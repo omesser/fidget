@@ -11,12 +11,18 @@
 //! transparency is respected during window moves, monitor transitions, and
 //! redraws. Without this, WebView2's white default background flashes through
 //! during these operations (#1327).
+//!
+//! DwmExtendFrameIntoClientArea extends the window frame into the entire client
+//! area, making DWM composite the window with full transparency. Without this,
+//! Windows shows the window frame's white background during drag operations and
+//! monitor transitions, causing full-screen white flashes (#1327).
 
 use std::sync::Mutex;
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, MARGINS};
 use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -34,6 +40,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
+    extend_dwm_frame(hwnd)?;
     set_webview_transparent_background(window)?;
     note_overlay(hwnd as u64);
 
@@ -223,6 +230,24 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
             return Err("Failed to set window display affinity".to_string());
         }
     }
+    Ok(())
+}
+
+fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+
+    unsafe {
+        let result = DwmExtendFrameIntoClientArea(hwnd, &margins);
+        if result != 0 {
+            return Err(format!("Failed to extend DWM frame: {result:#x}"));
+        }
+    }
+
     Ok(())
 }
 
