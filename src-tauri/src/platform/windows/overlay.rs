@@ -150,6 +150,7 @@ fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
         apply_exstyle(hwnd, current_style, new_style)?;
     }
+    extend_dwm_frame(hwnd)?;
     note_overlay(hwnd as u64);
     Ok(())
 }
