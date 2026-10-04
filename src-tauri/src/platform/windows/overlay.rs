@@ -231,34 +231,29 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
 /// and redraws. WebView2's default white background would otherwise show
 /// through while the transparent HTML content is being redrawn (#1327).
 fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller2;
-        use windows::UI::Color;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
+    };
 
-        window
-            .with_webview(|webview| unsafe {
-                let controller = webview.controller();
-                let controller2: ICoreWebView2Controller2 = controller
-                    .cast()
-                    .map_err(|e| format!("Failed to cast to ICoreWebView2Controller2: {e:?}"))?;
+    window
+        .with_webview(|webview| unsafe {
+            let controller = webview.controller();
+            let controller2: ICoreWebView2Controller2 = controller
+                .cast()
+                .map_err(|e| format!("Failed to cast to ICoreWebView2Controller2: {e:?}"))?;
 
-                let transparent = Color {
-                    A: 0,
-                    R: 0,
-                    G: 0,
-                    B: 0,
-                };
+            let transparent = COREWEBVIEW2_COLOR {
+                A: 0,
+                R: 0,
+                G: 0,
+                B: 0,
+            };
 
-                controller2
-                    .SetDefaultBackgroundColor(transparent)
-                    .map_err(|e| format!("Failed to set default background color: {e:?}"))
-            })
-            .map_err(|e| format!("Failed to access webview: {e}"))?
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    Ok(())
+            controller2
+                .SetDefaultBackgroundColor(transparent)
+                .map_err(|e| format!("Failed to set default background color: {e:?}"))
+        })
+        .map_err(|e| format!("Failed to access webview: {e}"))
 }
 
 /// Apply the alpha mask as the input region using SetWindowRgn.
