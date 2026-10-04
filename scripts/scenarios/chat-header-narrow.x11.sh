@@ -3,9 +3,9 @@
 # On screen: launches Fidget as BMO with a fixture Harness. Chat opens by
 #   itself and takes focus, then is resized to 420, 360 and 320 wide. One
 #   AT-SPI dump of the Chat window per width. Fidget quits when it ends.
-# Input: none. The resizes go through AT-SPI, not the mouse.
+# Input: none. The resizes go through xdotool on the X11 client window.
 # Duration: about 30 s, 2 min at most.
-# Grants: a running X11 session. AT-SPI (python3-pyatspi) for the terminal that runs it.
+# Grants: a running X11 session. AT-SPI (python3-pyatspi) for the dump. xdotool for the resize.
 # Asserts: at each width the Instance name, the Character chip and the mind
 #   line share one row, all three end inside the window, and the page is no
 #   wider than its scroll area, so Chat never scrolls sideways. The mind line
@@ -86,6 +86,10 @@ if [ -z "${DISPLAY:-}" ]; then
 fi
 python3 -c 'import pyatspi' > /dev/null 2>&1 || {
   echo "SKIP: python3-pyatspi is not installed." >&2
+  exit 2
+}
+command -v xdotool > /dev/null 2>&1 || {
+  echo "SKIP: xdotool is not installed." >&2
   exit 2
 }
 
