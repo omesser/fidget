@@ -141,6 +141,7 @@ pub(crate) fn quit_item_id(generation: u64) -> String {
 /// No longer used for tray menus (those use TRAY_REFRESHING flag instead).
 /// Kept for sprite popup menus if needed, though sprite menus don't exhibit
 /// the Windows race because popup_menu_at blocks until dismissed.
+#[cfg(test)]
 pub(crate) fn is_live_quit(id: &str, generation: u64) -> bool {
     id == quit_item_id(generation)
 }
