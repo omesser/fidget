@@ -3532,10 +3532,6 @@ fn spawn_live(
 /// the menu on the main thread, where the native objects live.
 struct TrayHandle(Mutex<Option<tauri::tray::TrayIcon>>);
 
-/// Tracks whether tray set_menu is executing. Muda fires teardown clicks
-/// synchronously during set_menu; user clicks arrive asynchronously afterward.
-pub(crate) static TRAY_REFRESHING: AtomicBool = AtomicBool::new(false);
-
 struct FrameExtras {
     settings: Arc<Mutex<Settings>>,
     settings_path: PathBuf,
@@ -4606,9 +4602,6 @@ fn main() {
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
                 if id.starts_with("quit:") {
-                    if TRAY_REFRESHING.load(Ordering::SeqCst) {
-                        return;
-                    }
                     quit_now();
                 } else {
                     let _ = hook_sender.send(MenuSignal::Chose(id));
@@ -6137,28 +6130,5 @@ mod tests {
     fn perform_quit_action_on_a_second_interrupt_only_exits_the_process() {
         assert_eq!(recorded(false, true), vec![Recorded::ExitProcess]);
         assert_eq!(recorded(true, true), vec![Recorded::ExitProcess]);
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn tray_quit_guard_rejects_clicks_during_refresh() {
-        use std::sync::atomic::Ordering;
-
-        assert!(
-            !TRAY_REFRESHING.load(Ordering::SeqCst),
-            "guard accepts user clicks when not refreshing"
-        );
-
-        TRAY_REFRESHING.store(true, Ordering::SeqCst);
-        assert!(
-            TRAY_REFRESHING.load(Ordering::SeqCst),
-            "guard rejects clicks during menu refresh (muda teardown)"
-        );
-
-        TRAY_REFRESHING.store(false, Ordering::SeqCst);
-        assert!(
-            !TRAY_REFRESHING.load(Ordering::SeqCst),
-            "guard accepts user clicks after refresh completes"
-        );
     }
 }
