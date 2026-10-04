@@ -413,13 +413,15 @@ OVERLAY_STATUS=$?
 [ "$OVERLAY_STATUS" -ne 0 ] && STATUS=1
 
 # Hit-test pipeline, end to end, against the real art. The cursor is moved onto
-# the resting sprite and off it again. Two cases against the *same* sprite
-# isolate the alpha lookup: its centre is drawn, its top-left corner is not.
+# the resting sprite and off it again. Two cases against the same art isolate
+# the alpha lookup: its centre is drawn, its top-left corner is not.
 echo ""
 echo "Hit-test pipeline:"
 
 BEFORE=$(swift scripts/cursor-position.swift)
-SPRITE_AT=$(
+# Prints the still sprite's x, y, width and height, or fails if it keeps moving.
+# Each probe waits afresh: an idle walk can start between two probes.
+still_sprite() {
   python3 - "$OUT" << 'PY'
 import re, sys, time
 out = sys.argv[1]
@@ -452,12 +454,17 @@ if not size:
 # Already in the shared point space, which is the space the cursor is warped in.
 print(int(pos[0]), int(pos[1]), *size.groups())
 PY
-) || SPRITE_AT=""
+}
 
-probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
-  local x y line landed
-  x=$(($(echo "$SPRITE_AT" | cut -d' ' -f1) + $1))
-  y=$(($(echo "$SPRITE_AT" | cut -d' ' -f2) + $1))
+probe() { # $1=half-sizes into the art, 1 its centre, 0 its top-left corner  $2=label  $3=expected HIT|miss
+  local at sx sy w h x y line landed
+  if ! at=$(still_sprite); then
+    echo "  SKIP  $2 - the sprite never stood still for the required consecutive frames"
+    return
+  fi
+  read -r sx sy w h <<< "$at"
+  x=$((sx + w * $1 / 2))
+  y=$((sy + h * $1 / 2))
 
   landed=$(swift scripts/warp-cursor.swift "$x" "$y")
   if [ "$landed" != "$x $y" ]; then
@@ -487,17 +494,10 @@ probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
 }
 
 HIT_FAILED=0
-if [ -z "$SPRITE_AT" ]; then
-  echo "  SKIP  the sprite never stood still for the required consecutive frames"
-  echo "        (cannot run hit-test checks on a moving position)"
-else
-  # Half the art's size is its centre, which is drawn; offset 0 is its
-  # top-left corner, which is not.
-  probe $(($(echo "$SPRITE_AT" | cut -d' ' -f3) / 2)) "cursor over drawn pixels swallows clicks" "HIT"
-  probe 0 "cursor over transparent pixels passes clicks through" "miss"
-  # shellcheck disable=SC2086  # an x and a y, deliberately split
-  swift scripts/warp-cursor.swift $BEFORE > /dev/null
-fi
+probe 1 "cursor over drawn pixels swallows clicks" "HIT"
+probe 0 "cursor over transparent pixels passes clicks through" "miss"
+# shellcheck disable=SC2086  # an x and a y, deliberately split
+swift scripts/warp-cursor.swift $BEFORE > /dev/null
 
 [ "$HIT_FAILED" = "1" ] && STATUS=1
 
