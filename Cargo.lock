@@ -1269,8 +1269,6 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
- "webview2-com",
- "windows-core",
  "windows-sys 0.61.2",
  "x11rb 0.14.0",
  "zip 8.6.0",
