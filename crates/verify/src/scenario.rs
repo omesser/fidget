@@ -457,4 +457,37 @@ mod tests {
         );
         assert!(String::from_utf8_lossy(&out.stderr).contains("DISPLAY is unset"));
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn chat_header_narrow_win_fixture_passes_with_web_area_only() {
+        let scenarios = repo_scenarios();
+        let script = scenarios.join("chat-header-narrow.win.ps1");
+        let ax420 = scenarios.join("fixtures/chat-header-narrow-420-win.txt");
+        let ax360 = scenarios.join("fixtures/chat-header-narrow-360.txt");
+        let ax320 = scenarios.join("fixtures/chat-header-narrow-320.txt");
+        let ok = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script.to_str().unwrap(),
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ])
+            .env("FIDGET_SCENARIO_AX_420", &ax420)
+            .env("FIDGET_SCENARIO_AX_360", &ax360)
+            .env("FIDGET_SCENARIO_AX_320", &ax320)
+            .output()
+            .unwrap();
+        assert_eq!(
+            ok.status.code(),
+            Some(0),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&ok.stdout),
+            String::from_utf8_lossy(&ok.stderr)
+        );
+    }
 }

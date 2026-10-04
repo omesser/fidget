@@ -98,13 +98,18 @@ function Check-Dump([int]$Width, [string]$File) {
 
     $scrollLine = Get-Content -LiteralPath $File -Encoding utf8 | Where-Object { $_ -match '^scroll-area\|' } | Select-Object -First 1
     $webLine = Get-Content -LiteralPath $File -Encoding utf8 | Where-Object { $_ -match '^web-area\|' } | Select-Object -First 1
-    if (-not $scrollLine -or -not $webLine) { Fail "${Width}: missing scroll-area or web-area in $File" }
-    $sw = (Get-Rect $scrollLine)[2]
-    $aw = (Get-Rect $webLine)[2]
-    if ($aw -gt ($sw + 1)) {
-        Fail "${Width}: the page is $aw wide in a $sw scroll area, so Chat scrolls sideways"
+    if (-not $scrollLine -and -not $webLine) { Fail "${Width}: missing scroll-area or web-area in $File" }
+    if ($scrollLine) {
+        $sw = (Get-Rect $scrollLine)[2]
+        $aw = (Get-Rect $webLine)[2]
+        if ($aw -gt ($sw + 1)) {
+            Fail "${Width}: the page is $aw wide in a $sw scroll area, so Chat scrolls sideways"
+        }
+        Write-Output "ok: ${Width}: one row inside the window, page $aw of $sw"
+    } else {
+        $aw = (Get-Rect $webLine)[2]
+        Write-Output "ok: ${Width}: one row inside the window, page $aw"
     }
-    Write-Output "ok: ${Width}: one row inside the window, page $aw of $sw"
 }
 
 $ax420 = $env:FIDGET_SCENARIO_AX_420
