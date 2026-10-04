@@ -212,17 +212,15 @@ fn start_stderr_capture_unix() {
         let reader = unsafe { std::fs::File::from_raw_fd(read_fd) };
         let reader = std::io::BufReader::new(reader);
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                append(&line);
+        for line in reader.lines().map_while(Result::ok) {
+            append(&line);
 
-                #[cfg(debug_assertions)]
-                unsafe {
-                    use std::io::Write;
-                    let mut stderr = std::fs::File::from_raw_fd(original_stderr);
-                    let _ = writeln!(stderr, "{}", line);
-                    std::mem::forget(stderr);
-                }
+            #[cfg(debug_assertions)]
+            unsafe {
+                use std::io::Write;
+                let mut stderr = std::fs::File::from_raw_fd(original_stderr);
+                let _ = writeln!(stderr, "{}", line);
+                std::mem::forget(stderr);
             }
         }
     });
@@ -231,13 +229,9 @@ fn start_stderr_capture_unix() {
 #[cfg(windows)]
 fn start_stderr_capture_windows() {
     use std::io::BufRead;
-    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use std::os::windows::io::FromRawHandle;
     use windows_sys::Win32::Foundation::{
-        CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
-    };
-    use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS,
-        PIPE_ACCESS_INBOUND,
+        DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::System::Pipes::CreatePipe;
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
@@ -251,44 +245,41 @@ fn start_stderr_capture_windows() {
         }
 
         #[cfg(debug_assertions)]
-        let mut original_stderr: HANDLE = INVALID_HANDLE_VALUE;
-        #[cfg(debug_assertions)]
-        {
+        let original_stderr = {
             let stderr_handle = windows_sys::Win32::System::Console::GetStdHandle(
                 windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
             );
+            let mut dup: HANDLE = INVALID_HANDLE_VALUE;
             DuplicateHandle(
                 GetCurrentProcess(),
                 stderr_handle,
                 GetCurrentProcess(),
-                &mut original_stderr,
+                &mut dup,
                 0,
                 0,
                 DUPLICATE_SAME_ACCESS,
             );
-        }
+            std::fs::File::from_raw_handle(dup as _)
+        };
 
         windows_sys::Win32::System::Console::SetStdHandle(
             windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
             write_handle,
         );
 
-        let read_fd = read_handle as i32;
+        let reader = std::fs::File::from_raw_handle(read_handle as _);
+
         std::thread::spawn(move || {
-            let reader = std::fs::File::from_raw_handle(read_handle as _);
             let reader = std::io::BufReader::new(reader);
 
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    append(&line);
+            for line in reader.lines().flatten() {
+                append(&line);
 
-                    #[cfg(debug_assertions)]
-                    {
-                        use std::io::Write;
-                        let mut stderr = std::fs::File::from_raw_handle(original_stderr as _);
-                        let _ = writeln!(stderr, "{}", line);
-                        std::mem::forget(stderr);
-                    }
+                #[cfg(debug_assertions)]
+                {
+                    use std::io::Write;
+                    let mut stderr = &original_stderr;
+                    let _ = writeln!(stderr, "{}", line);
                 }
             }
         });
