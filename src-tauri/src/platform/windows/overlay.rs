@@ -6,6 +6,11 @@
 //! and unions any hotspot rectangles the renderer reported so a control drawn
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
 //! when the capturable setting, on by default (ADR-0024), is turned off.
+//!
+//! WebView2's DefaultBackgroundColor is set to fully transparent so the HTML
+//! transparency is respected during window moves, monitor transitions, and
+//! redraws. Without this, WebView2's white default background flashes through
+//! during these operations (#1327).
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -21,13 +26,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
-/// `FIDGET_CAPTURABLE=0` excludes it from shares.
+/// `FIDGET_CAPTURABLE=0` excludes it from shares. Set WebView2 background to
+/// transparent to prevent white flashes during window moves and monitor transitions.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
+    set_webview_transparent_background(window)?;
     note_overlay(hwnd as u64);
 
     Ok(())
@@ -216,6 +223,41 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
             return Err("Failed to set window display affinity".to_string());
         }
     }
+    Ok(())
+}
+
+/// Set WebView2's default background color to fully transparent.
+/// This prevents white flashes during window moves, monitor transitions,
+/// and redraws. WebView2's default white background would otherwise show
+/// through while the transparent HTML content is being redrawn (#1327).
+fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller2;
+        use windows::UI::Color;
+
+        window
+            .with_webview(|webview| unsafe {
+                let controller = webview.controller();
+                let controller2: ICoreWebView2Controller2 = controller
+                    .cast()
+                    .map_err(|e| format!("Failed to cast to ICoreWebView2Controller2: {e:?}"))?;
+
+                let transparent = Color {
+                    A: 0,
+                    R: 0,
+                    G: 0,
+                    B: 0,
+                };
+
+                controller2
+                    .SetDefaultBackgroundColor(transparent)
+                    .map_err(|e| format!("Failed to set default background color: {e:?}"))
+            })
+            .map_err(|e| format!("Failed to access webview: {e}"))?
+    }
+
+    #[cfg(not(target_os = "windows"))]
     Ok(())
 }
 
