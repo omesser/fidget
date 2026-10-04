@@ -331,7 +331,6 @@ mod tests {
         assert!(indexed[0].header_text("linux").contains("(Windows)"));
     }
 
-    #[cfg(unix)]
     fn repo_scenarios() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/scenarios")
     }
