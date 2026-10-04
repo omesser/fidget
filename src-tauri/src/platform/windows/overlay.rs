@@ -10,11 +10,10 @@
 //! DwmExtendFrameIntoClientArea extends the window frame into the entire client
 //! area, making DWM composite the window with full transparency. This prevents
 //! the window frame's white background from showing during drag operations and
-//! monitor transitions, eliminating full-screen white flashes (#1327).
+//! monitor transitions (#1327).
 //!
-//! WebView2's DefaultBackgroundColor is set to fully transparent to prevent
-//! white artifacts on sprite and quick-message pill content during repaints
-//! and compositor updates (#1327).
+//! Window style restoration in reinforce_overlay skips SetWindowPos FRAMECHANGED
+//! to avoid unnecessary frame redraws that cause white flashes and content ghosting.
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -43,7 +42,6 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
     extend_dwm_frame(hwnd)?;
-    set_webview_background(window)?;
     note_overlay(hwnd as u64);
 
     Ok(())
@@ -148,14 +146,18 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 }
 
 /// Put the tool-window bits back after a click-through rewrite drops them.
+/// Restores bits without forcing frame redraw to prevent white flash.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
-    extend_dwm_frame(hwnd)?;
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
-        apply_exstyle(hwnd, current_style, new_style)?;
+        if new_style != current_style {
+            if SetWindowLongW(hwnd, GWL_EXSTYLE, new_style) == 0 && current_style != 0 {
+                return Err("Failed to restore overlay extended styles".to_string());
+            }
+        }
     }
     note_overlay(hwnd as u64);
     Ok(())
@@ -249,54 +251,6 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
         if result != 0 {
             return Err(format!("Failed to extend DWM frame: {result:#x}"));
         }
-    }
-
-    Ok(())
-}
-
-fn set_webview_background(window: &tauri::WebviewWindow) -> Result<(), String> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
-    };
-    use windows_core::Interface;
-
-    let captured_error = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    let slot = std::sync::Arc::clone(&captured_error);
-
-    window
-        .with_webview(move |webview| unsafe {
-            let controller = webview.controller();
-            let controller2: ICoreWebView2Controller2 = match controller.cast() {
-                Ok(c) => c,
-                Err(e) => {
-                    if let Ok(mut err) = slot.lock() {
-                        *err = Some(format!("Failed to cast to ICoreWebView2Controller2: {e:?}"));
-                    }
-                    return;
-                }
-            };
-
-            let transparent = COREWEBVIEW2_COLOR {
-                A: 0,
-                R: 0,
-                G: 0,
-                B: 0,
-            };
-
-            if let Err(e) = controller2.SetDefaultBackgroundColor(transparent) {
-                if let Ok(mut err) = slot.lock() {
-                    *err = Some(format!("Failed to set default background color: {e:?}"));
-                }
-            }
-        })
-        .map_err(|e| format!("Failed to access webview: {e}"))?;
-
-    if let Some(err) = captured_error
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-    {
-        return Err(err);
     }
 
     Ok(())
