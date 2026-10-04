@@ -39,7 +39,7 @@ def read_tail_frames(log_path, n=10):
     ][-n:]
 
 log_path = f"{out}/app.log"
-for attempt in range(40):
+for _ in range(40):
     frames = read_tail_frames(log_path, n=5)
     if len(frames) >= 3 and all(f == frames[0] for f in frames):
         pos = frames[0]
@@ -55,7 +55,8 @@ else:
 print(f"{pos[0]},{pos[1]}")
 PY
 
-RESULT=$(python3 - "$TEMP_DIR" << 'PY'
+RESULT=$(
+  python3 - "$TEMP_DIR" << 'PY'
 import re, sys, time
 out = sys.argv[1]
 
@@ -69,7 +70,7 @@ def read_tail_frames(log_path, n=10):
     ][-n:]
 
 log_path = f"{out}/app.log"
-for attempt in range(40):
+for _ in range(40):
     frames = read_tail_frames(log_path, n=5)
     if len(frames) >= 3 and all(f == frames[0] for f in frames):
         pos = frames[0]
@@ -105,7 +106,8 @@ frame: 4 Falling sprite(100,400)
 frame: 5 Falling sprite(100,500)
 EOF
 
-RESULT=$(python3 - "$TEMP_DIR/moving.log" << 'PY'
+RESULT=$(
+  python3 - "$TEMP_DIR/moving.log" << 'PY'
 import re, sys, time
 out = sys.argv[1]
 
@@ -120,7 +122,7 @@ def read_tail_frames(log_path, n=10):
 
 log_path = out
 max_attempts = 2
-for attempt in range(max_attempts):
+for _ in range(max_attempts):
     frames = read_tail_frames(log_path, n=5)
     if len(frames) >= 3 and all(f == frames[0] for f in frames):
         pos = frames[0]
@@ -154,7 +156,7 @@ hit-test: frame#90 cursor(300,300) -> HIT via alpha=200
 EOF
 
 line=""
-for attempt in $(seq 1 40); do
+for _ in $(seq 1 40); do
   line=$(grep 'hit-test:' "$TEMP_DIR/hittest1.log" | tail -1)
   if echo "$line" | grep -q "cursor(300,300)"; then
     break
@@ -175,7 +177,7 @@ hit-test: frame#50 cursor(200,200) -> miss via alpha=0
 EOF
 
 line=""
-for attempt in $(seq 1 40); do
+for _ in $(seq 1 40); do
   line=$(grep 'hit-test:' "$TEMP_DIR/hittest2.log" | tail -1)
   if echo "$line" | grep -q "cursor(200,200)"; then
     break
@@ -203,7 +205,7 @@ hit-test: frame#120 cursor(500,600) -> miss via alpha=0
 EOF
 
 line=""
-for attempt in $(seq 1 40); do
+for _ in $(seq 1 40); do
   line=$(grep 'hit-test:' "$TEMP_DIR/stale.log" | tail -1)
   if echo "$line" | grep -q "cursor(500,600)"; then
     break
