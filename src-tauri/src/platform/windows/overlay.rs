@@ -236,12 +236,18 @@ fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(
     };
     use windows_core::Interface;
 
+    let mut captured_error: Option<String> = None;
+
     window
         .with_webview(|webview| unsafe {
             let controller = webview.controller();
-            let controller2: ICoreWebView2Controller2 = controller
-                .cast()
-                .map_err(|e| format!("Failed to cast to ICoreWebView2Controller2: {e:?}"))?;
+            let controller2: ICoreWebView2Controller2 = match controller.cast() {
+                Ok(c) => c,
+                Err(e) => {
+                    captured_error = Some(format!("Failed to cast to ICoreWebView2Controller2: {e:?}"));
+                    return;
+                }
+            };
 
             let transparent = COREWEBVIEW2_COLOR {
                 A: 0,
@@ -250,11 +256,17 @@ fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(
                 B: 0,
             };
 
-            controller2
-                .SetDefaultBackgroundColor(transparent)
-                .map_err(|e| format!("Failed to set default background color: {e:?}"))
+            if let Err(e) = controller2.SetDefaultBackgroundColor(transparent) {
+                captured_error = Some(format!("Failed to set default background color: {e:?}"));
+            }
         })
-        .map_err(|e| format!("Failed to access webview: {e}"))
+        .map_err(|e| format!("Failed to access webview: {e}"))?;
+
+    if let Some(err) = captured_error {
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 /// Apply the alpha mask as the input region using SetWindowRgn.
