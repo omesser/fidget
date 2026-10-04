@@ -144,13 +144,13 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
+    extend_dwm_frame(hwnd)?;
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
         apply_exstyle(hwnd, current_style, new_style)?;
     }
-    extend_dwm_frame(hwnd)?;
     note_overlay(hwnd as u64);
     Ok(())
 }
