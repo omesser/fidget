@@ -53,7 +53,6 @@ pub fn refresh(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::Ordering;
 
     #[test]
