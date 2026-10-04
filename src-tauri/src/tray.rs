@@ -15,8 +15,9 @@ use tauri::AppHandle;
 pub fn install(
     app: &AppHandle,
     description: &MenuDescription,
+    quit_generation: u64,
 ) -> Result<tauri::tray::TrayIcon, tauri::Error> {
-    let menu = menu::build(app, description)?;
+    let menu = menu::build(app, description, quit_generation)?;
 
     let tray_icon_bytes = include_bytes!("../icons/tray.png");
     let decoded = image::load_from_memory(tray_icon_bytes).expect("Failed to decode tray icon PNG");
@@ -44,7 +45,8 @@ pub fn refresh(
     tray: &tauri::tray::TrayIcon,
     app: &AppHandle,
     description: &MenuDescription,
+    quit_generation: u64,
 ) -> Result<(), tauri::Error> {
-    let menu = menu::build(app, description)?;
+    let menu = menu::build(app, description, quit_generation)?;
     tray.set_menu(Some(menu))
 }
