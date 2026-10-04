@@ -3275,7 +3275,7 @@ fn apply_menu_action(
                 eprintln!("menu: Summon");
             }
         }
-        menu::MenuAction::Quit => unreachable!("quit handled in on_menu_event hook"),
+        menu::MenuAction::Quit => quit_now(),
     }
 }
 
