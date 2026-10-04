@@ -121,11 +121,39 @@ try {
     if (-not (Wait-For 40 { Select-String -LiteralPath $marks -Pattern '^thought 2$' -Quiet })) {
         Fail "no thinking turn; see $log"
     }
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [Console]::OutputEncoding = $utf8
+    $OutputEncoding = $utf8
+    $dumpPs1 = Join-Path $out "dump-ax.ps1"
+    $ax = Join-Path $root "scripts\ax-window-win.ps1"
+    $dumpLines = @(
+        '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false',
+        '$OutputEncoding = [Console]::OutputEncoding',
+        "& '$ax' @args"
+    )
+    [System.IO.File]::WriteAllLines($dumpPs1, $dumpLines, $utf8)
     function Capture([string]$Name, [string]$Glyph) {
         $dump = Join-Path $out "$Name.ax.txt"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts/ax-window-win.ps1") dump -ProcessId $proc.Id -Title "BMO" |
-            Out-File -FilePath $dump -Encoding utf8
-        if ($LASTEXITCODE -ne 0) { Fail "$Name`: UI Automation dump failed; see $dump" }
+        $prefix = ("button|$Glyph").ToLower()
+        $deadline = (Get-Date).AddSeconds(2)
+        $code = 1
+        do {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $dumpPs1 dump -ProcessId $proc.Id -Title "BMO" |
+                Out-File -FilePath $dump -Encoding utf8
+            $code = $LASTEXITCODE
+            if ($code -eq 0) {
+                $row = Get-Content -LiteralPath $dump -Encoding utf8 |
+                    Where-Object { $_ -match '(?i)^button\|.*thinking' } |
+                    Select-Object -First 1
+                if ($row -and $row.ToLower().StartsWith($prefix)) {
+                    Write-Output "ok: ${Name}: $row"
+                    return
+                }
+            }
+            if ($proc.HasExited) { Fail "Fidget exited; see $log" }
+            Start-Sleep -Milliseconds 200
+        } while ((Get-Date) -lt $deadline)
+        if ($code -ne 0) { Fail "${Name}: UI Automation dump failed; see $dump" }
         Assert-Row $dump $Glyph $Name
     }
     Capture "mid-thought" $GlyphOpen
