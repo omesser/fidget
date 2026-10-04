@@ -16,14 +16,11 @@
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # Set FIDGET_SCENARIO_AX_420, FIDGET_SCENARIO_AX_360 and FIDGET_SCENARIO_AX_320
 # to assert those dumps and skip the GUI. That checks the assertion, not the live window.
-param(
-    [Parameter(Position = 0)]
-    [string]$Go = "",
-    [Parameter(Position = 1)]
-    [string]$Bin = "",
-    [Parameter(Position = 2)]
-    [string]$TestBin = ""
-)
+# No param() block: Windows PowerShell binds `--go` as -Go and swallows the
+# next token, so $Go never equals "--go" and the leaf always exits 2.
+$Go = if ($args.Count -gt 0) { $args[0] } else { "" }
+$Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
+$TestBin = if ($args.Count -gt 2) { $args[2] } else { "" }
 $ErrorActionPreference = "Stop"
 
 function Show-Header {
