@@ -16,21 +16,15 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows_sys::Win32::{
-    Foundation::HWND,
-    Graphics::{
-        Dwm::DwmExtendFrameIntoClientArea,
-        Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR},
-    },
-    System::Threading::GetCurrentThreadId,
-    UI::{
-        Controls::MARGINS,
-        WindowsAndMessaging::{
-            GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
-            HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-            WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
-        },
-    },
+use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
+use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows_sys::Win32::UI::Controls::MARGINS;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
+    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
@@ -150,14 +144,56 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
+
+    if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap();
+        eprintln!(
+            "[{}.{:03}] reinforce_overlay start hwnd={:x}",
+            now.as_secs(),
+            now.subsec_millis(),
+            hwnd as usize
+        );
+    }
+
     extend_dwm_frame(hwnd)?;
+
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
+
+        if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap();
+            eprintln!(
+                "[{}.{:03}] reinforce_overlay ex-style write: current={:#x} new={:#x}",
+                now.as_secs(),
+                now.subsec_millis(),
+                current_style,
+                new_style
+            );
+        }
+
         apply_exstyle(hwnd, current_style, new_style)?;
     }
+
     note_overlay(hwnd as u64);
+
+    if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap();
+        eprintln!(
+            "[{}.{:03}] reinforce_overlay end hwnd={:x}",
+            now.as_secs(),
+            now.subsec_millis(),
+            hwnd as usize
+        );
+    }
+
     Ok(())
 }
 
