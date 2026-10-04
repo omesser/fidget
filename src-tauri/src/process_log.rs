@@ -272,7 +272,7 @@ fn start_stderr_capture_windows() {
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(reader);
 
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 append(&line);
 
                 #[cfg(debug_assertions)]
