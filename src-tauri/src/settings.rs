@@ -1533,6 +1533,7 @@ pub struct SettingsPatch {
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
     pub trace_engine: Option<bool>,
+    pub debug_reinforce: Option<bool>,
     pub capturable: Option<bool>,
     #[serde(default)]
     pub use_accessibility: Option<bool>,
@@ -1895,6 +1896,9 @@ impl Settings {
         if let Some(value) = patch.trace_engine {
             self.trace_engine = value;
         }
+        if let Some(value) = patch.debug_reinforce {
+            self.debug_reinforce = value;
+        }
         if let Some(value) = patch.completer.director_blank {
             self.director_blank = value;
         }
@@ -2070,6 +2074,7 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
+    pub debug_reinforce: bool,
     /// Blank-AI mode: built-in prompt layers emptied, Instance Prompt kept
     /// (#657, #680).
     pub director_blank: bool,
@@ -2144,6 +2149,7 @@ impl Default for Settings {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
+            debug_reinforce: false,
             director_blank: false,
             capturable: true,
             use_accessibility: false,

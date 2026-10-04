@@ -142,6 +142,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
         TRACE_ENGINE.var(),
+        DEBUG_REINFORCE.var(),
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         CAPTURABLE.var(),
         DIRECTOR_BLANK.var(),
@@ -182,6 +183,7 @@ pub fn seed(settings: &Settings) {
     TRACE_HITTEST.seed(settings.trace_hittest);
     TRACE_DIRECTOR.seed(settings.trace_director);
     TRACE_ENGINE.seed(settings.trace_engine);
+    DEBUG_REINFORCE.seed(settings.debug_reinforce);
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     CAPTURABLE.seed(settings.capturable);
     DIRECTOR_BLANK.seed(settings.director_blank);
