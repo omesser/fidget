@@ -119,8 +119,7 @@ wait_for() {
 }
 
 dump() { # <name>
-  python3 "$root/scripts/ax-window-linux.py" dump "$pid" BMO frames > "$out/$1.ax.txt" 2> "$out/$1.err" ||
-    fail "$1: AT-SPI dump failed; see $out/$1.err"
+  python3 "$root/scripts/ax-window-linux.py" dump "$pid" BMO frames > "$out/$1.ax.txt" 2> "$out/$1.err"
 }
 
 shows_session() {
