@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: chat-level (macOS)
+# Scenario: chat-level (macOS only, since it asserts a macOS window level)
 # On screen: launches Fidget as BMO with a fixture Harness. Chat opens by
 #   itself and takes focus. Finder is brought forward, then Chat is minimized
 #   and restored twice: once while focused, once while Finder is in front.

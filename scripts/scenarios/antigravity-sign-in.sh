@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: antigravity-sign-in (macOS)
+# Scenario: antigravity-sign-in (macOS only, since the sign-in flow is the server's own)
 # On screen: launches Fidget as BMO with the antigravity preset Harness, signed
 #   out. You open Chat and sign in with Google in your browser. Two screenshots
 #   of the Chat window. Fidget quits, then two headless probes run.

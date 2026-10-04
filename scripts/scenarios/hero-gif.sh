@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: hero-gif (macOS)
+# Scenario: hero-gif (macOS only, since the README needs one recording, not one per OS)
 # On screen: launches Fidget as one Character (default Buddy Bot) with a Harness
 #   and records the main display until the last beat, 90 s at most. The terminal cues five beats: throw
 #   the sprite at a window's top edge, poke it, double-click it (Chat opens; keep

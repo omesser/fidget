@@ -75,11 +75,16 @@ leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
 
 These stay macOS only on purpose:
 
-- `chat-level` asserts Chat's macOS window level. Windows and X11 have only a
-  topmost flag, so a port would be a different test.
-- `hero-gif` records the README video and asserts nothing.
-- `codex-sign-in-link` and `antigravity-sign-in` need a person at the browser,
-  so no agent could run a port.
+- `chat-level` asserts Chat's macOS window level. Windows has only a topmost
+  flag, and X11 leaves stacking to the window manager. Its minimize check could
+  still get its own leaf.
+- `hero-gif` records the README video, and the README needs one recording, not
+  one per OS.
+- `codex-sign-in-link` and `antigravity-sign-in` check a sign-in flow that is
+  the Harness's own and the same on every OS. A port would need a person at
+  the browser on each OS to recheck only how Chat draws it.
+
+Every other scenario is waiting for its leaves (#1088).
 
 X11 reads the Chat window through AT-SPI (`scripts/ax-window-linux.py`) and
 needs `python3-pyatspi` plus `DISPLAY`. Windows reads it through UI Automation
