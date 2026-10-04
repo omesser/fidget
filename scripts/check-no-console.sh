@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fail when a built package would open a console or a terminal. Usage:
 # scripts/check-no-console.sh linux|macos|windows [cargo target dir], run after
-# `tauri build` has produced the deb, the .app or the exe under target/release.
+# `tauri build` has produced the deb, the dmg or the exe under target/release.
 
 set -euo pipefail
 
@@ -36,7 +36,12 @@ case "${1:-}" in
     echo "${debs[0]}: Terminal=false, Exec=$program is the ELF"
     ;;
   macos)
-    apps=("$release"/bundle/macos/*.app)
+    # The bundler deletes bundle/macos/*.app once the dmg holds it.
+    dmgs=("$release"/bundle/dmg/*.dmg)
+    mount=$(mktemp -d)
+    hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${dmgs[0]}" > /dev/null
+    trap 'hdiutil detach -quiet "$mount"' EXIT
+    apps=("$mount"/*.app)
     app=${apps[0]}
     wrappers=$(find "$app" -name '*.command')
     [ -z "$wrappers" ] || fail "$app ships a Terminal launcher: $wrappers"
