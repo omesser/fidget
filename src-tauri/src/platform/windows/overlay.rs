@@ -141,21 +141,22 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
+/// Log a debug message if FIDGET_DEBUG_REINFORCE is set.
+fn debug_reinforce(msg: impl FnOnce() -> String) {
+    static DEBUG_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *DEBUG_ENABLED.get_or_init(|| std::env::var("FIDGET_DEBUG_REINFORCE").is_ok());
+
+    if enabled {
+        if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            eprintln!("[{}.{:03}] {}", now.as_secs(), now.subsec_millis(), msg());
+        }
+    }
+}
+
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
-
-    if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap();
-        eprintln!(
-            "[{}.{:03}] reinforce_overlay start hwnd={:x}",
-            now.as_secs(),
-            now.subsec_millis(),
-            hwnd as usize
-        );
-    }
+    debug_reinforce(|| format!("reinforce_overlay start hwnd={:x}", hwnd as usize));
 
     extend_dwm_frame(hwnd)?;
 
@@ -163,36 +164,17 @@ fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
-
-        if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap();
-            eprintln!(
-                "[{}.{:03}] reinforce_overlay ex-style write: current={:#x} new={:#x}",
-                now.as_secs(),
-                now.subsec_millis(),
-                current_style,
-                new_style
-            );
-        }
-
+        debug_reinforce(|| {
+            format!(
+                "reinforce_overlay ex-style write: current={:#x} new={:#x}",
+                current_style, new_style
+            )
+        });
         apply_exstyle(hwnd, current_style, new_style)?;
     }
 
     note_overlay(hwnd as u64);
-
-    if std::env::var("FIDGET_DEBUG_REINFORCE").is_ok() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap();
-        eprintln!(
-            "[{}.{:03}] reinforce_overlay end hwnd={:x}",
-            now.as_secs(),
-            now.subsec_millis(),
-            hwnd as usize
-        );
-    }
+    debug_reinforce(|| format!("reinforce_overlay end hwnd={:x}", hwnd as usize));
 
     Ok(())
 }
