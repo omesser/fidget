@@ -27,6 +27,7 @@ use file_rotate::compression::Compression;
 use file_rotate::suffix::AppendCount;
 use file_rotate::{ContentLimit, FileRotate};
 
+/// The log file name, in the data folder beside Memory.
 pub const FILE: &str = "process.log";
 
 /// The log as it stands now, for anything that opens it rather than writes it.
@@ -57,9 +58,10 @@ type RotatorHandle = Arc<Mutex<FileRotate<AppendCount>>>;
 /// Concurrent `FileRotate::new` plus rotate would race the rename cascade.
 static ROTATORS: OnceLock<Mutex<HashMap<PathBuf, RotatorHandle>>> = OnceLock::new();
 
-/// Install the panic hook so a packaged build still has the line after death.
+/// Install the panic hook and redirect stderr to the process log.
 ///
 /// Safe to call more than once. Call early, before anything that might panic.
+/// After this, all stderr writes (including `eprintln!`) land in the process log.
 pub fn init() {
     static STARTED: OnceLock<()> = OnceLock::new();
     STARTED.get_or_init(|| {
@@ -68,6 +70,11 @@ pub fn init() {
             append(&format!("panic: {info}"));
             previous(info);
         }));
+
+        #[cfg(unix)]
+        start_stderr_capture_unix();
+        #[cfg(windows)]
+        start_stderr_capture_windows();
     });
 }
 
@@ -178,6 +185,116 @@ fn report_error(msg: &str) {
     }
 }
 
+#[cfg(unix)]
+fn start_stderr_capture_unix() {
+    use std::io::BufRead;
+    use std::os::unix::io::FromRawFd;
+
+    let pipe_result = unsafe {
+        let mut fds = [0; 2];
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
+            return;
+        }
+        (fds[0], fds[1])
+    };
+
+    let (read_fd, write_fd) = pipe_result;
+
+    #[cfg(debug_assertions)]
+    let original_stderr = unsafe { libc::dup(libc::STDERR_FILENO) };
+
+    unsafe {
+        libc::dup2(write_fd, libc::STDERR_FILENO);
+        libc::close(write_fd);
+    }
+
+    std::thread::spawn(move || {
+        let reader = unsafe { std::fs::File::from_raw_fd(read_fd) };
+        let reader = std::io::BufReader::new(reader);
+
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                append(&line);
+
+                #[cfg(debug_assertions)]
+                unsafe {
+                    use std::io::Write;
+                    let mut stderr = std::fs::File::from_raw_fd(original_stderr);
+                    let _ = writeln!(stderr, "{}", line);
+                    std::mem::forget(stderr);
+                }
+            }
+        }
+    });
+}
+
+#[cfg(windows)]
+fn start_stderr_capture_windows() {
+    use std::io::BufRead;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS,
+        PIPE_ACCESS_INBOUND,
+    };
+    use windows_sys::Win32::System::Pipes::CreatePipe;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    unsafe {
+        let mut read_handle: HANDLE = INVALID_HANDLE_VALUE;
+        let mut write_handle: HANDLE = INVALID_HANDLE_VALUE;
+
+        if CreatePipe(&mut read_handle, &mut write_handle, std::ptr::null_mut(), 0) == 0 {
+            return;
+        }
+
+        #[cfg(debug_assertions)]
+        let mut original_stderr: HANDLE = INVALID_HANDLE_VALUE;
+        #[cfg(debug_assertions)]
+        {
+            let stderr_handle = windows_sys::Win32::System::Console::GetStdHandle(
+                windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
+            );
+            DuplicateHandle(
+                GetCurrentProcess(),
+                stderr_handle,
+                GetCurrentProcess(),
+                &mut original_stderr,
+                0,
+                0,
+                DUPLICATE_SAME_ACCESS,
+            );
+        }
+
+        windows_sys::Win32::System::Console::SetStdHandle(
+            windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
+            write_handle,
+        );
+
+        let read_fd = read_handle as i32;
+        std::thread::spawn(move || {
+            let reader = std::fs::File::from_raw_handle(read_handle as _);
+            let reader = std::io::BufReader::new(reader);
+
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    append(&line);
+
+                    #[cfg(debug_assertions)]
+                    {
+                        use std::io::Write;
+                        let mut stderr = std::fs::File::from_raw_handle(original_stderr as _);
+                        let _ = writeln!(stderr, "{}", line);
+                        std::mem::forget(stderr);
+                    }
+                }
+            }
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,8 +344,7 @@ mod tests {
         body
     }
 
-    /// The tray and every writer must land on one file. Two callers joining
-    /// the same name are two places for it to stop being the same name.
+    /// Every writer and reader must land on one file.
     #[test]
     fn the_log_sits_beside_memory() {
         let opened = current_path();
