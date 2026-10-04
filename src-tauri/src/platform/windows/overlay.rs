@@ -234,7 +234,7 @@ fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
     };
-    use windows_core::interface::Interface;
+    use windows_core::Interface;
 
     window
         .with_webview(|webview| unsafe {
