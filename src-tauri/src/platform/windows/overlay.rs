@@ -19,7 +19,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::{
     Foundation::HWND,
     Graphics::{
-        Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND},
+        Dwm::DwmExtendFrameIntoClientArea,
         Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR},
     },
     System::Threading::GetCurrentThreadId,
@@ -36,9 +36,8 @@ use windows_sys::Win32::{
 /// Float above other windows, non-activating. Capturable unless Presence or
 /// `FIDGET_CAPTURABLE=0` excludes it from shares. Extends DWM frame into the
 /// entire client area to prevent white flashes during window moves and monitor
-/// transitions. Sets WebView2 background transparent to prevent white artifacts
-/// on sprite and pill content. Returns Err when the handle is not realized yet,
-/// so the caller can retry.
+/// transitions. Returns Err when the handle is not realized yet, so the caller
+/// can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
@@ -252,20 +251,6 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
         }
     }
 
-    Ok(())
-}
-
-/// Set layered window attributes to ensure proper alpha blending during frame redraws.
-/// Without this, FRAMECHANGED can show white background during the synchronous redraw.
-fn set_layered_attributes(hwnd: HWND) -> Result<(), String> {
-    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
-    // LWA_ALPHA with 255 (fully opaque) tells Windows to use per-pixel alpha
-    // from the content, preventing white background during compositor updates.
-    unsafe {
-        if SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA) == 0 {
-            return Err("Failed to set layered window attributes".to_string());
-        }
-    }
     Ok(())
 }
 
