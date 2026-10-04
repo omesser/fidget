@@ -236,15 +236,20 @@ fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(
     };
     use windows_core::Interface;
 
-    let mut captured_error: Option<String> = None;
+    let captured_error = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let error_clone = captured_error.clone();
 
     window
-        .with_webview(|webview| unsafe {
+        .with_webview(move |webview| unsafe {
             let controller = webview.controller();
             let controller2: ICoreWebView2Controller2 = match controller.cast() {
                 Ok(c) => c,
                 Err(e) => {
-                    captured_error = Some(format!("Failed to cast to ICoreWebView2Controller2: {e:?}"));
+                    if let Ok(mut err) = error_clone.lock() {
+                        *err = Some(format!(
+                            "Failed to cast to ICoreWebView2Controller2: {e:?}"
+                        ));
+                    }
                     return;
                 }
             };
@@ -257,13 +262,17 @@ fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(
             };
 
             if let Err(e) = controller2.SetDefaultBackgroundColor(transparent) {
-                captured_error = Some(format!("Failed to set default background color: {e:?}"));
+                if let Ok(mut err) = error_clone.lock() {
+                    *err = Some(format!("Failed to set default background color: {e:?}"));
+                }
             }
         })
         .map_err(|e| format!("Failed to access webview: {e}"))?;
 
-    if let Some(err) = captured_error {
-        return Err(err);
+    if let Ok(err) = captured_error.lock() {
+        if let Some(error_msg) = err.as_ref() {
+            return Err(error_msg.clone());
+        }
     }
 
     Ok(())
