@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 use crate::acp_wire::{
     kill_harness_tree, Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError,
@@ -463,6 +465,7 @@ fn timed_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    without_console_window(&mut command);
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -531,18 +534,21 @@ fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsSt
     None
 }
 
-#[cfg(windows)]
-pub(crate) fn get_creation_flags() -> u32 {
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    CREATE_NEW_PROCESS_GROUP
+/// Spawns the child with no console window. A release build has no console to
+/// share, so on Windows a console child would otherwise open a window of its own.
+pub(crate) fn without_console_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
 }
 
 fn apply_isolation(command: &mut Command, isolate: bool) {
-    if !isolate {
-        return;
-    }
     #[cfg(unix)]
-    {
+    if isolate {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
@@ -551,9 +557,79 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
         use std::os::windows::process::CommandExt;
         // The Job Object is created and assigned at spawn time in
         // `acp_wire::windows_job::spawn_in_job`, so descendants die on
-        // shutdown. Still a new process group, so Ctrl+C does not reach the child.
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        // shutdown. Isolated, it is also a new process group, so Ctrl+C misses it.
+        let group = if isolate { CREATE_NEW_PROCESS_GROUP } else { 0 };
+        command.creation_flags(group | CREATE_NO_WINDOW);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod console_window_tests {
+    use std::os::windows::process::CommandExt;
+    use std::time::Duration;
+
+    const PROBE: &str = "FIDGET_CONSOLE_WINDOW_PROBE";
+
+    fn rerun(name: &str) -> [String; 3] {
+        let module = module_path!();
+        let rest = module.split_once("::").map_or(module, |(_, rest)| rest);
+        [
+            format!("{rest}::{name}"),
+            "--exact".into(),
+            "--test-threads=1".into(),
+        ]
+    }
+
+    /// Runs only when re-executed. Exits 0 when this process shows no console window.
+    #[test]
+    fn console_window_child() {
+        if std::env::var_os(PROBE).is_none() {
+            return;
+        }
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        // SAFETY: both take no pointer this process owns, and accept null.
+        let shown = unsafe { IsWindowVisible(GetConsoleWindow()) != 0 };
+        std::process::exit(if shown { 9 } else { 0 });
+    }
+
+    /// Runs only when re-executed with no console, as a release exe has none, and
+    /// spawns the child the way a version probe does.
+    #[test]
+    fn console_window_parent() {
+        if std::env::var_os(PROBE).is_none() {
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary");
+        let args = rerun("console_window_child");
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let code = match super::timed_command(
+            exe.to_str().expect("utf-8 path"),
+            &args,
+            Duration::from_secs(60),
+        ) {
+            Ok(output) => output.status.code().unwrap_or(8),
+            Err(_) => 7,
+        };
+        std::process::exit(code);
+    }
+
+    #[test]
+    fn a_console_child_of_a_process_with_no_console_opens_no_window() {
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .env(PROBE, "1")
+            .args(rerun("console_window_parent"))
+            .creation_flags(DETACHED_PROCESS)
+            .output()
+            .expect("parent probe");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "9 is a visible console window on the child\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 

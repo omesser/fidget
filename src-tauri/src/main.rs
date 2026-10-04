@@ -17,6 +17,10 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+// A release exe started from Explorer would otherwise get a console window for
+// its whole life. Piped std handles still reach `--mcp-stdio` and `--probe-*`.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // ponytail: module-wide, though only part of each module is dead on Windows.
 // The ceiling is that dead code added inside them goes unwarned there; narrow
 // it to `mod form` and the view types when a Windows-only item first lands.
