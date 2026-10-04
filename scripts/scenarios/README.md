@@ -71,8 +71,15 @@ unless Chat is open.
 
 `thinking-row` and `chat-header-narrow` each have `.x11.sh` and `.win.ps1`
 leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
-`--go` it runs that leaf, or skips when this host has none (`hero-gif` is
-still macOS only).
+`--go` it runs that leaf, or skips when this host has none.
+
+These stay macOS only on purpose:
+
+- `chat-level` asserts Chat's macOS window level. Windows and X11 have only a
+  topmost flag, so a port would be a different test.
+- `hero-gif` records the README video and asserts nothing.
+- `codex-sign-in-link` and `antigravity-sign-in` need a person at the browser,
+  so no agent could run a port.
 
 X11 reads the Chat window through AT-SPI (`scripts/ax-window-linux.py`) and
 needs `python3-pyatspi` plus `DISPLAY`. Windows reads it through UI Automation
