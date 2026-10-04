@@ -553,4 +553,362 @@ mod tests {
         let err = String::from_utf8_lossy(&fail.stderr);
         assert!(err.contains("want it to start with"), "stderr was:\n{err}");
     }
+
+    /// Runs a leaf on fixture dumps with no desktop. `envs` paths are under
+    /// `scripts/scenarios/` unless absolute.
+    fn fixture_run(script: &str, envs: &[(&str, PathBuf)]) -> std::process::Output {
+        let scenarios = repo_scenarios();
+        let path = scenarios.join(script);
+        let mut cmd = if script.ends_with(".ps1") {
+            let mut cmd = Command::new("powershell");
+            cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
+            cmd.arg(&path).args([
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ]);
+            cmd
+        } else {
+            let mut cmd = Command::new("bash");
+            cmd.arg(&path).args(["--go", "/bin/true", "/bin/true"]);
+            cmd
+        };
+        cmd.env_remove("DISPLAY");
+        for (key, value) in envs {
+            cmd.env(key, scenarios.join(value));
+        }
+        cmd.output().unwrap()
+    }
+
+    fn assert_exit(out: &std::process::Output, code: i32, stderr_has: &str) {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(code),
+            "stdout:\n{}\nstderr:\n{stderr}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(stderr.contains(stderr_has), "stderr was:\n{stderr}");
+    }
+
+    type Mutate = fn(&str) -> String;
+
+    /// `text` without the lines holding `needle`.
+    fn drop_lines(text: &str, needle: &str) -> String {
+        text.lines()
+            .filter(|line| !line.contains(needle))
+            .map(|line| format!("{line}\n"))
+            .collect()
+    }
+
+    /// `text` with `edit` applied to each line holding `needle`.
+    fn edit_lines(text: &str, needle: &str, edit: impl Fn(&str) -> String) -> String {
+        text.lines()
+            .map(|line| {
+                let line = if line.contains(needle) {
+                    edit(line)
+                } else {
+                    line.to_string()
+                };
+                format!("{line}\n")
+            })
+            .collect()
+    }
+
+    fn reframe(line: &str, frame: &str) -> String {
+        format!("{}|{frame}", line.rsplit_once('|').unwrap().0)
+    }
+
+    fn retype(line: &str, role: &str) -> String {
+        format!("{role}|{}", line.split_once('|').unwrap().1)
+    }
+
+    /// Runs `script` on the `good` fixtures, then once per case with that
+    /// case's fixture mutated, and wants each case to fail with its message.
+    /// One case per assertion, so deleting any assertion turns a case red.
+    fn fixture_cases(script: &str, good: &[(&str, &str)], cases: &[(&str, Mutate, &str)]) {
+        let dir = tempfile::tempdir().unwrap();
+        let run = |case: Option<(&str, Mutate)>| {
+            let envs: Vec<(&str, PathBuf)> = good
+                .iter()
+                .enumerate()
+                .map(|(i, &(key, file))| {
+                    let mut text = fs::read_to_string(repo_scenarios().join(file)).unwrap();
+                    if let Some((broken, mutate)) = case {
+                        if broken == key {
+                            let changed = mutate(&text);
+                            assert_ne!(changed, text, "{key}: the mutation changed nothing");
+                            text = changed;
+                        }
+                    }
+                    let path = dir.path().join(format!("{i}.txt"));
+                    fs::write(&path, text).unwrap();
+                    (key, path)
+                })
+                .collect();
+            fixture_run(script, &envs)
+        };
+        assert_exit(&run(None), 0, "");
+        for &(key, mutate, message) in cases {
+            let out = run(Some((key, mutate)));
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                out.status.code() == Some(1) && stderr.contains(message),
+                "{script} with {key} broken, want exit 1 and '{message}', got {:?}:\n{stderr}",
+                out.status.code()
+            );
+        }
+    }
+
+    const LANDING: &str = "FIDGET_SCENARIO_AX_LANDING";
+    const AFTER: &str = "FIDGET_SCENARIO_AX_AFTER";
+    const OPENED: &str = "FIDGET_SCENARIO_OPENED";
+    /// OPENED last: the Windows leaves record no hand-off and drop it.
+    const LANDING_GOOD: &[(&str, &str)] = &[
+        (LANDING, "fixtures/landing-link-click-landing.txt"),
+        (AFTER, "fixtures/landing-link-click-landing.txt"),
+        (OPENED, "fixtures/landing-link-click-opened.txt"),
+    ];
+    const LANDING_CASES: &[(&str, Mutate, &str)] = &[
+        (
+            LANDING,
+            |t| drop_lines(t, "Codex needs"),
+            "Chat shows no Codex needs npx landing",
+        ),
+        (
+            LANDING,
+            |t| t.replace("does not bundle npx.", "does not bundle `npx`."),
+            "a backtick is left in the landing copy",
+        ),
+        (
+            LANDING,
+            |t| drop_lines(t, "|npx|"),
+            "npx is not drawn as its own element",
+        ),
+        (
+            LANDING,
+            |t| drop_lines(t, "|https://nodejs.org/|"),
+            "https://nodejs.org/ is not drawn as its own element",
+        ),
+        (
+            AFTER,
+            |t| drop_lines(t, "Codex needs"),
+            "Chat left the landing after the click",
+        ),
+    ];
+
+    const FAILED: &str = "FIDGET_SCENARIO_AX_FAILED";
+    const AX_420: &str = "FIDGET_SCENARIO_AX_420";
+    const AX_320: &str = "FIDGET_SCENARIO_AX_320";
+    const LIVE: &str = "FIDGET_SCENARIO_AX_LIVE";
+    const LAUNCHER_GOOD: &[(&str, &str)] = &[
+        (FAILED, "fixtures/launcher-dies-at-startup-420.txt"),
+        (AX_420, "fixtures/launcher-dies-at-startup-420.txt"),
+        (AX_320, "fixtures/launcher-dies-at-startup-320.txt"),
+        (LIVE, "fixtures/launcher-dies-at-startup-live.txt"),
+    ];
+    const LAUNCHER_CASES: &[(&str, Mutate, &str)] = &[
+        (
+            FAILED,
+            |t| drop_lines(t, "Harness couldn't start"),
+            "Chat shows no Harness error landing",
+        ),
+        (AX_420, |t| drop_lines(t, "frame|"), "420: no frame line"),
+        (
+            AX_420,
+            |t| edit_lines(t, "frame|", |l| reframe(l, "0,0,400,560")),
+            "420: frame is 400 wide",
+        ),
+        (
+            AX_320,
+            |t| drop_lines(t, "dyld[0]"),
+            "320: no box holds 'dyld[0]",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "dyld[0]", |l| retype(l, "other")),
+            "320: no box holds 'dyld[0]",
+        ),
+        (
+            AX_320,
+            |t| drop_lines(t, "script=abort-first"),
+            "320: no box holds '|/opt/fidget/",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "script=abort-first", |l| retype(l, "other")),
+            "320: no box holds '|/opt/fidget/",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "dyld[0]", |l| reframe(l, "16,252,400,54")),
+            "320: a box ends at 416, past the window edge at 320",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "script=abort-first", |l| reframe(l, "16,170,401,54")),
+            "320: a box ends at 417, past the window edge at 320",
+        ),
+        (
+            AX_320,
+            |t| drop_lines(t, "Nothing can answer yet"),
+            "320: no composer",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "Nothing can answer yet", |l| retype(l, "label")),
+            "320: no composer",
+        ),
+        (
+            AX_320,
+            |t| edit_lines(t, "Nothing can answer yet", |l| reframe(l, "8,200,304,40")),
+            "320: Error output starts at y 252, under the composer at 200",
+        ),
+        (
+            LIVE,
+            |t| drop_lines(t, "fixture-harness.sh ·"),
+            "after the re-pick the mind line names no live Harness",
+        ),
+    ];
+
+    const NEEDS_LOGIN: &str = "FIDGET_SCENARIO_AX_NEEDS_LOGIN";
+    const WAITING: &str = "FIDGET_SCENARIO_AX_WAITING";
+    const SIGNED_IN: &str = "FIDGET_SCENARIO_AX_SIGNED_IN";
+    /// OPENED last: the Windows leaves record no hand-off and drop it.
+    const SIGN_IN_GOOD: &[(&str, &str)] = &[
+        (NEEDS_LOGIN, "fixtures/sign-in-button-needs-login.txt"),
+        (WAITING, "fixtures/sign-in-button-waiting.txt"),
+        (SIGNED_IN, "fixtures/sign-in-button-signed-in.txt"),
+        (OPENED, "fixtures/sign-in-button-opened.txt"),
+    ];
+    const SIGN_IN_CASES: &[(&str, Mutate, &str)] = &[
+        (
+            NEEDS_LOGIN,
+            |t| drop_lines(t, "Fake login"),
+            "no Fake login button on needs-login",
+        ),
+        (
+            NEEDS_LOGIN,
+            |t| edit_lines(t, "Fake login", |l| retype(l, "label")),
+            "no Fake login button on needs-login",
+        ),
+        (
+            NEEDS_LOGIN,
+            |t| drop_lines(t, "Or run this in a terminal:"),
+            "no terminal command hint on needs-login",
+        ),
+        (
+            WAITING,
+            |t| drop_lines(t, "Finish signing in"),
+            "no waiting line after button press",
+        ),
+        (
+            WAITING,
+            |t| edit_lines(t, "Finish signing in", |l| retype(l, "other")),
+            "no waiting line after button press",
+        ),
+        (
+            WAITING,
+            |t| {
+                t.replace(
+                    "came from /opt/fidget/scripts/scenarios/fixture-harness.sh,",
+                    "came from codex,",
+                )
+            },
+            "waiting line does not name the Harness",
+        ),
+        (
+            SIGNED_IN,
+            |t| drop_lines(t, "· session "),
+            "mind line does not name the session",
+        ),
+        (
+            SIGNED_IN,
+            |t| format!("{t}label|Finish signing in in your browser.|16,140,388,54\n"),
+            "waiting line still present after sign-in",
+        ),
+    ];
+
+    #[cfg(unix)]
+    #[test]
+    fn landing_link_click_x11_fails_on_each_broken_assertion() {
+        let opened: &[(&str, Mutate, &str)] = &[(
+            OPENED,
+            |_| "https://example.test/\n".into(),
+            "the click handed 'https://example.test/' to xdg-open, want https://nodejs.org/",
+        )];
+        fixture_cases(
+            "landing-link-click.x11.sh",
+            LANDING_GOOD,
+            &[LANDING_CASES, opened].concat(),
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launcher_dies_at_startup_x11_fails_on_each_broken_assertion() {
+        fixture_cases(
+            "launcher-dies-at-startup.x11.sh",
+            LAUNCHER_GOOD,
+            LAUNCHER_CASES,
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sign_in_button_x11_fails_on_each_broken_assertion() {
+        let opened: &[(&str, Mutate, &str)] = &[(
+            OPENED,
+            |_| "https://example.test/other\n".into(),
+            "Open handed 'https://example.test/other' to xdg-open",
+        )];
+        fixture_cases(
+            "sign-in-button.x11.sh",
+            SIGN_IN_GOOD,
+            &[SIGN_IN_CASES, opened].concat(),
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_leaves_on_x11_without_a_display_skip() {
+        for script in [
+            "landing-link-click.x11.sh",
+            "launcher-dies-at-startup.x11.sh",
+            "sign-in-button.x11.sh",
+        ] {
+            assert_exit(&fixture_run(script, &[]), 2, "DISPLAY is unset");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn landing_link_click_win_fails_on_each_broken_assertion() {
+        let refused: &[(&str, Mutate, &str)] = &[(
+            AFTER,
+            |t| format!("{t}label|That link did not open: boom.|0,0,1,1\n"),
+            "the click did not reach ShellExecuteW",
+        )];
+        fixture_cases(
+            "landing-link-click.win.ps1",
+            &LANDING_GOOD[..2],
+            &[LANDING_CASES, refused].concat(),
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn launcher_dies_at_startup_win_fails_on_each_broken_assertion() {
+        fixture_cases(
+            "launcher-dies-at-startup.win.ps1",
+            LAUNCHER_GOOD,
+            LAUNCHER_CASES,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sign_in_button_win_fails_on_each_broken_assertion() {
+        fixture_cases("sign-in-button.win.ps1", &SIGN_IN_GOOD[..3], SIGN_IN_CASES);
+    }
 }

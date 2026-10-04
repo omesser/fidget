@@ -1,0 +1,6 @@
+frame|BMO|0,0,420,560
+label|/opt/fidget/scripts/scenarios/fixture-harness.sh · no session yet|72,10,340,20
+label|Finish signing in in your browser. Any code on that page came from /opt/fidget/scripts/scenarios/fixture-harness.sh, so continue only if you just clicked this button.|16,140,388,54
+label|https://example.test/device?code=ABCD-1234|16,200,300,18
+button|Open|16,224,60,28
+button|Decline|84,224,70,28

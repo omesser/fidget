@@ -1,23 +1,34 @@
 # Dump or resize one top-level window through UI Automation.
 # Dump lines are `role|name`. Pass `frames` after the title to append
 # `|x,y,w,h` on every line. `size` resizes the window and prints `x,y,w,h`.
+# `press NAME` invokes the first button named NAME.
+# `click -X X -Y Y` sends a real left click at that screen point and takes
+# no -ProcessId or -Title.
+# `tray ROW` clicks the taskbar icon named fidget, invokes the menu row whose
+# name starts with ROW, then waits for a window titled TITLE.
 #
 # EnumWindows plus FromHandle, not RootElement.FindFirst: a desktop-wide
 # descendant search can hang on a multi-monitor session.
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('dump', 'size')]
+    [ValidateSet('dump', 'size', 'press', 'click', 'tray')]
     [string]$Command,
-    [Parameter(Mandatory = $true, Position = 1)]
+    [Parameter(Position = 1)]
     [int]$ProcessId,
-    [Parameter(Mandatory = $true, Position = 2)]
-    [string]$Title,
+    [Parameter(Position = 2)]
+    [string]$Title = "",
     [Parameter(Position = 3)]
     [string]$Arg3 = "",
     [Parameter(Position = 4)]
-    [string]$Arg4 = ""
+    [string]$Arg4 = "",
+    [int]$X,
+    [int]$Y
 )
 $ErrorActionPreference = "Stop"
+if ($Command -ne "click" -and ($ProcessId -eq 0 -or -not $Title)) {
+    Write-Error "$Command takes -ProcessId and -Title"
+    exit 2
+}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type @"
@@ -31,6 +42,14 @@ public class FidgetWinEnum {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lp, int n);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string name);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     [StructLayout(LayoutKind.Sequential)]
@@ -64,6 +83,7 @@ function Short-Role($Element) {
     if ($ct -eq [System.Windows.Automation.ControlType]::Window) { return "frame" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Text) { return "label" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Hyperlink) { return "link" }
+    if ($ct -eq [System.Windows.Automation.ControlType]::Edit) { return "entry" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Document) { return "web-area" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Pane) {
         try {
@@ -97,6 +117,57 @@ function Write-Node {
         Write-Node -Element $child -Depth ($Depth + 1) -WithFrames $WithFrames
         $child = $walker.GetNextSibling($child)
     }
+}
+
+function Invoke-Element($Element) {
+    $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+}
+
+function Find-ByControlType($Root, $ControlType) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $ControlType)
+    $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+}
+
+if ($Command -eq "click") {
+    [FidgetWinEnum]::Click($X, $Y)
+    exit 0
+}
+
+if ($Command -eq "tray") {
+    # tray-icon attaches its menu on the click itself, so a real click, not Invoke.
+    $taskbar = [FidgetWinEnum]::FindWindow("Shell_TrayWnd", $null)
+    $icon = $null
+    for ($n = 0; $n -lt 80 -and $null -eq $icon; $n++) {
+        $buttons = Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($taskbar)) ([System.Windows.Automation.ControlType]::Button)
+        $icon = $buttons | Where-Object { $_.Current.Name -like "fidget*" } | Select-Object -First 1
+        if ($null -eq $icon) { Start-Sleep -Milliseconds 250 }
+    }
+    if ($null -eq $icon) {
+        Write-Error "no fidget icon on the taskbar after 20s; is it in the hidden-icons overflow?"
+        exit 1
+    }
+    $r = $icon.Current.BoundingRectangle
+    [FidgetWinEnum]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+    $row = $null
+    for ($n = 0; $n -lt 20 -and $null -eq $row; $n++) {
+        Start-Sleep -Milliseconds 250
+        $menu = [FidgetWinEnum]::FindWindow("#32768", $null)
+        if ($menu -eq [IntPtr]::Zero) { continue }
+        $items = Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
+        $row = $items | Where-Object { $_.Current.Name.StartsWith($Arg3) } | Select-Object -First 1
+    }
+    if ($null -eq $row) {
+        Write-Error "the tray menu has no $Arg3 row"
+        exit 1
+    }
+    Invoke-Element $row
+    for ($n = 0; $n -lt 40; $n++) {
+        if ([FidgetWinEnum]::Find([uint32]$ProcessId, $Title) -ne [IntPtr]::Zero) { exit 0 }
+        Start-Sleep -Milliseconds 250
+    }
+    Write-Error "$Title did not open within 10s"
+    exit 1
 }
 
 $hwnd = [FidgetWinEnum]::Find([uint32]$ProcessId, $Title)
@@ -143,6 +214,16 @@ $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
 if ($null -eq $window) {
     Write-Error "FromHandle returned nothing for $hwnd"
     exit 1
+}
+if ($Command -eq "press") {
+    $found = Find-ByControlType $window ([System.Windows.Automation.ControlType]::Button) |
+        Where-Object { $_.Current.Name -eq $Arg3 } | Select-Object -First 1
+    if ($null -eq $found) {
+        Write-Error "no button $Arg3"
+        exit 1
+    }
+    Invoke-Element $found
+    exit 0
 }
 Write-Node -Element $window -Depth 0 -WithFrames $withFrames
 exit 0

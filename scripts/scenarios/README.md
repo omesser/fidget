@@ -69,8 +69,9 @@ unless Chat is open.
 
 ## Windows and X11
 
-`thinking-row` and `chat-header-narrow` each have `.x11.sh` and `.win.ps1`
-leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
+`thinking-row`, `chat-header-narrow`, `landing-link-click`,
+`launcher-dies-at-startup` and `sign-in-button` each have `.x11.sh` and
+`.win.ps1` leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
 `--go` it runs that leaf, or skips when this host has none.
 
 These stay macOS only on purpose:
@@ -94,6 +95,15 @@ append `|x,y,w,h`. `size` resizes the window and prints `x,y,w,h`.
 `thinking-row` asserts the same open and collapsed Thinking-row shapes as
 macOS. `chat-header-narrow` resizes Chat to 420, 360 and 320 and asserts one
 header row with no sideways scroll.
+
+`landing-link-click`, `launcher-dies-at-startup` and `sign-in-button` open
+Chat from the tray's Chat… row. X11 clicks it over the tray's dbusmenu
+(`ax-window-linux.py tray`), so it needs a StatusNotifierWatcher and skips
+without one. Windows clicks the taskbar icon and invokes the row
+(`ax-window-win.ps1 tray`), so the icon must not sit in the hidden-icons
+overflow. On X11 a recording `xdg-open` on `PATH` takes the URL, as `open`
+does on macOS. Windows hands it to `ShellExecuteW`, so its leaves do not
+record the URL and a real browser opens.
 
 To check an assertion without a desktop, point the leaf at fixture dumps and
 skip the launch:

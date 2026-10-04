@@ -112,11 +112,11 @@ echo "ok: waiting line appears after button press"
 "$tools/ax" press-button "$pid" Open 1 BMO > "$out/press-open.txt" 2>&1 ||
   fail "could not press Open on the sign-in link; see $out/press-open.txt"
 wait_for 10 grep -qx 'elicit-url:accept' "$marks" || fail "sign-in form never answered; see $log"
+sessions() { [ "$(grep -cx new "$marks")" -ge "$1" ]; }
 handed() { [ "$(cat "$opened")" = "https://example.test/device?code=ABCD-1234" ]; }
 wait_for 5 handed || fail "Open handed '$(cat "$opened")' to open"
 echo "ok: Open accepted the link and handed it to open"
-wait_for 15 grep -qx new "$marks" || fail "session did not open after sign-in; see $log"
-[ "$(grep -c new "$marks")" -ge 2 ] || fail "session did not open after sign-in; see $log"
+wait_for 15 sessions 2 || fail "session did not open after sign-in; see $log"
 sleep 1.5
 
 dump signed-in

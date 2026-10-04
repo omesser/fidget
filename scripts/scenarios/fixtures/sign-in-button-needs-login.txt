@@ -1,0 +1,7 @@
+frame|BMO|0,0,420,560
+label|/opt/fidget/scripts/scenarios/fixture-harness.sh · no session yet|72,10,340,20
+heading|Sign in to /opt/fidget/scripts/scenarios/fixture-harness.sh|16,60,388,28
+button|Fake login|16,100,120,28
+label|Or run this in a terminal:|16,140,200,18
+label|fake-agent login|16,160,140,18
+entry|Nothing can answer yet|8,500,404,40

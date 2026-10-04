@@ -1,0 +1,4 @@
+frame|BMO|0,0,320,560
+label|local|8,10,60,20
+label|/opt/fidget/scripts/scenarios/fixture-harness.sh · session fresh-id|72,10,240,20
+entry|Ask BMO|8,500,304,40
