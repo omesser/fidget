@@ -421,25 +421,35 @@ echo "Hit-test pipeline:"
 BEFORE=$(swift scripts/cursor-position.swift)
 SPRITE_AT=$(
   python3 - "$OUT" << 'PY'
-import re, sys
+import re, sys, time
 out = sys.argv[1]
-log = open(f"{out}/app.log").read()
-size = re.search(r"sprite (\d+)x(\d+)", log)
-at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
-if not (size and at):
-    sys.exit(1)
-# Wait for a still sprite: find the first position where the sprite stays
-# unchanged for at least 3 consecutive frames, to avoid racing an idle walk.
-still = None
-for i in range(len(at) - 2):
-    if at[i] == at[i+1] == at[i+2]:
-        still = at[i]
+
+def read_tail_frames(log_path, n=10):
+    with open(log_path) as f:
+        lines = f.readlines()
+    return [
+        (m[1], m[2])
+        for line in lines
+        if (m := re.match(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", line))
+    ][-n:]
+
+log_path = f"{out}/app.log"
+for attempt in range(40):
+    frames = read_tail_frames(log_path, n=5)
+    if len(frames) >= 3 and all(f == frames[0] for f in frames):
+        pos = frames[0]
         break
-# Fall back to the last position if the sprite never stood still (shouldn't
-# happen in practice: even walking characters pause between animations).
-pos = still if still else at[-1]
-# Where the art's top-left corner is on screen, and how big it is. Already in
-# the shared point space, which is the space the cursor is warped in.
+    time.sleep(0.25)
+else:
+    log = open(log_path).read()
+    at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
+    if not at:
+        sys.exit(1)
+    pos = at[-1]
+
+size = re.search(r"sprite (\d+)x(\d+)", open(log_path).read())
+if not size:
+    sys.exit(1)
 print(int(pos[0]), int(pos[1]), *size.groups())
 PY
 ) || SPRITE_AT=""
@@ -454,10 +464,15 @@ probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
     echo "  SKIP  $2 - the cursor could not be placed at $x $y (landed at $landed)"
     return
   fi
-  # The decision is made on the next tick, not on the warp.
-  perl -e 'select(undef,undef,undef,0.5)'
 
-  line=$(grep 'hit-test:' "$OUT/app.log" | tail -1)
+  for _ in $(seq 1 40); do
+    line=$(grep 'hit-test:' "$OUT/app.log" | tail -1)
+    if echo "$line" | grep -q "cursor($x,$y)"; then
+      break
+    fi
+    perl -e 'select(undef,undef,undef,0.1)'
+  done
+
   if echo "$line" | grep -q "$3 "; then
     echo "  PASS  $2"
   else
