@@ -4,14 +4,14 @@
 Dump lines are `role|name`. Pass `frames` after the title to append
 `|x,y,w,h` on every line, matching the shape chat-header-narrow asserts.
 `size` resizes the window and prints its frame as `x,y,w,h`.
-`press` performs the first action of the INDEX-th button named NAME (1-based).
+`press` performs the first action of the first button named NAME.
 `tray` clicks the tray menu row whose label starts with ROW, through the
 StatusNotifierItem's dbusmenu, then waits for a window titled TITLE.
 
 Usage:
   ax-window-linux.py dump PID TITLE [frames]
   ax-window-linux.py size PID TITLE WIDTH HEIGHT
-  ax-window-linux.py press PID TITLE NAME [INDEX]
+  ax-window-linux.py press PID TITLE NAME
   ax-window-linux.py tray PID TITLE ROW
 
 Exit 2 when pyatspi is missing, or for `tray` when no StatusNotifierWatcher
@@ -280,11 +280,10 @@ def find_buttons(acc, name, found, depth=0):
 
 
 def cmd_press(argv):
-    if len(argv) not in (5, 6):
-        print("usage: ax-window-linux.py press PID TITLE NAME [INDEX]", file=sys.stderr)
+    if len(argv) != 5:
+        print("usage: ax-window-linux.py press PID TITLE NAME", file=sys.stderr)
         return 2
     pid, title, name = int(argv[2]), argv[3], argv[4]
-    index = int(argv[5]) if len(argv) == 6 else 1
     try:
         import pyatspi
     except ImportError:
@@ -296,11 +295,11 @@ def cmd_press(argv):
         return 1
     found = []
     find_buttons(window, name, found)
-    if index < 1 or index > len(found):
-        print(f"no button {name} at index {index} ({len(found)} found)", file=sys.stderr)
+    if not found:
+        print(f"no button {name}", file=sys.stderr)
         return 1
     try:
-        if not found[index - 1].queryAction().doAction(0):
+        if not found[0].queryAction().doAction(0):
             raise RuntimeError("doAction returned false")
     except Exception as err:
         print(f"could not press {name}: {err}", file=sys.stderr)

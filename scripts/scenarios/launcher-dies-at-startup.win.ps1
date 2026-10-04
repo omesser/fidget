@@ -65,6 +65,9 @@ function Read-Dump([string]$File) { @(Get-Content -LiteralPath $File -Encoding u
 function First-Line([string]$File, [string]$Text) {
     Read-Dump $File | Where-Object { $_.Contains($Text) } | Select-Object -First 1
 }
+function Box([string]$File, [string]$Text) {
+    Read-Dump $File | Where-Object { $_.StartsWith("label|") -and $_.Contains($Text) } | Select-Object -First 1
+}
 function Get-Rect([string]$Line) { @(($Line -split '\|')[-1] -split ',' | ForEach-Object { [int]$_ }) }
 
 function Test-Failed([string]$File) { [bool](First-Line $File "|Harness couldn't start|") }
@@ -84,14 +87,14 @@ function Check-Fits([int]$Width, [string]$File) {
     if ($frame[2] -ne $Width) { Fail "${Width}: frame is $($frame[2]) wide in $File" }
     $edge = $frame[0] + $frame[2]
     foreach ($text in @($Dyld, "|$Harness|")) {
-        $row = First-Line $File $text
+        $row = Box $File $text
         if (-not $row) { Fail "${Width}: no box holds '$text' in $File" }
         $r = Get-Rect $row
         if (($r[0] + $r[2]) -gt ($edge + 1)) { Fail "${Width}: a box ends at $($r[0] + $r[2]), past the window edge at $edge" }
     }
     # The composer covers the log's foot, so the fold is its top, not the window's.
-    $y = (Get-Rect (First-Line $File $Dyld))[1]
-    $composer = First-Line $File "|Nothing can answer yet|"
+    $y = (Get-Rect (Box $File $Dyld))[1]
+    $composer = Read-Dump $File | Where-Object { $_.StartsWith("entry|Nothing can answer yet|") } | Select-Object -First 1
     if (-not $composer) { Fail "${Width}: no composer in $File" }
     $fold = (Get-Rect $composer)[1]
     if ($y -ge $fold) { Fail "${Width}: Error output starts at y $y, under the composer at $fold" }
@@ -211,7 +214,7 @@ try {
     }
 
     if ((Get-Spawns) -ne 1) { Fail "the Harness launched again before the re-pick ($(Get-Spawns) spawns)" }
-    if (-not (Invoke-Ax "press" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Codex", "1"))) {
+    if (-not (Invoke-Ax "press" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Codex"))) {
         Fail "could not press Codex on the landing; see $out\press.txt"
     }
     if (-not (Wait-For 10 { (Get-Spawns) -ge 2 })) { Fail "the re-pick did not launch the Harness again; see $errLog" }

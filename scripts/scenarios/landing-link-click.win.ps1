@@ -145,7 +145,6 @@ try {
         return (Test-Landing (Join-Path $out "$Name.ax.txt"))
     }
 
-    Start-Sleep -Seconds 3
     if (-not (Invoke-Ax "open" @("tray", "-ProcessId", $proc.Id, "-Title", "BMO", "Chat"))) {
         Fail "the tray's Chat row did not open Chat; see $out\open.txt"
     }
@@ -155,7 +154,7 @@ try {
     Check-Landing (Join-Path $out "landing.ax.txt")
     $x = $script:Link[0] + [int]($script:Link[2] / 2)
     $y = $script:Link[1] + [int]($script:Link[3] / 2)
-    if (-not (Invoke-Ax "click" @("click", "-ProcessId", $proc.Id, "-Title", "BMO", $x, $y))) {
+    if (-not (Invoke-Ax "click" @("click", "-X", $x, "-Y", $y))) {
         Fail "could not click the link; see $out\click.txt"
     }
     Start-Sleep -Seconds 2

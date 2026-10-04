@@ -1,8 +1,9 @@
 # Dump or resize one top-level window through UI Automation.
 # Dump lines are `role|name`. Pass `frames` after the title to append
 # `|x,y,w,h` on every line. `size` resizes the window and prints `x,y,w,h`.
-# `press NAME [INDEX]` invokes the INDEX-th button named NAME (1-based).
-# `click X Y` sends a real left click at that screen point.
+# `press NAME` invokes the first button named NAME.
+# `click -X X -Y Y` sends a real left click at that screen point and takes
+# no -ProcessId or -Title.
 # `tray ROW` clicks the taskbar icon named fidget, invokes the menu row whose
 # name starts with ROW, then waits for a window titled TITLE.
 #
@@ -12,16 +13,22 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet('dump', 'size', 'press', 'click', 'tray')]
     [string]$Command,
-    [Parameter(Mandatory = $true, Position = 1)]
+    [Parameter(Position = 1)]
     [int]$ProcessId,
-    [Parameter(Mandatory = $true, Position = 2)]
-    [string]$Title,
+    [Parameter(Position = 2)]
+    [string]$Title = "",
     [Parameter(Position = 3)]
     [string]$Arg3 = "",
     [Parameter(Position = 4)]
-    [string]$Arg4 = ""
+    [string]$Arg4 = "",
+    [int]$X,
+    [int]$Y
 )
 $ErrorActionPreference = "Stop"
+if ($Command -ne "click" -and ($ProcessId -eq 0 -or -not $Title)) {
+    Write-Error "$Command takes -ProcessId and -Title"
+    exit 2
+}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type @"
@@ -76,6 +83,7 @@ function Short-Role($Element) {
     if ($ct -eq [System.Windows.Automation.ControlType]::Window) { return "frame" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Text) { return "label" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Hyperlink) { return "link" }
+    if ($ct -eq [System.Windows.Automation.ControlType]::Edit) { return "entry" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Document) { return "web-area" }
     if ($ct -eq [System.Windows.Automation.ControlType]::Pane) {
         try {
@@ -115,14 +123,14 @@ function Invoke-Element($Element) {
     $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
 }
 
-function Find-Named($Root, $ControlType) {
+function Find-ByControlType($Root, $ControlType) {
     $cond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $ControlType)
     $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
 }
 
 if ($Command -eq "click") {
-    [FidgetWinEnum]::Click([int]$Arg3, [int]$Arg4)
+    [FidgetWinEnum]::Click($X, $Y)
     exit 0
 }
 
@@ -131,7 +139,7 @@ if ($Command -eq "tray") {
     $taskbar = [FidgetWinEnum]::FindWindow("Shell_TrayWnd", $null)
     $icon = $null
     for ($n = 0; $n -lt 80 -and $null -eq $icon; $n++) {
-        $buttons = Find-Named ([System.Windows.Automation.AutomationElement]::FromHandle($taskbar)) ([System.Windows.Automation.ControlType]::Button)
+        $buttons = Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($taskbar)) ([System.Windows.Automation.ControlType]::Button)
         $icon = $buttons | Where-Object { $_.Current.Name -like "fidget*" } | Select-Object -First 1
         if ($null -eq $icon) { Start-Sleep -Milliseconds 250 }
     }
@@ -146,7 +154,7 @@ if ($Command -eq "tray") {
         Start-Sleep -Milliseconds 250
         $menu = [FidgetWinEnum]::FindWindow("#32768", $null)
         if ($menu -eq [IntPtr]::Zero) { continue }
-        $items = Find-Named ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
+        $items = Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
         $row = $items | Where-Object { $_.Current.Name.StartsWith($Arg3) } | Select-Object -First 1
     }
     if ($null -eq $row) {
@@ -208,13 +216,13 @@ if ($null -eq $window) {
     exit 1
 }
 if ($Command -eq "press") {
-    $index = if ($Arg4) { [int]$Arg4 } else { 1 }
-    $found = @(Find-Named $window ([System.Windows.Automation.ControlType]::Button) | Where-Object { $_.Current.Name -eq $Arg3 })
-    if ($index -lt 1 -or $index -gt $found.Count) {
-        Write-Error "no button $Arg3 at index $index ($($found.Count) found)"
+    $found = Find-ByControlType $window ([System.Windows.Automation.ControlType]::Button) |
+        Where-Object { $_.Current.Name -eq $Arg3 } | Select-Object -First 1
+    if ($null -eq $found) {
+        Write-Error "no button $Arg3"
         exit 1
     }
-    Invoke-Element $found[$index - 1]
+    Invoke-Element $found
     exit 0
 }
 Write-Node -Element $window -Depth 0 -WithFrames $withFrames

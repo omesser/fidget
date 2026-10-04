@@ -72,7 +72,8 @@ function Check-NeedsLogin([string]$File) {
 }
 
 function Check-Waiting([string]$File) {
-    if (-not (Has $File $Waiting)) { Fail "no waiting line after button press; see $File" }
+    $line = Get-Content -LiteralPath $File -Encoding utf8 | Where-Object { $_.StartsWith("label|") -and $_.Contains($Waiting) }
+    if (-not $line) { Fail "no waiting line after button press; see $File" }
     if (-not (Has $File "came from $Launcher, so")) { Fail "waiting line does not name the Harness; see $File" }
     Write-Output "ok: waiting line appears after button press"
 }
@@ -173,13 +174,13 @@ try {
     }
 
     Check-NeedsLogin (Invoke-Dump "needs-login")
-    if (-not (Invoke-Ax "press" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Fake login", "1"))) {
+    if (-not (Invoke-Ax "press" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Fake login"))) {
         Fail "could not press Fake login button; see $out\press.txt"
     }
     Start-Sleep -Seconds 1
     Check-Waiting (Invoke-Dump "waiting")
 
-    if (-not (Invoke-Ax "press-open" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Open", "1"))) {
+    if (-not (Invoke-Ax "press-open" @("press", "-ProcessId", $proc.Id, "-Title", "BMO", "Open"))) {
         Fail "could not press Open on the sign-in link; see $out\press-open.txt"
     }
     if (-not (Wait-For 10 { Marked "elicit-url:accept" })) { Fail "sign-in form never answered; see $log" }

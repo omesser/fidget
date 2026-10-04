@@ -5,7 +5,8 @@
 #   Chat on the needs-login landing, and Chat takes focus. Two button presses.
 #   Open goes to a recording `xdg-open`, so no browser opens.
 #   Three AT-SPI dumps of the Chat window. Fidget quits when it ends.
-# Input: AT-SPI actions on the sign-in button and on Open; no pointer, no keys.
+# Input: a dbusmenu click on the tray's Chat… row; AT-SPI actions on the
+#   sign-in button and on Open; no pointer, no keys.
 # Duration: about 30 s, 2 min at most.
 # Grants: an X11 session with a tray host (StatusNotifierWatcher) and AT-SPI
 #   (python3-pyatspi).
@@ -43,7 +44,7 @@ check_needs_login() { # <dump>
 }
 
 check_waiting() { # <dump>
-  grep -qF 'Finish signing in in your browser' "$1" || fail "no waiting line after button press; see $1"
+  grep -qE '^label\|.*Finish signing in in your browser' "$1" || fail "no waiting line after button press; see $1"
   grep -qF "came from $launcher, so" "$1" || fail "waiting line does not name the Harness; see $1"
   echo "ok: waiting line appears after button press"
 }
@@ -126,6 +127,7 @@ dump() { # <name>
   ax dump "$pid" BMO frames > "$out/$1.ax.txt" 2> "$out/$1.err" || fail "$1: AT-SPI dump failed; see $out/$1.err"
 }
 handed() { [ "$(cat "$opened")" = "$link" ]; }
+sessions() { [ "$(grep -cx new "$marks")" -ge "$1" ]; }
 
 wait_for 30 grep -qx spawn "$marks" || fail "Harness never spawned; see $log"
 # Needs-login does not open Chat by itself; only a link Fidget's own sign-in
@@ -142,17 +144,16 @@ fi
 dump needs-login
 check_needs_login "$out/needs-login.ax.txt"
 
-ax press "$pid" BMO "Fake login" 1 > "$out/press.txt" 2>&1 || fail "could not press Fake login button; see $out/press.txt"
+ax press "$pid" BMO "Fake login" > "$out/press.txt" 2>&1 || fail "could not press Fake login button; see $out/press.txt"
 sleep 1
 dump waiting
 check_waiting "$out/waiting.ax.txt"
 
-ax press "$pid" BMO Open 1 > "$out/press-open.txt" 2>&1 || fail "could not press Open on the sign-in link; see $out/press-open.txt"
+ax press "$pid" BMO Open > "$out/press-open.txt" 2>&1 || fail "could not press Open on the sign-in link; see $out/press-open.txt"
 wait_for 10 grep -qx 'elicit-url:accept' "$marks" || fail "sign-in form never answered; see $log"
 wait_for 5 handed || true
 check_opened "$opened"
-wait_for 15 grep -qx new "$marks" || fail "session did not open after sign-in; see $log"
-[ "$(grep -c new "$marks")" -ge 2 ] || fail "session did not open after sign-in; see $log"
+wait_for 15 sessions 2 || fail "session did not open after sign-in; see $log"
 sleep 1.5
 
 dump signed-in

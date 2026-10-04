@@ -4,10 +4,10 @@
 #   aborts before initialize. The tray menu's Chat… row is clicked over
 #   dbusmenu, so Chat opens and takes focus. Chat is resized to 420 and 320
 #   wide, then Codex is pressed. Four AT-SPI dumps. Fidget quits at the end.
-# Input: none. The resizes go through xdotool, Codex through an AT-SPI action.
+# Input: a dbusmenu click on the tray's Chat… row; an AT-SPI action on Codex;
+#   xdotool resizes; no pointer, no keys.
 # Duration: about 30 s, 2 min at most.
-# Grants: an X11 session with a tray host (StatusNotifierWatcher), AT-SPI
-#   (python3-pyatspi) and xdotool.
+# Grants: X11 with a tray host (StatusNotifierWatcher), python3-pyatspi, xdotool.
 # Asserts: what only a live run can: the tray's Chat… row opens the Harness
 #   error landing; at 420 and 320 its Error output and Command boxes end inside
 #   the window and Error output starts above the composer; Codex, a re-pick
@@ -37,7 +37,8 @@ fail() {
   exit 1
 }
 
-rect() { tr , ' ' <<< "${1##*|}"; } # <dump line>: its frame as "x y w h"
+rect() { tr , ' ' <<< "${1##*|}"; }                   # <dump line>: its frame as "x y w h"
+box() { grep -E '^label\|' "$2" | grep -m1 -F "$1"; } # <text> <dump>
 
 check_failed() { # <dump>
   grep -qF "|Harness couldn't start|" "$1" || fail "Chat shows no Harness error landing; see $1"
@@ -51,13 +52,13 @@ check_fits() { # <width> <dump>: both boxes end inside Chat, Error output above 
   read -r wx _ ww _ <<< "$(rect "$row")"
   [ "$ww" -eq "$w" ] || fail "$w: frame is $ww wide in $f"
   for text in "$dyld" "|$harness|"; do
-    row=$(grep -m1 -F "$text" "$f") || fail "$w: no box holds '$text' in $f"
+    row=$(box "$text" "$f") || fail "$w: no box holds '$text' in $f"
     read -r x _ bw _ <<< "$(rect "$row")"
     [ $((x + bw)) -le $((wx + ww + 1)) ] || fail "$w: a box ends at $((x + bw)), past the window edge at $((wx + ww))"
   done
   # The composer covers the log's foot, so the fold is its top, not the window's.
-  read -r _ y _ _ <<< "$(rect "$(grep -m1 -F "$dyld" "$f")")"
-  row=$(grep -m1 -F '|Nothing can answer yet|' "$f") || fail "$w: no composer in $f"
+  read -r _ y _ _ <<< "$(rect "$(box "$dyld" "$f")")"
+  row=$(grep -m1 '^entry|Nothing can answer yet|' "$f") || fail "$w: no composer in $f"
   read -r _ fold _ _ <<< "$(rect "$row")"
   [ "$y" -lt "$fold" ] || fail "$w: Error output starts at y $y, under the composer at $fold"
   echo "ok: $w: both boxes inside the window, Error output at y $y above the composer at $fold"
@@ -164,7 +165,7 @@ check_failed "$out/failed.ax.txt"
 for w in 420 320; do fits "$w"; done
 
 [ "$(spawns)" -eq 1 ] || fail "the Harness launched again before the re-pick ($(spawns) spawns)"
-ax press "$pid" BMO Codex 1 > "$out/press.txt" 2>&1 || fail "could not press Codex on the landing; see $out/press.txt"
+ax press "$pid" BMO Codex > "$out/press.txt" 2>&1 || fail "could not press Codex on the landing; see $out/press.txt"
 wait_for 10 respawned || fail "the re-pick did not launch the Harness again; see $log"
 wait_for 15 shows_live || true
 check_live "$out/live.ax.txt"

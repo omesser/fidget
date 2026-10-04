@@ -4,8 +4,8 @@
 #   no Harness runs. The tray menu's Chat… row is clicked over dbusmenu, so
 #   Chat opens on the "Codex needs `npx`" landing and takes focus. The install
 #   link is clicked. Two AT-SPI dumps. Fidget quits at the end.
-# Input: one real click on the link through xdotool; no keys. The link goes to
-#   a recording `xdg-open`, so no browser opens.
+# Input: a dbusmenu click on the tray's Chat… row; one real click on the link
+#   through xdotool; no keys. A recording `xdg-open` takes it, so no browser.
 # Duration: about 20 s, 1 min at most.
 # Grants: an X11 session with a tray host (StatusNotifierWatcher), AT-SPI
 #   (python3-pyatspi) and xdotool.
@@ -122,7 +122,6 @@ dump() { ax dump "$pid" BMO frames > "$out/$1.ax.txt" 2> "$out/$1.err"; }
 shows_landing() { dump "$1" && landing "$out/$1.ax.txt"; }
 handed() { [ "$(cat "$opened")" = "$url" ]; }
 
-sleep 3
 rc=0
 ax tray "$pid" BMO Chat > "$out/open.txt" 2>&1 || rc=$?
 if [ "$rc" -eq 2 ]; then
