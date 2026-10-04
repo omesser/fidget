@@ -1,0 +1,6 @@
+frame|BMO|0,0,320,560
+label|local|8,10,60,20
+label|BMO|72,10,36,20
+label|/Users/od/very/long/unbroken/project/path · session a1b2|112,10,160,20
+scroll-area||0,40,320,480
+web-area||0,40,300,480

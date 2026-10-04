@@ -331,7 +331,6 @@ mod tests {
         assert!(indexed[0].header_text("linux").contains("(Windows)"));
     }
 
-    #[cfg(unix)]
     fn repo_scenarios() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/scenarios")
     }
@@ -394,5 +393,100 @@ mod tests {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(String::from_utf8_lossy(&out.stderr).contains("DISPLAY is unset"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn chat_header_narrow_x11_fixture_passes_and_a_wide_page_fails() {
+        let scenarios = repo_scenarios();
+        let script = scenarios.join("chat-header-narrow.x11.sh");
+        let ax420 = scenarios.join("fixtures/chat-header-narrow-420.txt");
+        let ax360 = scenarios.join("fixtures/chat-header-narrow-360.txt");
+        let ax320 = scenarios.join("fixtures/chat-header-narrow-320.txt");
+        let ok = Command::new("bash")
+            .arg(&script)
+            .args(["--go", "/bin/true", "/bin/true"])
+            .env("FIDGET_SCENARIO_AX_420", &ax420)
+            .env("FIDGET_SCENARIO_AX_360", &ax360)
+            .env("FIDGET_SCENARIO_AX_320", &ax320)
+            .env_remove("DISPLAY")
+            .output()
+            .unwrap();
+        assert_eq!(
+            ok.status.code(),
+            Some(0),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&ok.stdout),
+            String::from_utf8_lossy(&ok.stderr)
+        );
+
+        let bad = scenarios.join("fixtures/chat-header-narrow-bad-scroll.txt");
+        let fail = Command::new("bash")
+            .arg(&script)
+            .args(["--go", "/bin/true", "/bin/true"])
+            .env("FIDGET_SCENARIO_AX_420", &ax420)
+            .env("FIDGET_SCENARIO_AX_360", &ax360)
+            .env("FIDGET_SCENARIO_AX_320", &bad)
+            .env_remove("DISPLAY")
+            .output()
+            .unwrap();
+        assert_eq!(fail.status.code(), Some(1));
+        let err = String::from_utf8_lossy(&fail.stderr);
+        assert!(err.contains("scrolls sideways"), "stderr was:\n{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn chat_header_narrow_x11_without_a_display_skips() {
+        let script = repo_scenarios().join("chat-header-narrow.x11.sh");
+        let out = Command::new("bash")
+            .arg(&script)
+            .args(["--go", "/bin/true", "/bin/true"])
+            .env_remove("DISPLAY")
+            .env_remove("FIDGET_SCENARIO_AX_420")
+            .env_remove("FIDGET_SCENARIO_AX_360")
+            .env_remove("FIDGET_SCENARIO_AX_320")
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(String::from_utf8_lossy(&out.stderr).contains("DISPLAY is unset"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn chat_header_narrow_win_fixture_passes_with_web_area_only() {
+        let scenarios = repo_scenarios();
+        let script = scenarios.join("chat-header-narrow.win.ps1");
+        let ax420 = scenarios.join("fixtures/chat-header-narrow-420-win.txt");
+        let ax360 = scenarios.join("fixtures/chat-header-narrow-360.txt");
+        let ax320 = scenarios.join("fixtures/chat-header-narrow-320.txt");
+        let ok = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script.to_str().unwrap(),
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ])
+            .env("FIDGET_SCENARIO_AX_420", &ax420)
+            .env("FIDGET_SCENARIO_AX_360", &ax360)
+            .env("FIDGET_SCENARIO_AX_320", &ax320)
+            .output()
+            .unwrap();
+        assert_eq!(
+            ok.status.code(),
+            Some(0),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&ok.stdout),
+            String::from_utf8_lossy(&ok.stderr)
+        );
     }
 }

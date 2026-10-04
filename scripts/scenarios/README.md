@@ -69,18 +69,22 @@ unless Chat is open.
 
 ## Windows and X11
 
-`thinking-row` also has `thinking-row.x11.sh` and `thinking-row.win.ps1`.
-`fidget-verify scenario thinking-row` prints the leaf for this host. With
+`thinking-row` and `chat-header-narrow` each have `.x11.sh` and `.win.ps1`
+leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
 `--go` it runs that leaf, or skips when this host has none (`hero-gif` is
 still macOS only).
 
 X11 reads the Chat window through AT-SPI (`scripts/ax-window-linux.py`) and
 needs `python3-pyatspi` plus `DISPLAY`. Windows reads it through UI Automation
-(`scripts/ax-window-win.ps1`). Both leaves assert the same two Thinking-row
-shapes as the macOS script.
+(`scripts/ax-window-win.ps1`). Dump lines are `role|name`. Pass `frames` to
+append `|x,y,w,h`. `size` resizes the window and prints `x,y,w,h`.
 
-To check that assertion without a desktop, point the leaf at the two dumps in
-`fixtures/` and skip the launch:
+`thinking-row` asserts the same open and collapsed Thinking-row shapes as
+macOS. `chat-header-narrow` resizes Chat to 420, 360 and 320 and asserts one
+header row with no sideways scroll.
+
+To check an assertion without a desktop, point the leaf at fixture dumps and
+skip the launch:
 
 ```sh
 FIDGET_SCENARIO_AX_OPEN=scripts/scenarios/fixtures/thinking-row-open.txt \
@@ -88,7 +92,14 @@ FIDGET_SCENARIO_AX_DONE=scripts/scenarios/fixtures/thinking-row-done.txt \
 scripts/scenarios/thinking-row.x11.sh --go /bin/true /bin/true
 ```
 
-That run does not prove the live window. A live `--go` still needs the
+```sh
+FIDGET_SCENARIO_AX_420=scripts/scenarios/fixtures/chat-header-narrow-420.txt \
+FIDGET_SCENARIO_AX_360=scripts/scenarios/fixtures/chat-header-narrow-360.txt \
+FIDGET_SCENARIO_AX_320=scripts/scenarios/fixtures/chat-header-narrow-320.txt \
+scripts/scenarios/chat-header-narrow.x11.sh --go /bin/true /bin/true
+```
+
+Those runs do not prove the live window. A live `--go` still needs the
 go-ahead in `docs/agents/gui-takeover.md`.
 
 ## codex-sign-in-link
