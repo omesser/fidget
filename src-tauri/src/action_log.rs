@@ -125,6 +125,8 @@ pub fn append(dir: &Path, event: &str, mut fields: Value) {
 
 /// Rate-limit error reports so a write loop cannot storm stderr.
 fn report_error(msg: &str) {
+    fidget::process_log::append(msg);
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());

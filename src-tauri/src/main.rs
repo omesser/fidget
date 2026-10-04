@@ -4194,6 +4194,8 @@ fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
 }
 
 fn main() {
+    fidget::process_log::init();
+
     // Same Completer, no overlay. scripts/probe-model.sh is the face of this.
     if std::env::args().any(|arg| arg == "--probe-model") {
         std::process::exit(model::run_probe());
@@ -4266,12 +4268,12 @@ fn main() {
                 settings.use_input_monitoring,
             );
             let wanted = requested_instances(&settings).unwrap_or_else(|why| {
-                eprintln!("instances: {why}");
+                fidget::eprintln_and_log!("instances: {why}");
                 std::process::exit(1);
             });
             let mut loaded = load_instances(&app.handle().clone(), &wanted, &settings)
                 .unwrap_or_else(|why| {
-                    eprintln!("character: {why}");
+                    fidget::eprintln_and_log!("character: {why}");
                     std::process::exit(1);
                 });
 
@@ -4317,11 +4319,14 @@ fn main() {
             // invisible until a sprite walks past the Dock's real end.
             if cfg!(target_os = "macos") {
                 match displays.read().dock {
-                    Some((dock, source)) => eprintln!(
+                    Some((dock, source)) => fidget::eprintln_and_log!(
                         "dock: true bounds via {source:?}, {}x{} at {},{}",
-                        dock.width, dock.height, dock.x, dock.y
+                        dock.width,
+                        dock.height,
+                        dock.x,
+                        dock.y
                     ),
-                    None => eprintln!(
+                    None => fidget::eprintln_and_log!(
                         "dock: full-width floor; no source reported a bottom Dock — \
                          a side or hidden Dock has nothing to report, and granting \
                          Fidget Accessibility only helps where one exists"
@@ -4354,7 +4359,7 @@ fn main() {
                 })
                 .unwrap_or((0, 0));
 
-            eprintln!(
+            fidget::eprintln_and_log!(
                 "overlay: {} display(s); sprite {}x{}; {}",
                 covered.len(),
                 sprite_width,
@@ -4378,7 +4383,7 @@ fn main() {
                 .handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())
             {
-                eprintln!("updater: {why}");
+                fidget::eprintln_and_log!("updater: {why}");
             } else if !cfg!(debug_assertions) {
                 // A success downloads and installs a GitHub release over this
                 // process; `cargo run` is a debug binary that must not be
