@@ -165,11 +165,12 @@ try {
         $dump = Join-Path $out "$Name.ax.txt"
         & powershell -NoProfile -ExecutionPolicy Bypass -File $ax dump -ProcessId $proc.Id -Title "BMO" frames |
             Out-File -FilePath $dump -Encoding utf8
-        if ($LASTEXITCODE -ne 0) { Fail "${Name}: UI Automation dump failed; see $dump" }
+        if ($LASTEXITCODE -ne 0) { return $null }
         return $dump
     }
     function Shows-Session {
         $dump = Invoke-Dump "session"
+        if (-not $dump) { return $false }
         return [bool](Select-String -LiteralPath $dump -Pattern $Mind -Quiet)
     }
     if (-not (Wait-For 30 { Select-String -LiteralPath $marks -Pattern '^asked$' -Quiet })) {
@@ -191,6 +192,7 @@ try {
         if ($got -ne $w) { Fail "${w}: Chat is $got wide after the resize" }
         Start-Sleep -Seconds 1
         $dump = Invoke-Dump "$w"
+        if (-not $dump) { Fail "${w}: UI Automation dump failed; see $out\$w.ax.txt" }
         Check-Dump $w $dump
     }
     Write-Output "PASS: evidence in $out"
