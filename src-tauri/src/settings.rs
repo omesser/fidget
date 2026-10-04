@@ -2416,6 +2416,7 @@ mod tests {
             trace_hittest: true,
             trace_director: true,
             trace_engine: true,
+            debug_reinforce: false,
             director_blank: true,
             capturable: true,
             chat_ui: "minimal".into(),
