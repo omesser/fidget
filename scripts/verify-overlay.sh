@@ -428,9 +428,19 @@ size = re.search(r"sprite (\d+)x(\d+)", log)
 at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
 if not (size and at):
     sys.exit(1)
+# Wait for a still sprite: find the first position where the sprite stays
+# unchanged for at least 3 consecutive frames, to avoid racing an idle walk.
+still = None
+for i in range(len(at) - 2):
+    if at[i] == at[i+1] == at[i+2]:
+        still = at[i]
+        break
+# Fall back to the last position if the sprite never stood still (shouldn't
+# happen in practice: even walking characters pause between animations).
+pos = still if still else at[-1]
 # Where the art's top-left corner is on screen, and how big it is. Already in
 # the shared point space, which is the space the cursor is warped in.
-print(int(at[-1][0]), int(at[-1][1]), *size.groups())
+print(int(pos[0]), int(pos[1]), *size.groups())
 PY
 ) || SPRITE_AT=""
 
