@@ -11,20 +11,30 @@
 //! area, making DWM composite the window with full transparency. This prevents
 //! the window frame's white background from showing during drag operations and
 //! monitor transitions (#1327).
+//!
+//! SetLayeredWindowAttributes with LWA_ALPHA ensures the layered window uses
+//! per-pixel alpha from content, preventing white background flashes during
+//! FRAMECHANGED synchronous redraws.
 
 use std::sync::Mutex;
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows_sys::Win32::Foundation::HWND;
-use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
-use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
-use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-use windows_sys::Win32::UI::Controls::MARGINS;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
+use windows_sys::Win32::{
+    Foundation::HWND,
+    Graphics::{
+        Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND},
+        Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR},
+    },
+    System::Threading::GetCurrentThreadId,
+    UI::{
+        Controls::MARGINS,
+        WindowsAndMessaging::{
+            GetWindowLongW, SetLayeredWindowAttributes, SetWindowDisplayAffinity, SetWindowLongW,
+            SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
+        },
+    },
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
@@ -36,6 +46,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
+    set_layered_attributes(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
     extend_dwm_frame(hwnd)?;
@@ -145,6 +156,7 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
+    set_layered_attributes(hwnd)?;
     extend_dwm_frame(hwnd)?;
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
@@ -246,6 +258,20 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+/// Set layered window attributes to ensure proper alpha blending during frame redraws.
+/// Without this, FRAMECHANGED can show white background during the synchronous redraw.
+fn set_layered_attributes(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
+    // LWA_ALPHA with 255 (fully opaque) tells Windows to use per-pixel alpha
+    // from the content, preventing white background during compositor updates.
+    unsafe {
+        if SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA) == 0 {
+            return Err("Failed to set layered window attributes".to_string());
+        }
+    }
     Ok(())
 }
 
