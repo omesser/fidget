@@ -996,13 +996,9 @@ pub(crate) fn run_frame_loop(
                         if let Some(state) = handle.try_state::<TrayHandle>() {
                             if let Ok(guard) = state.0.lock() {
                                 if let Some(icon) = guard.as_ref() {
-                                    // Set flag before set_menu: muda fires teardown synchronously
-                                    crate::TRAY_REFRESHING.store(true, Ordering::SeqCst);
-                                    let result =
-                                        tray::refresh(icon, &handle, &description, next_quit);
-                                    crate::TRAY_REFRESHING.store(false, Ordering::SeqCst);
-
-                                    if let Err(why) = result {
+                                    if let Err(why) =
+                                        tray::refresh(icon, &handle, &description, next_quit)
+                                    {
                                         eprintln!("tray: {why}");
                                     }
                                 }

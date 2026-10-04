@@ -47,8 +47,13 @@ pub fn refresh(
     description: &MenuDescription,
     quit_generation: u64,
 ) -> Result<(), tauri::Error> {
+    use std::sync::atomic::Ordering;
+
     let menu = menu::build(app, description, quit_generation)?;
-    tray.set_menu(Some(menu))
+    crate::TRAY_REFRESHING.store(true, Ordering::SeqCst);
+    let result = tray.set_menu(Some(menu));
+    crate::TRAY_REFRESHING.store(false, Ordering::SeqCst);
+    result
 }
 
 #[cfg(test)]
@@ -56,22 +61,10 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     #[test]
-    fn tray_refreshing_flag_state() {
+    fn tray_refreshing_flag_defaults_to_false() {
         assert!(
             !crate::TRAY_REFRESHING.load(Ordering::SeqCst),
-            "TRAY_REFRESHING should be false at rest"
-        );
-
-        crate::TRAY_REFRESHING.store(true, Ordering::SeqCst);
-        assert!(
-            crate::TRAY_REFRESHING.load(Ordering::SeqCst),
-            "TRAY_REFRESHING can be set to true"
-        );
-
-        crate::TRAY_REFRESHING.store(false, Ordering::SeqCst);
-        assert!(
-            !crate::TRAY_REFRESHING.load(Ordering::SeqCst),
-            "TRAY_REFRESHING can be cleared to false"
+            "TRAY_REFRESHING starts false, so user clicks are accepted"
         );
     }
 }

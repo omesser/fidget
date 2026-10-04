@@ -136,16 +136,6 @@ pub(crate) fn quit_item_id(generation: u64) -> String {
     format!("{QUIT_ID}:{generation}")
 }
 
-/// Whether `id` is Quit on the menu that is showing now.
-///
-/// No longer used for tray menus (those use TRAY_REFRESHING flag instead).
-/// Kept for sprite popup menus if needed, though sprite menus don't exhibit
-/// the Windows race because popup_menu_at blocks until dismissed.
-#[cfg(test)]
-pub(crate) fn is_live_quit(id: &str, generation: u64) -> bool {
-    id == quit_item_id(generation)
-}
-
 /// The id prefix for a Character row, so `character:bmo` cannot collide with a
 /// package that happens to be called `hide`.
 const CHARACTER_PREFIX: &str = "character:";
@@ -645,40 +635,6 @@ mod tests {
             })
         );
         assert_eq!(description.actions.get("quit"), Some(&MenuAction::Quit));
-    }
-
-    #[test]
-    fn tray_quit_is_protected_by_refresh_flag_not_generation() {
-        // Tray refresh protection: TRAY_REFRESHING flag distinguishes
-        // muda teardown (happens synchronously during set_menu) from
-        // user clicks (arrive asynchronously afterward).
-        //
-        // Generation-based protection failed because both user clicks
-        // (Windows race) and muda teardown are previous-generation
-        // (quit:N at generation N+1), making them indistinguishable.
-        //
-        // This test documents that generation alone cannot protect tray,
-        // and that the TRAY_REFRESHING flag is the correct seam.
-
-        assert_ne!(
-            quit_item_id(1),
-            quit_item_id(2),
-            "each tray draw mints a new Quit id"
-        );
-
-        // Only current generation is live when using generation check
-        assert!(
-            is_live_quit(&quit_item_id(5), 5),
-            "current generation is live"
-        );
-        assert!(
-            !is_live_quit(&quit_item_id(4), 5),
-            "previous generation is NOT live (Windows race and muda teardown are both N-1)"
-        );
-        assert!(
-            !is_live_quit(&quit_item_id(3), 5),
-            "older generations are not live"
-        );
     }
 
     /// Two Instances, then one: the remaining character is still on the menu, and

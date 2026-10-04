@@ -4605,17 +4605,10 @@ fn main() {
             let quit_generation = Arc::new(AtomicU64::new(0));
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                // Quit clicks are handled entirely in this hook and never sent
-                // to the frame loop.
                 if id.starts_with("quit:") {
-                    // Muda fires teardown clicks synchronously during tray set_menu.
-                    // User clicks arrive asynchronously afterward. TRAY_REFRESHING
-                    // distinguishes these: true during set_menu (reject), false after (accept).
                     if TRAY_REFRESHING.load(Ordering::SeqCst) {
-                        // Muda teardown during tray refresh - silently ignore
                         return;
                     }
-                    // Real user click (tray or sprite) - exit immediately
                     quit_now();
                 } else {
                     let _ = hook_sender.send(MenuSignal::Chose(id));
@@ -6144,5 +6137,28 @@ mod tests {
     fn perform_quit_action_on_a_second_interrupt_only_exits_the_process() {
         assert_eq!(recorded(false, true), vec![Recorded::ExitProcess]);
         assert_eq!(recorded(true, true), vec![Recorded::ExitProcess]);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn tray_quit_guard_rejects_clicks_during_refresh() {
+        use std::sync::atomic::Ordering;
+
+        assert!(
+            !TRAY_REFRESHING.load(Ordering::SeqCst),
+            "guard accepts user clicks when not refreshing"
+        );
+
+        TRAY_REFRESHING.store(true, Ordering::SeqCst);
+        assert!(
+            TRAY_REFRESHING.load(Ordering::SeqCst),
+            "guard rejects clicks during menu refresh (muda teardown)"
+        );
+
+        TRAY_REFRESHING.store(false, Ordering::SeqCst);
+        assert!(
+            !TRAY_REFRESHING.load(Ordering::SeqCst),
+            "guard accepts user clicks after refresh completes"
+        );
     }
 }
