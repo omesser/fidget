@@ -135,6 +135,14 @@ repos:
         files: ^docs/adr/
         pass_filenames: false
 
+      # Evidence can end up on a public PR, and a whole display is the
+      # owner's desktop. Capture a window (-l) or a region (-R).
+      - id: screencapture-is-cropped
+        name: screencapture takes a window or a region
+        entry: '(^\s*|[;&|({]\s*)screencapture\b(?![^\n]*\s-[lR]\b)'
+        language: pygrep
+        types: [shell]
+
       # Ungated on purpose (#321): a missing window-layer library fails here
       # rather than a skip claiming the shell was checked.
       - id: cargo-clippy

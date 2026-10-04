@@ -97,6 +97,11 @@ Upload the image with `gh pr create --attach` or `gh pr comment --attach`, in
 and the squash merge. Do not commit an image only to show it in a pull request;
 nothing references it after the merge.
 
+This repository is public, and an upload cannot be taken back. Attach a window
+or a region, never a whole display: the rest of the screen is the owner's
+desktop. Open the image at full size before uploading it. The
+`screencapture-is-cropped` pre-commit hook holds scripts to the same rule.
+
 Check an image in only when it documents an asset that lives here.
 `branding/app-icon-preview.png` is the worked example, and it earns its place
 next to the icon it previews, not by being in a pull request description.
