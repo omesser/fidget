@@ -489,4 +489,68 @@ mod tests {
             String::from_utf8_lossy(&ok.stderr)
         );
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn thinking_row_win_fixture_passes_and_a_wrong_glyph_fails() {
+        let scenarios = repo_scenarios();
+        let script = scenarios.join("thinking-row.win.ps1");
+        let open = scenarios.join("fixtures/thinking-row-open.txt");
+        let done = scenarios.join("fixtures/thinking-row-done.txt");
+        let ok = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script.to_str().unwrap(),
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ])
+            .env("FIDGET_SCENARIO_AX_OPEN", &open)
+            .env("FIDGET_SCENARIO_AX_DONE", &done)
+            .output()
+            .unwrap();
+        assert_eq!(
+            ok.status.code(),
+            Some(0),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&ok.stdout),
+            String::from_utf8_lossy(&ok.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&ok.stdout).contains("PASS: fixture dumps"),
+            "stdout:\n{}",
+            String::from_utf8_lossy(&ok.stdout)
+        );
+
+        let bad_dir = tempfile::tempdir().unwrap();
+        let bad = bad_dir.path().join("bad.txt");
+        fs::write(&bad, "button|x Thinking|\n").unwrap();
+        let fail = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script.to_str().unwrap(),
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ])
+            .env("FIDGET_SCENARIO_AX_OPEN", &bad)
+            .env("FIDGET_SCENARIO_AX_DONE", &done)
+            .output()
+            .unwrap();
+        assert_eq!(
+            fail.status.code(),
+            Some(1),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&fail.stdout),
+            String::from_utf8_lossy(&fail.stderr)
+        );
+        let err = String::from_utf8_lossy(&fail.stderr);
+        assert!(err.contains("want it to start with"), "stderr was:\n{err}");
+    }
 }
