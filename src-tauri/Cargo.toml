@@ -134,7 +134,6 @@ raw-window-handle = "0.6"
 # WebView2 COM interface to set transparent background, preventing white
 # flashes during window moves and monitor transitions (#1327).
 webview2-com = "0.39"
-windows = {version = "0.62", features = ["UI_ViewManagement"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The context menu (#155) is not here: `tauri::menu` already wraps the menu
