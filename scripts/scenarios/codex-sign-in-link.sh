@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: codex-sign-in-link (macOS)
+# Scenario: codex-sign-in-link (macOS only, since the sign-in flow is codex-acp's own)
 # On screen: launches Fidget as BMO with the codex preset Harness, signed out.
 #   You open Chat, sign in through the link Chat shows, and finish in your
 #   browser. Two screenshots of the Chat window. Fidget quits when it ends.
