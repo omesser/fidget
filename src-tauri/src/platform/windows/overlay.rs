@@ -11,9 +11,6 @@
 //! area, making DWM composite the window with full transparency. This prevents
 //! the window frame's white background from showing during drag operations and
 //! monitor transitions (#1327).
-//!
-//! Window style restoration in reinforce_overlay skips SetWindowPos FRAMECHANGED
-//! to avoid unnecessary frame redraws that cause white flashes and content ghosting.
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -146,18 +143,14 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 }
 
 /// Put the tool-window bits back after a click-through rewrite drops them.
-/// Restores bits without forcing frame redraw to prevent white flash.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
+    extend_dwm_frame(hwnd)?;
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
-        if new_style != current_style {
-            if SetWindowLongW(hwnd, GWL_EXSTYLE, new_style) == 0 && current_style != 0 {
-                return Err("Failed to restore overlay extended styles".to_string());
-            }
-        }
+        apply_exstyle(hwnd, current_style, new_style)?;
     }
     note_overlay(hwnd as u64);
     Ok(())
