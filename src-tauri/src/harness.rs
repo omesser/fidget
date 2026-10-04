@@ -463,6 +463,7 @@ fn timed_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    without_console_window(&mut command);
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -531,18 +532,27 @@ fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsSt
     None
 }
 
+/// Windows flags for every child. A release build has no console to share, so
+/// a console child without `CREATE_NO_WINDOW` would open a window of its own.
 #[cfg(windows)]
-pub(crate) fn get_creation_flags() -> u32 {
+pub(crate) fn creation_flags(isolate: bool) -> u32 {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    CREATE_NEW_PROCESS_GROUP
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    if isolate {
+        CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+    } else {
+        CREATE_NO_WINDOW
+    }
+}
+
+/// A one-shot child, such as a version probe, that stays in this process group.
+pub(crate) fn without_console_window(command: &mut Command) {
+    apply_isolation(command, false);
 }
 
 fn apply_isolation(command: &mut Command, isolate: bool) {
-    if !isolate {
-        return;
-    }
     #[cfg(unix)]
-    {
+    if isolate {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
@@ -551,9 +561,8 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
         use std::os::windows::process::CommandExt;
         // The Job Object is created and assigned at spawn time in
         // `acp_wire::windows_job::spawn_in_job`, so descendants die on
-        // shutdown. Still a new process group, so Ctrl+C does not reach the child.
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        // shutdown. Isolated, it is also a new process group, so Ctrl+C misses it.
+        command.creation_flags(creation_flags(isolate));
     }
 }
 

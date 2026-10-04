@@ -129,12 +129,15 @@ fn restrict(_path: &Path) -> Result<(), String> {
 /// `cursor-agent` process, so this runs before the `acp` spawn, every time.
 pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
     let line = format!("`{} mcp enable {SERVER}`", cli.display());
-    let mut child = Command::new(cli)
+    let mut command = Command::new(cli);
+    command
         .args(["mcp", "enable", SERVER])
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    crate::harness::without_console_window(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("{line}: {error}"))?;
     let deadline = Instant::now() + ENABLE_TIMEOUT;

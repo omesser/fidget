@@ -2600,7 +2600,7 @@ mod windows_job {
             job
         };
 
-        let creation_flags = crate::harness::get_creation_flags() | CREATE_SUSPENDED;
+        let creation_flags = crate::harness::creation_flags(true) | CREATE_SUSPENDED;
         command.creation_flags(creation_flags);
 
         let mut async_command = async_process::Command::from(command);
