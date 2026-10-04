@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -63,7 +62,6 @@ pub(crate) fn run_frame_loop(
     let MenuChannel {
         sender: menu_sender,
         receiver: menu_signals,
-        quit_generation,
     } = menu_channel;
     thread::spawn(move || {
         // macOS only. The window-list read there costs milliseconds, so it runs
@@ -990,15 +988,11 @@ pub(crate) fn run_frame_loop(
                 if let Some(description) = menu::replace_if_changed(&mut last_menu, description) {
                     tray_actions = description.actions.clone();
                     let handle = app.clone();
-                    let generation = Arc::clone(&quit_generation);
                     let _ = app.run_on_main_thread(move || {
-                        let next_quit = generation.fetch_add(1, Ordering::SeqCst) + 1;
                         if let Some(state) = handle.try_state::<TrayHandle>() {
                             if let Ok(guard) = state.0.lock() {
                                 if let Some(icon) = guard.as_ref() {
-                                    if let Err(why) =
-                                        tray::refresh(icon, &handle, &description, next_quit)
-                                    {
+                                    if let Err(why) = tray::refresh(icon, &handle, &description) {
                                         eprintln!("tray: {why}");
                                     }
                                 }
@@ -2189,10 +2183,8 @@ pub(crate) fn run_frame_loop(
                 let description_actions = description.actions.clone();
                 let handle = app.clone();
                 let signals = menu_sender.clone();
-                let quit_generation = quit_generation.load(Ordering::SeqCst);
                 let posted = app.run_on_main_thread(move || {
-                    if let Err(why) = menu::show(&handle, &description, &label, at, quit_generation)
-                    {
+                    if let Err(why) = menu::show(&handle, &description, &label, at) {
                         eprintln!("menu: {why}");
                     }
                     // Sent whether or not the menu drew, and after it has

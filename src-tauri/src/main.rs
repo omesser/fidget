@@ -358,7 +358,6 @@ enum MenuSignal {
 struct MenuChannel {
     sender: mpsc::Sender<MenuSignal>,
     receiver: mpsc::Receiver<MenuSignal>,
-    quit_generation: Arc<AtomicU64>,
 }
 
 /// Settings plus the live roster the settings window reads.
@@ -3276,11 +3275,7 @@ fn apply_menu_action(
                 eprintln!("menu: Summon");
             }
         }
-        menu::MenuAction::Quit => {
-            // Unreachable: Quit is handled entirely in on_menu_event hook and
-            // never sent to the frame loop. Kept for completeness of actions map.
-            quit_now()
-        }
+        menu::MenuAction::Quit => unreachable!("quit handled in on_menu_event hook"),
     }
 }
 
@@ -4577,7 +4572,7 @@ fn main() {
                 );
                 #[cfg(target_os = "macos")]
                 platform::seed_tray_position();
-                match tray::install(app.handle(), &description, 0) {
+                match tray::install(app.handle(), &description) {
                     Ok(icon) => Some(icon),
                     Err(why) => {
                         eprintln!("tray: {why}");
@@ -4598,10 +4593,9 @@ fn main() {
             // The hook forwards ids to the frame loop, which knows the open menu.
             let (menu_sender, menu_receiver) = mpsc::channel();
             let hook_sender = menu_sender.clone();
-            let quit_generation = Arc::new(AtomicU64::new(0));
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                if id.starts_with("quit:") {
+                if menu::is_quit_id(&id) {
                     quit_now();
                 } else {
                     let _ = hook_sender.send(MenuSignal::Chose(id));
@@ -4620,7 +4614,6 @@ fn main() {
                 MenuChannel {
                     sender: menu_sender,
                     receiver: menu_receiver,
-                    quit_generation,
                 },
                 FrameExtras {
                     settings,

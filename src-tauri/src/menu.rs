@@ -129,11 +129,9 @@ const HOTKEY_ID: &str = "hotkey";
 /// cannot drift onto different strings.
 pub(crate) const QUIT_ID: &str = "quit";
 
-/// Native id of Quit for one tray (or sprite) draw.
-///
-/// The native item uses this so replacing the tray mints a new id: muda can deliver the dropped item's teardown as a click.
-pub(crate) fn quit_item_id(generation: u64) -> String {
-    format!("{QUIT_ID}:{generation}")
+/// Whether `id` is the Quit menu item.
+pub(crate) fn is_quit_id(id: &str) -> bool {
+    id == QUIT_ID
 }
 
 /// The id prefix for a Character row, so `character:bmo` cannot collide with a
@@ -319,25 +317,17 @@ pub fn replace_if_changed(
 pub fn build(
     app: &tauri::AppHandle,
     description: &MenuDescription,
-    quit_generation: u64,
 ) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
     use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 
     // Built one item at a time rather than with `with_items`, because the rows
     // are of three different types and a Vec of them needs boxing either way.
     let menu = Menu::new(app)?;
-    let native_id = |id: &str| {
-        if id == QUIT_ID {
-            quit_item_id(quit_generation)
-        } else {
-            id.to_string()
-        }
-    };
 
     for entry in &description.entries {
         match entry {
             MenuEntry::Item { id, label, enabled } => {
-                let item = MenuItem::with_id(app, native_id(id), label, *enabled, None::<&str>)?;
+                let item = MenuItem::with_id(app, id, label, *enabled, None::<&str>)?;
                 menu.append(&item)?;
             }
             MenuEntry::Check {
@@ -395,11 +385,10 @@ pub fn show(
     description: &MenuDescription,
     window_label: &str,
     position: tauri::LogicalPosition<f64>,
-    quit_generation: u64,
 ) -> Result<(), tauri::Error> {
     use tauri::Manager;
 
-    let menu = build(app, description, quit_generation)?;
+    let menu = build(app, description)?;
     let window = app
         .get_webview_window(window_label)
         .ok_or(tauri::Error::WindowNotFound)?;
@@ -911,5 +900,25 @@ mod tests {
             replace_if_changed(&mut last, again).is_none(),
             "the same rows are not a rebuild"
         );
+    }
+
+    #[test]
+    fn is_quit_id_matches_quit() {
+        assert!(is_quit_id("quit"));
+    }
+
+    #[test]
+    fn is_quit_id_rejects_non_quit_menu_items() {
+        assert!(!is_quit_id("chat"));
+        assert!(!is_quit_id("character:bmo"));
+        assert!(!is_quit_id("character:finn"));
+        assert!(!is_quit_id("settings"));
+        assert!(!is_quit_id("memory"));
+        assert!(!is_quit_id("action_log"));
+        assert!(!is_quit_id("dnd"));
+        assert!(!is_quit_id("new_instance"));
+        assert!(!is_quit_id(""));
+        assert!(!is_quit_id("QUIT"));
+        assert!(!is_quit_id("quit:1"));
     }
 }
