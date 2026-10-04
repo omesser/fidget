@@ -7,15 +7,10 @@
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
 //! when the capturable setting, on by default (ADR-0024), is turned off.
 //!
-//! WebView2's DefaultBackgroundColor is set to fully transparent so the HTML
-//! transparency is respected during window moves, monitor transitions, and
-//! redraws. Without this, WebView2's white default background flashes through
-//! during these operations (#1327).
-//!
 //! DwmExtendFrameIntoClientArea extends the window frame into the entire client
-//! area, making DWM composite the window with full transparency. Without this,
-//! Windows shows the window frame's white background during drag operations and
-//! monitor transitions, causing full-screen white flashes (#1327).
+//! area, making DWM composite the window with full transparency. This prevents
+//! the window frame's white background from showing during drag operations and
+//! monitor transitions, eliminating full-screen white flashes (#1327).
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -33,16 +28,16 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
-/// `FIDGET_CAPTURABLE=0` excludes it from shares. Set WebView2 background to
-/// transparent to prevent white flashes during window moves and monitor transitions.
-/// Returns Err when the handle is not realized yet, so the caller can retry.
+/// `FIDGET_CAPTURABLE=0` excludes it from shares. Extends DWM frame into the
+/// entire client area to prevent white flashes during window moves and monitor
+/// transitions. Returns Err when the handle is not realized yet, so the caller
+/// can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
     extend_dwm_frame(hwnd)?;
-    set_webview_transparent_background(window)?;
     note_overlay(hwnd as u64);
 
     Ok(())
@@ -247,58 +242,6 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
         if result != 0 {
             return Err(format!("Failed to extend DWM frame: {result:#x}"));
         }
-    }
-
-    Ok(())
-}
-
-/// Set WebView2's default background color to fully transparent.
-/// This prevents white flashes during window moves, monitor transitions,
-/// and redraws. WebView2's default white background would otherwise show
-/// through while the transparent HTML content is being redrawn (#1327).
-fn set_webview_transparent_background(window: &tauri::WebviewWindow) -> Result<(), String> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
-    };
-    use windows_core::Interface;
-
-    let captured_error = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    let slot = std::sync::Arc::clone(&captured_error);
-
-    window
-        .with_webview(move |webview| unsafe {
-            let controller = webview.controller();
-            let controller2: ICoreWebView2Controller2 = match controller.cast() {
-                Ok(c) => c,
-                Err(e) => {
-                    if let Ok(mut err) = slot.lock() {
-                        *err = Some(format!("Failed to cast to ICoreWebView2Controller2: {e:?}"));
-                    }
-                    return;
-                }
-            };
-
-            let transparent = COREWEBVIEW2_COLOR {
-                A: 0,
-                R: 0,
-                G: 0,
-                B: 0,
-            };
-
-            if let Err(e) = controller2.SetDefaultBackgroundColor(transparent) {
-                if let Ok(mut err) = slot.lock() {
-                    *err = Some(format!("Failed to set default background color: {e:?}"));
-                }
-            }
-        })
-        .map_err(|e| format!("Failed to access webview: {e}"))?;
-
-    if let Some(err) = captured_error
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-    {
-        return Err(err);
     }
 
     Ok(())
