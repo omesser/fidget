@@ -433,10 +433,7 @@ mod tests {
             .unwrap();
         assert_eq!(fail.status.code(), Some(1));
         let err = String::from_utf8_lossy(&fail.stderr);
-        assert!(
-            err.contains("scrolls sideways"),
-            "stderr was:\n{err}"
-        );
+        assert!(err.contains("scrolls sideways"), "stderr was:\n{err}");
     }
 
     #[cfg(unix)]
@@ -460,5 +457,4 @@ mod tests {
         );
         assert!(String::from_utf8_lossy(&out.stderr).contains("DISPLAY is unset"));
     }
-
 }
