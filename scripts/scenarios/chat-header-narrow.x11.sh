@@ -128,7 +128,8 @@ shows_session() {
 
 check() { # <width>
   local w=$1
-  local f=$out/$w.ax.txt got
+  local f=$out/$w.ax.txt
+  local got
   python3 "$root/scripts/ax-window-linux.py" size "$pid" BMO "$w" 560 > "$out/$w.frame.txt" 2> "$out/$w.frame.err" ||
     fail "$w: resize failed; see $out/$w.frame.err"
   read -r _ _ got _ < <(tr , ' ' < "$out/$w.frame.txt")
