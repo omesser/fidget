@@ -259,8 +259,10 @@ jobs:
         continue-on-error: true
         with:
           files: |
+            src-tauri/src/main.rs
             src-tauri/src/platform.rs
             src-tauri/src/platform/windows/**
+            src-tauri/tests/windows_subsystem.rs
             src-tauri/src/secrets.rs
             crates/core/src/sensing.rs
             src-tauri/Cargo.toml
@@ -310,3 +312,9 @@ jobs:
         run: |
           cargo test --workspace --all-targets
           cargo test --workspace --doc
+
+      - name: The exe a release build links has no console
+        # Debug assertions off is the switch `windows_subsystem` reads, at the
+        # cost of rebuilding the one crate rather than a full release build.
+        if: steps.gate.outputs.run_tests == 'true'
+        run: cargo test -p fidget --test windows_subsystem --config 'profile.dev.package.fidget.debug-assertions=false'

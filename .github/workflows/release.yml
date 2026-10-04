@@ -160,10 +160,6 @@ jobs:
           uploadWorkflowArtifacts: true
           args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
 
-      - name: Check the package opens no console or terminal
-        shell: bash
-        run: scripts/check-no-console.sh ${{ matrix.key }}
-
   homebrew:
     needs: package
     if: |
