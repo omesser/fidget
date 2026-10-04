@@ -12,9 +12,11 @@
          Instances of one Character share a Memory and differ only in it. -->
     <header class="tb">
       <span class="who">
+        <!-- time, not span: WebKitGTK's AT-SPI tree omits generic header
+             spans, and chat-header-narrow needs name/chip/mind frames. -->
         <span class="ident">
-          <span class="name" id="name"></span>
-          <span class="of" id="character"></span>
+          <time class="name" id="name"></time>
+          <time class="of" id="character"></time>
         </span>
         <!-- Which mind answers, as identity rather than telemetry: beside who
              you are talking to, not in the bar, which is for what changes every
@@ -47,7 +49,7 @@
               d="M256 128v48M256 336v48M128 256h48M336 256h48"
             />
           </svg>
-          <span class="mind-text" id="mind-text"></span>
+          <time class="mind-text" id="mind-text"></time>
         </span>
       </span>
     </header>
