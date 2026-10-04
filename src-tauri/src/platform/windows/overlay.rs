@@ -25,19 +25,12 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
     HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
 };
-
-#[repr(C)]
-struct MARGINS {
-    cxLeftWidth: i32,
-    cxRightWidth: i32,
-    cyTopHeight: i32,
-    cyBottomHeight: i32,
-}
 
 /// Float above other windows, non-activating. Capturable unless Presence or
 /// `FIDGET_CAPTURABLE=0` excludes it from shares. Set WebView2 background to
