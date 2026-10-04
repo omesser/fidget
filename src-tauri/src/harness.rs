@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 use fidget_core::director::{Completer, Reply, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 use crate::acp_wire::{
     kill_harness_tree, Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError,
@@ -532,22 +534,16 @@ fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsSt
     None
 }
 
-/// Windows flags for every child. A release build has no console to share, so
-/// a console child without `CREATE_NO_WINDOW` would open a window of its own.
-#[cfg(windows)]
-pub(crate) fn creation_flags(isolate: bool) -> u32 {
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    if isolate {
-        CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-    } else {
-        CREATE_NO_WINDOW
-    }
-}
-
-/// A one-shot child, such as a version probe, that stays in this process group.
+/// Spawns the child with no console window. A release build has no console to
+/// share, so on Windows a console child would otherwise open a window of its own.
 pub(crate) fn without_console_window(command: &mut Command) {
-    apply_isolation(command, false);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
 }
 
 fn apply_isolation(command: &mut Command, isolate: bool) {
@@ -562,7 +558,8 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
         // The Job Object is created and assigned at spawn time in
         // `acp_wire::windows_job::spawn_in_job`, so descendants die on
         // shutdown. Isolated, it is also a new process group, so Ctrl+C misses it.
-        command.creation_flags(creation_flags(isolate));
+        let group = if isolate { CREATE_NEW_PROCESS_GROUP } else { 0 };
+        command.creation_flags(group | CREATE_NO_WINDOW);
     }
 }
 
@@ -583,7 +580,7 @@ mod console_window_tests {
         ]
     }
 
-    /// Re-exec'd. Exits 0 when this process has no console window to show.
+    /// Runs only when re-executed. Exits 0 when this process shows no console window.
     #[test]
     fn console_window_child() {
         if std::env::var_os(PROBE).is_none() {
@@ -596,8 +593,8 @@ mod console_window_tests {
         std::process::exit(if shown { 9 } else { 0 });
     }
 
-    /// Re-exec'd with no console, as a release exe is, and spawns the child
-    /// the way a version probe does.
+    /// Runs only when re-executed with no console, as a release exe has none, and
+    /// spawns the child the way a version probe does.
     #[test]
     fn console_window_parent() {
         if std::env::var_os(PROBE).is_none() {

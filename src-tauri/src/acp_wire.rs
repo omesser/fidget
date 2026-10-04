@@ -2551,8 +2551,8 @@ mod windows_job {
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, OpenThread, ResumeThread, CREATE_SUSPENDED, PROCESS_ALL_ACCESS,
-        THREAD_SUSPEND_RESUME,
+        OpenProcess, OpenThread, ResumeThread, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+        CREATE_SUSPENDED, PROCESS_ALL_ACCESS, THREAD_SUSPEND_RESUME,
     };
 
     /// A Job Object handle, parked in `JOBS` until the process exits.
@@ -2600,7 +2600,7 @@ mod windows_job {
             job
         };
 
-        let creation_flags = crate::harness::creation_flags(true) | CREATE_SUSPENDED;
+        let creation_flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED;
         command.creation_flags(creation_flags);
 
         let mut async_command = async_process::Command::from(command);
