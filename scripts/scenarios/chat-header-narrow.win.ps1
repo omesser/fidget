@@ -50,7 +50,7 @@ if (-not $Bin -or -not $TestBin) {
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $script:Evidence = $null
-$Mind = '^label\|[^|]* · session [^|]+\|'
+$Mind = '^label\|[^|]* session [^|]+\|'
 
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
