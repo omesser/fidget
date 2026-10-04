@@ -4,13 +4,18 @@
 Dump lines are `role|name`. Pass `frames` after the title to append
 `|x,y,w,h` on every line, matching the shape chat-header-narrow asserts.
 `size` resizes the window and prints its frame as `x,y,w,h`.
+`press` performs the first action of the INDEX-th button named NAME (1-based).
+`tray` clicks the tray menu row whose label starts with ROW, through the
+StatusNotifierItem's dbusmenu, then waits for a window titled TITLE.
 
 Usage:
   ax-window-linux.py dump PID TITLE [frames]
   ax-window-linux.py size PID TITLE WIDTH HEIGHT
+  ax-window-linux.py press PID TITLE NAME [INDEX]
+  ax-window-linux.py tray PID TITLE ROW
 
-Exit 2 when pyatspi is missing. Exit 1 when that window is not in the tree
-or a resize fails.
+Exit 2 when pyatspi is missing, or for `tray` when no StatusNotifierWatcher
+runs. Exit 1 when that window is not in the tree or an action fails.
 """
 
 import sys
@@ -97,9 +102,20 @@ def node_name(acc):
     # interface still holds what chat-header-narrow asserts on.
     try:
         text = acc.queryText()
-        return text.getText(0, text.characterCount).replace("\n", "\\n")
+        name = text.getText(0, text.characterCount).replace("\n", "\\n")
     except Exception:
-        return ""
+        name = ""
+    if name:
+        return name
+    # An empty <textarea> has no name or text; its placeholder is what the
+    # macOS dump shows for the composer.
+    try:
+        for attr in acc.getAttributes():
+            if attr.startswith("placeholder-text:"):
+                return attr.split(":", 1)[1]
+    except Exception:
+        pass
+    return ""
 
 
 def extents(acc):
@@ -247,20 +263,153 @@ def cmd_size(argv):
     return 0
 
 
+def find_buttons(acc, name, found, depth=0):
+    if depth > 30:
+        return
+    if short_role(acc) == "button" and node_name(acc) == name:
+        found.append(acc)
+    try:
+        count = acc.childCount
+    except Exception:
+        return
+    for i in range(count):
+        try:
+            find_buttons(acc.getChildAtIndex(i), name, found, depth + 1)
+        except Exception:
+            pass
+
+
+def cmd_press(argv):
+    if len(argv) not in (5, 6):
+        print("usage: ax-window-linux.py press PID TITLE NAME [INDEX]", file=sys.stderr)
+        return 2
+    pid, title, name = int(argv[2]), argv[3], argv[4]
+    index = int(argv[5]) if len(argv) == 6 else 1
+    try:
+        import pyatspi
+    except ImportError:
+        print("pyatspi is not installed", file=sys.stderr)
+        return 2
+    window = find_window(pyatspi.Registry.getDesktop(0), pid, title)
+    if window is None:
+        print(f"no window titled {title} for pid {pid}", file=sys.stderr)
+        return 1
+    found = []
+    find_buttons(window, name, found)
+    if index < 1 or index > len(found):
+        print(f"no button {name} at index {index} ({len(found)} found)", file=sys.stderr)
+        return 1
+    try:
+        if not found[index - 1].queryAction().doAction(0):
+            raise RuntimeError("doAction returned false")
+    except Exception as err:
+        print(f"could not press {name}: {err}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def dbusmenu_find(layout, row):
+    item_id, props, children = layout
+    if props.get("label", "").replace("_", "").startswith(row):
+        return item_id
+    for child in children:
+        found = dbusmenu_find(child, row)
+        if found is not None:
+            return found
+    return None
+
+
+def cmd_tray(argv):
+    """libappindicator exports the tray menu over dbusmenu, so a row is
+    clicked there, the same menu the panel draws, with no pointer."""
+    if len(argv) != 5:
+        print("usage: ax-window-linux.py tray PID TITLE ROW", file=sys.stderr)
+        return 2
+    pid, title, row = int(argv[2]), argv[3], argv[4]
+    import time
+
+    from gi.repository import Gio, GLib
+
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+    def call(name, path, iface, method, args, reply):
+        return bus.call_sync(
+            name, path, iface, method, args, GLib.VariantType(reply),
+            Gio.DBusCallFlags.NONE, 5000, None,
+        ).unpack()
+
+    def prop(name, path, iface, key):
+        return call(
+            name, path, "org.freedesktop.DBus.Properties", "Get",
+            GLib.Variant("(ss)", (iface, key)), "(v)",
+        )[0]
+
+    item = None
+    for _ in range(80):
+        try:
+            entries = prop(
+                "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems",
+            )
+        except GLib.Error as err:
+            print(f"no StatusNotifierWatcher, so no tray: {err.message}", file=sys.stderr)
+            return 2
+        for entry in entries:
+            service, _, path = entry.partition("/")
+            path = "/" + path if path else "/StatusNotifierItem"
+            try:
+                owner = call(
+                    "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+                    GLib.Variant("(s)", (service,)), "(u)",
+                )[0]
+            except GLib.Error:
+                continue
+            if owner == pid:
+                item = (service, path)
+        if item:
+            break
+        time.sleep(0.25)
+    if item is None:
+        print(f"pid {pid} registered no tray item in 20s", file=sys.stderr)
+        return 1
+    menu = prop(item[0], item[1], "org.kde.StatusNotifierItem", "Menu")
+    _, layout = call(
+        item[0], menu, "com.canonical.dbusmenu", "GetLayout",
+        GLib.Variant("(iias)", (0, -1, ["label"])), "(u(ia{sv}av))",
+    )
+    row_id = dbusmenu_find(layout, row)
+    if row_id is None:
+        print(f"the tray menu has no {row} row", file=sys.stderr)
+        return 1
+    call(
+        item[0], menu, "com.canonical.dbusmenu", "Event",
+        GLib.Variant("(isvu)", (row_id, "clicked", GLib.Variant("i", 0), 0)), "()",
+    )
+    import pyatspi
+
+    for _ in range(40):
+        if find_window(pyatspi.Registry.getDesktop(0), pid, title) is not None:
+            return 0
+        time.sleep(0.25)
+    print(f"{title} did not open within 10s", file=sys.stderr)
+    return 1
+
+
+COMMANDS = {"dump": cmd_dump, "size": cmd_size, "press": cmd_press, "tray": cmd_tray}
+
 
 def main(argv):
     if len(argv) < 2:
         print(
-            "usage: ax-window-linux.py dump|size PID TITLE ...",
+            "usage: ax-window-linux.py dump|size|press|tray PID TITLE ...",
             file=sys.stderr,
         )
         return 2
-    if argv[1] == "dump":
-        return cmd_dump(argv)
-    if argv[1] == "size":
-        return cmd_size(argv)
+    if argv[1] in COMMANDS:
+        return COMMANDS[argv[1]](argv)
     print(
-        "usage: ax-window-linux.py dump|size PID TITLE ...",
+        "usage: ax-window-linux.py dump|size|press|tray PID TITLE ...",
         file=sys.stderr,
     )
     return 2

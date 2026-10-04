@@ -1,0 +1,15 @@
+frame|BMO|0,0,420,560
+label|local|8,10,60,20
+label|BMO|72,10,36,20
+heading|Codex needs npx|16,60,388,28
+label|Codex needs |16,60,120,28
+label|npx|136,60,36,28
+paragraph|npx is not installed. Fidget does not bundle npx. Install Node.js from https://nodejs.org/. Then press Codex again, or pick a different Harness below.|16,96,388,60
+label|npx|16,96,30,18
+label| is not installed. Fidget does not bundle |46,96,280,18
+label|npx|326,96,30,18
+label|. Install Node.js from |16,114,150,18
+label|https://nodejs.org/|166,114,130,18
+label|. Then press Codex again, or pick a different Harness below.|16,132,388,18
+button|Codex|16,180,80,28
+entry|Nothing can answer yet|8,500,404,40

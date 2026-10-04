@@ -553,4 +553,236 @@ mod tests {
         let err = String::from_utf8_lossy(&fail.stderr);
         assert!(err.contains("want it to start with"), "stderr was:\n{err}");
     }
+
+    /// Runs a leaf on fixture dumps with no desktop. `envs` paths are under
+    /// `scripts/scenarios/` unless absolute.
+    fn fixture_run(script: &str, envs: &[(&str, PathBuf)]) -> std::process::Output {
+        let scenarios = repo_scenarios();
+        let path = scenarios.join(script);
+        let mut cmd = if script.ends_with(".ps1") {
+            let mut cmd = Command::new("powershell");
+            cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]);
+            cmd.arg(&path).args([
+                "--go",
+                "C:\\Windows\\System32\\cmd.exe",
+                "C:\\Windows\\System32\\cmd.exe",
+            ]);
+            cmd
+        } else {
+            let mut cmd = Command::new("bash");
+            cmd.arg(&path).args(["--go", "/bin/true", "/bin/true"]);
+            cmd
+        };
+        cmd.env_remove("DISPLAY");
+        for (key, value) in envs {
+            cmd.env(key, scenarios.join(value));
+        }
+        cmd.output().unwrap()
+    }
+
+    fn assert_exit(out: &std::process::Output, code: i32, stderr_has: &str) {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(code),
+            "stdout:\n{}\nstderr:\n{stderr}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(stderr.contains(stderr_has), "stderr was:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    fn landing_link_click_envs(opened: &str) -> Vec<(&'static str, PathBuf)> {
+        vec![
+            (
+                "FIDGET_SCENARIO_AX_LANDING",
+                "fixtures/landing-link-click-landing.txt".into(),
+            ),
+            (
+                "FIDGET_SCENARIO_AX_AFTER",
+                "fixtures/landing-link-click-landing.txt".into(),
+            ),
+            ("FIDGET_SCENARIO_OPENED", opened.into()),
+        ]
+    }
+
+    fn launcher_dies_envs(ax320: PathBuf) -> Vec<(&'static str, PathBuf)> {
+        vec![
+            (
+                "FIDGET_SCENARIO_AX_FAILED",
+                "fixtures/launcher-dies-at-startup-420.txt".into(),
+            ),
+            (
+                "FIDGET_SCENARIO_AX_420",
+                "fixtures/launcher-dies-at-startup-420.txt".into(),
+            ),
+            ("FIDGET_SCENARIO_AX_320", ax320),
+            (
+                "FIDGET_SCENARIO_AX_LIVE",
+                "fixtures/launcher-dies-at-startup-live.txt".into(),
+            ),
+        ]
+    }
+
+    /// The 320 fixture with its Error output box running past the window edge.
+    fn launcher_dies_wide_box(dir: &Path) -> PathBuf {
+        let good =
+            fs::read_to_string(repo_scenarios().join("fixtures/launcher-dies-at-startup-320.txt"))
+                .unwrap();
+        let bad = dir.join("320-wide.txt");
+        let wide: Vec<String> = good
+            .lines()
+            .map(|line| {
+                if line.contains("dyld[0]") {
+                    let (head, _) = line.rsplit_once('|').unwrap();
+                    format!("{head}|16,252,400,54")
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect();
+        fs::write(&bad, wide.join("\n")).unwrap();
+        bad
+    }
+
+    fn sign_in_envs(signed_in: &str) -> Vec<(&'static str, PathBuf)> {
+        vec![
+            (
+                "FIDGET_SCENARIO_AX_NEEDS_LOGIN",
+                "fixtures/sign-in-button-needs-login.txt".into(),
+            ),
+            (
+                "FIDGET_SCENARIO_AX_WAITING",
+                "fixtures/sign-in-button-waiting.txt".into(),
+            ),
+            ("FIDGET_SCENARIO_AX_SIGNED_IN", signed_in.into()),
+            (
+                "FIDGET_SCENARIO_OPENED",
+                "fixtures/sign-in-button-opened.txt".into(),
+            ),
+        ]
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn landing_link_click_x11_fixture_passes_and_a_wrong_url_fails() {
+        let script = "landing-link-click.x11.sh";
+        let ok = fixture_run(
+            script,
+            &landing_link_click_envs("fixtures/landing-link-click-opened.txt"),
+        );
+        assert_exit(&ok, 0, "");
+        let bad = fixture_run(
+            script,
+            &landing_link_click_envs("fixtures/sign-in-button-opened.txt"),
+        );
+        assert_exit(&bad, 1, "want https://nodejs.org/");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launcher_dies_at_startup_x11_fixture_passes_and_a_wide_box_fails() {
+        let script = "launcher-dies-at-startup.x11.sh";
+        let ok = fixture_run(
+            script,
+            &launcher_dies_envs("fixtures/launcher-dies-at-startup-320.txt".into()),
+        );
+        assert_exit(&ok, 0, "");
+        let dir = tempfile::tempdir().unwrap();
+        let bad = fixture_run(
+            script,
+            &launcher_dies_envs(launcher_dies_wide_box(dir.path())),
+        );
+        assert_exit(&bad, 1, "past the window edge");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sign_in_button_x11_fixture_passes_and_a_lingering_waiting_line_fails() {
+        let script = "sign-in-button.x11.sh";
+        let ok = fixture_run(
+            script,
+            &sign_in_envs("fixtures/sign-in-button-signed-in.txt"),
+        );
+        assert_exit(&ok, 0, "");
+        let bad = fixture_run(script, &sign_in_envs("fixtures/sign-in-button-waiting.txt"));
+        assert_exit(&bad, 1, "mind line does not name the session");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_leaves_on_x11_without_a_display_skip() {
+        for script in [
+            "landing-link-click.x11.sh",
+            "launcher-dies-at-startup.x11.sh",
+            "sign-in-button.x11.sh",
+        ] {
+            assert_exit(&fixture_run(script, &[]), 2, "DISPLAY is unset");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn landing_link_click_win_fixture_passes_and_a_refused_link_fails() {
+        let script = "landing-link-click.win.ps1";
+        let landing = "fixtures/landing-link-click-landing.txt";
+        let ok = fixture_run(
+            script,
+            &[
+                ("FIDGET_SCENARIO_AX_LANDING", landing.into()),
+                ("FIDGET_SCENARIO_AX_AFTER", landing.into()),
+            ],
+        );
+        assert_exit(&ok, 0, "");
+        let dir = tempfile::tempdir().unwrap();
+        let refused = dir.path().join("after.txt");
+        let mut text = fs::read_to_string(repo_scenarios().join(landing)).unwrap();
+        text.push_str("label|That link did not open: boom.|0,0,1,1\n");
+        fs::write(&refused, text).unwrap();
+        let bad = fixture_run(
+            script,
+            &[
+                ("FIDGET_SCENARIO_AX_LANDING", landing.into()),
+                ("FIDGET_SCENARIO_AX_AFTER", refused),
+            ],
+        );
+        assert_exit(&bad, 1, "did not reach ShellExecuteW");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn launcher_dies_at_startup_win_fixture_passes_and_a_wide_box_fails() {
+        let script = "launcher-dies-at-startup.win.ps1";
+        let ok = fixture_run(
+            script,
+            &launcher_dies_envs("fixtures/launcher-dies-at-startup-320.txt".into()),
+        );
+        assert_exit(&ok, 0, "");
+        let dir = tempfile::tempdir().unwrap();
+        let bad = fixture_run(
+            script,
+            &launcher_dies_envs(launcher_dies_wide_box(dir.path())),
+        );
+        assert_exit(&bad, 1, "past the window edge");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sign_in_button_win_fixture_passes_and_a_lingering_waiting_line_fails() {
+        let script = "sign-in-button.win.ps1";
+        // The Windows leaf records no hand-off, so it takes no OPENED file.
+        let envs = |signed_in: &str| -> Vec<(&'static str, PathBuf)> {
+            sign_in_envs(signed_in)
+                .into_iter()
+                .filter(|(key, _)| *key != "FIDGET_SCENARIO_OPENED")
+                .collect()
+        };
+        assert_exit(
+            &fixture_run(script, &envs("fixtures/sign-in-button-signed-in.txt")),
+            0,
+            "",
+        );
+        let bad = fixture_run(script, &envs("fixtures/sign-in-button-waiting.txt"));
+        assert_exit(&bad, 1, "mind line does not name the session");
+    }
 }

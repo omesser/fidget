@@ -1,0 +1,13 @@
+frame|BMO|0,0,320,560
+label|local|8,10,60,20
+label|/opt/fidget/scripts/scenarios/fixture-harness.sh · no session yet|72,10,240,20
+label|Harness error|16,50,120,16
+heading|Harness couldn't start|16,70,288,28
+label|Harness couldn't start|16,70,200,28
+label|It exited before initialize, signal: 6 (SIGABRT). This is what it printed:|16,104,288,36
+label|Command|16,150,80,16
+label|/opt/fidget/scripts/scenarios/fixture-harness.sh /opt/fidget/target/debug/deps/fidget-0 script=abort-first count=/tmp/harness.log|16,170,288,54
+label|Error output|16,232,100,16
+label|dyld[0]: Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib|16,252,288,54
+button|Codex|16,320,80,28
+entry|Nothing can answer yet|8,500,304,40
