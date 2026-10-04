@@ -8,9 +8,8 @@
 //! when the capturable setting, on by default (ADR-0024), is turned off.
 //!
 //! DwmExtendFrameIntoClientArea extends the window frame into the entire client
-//! area, making DWM composite the window with full transparency. This prevents
-//! the window frame's white background from showing during drag operations and
-//! monitor transitions (#1327).
+//! area, compositing the frame with the client area's glass sheet so the overlay
+//! has no opaque window background (#1327).
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -29,9 +28,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 /// Float above other windows, non-activating. Capturable unless Presence or
 /// `FIDGET_CAPTURABLE=0` excludes it from shares. Extends DWM frame into the
-/// entire client area to prevent white flashes during window moves and monitor
-/// transitions. Returns Err when the handle is not realized yet, so the caller
-/// can retry.
+/// entire client area to composite the frame with the client area's glass sheet.
+/// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
@@ -142,13 +140,18 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 }
 
 /// Log a debug message if FIDGET_DEBUG_REINFORCE is set.
-fn debug_reinforce(msg: impl FnOnce() -> String) {
+fn reinforce_debug_log(msg: impl FnOnce() -> String) {
     static DEBUG_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let enabled = *DEBUG_ENABLED.get_or_init(|| std::env::var("FIDGET_DEBUG_REINFORCE").is_ok());
 
     if enabled {
         if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            eprintln!("[{}.{:03}] {}", now.as_secs(), now.subsec_millis(), msg());
+            eprintln!(
+                "[{}.{:03}] reinforce_overlay {}",
+                now.as_secs(),
+                now.subsec_millis(),
+                msg()
+            );
         }
     }
 }
@@ -156,25 +159,31 @@ fn debug_reinforce(msg: impl FnOnce() -> String) {
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
-    debug_reinforce(|| format!("reinforce_overlay start hwnd={:x}", hwnd as usize));
 
-    extend_dwm_frame(hwnd)?;
+    reinforce_debug_log(|| format!("start hwnd={:x}", hwnd as usize));
+
+    if let Err(e) = extend_dwm_frame(hwnd) {
+        eprintln!("overlay: extend_dwm_frame failed: {e}");
+    }
 
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
-        debug_reinforce(|| {
+
+        reinforce_debug_log(|| {
             format!(
-                "reinforce_overlay ex-style write: current={:#x} new={:#x}",
+                "ex-style write: current={:#x} new={:#x}",
                 current_style, new_style
             )
         });
+
         apply_exstyle(hwnd, current_style, new_style)?;
     }
 
     note_overlay(hwnd as u64);
-    debug_reinforce(|| format!("reinforce_overlay end hwnd={:x}", hwnd as usize));
+
+    reinforce_debug_log(|| format!("end hwnd={:x}", hwnd as usize));
 
     Ok(())
 }
@@ -262,6 +271,8 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
         cyBottomHeight: -1,
     };
 
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
+    // DwmExtendFrameIntoClientArea is documented safe with valid HWNDs and margins.
     unsafe {
         let result = DwmExtendFrameIntoClientArea(hwnd, &margins);
         if result != 0 {
