@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "fidget"
+path = "src/lib.rs"
+
 [[bin]]
 name = "fidget"
 path = "src/main.rs"
@@ -50,8 +54,9 @@ url = "2"
 # nothing more. tokio was already in the tree through Tauri. The frame loop
 # never sees a future (ADR-0004).
 agent-client-protocol = "2.1"
-# Log rotation for the Action Log: K=10 retention (10 rotated + 1 current),
-# 2 MB per file, ~22 MB ceiling. BytesSurpassed keeps JSONL lines whole.
+# Log rotation for the Action Log and the process log: K=10 retention
+# (10 rotated + 1 current), 2 MB per file, ~22 MB ceiling. BytesSurpassed
+# keeps a line whole.
 file-rotate = "0.8"
 tokio = {version = "1", features = ["rt", "sync", "macros"]}
 # How the SDK reads a child's pipes. Spawned by us rather than by the SDK's

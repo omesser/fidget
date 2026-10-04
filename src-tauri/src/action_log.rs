@@ -129,6 +129,8 @@ fn report_error(msg: &str) {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
 
+    fidget::process_log::append(msg);
+
     let mut state = ERROR_STATE.lock().unwrap();
     let should_report = match *state {
         None => {
