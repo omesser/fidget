@@ -557,6 +557,76 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
     }
 }
 
+#[cfg(all(test, windows))]
+mod console_window_tests {
+    use std::os::windows::process::CommandExt;
+    use std::time::Duration;
+
+    const PROBE: &str = "FIDGET_CONSOLE_WINDOW_PROBE";
+
+    fn rerun(name: &str) -> [String; 3] {
+        let module = module_path!();
+        let rest = module.split_once("::").map_or(module, |(_, rest)| rest);
+        [
+            format!("{rest}::{name}"),
+            "--exact".into(),
+            "--test-threads=1".into(),
+        ]
+    }
+
+    /// Re-exec'd. Exits 0 when this process has no console window to show.
+    #[test]
+    fn console_window_child() {
+        if std::env::var_os(PROBE).is_none() {
+            return;
+        }
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        // SAFETY: both take no pointer this process owns, and accept null.
+        let shown = unsafe { IsWindowVisible(GetConsoleWindow()) != 0 };
+        std::process::exit(if shown { 9 } else { 0 });
+    }
+
+    /// Re-exec'd with no console, as a release exe is, and spawns the child
+    /// the way a version probe does.
+    #[test]
+    fn console_window_parent() {
+        if std::env::var_os(PROBE).is_none() {
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary");
+        let args = rerun("console_window_child");
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let code = match super::timed_command(
+            exe.to_str().expect("utf-8 path"),
+            &args,
+            Duration::from_secs(60),
+        ) {
+            Ok(output) => output.status.code().unwrap_or(8),
+            Err(_) => 7,
+        };
+        std::process::exit(code);
+    }
+
+    #[test]
+    fn a_console_child_of_a_process_with_no_console_opens_no_window() {
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .env(PROBE, "1")
+            .args(rerun("console_window_parent"))
+            .creation_flags(DETACHED_PROCESS)
+            .output()
+            .expect("parent probe");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "9 is a visible console window on the child\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 /// What Settings and the Chat surface can say about the attachment.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HarnessInspect {
