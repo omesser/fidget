@@ -4126,9 +4126,13 @@ unsafe extern "system" fn anchor_wndproc(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DefWindowProcW, SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS, WM_ACTIVATE, WM_WINDOWPOSCHANGING,
+        DefWindowProcW, SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS, WM_ACTIVATE, WM_CLOSE,
+        WM_WINDOWPOSCHANGING,
     };
 
+    if msg == WM_CLOSE {
+        quit_now();
+    }
     if msg == WM_WINDOWPOSCHANGING {
         let pos = lparam as *mut WINDOWPOS;
         if !pos.is_null() {
