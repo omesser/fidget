@@ -992,16 +992,17 @@ pub(crate) fn run_frame_loop(
                     let handle = app.clone();
                     let generation = Arc::clone(&quit_generation);
                     let _ = app.run_on_main_thread(move || {
-                        // Bump on this thread, immediately before set_menu: the
-                        // teardown click muda fires is then the previous
-                        // generation, so a real Quit cannot land in the hop.
                         let next_quit = generation.fetch_add(1, Ordering::SeqCst) + 1;
                         if let Some(state) = handle.try_state::<TrayHandle>() {
                             if let Ok(guard) = state.0.lock() {
                                 if let Some(icon) = guard.as_ref() {
-                                    if let Err(why) =
-                                        tray::refresh(icon, &handle, &description, next_quit)
-                                    {
+                                    // Set flag before set_menu: muda fires teardown synchronously
+                                    crate::TRAY_REFRESHING.store(true, Ordering::SeqCst);
+                                    let result =
+                                        tray::refresh(icon, &handle, &description, next_quit);
+                                    crate::TRAY_REFRESHING.store(false, Ordering::SeqCst);
+
+                                    if let Err(why) = result {
                                         eprintln!("tray: {why}");
                                     }
                                 }

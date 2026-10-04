@@ -3532,6 +3532,10 @@ fn spawn_live(
 /// the menu on the main thread, where the native objects live.
 struct TrayHandle(Mutex<Option<tauri::tray::TrayIcon>>);
 
+/// Tracks whether tray set_menu is executing. Muda fires teardown clicks
+/// synchronously during set_menu; user clicks arrive asynchronously afterward.
+pub(crate) static TRAY_REFRESHING: AtomicBool = AtomicBool::new(false);
+
 struct FrameExtras {
     settings: Arc<Mutex<Settings>>,
     settings_path: PathBuf,
@@ -4602,17 +4606,18 @@ fn main() {
             let live_quit = Arc::clone(&quit_generation);
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                // Native Quit ids are per tray draw. A dismiss rebuilds the
-                // tray and muda can click the item it just dropped; that id
-                // is the previous draw's, so it must not call quit_now.
-                //
                 // Quit clicks are handled entirely in this hook and never sent
-                // to the frame loop. Live Quit exits immediately. Non-live Quit
-                // (muda teardown during tray refresh) is silently ignored.
+                // to the frame loop.
                 if id.starts_with("quit:") {
-                    if menu::is_live_quit(&id, live_quit.load(Ordering::SeqCst)) {
-                        quit_now();
+                    // Muda fires teardown clicks synchronously during tray set_menu.
+                    // User clicks arrive asynchronously afterward. TRAY_REFRESHING
+                    // distinguishes these: true during set_menu (reject), false after (accept).
+                    if TRAY_REFRESHING.load(Ordering::SeqCst) {
+                        // Muda teardown during tray refresh - silently ignore
+                        return;
                     }
+                    // Real user click (tray or sprite) - exit immediately
+                    quit_now();
                 } else {
                     let _ = hook_sender.send(MenuSignal::Chose(id));
                 }
