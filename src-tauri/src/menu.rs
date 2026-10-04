@@ -136,9 +136,14 @@ pub(crate) fn quit_item_id(generation: u64) -> String {
     format!("{QUIT_ID}:{generation}")
 }
 
-/// Whether `id` is Quit on the menu that is showing now.
+/// Whether `id` is Quit on the menu that is showing now, or was showing very recently.
+///
+/// Accepts current generation OR immediately previous generation to handle
+/// Windows race: user clicks Quit on tray, menu refresh bumps generation before
+/// click is processed. Previous generation catches real Quit during race window
+/// while still rejecting older muda teardown clicks.
 pub(crate) fn is_live_quit(id: &str, generation: u64) -> bool {
-    id == quit_item_id(generation)
+    id == quit_item_id(generation) || (generation > 0 && id == quit_item_id(generation - 1))
 }
 
 /// The id prefix for a Character row, so `character:bmo` cannot collide with a
@@ -643,19 +648,43 @@ mod tests {
     }
 
     #[test]
-    fn a_replaced_tray_quit_is_not_the_live_one() {
+    fn quit_generation_window_protects_against_teardown_and_race() {
         assert_ne!(
             quit_item_id(1),
             quit_item_id(2),
             "each tray draw must mint a new Quit id"
         );
+
+        // Current generation is live (normal case)
         assert!(
-            is_live_quit(&quit_item_id(2), 2),
-            "the showing menu's Quit is live"
+            is_live_quit(&quit_item_id(5), 5),
+            "current generation is live"
+        );
+
+        // Previous generation is live (Windows race: user clicked before generation bumped)
+        assert!(
+            is_live_quit(&quit_item_id(4), 5),
+            "previous generation is live (race window)"
+        );
+
+        // Older generations are not live (muda teardown protection)
+        assert!(
+            !is_live_quit(&quit_item_id(3), 5),
+            "generation N-2 is not live (muda teardown)"
         );
         assert!(
-            !is_live_quit(&quit_item_id(1), 2),
-            "the replaced menu's Quit must not leave"
+            !is_live_quit(&quit_item_id(0), 5),
+            "generation N-5 is not live (old teardown)"
+        );
+
+        // Edge case: generation 0 only accepts itself, no previous
+        assert!(
+            is_live_quit(&quit_item_id(0), 0),
+            "generation 0 accepts itself"
+        );
+        assert!(
+            !is_live_quit(&quit_item_id(1), 0),
+            "generation 0 does not accept future generations"
         );
     }
 

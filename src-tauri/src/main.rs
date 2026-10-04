@@ -3276,7 +3276,11 @@ fn apply_menu_action(
                 eprintln!("menu: Summon");
             }
         }
-        menu::MenuAction::Quit => quit_now(),
+        menu::MenuAction::Quit => {
+            // Unreachable: Quit is handled entirely in on_menu_event hook and
+            // never sent to the frame loop. Kept for completeness of actions map.
+            quit_now()
+        }
     }
 }
 
@@ -4601,10 +4605,17 @@ fn main() {
                 // Native Quit ids are per tray draw. A dismiss rebuilds the
                 // tray and muda can click the item it just dropped; that id
                 // is the previous draw's, so it must not call quit_now.
-                if menu::is_live_quit(&id, live_quit.load(Ordering::SeqCst)) {
-                    quit_now();
+                //
+                // Quit clicks are handled entirely in this hook and never sent
+                // to the frame loop. Live Quit exits immediately. Non-live Quit
+                // (muda teardown during tray refresh) is silently ignored.
+                if id.starts_with("quit:") {
+                    if menu::is_live_quit(&id, live_quit.load(Ordering::SeqCst)) {
+                        quit_now();
+                    }
+                } else {
+                    let _ = hook_sender.send(MenuSignal::Chose(id));
                 }
-                let _ = hook_sender.send(MenuSignal::Chose(id));
             });
 
             run_frame_loop(
