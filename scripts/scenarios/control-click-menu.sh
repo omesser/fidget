@@ -2,7 +2,8 @@
 # Scenario: control-click-menu (macOS)
 # On screen: launches Fidget as BMO with a fixture Harness. The scenario finds
 #   the sprite, sends a Control-click to its centre, waits for the menu to
-#   appear, and reads its items. One full-screen screenshot with the menu open.
+#   appear, and reads its items. One screenshot of the open menu, cropped to
+#   the menu's bounds.
 #   Fidget quits when the scenario ends.
 # Input: one Control-click on the sprite (synthetic, via CGEvent), held while
 #   the menu is read; Escape closes the menu before the release.
@@ -118,11 +119,15 @@ for _ in 0..<20 where items.isEmpty {
         items.append(title)
     }
 }
-let shot = Process()
-shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-shot.arguments = ["-x", args[4]]
-try? shot.run()
-shot.waitUntilExit()
+// The menu's own bounds, never the display: evidence can end up attached to a
+// public PR, and the rest of the screen is the owner's.
+if let rect = menuWindow() {
+    let shot = Process()
+    shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    shot.arguments = ["-x", "-R", "\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))", args[4]]
+    try? shot.run()
+    shot.waitUntilExit()
+}
 key(53)
 usleep(200_000)
 mouse(.leftMouseUp)
