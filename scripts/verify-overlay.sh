@@ -434,22 +434,22 @@ def read_tail_frames(log_path, n=10):
     ][-n:]
 
 log_path = f"{out}/app.log"
+still_found = False
 for attempt in range(40):
     frames = read_tail_frames(log_path, n=5)
     if len(frames) >= 3 and all(f == frames[0] for f in frames):
         pos = frames[0]
+        still_found = True
         break
     time.sleep(0.25)
-else:
-    log = open(log_path).read()
-    at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
-    if not at:
-        sys.exit(1)
-    pos = at[-1]
+
+if not still_found:
+    sys.exit(1)
 
 size = re.search(r"sprite (\d+)x(\d+)", open(log_path).read())
 if not size:
     sys.exit(1)
+# Already in the shared point space, which is the space the cursor is warped in.
 print(int(pos[0]), int(pos[1]), *size.groups())
 PY
 ) || SPRITE_AT=""
@@ -473,7 +473,11 @@ probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
     perl -e 'select(undef,undef,undef,0.1)'
   done
 
-  if echo "$line" | grep -q "$3 "; then
+  if ! echo "$line" | grep -q "cursor($x,$y)"; then
+    echo "  FAIL  $2 (no hit-test line for cursor($x,$y))"
+    echo "        last line: $line"
+    HIT_FAILED=1
+  elif echo "$line" | grep -q "$3 "; then
     echo "  PASS  $2"
   else
     echo "  FAIL  $2 (expected $3)"
@@ -484,7 +488,8 @@ probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
 
 HIT_FAILED=0
 if [ -z "$SPRITE_AT" ]; then
-  echo "  SKIP  the app never reported where the sprite is"
+  echo "  SKIP  the sprite never stood still for the required consecutive frames"
+  echo "        (cannot run hit-test checks on a moving position)"
 else
   # Half the art's size is its centre, which is drawn; offset 0 is its
   # top-left corner, which is not.
