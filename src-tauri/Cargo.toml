@@ -133,6 +133,11 @@ windows-sys = {version = "0.61", features = [
 ]}
 # Raw window handle for getting the HWND from Tauri.
 raw-window-handle = "0.6"
+# WebView2 COM interface to set transparent background, preventing white
+# artifacts on sprite and pill content during repaints (#1327).
+webview2-com = "0.39"
+# Interface trait for COM .cast() method used by webview2-com (#1327).
+windows-core = "0.62"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The context menu (#155) is not here: `tauri::menu` already wraps the menu
