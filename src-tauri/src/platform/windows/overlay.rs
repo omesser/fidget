@@ -141,10 +141,7 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 
 /// Log a debug message if FIDGET_DEBUG_REINFORCE is set.
 fn reinforce_debug_log(msg: impl FnOnce() -> String) {
-    static DEBUG_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let enabled = *DEBUG_ENABLED.get_or_init(|| std::env::var("FIDGET_DEBUG_REINFORCE").is_ok());
-
-    if enabled {
+    if crate::dev_flags::DEBUG_REINFORCE.is_on() {
         if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
             eprintln!(
                 "[{}.{:03}] reinforce_overlay {}",

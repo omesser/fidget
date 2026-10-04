@@ -58,6 +58,7 @@ pub static TRACE_FRAMES: Flag = Flag::new("FIDGET_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("FIDGET_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("FIDGET_TRACE_DIRECTOR");
 pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
+pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
 /// Capture exclusion setting. macOS and Windows both support it; Linux degrades
 /// gracefully (no exclusion API).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
