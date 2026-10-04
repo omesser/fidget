@@ -50,3 +50,29 @@ pub fn refresh(
     let menu = menu::build(app, description, quit_generation)?;
     tray.set_menu(Some(menu))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn tray_refreshing_flag_state() {
+        assert!(
+            !crate::TRAY_REFRESHING.load(Ordering::SeqCst),
+            "TRAY_REFRESHING should be false at rest"
+        );
+
+        crate::TRAY_REFRESHING.store(true, Ordering::SeqCst);
+        assert!(
+            crate::TRAY_REFRESHING.load(Ordering::SeqCst),
+            "TRAY_REFRESHING can be set to true"
+        );
+
+        crate::TRAY_REFRESHING.store(false, Ordering::SeqCst);
+        assert!(
+            !crate::TRAY_REFRESHING.load(Ordering::SeqCst),
+            "TRAY_REFRESHING can be cleared to false"
+        );
+    }
+}

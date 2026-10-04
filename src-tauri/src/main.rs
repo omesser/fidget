@@ -4603,7 +4603,6 @@ fn main() {
             let (menu_sender, menu_receiver) = mpsc::channel();
             let hook_sender = menu_sender.clone();
             let quit_generation = Arc::new(AtomicU64::new(0));
-            let live_quit = Arc::clone(&quit_generation);
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
                 // Quit clicks are handled entirely in this hook and never sent
