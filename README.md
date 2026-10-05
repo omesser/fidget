@@ -27,7 +27,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 ## What It Does
 
 - **Keeps you company.** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
-- **Pick a built-in character, or build your own.** Each character has its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
+- **Pick a built-in character, or build your own.** Each character has its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries. Or keep the character and [give it a brief of your own](#give-it-a-brief).
 - **Pitches in.** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
 - **Knows what you're up to.** It can see and react to your open windows - titles only, and only with consent, for context-aware chatter. It never reads screen pixels and [never takes screenshots](#computer-use); Reading titles and application names needs your explicit consent.
 - **Gets out of your way when you ask it to.** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
@@ -97,6 +97,23 @@ too, labelled with what it was reacting to.
 The bar at the bottom says what the fidget is doing and when it next thinks.
 Advanced opens the ladder: Behavior, Primitive, Animation, State, Facing, and
 the Director's countdown. Answers need a Director; see [Get It](#get-it).
+
+### Give It a Brief
+
+Each fidget takes a brief of your own, up to 2000 characters, on top of its Character's personality. Summon it (double-click), open the **Prompt** tab, paste one of these under **Your own layer**, and edit it to fit. Saving starts a new conversation, and the brief stays with that fidget if you switch its Character. The brief changes how the fidget reacts each time it wakes. It doesn't schedule anything.
+
+| Paste and edit | How it reacts on a wake |
+|---|---|
+| `I'm deep in debugging today. If iTerm2 is still in front around mid-afternoon (say 15:00), tell me to wrap up. A technician is coming.` | Sees the time and that iTerm2 is still in front, and tells you to wrap up. ¹ ² |
+| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Checks the time against the last nag and sends you off to stretch, in its own voice. ¹ |
+| `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees your editor still in front, wake after wake, and asks you to walk it through the bug. ¹ ² |
+| `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. ² |
+| `When I ask you to check something on my machine, do it, then report back in one line, in character.` <br>![needs a harness](https://img.shields.io/badge/needs-harness-57606A) | Your [Harness](#harness-support) does the work with its own tools, and the fidget answers. ³ |
+
+> [!IMPORTANT]
+> ¹ **No timers.** Fidget doesn't schedule anything. It acts on the brief when it next wakes, and the gap between unprompted wakes grows to as much as two hours, so "around 15:00" can land well after 15:00. A poke, a pickup, a Perch, or a chat wakes it at once and resets the gap. **Use a real alarm for anything you can't miss.**
+
+<sub>² Needs the **Window and application names** consent in Settings → Privacy: app names and window titles only, never pixels, and Fidget [never takes screenshots](#computer-use) ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)). ³ A Model API can't run tools.</sub>
 
 ## Characters
 
