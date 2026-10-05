@@ -4,6 +4,8 @@
 # `press NAME` invokes the first button named NAME.
 # `click -X X -Y Y` sends a real left click at that screen point and takes
 # no -ProcessId or -Title.
+# `menu -X X -Y Y` right-clicks that point, prints the names of the popup
+# menu's items one per line, then presses Escape. It also takes no -ProcessId.
 # `tray ROW` clicks the taskbar icon named fidget, invokes the menu row whose
 # name starts with ROW, then waits for a window titled TITLE.
 #
@@ -11,7 +13,7 @@
 # descendant search can hang on a multi-monitor session.
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('dump', 'size', 'press', 'click', 'tray')]
+    [ValidateSet('dump', 'size', 'press', 'click', 'tray', 'menu')]
     [string]$Command,
     [Parameter(Position = 1)]
     [int]$ProcessId,
@@ -25,7 +27,7 @@ param(
     [int]$Y
 )
 $ErrorActionPreference = "Stop"
-if ($Command -ne "click" -and ($ProcessId -eq 0 -or -not $Title)) {
+if ($Command -notin @("click", "menu") -and ($ProcessId -eq 0 -or -not $Title)) {
     Write-Error "$Command takes -ProcessId and -Title"
     exit 2
 }
@@ -49,6 +51,16 @@ public class FidgetWinEnum {
         SetCursorPos(x, y);
         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
+    public static void RightClick(int x, int y) {
+        SetCursorPos(x, y);
+        mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero);
+    }
+    [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    public static void Escape() {
+        keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+        keybd_event(0x1B, 0, 0x0002, UIntPtr.Zero);
     }
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
@@ -129,8 +141,31 @@ function Find-ByControlType($Root, $ControlType) {
     $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
 }
 
+# The items of the open Win32 popup menu, or none while no menu is up.
+function Get-PopupMenuItems {
+    $menu = [FidgetWinEnum]::FindWindow("#32768", $null)
+    if ($menu -eq [IntPtr]::Zero) { return }
+    Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
+}
+
 if ($Command -eq "click") {
     [FidgetWinEnum]::Click($X, $Y)
+    exit 0
+}
+
+if ($Command -eq "menu") {
+    [FidgetWinEnum]::RightClick($X, $Y)
+    $items = @()
+    for ($n = 0; $n -lt 20 -and $items.Count -eq 0; $n++) {
+        Start-Sleep -Milliseconds 250
+        $items = @(Get-PopupMenuItems)
+    }
+    [FidgetWinEnum]::Escape()
+    if ($items.Count -eq 0) {
+        Write-Error "no menu showed within 5s"
+        exit 1
+    }
+    $items | ForEach-Object { $_.Current.Name }
     exit 0
 }
 
@@ -152,10 +187,7 @@ if ($Command -eq "tray") {
     $row = $null
     for ($n = 0; $n -lt 20 -and $null -eq $row; $n++) {
         Start-Sleep -Milliseconds 250
-        $menu = [FidgetWinEnum]::FindWindow("#32768", $null)
-        if ($menu -eq [IntPtr]::Zero) { continue }
-        $items = Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
-        $row = $items | Where-Object { $_.Current.Name.StartsWith($Arg3) } | Select-Object -First 1
+        $row = Get-PopupMenuItems | Where-Object { $_.Current.Name.StartsWith($Arg3) } | Select-Object -First 1
     }
     if ($null -eq $row) {
         Write-Error "the tray menu has no $Arg3 row"

@@ -70,8 +70,8 @@ unless Chat is open.
 ## Windows and X11
 
 `thinking-row`, `chat-header-narrow`, `landing-link-click`,
-`launcher-dies-at-startup` and `sign-in-button` each have `.x11.sh` and
-`.win.ps1` leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
+`launcher-dies-at-startup`, `sign-in-button`, `question-bubble` and
+`control-click-menu` each have `.x11.sh` and `.win.ps1` leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
 `--go` it runs that leaf, or skips when this host has none.
 
 These stay macOS only on purpose:
@@ -84,8 +84,6 @@ These stay macOS only on purpose:
 - `codex-sign-in-link` and `antigravity-sign-in` check a sign-in flow that is
   the Harness's own and the same on every OS. A port would need a person at
   the browser on each OS to recheck only how Chat draws it.
-
-Every other scenario is waiting for its leaves (#1088).
 
 X11 reads the Chat window through AT-SPI (`scripts/ax-window-linux.py`) and
 needs `python3-pyatspi` plus `DISPLAY`. Windows reads it through UI Automation
@@ -104,6 +102,13 @@ without one. Windows clicks the taskbar icon and invokes the row
 overflow. On X11 a recording `xdg-open` on `PATH` takes the URL, as `open`
 does on macOS. Windows hands it to `ShellExecuteW`, so its leaves do not
 record the URL and a real browser opens.
+
+`question-bubble` and `control-click-menu` find the sprite from the frame
+trace, as on macOS. `question-bubble` pokes it with a real click and dumps the
+overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
+`control-click-menu` right-clicks the sprite instead. `ax-window-linux.py menu`
+and `ax-window-win.ps1 menu` send that click, print the open menu's items and
+press Escape.
 
 To check an assertion without a desktop, point the leaf at fixture dumps and
 skip the launch:
