@@ -5958,9 +5958,9 @@ mod tests {
         );
     }
 
-    /// The same throw with the second display left out of the world, as the
-    /// shell leaves out a fullscreen one: the seam is the outer edge now, and
-    /// the sprite stays on the first display.
+    /// The same throw with the second display left out of the world (e.g.,
+    /// unplugged): the remaining display's edge is the outer wall now, and
+    /// the sprite stops there.
     #[test]
     fn a_sprite_stops_at_the_seam_of_a_display_left_out() {
         let alone = || WorldSnapshot {

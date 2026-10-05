@@ -8,7 +8,7 @@
 //! share is the window server's: the overlay is marked never-captured instead
 //! (`platform::macos::overlay_panel`), since macOS cannot say when a share is on.
 
-use crate::window_source::{centered_in, Rect};
+use crate::window_source::Rect;
 
 /// How long a rule takes to take the Character away, and to give it back. Long
 /// enough to read as leaving rather than a dropped frame, short enough not to
@@ -45,28 +45,6 @@ impl Desktop {
     /// standing on a fullscreen one goes. `None` when every display is taken.
     pub fn refuge(&self) -> Option<usize> {
         self.fullscreen.iter().position(|taken| !taken)
-    }
-
-    /// The floors on no taken display, for `refuge_landings` to know where sprites
-    /// may land. Matched by centre: `floors` comes from the polled snapshot, not
-    /// `frames`' indexes. With no free display, every floor, since the Character fades.
-    pub fn free_floors(&self, frames: &[Rect], floors: &[Rect]) -> Vec<Rect> {
-        let taken: Vec<Rect> = frames
-            .iter()
-            .zip(&self.fullscreen)
-            .filter(|(_, &taken)| taken)
-            .map(|(frame, _)| *frame)
-            .collect();
-        let free: Vec<Rect> = floors
-            .iter()
-            .filter(|floor| !taken.iter().any(|frame| centered_in(floor, *frame)))
-            .copied()
-            .collect();
-        if free.is_empty() {
-            floors.to_vec()
-        } else {
-            free
-        }
     }
 }
 
@@ -768,47 +746,6 @@ mod tests {
             }),
             faded_in(),
             "one display free again is somewhere to stand"
-        );
-    }
-
-    /// A taken display's floor leaves the world, so its edge with the free one
-    /// is a wall, as an unplugged display's would be.
-    #[test]
-    fn free_floors_drops_the_floor_of_a_taken_display() {
-        let desktop = Desktop {
-            fullscreen: vec![false, true],
-        };
-        assert_eq!(
-            desktop.free_floors(
-                &[display(), second_display()],
-                &[
-                    rect(0.0, 30.0, 1920.0, 1050.0),
-                    rect(1920.0, 230.0, 1728.0, 1087.0),
-                ],
-            ),
-            [rect(0.0, 30.0, 1920.0, 1050.0)]
-        );
-    }
-
-    /// Every display taken leaves nowhere to stand: the floors stay, and the
-    /// Character fades instead.
-    #[test]
-    fn free_floors_keeps_every_floor_when_every_display_is_taken() {
-        let desktop = Desktop {
-            fullscreen: vec![true, true],
-        };
-        assert_eq!(
-            desktop.free_floors(
-                &[display(), second_display()],
-                &[
-                    rect(0.0, 30.0, 1920.0, 1050.0),
-                    rect(1920.0, 230.0, 1728.0, 1087.0),
-                ],
-            ),
-            [
-                rect(0.0, 30.0, 1920.0, 1050.0),
-                rect(1920.0, 230.0, 1728.0, 1087.0),
-            ]
         );
     }
 
