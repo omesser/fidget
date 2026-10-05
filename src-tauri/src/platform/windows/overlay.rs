@@ -96,8 +96,11 @@ fn note_overlay(hwnd: u64) {
 }
 
 /// SetWindowRgn carves the click-through region from the sprite's alpha mask.
-/// `None` is WS_EX_TRANSPARENT (whole window). `Some` is the opaque pixels
-/// plus hotspots, with WS_EX_TRANSPARENT removed so clicks hit that region.
+/// `None` clears the region (whole window click-through via WS_EX_TRANSPARENT).
+/// `Some` applies the opaque pixels plus hotspots. `click_through` controls
+/// WS_EX_TRANSPARENT: when true (cursor elsewhere), the region stays but the
+/// window is still click-through; when false (cursor over sprite), the region
+/// becomes hit-testable.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,
@@ -106,6 +109,7 @@ pub fn update_input_region(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    click_through: bool,
 ) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
 
@@ -118,6 +122,7 @@ pub fn update_input_region(
             sprite_facing,
             scale,
             hotspot_rects,
+            click_through,
         )?;
     } else {
         clear_input_region(hwnd)?;
@@ -280,7 +285,9 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 
 /// Apply the alpha mask as the input region using SetWindowRgn.
 /// Facing < 0 mirrors the mask. Hotspot rectangles are OR'd in so a control
-/// drawn outside the art still receives clicks.
+/// drawn outside the art still receives clicks. `click_through` controls
+/// WS_EX_TRANSPARENT: when true, the region is set but the window remains
+/// click-through; when false, the region becomes hit-testable.
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
@@ -290,6 +297,7 @@ fn apply_input_mask(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    click_through: bool,
 ) -> Result<(), String> {
     let rebuild_start = Instant::now();
 
@@ -398,7 +406,11 @@ fn apply_input_mask(
         }
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        let new_style = current_style & !(WS_EX_TRANSPARENT as i32);
+        let new_style = if click_through {
+            current_style | (WS_EX_TRANSPARENT as i32)
+        } else {
+            current_style & !(WS_EX_TRANSPARENT as i32)
+        };
         if let Err(e) = apply_exstyle(hwnd, current_style, new_style) {
             DeleteObject(combined_rgn);
             return Err(e);

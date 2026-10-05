@@ -2007,7 +2007,7 @@ pub(crate) fn run_frame_loop(
                 // ignore-cursor-events false after the mask applies, or the overlay is a click-eater.
                 #[cfg(not(target_os = "macos"))]
                 {
-                    if !ignore && presence.visible {
+                    if presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
                             let local = instance.sprite.in_overlay(*display);
                             local.x + instance.width > 0
@@ -2055,6 +2055,7 @@ pub(crate) fn run_frame_loop(
                                 let mask_params_clone = mask_params.clone();
                                 let overlay_index = index;
                                 let trace = tracing;
+                                let click_through = ignore;
 
                                 let _ = app.run_on_main_thread(move || {
                                     mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
@@ -2067,6 +2068,7 @@ pub(crate) fn run_frame_loop(
                                             sprite_mirror,
                                             sprite_scale,
                                             &hotspots_clone,
+                                            click_through,
                                         ) {
                                             Ok(()) => {
                                                 mask_applied_clone.lock().unwrap()[overlay_index] =
@@ -2099,12 +2101,9 @@ pub(crate) fn run_frame_loop(
                                 .get(index)
                                 .copied()
                                 .unwrap_or(false)
-                                && ignoring[index] != Some(false)
+                                && ignoring[index] != Some(ignore)
                             {
-                                flipped = true;
-                                if platform::set_overlay_click_through(&window, false).is_ok() {
-                                    ignoring[index] = Some(false);
-                                }
+                                ignoring[index] = Some(ignore);
                             }
                         } else {
                             let mask_params = (None, 0, 0, 1, 1, Vec::new());
@@ -2126,6 +2125,7 @@ pub(crate) fn run_frame_loop(
                                             1,
                                             1,
                                             &[],
+                                            true,
                                         )
                                         .is_ok()
                                         {
@@ -2137,10 +2137,7 @@ pub(crate) fn run_frame_loop(
                             }
 
                             if ignoring[index] != Some(true) {
-                                flipped = true;
-                                if platform::set_overlay_click_through(&window, true).is_ok() {
-                                    ignoring[index] = Some(true);
-                                }
+                                ignoring[index] = Some(true);
                             }
                         }
                     } else {
@@ -2155,7 +2152,7 @@ pub(crate) fn run_frame_loop(
 
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    if platform::update_input_region(&window, None, 0, 0, 1, 1, &[])
+                                    if platform::update_input_region(&window, None, 0, 0, 1, 1, &[], true)
                                         .is_ok()
                                     {
                                         last_mask_clone.lock().unwrap()[overlay_index] =
@@ -2166,10 +2163,7 @@ pub(crate) fn run_frame_loop(
                         }
 
                         if ignoring[index] != Some(true) {
-                            flipped = true;
-                            if platform::set_overlay_click_through(&window, true).is_ok() {
-                                ignoring[index] = Some(true);
-                            }
+                            ignoring[index] = Some(true);
                         }
                     }
                 }
