@@ -44,6 +44,33 @@ const FRAME_RESEND: Duration = Duration::from_millis(250);
 #[cfg(not(target_os = "macos"))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
+#[derive(Debug, PartialEq, Eq)]
+enum OverlayAction {
+    ApplyMask,
+    ToggleOnly,
+    Nothing,
+}
+
+fn decide_overlay_action(
+    last_mask: Option<&MaskParams>,
+    new_mask: &MaskParams,
+    mask_in_flight: bool,
+    toggle_in_flight: bool,
+    applied_ignoring: Option<bool>,
+    new_ignore: bool,
+) -> OverlayAction {
+    let mask_changed = last_mask != Some(new_mask);
+    let ignore_changed = applied_ignoring != Some(new_ignore);
+
+    if mask_changed && !mask_in_flight {
+        OverlayAction::ApplyMask
+    } else if !mask_changed && ignore_changed && !toggle_in_flight {
+        OverlayAction::ToggleOnly
+    } else {
+        OverlayAction::Nothing
+    }
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 /// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
 // One over clippy's cap: Director config belongs here, not mixed with window geometry.
@@ -157,6 +184,8 @@ pub(crate) fn run_frame_loop(
         let configure_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
         #[cfg(not(target_os = "macos"))]
         let mask_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
+        #[cfg(not(unix))]
+        let toggle_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
 
         // Cache last applied mask parameters to avoid rebuilding the region
         // every 16ms. Shared with the main thread, which writes the params back
@@ -2231,6 +2260,12 @@ pub(crate) fn run_frame_loop(
                                     .get(index)
                                     .copied()
                                     .unwrap_or(false),
+                                toggle_in_flight
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(false),
                                 applied_ignoring
                                     .lock()
                                     .unwrap()
@@ -2298,14 +2333,17 @@ pub(crate) fn run_frame_loop(
                                     }
                                 });
                             } else if action == OverlayAction::ToggleOnly {
+                                toggle_in_flight.lock().unwrap()[index] = true;
                                 let handle = app.clone();
                                 let label_clone = label.clone();
                                 let applied_ignoring_clone = Arc::clone(&applied_ignoring);
+                                let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
                                 let overlay_index = index;
                                 let trace = tracing;
                                 let click_through = ignore;
 
                                 let _ = app.run_on_main_thread(move || {
+                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         if platform::toggle_click_through_only(
                                             &window,
@@ -2857,107 +2895,80 @@ mod tests {
         assert_eq!(heard(&gesture), vec![Happened::Poke, Happened::Poke]);
     }
 
-    #[derive(Debug, PartialEq, Eq)]
-    #[cfg(windows)]
-    enum OverlayAction {
-        ApplyMask,
-        ToggleOnly,
-        Nothing,
-    }
-
-    #[cfg(windows)]
-    type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
-
-    #[cfg(windows)]
-    fn decide_overlay_action(
-        last_mask: Option<&MaskParams>,
-        new_mask: &MaskParams,
-        mask_in_flight: bool,
-        applied_ignoring: Option<bool>,
-        new_ignore: bool,
-    ) -> OverlayAction {
-        let mask_changed = last_mask != Some(new_mask);
-        let ignore_changed = applied_ignoring != Some(new_ignore);
-
-        if mask_changed && !mask_in_flight {
-            OverlayAction::ApplyMask
-        } else if !mask_changed && ignore_changed {
-            OverlayAction::ToggleOnly
-        } else {
-            OverlayAction::Nothing
-        }
-    }
-
     #[test]
-    #[cfg(windows)]
     fn test_decide_overlay_action_apply_mask() {
         let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
         let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&old_mask), &new_mask, false, Some(false), false),
+            decide_overlay_action(Some(&old_mask), &new_mask, false, false, Some(false), false),
             OverlayAction::ApplyMask
         );
     }
 
     #[test]
-    #[cfg(windows)]
     fn test_decide_overlay_action_toggle_only() {
         let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&mask), &mask, false, Some(false), true),
+            decide_overlay_action(Some(&mask), &mask, false, false, Some(false), true),
             OverlayAction::ToggleOnly
         );
     }
 
     #[test]
-    #[cfg(windows)]
-    fn test_decide_overlay_action_nothing_when_in_flight() {
+    fn test_decide_overlay_action_nothing_when_mask_in_flight() {
         let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
         let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&old_mask), &new_mask, true, Some(false), false),
+            decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), false),
             OverlayAction::Nothing
         );
     }
 
     #[test]
-    #[cfg(windows)]
+    fn test_decide_overlay_action_nothing_when_toggle_in_flight() {
+        let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&mask), &mask, false, true, Some(false), true),
+            OverlayAction::Nothing
+        );
+    }
+
+    #[test]
     fn test_decide_overlay_action_nothing_when_all_match() {
         let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&mask), &mask, false, Some(false), false),
+            decide_overlay_action(Some(&mask), &mask, false, false, Some(false), false),
             OverlayAction::Nothing
         );
     }
 
     #[test]
-    #[cfg(windows)]
     fn test_decide_overlay_action_retry_after_failed_toggle() {
         let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&mask), &mask, false, Some(false), true),
+            decide_overlay_action(Some(&mask), &mask, false, false, Some(false), true),
             OverlayAction::ToggleOnly
         );
 
         assert_eq!(
-            decide_overlay_action(Some(&mask), &mask, false, None, true),
+            decide_overlay_action(Some(&mask), &mask, false, false, None, true),
             OverlayAction::ToggleOnly
         );
     }
 
     #[test]
-    #[cfg(windows)]
     fn test_decide_overlay_action_in_flight_with_stale_click_through() {
         let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
         let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
 
         assert_eq!(
-            decide_overlay_action(Some(&old_mask), &new_mask, true, Some(false), true),
+            decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), true),
             OverlayAction::Nothing
         );
     }
