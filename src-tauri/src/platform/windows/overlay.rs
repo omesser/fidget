@@ -120,6 +120,7 @@ fn note_overlay(hwnd: u64) {
 /// WS_EX_TRANSPARENT: when true (cursor elsewhere), the region stays but the
 /// window is still click-through; when false (cursor over sprite), the region
 /// becomes hit-testable.
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,

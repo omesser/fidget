@@ -2814,6 +2814,7 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
+    #[allow(clippy::type_complexity)]
     fn test_idle_sprite_ignoring_change_detected() {
         let _mask_params: (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>) =
             (Some(vec![true, false]), 100, 100, 1, 1, Vec::new());
