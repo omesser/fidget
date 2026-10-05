@@ -105,8 +105,8 @@ Each fidget takes a brief of your own, up to 2000 characters, on top of its Char
 | Paste and edit | How it reacts on a wake |
 |---|---|
 | `I'm deep in debugging today. If iTerm2 is still in front around mid-afternoon (say 15:00), tell me to wrap up. A technician is coming.` | Sees the time and that iTerm2 is still in front, and tells you to wrap up. ¹ ² |
-| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Checks the time against the last nag and sends you off to stretch, in its own voice. ¹ |
-| `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees your editor still in front, wake after wake, and asks you to walk it through the bug. ¹ ² |
+| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Sees the time on a wake and nags you to stretch, in its own voice. ¹ |
+| `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees the editor in front on a wake and asks you to walk it through the bug. ¹ ² |
 | `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. ² |
 | `When I ask you to check something on my machine, do it, then report back in one line, in character.` <br>![needs a harness](https://img.shields.io/badge/needs-harness-57606A) | Your [Harness](#harness-support) does the work with its own tools, and the fidget answers. ³ |
 
