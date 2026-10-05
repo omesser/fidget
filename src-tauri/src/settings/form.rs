@@ -2221,7 +2221,7 @@ pub(crate) mod tests {
                 .collect();
 
             #[cfg(target_os = "linux")]
-            let expected = vec![LAUNCH_ID, CAPTURABLE_ID];
+            let expected = vec![CAPTURABLE_ID, LAUNCH_ID];
             #[cfg(not(target_os = "linux"))]
             let expected = vec![LAUNCH_ID];
 
