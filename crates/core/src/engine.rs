@@ -1120,8 +1120,8 @@ impl Engine {
         // `react` is `loop = once`, so a second Poke on the held last frame would be invisible unless the clock restarts.
         // `land` needs no such clause: a second arrival comes through a fall, which is a change of name.
         // Everything else keeps its clock across Primitive turns, because restarting each turn would draw the first 600ms of the strip and never the rest.
-        // A climb paused by a Poke keeps one pose: the strip's clock would otherwise climb in place.
         let startled = self.on_screen() == Some(Primitive::React);
+        // A climb paused by a Poke keeps one pose: the strip's clock would otherwise climb in place.
         let paused_climb = self.state == State::Climbing && self.poke_cooldown_ms > 0;
         if new_family || (started && startled) {
             self.animation_ms = 0;
@@ -1587,14 +1587,14 @@ fn animation_of(primitive: Primitive) -> &'static str {
     }
 }
 
-/// Which Animation a State plays.
-///
-/// A grab cannot reuse `hold`, which the required set spends on riding a moving Perch. It gets an optional Animation of its own: a package that declares no `grab` goes on dangling from the cursor in its `fall`.
 /// Where a Poke stops the sprite for the cooldown: on its feet or on a wall. Mid-air it changes nothing about the flight.
 fn stopped_by_a_poke(state: State) -> bool {
     matches!(state, State::Grounded | State::Perched | State::Climbing)
 }
 
+/// Which Animation a State plays.
+///
+/// A grab cannot reuse `hold`, which the required set spends on riding a moving Perch. It gets an optional Animation of its own: a package that declares no `grab` goes on dangling from the cursor in its `fall`.
 fn animation_for(state: State) -> &'static str {
     match state {
         State::Grounded => "idle",
