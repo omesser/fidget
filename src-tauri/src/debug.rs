@@ -39,7 +39,7 @@ pub fn check_debug_commands(
                     let mut moved = false;
                     for id in ids {
                         if let Some(instance) = roster.get_mut(&id) {
-                            instance.stand_at(fidget_core::Point {
+                            instance.stand_at(fidget_core::engine::Point {
                                 x: x as f64,
                                 y: y as f64,
                             });
