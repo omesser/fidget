@@ -1,6 +1,6 @@
 # Soft+Hard Review Gate
 
-When to post this gate: an agent reviewing a pull request applies Soft+Hard to assess whether a change is safe to merge. Post it as a PR comment, not a review.
+When to post this gate: an agent reviewing a pull request applies Soft+Hard to assess whether a change is safe to merge. Post as a GitHub pull request review with event `COMMENT`, not `APPROVE` or `REQUEST_CHANGES` when posting as the repo owner account.
 
 ## Axes
 
@@ -103,7 +103,7 @@ Issue #123 asked for perch position persistence. Implemented: saves position on 
 
 Only touches perch position logic. Callers unchanged. Ran integration test `tests/perch_position.rs` against the branch; persisted across restart as expected. Safety fact (state writes idempotent) proven at step 4.
 
-_— Cursor agent (Architect), on [@omesser](https://github.com/omesser)'s behalf._
+_— Cursor agent (by Architect), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
 ## Example: Not cleared
@@ -125,12 +125,12 @@ _— Cursor agent (Architect), on [@omesser](https://github.com/omesser)'s behal
 
 ### Spec — Pass (provisional)
 
-Issue #456 Done-when: gesture moves sprite, no clip. Code reads correct; live verification OPEN (waiting on build).
+Issue #456 Done-when: gesture moves sprite, no clip. Code reads correct; in-app verification not yet run.
 
 ### Hard — Fail
 
 - **Hard-FIX** `apply_gesture_to_sprite` calls `update_position` on every frame. That writes to the same JSON backup file concurrently when two sprites move. File corruption risk (high likelihood, loses user state). Safety fact unproven.
 - Checked: no other callers modified. Cleared.
 
-_— Cursor agent (Architect), on [@omesser](https://github.com/omesser)'s behalf._
+_— Cursor agent (by Architect), on [@omesser](https://github.com/omesser)'s behalf._
 ```
