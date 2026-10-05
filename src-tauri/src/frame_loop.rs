@@ -8,7 +8,7 @@ use fidget_core::director::{self, Context, Happened, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::engine::{BehaviorProposal, State, Verb};
+use fidget_core::engine::{refuge_landings, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
@@ -27,10 +27,11 @@ use super::{
     apply_menu_action, cancelled_caret, chat_is_up, chat_label, close_chat, completer,
     describe_menu, dev_flags, harness, mcp_http, mcp_resources, menu, model, note_happened,
     open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
-    push_chat_opening, push_chat_openings, remember_instances, spawn_live, switch_instance, tray,
-    ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState,
-    MenuChannel, MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle,
-    ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    push_chat_opening, push_chat_openings, remember_instances, spawn_live, sprite_width,
+    stand_roster, switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush,
+    DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
+    Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    SENSE_INTERVAL,
 };
 
 /// How long an overlay may go without being told anything.
@@ -1301,22 +1302,48 @@ pub(crate) fn run_frame_loop(
 
             // Visibility before instance ticks so scheduler::mode gets the
             // real answer, not hardcoded true (#183).
-            let presence = rules
+            let (presence, hide_in_fullscreen) = rules
                 .lock()
                 .map(|mut rules| {
-                    if let Some(change) = rules.update(desktop) {
+                    if let Some(change) = rules.update(&desktop) {
                         eprintln!(
                             "presence: {} over {}ms",
                             if change.visible { "shown" } else { "hidden" },
                             change.fade_ms,
                         );
                     }
-                    rules.presence()
+                    (rules.presence(), rules.hide_in_fullscreen())
                 })
-                .unwrap_or(Change {
-                    visible,
-                    fade_ms: 0,
-                });
+                .unwrap_or((
+                    Change {
+                        visible,
+                        fade_ms: 0,
+                    },
+                    false,
+                ));
+
+            // Whoever stands on a fullscreen display goes to a free one. A
+            // teleport, as Bring is: a walk would parade the sprite across the
+            // very app it is leaving. A held sprite stays in the hand until let go.
+            if hide_in_fullscreen && desktop.fullscreen.contains(&true) {
+                if let Some(refuge) = desktop.refuge() {
+                    let widths: Vec<(InstanceId, f64)> = lives
+                        .iter()
+                        .filter(|live| !live.pointer.grabbing())
+                        .map(|live| (live.id.clone(), sprite_width(&live.character)))
+                        .collect();
+                    stand_roster(&mut roster, &widths, |feet, widths| {
+                        refuge_landings(
+                            feet,
+                            widths,
+                            &displays.frames,
+                            &displays.usable_frames,
+                            &desktop.fullscreen,
+                            refuge,
+                        )
+                    });
+                }
+            }
 
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 

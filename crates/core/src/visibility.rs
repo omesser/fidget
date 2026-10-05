@@ -132,7 +132,7 @@ impl HideRules {
     /// What the overlay must do now, or `None` when nothing the user could see
     /// has changed. Silence is most of the answer: an overlay told to hide sixty
     /// times a second is the flicker decision 8 gave up restacking to avoid.
-    pub fn update(&mut self, desktop: Desktop) -> Option<Change> {
+    pub fn update(&mut self, desktop: &Desktop) -> Option<Change> {
         let was = self.presence;
         self.presence = if self.away {
             Presence::Away
@@ -359,8 +359,8 @@ mod tests {
     fn a_quiet_desktop_leaves_the_character_on_screen_and_says_nothing() {
         let mut rules = HideRules::default();
 
-        assert_eq!(rules.update(Desktop::default()), None);
-        assert_eq!(rules.update(Desktop::default()), None);
+        assert_eq!(rules.update(&Desktop::default()), None);
+        assert_eq!(rules.update(&Desktop::default()), None);
         assert!(rules.presence().visible);
     }
 
@@ -368,11 +368,11 @@ mod tests {
     fn a_fullscreen_application_taking_the_front_fades_the_character_out() {
         let mut rules = HideRules::default();
 
-        assert_eq!(rules.update(fullscreen()), faded_out());
+        assert_eq!(rules.update(&fullscreen()), faded_out());
         assert!(!rules.presence().visible);
-        assert_eq!(rules.update(fullscreen()), None, "said once, not held");
+        assert_eq!(rules.update(&fullscreen()), None, "said once, not held");
 
-        assert_eq!(rules.update(Desktop::default()), faded_in());
+        assert_eq!(rules.update(&Desktop::default()), faded_in());
         assert!(rules.presence().visible);
     }
 
@@ -384,7 +384,7 @@ mod tests {
 
         rules.toggle();
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             Some(Change {
                 visible: false,
                 fade_ms: 0
@@ -393,7 +393,7 @@ mod tests {
 
         rules.toggle();
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             Some(Change {
                 visible: true,
                 fade_ms: 0
@@ -409,11 +409,11 @@ mod tests {
         assert!(rules.hide_in_fullscreen());
 
         rules.set_hide_in_fullscreen(false);
-        assert_eq!(rules.update(fullscreen()), None);
+        assert_eq!(rules.update(&fullscreen()), None);
         assert!(rules.presence().visible);
 
         rules.set_hide_in_fullscreen(true);
-        assert_eq!(rules.update(fullscreen()), faded_out());
+        assert_eq!(rules.update(&fullscreen()), faded_out());
     }
 
     /// Go-away is the same flag across a restart, so a character sent away does
@@ -424,7 +424,7 @@ mod tests {
         rules.set_away(true);
         assert!(rules.is_away());
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             Some(Change {
                 visible: false,
                 fade_ms: 0
@@ -438,11 +438,11 @@ mod tests {
     fn a_character_sent_away_outlasts_every_rule_that_comes_and_goes() {
         let mut rules = HideRules::default();
         rules.toggle();
-        rules.update(Desktop::default());
+        rules.update(&Desktop::default());
 
-        assert_eq!(rules.update(fullscreen()), None, "already gone");
+        assert_eq!(rules.update(&fullscreen()), None, "already gone");
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             None,
             "the rule lifting does not undo the hotkey"
         );
@@ -450,7 +450,7 @@ mod tests {
 
         rules.toggle();
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             Some(Change {
                 visible: true,
                 fade_ms: 0
@@ -465,17 +465,17 @@ mod tests {
     fn asking_for_the_character_back_under_a_rule_waits_for_the_rule() {
         let mut rules = HideRules::default();
         rules.toggle();
-        rules.update(fullscreen());
+        rules.update(&fullscreen());
 
         rules.toggle();
         assert_eq!(
-            rules.update(fullscreen()),
+            rules.update(&fullscreen()),
             None,
             "the rule still has it, so nothing on screen changed"
         );
         assert!(!rules.presence().visible);
 
-        assert_eq!(rules.update(Desktop::default()), faded_in());
+        assert_eq!(rules.update(&Desktop::default()), faded_in());
     }
 
     /// The hotkey's answer is instant whatever else changed alongside it: a
@@ -484,14 +484,14 @@ mod tests {
     #[test]
     fn the_hotkey_answers_at_once_even_when_a_rule_lifts_with_it() {
         let mut rules = HideRules::default();
-        rules.update(fullscreen());
+        rules.update(&fullscreen());
 
         rules.toggle();
-        assert_eq!(rules.update(fullscreen()), None, "hidden either way");
+        assert_eq!(rules.update(&fullscreen()), None, "hidden either way");
 
         rules.toggle();
         assert_eq!(
-            rules.update(Desktop::default()),
+            rules.update(&Desktop::default()),
             Some(Change {
                 visible: true,
                 fade_ms: 0
@@ -506,10 +506,10 @@ mod tests {
         let mut rules = HideRules::default();
         assert!(rules.presence().visible);
 
-        rules.update(fullscreen());
+        rules.update(&fullscreen());
         assert!(!rules.presence().visible);
 
-        rules.update(Desktop::default());
+        rules.update(&Desktop::default());
         assert!(rules.presence().visible);
     }
 
@@ -529,7 +529,7 @@ mod tests {
         );
 
         for _ in 0..4 {
-            rules.update(fullscreen());
+            rules.update(&fullscreen());
         }
         assert_eq!(
             rules.presence(),
@@ -540,7 +540,7 @@ mod tests {
         );
 
         for _ in 0..4 {
-            rules.update(Desktop::default());
+            rules.update(&Desktop::default());
         }
         assert_eq!(
             rules.presence(),
@@ -558,8 +558,8 @@ mod tests {
     fn the_standing_answer_carries_the_fade_of_the_change_that_made_it() {
         let mut rules = HideRules::default();
         rules.toggle();
-        rules.update(Desktop::default());
-        rules.update(Desktop::default());
+        rules.update(&Desktop::default());
+        rules.update(&Desktop::default());
 
         assert_eq!(
             rules.presence(),
@@ -619,7 +619,7 @@ mod tests {
 
         let mut rules = HideRules::default();
         assert_eq!(
-            rules.update(Desktop {
+            rules.update(&Desktop {
                 fullscreen: vec![true, true],
             }),
             faded_out()
@@ -627,7 +627,7 @@ mod tests {
         rules.toggle();
         rules.toggle();
         assert_eq!(
-            rules.update(Desktop {
+            rules.update(&Desktop {
                 fullscreen: vec![true, true],
             }),
             None,
@@ -636,7 +636,7 @@ mod tests {
         assert!(!rules.presence().visible);
 
         assert_eq!(fullscreen_displays(&[], &displays), [false, false]);
-        assert_eq!(rules.update(Desktop::default()), faded_in());
+        assert_eq!(rules.update(&Desktop::default()), faded_in());
         assert!(rules.presence().visible);
     }
 
@@ -699,7 +699,7 @@ mod tests {
 
         let mut rules = HideRules::default();
         assert_eq!(
-            rules.update(desktop),
+            rules.update(&desktop),
             None,
             "the Character moves, not fades"
         );
@@ -739,9 +739,9 @@ mod tests {
         assert_eq!(both.refuge(), None);
 
         let mut rules = HideRules::default();
-        assert_eq!(rules.update(both), faded_out());
+        assert_eq!(rules.update(&both), faded_out());
         assert_eq!(
-            rules.update(Desktop {
+            rules.update(&Desktop {
                 fullscreen: vec![false, true],
             }),
             faded_in(),
@@ -753,7 +753,7 @@ mod tests {
     fn a_desktop_with_no_displays_has_no_refuge_and_does_not_fade() {
         let none = Desktop::default();
         assert_eq!(none.refuge(), None);
-        assert_eq!(HideRules::default().update(none), None);
+        assert_eq!(HideRules::default().update(&none), None);
     }
 
     /// All four edges are measured against where the display starts, not merely
