@@ -44,22 +44,23 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Reinforce overlay extended styles after a potential rewrite.
 /// On Windows, `update_input_region` owns WS_EX_TRANSPARENT, and this function
 /// only re-applies the tool-window ex-style bits via `reinforce_overlay`.
-pub fn set_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<(), String> {
+/// `_ignore` is unused; kept for cross-platform signature parity.
+pub fn set_click_through(window: &tauri::WebviewWindow, _ignore: bool) -> Result<(), String> {
     if event_loop_thread() {
-        return apply_click_through(window, ignore);
+        return apply_click_through(window);
     }
     let window = window.clone();
     window
         .clone()
         .run_on_main_thread(move || {
-            if let Err(why) = apply_click_through(&window, ignore) {
+            if let Err(why) = apply_click_through(&window) {
                 eprintln!("overlay: click-through restore failed: {why}");
             }
         })
         .map_err(|e| e.to_string())
 }
 
-fn apply_click_through(window: &tauri::WebviewWindow, _ignore: bool) -> Result<(), String> {
+fn apply_click_through(window: &tauri::WebviewWindow) -> Result<(), String> {
     reinforce_overlay(window)
 }
 
