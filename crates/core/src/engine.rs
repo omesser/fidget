@@ -5958,6 +5958,41 @@ mod tests {
         );
     }
 
+    /// The same throw with the second display left out of the world, as the
+    /// shell leaves out a fullscreen one: the seam is the outer edge now, and
+    /// the sprite stays on the first display.
+    #[test]
+    fn a_sprite_stops_at_the_seam_of_a_display_left_out() {
+        let alone = || WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point { x: 900.0, y: 100.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..alone()
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 400.0, y: 0.0 },
+            }],
+            ..alone()
+        });
+
+        let landed = settle(&mut engine, &alone());
+        // Half a default sprite in from the seam at 1000, on the first floor.
+        assert_eq!(landed.position, Point { x: 936.0, y: 800.0 });
+        assert_eq!(landed.state, State::Grounded);
+    }
+
     #[test]
     fn a_proposal_offered_under_do_not_disturb_is_not_applied() {
         let mut engine = a_resting_sprite();
