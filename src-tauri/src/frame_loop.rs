@@ -134,6 +134,7 @@ pub(crate) fn run_frame_loop(
         // closures only after toggle_click_through_only or update_input_region
         // succeeds. Shared so the frame thread can detect when a new toggle or
         // mask apply carrying the new click-through is needed.
+        #[cfg(not(unix))]
         let applied_ignoring: Arc<Mutex<Vec<Option<bool>>>> =
             Arc::new(Mutex::new(vec![None; covered.len()]));
 
@@ -402,6 +403,11 @@ pub(crate) fn run_frame_loop(
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
+            #[cfg(not(unix))]
+            applied_ignoring
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), None);
             #[cfg(not(target_os = "macos"))]
             configure_in_flight
                 .lock()
@@ -2852,14 +2858,17 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq)]
+    #[cfg(windows)]
     enum OverlayAction {
         ApplyMask,
         ToggleOnly,
         Nothing,
     }
 
+    #[cfg(windows)]
     type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
+    #[cfg(windows)]
     fn decide_overlay_action(
         last_mask: Option<&MaskParams>,
         new_mask: &MaskParams,
