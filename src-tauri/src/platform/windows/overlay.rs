@@ -41,9 +41,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Click-through, then put the tool-window bits back.
-/// Off the event-loop thread tao posts the style rewrite and returns first,
-/// so both steps run there, rewrite first.
+/// Reinforce overlay extended styles after a potential rewrite.
+/// On Windows, `update_input_region` owns WS_EX_TRANSPARENT, and this function
+/// only re-applies the tool-window ex-style bits via `reinforce_overlay`.
 pub fn set_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<(), String> {
     if event_loop_thread() {
         return apply_click_through(window, ignore);
@@ -398,7 +398,10 @@ fn apply_input_mask(
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style & !(WS_EX_TRANSPARENT as i32);
-        apply_exstyle(hwnd, current_style, new_style)?;
+        if let Err(e) = apply_exstyle(hwnd, current_style, new_style) {
+            DeleteObject(combined_rgn);
+            return Err(e);
+        }
 
         if SetWindowRgn(hwnd, combined_rgn, 0) == 0 {
             DeleteObject(combined_rgn);
@@ -421,6 +424,8 @@ fn apply_input_mask(
 
 /// Clear the input region, making the entire window click-through.
 fn clear_input_region(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a live HWND. GetWindowLongW and SetWindowRgn are safe
+    // with a valid hwnd; apply_exstyle validates the same hwnd.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style | (WS_EX_TRANSPARENT as i32);
