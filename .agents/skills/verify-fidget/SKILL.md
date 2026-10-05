@@ -14,9 +14,9 @@ Project-local control skill for **fidget**, a Tauri desktop mascot whose primary
 | Axis | Finding |
 |---|---|
 | **Surface** | Desktop overlay mascot (macOS / Linux X11 / Windows). Secondary: Settings webview, Chat surface (Summon), tray menu. |
-| **Run** | `cargo run -p fidget` from repo root (or `target/release/fidget` / `target/debug/fidget` after build). Offline by default (Static Director). |
+| **Run** | `cargo run -p fidget` from repo root (or `target/debug/fidget` after `cargo build -p fidget`). Offline by default (Static Director). A release binary writes its stderr only to the process log (see Launch), so verify with debug. |
 | **Drive** | Prefer existing scripts: `scripts/verify-overlay.sh` (macOS), `scripts/verify-overlay-x11.sh` (Linux X11 under a WM), `scripts/verify-overlay-win.ps1`, `scripts/verify-settings-webview-phase2-win.ps1`, `scripts/verify-settings-zorder-x11.sh`, `scripts/verify-settings-keyboard-webview.sh`, `scripts/probe-harness.sh`, `scripts/test_verify_overlay_diagnostics.sh`. Plus `cargo test` / `node --test tests/*.test.js`. Poke and Summon are CLI-native on macOS: `cargo run -p fidget-verify -- poke` / `-- summon` (ADR-0027 stone 2) — do not hand-roll a click with the bash helpers for those two verbs. |
-| **Observe** | Overlay logs (`FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_HITTEST=1`), `.verify/` stamp dirs, screenshots when capturable, exit codes, `verbs: …Poke` / `verbs: …Summon` lines. |
+| **Observe** | Overlay logs (`FIDGET_TRACE_FRAMES=1`, `FIDGET_TRACE_HITTEST=1`) on a debug build's stderr, `.verify/` stamp dirs, screenshots when capturable, exit codes, `verbs: …Poke` / `verbs: …Summon` lines. |
 | **Isolate** | **Refuse double-drive on one display.** Two instances share the same window list / hit-test path (`FIDGET_INSTANCES` is multi-character in *one* process, not two agents). Kill only the PID this run started. |
 
 ## Evidence location (survives cleanup)
@@ -35,13 +35,15 @@ Cleanup removes processes and scratch under `$FIDGET_VERIFY_ROOT/scratch` only. 
 From the repo root:
 
 ```sh
-# One-time build (release preferred for X11 verify)
-cargo build -p fidget --release
+# One-time build. Debug, because only debug echoes stderr (#1325)
+cargo build -p fidget
 
 # Helpers set RUN_ID / evidence / scratch and start a traced instance when a
 # platform script does not already own the lifecycle:
 .agents/skills/verify-fidget/helpers/launch.sh
 ```
+
+Since #1325 every build sends stderr to `process.log` in the data dir (Linux `~/.local/share/fidget/process.log`), each line prefixed with Unix seconds. Only a debug build also echoes it to the terminal, so a release binary's terminal log stays empty and nothing matching `^overlay:` ever arrives. `scripts/verify-overlay-x11.sh` builds and runs release, so it fails with `App never published an overlay line` on main; `scripts/verify-settings-zorder-x11.sh` does the same whenever `target/release/fidget` exists. Those scripts sit outside this skill: report the failure, and drive the debug binary through `launch.sh` meanwhile.
 
 Ready signals (any one is enough for doctor):
 
@@ -71,7 +73,7 @@ Read-only health check. Run before Drive whenever anything looks off:
 Doctor answers:
 
 1. Repo root looks like fidget (`Cargo.toml` workspace + `src-tauri/`).
-2. Binary exists (`target/release/fidget` or `target/debug/fidget`) or `cargo` can build.
+2. Debug binary exists (`target/debug/fidget`) or `cargo` can build.
 3. Platform tools for the active lane are on `PATH` (macOS: `swift`; Linux X11: `xdotool` `xprop` `xwininfo` `xterm` + `DISPLAY` + supporting WM / `openbox`; Windows: PowerShell + dual display for overlay-win).
 4. If `$APP_PID` is set, that process is alive and its log (if any) contains `^overlay:`.
 5. Unit lanes green when asked: `cargo test -p fidget-core` and `node --test tests/*.test.js` (see Helpers).
@@ -84,7 +86,7 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 
 | Lane | Command |
 |---|---|
-| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `FIDGET_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes) |
+| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `FIDGET_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes). Fails at `App never published an overlay line` until the wrapped script runs a debug build (see Launch) |
 | macOS overlay + physics + hit-test | `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh` |
 | macOS Poke (gesture verb) | `cargo run -p fidget-verify -- poke` — real click, asserts `verbs:.*Poke` |
 | macOS Summon (gesture verb) | `cargo run -p fidget-verify -- summon` — real double-click, asserts `verbs:.*Summon` |
@@ -147,7 +149,7 @@ All under `.agents/skills/verify-fidget/helpers/` (executable):
 |---|---|---|
 | `common.sh` | sourced by others | `RUN_ID`, evidence/scratch paths, repo root |
 | `doctor.sh` | `…/doctor.sh` [`--units`] | Launch readiness + optional unit suites |
-| `launch.sh` | `…/launch.sh` | Build if needed; start traced app into scratch log when no drive script owns lifecycle |
+| `launch.sh` | `…/launch.sh` | Build debug if needed; start traced app into scratch log when no drive script owns lifecycle |
 | `cleanup.sh` | `…/cleanup.sh` | Tear down helper-owned PIDs; preserve evidence |
 | `drive-overlay-x11.sh` | `…/drive-overlay-x11.sh` | Wraps `scripts/verify-overlay-x11.sh`; copies `.verify/x11-*` → evidence |
 | `drive-overlay-macos.sh` | `…/drive-overlay-macos.sh` | Wraps `scripts/verify-overlay.sh`; copies `.verify/<stamp>` → evidence |

@@ -10,8 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
 if ! fidget_bin > /dev/null; then
-  echo "launch: building release…"
-  cargo build -p fidget --release
+  echo "launch: building debug…"
+  cargo build -p fidget
 fi
 BIN="$(fidget_bin)"
 

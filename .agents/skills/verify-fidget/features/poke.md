@@ -22,7 +22,7 @@ Preconditions:
 - `FIDGET_TRACE_FRAMES=1` and `FIDGET_TRACE_HITTEST=1` (the verify scripts set these).
 - Sprite has a known `pos()` in the log (feet); click slightly above the feet so the body is hit.
 
-- **Linux X11.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof. Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
+- **Linux X11.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof. Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`. While that script still runs a release build it fails before the click (see overlay-presence Gotchas); drive the same click by hand on the `launch.sh` debug instance: `xdotool mousemove --sync $X $(($Y - 40)); xdotool mousedown 1; sleep 0.12; xdotool mouseup 1`, then `grep -E 'verbs:.*Poke' "$FIDGET_VERIFY_SCRATCH/app.log"`.
 - **macOS hit-test (HIT/miss).** Run `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. The hit-test section warps the cursor onto drawn pixels (`HIT`) and the transparent corner (`miss`). Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
 - **macOS poke-hit (gesture verb).** Run `cargo run -p fidget-verify -- poke`. Real click, asserts `verbs:.*Poke`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/poke/`.
 - **Proof.** Require the `verbs:` line containing `Poke` from the app/trace log.
