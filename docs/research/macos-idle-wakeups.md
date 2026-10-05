@@ -377,8 +377,8 @@ confound a second time, more directly.
   load average and whether `cargo`/`rustc` were running at the end of the
   capture.
 - `scripts/fullscreen-window.swift [quit-after-secs]` — a borderless,
-  click-through, near-transparent window over each whole display.
-  `fullscreen_displays` in `crates/core/src/visibility.rs` reads rectangles
+  click-through, near-transparent window covering the whole main display.
+  `fullscreen_frontmost` in `crates/core/src/visibility.rs` reads rectangles
   only, so this fires the hide rule the same way a real fullscreen app does
   without taking the desktop from whoever is using the machine. It re-asserts
   itself at the front of ordinary windows every 50 ms, the same trick as
@@ -525,7 +525,7 @@ of the same round:
   than a comparison against a capture from a week earlier.
 - **hidden** — `--scenario hidden`. The app launches, waits for a
   `Grounded`/`Perched` frame, then `scripts/fullscreen-window.swift` covers
-  every display and the script waits for the engine's own
+  the main display and the script waits for the engine's own
   `presence: hidden over 500ms` line before sampling. A capture in which
   `presence: shown` appears afterwards is marked invalid and exits non-zero.
   While hidden the frame loop traced one `frame:` line per second (47–48 in
