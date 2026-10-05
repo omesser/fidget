@@ -2220,10 +2220,14 @@ pub(crate) mod tests {
                 })
                 .collect();
 
+            #[cfg(target_os = "linux")]
+            let expected = vec![LAUNCH_ID, CAPTURABLE_ID];
+            #[cfg(not(target_os = "linux"))]
+            let expected = vec![LAUNCH_ID];
+
             assert_eq!(
-                frozen_rows,
-                vec![LAUNCH_ID],
-                "only Launch should be a frozen checkbox"
+                frozen_rows, expected,
+                "only Launch (and capturable on Linux) should be frozen checkboxes"
             );
         });
     }
