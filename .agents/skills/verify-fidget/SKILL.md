@@ -43,7 +43,7 @@ cargo build -p fidget
 .agents/skills/verify-fidget/helpers/launch.sh
 ```
 
-Since #1325 every build sends stderr to `process.log` in the data dir (Linux `~/.local/share/fidget/process.log`), each line prefixed with Unix seconds. Only a debug build also echoes it to the terminal, so a release binary's terminal log stays empty and nothing matching `^overlay:` ever arrives. `scripts/verify-overlay-x11.sh` builds and runs release, so it fails with `App never published an overlay line` on main; `scripts/verify-settings-zorder-x11.sh` does the same whenever `target/release/fidget` exists. Those scripts sit outside this skill: report the failure, and drive the debug binary through `launch.sh` meanwhile.
+Since #1325 every build sends stderr to `process.log` in the data dir (Linux `~/.local/share/fidget/process.log`), each line prefixed with Unix seconds. Only a debug build also echoes it to the terminal. `scripts/verify-overlay-x11.sh` and `scripts/verify-settings-zorder-x11.sh` now build and run debug binaries.
 
 Ready signals (any one is enough for doctor):
 
