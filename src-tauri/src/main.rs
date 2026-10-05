@@ -1912,26 +1912,24 @@ fn build_overlay(
         .visible(false)
         .build()?;
 
-    // On Linux/GTK, set_ignore_cursor_events unwraps a GdkWindow that is
-    // None until realize. The frame loop sets ignore-cursor on the first
-    // frame. On macOS, NSWindow exists while hidden, so the call is safe here.
+    // On Linux/GTK, the GdkWindow handle is unavailable until realize (at
+    // show). On Windows/macOS, the native handle exists while hidden.
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     platform::set_overlay_click_through(&window, true)?;
 
     cover_display(&window, display)?;
 
-    // Windows and macOS: configure overlay before showing to prevent white
-    // flash. HWND and NSWindow exist while hidden, so all operations succeed.
+    // Windows/macOS: configure before show to prevent white flash.
+    // HWND and NSWindow exist while hidden, so all operations succeed.
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     platform::configure_overlay(&window)?;
 
-    // Show the window. On Linux/GTK this creates the native handle that
-    // configure_overlay needs, so it runs after. On Windows/macOS the handle
-    // already exists and configure_overlay ran above to prevent white flash.
+    // Show the window. On Linux/GTK this realizes the widget and creates the
+    // X11 window ID that configure_overlay needs.
     window.show()?;
 
-    // Linux: configure_overlay may fail if the GTK widget is not yet realized.
-    // The frame loop retries on the main thread, so a failure here is not fatal.
+    // Linux: configure_overlay after show. May fail if the widget is not yet
+    // realized; the frame loop retries until success.
     #[cfg(all(unix, not(target_os = "macos")))]
     if let Err(why) = platform::configure_overlay(&window) {
         eprintln!("overlay: {label} EWMH config deferred: {why}");
