@@ -44,12 +44,14 @@ const FRAME_RESEND: Duration = Duration::from_millis(250);
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 enum OverlayAction {
     ApplyMask,
     ToggleOnly,
     Nothing,
 }
 
+#[allow(dead_code)]
 fn decide_overlay_action(
     last_mask: Option<&MaskParams>,
     new_mask: &MaskParams,
