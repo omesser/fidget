@@ -2209,7 +2209,8 @@ pub(crate) fn run_frame_loop(
                                 hotspots,
                             );
 
-                            let mask_changed = last_mask.lock().unwrap().get(index) != Some(&mask_params);
+                            let mask_changed =
+                                last_mask.lock().unwrap().get(index) != Some(&mask_params);
                             let ignore_changed = ignoring[index] != Some(ignore);
 
                             if mask_changed
@@ -2276,7 +2277,6 @@ pub(crate) fn run_frame_loop(
                             } else if !mask_changed && ignore_changed {
                                 let handle = app.clone();
                                 let label_clone = label.clone();
-                                let overlay_index = index;
                                 let trace = tracing;
                                 let click_through = ignore;
 
@@ -2815,11 +2815,15 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_idle_sprite_ignoring_change_detected() {
-        let mask_params = (Some(vec![true, false]), 100, 100, 1, 1, Vec::new());
+        let _mask_params: (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>) =
+            (Some(vec![true, false]), 100, 100, 1, 1, Vec::new());
 
         let mut ignoring_last = Some(false);
         let mut ignoring_now = Some(true);
-        assert_ne!(ignoring_last, ignoring_now, "Change in ignoring should be detected");
+        assert_ne!(
+            ignoring_last, ignoring_now,
+            "Change in ignoring should be detected"
+        );
 
         ignoring_last = Some(true);
         ignoring_now = Some(true);
