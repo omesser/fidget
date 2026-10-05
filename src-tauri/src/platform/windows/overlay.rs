@@ -435,7 +435,7 @@ fn apply_input_mask(
             return Err(e);
         }
 
-        if SetWindowRgn(hwnd, combined_rgn, 0) == 0 {
+        if SetWindowRgn(hwnd, combined_rgn, 1) == 0 {
             DeleteObject(combined_rgn);
             return Err("Failed to set window region".to_string());
         }
@@ -463,7 +463,7 @@ fn clear_input_region(hwnd: HWND) -> Result<(), String> {
         let new_style = current_style | (WS_EX_TRANSPARENT as i32);
         apply_exstyle(hwnd, current_style, new_style)?;
 
-        SetWindowRgn(hwnd, std::ptr::null_mut(), 0);
+        SetWindowRgn(hwnd, std::ptr::null_mut(), 1);
     }
 
     Ok(())
