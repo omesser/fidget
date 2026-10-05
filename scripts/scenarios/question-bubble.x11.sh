@@ -106,12 +106,12 @@ sleep 1
 
 # The overlay spans the display, so its centre is not the sprite. The newest
 # frame trace line says where the sprite is drawn.
-read -r sw sh < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
+read -r sprite_w sprite_h < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
 read -r sx sy < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
 dump before-poke
 check_before "$out/before-poke.ax.txt"
 
-xdotool mousemove --sync "$((sx + sw / 2))" "$((sy + sh / 2))" click 1 > "$out/poke.txt" 2>&1 ||
+xdotool mousemove --sync "$((sx + sprite_w / 2))" "$((sy + sprite_h / 2))" click 1 > "$out/poke.txt" 2>&1 ||
   fail "could not click the sprite; see $out/poke.txt"
 wait_for 3 grep -q '^verbs: .*Poke' "$log" || fail "the click did not land as a Poke; see $log"
 sleep 1

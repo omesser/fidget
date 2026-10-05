@@ -62,10 +62,12 @@ command -v xdotool > /dev/null 2>&1 || {
 test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 out="${TMPDIR:-/tmp}/fidget-scenario-control-click-menu-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out/home"
-log="$out/app.log"
+log="$out/app.log" marks="$out/harness.log"
+: > "$marks"
 
-harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=nop"
-[ "$(wc -w <<< "$harness")" -eq 3 ] || fail "a path in the Harness line holds a space: $harness"
+# count= gives this run's Harness a unique command line for the kill on exit.
+harness="$root/scripts/scenarios/fixture-harness.sh $test_bin script=nop count=$marks"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
@@ -74,7 +76,7 @@ env HOME="$out/home" \
   FIDGET_CHARACTER=bmo FIDGET_CHARACTERS="$root/characters" \
   "$bin" > "$log" 2>&1 &
 pid=$!
-trap 'kill "$pid" 2> /dev/null || true; pkill -f "script=nop" || true' EXIT
+trap 'kill "$pid" 2> /dev/null || true; pkill -f "count=$marks" || true' EXIT
 
 wait_for() { # <seconds> <command...>
   local n=$(($1 * 4))

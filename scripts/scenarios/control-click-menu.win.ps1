@@ -81,10 +81,13 @@ $script:Evidence = $out
 New-Item -ItemType Directory -Force -Path (Join-Path $out "home") | Out-Null
 $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
+$marks = Join-Path $out "harness.log"
+Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=nop"
+# count= gives this run's Harness a unique command line for the kill on exit.
+$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=nop count=$marks"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
-if ($paths.Count -ne 3) { Fail "a path in the Harness line holds a space: $harness" }
+if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 
 $env:HOME = Join-Path $out "home"
 $env:USERPROFILE = $env:HOME
@@ -134,6 +137,7 @@ try {
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
     if (-not $size) { Fail "no sprite size in $err" }
     $at = $trace | Select-String -Pattern '^frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+    if (-not $at) { Fail "no frame trace in $err" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
     $x = [int]$at.Matches[0].Groups[1].Value + [int]($w / 2)
@@ -148,6 +152,6 @@ try {
 } finally {
     if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
     Get-CimInstance Win32_Process -Filter "Name = 'bash.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*script=nop*" } |
+        Where-Object { $_.CommandLine -like "*count=$marks*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }

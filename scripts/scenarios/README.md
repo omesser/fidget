@@ -71,8 +71,9 @@ unless Chat is open.
 
 `thinking-row`, `chat-header-narrow`, `landing-link-click`,
 `launcher-dies-at-startup`, `sign-in-button`, `question-bubble` and
-`control-click-menu` each have `.x11.sh` and `.win.ps1` leaves. `fidget-verify scenario <name>` prints the leaf for this host. With
-`--go` it runs that leaf, or skips when this host has none.
+`control-click-menu` each have `.x11.sh` and `.win.ps1` leaves.
+`fidget-verify scenario <name>` prints the leaf for this host. With `--go` it
+runs that leaf, or skips when this host has none.
 
 These stay macOS only on purpose:
 
