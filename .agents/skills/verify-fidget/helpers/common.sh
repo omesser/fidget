@@ -25,7 +25,7 @@ export FIDGET_VERIFY_SCRATCH="${FIDGET_VERIFY_SCRATCH:-$FIDGET_VERIFY_ROOT/scrat
 
 mkdir -p "$FIDGET_VERIFY_EVIDENCE" "$FIDGET_VERIFY_SCRATCH/pids"
 
-# Debug first: a release build sends stderr only to <data dir>/fidget/process.log
+# Debug only: a release build sends stderr only to <data dir>/fidget/process.log
 # (#1325), so its terminal log never shows the `overlay:` or `frame:` lines.
 fidget_bin() {
   if [ -x "$REPO_ROOT/target/debug/fidget" ]; then

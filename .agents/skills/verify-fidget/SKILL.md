@@ -43,7 +43,7 @@ cargo build -p fidget
 .agents/skills/verify-fidget/helpers/launch.sh
 ```
 
-Since #1325 every build sends stderr to `process.log` in the data dir (Linux `~/.local/share/fidget/process.log`), each line prefixed with Unix seconds. Only a debug build also echoes it to the terminal. `scripts/verify-overlay-x11.sh` and `scripts/verify-settings-zorder-x11.sh` now build and run debug binaries.
+Since #1325 every build sends stderr to `process.log` in the data dir (Linux `~/.local/share/fidget/process.log`), each line prefixed with Unix seconds. Only a debug build also echoes it to the terminal. `scripts/verify-overlay-x11.sh` and `scripts/verify-settings-zorder-x11.sh` build and run debug binaries.
 
 Ready signals (any one is enough for doctor):
 
@@ -86,14 +86,14 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 
 | Lane | Command |
 |---|---|
-| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `FIDGET_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes). Fails at `App never published an overlay line` until the wrapped script runs a debug build (see Launch) |
+| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `FIDGET_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes) |
 | macOS overlay + physics + hit-test | `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh` |
 | macOS Poke (gesture verb) | `cargo run -p fidget-verify -- poke` — real click, asserts `verbs:.*Poke` |
 | macOS Summon (gesture verb) | `cargo run -p fidget-verify -- summon` — real double-click, asserts `verbs:.*Summon` |
 | e2e scenario | `cargo run -p fidget-verify -- scenario <name>` prints this host's takeover header; `--go` runs `scripts/scenarios/<name>.sh` (macOS), `<name>.x11.sh`, or `<name>.win.ps1` after the owner's go-ahead (`scripts/scenarios/README.md`) |
 | Windows overlay | `.agents/skills/verify-fidget/helpers/drive-overlay-win.ps1` |
 | Windows Settings | `scripts/verify-settings-webview-phase2-win.ps1` (copy `$Out` into evidence after) |
-| Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (proves webview stacks above overlay) |
+| Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (Settings currently stacks below overlay, tracked in #1337) |
 | Harness ACP (no sprite) | `FIDGET_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
 | Settings keyboard checks on fixtures | `scripts/test_verify_settings_keyboard.sh` (no app, no Accessibility) |
