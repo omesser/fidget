@@ -481,6 +481,53 @@ pub fn bring_landings(
     Some(landings)
 }
 
+/// Where each sprite standing on a fullscreen display should stand instead, on
+/// display `refuge`. `fullscreen` is at the same indexes as `monitors`. Sprites
+/// elsewhere stay put, so a sprite already moved plans nothing the next time.
+pub fn refuge_landings(
+    feet: &[Point],
+    widths: &[f64],
+    monitors: &[Rect],
+    floors: &[Rect],
+    fullscreen: &[bool],
+    refuge: usize,
+) -> Vec<Option<Point>> {
+    let mut landings = vec![None; feet.len()];
+    let Some(haven) = monitors.get(refuge) else {
+        return landings;
+    };
+    let stranded = |at: &Point| {
+        monitors
+            .iter()
+            .zip(fullscreen)
+            .any(|(monitor, &held)| held && stands_on((at.x, at.y), monitor))
+    };
+    // A Bring to the refuge, among only the stranded and those already there:
+    // they are the arrivals and the stayers it lays out. Anyone on another
+    // free display is not in it, so is not swept along.
+    let picked: Vec<usize> = (0..feet.len())
+        .filter(|&index| {
+            let at = &feet[index];
+            stranded(at) || stands_on((at.x, at.y), haven)
+        })
+        .collect();
+    let picked_feet: Vec<Point> = picked.iter().map(|&index| feet[index]).collect();
+    let picked_widths: Vec<f64> = picked
+        .iter()
+        .map(|&index| widths.get(index).copied().unwrap_or(0.0))
+        .collect();
+    let centre = Point {
+        x: haven.x + haven.width / 2.0,
+        y: haven.y + haven.height / 2.0,
+    };
+    if let Some(planned) = bring_landings(&picked_feet, &picked_widths, monitors, floors, centre) {
+        for (index, landing) in picked.into_iter().zip(planned) {
+            landings[index] = landing;
+        }
+    }
+    landings
+}
+
 fn sprite_span(width: f64) -> f64 {
     if width > 0.0 {
         width
@@ -7220,6 +7267,73 @@ mod tests {
                 Point { x: 10.0, y: 10.0 },
             ),
             None
+        );
+    }
+
+    /// Fullscreen on the second display. The sprite standing there goes to the
+    /// middle of the free primary floor; the one already on the primary, and
+    /// the one on a third display nobody took, stay where they are.
+    #[test]
+    fn refuge_landings_moves_only_the_sprites_on_a_fullscreen_display() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+        let third = monitor(-1920.0, 0.0, 1920.0, 1080.0);
+        let monitors = [primary, second, third];
+        let feet = [
+            Point {
+                x: 2500.0,
+                y: 982.0,
+            },
+            Point {
+                x: 400.0,
+                y: 1080.0,
+            },
+            Point {
+                x: -1000.0,
+                y: 1080.0,
+            },
+        ];
+
+        assert_eq!(
+            refuge_landings(
+                &feet,
+                &[128.0, 128.0, 128.0],
+                &monitors,
+                &monitors,
+                &[false, true, false],
+                0,
+            ),
+            vec![
+                Some(Point {
+                    x: 960.0,
+                    y: 1080.0
+                }),
+                None,
+                None,
+            ]
+        );
+    }
+
+    /// Nobody stands on the fullscreen display, so nobody moves. This is what
+    /// makes the shell's every-tick call settle after the first move.
+    #[test]
+    fn refuge_landings_leaves_a_sprite_already_on_a_free_display() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+
+        assert_eq!(
+            refuge_landings(
+                &[Point {
+                    x: 960.0,
+                    y: 1080.0,
+                }],
+                &[128.0],
+                &[primary, second],
+                &[primary, second],
+                &[false, true],
+                0,
+            ),
+            vec![None]
         );
     }
 
