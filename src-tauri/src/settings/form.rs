@@ -1313,9 +1313,9 @@ fn presence_sections() -> Vec<FormSection> {
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     batched: false,
-                    frozen: false,
+                    frozen: cfg!(target_os = "linux"),
                     help: Some(if cfg!(target_os = "linux") {
-                        "Checked: visible in captures. Linux has no exclusion API (always visible). Needs restart.".to_string()
+                        "Fidget has no portable API to exclude itself from screen captures on Linux. Always visible.".to_string()
                     } else {
                         "Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()
                     }),
@@ -1819,10 +1819,11 @@ pub(crate) mod tests {
     const FIXTURE_CHARACTERS_DIR: &str =
         "/Users/buddy/Library/Application Support/fidget/characters";
 
-    /// The fixtures hold the macOS form. Linux builds Presence with a note that
-    /// the capturable checkbox doesn't actually exclude on Linux (#1338), and
-    /// Privacy has no consent rows because there is nothing there to grant (#250).
-    /// Windows builds Privacy one row smaller for the same reason (#721). Each tab
+    /// The fixtures hold the macOS form. Linux builds Presence with the capturable
+    /// checkbox disabled (frozen) and help text explaining there is no portable
+    /// capture-exclusion API on Linux (#1338); Privacy has no consent rows because
+    /// there is nothing there to grant (#250). Windows builds Privacy one row
+    /// smaller for the same reason (#721). Each tab
     /// is pinned on the platforms that build it the same way, and the three that
     /// never differ pin everywhere.
     #[cfg(target_os = "linux")]
