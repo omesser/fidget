@@ -30,7 +30,10 @@ pub fn check_debug_commands(
     let _ = fs::remove_file(&cmd_path);
 
     let response = if cmd.trim() == "snapshot" {
-        format!("position: ({}, {})\nstate: {}", position.0, position.1, state)
+        format!(
+            "position: ({}, {})\nstate: {}",
+            position.0, position.1, state
+        )
     } else if let Some(place_cmd) = cmd.strip_prefix("place ") {
         if let Some((x_part, y_part)) = place_cmd.split_once(" y=") {
             if let Some(x_str) = x_part.strip_prefix("x=") {

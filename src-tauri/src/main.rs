@@ -4224,7 +4224,6 @@ fn main() {
         std::process::exit(harness::run_probe());
     }
 
-
     // This process *is* the stdio MCP server: never the overlay. The Harness
     // child is a new process, so it does not share the shell's ACP runtime.
     if std::env::args().any(|arg| arg == "--mcp-stdio") {
