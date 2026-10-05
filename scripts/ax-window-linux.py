@@ -173,6 +173,7 @@ def find_window(desktop, pid, title):
     app = find_app(desktop, pid)
     if app is None:
         return None
+    best, best_area = None, -1
     for j in range(app.childCount):
         win = app.getChildAtIndex(j)
         try:
@@ -180,8 +181,11 @@ def find_window(desktop, pid, title):
         except Exception:
             name = ""
         if title in name.lower():
-            return win
-    return None
+            box = extents(win)
+            area = box[2] * box[3] if box else 0
+            if area > best_area:
+                best, best_area = win, area
+    return best
 
 
 def cmd_dump(argv):

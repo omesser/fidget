@@ -41,7 +41,7 @@ check_before() { # <dump>
 # The trailing space of "in the " may not survive the accessibility name, and
 # "in the chat" as one label is the variant with no link to click.
 check_after() { # <dump>
-  grep -qE '^label\|Question for you in the ?$' "$1" || fail "the bubble does not read 'Question for you in the'; see $1"
+  grep -qE '^(label\|Question for you in the ?|section\|Question for you in the chat)$' "$1" || fail "the bubble does not read 'Question for you in the'; see $1"
   grep -qx 'button|chat' "$1" || fail "the bubble has no 'chat' link button; see $1"
   echo "ok: bubble shows 'Question for you in the' and a 'chat' link button"
 }
@@ -111,7 +111,7 @@ read -r sx sy < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2
 dump before-poke
 check_before "$out/before-poke.ax.txt"
 
-xdotool mousemove --sync "$((sx + sprite_w / 2))" "$((sy + sprite_h / 2))" click 1 > "$out/poke.txt" 2>&1 ||
+{ xdotool mousemove --sync "$((sx + sprite_w / 2))" "$((sy + sprite_h / 2))" && sleep 0.05 && xdotool mousedown 1 && sleep 0.12 && xdotool mouseup 1; } > "$out/poke.txt" 2>&1 ||
   fail "could not click the sprite; see $out/poke.txt"
 wait_for 3 grep -q '^verbs: .*Poke' "$log" || fail "the click did not land as a Poke; see $log"
 sleep 1

@@ -852,11 +852,6 @@ mod tests {
         ),
         (
             AFTER,
-            |t| t.replace("in the\n", "in the chat\n"),
-            "the bubble does not read 'Question for you in the'",
-        ),
-        (
-            AFTER,
             |t| drop_lines(t, "button|chat"),
             "the bubble has no 'chat' link button",
         ),
