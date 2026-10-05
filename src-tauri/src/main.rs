@@ -1935,9 +1935,8 @@ fn build_overlay(
         eprintln!("overlay: {label} EWMH config deferred: {why}");
     }
 
-    // macOS: configure after show. NSWindow exists before show but tao's
-    // show() calls makeKeyAndOrderFront, so configure after to set the panel
-    // level and behavior before the window is seen.
+    // macOS: configure after show, matching main's order. NSWindow exists
+    // while hidden, but this keeps the macOS diff zero.
     #[cfg(target_os = "macos")]
     platform::configure_overlay(&window)?;
 

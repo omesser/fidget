@@ -45,14 +45,14 @@ const FRAME_RESEND: Duration = Duration::from_millis(250);
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg(any(test, not(unix)))]
+#[cfg(not(target_os = "macos"))]
 enum OverlayAction {
     ApplyMask,
     ToggleOnly,
     Nothing,
 }
 
-#[cfg(any(test, not(unix)))]
+#[cfg(not(target_os = "macos"))]
 fn decide_overlay_action(
     last_mask: Option<&MaskParams>,
     new_mask: &MaskParams,
