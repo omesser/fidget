@@ -282,6 +282,16 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     .map_err(|e| format!("X11 error setting states: {e}"))?;
 
     conn.flush()
+        .map_err(|e| format!("Failed to flush X11 after EWMH states: {e}"))?;
+
+    use xproto::{ConfigureWindowAux, StackMode};
+    let lower_aux = ConfigureWindowAux::new().stack_mode(StackMode::BELOW);
+    xproto::configure_window(conn, window, &lower_aux)
+        .map_err(|e| format!("Failed to lower overlay: {e}"))?
+        .check()
+        .map_err(|e| format!("X11 error lowering overlay: {e}"))?;
+
+    conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
     Ok(())
 }
