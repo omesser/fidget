@@ -888,20 +888,24 @@ public class BuddyCoverDpi {
 [BuddyCoverDpi]::SetProcessDPIAware() | Out-Null
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$form = New-Object System.Windows.Forms.Form
-$form.FormBorderStyle = "None"
-$form.StartPosition = "Manual"
-$form.Bounds = $bounds
-$form.TopMost = $true
-$form.ShowInTaskbar = $true
-$form.Text = "fidget-bench-cover"
-$form.BackColor = [System.Drawing.Color]::Black
+# One per screen: with a display left free, the Character moves there instead of hiding.
+$forms = foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+    $form = New-Object System.Windows.Forms.Form
+    $form.FormBorderStyle = "None"
+    $form.StartPosition = "Manual"
+    $form.Bounds = $screen.Bounds
+    $form.TopMost = $true
+    $form.ShowInTaskbar = $true
+    $form.Text = "fidget-bench-cover"
+    $form.BackColor = [System.Drawing.Color]::Black
+    $form
+}
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = __MS__
-$timer.Add_Tick({ $form.Close() })
+$timer.Add_Tick({ $forms | ForEach-Object { $_.Close() } })
 $timer.Start()
-[void]$form.ShowDialog()
+$forms | Select-Object -Skip 1 | ForEach-Object { $_.Show() }
+[void]@($forms)[0].ShowDialog()
 '@
     $body = $body.Replace("__MS__", [string](($window + 30) * 1000))
     [System.IO.File]::WriteAllText($path, $body)
