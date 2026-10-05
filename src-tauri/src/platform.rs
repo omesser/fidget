@@ -605,6 +605,7 @@ pub fn set_overlay_click_through(
 /// art still receives clicks. macOS uses `set_ignore_cursor_events`.
 /// `click_through` (Windows-only) controls whether the sprite region is hit-testable.
 #[cfg(all(unix, not(target_os = "macos")))]
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,
@@ -629,6 +630,7 @@ pub fn update_input_region(
 /// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
 /// `click_through` controls WS_EX_TRANSPARENT.
 #[cfg(not(unix))]
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,

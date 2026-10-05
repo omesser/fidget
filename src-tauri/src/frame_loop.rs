@@ -2005,7 +2005,187 @@ pub(crate) fn run_frame_loop(
                 // XShape carves the input region; Tauri must still receive
                 // events. Marshal on the GTK main thread. Only set
                 // ignore-cursor-events false after the mask applies, or the overlay is a click-eater.
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(all(unix, not(target_os = "macos")))]
+                {
+                    if !ignore && presence.visible {
+                        let sprite_on_overlay = placed.iter().find(|instance| {
+                            let local = instance.sprite.in_overlay(*display);
+                            local.x + instance.width > 0
+                                && local.x < display.width as i32
+                                && local.y + instance.height > 0
+                                && local.y < display.height as i32
+                        });
+
+                        if let Some(instance) = sprite_on_overlay {
+                            let local = instance.sprite.in_overlay(*display);
+                            let (_width, _height, opaque) = instance.mask.raw();
+                            let hotspots = platform::overlay_hotspots_for(&label);
+                            let mask_params = (
+                                Some(opaque.to_vec()),
+                                local.x,
+                                local.y,
+                                i32::from(instance.mirror),
+                                instance.sprite.scale,
+                                hotspots,
+                            );
+
+                            // `last_mask` skips an unchanged sprite. `local.x`
+                            // and `local.y` change while walking, so this fires
+                            // at motion rate either way; hotspots do not worsen it.
+                            if last_mask.lock().unwrap().get(index) != Some(&mask_params)
+                                && !mask_in_flight
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(false)
+                            {
+                                mask_in_flight.lock().unwrap()[index] = true;
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                let mask_clone = instance.mask.clone();
+                                let sprite_x = local.x;
+                                let sprite_y = local.y;
+                                let sprite_mirror = i32::from(instance.mirror);
+                                let sprite_scale = instance.sprite.scale;
+                                let hotspots_clone = mask_params.5.clone();
+                                let mask_applied_clone = Arc::clone(&mask_applied);
+                                let last_mask_clone = Arc::clone(&last_mask);
+                                let mask_in_flight_clone = Arc::clone(&mask_in_flight);
+                                let mask_params_clone = mask_params.clone();
+                                let overlay_index = index;
+                                let trace = tracing;
+
+                                let _ = app.run_on_main_thread(move || {
+                                    mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        match platform::update_input_region(
+                                            &window,
+                                            Some(&mask_clone),
+                                            sprite_x,
+                                            sprite_y,
+                                            sprite_mirror,
+                                            sprite_scale,
+                                            &hotspots_clone,
+                                            false,
+                                        ) {
+                                            Ok(()) => {
+                                                mask_applied_clone.lock().unwrap()[overlay_index] =
+                                                    true;
+                                                last_mask_clone.lock().unwrap()[overlay_index] =
+                                                    mask_params_clone;
+                                                if trace {
+                                                    eprintln!(
+                                                        "overlay: {label_clone} input mask applied"
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                static LOGGED: std::sync::atomic::AtomicBool =
+                                                    std::sync::atomic::AtomicBool::new(false);
+                                                if !LOGGED
+                                                    .swap(true, std::sync::atomic::Ordering::Relaxed)
+                                                {
+                                                    eprintln!("overlay: {label_clone} update_input_region deferred: {e}");
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+
+                            if mask_applied
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(false)
+                                && ignoring[index] != Some(false)
+                            {
+                                flipped = true;
+                                if platform::set_overlay_click_through(&window, false).is_ok() {
+                                    ignoring[index] = Some(false);
+                                }
+                            }
+                        } else {
+                            let mask_params = (None, 0, 0, 1, 1, Vec::new());
+
+                            if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                let last_mask_clone = Arc::clone(&last_mask);
+                                let mask_params_clone = mask_params.clone();
+                                let overlay_index = index;
+
+                                let _ = app.run_on_main_thread(move || {
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        if platform::update_input_region(
+                                            &window,
+                                            None,
+                                            0,
+                                            0,
+                                            1,
+                                            1,
+                                            &[],
+                                            true,
+                                        )
+                                        .is_ok()
+                                        {
+                                            last_mask_clone.lock().unwrap()[overlay_index] =
+                                                mask_params_clone;
+                                        }
+                                    }
+                                });
+                            }
+
+                            if ignoring[index] != Some(true) {
+                                flipped = true;
+                                if platform::set_overlay_click_through(&window, true).is_ok() {
+                                    ignoring[index] = Some(true);
+                                }
+                            }
+                        }
+                    } else {
+                        let mask_params = (None, 0, 0, 1, 1, Vec::new());
+
+                        if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
+                            let handle = app.clone();
+                            let label_clone = label.clone();
+                            let last_mask_clone = Arc::clone(&last_mask);
+                            let mask_params_clone = mask_params.clone();
+                            let overlay_index = index;
+
+                            let _ = app.run_on_main_thread(move || {
+                                if let Some(window) = handle.get_webview_window(&label_clone) {
+                                    if platform::update_input_region(
+                                        &window,
+                                        None,
+                                        0,
+                                        0,
+                                        1,
+                                        1,
+                                        &[],
+                                        true,
+                                    )
+                                    .is_ok()
+                                    {
+                                        last_mask_clone.lock().unwrap()[overlay_index] =
+                                            mask_params_clone;
+                                    }
+                                }
+                            });
+                        }
+
+                        if ignoring[index] != Some(true) {
+                            flipped = true;
+                            if platform::set_overlay_click_through(&window, true).is_ok() {
+                                ignoring[index] = Some(true);
+                            }
+                        }
+                    }
+                }
+
+                #[cfg(not(unix))]
                 {
                     if presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
@@ -2152,8 +2332,17 @@ pub(crate) fn run_frame_loop(
 
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    if platform::update_input_region(&window, None, 0, 0, 1, 1, &[], true)
-                                        .is_ok()
+                                    if platform::update_input_region(
+                                        &window,
+                                        None,
+                                        0,
+                                        0,
+                                        1,
+                                        1,
+                                        &[],
+                                        true,
+                                    )
+                                    .is_ok()
                                     {
                                         last_mask_clone.lock().unwrap()[overlay_index] =
                                             mask_params_clone;
