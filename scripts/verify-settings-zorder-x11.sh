@@ -47,14 +47,12 @@ trap cleanup EXIT
 
 BIN="${FIDGET_VERIFY_BIN:-}"
 if [ -z "$BIN" ]; then
-  if [ -x "$WORKSPACE_ROOT/target/release/fidget" ]; then
-    BIN="$WORKSPACE_ROOT/target/release/fidget"
-  elif [ -x "$WORKSPACE_ROOT/target/debug/fidget" ]; then
+  if [ -x "$WORKSPACE_ROOT/target/debug/fidget" ]; then
     BIN="$WORKSPACE_ROOT/target/debug/fidget"
   else
-    log_info "Building fidget (release)..."
-    cargo build -p fidget --release
-    BIN="$WORKSPACE_ROOT/target/release/fidget"
+    log_info "Building fidget (debug)..."
+    cargo build -p fidget
+    BIN="$WORKSPACE_ROOT/target/debug/fidget"
   fi
 fi
 [ -x "$BIN" ] || fail "no binary at $BIN"

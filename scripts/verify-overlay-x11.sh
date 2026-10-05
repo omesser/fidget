@@ -68,14 +68,14 @@ log_info "Perch window ID: $TEST_WINDOW_ID"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
 log_info "Building fidget..."
-cargo build --release
+cargo build -p fidget
 
 log_info "Starting fidget with frame tracing..."
 export FIDGET_TRACE_FRAMES=1
 export FIDGET_TRACE_HITTEST=1
 export RUST_LOG=debug
 export LIBGL_ALWAYS_SOFTWARE=1
-target/release/fidget > "$TRACE_LOG" 2>&1 &
+target/debug/fidget > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
 
 await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"

@@ -6,7 +6,7 @@ This directory is the maintained source for verifying user-facing behavior of th
 
 - Work from the repository root (`Cargo.toml` workspace with `src-tauri/`).
 - Set `RUN_ID` and evidence paths as in the skill (`/tmp/fidget-verify-$RUN_ID/evidence`).
-- Prefer a binary this run built: `target/release/fidget` or `target/debug/fidget`.
+- Prefer a debug binary this run built (`target/debug/fidget`). A release binary's stderr goes only to `process.log` in the data dir, so its terminal log has no `overlay:` or `frame:` lines (#1325).
 - Run `.agents/skills/verify-fidget/helpers/doctor.sh` and require exit `0` before Drive.
 - Never drive an instance that was not started by this verification run (or by the platform verify script it wraps).
 - **One agent per display.** Two overlapping drives share Perches and hit-test state; refuse double-drive.
