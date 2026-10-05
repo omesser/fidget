@@ -59,10 +59,7 @@ pub fn set_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<
         .map_err(|e| e.to_string())
 }
 
-fn apply_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(ignore)
-        .map_err(|e| e.to_string())?;
+fn apply_click_through(window: &tauri::WebviewWindow, _ignore: bool) -> Result<(), String> {
     reinforce_overlay(window)
 }
 
@@ -401,7 +398,7 @@ fn apply_input_mask(
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style & !(WS_EX_TRANSPARENT as i32);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        apply_exstyle(hwnd, current_style, new_style)?;
 
         if SetWindowRgn(hwnd, combined_rgn, 0) == 0 {
             DeleteObject(combined_rgn);
@@ -424,13 +421,10 @@ fn apply_input_mask(
 
 /// Clear the input region, making the entire window click-through.
 fn clear_input_region(hwnd: HWND) -> Result<(), String> {
-    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. GetWindowLongW,
-    // SetWindowLongW, and SetWindowRgn are documented safe with valid HWNDs; passing
-    // null to SetWindowRgn clears the region.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style | (WS_EX_TRANSPARENT as i32);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        apply_exstyle(hwnd, current_style, new_style)?;
 
         SetWindowRgn(hwnd, std::ptr::null_mut(), 0);
     }
