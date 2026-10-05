@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
-use x11rb::protocol::xproto::{self, AtomEnum, PropMode};
+use x11rb::protocol::xproto::{self, AtomEnum, ConfigureWindowAux, PropMode, StackMode};
 use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -280,6 +280,17 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     .map_err(|e| format!("Failed to set EWMH states: {e}"))?
     .check()
     .map_err(|e| format!("X11 error setting states: {e}"))?;
+
+    conn.flush()
+        .map_err(|e| format!("Failed to flush X11 after EWMH states: {e}"))?;
+
+    // ABOVE band puts the overlay above normal windows. Within that band, BELOW
+    // reorders so Settings (also ABOVE) stacks higher than the overlay.
+    let lower_aux = ConfigureWindowAux::new().stack_mode(StackMode::BELOW);
+    xproto::configure_window(conn, window, &lower_aux)
+        .map_err(|e| format!("Failed to lower overlay: {e}"))?
+        .check()
+        .map_err(|e| format!("X11 error lowering overlay: {e}"))?;
 
     conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
