@@ -2651,35 +2651,6 @@ fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denyli
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-#[allow(dead_code)]
-enum OverlayAction {
-    ApplyMask,
-    ToggleOnly,
-    Nothing,
-}
-
-#[allow(dead_code)]
-fn decide_overlay_action(
-    last_mask: Option<&MaskParams>,
-    new_mask: &MaskParams,
-    mask_in_flight: bool,
-    toggle_in_flight: bool,
-    applied_ignoring: Option<bool>,
-    new_ignore: bool,
-) -> OverlayAction {
-    let mask_changed = last_mask != Some(new_mask);
-    let ignore_changed = applied_ignoring != Some(new_ignore);
-
-    if mask_changed && !mask_in_flight {
-        OverlayAction::ApplyMask
-    } else if !mask_changed && ignore_changed && !toggle_in_flight {
-        OverlayAction::ToggleOnly
-    } else {
-        OverlayAction::Nothing
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
