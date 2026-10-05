@@ -2282,7 +2282,13 @@ pub(crate) fn run_frame_loop(
 
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if platform::toggle_click_through_only(&window, click_through).is_ok() && trace {
+                                        if platform::toggle_click_through_only(
+                                            &window,
+                                            click_through,
+                                        )
+                                        .is_ok()
+                                            && trace
+                                        {
                                             eprintln!(
                                                 "overlay: {label_clone} click-through toggled"
                                             );
