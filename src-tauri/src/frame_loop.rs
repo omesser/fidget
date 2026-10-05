@@ -16,7 +16,7 @@ use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, FreeTier, SystemClock};
 use fidget_core::snapshot::SnapshotAssembler;
 use fidget_core::speech;
-use fidget_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
+use fidget_core::visibility::{fullscreen_displays, Change, Desktop, HideRules};
 use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
@@ -1296,7 +1296,7 @@ pub(crate) fn run_frame_loop(
             // Rectangles only; `visibility` has no use for which window it is.
             let rects: Vec<_> = world.windows.iter().map(|window| window.rect).collect();
             let desktop = Desktop {
-                fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
+                fullscreen: fullscreen_displays(&rects, &displays.frames),
             };
 
             // Visibility before instance ticks so scheduler::mode gets the
