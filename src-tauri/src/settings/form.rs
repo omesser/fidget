@@ -475,7 +475,6 @@ pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
 pub const TRACE_DIRECTOR_ID: &str = "trace_director";
 pub const TRACE_ENGINE_ID: &str = "trace_engine";
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_BLANK_ID: &str = "director_blank";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
@@ -1309,14 +1308,17 @@ fn presence_sections() -> Vec<FormSection> {
                     disclosure: None,
                     status: None,
                 },
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 FormRow::Checkbox {
                     id: CAPTURABLE_ID.to_string(),
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     batched: false,
                     frozen: false,
-                    help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
+                    help: Some(if cfg!(target_os = "linux") {
+                        "Checked: visible in captures. Linux has no exclusion API (always visible). Needs restart.".to_string()
+                    } else {
+                        "Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()
+                    }),
                     comment: None,
                     disclosure: None,
                     status: None,
@@ -1817,13 +1819,14 @@ pub(crate) mod tests {
     const FIXTURE_CHARACTERS_DIR: &str =
         "/Users/buddy/Library/Application Support/fidget/characters";
 
-    /// The fixtures hold the macOS form. Linux builds two tabs deliberately
-    /// smaller: no capture-exclusion row and no consent rows, because there is
-    /// nothing there to grant (#250). Windows builds Privacy one row smaller
-    /// for the same reason (#721). Each tab is pinned on the platforms that
-    /// build it the same way, and the three that never differ pin everywhere.
+    /// The fixtures hold the macOS form. Linux builds Presence with a note that
+    /// the capturable checkbox doesn't actually exclude on Linux (#1338), and
+    /// Privacy has no consent rows because there is nothing there to grant (#250).
+    /// Windows builds Privacy one row smaller for the same reason (#721). Each tab
+    /// is pinned on the platforms that build it the same way, and the three that
+    /// never differ pin everywhere.
     #[cfg(target_os = "linux")]
-    const UNPINNED_TABS: &[&str] = &["Presence", "Privacy"];
+    const UNPINNED_TABS: &[&str] = &["Privacy"];
     /// Windows builds Privacy without the Input Monitoring row: the grant is
     /// macOS's (#721).
     #[cfg(target_os = "windows")]

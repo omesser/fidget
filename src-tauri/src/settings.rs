@@ -235,7 +235,6 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             dev_flags::DIRECTOR_BLANK.in_force(settings.director_blank),
         ),
         (form::PI_PROJECT_MCP_ID.to_string(), settings.pi_project_mcp),
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
         (
             form::CAPTURABLE_ID.to_string(),
             dev_flags::CAPTURABLE.in_force(settings.capturable),
@@ -1610,9 +1609,10 @@ pub enum BoolField {
     DirectorBlank,
     /// Apply writes the project `.mcp.json` when Pi is the Harness. Default on.
     PiProjectMcp,
-    /// macOS and Windows support capture exclusion. The patch field itself is
-    /// not gated: the file carries it anywhere.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    /// macOS and Windows support capture exclusion via platform APIs. Linux
+    /// has no exclusion API (ADR-0024) but the setting and UI row are present
+    /// for consistency. The patch field itself is not gated: the file carries
+    /// it anywhere.
     Capturable,
     // The consent rows. All three platforms offer WindowNames; Accessibility
     // is macOS and Windows. The patch fields are not gated; the file carries them. #250.
@@ -1677,7 +1677,6 @@ impl SettingsPatch {
             BoolField::TraceEngine => self.trace_engine = Some(value),
             BoolField::DirectorBlank => self.completer.director_blank = Some(value),
             BoolField::PiProjectMcp => self.completer.pi_project_mcp = Some(value),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
