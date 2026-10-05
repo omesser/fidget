@@ -1314,7 +1314,11 @@ fn presence_sections() -> Vec<FormSection> {
                     writes: BoolField::Capturable,
                     batched: false,
                     frozen: false,
-                    help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
+                    help: Some(if cfg!(target_os = "linux") {
+                        "Checked: visible in captures. Linux has no exclusion API (always visible). Needs restart.".to_string()
+                    } else {
+                        "Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()
+                    }),
                     comment: None,
                     disclosure: None,
                     status: None,
@@ -1822,7 +1826,7 @@ pub(crate) mod tests {
     /// is pinned on the platforms that build it the same way, and the three that
     /// never differ pin everywhere.
     #[cfg(target_os = "linux")]
-    const UNPINNED_TABS: &[&str] = &["Privacy"];
+    const UNPINNED_TABS: &[&str] = &["Presence", "Privacy"];
     /// Windows builds Privacy without the Input Monitoring row: the grant is
     /// macOS's (#721).
     #[cfg(target_os = "windows")]
