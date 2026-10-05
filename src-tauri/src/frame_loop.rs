@@ -2430,7 +2430,12 @@ pub(crate) fn run_frame_loop(
                             .unwrap_or(None);
 
                         if confirmed_ignoring != Some(true)
-                            && !toggle_in_flight.lock().unwrap().get(index).copied().unwrap_or(false)
+                            && !toggle_in_flight
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(false)
                         {
                             toggle_in_flight.lock().unwrap()[index] = true;
                             let handle = app.clone();
