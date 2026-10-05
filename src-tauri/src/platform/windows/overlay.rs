@@ -307,6 +307,10 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 /// drawn outside the art still receives clicks. `click_through` controls
 /// WS_EX_TRANSPARENT: when true, the region is set but the window remains
 /// click-through; when false, the region becomes hit-testable.
+///
+/// bRedraw=1: With bRedraw=0, the region update could race sprite placement
+/// from an earlier SetWindowPos, leaving the wrong region visible until the
+/// next frame forced a redraw.
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,

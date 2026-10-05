@@ -1919,9 +1919,9 @@ fn build_overlay(
 
     cover_display(&window, display)?;
 
-    // Windows/macOS: configure before show to prevent white flash.
-    // HWND and NSWindow exist while hidden, so all operations succeed.
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    // Windows: configure before show to prevent white flash.
+    // HWND exists while hidden, so all operations succeed.
+    #[cfg(windows)]
     platform::configure_overlay(&window)?;
 
     // Show the window. On Linux/GTK this realizes the widget and creates the
@@ -1934,6 +1934,12 @@ fn build_overlay(
     if let Err(why) = platform::configure_overlay(&window) {
         eprintln!("overlay: {label} EWMH config deferred: {why}");
     }
+
+    // macOS: configure after show. NSWindow exists before show but tao's
+    // show() calls makeKeyAndOrderFront, so configure after to set the panel
+    // level and behavior before the window is seen.
+    #[cfg(target_os = "macos")]
+    platform::configure_overlay(&window)?;
 
     eprintln!(
         "overlay: {label} covers {:.0}x{:.0} at ({:.0},{:.0})",
