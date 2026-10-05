@@ -41,7 +41,6 @@ const FRAME_RESEND: Duration = Duration::from_millis(250);
 /// One overlay's last applied shape: mask, x, y, facing, scale, and hotspot
 /// rectangles. Named because clippy's `type_complexity` rejects the tuple
 /// inline. Only X11 keeps one: XShape must not rebuild every tick.
-#[cfg(not(target_os = "macos"))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -444,6 +443,11 @@ pub(crate) fn run_frame_loop(
                 .resize(displays.frames.len(), false);
             #[cfg(not(target_os = "macos"))]
             mask_in_flight
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), false);
+            #[cfg(not(unix))]
+            toggle_in_flight
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
@@ -2466,7 +2470,7 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
-                #[cfg(not(all(unix, not(target_os = "macos"))))]
+                #[cfg(target_os = "macos")]
                 {
                     // Only record the new state once the platform accepted it.
                     // Recording it regardless would latch a failed toggle
@@ -2644,6 +2648,35 @@ fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denyli
         .is_some_and(|name| !denylist.allows(name));
     if !can_read_names || denied {
         activity.frontmost_application = None;
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+enum OverlayAction {
+    ApplyMask,
+    ToggleOnly,
+    Nothing,
+}
+
+#[allow(dead_code)]
+fn decide_overlay_action(
+    last_mask: Option<&MaskParams>,
+    new_mask: &MaskParams,
+    mask_in_flight: bool,
+    toggle_in_flight: bool,
+    applied_ignoring: Option<bool>,
+    new_ignore: bool,
+) -> OverlayAction {
+    let mask_changed = last_mask != Some(new_mask);
+    let ignore_changed = applied_ignoring != Some(new_ignore);
+
+    if mask_changed && !mask_in_flight {
+        OverlayAction::ApplyMask
+    } else if !mask_changed && ignore_changed && !toggle_in_flight {
+        OverlayAction::ToggleOnly
+    } else {
+        OverlayAction::Nothing
     }
 }
 
