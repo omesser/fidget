@@ -1325,8 +1325,8 @@ pub(crate) fn run_frame_loop(
             // Teleport, as Bring does: a walk would parade the sprite across the app
             // it is leaving. The Engine loses the taken floor too, or a Walk or throw
             // carries the sprite back. A held sprite stays in the hand until let go.
-            if hide_in_fullscreen && desktop.fullscreen.contains(&true) {
-                world.displays = desktop.free_floors(&displays.frames, &world.displays);
+            let has_refuge = hide_in_fullscreen && desktop.fullscreen.contains(&true);
+            if has_refuge {
                 let widths: Vec<(InstanceId, f64)> = lives
                     .iter()
                     .filter(|live| !live.pointer.grabbing())
@@ -1341,6 +1341,14 @@ pub(crate) fn run_frame_loop(
                         &desktop,
                     )
                 });
+            }
+
+            // Filter the floors now, just before each Instance ticks, so the Engine
+            // cannot see a taken display's floor. The seam is then a wall like an
+            // unplugged display's edge: a Walk or throw stops there instead of
+            // crossing onto the taken display for `refuge_landings` to move back.
+            if has_refuge {
+                world.displays = desktop.free_floors(&displays.frames, &world.displays);
             }
 
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
