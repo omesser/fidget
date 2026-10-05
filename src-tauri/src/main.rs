@@ -1935,8 +1935,9 @@ fn build_overlay(
         eprintln!("overlay: {label} EWMH config deferred: {why}");
     }
 
-    // macOS: configure after show, matching main's order. NSWindow exists
-    // while hidden, but this keeps the macOS diff zero.
+    // macOS: configure after show. NSWindow exists while hidden, so configure
+    // could happen before show, but this matches main's order and keeps the
+    // macOS diff zero.
     #[cfg(target_os = "macos")]
     platform::configure_overlay(&window)?;
 

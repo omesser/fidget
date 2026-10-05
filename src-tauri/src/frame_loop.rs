@@ -41,18 +41,18 @@ const FRAME_RESEND: Duration = Duration::from_millis(250);
 /// One overlay's last applied shape: mask, x, y, facing, scale, and hotspot
 /// rectangles. Named because clippy's `type_complexity` rejects the tuple
 /// inline. Only X11 keeps one: XShape must not rebuild every tick.
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(test, not(target_os = "macos")))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(test, not(unix)))]
 enum OverlayAction {
     ApplyMask,
     ToggleOnly,
     Nothing,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(test, not(unix)))]
 fn decide_overlay_action(
     last_mask: Option<&MaskParams>,
     new_mask: &MaskParams,
