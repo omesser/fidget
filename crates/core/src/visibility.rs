@@ -47,9 +47,9 @@ impl Desktop {
         self.fullscreen.iter().position(|taken| !taken)
     }
 
-    /// The floors on no taken display, so a taken display's edge is a wall. Matched
-    /// by centre: `floors` comes from the polled snapshot, not `frames`' indexes.
-    /// With no free display, every floor, since the Character fades anyway.
+    /// The floors on no taken display, for `refuge_landings` to know where sprites
+    /// may land. Matched by centre: `floors` comes from the polled snapshot, not
+    /// `frames`' indexes. With no free display, every floor, since the Character fades.
     pub fn free_floors(&self, frames: &[Rect], floors: &[Rect]) -> Vec<Rect> {
         let taken: Vec<Rect> = frames
             .iter()
