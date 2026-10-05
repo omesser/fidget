@@ -406,10 +406,14 @@ pub(crate) fn run_frame_loop(
 
             // Check for debug IPC commands (place/snapshot) once per frame.
             if let Some(live) = lives.first() {
-                let state_str = format!("{:?}", live.last_state);
+                let state_str = live
+                    .last_state
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "None".to_string());
                 crate::debug::check_debug_commands(
-                    (live.last_position.0 as i32, live.last_position.1 as i32),
+                    (live.last_position.x as i32, live.last_position.y as i32),
                     &state_str,
+                    &mut roster,
                 );
             }
             // And for what the Engine is playing. The frame line above says
@@ -1556,6 +1560,7 @@ pub(crate) fn run_frame_loop(
                     live.last_state = Some(frame.state);
                     live.since_state = Duration::ZERO;
                 }
+                live.last_position = frame.position;
 
                 // Stay Active while moving, a multi-frame animation still
                 // advancing, or idle_ms accruing toward sleep (#183).
@@ -1846,12 +1851,8 @@ pub(crate) fn run_frame_loop(
 
                 // Placed once, in the space every display shares. Each overlay
                 // is handed it in its own coordinates below.
-                let (pos_x, pos_y) = if let Some((ox, oy)) = crate::debug::get_position_override() {
-                    (ox as f64, oy as f64)
-                } else {
-                    (frame.position.x, frame.position.y)
-                };
-                let sprite = place_sprite((pos_x, pos_y), (width, height), scale);
+                let sprite =
+                    place_sprite((frame.position.x, frame.position.y), (width, height), scale);
 
                 if tracing_frames {
                     // Unix milliseconds so a prop window and this loop share a

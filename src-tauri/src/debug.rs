@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI32, Ordering};
 
 fn debug_cmd_path() -> PathBuf {
     dirs::home_dir()
@@ -16,23 +15,11 @@ fn debug_result_path() -> PathBuf {
         .join(".fidget-debug-result")
 }
 
-static OVERRIDE_X: AtomicI32 = AtomicI32::new(i32::MIN);
-static OVERRIDE_Y: AtomicI32 = AtomicI32::new(i32::MIN);
-static OVERRIDE_ACTIVE: AtomicI32 = AtomicI32::new(0);
-
-pub fn get_position_override() -> Option<(i32, i32)> {
-    if OVERRIDE_ACTIVE.load(Ordering::Relaxed) > 0 {
-        OVERRIDE_ACTIVE.fetch_sub(1, Ordering::Relaxed);
-        Some((
-            OVERRIDE_X.load(Ordering::Relaxed),
-            OVERRIDE_Y.load(Ordering::Relaxed),
-        ))
-    } else {
-        None
-    }
-}
-
-pub fn check_debug_commands(position: (i32, i32), state: &str) {
+pub fn check_debug_commands(
+    position: (i32, i32),
+    state: &str,
+    roster: &mut fidget_core::roster::Roster,
+) {
     let cmd_path = debug_cmd_path();
     let result_path = debug_result_path();
 
@@ -48,10 +35,22 @@ pub fn check_debug_commands(position: (i32, i32), state: &str) {
         if let Some((x_part, y_part)) = place_cmd.split_once(" y=") {
             if let Some(x_str) = x_part.strip_prefix("x=") {
                 if let (Ok(x), Ok(y)) = (x_str.parse::<i32>(), y_part.parse::<i32>()) {
-                    OVERRIDE_X.store(x, Ordering::Relaxed);
-                    OVERRIDE_Y.store(y, Ordering::Relaxed);
-                    OVERRIDE_ACTIVE.store(20, Ordering::Relaxed);
-                    format!("placed: ({}, {})", x, y)
+                    let ids: Vec<_> = roster.list().iter().map(|(id, _)| id.clone()).collect();
+                    let mut moved = false;
+                    for id in ids {
+                        if let Some(instance) = roster.get_mut(&id) {
+                            instance.stand_at(fidget_core::Point {
+                                x: x as f64,
+                                y: y as f64,
+                            });
+                            moved = true;
+                        }
+                    }
+                    if moved {
+                        format!("placed: ({}, {})", x, y)
+                    } else {
+                        "error: no instances".to_string()
+                    }
                 } else {
                     "error: invalid coordinates".to_string()
                 }
