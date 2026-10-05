@@ -35,16 +35,16 @@ const STRIP_SPAN: f64 = 0.5;
 /// desktop where it is not happening: the Character stays.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Desktop {
-    /// Whether a fullscreen application holds each display, at the same
+    /// Whether a fullscreen application takes each display, at the same
     /// indexes as the display frames.
     pub fullscreen: Vec<bool>,
 }
 
 impl Desktop {
-    /// The first display no fullscreen application holds: where a Character
-    /// standing on a fullscreen one goes. `None` when every display is held.
+    /// The first display no fullscreen application takes: where a Character
+    /// standing on a fullscreen one goes. `None` when every display is taken.
     pub fn refuge(&self) -> Option<usize> {
-        self.fullscreen.iter().position(|held| !held)
+        self.fullscreen.iter().position(|taken| !taken)
     }
 
     /// The `floors` a sprite may still walk onto: those on no taken display, so
