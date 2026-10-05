@@ -15,7 +15,9 @@ mod settings_raise;
 mod window_source;
 
 pub(super) use console::{restore_ctrl_c, suppress_ctrl_c_for_children};
-pub use overlay::{configure_overlay, set_click_through, update_input_region};
+pub use overlay::{
+    configure_overlay, set_click_through, toggle_click_through_only, update_input_region,
+};
 pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::WindowsActivitySource;
 pub(super) use settings_raise::{lower_to_normal_level, raise_above_overlay};

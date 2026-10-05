@@ -6,56 +6,80 @@
 //! and unions any hotspot rectangles the renderer reported so a control drawn
 //! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
 //! when the capturable setting, on by default (ADR-0024), is turned off.
+//!
+//! DwmExtendFrameIntoClientArea extends the window frame into the entire client
+//! area, compositing the frame with the client area's glass sheet so the overlay
+//! has no opaque window background (#1327).
 
 use std::sync::Mutex;
 use std::time::Instant;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
+    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOREDRAW, SWP_NOSIZE,
+    SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
-/// `FIDGET_CAPTURABLE=0` excludes it from shares.
+/// `FIDGET_CAPTURABLE=0` excludes it from shares. Extends DWM frame into the
+/// entire client area to composite the frame with the client area's glass sheet.
 /// Returns Err when the handle is not realized yet, so the caller can retry.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
     apply_capture_exclusion(hwnd)?;
+    extend_dwm_frame(hwnd)?;
     note_overlay(hwnd as u64);
 
     Ok(())
 }
 
-/// Click-through, then put the tool-window bits back.
-/// Off the event-loop thread tao posts the style rewrite and returns first,
-/// so both steps run there, rewrite first.
-pub fn set_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<(), String> {
+/// Reinforce overlay styles after a rewrite. `update_input_region` owns
+/// WS_EX_TRANSPARENT; this re-applies tool-window bits via `reinforce_overlay`.
+/// `_ignore` unused; kept for cross-platform signature parity.
+pub fn set_click_through(window: &tauri::WebviewWindow, _ignore: bool) -> Result<(), String> {
     if event_loop_thread() {
-        return apply_click_through(window, ignore);
+        return apply_click_through(window);
     }
     let window = window.clone();
     window
         .clone()
         .run_on_main_thread(move || {
-            if let Err(why) = apply_click_through(&window, ignore) {
+            if let Err(why) = apply_click_through(&window) {
                 eprintln!("overlay: click-through restore failed: {why}");
             }
         })
         .map_err(|e| e.to_string())
 }
 
-fn apply_click_through(window: &tauri::WebviewWindow, ignore: bool) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(ignore)
-        .map_err(|e| e.to_string())?;
+fn apply_click_through(window: &tauri::WebviewWindow) -> Result<(), String> {
     reinforce_overlay(window)
+}
+
+/// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
+/// click-through state changes on an idle sprite (mask unchanged, ignore flipped).
+pub fn toggle_click_through_only(
+    window: &tauri::WebviewWindow,
+    click_through: bool,
+) -> Result<(), String> {
+    let hwnd = overlay_hwnd(window)?;
+    unsafe {
+        let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let new_style = if click_through {
+            current_style | (WS_EX_TRANSPARENT as i32)
+        } else {
+            current_style & !(WS_EX_TRANSPARENT as i32)
+        };
+        apply_exstyle(hwnd, current_style, new_style)?;
+    }
+    Ok(())
 }
 
 /// Setup builds overlays on the event-loop thread, before the frame loop.
@@ -90,8 +114,12 @@ fn note_overlay(hwnd: u64) {
 }
 
 /// SetWindowRgn carves the click-through region from the sprite's alpha mask.
-/// `None` is WS_EX_TRANSPARENT (whole window). `Some` is the opaque pixels
-/// plus hotspots, with WS_EX_TRANSPARENT removed so clicks hit that region.
+/// `None` clears the region (whole window click-through via WS_EX_TRANSPARENT).
+/// `Some` applies the opaque pixels plus hotspots. `click_through` controls
+/// WS_EX_TRANSPARENT: when true (cursor elsewhere), the region stays but the
+/// window is still click-through; when false (cursor over sprite), the region
+/// becomes hit-testable.
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,
@@ -100,6 +128,7 @@ pub fn update_input_region(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    click_through: bool,
 ) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
 
@@ -112,6 +141,7 @@ pub fn update_input_region(
             sprite_facing,
             scale,
             hotspot_rects,
+            click_through,
         )?;
     } else {
         clear_input_region(hwnd)?;
@@ -131,16 +161,49 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
+/// Log a debug message if FIDGET_DEBUG_REINFORCE is set.
+fn reinforce_debug_log(msg: impl FnOnce() -> String) {
+    if crate::dev_flags::DEBUG_REINFORCE.is_on() {
+        if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            eprintln!(
+                "[{}.{:03}] reinforce_overlay {}",
+                now.as_secs(),
+                now.subsec_millis(),
+                msg()
+            );
+        }
+    }
+}
+
 /// Put the tool-window bits back after a click-through rewrite drops them.
 fn reinforce_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
+
+    reinforce_debug_log(|| format!("start hwnd={:x}", hwnd as usize));
+
+    if let Err(e) = extend_dwm_frame(hwnd) {
+        eprintln!("overlay: extend_dwm_frame failed: {e}");
+    }
+
     // SAFETY: hwnd comes from the window's raw handle, valid for this call.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = super::super::windows_perch::restore_overlay_exstyle(current_style);
+
+        reinforce_debug_log(|| {
+            format!(
+                "ex-style write: current={:#x} new={:#x}",
+                current_style, new_style
+            )
+        });
+
         apply_exstyle(hwnd, current_style, new_style)?;
     }
+
     note_overlay(hwnd as u64);
+
+    reinforce_debug_log(|| format!("end hwnd={:x}", hwnd as usize));
+
     Ok(())
 }
 
@@ -171,7 +234,7 @@ unsafe fn apply_exstyle(hwnd: HWND, current_style: i32, new_style: i32) -> Resul
         0,
         0,
         0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW,
     ) == 0
     {
         return Err("Failed to apply overlay extended styles".to_string());
@@ -219,9 +282,35 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
+fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
+    // DwmExtendFrameIntoClientArea is documented safe with valid HWNDs and margins.
+    unsafe {
+        let result = DwmExtendFrameIntoClientArea(hwnd, &margins);
+        if result != 0 {
+            return Err(format!("Failed to extend DWM frame: {result:#x}"));
+        }
+    }
+
+    Ok(())
+}
+
 /// Apply the alpha mask as the input region using SetWindowRgn.
 /// Facing < 0 mirrors the mask. Hotspot rectangles are OR'd in so a control
-/// drawn outside the art still receives clicks.
+/// drawn outside the art still receives clicks. `click_through` controls
+/// WS_EX_TRANSPARENT: when true, the region is set but the window remains
+/// click-through; when false, the region becomes hit-testable.
+///
+/// bRedraw=1: With bRedraw=0, the region update could race sprite placement
+/// from an earlier SetWindowPos, leaving the wrong region visible until the
+/// next frame forced a redraw.
 #[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
@@ -231,6 +320,7 @@ fn apply_input_mask(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    click_through: bool,
 ) -> Result<(), String> {
     let rebuild_start = Instant::now();
 
@@ -339,8 +429,15 @@ fn apply_input_mask(
         }
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        let new_style = current_style & !(WS_EX_TRANSPARENT as i32);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        let new_style = if click_through {
+            current_style | (WS_EX_TRANSPARENT as i32)
+        } else {
+            current_style & !(WS_EX_TRANSPARENT as i32)
+        };
+        if let Err(e) = apply_exstyle(hwnd, current_style, new_style) {
+            DeleteObject(combined_rgn);
+            return Err(e);
+        }
 
         if SetWindowRgn(hwnd, combined_rgn, 1) == 0 {
             DeleteObject(combined_rgn);
@@ -363,13 +460,12 @@ fn apply_input_mask(
 
 /// Clear the input region, making the entire window click-through.
 fn clear_input_region(hwnd: HWND) -> Result<(), String> {
-    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. GetWindowLongW,
-    // SetWindowLongW, and SetWindowRgn are documented safe with valid HWNDs; passing
-    // null to SetWindowRgn clears the region.
+    // SAFETY: hwnd is a live HWND. GetWindowLongW and SetWindowRgn are safe
+    // with a valid hwnd; apply_exstyle validates the same hwnd.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style | (WS_EX_TRANSPARENT as i32);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        apply_exstyle(hwnd, current_style, new_style)?;
 
         SetWindowRgn(hwnd, std::ptr::null_mut(), 1);
     }

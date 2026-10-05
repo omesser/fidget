@@ -603,7 +603,9 @@ pub fn set_overlay_click_through(
 /// Update the input region for the overlay window based on the sprite's alpha mask.
 /// X11 and Windows then union hotspot rects so a control drawn outside the
 /// art still receives clicks. macOS uses `set_ignore_cursor_events`.
+/// `click_through` (Windows-only) controls whether the sprite region is hit-testable.
 #[cfg(all(unix, not(target_os = "macos")))]
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,
@@ -612,6 +614,7 @@ pub fn update_input_region(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    _click_through: bool,
 ) -> Result<(), String> {
     x11::update_input_region(
         window,
@@ -625,7 +628,9 @@ pub fn update_input_region(
 }
 
 /// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
+/// `click_through` controls WS_EX_TRANSPARENT.
 #[cfg(not(unix))]
+#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&fidget_core::overlay::AlphaMask>,
@@ -634,6 +639,7 @@ pub fn update_input_region(
     sprite_facing: i32,
     scale: i32,
     hotspot_rects: &[[i32; 4]],
+    click_through: bool,
 ) -> Result<(), String> {
     windows::update_input_region(
         window,
@@ -643,7 +649,18 @@ pub fn update_input_region(
         sprite_facing,
         scale,
         hotspot_rects,
+        click_through,
     )
+}
+
+/// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
+/// click-through state changes on an idle sprite (mask unchanged, ignore flipped).
+#[cfg(not(unix))]
+pub fn toggle_click_through_only(
+    window: &tauri::WebviewWindow,
+    click_through: bool,
+) -> Result<(), String> {
+    windows::toggle_click_through_only(window, click_through)
 }
 
 /// Whether this lane honours the off-art rectangles the renderer reports (#547).

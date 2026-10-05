@@ -58,6 +58,9 @@ pub static TRACE_FRAMES: Flag = Flag::new("FIDGET_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("FIDGET_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("FIDGET_TRACE_DIRECTOR");
 pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
+/// Windows overlay reinforce debug logging. Windows only.
+#[cfg(windows)]
+pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
 /// Capture exclusion setting. macOS and Windows both support it; Linux degrades
 /// gracefully (no exclusion API).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -141,6 +144,8 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
         TRACE_ENGINE.var(),
+        #[cfg(windows)]
+        DEBUG_REINFORCE.var(),
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         CAPTURABLE.var(),
         DIRECTOR_BLANK.var(),
@@ -181,6 +186,8 @@ pub fn seed(settings: &Settings) {
     TRACE_HITTEST.seed(settings.trace_hittest);
     TRACE_DIRECTOR.seed(settings.trace_director);
     TRACE_ENGINE.seed(settings.trace_engine);
+    #[cfg(windows)]
+    DEBUG_REINFORCE.seed(false);
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     CAPTURABLE.seed(settings.capturable);
     DIRECTOR_BLANK.seed(settings.director_blank);
