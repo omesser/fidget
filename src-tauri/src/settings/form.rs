@@ -1314,11 +1314,7 @@ fn presence_sections() -> Vec<FormSection> {
                     writes: BoolField::Capturable,
                     batched: false,
                     frozen: false,
-                    help: Some(if cfg!(target_os = "linux") {
-                        "Checked: visible in captures. Linux has no exclusion API (always visible). Needs restart.".to_string()
-                    } else {
-                        "Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()
-                    }),
+                    help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
                     comment: None,
                     disclosure: None,
                     status: None,

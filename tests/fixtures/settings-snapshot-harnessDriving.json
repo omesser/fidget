@@ -69,7 +69,7 @@
               "writes": "Capturable",
               "frozen": false,
               "batched": false,
-              "help": "Checked: visible in captures. Linux has no exclusion API (always visible). Needs restart.",
+              "help": "Checked: visible in captures. Unchecked: excluded. Needs restart.",
               "comment": null,
               "disclosure": null,
               "status": null
@@ -550,6 +550,104 @@
           ],
           "comment": null,
           "disclosure": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "title": "Privacy",
+      "sections": [
+        {
+          "heading": "What the fidget can see",
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "consent_accessibility",
+              "label": "Accessibility",
+              "writes": "UseAccessibility",
+              "frozen": false,
+              "batched": false,
+              "help": "Reads the Dock's position.",
+              "comment": null,
+              "disclosure": "Accessibility permission lets fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.",
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "consent_screen_recording",
+              "label": "Window and application names",
+              "writes": "UseWindowNames",
+              "frozen": false,
+              "batched": false,
+              "help": "Requires macOS Screen Recording.",
+              "comment": null,
+              "disclosure": "macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.",
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "consent_input_monitoring",
+              "label": "Input Monitoring",
+              "writes": "UseInputMonitoring",
+              "frozen": false,
+              "batched": false,
+              "help": "Reacts to the mouse at once, not a second late.",
+              "comment": null,
+              "disclosure": "Without this grant fidget asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the fidget the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the fidget goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.",
+              "status": null
+            }
+          ],
+          "comment": "Checking a box asks macOS for the permission. macOS lists this app as Fidget, under Privacy & Security.",
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Excluded applications",
+          "rows": [
+            {
+              "type": "Multiline",
+              "id": "excluded",
+              "label": null,
+              "writes": "ExcludedApplications",
+              "help": "One app name per line. Those windows stay out of MCP sensing.",
+              "editable": true,
+              "disclosure": "Applications on this list never appear in MCP sensing tool results (window metadata). The fidget can still sit on their windows. Password fields are excluded everywhere, regardless of this list."
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "Memory File",
+          "rows": [
+            {
+              "type": "InspectPath",
+              "id": "memory_path"
+            },
+            {
+              "type": "Composite",
+              "id": "memory_actions",
+              "controls": [
+                {
+                  "type": "Button",
+                  "id": "memory_open",
+                  "label": "Open in editor",
+                  "frozen": false
+                },
+                {
+                  "type": "Button",
+                  "id": "memory_wipe",
+                  "label": "Wipe",
+                  "frozen": false
+                }
+              ],
+              "help": null,
+              "disclosure": null
+            }
+          ],
+          "comment": "What your fidget remembers between runs.",
+          "disclosure": "Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.",
           "status": null
         }
       ]
