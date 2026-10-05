@@ -5,7 +5,7 @@
 #   reads its items. Escape closes the menu. Fidget quits when the scenario
 #   ends.
 # Input: one real right-click on the sprite and one Escape, through xdotool.
-#   X11 has no Control-click; the right button is the menu gesture there.
+#   Fidget treats Control-click as the menu gesture only on macOS; here the right button is the menu gesture.
 # Duration: about 20 s, 1 min at most.
 # Grants: an X11 session, AT-SPI (python3-pyatspi) and xdotool.
 # Asserts: the right-click lands as Menu, and the open menu's AT-SPI items

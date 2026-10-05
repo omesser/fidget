@@ -4,8 +4,8 @@
 #   the sprite, right-clicks its centre, waits for the menu to appear, and
 #   reads its items. Escape closes the menu. Fidget quits when the scenario
 #   ends.
-# Input: one real right-click on the sprite and one Escape. Windows has no
-#   Control-click; the right button is the menu gesture there.
+# Input: one real right-click on the sprite and one Escape. Fidget treats
+#   Control-click as the menu gesture only on macOS; here the right button is the menu gesture.
 # Duration: about 20 s, 1 min at most.
 # Grants: a desktop session. UI Automation for the terminal that runs it. bash
 #   on PATH for the fixture Harness wrapper.

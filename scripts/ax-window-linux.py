@@ -483,14 +483,14 @@ COMMANDS = {
 def main(argv):
     if len(argv) < 2:
         print(
-            "usage: ax-window-linux.py dump|size|press|tray|menu PID TITLE ...",
+            "usage: ax-window-linux.py dump|size|press|tray|menu PID ...",
             file=sys.stderr,
         )
         return 2
     if argv[1] in COMMANDS:
         return COMMANDS[argv[1]](argv)
     print(
-        "usage: ax-window-linux.py dump|size|press|tray|menu PID TITLE ...",
+        "usage: ax-window-linux.py dump|size|press|tray|menu PID ...",
         file=sys.stderr,
     )
     return 2
