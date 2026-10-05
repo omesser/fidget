@@ -41,10 +41,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Reinforce overlay extended styles after a potential rewrite.
-/// On Windows, `update_input_region` owns WS_EX_TRANSPARENT, and this function
-/// only re-applies the tool-window ex-style bits via `reinforce_overlay`.
-/// `_ignore` is unused; kept for cross-platform signature parity.
+/// Reinforce overlay styles after a rewrite. `update_input_region` owns
+/// WS_EX_TRANSPARENT; this re-applies tool-window bits via `reinforce_overlay`.
+/// `_ignore` unused; kept for cross-platform signature parity.
 pub fn set_click_through(window: &tauri::WebviewWindow, _ignore: bool) -> Result<(), String> {
     if event_loop_thread() {
         return apply_click_through(window);

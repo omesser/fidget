@@ -158,10 +158,9 @@ pub(crate) fn run_frame_loop(
         // decision so the first tick always applies.
         let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
 
-        // Confirmed click-through state per overlay, written from main-thread
-        // closures only after toggle_click_through_only or update_input_region
-        // succeeds. Shared so the frame thread can detect when a new toggle or
-        // mask apply carrying the new click-through is needed.
+        // Confirmed click-through per overlay, set on main thread when
+        // toggle or mask apply succeeds. Frame thread checks to decide
+        // when new toggle or mask apply is needed.
         #[cfg(not(unix))]
         let applied_ignoring: Arc<Mutex<Vec<Option<bool>>>> =
             Arc::new(Mutex::new(vec![None; covered.len()]));
