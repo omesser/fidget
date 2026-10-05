@@ -8,6 +8,7 @@
 use crate::character::{Behavior, CursorReaction, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
+use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -482,25 +483,25 @@ pub fn bring_landings(
 }
 
 /// Where each sprite standing on a fullscreen display should stand instead, on
-/// display `refuge`. `fullscreen` is at the same indexes as `monitors`. Sprites
-/// elsewhere stay put, so a sprite already moved plans nothing the next time.
+/// the desktop's refuge. `desktop.fullscreen` is at the same indexes as
+/// `monitors`. Sprites elsewhere stay put, so a sprite already moved plans
+/// nothing the next time; with no refuge, nobody moves.
 pub fn refuge_landings(
     feet: &[Point],
     widths: &[f64],
     monitors: &[Rect],
     floors: &[Rect],
-    fullscreen: &[bool],
-    refuge: usize,
+    desktop: &Desktop,
 ) -> Vec<Option<Point>> {
     let mut landings = vec![None; feet.len()];
-    let Some(haven) = monitors.get(refuge) else {
+    let Some(refuge) = desktop.refuge().and_then(|index| monitors.get(index)) else {
         return landings;
     };
     let stranded = |at: &Point| {
         monitors
             .iter()
-            .zip(fullscreen)
-            .any(|(monitor, &held)| held && stands_on((at.x, at.y), monitor))
+            .zip(&desktop.fullscreen)
+            .any(|(monitor, &taken)| taken && stands_on((at.x, at.y), monitor))
     };
     // A Bring to the refuge, among only the stranded and those already there:
     // they are the arrivals and the stayers it lays out. Anyone on another
@@ -508,7 +509,7 @@ pub fn refuge_landings(
     let picked: Vec<usize> = (0..feet.len())
         .filter(|&index| {
             let at = &feet[index];
-            stranded(at) || stands_on((at.x, at.y), haven)
+            stranded(at) || stands_on((at.x, at.y), refuge)
         })
         .collect();
     let picked_feet: Vec<Point> = picked.iter().map(|&index| feet[index]).collect();
@@ -517,8 +518,8 @@ pub fn refuge_landings(
         .map(|&index| widths.get(index).copied().unwrap_or(0.0))
         .collect();
     let centre = Point {
-        x: haven.x + haven.width / 2.0,
-        y: haven.y + haven.height / 2.0,
+        x: refuge.x + refuge.width / 2.0,
+        y: refuge.y + refuge.height / 2.0,
     };
     if let Some(planned) = bring_landings(&picked_feet, &picked_widths, monitors, floors, centre) {
         for (index, landing) in picked.into_iter().zip(planned) {
@@ -7335,8 +7336,9 @@ mod tests {
                 &[128.0, 128.0, 128.0],
                 &monitors,
                 &monitors,
-                &[false, true, false],
-                0,
+                &Desktop {
+                    fullscreen: vec![false, true, false],
+                },
             ),
             vec![
                 Some(Point {
@@ -7365,8 +7367,33 @@ mod tests {
                 &[128.0],
                 &[primary, second],
                 &[primary, second],
-                &[false, true],
-                0,
+                &Desktop {
+                    fullscreen: vec![false, true],
+                },
+            ),
+            vec![None]
+        );
+    }
+
+    /// Every display taken: there is nowhere to go, so nobody moves, and the
+    /// Character fades instead.
+    #[test]
+    fn refuge_landings_moves_nobody_when_every_display_is_taken() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+
+        assert_eq!(
+            refuge_landings(
+                &[Point {
+                    x: 2500.0,
+                    y: 982.0,
+                }],
+                &[128.0],
+                &[primary, second],
+                &[primary, second],
+                &Desktop {
+                    fullscreen: vec![true, true],
+                },
             ),
             vec![None]
         );

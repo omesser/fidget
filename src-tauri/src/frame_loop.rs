@@ -1330,23 +1330,20 @@ pub(crate) fn run_frame_loop(
             // into the app, to be moved again next tick.
             if hide_in_fullscreen && desktop.fullscreen.contains(&true) {
                 world.displays = desktop.free_floors(&displays.frames, &world.displays);
-                if let Some(refuge) = desktop.refuge() {
-                    let widths: Vec<(InstanceId, f64)> = lives
-                        .iter()
-                        .filter(|live| !live.pointer.grabbing())
-                        .map(|live| (live.id.clone(), sprite_width(&live.character)))
-                        .collect();
-                    stand_roster(&mut roster, &widths, |feet, widths| {
-                        refuge_landings(
-                            feet,
-                            widths,
-                            &displays.frames,
-                            &displays.usable_frames,
-                            &desktop.fullscreen,
-                            refuge,
-                        )
-                    });
-                }
+                let widths: Vec<(InstanceId, f64)> = lives
+                    .iter()
+                    .filter(|live| !live.pointer.grabbing())
+                    .map(|live| (live.id.clone(), sprite_width(&live.character)))
+                    .collect();
+                stand_roster(&mut roster, &widths, |feet, widths| {
+                    refuge_landings(
+                        feet,
+                        widths,
+                        &displays.frames,
+                        &displays.usable_frames,
+                        &desktop,
+                    )
+                });
             }
 
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());

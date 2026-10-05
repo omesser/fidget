@@ -3090,15 +3090,15 @@ fn stand_roster(
 ) {
     let mut ids = Vec::new();
     let mut feet = Vec::new();
-    let mut width_of = Vec::new();
+    let mut spans = Vec::new();
     for (id, width) in widths {
         if let Some(instance) = roster.get(id) {
             ids.push(id);
             feet.push(instance.feet());
-            width_of.push(*width);
+            spans.push(*width);
         }
     }
-    for (id, landing) in ids.into_iter().zip(plan(&feet, &width_of)) {
+    for (id, landing) in ids.into_iter().zip(plan(&feet, &spans)) {
         if let (Some(at), Some(instance)) = (landing, roster.get_mut(id)) {
             instance.stand_at(at);
         }
@@ -5619,8 +5619,9 @@ mod tests {
                 widths,
                 &[PRIMARY, SECOND],
                 &[PRIMARY, SECOND],
-                &[false, true],
-                0,
+                &fidget_core::visibility::Desktop {
+                    fullscreen: vec![false, true],
+                },
             )
         };
 
