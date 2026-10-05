@@ -68,12 +68,11 @@ pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance
 /// Whether the feet can be put down at `position`: some display covers it,
 /// with the room the art needs above. Split out of `is_perch` because a ride
 /// between polls has no window sample yet must not place the sprite out there.
-/// Uses closed interval [x, x+width] to include rightmost edges.
 pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     snapshot
         .displays
         .iter()
-        .filter(|display| display.x <= position.x && position.x <= display.x + display.width)
+        .filter(|display| display.spans_x_closed(position.x))
         .any(|display| {
             position.y >= display.y + room_above(clearance, display)
                 && position.y <= display.bottom()
@@ -148,24 +147,22 @@ pub(super) fn swallows(window: &Rect, position: Point) -> bool {
 
 /// The bottom of the display the sprite is over, or nothing when it is over no
 /// display at all — a sprite outside every display has nothing to land on.
-/// Uses closed interval [x, x+width] to include rightmost edges for landing.
 fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
     snapshot
         .displays
         .iter()
-        .filter(|display| display.x <= x && x <= display.x + display.width)
+        .filter(|display| display.spans_x_closed(x))
         .map(Rect::bottom)
         .max_by(f64::total_cmp)
 }
 
 /// The highest the feet may go: the usable top plus the room the art needs
 /// above them. A climb lets go here; a Throw bumps it.
-/// Uses closed interval [x, x+width] to include rightmost edges for climbing.
 pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> Option<f64> {
     snapshot
         .displays
         .iter()
-        .filter(|display| display.x <= x && x <= display.x + display.width)
+        .filter(|display| display.spans_x_closed(x))
         .map(|display| display.y + room_above(clearance, display))
         .min_by(f64::total_cmp)
 }
@@ -181,14 +178,11 @@ fn room_above(clearance: f64, display: &Rect) -> f64 {
 /// nearest one when it is over no display at all: out there it has no floor and
 /// would fall for ever, so grabbing an edge is how it gets back over a display.
 pub(super) fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
-    // Check if x is over any display using closed interval [x, x+width] to
-    // include rightmost edges. Half-open spans_x would exclude the right edge.
-    let over_display = snapshot
+    if !snapshot
         .displays
         .iter()
-        .any(|display| display.x <= x && x <= display.x + display.width);
-    
-    if !over_display {
+        .any(|display| display.spans_x_closed(x))
+    {
         return nearest_edge(x, snapshot);
     }
 

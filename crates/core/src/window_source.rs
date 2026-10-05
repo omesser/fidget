@@ -42,16 +42,13 @@ impl Rect {
     }
 
     pub(crate) fn spans_x(&self, x: f64) -> bool {
-        // Half-open interval [x, x+width) prevents dual-spanning at display seams.
-        // At x=0 between secondary (ending at 0) and primary (starting at 0),
-        // only the primary spans x=0. Functions that need to include the rightmost
-        // edge for physics (floor_under, ceiling_over) check it explicitly.
+        // Half-open [x, x+width) prevents dual-spanning at seams.
+        // Seam x belongs to the display whose left edge it is.
         x >= self.x && x < self.x + self.width
     }
 
     pub(crate) fn spans_x_closed(&self, x: f64) -> bool {
-        // Closed interval [x, x+width] for perch detection where sprites can
-        // stand on the rightmost pixel of a window's top edge.
+        // Closed [x, x+width] for landing on rightmost edges.
         x >= self.x && x <= self.x + self.width
     }
 }
