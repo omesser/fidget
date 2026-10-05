@@ -1,7 +1,6 @@
-// A window over every whole display, so `fullscreen_displays` in
-// crates/core/src/visibility.rs fades the Character: with a free display left,
-// the Character would move there instead. The rule reads rectangles, not pixels,
-// so each window is nearly transparent and lets every click through.
+// A window over every display, since `fullscreen_displays` (core visibility.rs)
+// moves the Character to any free one rather than fading it. The rule reads
+// rectangles, not pixels, so each window is near-transparent and click-through.
 
 // It re-asserts its place at the front: an accessory window is buried by any
 // focus change, and the rule takes the first window overlapping a display.
