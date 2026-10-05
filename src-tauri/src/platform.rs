@@ -653,6 +653,16 @@ pub fn update_input_region(
     )
 }
 
+/// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
+/// click-through state changes on an idle sprite (mask unchanged, ignore flipped).
+#[cfg(not(unix))]
+pub fn toggle_click_through_only(
+    window: &tauri::WebviewWindow,
+    click_through: bool,
+) -> Result<(), String> {
+    windows::toggle_click_through_only(window, click_through)
+}
+
 /// Whether this lane honours the off-art rectangles the renderer reports (#547).
 /// macOS hit-tests via boolean click-through; X11 and Windows union them into
 /// the input region, so a control above the head takes clicks on every platform.

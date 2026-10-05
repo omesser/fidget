@@ -2209,10 +2209,10 @@ pub(crate) fn run_frame_loop(
                                 hotspots,
                             );
 
-                            // `last_mask` skips an unchanged sprite. `local.x`
-                            // and `local.y` change while walking, so this fires
-                            // at motion rate either way; hotspots do not worsen it.
-                            if last_mask.lock().unwrap().get(index) != Some(&mask_params)
+                            let mask_changed = last_mask.lock().unwrap().get(index) != Some(&mask_params);
+                            let ignore_changed = ignoring[index] != Some(ignore);
+
+                            if mask_changed
                                 && !mask_in_flight
                                     .lock()
                                     .unwrap()
@@ -2273,6 +2273,29 @@ pub(crate) fn run_frame_loop(
                                         }
                                     }
                                 });
+                            } else if !mask_changed && ignore_changed {
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                let overlay_index = index;
+                                let trace = tracing;
+                                let click_through = ignore;
+
+                                let _ = app.run_on_main_thread(move || {
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        if platform::toggle_click_through_only(
+                                            &window,
+                                            click_through,
+                                        )
+                                        .is_ok()
+                                        {
+                                            if trace {
+                                                eprintln!(
+                                                    "overlay: {label_clone} click-through toggled"
+                                                );
+                                            }
+                                        }
+                                    }
+                                });
                             }
 
                             if mask_applied
@@ -2283,6 +2306,7 @@ pub(crate) fn run_frame_loop(
                                 .unwrap_or(false)
                                 && ignoring[index] != Some(ignore)
                             {
+                                flipped = true;
                                 ignoring[index] = Some(ignore);
                             }
                         } else {
@@ -2317,6 +2341,7 @@ pub(crate) fn run_frame_loop(
                             }
 
                             if ignoring[index] != Some(true) {
+                                flipped = true;
                                 ignoring[index] = Some(true);
                             }
                         }
@@ -2352,6 +2377,7 @@ pub(crate) fn run_frame_loop(
                         }
 
                         if ignoring[index] != Some(true) {
+                            flipped = true;
                             ignoring[index] = Some(true);
                         }
                     }
@@ -2784,5 +2810,19 @@ mod tests {
     fn two_clicks_farther_apart_than_the_interval_are_two_pokes() {
         let gesture = [click(), wait(700), click(), wait(700)].concat();
         assert_eq!(heard(&gesture), vec![Happened::Poke, Happened::Poke]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_idle_sprite_ignoring_change_detected() {
+        let mask_params = (Some(vec![true, false]), 100, 100, 1, 1, Vec::new());
+
+        let mut ignoring_last = Some(false);
+        let mut ignoring_now = Some(true);
+        assert_ne!(ignoring_last, ignoring_now, "Change in ignoring should be detected");
+
+        ignoring_last = Some(true);
+        ignoring_now = Some(true);
+        assert_eq!(ignoring_last, ignoring_now, "No change when both true");
     }
 }

@@ -64,6 +64,25 @@ fn apply_click_through(window: &tauri::WebviewWindow) -> Result<(), String> {
     reinforce_overlay(window)
 }
 
+/// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
+/// click-through state changes on an idle sprite (mask unchanged, ignore flipped).
+pub fn toggle_click_through_only(
+    window: &tauri::WebviewWindow,
+    click_through: bool,
+) -> Result<(), String> {
+    let hwnd = overlay_hwnd(window)?;
+    unsafe {
+        let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let new_style = if click_through {
+            current_style | (WS_EX_TRANSPARENT as i32)
+        } else {
+            current_style & !(WS_EX_TRANSPARENT as i32)
+        };
+        apply_exstyle(hwnd, current_style, new_style)?;
+    }
+    Ok(())
+}
+
 /// Setup builds overlays on the event-loop thread, before the frame loop.
 fn event_loop_thread() -> bool {
     static EVENT_LOOP: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
