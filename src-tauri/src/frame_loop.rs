@@ -130,6 +130,13 @@ pub(crate) fn run_frame_loop(
         // decision so the first tick always applies.
         let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
 
+        // Confirmed click-through state per overlay, written from main-thread
+        // closures only after toggle_click_through_only or update_input_region
+        // succeeds. Shared so the frame thread can detect when a new toggle or
+        // mask apply carrying the new click-through is needed.
+        let applied_ignoring: Arc<Mutex<Vec<Option<bool>>>> =
+            Arc::new(Mutex::new(vec![None; covered.len()]));
+
         // The last instruction sent to each overlay and when, so a tick that
         // repeats one does not send it again. See the emit site for the
         // measurement that earns this.
@@ -2209,18 +2216,25 @@ pub(crate) fn run_frame_loop(
                                 hotspots,
                             );
 
-                            let mask_changed =
-                                last_mask.lock().unwrap().get(index) != Some(&mask_params);
-                            let ignore_changed = ignoring[index] != Some(ignore);
-
-                            if mask_changed
-                                && !mask_in_flight
+                            let action = decide_overlay_action(
+                                last_mask.lock().unwrap().get(index),
+                                &mask_params,
+                                mask_in_flight
                                     .lock()
                                     .unwrap()
                                     .get(index)
                                     .copied()
-                                    .unwrap_or(false)
-                            {
+                                    .unwrap_or(false),
+                                applied_ignoring
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(None),
+                                ignore,
+                            );
+
+                            if action == OverlayAction::ApplyMask {
                                 mask_in_flight.lock().unwrap()[index] = true;
                                 let handle = app.clone();
                                 let label_clone = label.clone();
@@ -2232,6 +2246,7 @@ pub(crate) fn run_frame_loop(
                                 let hotspots_clone = mask_params.5.clone();
                                 let mask_applied_clone = Arc::clone(&mask_applied);
                                 let last_mask_clone = Arc::clone(&last_mask);
+                                let applied_ignoring_clone = Arc::clone(&applied_ignoring);
                                 let mask_in_flight_clone = Arc::clone(&mask_in_flight);
                                 let mask_params_clone = mask_params.clone();
                                 let overlay_index = index;
@@ -2256,6 +2271,8 @@ pub(crate) fn run_frame_loop(
                                                     true;
                                                 last_mask_clone.lock().unwrap()[overlay_index] =
                                                     mask_params_clone;
+                                                applied_ignoring_clone.lock().unwrap()[overlay_index] =
+                                                    Some(click_through);
                                                 if trace {
                                                     eprintln!(
                                                         "overlay: {label_clone} input mask applied"
@@ -2274,9 +2291,11 @@ pub(crate) fn run_frame_loop(
                                         }
                                     }
                                 });
-                            } else if !mask_changed && ignore_changed {
+                            } else if action == OverlayAction::ToggleOnly {
                                 let handle = app.clone();
                                 let label_clone = label.clone();
+                                let applied_ignoring_clone = Arc::clone(&applied_ignoring);
+                                let overlay_index = index;
                                 let trace = tracing;
                                 let click_through = ignore;
 
@@ -2287,26 +2306,29 @@ pub(crate) fn run_frame_loop(
                                             click_through,
                                         )
                                         .is_ok()
-                                            && trace
                                         {
-                                            eprintln!(
-                                                "overlay: {label_clone} click-through toggled"
-                                            );
+                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
+                                                Some(click_through);
+                                            if trace {
+                                                eprintln!(
+                                                    "overlay: {label_clone} click-through toggled"
+                                                );
+                                            }
                                         }
                                     }
                                 });
                             }
 
-                            if mask_applied
+                            let confirmed_ignoring = applied_ignoring
                                 .lock()
                                 .unwrap()
                                 .get(index)
                                 .copied()
-                                .unwrap_or(false)
-                                && ignoring[index] != Some(ignore)
+                                .unwrap_or(None);
+                            if confirmed_ignoring.is_some() && ignoring[index] != confirmed_ignoring
                             {
                                 flipped = true;
-                                ignoring[index] = Some(ignore);
+                                ignoring[index] = confirmed_ignoring;
                             }
                         } else {
                             let mask_params = (None, 0, 0, 1, 1, Vec::new());
@@ -2315,6 +2337,7 @@ pub(crate) fn run_frame_loop(
                                 let handle = app.clone();
                                 let label_clone = label.clone();
                                 let last_mask_clone = Arc::clone(&last_mask);
+                                let applied_ignoring_clone = Arc::clone(&applied_ignoring);
                                 let mask_params_clone = mask_params.clone();
                                 let overlay_index = index;
 
@@ -2334,12 +2357,20 @@ pub(crate) fn run_frame_loop(
                                         {
                                             last_mask_clone.lock().unwrap()[overlay_index] =
                                                 mask_params_clone;
+                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
+                                                Some(true);
                                         }
                                     }
                                 });
                             }
 
-                            if ignoring[index] != Some(true) {
+                            let confirmed_ignoring = applied_ignoring
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(None);
+                            if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                                 flipped = true;
                                 ignoring[index] = Some(true);
                             }
@@ -2351,6 +2382,7 @@ pub(crate) fn run_frame_loop(
                             let handle = app.clone();
                             let label_clone = label.clone();
                             let last_mask_clone = Arc::clone(&last_mask);
+                            let applied_ignoring_clone = Arc::clone(&applied_ignoring);
                             let mask_params_clone = mask_params.clone();
                             let overlay_index = index;
 
@@ -2370,12 +2402,20 @@ pub(crate) fn run_frame_loop(
                                     {
                                         last_mask_clone.lock().unwrap()[overlay_index] =
                                             mask_params_clone;
+                                        applied_ignoring_clone.lock().unwrap()[overlay_index] =
+                                            Some(true);
                                     }
                                 }
                             });
                         }
 
-                        if ignoring[index] != Some(true) {
+                        let confirmed_ignoring = applied_ignoring
+                            .lock()
+                            .unwrap()
+                            .get(index)
+                            .copied()
+                            .unwrap_or(None);
+                        if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                             flipped = true;
                             ignoring[index] = Some(true);
                         }
@@ -2811,22 +2851,105 @@ mod tests {
         assert_eq!(heard(&gesture), vec![Happened::Poke, Happened::Poke]);
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    enum OverlayAction {
+        ApplyMask,
+        ToggleOnly,
+        Nothing,
+    }
+
+    type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
+
+    fn decide_overlay_action(
+        last_mask: Option<&MaskParams>,
+        new_mask: &MaskParams,
+        mask_in_flight: bool,
+        applied_ignoring: Option<bool>,
+        new_ignore: bool,
+    ) -> OverlayAction {
+        let mask_changed = last_mask != Some(new_mask);
+        let ignore_changed = applied_ignoring != Some(new_ignore);
+
+        if mask_changed && !mask_in_flight {
+            OverlayAction::ApplyMask
+        } else if !mask_changed && ignore_changed {
+            OverlayAction::ToggleOnly
+        } else {
+            OverlayAction::Nothing
+        }
+    }
+
     #[test]
     #[cfg(windows)]
-    #[allow(clippy::type_complexity)]
-    fn test_idle_sprite_ignoring_change_detected() {
-        let _mask_params: (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>) =
-            (Some(vec![true, false]), 100, 100, 1, 1, Vec::new());
+    fn test_decide_overlay_action_apply_mask() {
+        let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+        let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
 
-        let mut ignoring_last = Some(false);
-        let mut ignoring_now = Some(true);
-        assert_ne!(
-            ignoring_last, ignoring_now,
-            "Change in ignoring should be detected"
+        assert_eq!(
+            decide_overlay_action(Some(&old_mask), &new_mask, false, Some(false), false),
+            OverlayAction::ApplyMask
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_decide_overlay_action_toggle_only() {
+        let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&mask), &mask, false, Some(false), true),
+            OverlayAction::ToggleOnly
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_decide_overlay_action_nothing_when_in_flight() {
+        let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+        let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&old_mask), &new_mask, true, Some(false), false),
+            OverlayAction::Nothing
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_decide_overlay_action_nothing_when_all_match() {
+        let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&mask), &mask, false, Some(false), false),
+            OverlayAction::Nothing
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_decide_overlay_action_retry_after_failed_toggle() {
+        let mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&mask), &mask, false, Some(false), true),
+            OverlayAction::ToggleOnly
         );
 
-        ignoring_last = Some(true);
-        ignoring_now = Some(true);
-        assert_eq!(ignoring_last, ignoring_now, "No change when both true");
+        assert_eq!(
+            decide_overlay_action(Some(&mask), &mask, false, None, true),
+            OverlayAction::ToggleOnly
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_decide_overlay_action_in_flight_with_stale_click_through() {
+        let old_mask = (Some(vec![true]), 10, 10, 1, 1, Vec::new());
+        let new_mask = (Some(vec![false]), 20, 20, 1, 1, Vec::new());
+
+        assert_eq!(
+            decide_overlay_action(Some(&old_mask), &new_mask, true, Some(false), true),
+            OverlayAction::Nothing
+        );
     }
 }
