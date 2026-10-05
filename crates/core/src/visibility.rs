@@ -47,11 +47,9 @@ impl Desktop {
         self.fullscreen.iter().position(|taken| !taken)
     }
 
-    /// The `floors` a sprite may still walk onto: those on no taken display, so
-    /// a taken display's edge is a wall, as an unplugged one's is. `frames` is
-    /// at the same indexes as `fullscreen`; `floors` is matched by its centre,
-    /// because it comes from the polled snapshot and need not share them. With
-    /// no free display, every floor: there is nowhere better, and it fades.
+    /// The floors on no taken display, so a taken display's edge is a wall. Matched
+    /// by centre: `floors` comes from the polled snapshot, not `frames`' indexes.
+    /// With no free display, every floor, since the Character fades anyway.
     pub fn free_floors(&self, frames: &[Rect], floors: &[Rect]) -> Vec<Rect> {
         let taken: Vec<Rect> = frames
             .iter()

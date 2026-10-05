@@ -482,10 +482,9 @@ pub fn bring_landings(
     Some(landings)
 }
 
-/// Where each sprite standing on a fullscreen display should stand instead, on
-/// the desktop's refuge. `desktop.fullscreen` is at the same indexes as
-/// `monitors`. Sprites elsewhere stay put, so a sprite already moved plans
-/// nothing the next time; with no refuge, nobody moves.
+/// Where each sprite on a fullscreen display lands on the refuge instead.
+/// `desktop.fullscreen` shares `monitors`' indexes. Everyone else stays put, so
+/// a sprite already moved plans nothing next time; with no refuge, nobody moves.
 pub fn refuge_landings(
     feet: &[Point],
     widths: &[f64],

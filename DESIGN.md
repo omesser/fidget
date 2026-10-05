@@ -12,7 +12,7 @@ is defined in [CONTEXT.md](./CONTEXT.md) and used precisely here.
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/fidget/issues).
 
-The overlay is up and the frame loop runs the Engine, so the sprite falls, lands on the top edge of whatever window is under it, rides that edge when the window is dragged slowly, and drops when the window is yanked or closed, and it stands on the Dock rather than behind it. It can be clicked, picked up, dragged and thrown. It knows when to get out of the way: it fades out while a fullscreen application has the screen, goes away at once on Control-Option-Command-B and comes back the same way, and appears in screen captures and shares by default, with an opt-out in Presence settings for users who need meeting privacy. Startup stops if no Character Package loads. A Director proposes Behaviors: Static weights with nothing configured, an HTTP Completer if you set a key, or a Harness if you attach one (see [Get It](./README.md#get-it)). Both HTTP and Harness fill the Director role and answer chat ([ADR-0008](./docs/adr/0008-one-harness-session.md)). Double-clicking is a Summon that opens the chat surface; the sprite reacts and the Director answers. Right-clicking the sprite and the tray / menu bar icon open the same menu: Chat, Character, Instances, Director, Do Not Disturb, Go away, Hide rules, Memory, Action Log, Settings, Quit.
+The overlay is up and the frame loop runs the Engine, so the sprite falls, lands on the top edge of whatever window is under it, rides that edge when the window is dragged slowly, and drops when the window is yanked or closed, and it stands on the Dock rather than behind it. It can be clicked, picked up, dragged and thrown. It knows when to get out of the way: it moves off a display a fullscreen application has taken and fades out when every display is taken, goes away at once on Control-Option-Command-B and comes back the same way, and appears in screen captures and shares by default, with an opt-out in Presence settings for users who need meeting privacy. Startup stops if no Character Package loads. A Director proposes Behaviors: Static weights with nothing configured, an HTTP Completer if you set a key, or a Harness if you attach one (see [Get It](./README.md#get-it)). Both HTTP and Harness fill the Director role and answer chat ([ADR-0008](./docs/adr/0008-one-harness-session.md)). Double-clicking is a Summon that opens the chat surface; the sprite reacts and the Director answers. Right-clicking the sprite and the tray / menu bar icon open the same menu: Chat, Character, Instances, Director, Do Not Disturb, Go away, Hide rules, Memory, Action Log, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep` and `walk` each answer a State, `fall` covering being dragged as well; `land` plays when a fall ends, `hold` when a Perch is ridden, and `react` answers a Poke. Eight of the nine are also Primitives a Character can compose into a Behavior — all but `fall`, which is what losing your footing looks like rather than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into, and is refused or abandoned when the State the sprite is in does not permit it. `talk` plays when a proposal names a Behavior that includes it.
 
@@ -347,8 +347,9 @@ desktop level. One window cannot be both, and restacking dynamically by sprite
 state produces flicker on every platform. Peeking out from behind windows is
 given up deliberately.
 
-The investment goes into **hide rules** instead: fullscreen frontmost and the
-hotkey. A companion that knows when to disappear is the difference between a pet
+The investment goes into **hide rules** instead: fullscreen and the hotkey. A
+fullscreen application moves the Character to a free display, and fades it only
+when no display is free. A companion that knows when to disappear is the difference between a pet
 and malware.
 
 Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character

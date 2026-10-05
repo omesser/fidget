@@ -1322,12 +1322,9 @@ pub(crate) fn run_frame_loop(
                     false,
                 ));
 
-            // Whoever stands on a fullscreen display goes to a free one. A
-            // teleport, as Bring is: a walk would parade the sprite across the
-            // very app it is leaving. A held sprite stays in the hand until let go.
-            // The Engine does not see a taken display either: its seam is
-            // passable, and a Walk, Chase or throw would carry the sprite back
-            // into the app, to be moved again next tick.
+            // Teleport, as Bring does: a walk would parade the sprite across the app
+            // it is leaving. The Engine loses the taken floor too, or a Walk or throw
+            // carries the sprite back. A held sprite stays in the hand until let go.
             if hide_in_fullscreen && desktop.fullscreen.contains(&true) {
                 world.displays = desktop.free_floors(&displays.frames, &world.displays);
                 let widths: Vec<(InstanceId, f64)> = lives
