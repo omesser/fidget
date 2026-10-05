@@ -31,6 +31,7 @@ mod chat_surface;
 mod completer;
 mod consent;
 mod cursor_mcp;
+mod debug;
 mod dev_flags;
 mod frame_loop;
 mod harness;
@@ -4219,6 +4220,7 @@ fn main() {
     if std::env::args().any(|arg| arg == "--probe-harness") {
         std::process::exit(harness::run_probe());
     }
+
 
     // This process *is* the stdio MCP server: never the overlay. The Harness
     // child is a new process, so it does not share the shell's ACP runtime.

@@ -403,6 +403,15 @@ pub(crate) fn run_frame_loop(
             // is the loop's only output, and a screenshot cannot say whether it
             // got there by falling.
             let tracing_frames = dev_flags::TRACE_FRAMES.is_on();
+
+            // Check for debug IPC commands (place/snapshot) once per frame.
+            if let Some(live) = lives.first() {
+                let state_str = format!("{:?}", live.last_state);
+                crate::debug::check_debug_commands(
+                    (live.last_position.0 as i32, live.last_position.1 as i32),
+                    &state_str,
+                );
+            }
             // And for what the Engine is playing. The frame line above says
             // which Animation is on screen but not what chose it: a `talk` is a
             // proposed Behavior, a cursor reaction and a Dwell alike.
@@ -1837,8 +1846,12 @@ pub(crate) fn run_frame_loop(
 
                 // Placed once, in the space every display shares. Each overlay
                 // is handed it in its own coordinates below.
-                let sprite =
-                    place_sprite((frame.position.x, frame.position.y), (width, height), scale);
+                let (pos_x, pos_y) = if let Some((ox, oy)) = crate::debug::get_position_override() {
+                    (ox as f64, oy as f64)
+                } else {
+                    (frame.position.x, frame.position.y)
+                };
+                let sprite = place_sprite((pos_x, pos_y), (width, height), scale);
 
                 if tracing_frames {
                     // Unix milliseconds so a prop window and this loop share a

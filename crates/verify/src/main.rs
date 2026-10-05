@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 
 use fidget_verify::cleanup;
 use fidget_verify::contract::{Outcome, RunReport};
+use fidget_verify::debug_ipc;
 use fidget_verify::doctor;
 use fidget_verify::overlay;
 use fidget_verify::paths::{self, RunPaths};
@@ -67,6 +68,17 @@ enum Commands {
     },
     /// Kill recorded PIDs; remove scratch; keep evidence.
     Cleanup,
+    /// Debug: place character at (x,y) in a running fidget instance.
+    Place {
+        /// X coordinate
+        #[arg(long)]
+        x: i32,
+        /// Y coordinate
+        #[arg(long)]
+        y: i32,
+    },
+    /// Debug: snapshot position/state from a running fidget instance.
+    Snapshot,
 }
 
 impl Commands {
@@ -79,6 +91,8 @@ impl Commands {
             Commands::Summon => "summon",
             Commands::Scenario { .. } => "scenario",
             Commands::Cleanup => "cleanup",
+            Commands::Place { .. } => "place",
+            Commands::Snapshot => "snapshot",
         }
     }
 }
@@ -119,6 +133,8 @@ fn main() -> ExitCode {
                     scenario::run(&repo_root, name, *go, args, &mut report)
                 }
                 Commands::Cleanup => cleanup::run(&mut report),
+                Commands::Place { x, y } => return ExitCode::from(debug_ipc::place(*x, *y)),
+                Commands::Snapshot => return ExitCode::from(debug_ipc::snapshot()),
             },
             // Doctor's product is the layout report, so it still runs and
             // records the layout failure itself.

@@ -93,7 +93,7 @@ try {
     if ($proc.HasExited) { Fail "Fidget exited early; see $log" }
 
     $TestBin = (Resolve-Path -LiteralPath $TestBin).Path
-    & $TestBin place x=0 y=800 2>&1 | Out-Null
+    & $TestBin place --x 0 --y 800 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "place command failed; see $log" }
 
     Start-Sleep -Milliseconds 500

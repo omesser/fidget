@@ -7,6 +7,7 @@
 
 pub mod cleanup;
 pub mod contract;
+pub mod debug_ipc;
 pub mod doctor;
 pub mod gesture;
 pub mod overlay;
