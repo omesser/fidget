@@ -790,6 +790,13 @@ pub enum Forwarded {
     },
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
+    /// An inbound wake: the Harness started a turn between Fidget prompts,
+    /// with agent text meant for the user. This triggers a Director wake
+    /// so the speech participates in Pace and reaches Chat/bubble/Behaviors.
+    InboundWake {
+        instance: String,
+        speech: String,
+    },
     /// The attachment moved: preflight finished, or a login went missing or
     /// came back mid-session (#991). Chat's first ReloadChat races preflight,
     /// so a missing launcher would otherwise never reach the landing (#726).
@@ -2264,6 +2271,15 @@ fn note_event(
         // Forwarded and not logged. The Action Log points at the Harness's own
         // session dump rather than copying it (CONTEXT.md), and a reply is not
         // copied there either (ADR-0034).
+        Event::InboundWake { session, speech } => {
+            let instance = owners
+                .lock()
+                .ok()
+                .and_then(|owners| owners.get(&session).cloned());
+            if let Some(instance) = instance {
+                forward(Forwarded::InboundWake { instance, speech });
+            }
+        }
         Event::Thought { session, text } => {
             let instance = owners
                 .lock()
@@ -3409,7 +3425,7 @@ mod tests {
                         }
                         // Answers, then works on with no prompt open, the way
                         // a Claude Code cron fire does: a tool call, a
-                        // thought, and an ask the user has to answer.
+                        // thought, agent text, and an ask the user has to answer.
                         "between-turn" | "between-turn-held" if prompts == 1 => {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
@@ -3418,6 +3434,7 @@ mod tests {
                             thread::sleep(Duration::from_millis(300));
                             tool_call(&session, "cron fired");
                             thought(&session, "between turns");
+                            chunk(&session, "Your reminder: time to stretch!");
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
                                     "sessionId": &session,
@@ -5262,16 +5279,19 @@ mod tests {
 
     /// A Harness that works on after its turn ends, as a cron fire does. Its
     /// tool call reaches the Action Log, its thought reaches the Instance's
-    /// Thinking row, and its ask reaches Chat and is answered.
+    /// Thinking row, its agent text reaches Chat/bubble, and its ask reaches
+    /// Chat and is answered.
     #[test]
     fn work_between_turns_reaches_the_user_and_its_ask_is_answered() {
         let (fx, session) = Fixture::new("between-turn");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let mut thoughts = Vec::new();
+        let mut said = Vec::new();
         let ask = loop {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Ask(ask)) => break ask,
                 Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
+                Ok(Forwarded::InboundWake { instance, speech }) => said.push((instance, speech)),
                 Ok(_) => {}
                 Err(_) => panic!("the between-turn ask never reached Chat"),
             }
@@ -5280,6 +5300,10 @@ mod tests {
         assert!(
             thoughts.contains(&("buddy-1".to_string(), "between turns".to_string())),
             "{thoughts:?}"
+        );
+        assert!(
+            said.contains(&("buddy-1".to_string(), "Your reminder: time to stretch!".to_string())),
+            "between-turn agent text never reached the user: {said:?}"
         );
         let titles: Vec<Value> = fx
             .events("tool_call")

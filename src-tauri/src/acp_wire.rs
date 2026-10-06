@@ -310,6 +310,13 @@ pub enum Event {
         session: String,
         text: String,
     },
+    /// An inbound wake: the Harness started a turn between Fidget prompts,
+    /// with agent text meant for the user. Triggers a Director wake so the
+    /// speech participates in Pace and reaches Chat/bubble/Behaviors (#1356).
+    InboundWake {
+        session: String,
+        speech: String,
+    },
     /// A forwarded ask that can no longer be answered. Every open Chat
     /// surface was given the ask, so every one of them has to hear this.
     PermissionSettled {
@@ -1255,6 +1262,9 @@ fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_eve
 
 /// One message with no `session/prompt` open, held as a turn would hold it.
 /// `signing_in` is whether Fidget's own `authenticate` is in flight.
+/// 
+/// Between-turn `session/update`s that finish with agent text trigger an
+/// inbound wake, making the speech visible and participating in Director pacing.
 fn between_turns(
     message: Incoming,
     forms: &mut Vec<PendingElicit>,
@@ -1264,18 +1274,34 @@ fn between_turns(
     on_event: &OnEvent,
 ) {
     match message {
-        // Not shown: nothing makes an inbound turn a wake yet (ADR-0028 gap).
-        // ponytail: `Inbound` keeps every fire's text and thought until the next prompt,
-        // in memory and in one Thinking row. The wake slice (#1356) replaces it.
         Incoming::Update(update) => {
-            let held = inbound.entry(update.session_id.clone()).or_default();
+            let session_id = update.session_id.clone();
+            let held = inbound.entry(session_id.clone()).or_default();
             note_update(
                 update.update,
-                &update.session_id,
+                &session_id,
                 &mut held.said,
                 &mut held.thought,
                 on_event,
             );
+            
+            if update.update.session_update == "turn_complete" {
+                if let Some(held) = inbound.remove(&session_id) {
+                    let speech = held.said.finish();
+                    if !speech.is_empty() {
+                        on_event(Event::InboundWake {
+                            session: session_id.0.to_string(),
+                            speech,
+                        });
+                    }
+                    if !held.thought.is_empty() {
+                        on_event(Event::Thought {
+                            session: session_id.0.to_string(),
+                            text: String::new(),
+                        });
+                    }
+                }
+            }
         }
         Incoming::Ask(request, responder) => hold_ask(asks, &request, responder, on_event),
         Incoming::Elicit(request, responder) => {
