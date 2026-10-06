@@ -403,7 +403,15 @@ pub(crate) fn run_frame_loop(
             // is the loop's only output, and a screenshot cannot say whether it
             // got there by falling.
             let tracing_frames = dev_flags::TRACE_FRAMES.is_on();
+            // And for what the Engine is playing. The frame line above says
+            // which Animation is on screen but not what chose it: a `talk` is a
+            // proposed Behavior, a cursor reaction and a Dwell alike.
             let tracing_engine = dev_flags::TRACE_ENGINE.is_on();
+            // A click is two edges. The periodic hit-test line only prints on
+            // a click-through flip or every two seconds, so a press that did
+            // not flip left no record of whether the button was seen.
+            let tracing_director = model::tracing();
+            let tracing_clicks = tracing || tracing_frames || tracing_director;
 
             if dev_flags::DEBUG_IPC.is_on() {
                 if let Some(live) = lives.first() {
@@ -418,11 +426,6 @@ pub(crate) fn run_frame_loop(
                     );
                 }
             }
-            // A click is two edges. The periodic hit-test line only prints on
-            // a click-through flip or every two seconds, so a press that did
-            // not flip left no record of whether the button was seen.
-            let tracing_director = model::tracing();
-            let tracing_clicks = tracing || tracing_frames || tracing_director;
 
             let Ok(cursor) = app.cursor_position() else {
                 continue;

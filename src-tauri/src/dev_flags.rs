@@ -361,6 +361,22 @@ mod tests {
         });
     }
 
+    #[test]
+    fn debug_ipc_env_enables_the_flag() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert!(!DEBUG_IPC.is_on(), "off without env var");
+
+            std::env::set_var(DEBUG_IPC.var(), "1");
+            seed(&Settings::default());
+            std::env::remove_var(DEBUG_IPC.var());
+            assert!(DEBUG_IPC.is_on(), "FIDGET_DEBUG_IPC=1 enables it");
+
+            seed(&Settings::default());
+            assert!(!DEBUG_IPC.is_on(), "back to off when env var cleared");
+        });
+    }
+
     /// The effort is a string, so blank is the only unset there is: no parse
     /// can reject it, and nothing validates it against a list of levels.
     #[test]

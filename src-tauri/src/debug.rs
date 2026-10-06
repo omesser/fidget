@@ -21,6 +21,7 @@ fn parse_place(text: &str) -> Result<(i32, i32), String> {
     Ok((x, y))
 }
 
+/// Poll for file-based debug commands (place/snapshot) once per frame.
 pub fn check_debug_commands(
     position: (i32, i32),
     state: &str,
@@ -48,31 +49,33 @@ pub fn check_debug_commands(
             "position: ({}, {})\nstate: {}",
             position.0, position.1, state
         ),
-        text if text.starts_with("place ") => {
-            let place_args = text.strip_prefix("place ").unwrap();
-            match parse_place(place_args) {
-                Ok((x, y)) => {
-                    let ids: Vec<_> = roster.list().iter().map(|(id, _)| id.clone()).collect();
-                    let mut moved = false;
-                    for id in ids {
-                        if let Some(instance) = roster.get_mut(&id) {
-                            instance.stand_at(fidget_core::engine::Point {
-                                x: x as f64,
-                                y: y as f64,
-                            });
-                            moved = true;
+        text => {
+            if let Some(place_args) = text.strip_prefix("place ") {
+                match parse_place(place_args) {
+                    Ok((x, y)) => {
+                        let ids: Vec<_> = roster.list().iter().map(|(id, _)| id.clone()).collect();
+                        let mut moved = false;
+                        for id in ids {
+                            if let Some(instance) = roster.get_mut(&id) {
+                                instance.stand_at(fidget_core::engine::Point {
+                                    x: x as f64,
+                                    y: y as f64,
+                                });
+                                moved = true;
+                            }
+                        }
+                        if moved {
+                            format!("placed: ({}, {})", x, y)
+                        } else {
+                            "error: no instances".to_string()
                         }
                     }
-                    if moved {
-                        format!("placed: ({}, {})", x, y)
-                    } else {
-                        "error: no instances".to_string()
-                    }
+                    Err(e) => format!("error: {}", e),
                 }
-                Err(e) => format!("error: {}", e),
+            } else {
+                format!("error: unknown command '{}'", text)
             }
         }
-        text => format!("error: unknown command '{}'", text),
     };
 
     let _ = fs::write(&result_path, &response);
