@@ -1055,8 +1055,9 @@ struct PendingElicit {
     link: Option<ElicitationId>,
 }
 
-/// What `serve` lends a turn: both channels, and the forms and asks that
-/// outlive it.
+/// Lent by `serve`, which runs Fidget's side of the Harness connection, to
+/// `turn` for one `session/prompt`: Fidget's commands (`rx`), the Harness's
+/// requests and updates (`incoming`), and the forms and asks that outlive it.
 struct Serving<'a> {
     rx: &'a mut mpsc::UnboundedReceiver<Msg>,
     incoming: &'a mut mpsc::UnboundedReceiver<Incoming>,
