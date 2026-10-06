@@ -263,17 +263,17 @@ A Harness can work between Fidget's `session/prompt` calls: Claude Code `/loop` 
 
 #### What counts as inbound wake
 
-Between-turn `session/update` carrying agent text, thought, or tool activity the user should see. Not history: a loaded session's replay before `session/load` answers is discarded (#1370). Not attribution metadata: usage and latency stay internal.
+Between-turn `session/update` carrying agent text that is flushed to the user. Only agent speech triggers an inbound wake and resets Pace; between-turn thought and tool activity are visible (#1370) but do not count as a wake. Not history: a loaded session's replay before `session/load` answers is discarded (#1370). Not attribution metadata: usage and latency stay internal.
 
 #### Interaction with ADR-0008 (one session)
 
-Inbound wakes are still the one Director session per Character Instance. A Harness fire is a turn the Harness started in the same conversation Fidget prompts, not a second session. ADR-0008's wake policy applies: inbound wakes are neither reactive (user-addressed) nor proactive (Fidget's exponential backoff), but they trigger a reactive wake, so Pace is reset and the next proactive wake is pushed out.
+Inbound wakes are still the one Director session per Character Instance. A Harness fire is a turn the Harness started in the same conversation Fidget prompts, not a second session. Inbound wakes are not user-addressed reactive touches and not Fidget's proactive exponential-backoff timer. They participate in Pace on the reactive path: the inbound wake marks the Instance `addressed`, and the following Director wake calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval.
 
 #### Visibility
 
 - **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row labeled "inbound wake" when a flush boundary arrives.
-- **Bubble and Behaviors.** The inbound wake sets `addressed = true` on the Instance, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows `addressed`.
-- **Director wake and Pace participation.** An inbound wake behaves like a reactive wake: it sets `addressed = true`, marks `happened = Happened::Proactive`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
+- **Bubble and Behaviors.** The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
+- **Director wake and Pace participation.** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
 
 #### Flush boundaries
 
