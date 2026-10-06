@@ -61,6 +61,7 @@ pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
+/// File-based debug IPC for test automation. Off by default, with no Settings row.
 pub static DEBUG_IPC: Flag = Flag::new("FIDGET_DEBUG_IPC");
 /// Capture exclusion setting. macOS and Windows support it via platform APIs;
 /// Linux has no exclusion API (ADR-0024) but the setting and UI row are present.
