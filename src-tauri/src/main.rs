@@ -2827,8 +2827,9 @@ struct ChatStatus {
     /// `SpritePlacement::mirror`'s answer about the art (#345): the bar says
     /// which way the sprite is walking, which a left strip does not change.
     facing: i8,
-    /// A turn is on the wire. The same bit the thinking ellipsis draws from.
-    asking: bool,
+    /// A turn is on the wire, and the character is not waiting on the user.
+    /// The thinking ellipsis draws from this.
+    thinking: bool,
 }
 
 #[derive(Clone, Serialize)]
