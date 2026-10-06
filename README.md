@@ -101,13 +101,13 @@ the Director's countdown. Answers need a Director; see [Get It](#get-it).
 
 ### Give It an Instance Prompt
 
-An Instance Prompt is your own text for one fidget, up to 2000 characters, layered on top of its Character's personality. To write one, double-click the fidget to summon it, open the **Prompt** tab, and type in the **Your own layer** box. That box is the Instance Prompt. Paste one of the examples below and edit it to fit. Saving starts a new conversation, and the Instance Prompt stays with that fidget if you switch its Character.
+An Instance Prompt is your own text for one fidget, layered on top of its Character's personality. To write one, double-click the fidget to summon it, open the **Prompt** tab, and type in the **Your own layer** box. That box is the Instance Prompt. Paste one of the examples below and edit it to fit. Saving starts a new conversation, and the Instance Prompt stays with that fidget if you switch its Character.
 
 Every example below assumes this setup:
 
 - A [Harness](#harness-support) is attached. A Model API can't run tools.
 - The Harness is allowed to use its own tools.
-- The **Window and application names** consent is on in Settings → Privacy. Fidget then reads app names and window titles only, never pixels, and it [never takes screenshots](#computer-use) ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)).
+- The **Window and application names** consent is on in Settings → Privacy. Fidget then reads app names and window titles only, never pixels, and it [never takes screenshots](#computer-use).
 
 > [!IMPORTANT]
 > **No timers.** Fidget doesn't schedule anything. It acts on the Instance Prompt when it next wakes, and the gap between unprompted wakes grows to as much as two hours, so "around 15:00" can land well after 15:00. A poke, a pickup, a Perch, or a chat wakes it at once and resets the gap. **Use a real alarm for anything you can't miss.**
