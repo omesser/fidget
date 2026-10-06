@@ -1864,7 +1864,6 @@ pub(crate) fn run_frame_loop(
                     happened: live.happened_last,
                     facing: frame.facing as i8,
                     thinking,
-                    asking,
                 };
                 // Asks whether the deadline moved — a wake landing, the pace
                 // growing under it — not whether it ran down, which it does

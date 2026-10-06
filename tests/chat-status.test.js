@@ -16,7 +16,6 @@ const push = {
   happened: "poked",
   facing: 1,
   thinking: false,
-  asking: false,
 };
 
 test("a push fills every cell", () => {
