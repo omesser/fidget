@@ -2702,11 +2702,9 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
 
 /// Drop the application names the user has not asked for: the frontmost one,
 /// and the earlier ones the read carries in `before`.
-///
-/// Two reasons, and both end the same way. One consent covers every name the
-/// character reports (ADR-0032), and these names come from a different call than
-/// the window walk, so the gate is repeated here. An excluded application is
-/// the other reason, and it can only be matched while the name is still there.
+/// Drop front and `before` names without WindowNames consent or when excluded
+/// (ADR-0032). Repeated here: these names arrive by a different call than the
+/// window walk, and exclusion can only match while the name is still present.
 fn withhold_names(activity: &mut Activity, can_read_names: bool, denylist: &DenyList) {
     let denied = activity
         .frontmost_application

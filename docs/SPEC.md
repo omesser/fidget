@@ -389,17 +389,17 @@ knowledge.
 
 A trait returning an optional Behavior proposal given a context record.
 
-v1 context is the free sensing tier only — frontmost application name and
-window title, how long it has been in front, up to three earlier front
-applications, idle minutes, weekday and time of day, State, what just happened,
-what the feet stand on (window owner, display floor above the Dock, or screen
-edge), recent Behavior identifiers, and the two
-authored prompt layers — the active Character's Personality Prompt and this
-Instance's own Instance Prompt (opening turn only, ADR-0012). No screen capture, no
-clipboard, no input contents. Window titles and application names alike are available
-only when the one sensing consent is granted (Screen Recording on macOS, ScreenCast
-on Wayland). Without it the context carries no application names and no title,
-and the Perch is a window rather than a named application's window (ADR-0032).
+v1 context is the free sensing tier only — how long the frontmost application
+has been in front, up to three earlier fronts with their stays, idle minutes,
+weekday and time of day, State, what just happened, what the feet stand on
+(window owner, display floor above the Dock, or screen edge), recent Behavior
+identifiers, and the two authored prompt layers — the active Character's
+Personality Prompt and this Instance's own Instance Prompt (opening turn only,
+ADR-0012). Application names and window titles both require the window-names
+consent (Screen Recording on macOS, ScreenCast on Wayland); without it the
+context carries no application names and no title, and the Perch is a window
+rather than a named application's window (ADR-0032). No screen capture, no
+clipboard, no input contents.
 
 The opening payload is the Character Prompt. Later session turns are a short
 follow-up. Both are inspectable in settings as the last user turn.

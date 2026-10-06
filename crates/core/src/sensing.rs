@@ -1,6 +1,6 @@
-//! The Free sensing tier: the frontmost application's name, how long the user
-//! has been idle, and the time of day, none of it costing a permission prompt.
-//! Titles, screen content and the clipboard are absent by construction.
+//! The Free sensing tier: frontmost application, how long it and a few earlier
+//! fronts stayed, idle, and the civil clock — none of it costing a permission
+//! prompt. Titles, screen content and the clipboard are absent by construction.
 
 use std::time::{Duration, SystemTime};
 
@@ -116,8 +116,8 @@ pub struct FreeTier {
 }
 
 impl FreeTier {
-    /// Read the source and the clock once. The frontmost application is the only
-    /// thing that needs a memory; idle and the time are already the whole answer.
+    /// Read the source and the clock once. Remembers which applications were
+    /// in front and for how long; idle and the civil clock need no memory.
     pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
         let at = clock.now();
         let frontmost_application = source.frontmost_application();
