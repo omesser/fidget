@@ -355,9 +355,7 @@ pub(crate) mod tests {
     /// A Context to stand in for a wake already on the wire. `pub(crate)` for
     /// the `settings` tests, which retarget through the same call.
     pub(crate) fn wake_context() -> Context {
-        use fidget_core::engine::State;
         use fidget_core::sensing::Activity;
-        use std::time::UNIX_EPOCH;
 
         Context {
             activity: Activity {

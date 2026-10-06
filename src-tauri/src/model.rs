@@ -4455,10 +4455,10 @@ pub(crate) mod tests {
                 },
                 personality: cat.personality.clone(),
                 state: *state,
-                ..fidget_core::director::Context::quiet()
                 happened: happened.clone(),
                 standing: standing.to_string(),
                 front_title: None,
+                ..fidget_core::director::Context::quiet()
             };
 
             match director.wake(&context) {

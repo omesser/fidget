@@ -606,10 +606,10 @@ mod tests {
                 ..Activity::quiet()
             },
             personality: character.personality.clone(),
-            ..fidget_core::director::Context::quiet()
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
             front_title: None,
+            ..fidget_core::director::Context::quiet()
         };
 
         (0..64)
