@@ -1,18 +1,33 @@
-//! File-based IPC for debug commands: check for place/snapshot requests.
+//! File-based IPC for test scripts: place/snapshot commands.
 
 use std::fs;
 use std::path::PathBuf;
 
-fn debug_cmd_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".fidget-debug-cmd")
+fn cmd_path() -> Option<PathBuf> {
+    Some(fidget_core::memory::home_dir()?.join(".fidget-debug-cmd"))
 }
 
-fn debug_result_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".fidget-debug-result")
+fn result_path() -> Option<PathBuf> {
+    Some(fidget_core::memory::home_dir()?.join(".fidget-debug-result"))
+}
+
+fn parse_place(text: &str) -> Result<(i32, i32), String> {
+    let parts: Vec<&str> = text.split_whitespace().collect();
+    if parts.len() != 2 {
+        return Err("syntax: place x=N y=M".to_string());
+    }
+
+    let x = parts[0]
+        .strip_prefix("x=")
+        .and_then(|s| s.parse::<i32>().ok())
+        .ok_or_else(|| "invalid x coordinate".to_string())?;
+
+    let y = parts[1]
+        .strip_prefix("y=")
+        .and_then(|s| s.parse::<i32>().ok())
+        .ok_or_else(|| "invalid y coordinate".to_string())?;
+
+    Ok((x, y))
 }
 
 pub fn check_debug_commands(
@@ -20,8 +35,13 @@ pub fn check_debug_commands(
     state: &str,
     roster: &mut fidget_core::roster::Roster,
 ) {
-    let cmd_path = debug_cmd_path();
-    let result_path = debug_result_path();
+    if !crate::dev_flags::DEBUG_IPC.is_on() {
+        return;
+    }
+
+    let (Some(cmd_path), Some(result_path)) = (cmd_path(), result_path()) else {
+        return;
+    };
 
     let Ok(cmd) = fs::read_to_string(&cmd_path) else {
         return;
@@ -29,15 +49,15 @@ pub fn check_debug_commands(
 
     let _ = fs::remove_file(&cmd_path);
 
-    let response = if cmd.trim() == "snapshot" {
-        format!(
+    let response = match cmd.trim() {
+        "snapshot" => format!(
             "position: ({}, {})\nstate: {}",
             position.0, position.1, state
-        )
-    } else if let Some(place_cmd) = cmd.strip_prefix("place ") {
-        if let Some((x_part, y_part)) = place_cmd.split_once(" y=") {
-            if let Some(x_str) = x_part.strip_prefix("x=") {
-                if let (Ok(x), Ok(y)) = (x_str.parse::<i32>(), y_part.parse::<i32>()) {
+        ),
+        text if text.starts_with("place ") => {
+            let place_args = text.strip_prefix("place ").unwrap();
+            match parse_place(place_args) {
+                Ok((x, y)) => {
                     let ids: Vec<_> = roster.list().iter().map(|(id, _)| id.clone()).collect();
                     let mut moved = false;
                     for id in ids {
@@ -54,18 +74,42 @@ pub fn check_debug_commands(
                     } else {
                         "error: no instances".to_string()
                     }
-                } else {
-                    "error: invalid coordinates".to_string()
                 }
-            } else {
-                "error: invalid place syntax".to_string()
+                Err(e) => format!("error: {}", e),
             }
-        } else {
-            "error: invalid place syntax".to_string()
         }
-    } else {
-        format!("error: unknown command '{}'", cmd.trim())
+        text => format!("error: unknown command '{}'", text),
     };
 
     let _ = fs::write(&result_path, &response);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_place_accepts_valid_coordinates() {
+        assert_eq!(parse_place("x=0 y=800"), Ok((0, 800)));
+        assert_eq!(parse_place("x=-100 y=50"), Ok((-100, 50)));
+        assert_eq!(parse_place("x=1920 y=1080"), Ok((1920, 1080)));
+    }
+
+    #[test]
+    fn parse_place_rejects_missing_prefix() {
+        assert!(parse_place("0 y=800").is_err());
+        assert!(parse_place("x=0 800").is_err());
+    }
+
+    #[test]
+    fn parse_place_rejects_non_numeric() {
+        assert!(parse_place("x=abc y=800").is_err());
+        assert!(parse_place("x=0 y=def").is_err());
+    }
+
+    #[test]
+    fn parse_place_rejects_wrong_arg_count() {
+        assert!(parse_place("x=0").is_err());
+        assert!(parse_place("x=0 y=1 z=2").is_err());
+    }
 }

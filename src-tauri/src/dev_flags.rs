@@ -58,11 +58,18 @@ pub static TRACE_FRAMES: Flag = Flag::new("FIDGET_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("FIDGET_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("FIDGET_TRACE_DIRECTOR");
 pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
+<<<<<<< HEAD
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
 /// Capture exclusion setting. macOS and Windows support it via platform APIs;
 /// Linux has no exclusion API (ADR-0024) but the setting and UI row are present.
+=======
+pub static DEBUG_IPC: Flag = Flag::new("FIDGET_DEBUG_IPC");
+/// Capture exclusion setting. macOS and Windows both support it; Linux degrades
+/// gracefully (no exclusion API).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+>>>>>>> 593a7689 (Revert #1334 geometry changes; gate debug IPC)
 pub static CAPTURABLE: Flag = Flag::new("FIDGET_CAPTURABLE");
 /// Blank-AI mode. Named from `model` rather than spelled again here:
 /// it is a Director variable, and the row that freezes on it names the same

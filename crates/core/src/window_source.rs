@@ -42,13 +42,6 @@ impl Rect {
     }
 
     pub(crate) fn spans_x(&self, x: f64) -> bool {
-        // Half-open [x, x+width) prevents dual-spanning at seams.
-        // Seam x belongs to the display whose left edge it is.
-        x >= self.x && x < self.x + self.width
-    }
-
-    pub(crate) fn spans_x_closed(&self, x: f64) -> bool {
-        // Closed [x, x+width] for landing on rightmost edges.
         x >= self.x && x <= self.x + self.width
     }
 }
@@ -251,44 +244,6 @@ mod tests {
     /// A 1x display beside a 2x one, as a window server reports that pair. Each
     /// display's geometry comes against its own scale, so the 2x origin arrives
     /// already doubled; one factor for both puts the overlay on a display that is not there.
-    #[test]
-    fn windows_dual_monitor_seam_belongs_to_right_display() {
-        // Windows dual-monitor: secondary left @ x≈−1200, primary @ x=0
-        // Issue #1334: x=0 seam should belong to primary (whose left edge it is), not secondary
-        let secondary = Rect {
-            x: -1200.0,
-            y: 0.0,
-            width: 1200.0,
-            height: 1080.0,
-        };
-        let primary = Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 3440.0,
-            height: 1440.0,
-        };
-
-        // At x=0 (the seam), only the primary should span it
-        assert!(
-            !secondary.spans_x(0.0),
-            "secondary should not span its right boundary"
-        );
-        assert!(
-            primary.spans_x(0.0),
-            "primary should span its left boundary"
-        );
-
-        // Interior points work as expected
-        assert!(secondary.spans_x(-100.0));
-        assert!(primary.spans_x(100.0));
-
-        // Right edge of primary is NOT spanned by half-open spans_x
-        assert!(
-            !primary.spans_x(3440.0),
-            "primary right boundary not spanned by half-open interval"
-        );
-    }
-
     #[test]
     fn each_display_converts_with_its_own_scale() {
         assert_eq!(

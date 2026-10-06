@@ -56,12 +56,10 @@ pub(super) fn support_below(
 /// can plainly see whenever the window in front sits above it and is no support.
 pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     let window = &snapshot.windows[index].rect;
-    window.spans_x_closed(x)
+    window.spans_x(x)
         && on_a_display(Point { x, y: window.y }, snapshot, clearance)
         && !snapshot.windows[..index].iter().any(|front| {
-            front.rect.spans_x_closed(x)
-                && window.y >= front.rect.y
-                && window.y <= front.rect.bottom()
+            front.rect.spans_x(x) && window.y >= front.rect.y && window.y <= front.rect.bottom()
         })
 }
 
@@ -69,14 +67,9 @@ pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance
 /// with the room the art needs above. Split out of `is_perch` because a ride
 /// between polls has no window sample yet must not place the sprite out there.
 pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot, clearance: f64) -> bool {
-    snapshot
-        .displays
-        .iter()
-        .filter(|display| display.spans_x_closed(position.x))
-        .any(|display| {
-            position.y >= display.y + room_above(clearance, display)
-                && position.y <= display.bottom()
-        })
+    displays_spanning(position.x, snapshot).any(|display| {
+        position.y >= display.y + room_above(clearance, display) && position.y <= display.bottom()
+    })
 }
 
 /// What a resting sprite is standing on: its Perch, unless a window in front
@@ -101,7 +94,7 @@ pub(super) fn footing(
     let perch = snapshot
         .windows
         .iter()
-        .position(|window| window.rect.spans_x_closed(position.x) && window.rect.y == position.y)?;
+        .position(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)?;
 
     // Only a window in front of the Perch can swallow the sprite: what is behind
     // the Perch is behind the sprite too. And an edge you cannot see is gone, so
@@ -136,22 +129,19 @@ pub(super) fn perch_at(position: Point, windows: &[Window]) -> Option<Window> {
     windows
         .iter()
         .copied()
-        .find(|window| window.rect.spans_x_closed(position.x) && window.rect.y == position.y)
+        .find(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)
 }
 
 /// Whether the sprite is inside `window` rather than on top of it. A top edge
 /// is a Perch to stand on, so only what is strictly below it is inside.
 pub(super) fn swallows(window: &Rect, position: Point) -> bool {
-    window.spans_x_closed(position.x) && window.y < position.y && position.y < window.bottom()
+    window.spans_x(position.x) && window.y < position.y && position.y < window.bottom()
 }
 
 /// The bottom of the display the sprite is over, or nothing when it is over no
 /// display at all — a sprite outside every display has nothing to land on.
 fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
-    snapshot
-        .displays
-        .iter()
-        .filter(|display| display.spans_x_closed(x))
+    displays_spanning(x, snapshot)
         .map(Rect::bottom)
         .max_by(f64::total_cmp)
 }
@@ -159,10 +149,7 @@ fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
 /// The highest the feet may go: the usable top plus the room the art needs
 /// above them. A climb lets go here; a Throw bumps it.
 pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> Option<f64> {
-    snapshot
-        .displays
-        .iter()
-        .filter(|display| display.spans_x_closed(x))
+    displays_spanning(x, snapshot)
         .map(|display| display.y + room_above(clearance, display))
         .min_by(f64::total_cmp)
 }
@@ -174,15 +161,21 @@ fn room_above(clearance: f64, display: &Rect) -> f64 {
     clearance.min(display.height / 2.0)
 }
 
+fn displays_spanning<'a>(
+    x: f64,
+    snapshot: &'a WorldSnapshot,
+) -> impl Iterator<Item = &'a Rect> + 'a {
+    snapshot
+        .displays
+        .iter()
+        .filter(move |display| display.spans_x(x))
+}
+
 /// The screen edge the sprite has just arrived at while moving into it, or the
 /// nearest one when it is over no display at all: out there it has no floor and
 /// would fall for ever, so grabbing an edge is how it gets back over a display.
 pub(super) fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
-    if !snapshot
-        .displays
-        .iter()
-        .any(|display| display.spans_x_closed(x))
-    {
+    if displays_spanning(x, snapshot).next().is_none() {
         return nearest_edge(x, snapshot);
     }
 
