@@ -101,20 +101,24 @@ the Director's countdown. Answers need a Director; see [Get It](#get-it).
 
 ### Give It an Instance Prompt
 
-An Instance Prompt is your own text for one fidget, up to 2000 characters, layered on top of its Character's personality. To write one, double-click the fidget to summon it, open the **Prompt** tab, and type in the **Your own layer** box. That box is the Instance Prompt. Paste one of the examples below and edit it to fit. Saving starts a new conversation, and the Instance Prompt stays with that fidget if you switch its Character. The Instance Prompt changes how the fidget reacts each time it wakes. It doesn't schedule anything.
+An Instance Prompt is your own text for one fidget, up to 2000 characters, layered on top of its Character's personality. To write one, double-click the fidget to summon it, open the **Prompt** tab, and type in the **Your own layer** box. That box is the Instance Prompt. Paste one of the examples below and edit it to fit. Saving starts a new conversation, and the Instance Prompt stays with that fidget if you switch its Character.
+
+Every example below assumes this setup:
+
+- A [Harness](#harness-support) is attached. A Model API can't run tools.
+- The Harness is allowed to use its own tools.
+- The **Window and application names** consent is on in Settings → Privacy. Fidget then reads app names and window titles only, never pixels, and it [never takes screenshots](#computer-use) ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)).
+
+> [!IMPORTANT]
+> **No timers.** Fidget doesn't schedule anything. It acts on the Instance Prompt when it next wakes, and the gap between unprompted wakes grows to as much as two hours, so "around 15:00" can land well after 15:00. A poke, a pickup, a Perch, or a chat wakes it at once and resets the gap. **Use a real alarm for anything you can't miss.**
 
 | Paste and edit | How it reacts on a wake |
 |---|---|
-| `I'm deep in debugging today. If iTerm2 is still in front around mid-afternoon (say 15:00), tell me to wrap up. A technician is coming.` | Sees the time and that iTerm2 is still in front, and tells you to wrap up. ¹ ² |
-| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Sees the time on a wake and nags you to stretch, in its own voice. ¹ |
-| `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees the editor in front on a wake and asks you to walk it through the bug. ¹ ² |
-| `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. ² |
-| `When I ask you to check something on my machine, do it, then report back in one line, in character.` <br>![needs a harness](https://img.shields.io/badge/needs-harness-57606A) | Your [Harness](#harness-support) does the work with its own tools, and the fidget answers. ³ |
-
-> [!IMPORTANT]
-> ¹ **No timers.** Fidget doesn't schedule anything. It acts on the Instance Prompt when it next wakes, and the gap between unprompted wakes grows to as much as two hours, so "around 15:00" can land well after 15:00. A poke, a pickup, a Perch, or a chat wakes it at once and resets the gap. **Use a real alarm for anything you can't miss.**
-
-<sub>² Needs the **Window and application names** consent in Settings → Privacy: app names and window titles only, never pixels, and Fidget [never takes screenshots](#computer-use) ([ADR-0032](./docs/adr/0032-one-consent-for-titles-and-application-names.md)). ³ A Model API can't run tools.</sub>
+| `I'm deep in debugging today. If iTerm2 is still in front around mid-afternoon (say 15:00), tell me to wrap up. A technician is coming.` | Sees the time and that iTerm2 is still in front, and tells you to wrap up. |
+| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Sees the time on a wake and nags you to stretch, in its own voice. |
+| `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees the editor in front on a wake and asks you to walk it through the bug. |
+| `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. |
+| `When I ask you to check something on my machine, do it, then report back in one line, in character.` | Does the check with your Harness's tools and reports back in one line, in character. |
 
 ## Characters
 
