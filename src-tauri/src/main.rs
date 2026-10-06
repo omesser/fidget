@@ -2750,7 +2750,10 @@ enum ChatMsg {
     /// An inbound wake: the Harness started a turn between Fidget prompts with
     /// agent text. Triggers a Director wake so the speech participates in Pace
     /// and reaches Chat/bubble/Behaviors (#1356 Part 2).
-    InboundWake { instance: InstanceId, speech: String },
+    InboundWake {
+        instance: InstanceId,
+        speech: String,
+    },
 }
 
 /// The sender every Chat surface posts on. Not another `SettingsOp`: every

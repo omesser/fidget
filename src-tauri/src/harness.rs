@@ -3657,7 +3657,11 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. }) => {}
+                    Ok(
+                        Forwarded::Plan(_)
+                        | Forwarded::Thought { .. }
+                        | Forwarded::InboundWake { .. },
+                    ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
             }
@@ -5302,7 +5306,10 @@ mod tests {
             "{thoughts:?}"
         );
         assert!(
-            said.contains(&("buddy-1".to_string(), "Your reminder: time to stretch!".to_string())),
+            said.contains(&(
+                "buddy-1".to_string(),
+                "Your reminder: time to stretch!".to_string()
+            )),
             "between-turn agent text never reached the user: {said:?}"
         );
         let titles: Vec<Value> = fx
@@ -5364,7 +5371,9 @@ mod tests {
                     assert_eq!(speech, "Your reminder: time to stretch!");
                     speech_seen = true;
                 }
-                Forwarded::Thought { instance, line } if instance == "buddy-1" && line.is_empty() => {
+                Forwarded::Thought { instance, line }
+                    if instance == "buddy-1" && line.is_empty() =>
+                {
                     thought_ended = true;
                 }
                 _ => {}
@@ -5394,7 +5403,10 @@ mod tests {
                 _ => thread::sleep(Duration::from_millis(10)),
             }
         }
-        assert!(speech_seen, "between-turn speech was dropped when prompting again");
+        assert!(
+            speech_seen,
+            "between-turn speech was dropped when prompting again"
+        );
         drop(worker);
     }
 
