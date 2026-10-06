@@ -1,6 +1,6 @@
 // Throws the sprite: a real press at a top-left-origin point, a fast drag of dx
 // points, then the release, so the app sees a Grab and a Throw.
-// Usage: swift scripts/throw-sprite.swift x y dx
+// Usage: swift scripts/scenarios/throw-sprite.swift x y dx
 
 import AppKit
 
@@ -25,7 +25,7 @@ CGWarpMouseCursorPosition(start)
 post(.mouseMoved, start)
 Thread.sleep(forTimeInterval: 0.12)
 post(.leftMouseDown, start)
-// Held long enough to count as a Grab rather than a Poke.
+// A drag past DRAG_THRESHOLD makes this a Grab; the hold lets the press land first.
 Thread.sleep(forTimeInterval: 0.15)
 var point = start
 for step in 1...8 {

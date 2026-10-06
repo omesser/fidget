@@ -912,27 +912,43 @@ mod tests {
         fixture_cases("sign-in-button.win.ps1", &SIGN_IN_GOOD[..3], SIGN_IN_CASES);
     }
 
-    /// `text` with the `nth` frame line after the Poke edited by `edit`, and
-    /// every frame line past `keep` dropped.
-    fn after_poke(text: &str, keep: usize, nth: usize, edit: fn(&str) -> String) -> String {
-        let mut frames = None;
+    /// Frame lines after the Poke in `text`, each with its 1-based count.
+    /// The fixture traces a frame every 16 ms: frames 1..=143 fall in the
+    /// check's 2300 ms pause window, and 163 on in its 2600 ms resume window.
+    fn after_poke(text: &str, mut each: impl FnMut(usize, &str) -> Option<String>) -> String {
+        let mut frames: Option<usize> = None;
         text.lines()
             .filter_map(|line| {
                 if line.starts_with("verbs:") && line.contains("Poke") {
                     frames = Some(0);
-                    return Some(format!("{line}\n"));
+                    return Some(line.to_string());
                 }
-                let Some(n) = frames.as_mut().filter(|_| line.starts_with("frame:")) else {
-                    return Some(format!("{line}\n"));
-                };
-                *n += 1;
-                match *n {
-                    n if n > keep => None,
-                    n if n == nth => Some(format!("{}\n", edit(line))),
-                    _ => Some(format!("{line}\n")),
+                match frames.as_mut().filter(|_| line.starts_with("frame:")) {
+                    Some(n) => {
+                        *n += 1;
+                        each(*n, line)
+                    }
+                    None => Some(line.to_string()),
                 }
             })
+            .map(|line| format!("{line}\n"))
             .collect()
+    }
+
+    /// `text` with only the first `keep` frames after the Poke.
+    fn keep_after_poke(text: &str, keep: usize) -> String {
+        after_poke(text, |n, line| (n <= keep).then(|| line.to_string()))
+    }
+
+    /// `text` with the `nth` frame after the Poke put through `edit`.
+    fn edit_after_poke(text: &str, nth: usize, edit: fn(&str) -> String) -> String {
+        after_poke(text, |n, line| {
+            Some(if n == nth {
+                edit(line)
+            } else {
+                line.to_string()
+            })
+        })
     }
 
     const TRACE: &str = "FIDGET_SCENARIO_TRACE";
@@ -951,27 +967,32 @@ mod tests {
                 ),
                 (
                     TRACE,
-                    |t| after_poke(t, usize::MAX, 60, |l| l.replace("Climbing", "Falling")),
+                    |t| keep_after_poke(t, 20),
+                    "the trace stops 0.3 s after the Poke",
+                ),
+                (
+                    TRACE,
+                    |t| edit_after_poke(t, 60, |l| l.replace("Climbing", "Falling")),
                     "the sprite left the wall during the pause",
                 ),
                 (
                     TRACE,
-                    |t| after_poke(t, usize::MAX, 60, |l| l.replace("pos(0,864)", "pos(0,860)")),
+                    |t| edit_after_poke(t, 60, |l| l.replace("pos(0,864)", "pos(0,860)")),
                     "the sprite moved during the pause",
                 ),
                 (
                     TRACE,
-                    |t| t.replace("react#", "climb#"),
-                    "no react on the wall after the Poke",
+                    |t| edit_after_poke(t, 1, |l| l.replace("react#0", "react#3")),
+                    "the Poke did not start react over",
                 ),
                 (
                     TRACE,
-                    |t| after_poke(t, usize::MAX, 100, |l| l.replace("climb#0", "climb#3")),
+                    |t| edit_after_poke(t, 100, |l| l.replace("climb#0", "climb#3")),
                     "the sprite climbed in place during the pause",
                 ),
                 (
                     TRACE,
-                    |t| after_poke(t, 155, 0, str::to_string),
+                    |t| keep_after_poke(t, 155),
                     "the sprite did not climb on after the cooldown",
                 ),
             ],
