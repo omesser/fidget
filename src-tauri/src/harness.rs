@@ -768,17 +768,16 @@ impl SessionKey {
     }
 }
 
-/// What the session on the wire tells the Chat surface, live.
-/// `Settled` exists because an ask goes to every open surface and only one
-/// takes the click. Without it the others keep offering live buttons.
-/// An inbound wake: the Harness started a turn between Fidget prompts
-/// with agent text meant for the user.
+/// Between-turn agent text from a Harness-initiated turn.
 #[derive(Clone, Debug)]
 pub struct InboundWake {
     pub instance: String,
     pub speech: String,
 }
 
+/// What the session on the wire tells the Chat surface, live or on replay.
+/// `Settled` exists because an ask goes to every open surface and only one
+/// takes the click. Without it the others keep offering live buttons.
 #[derive(Debug)]
 pub enum Forwarded {
     Ask(PermissionAsk),

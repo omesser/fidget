@@ -2206,12 +2206,9 @@ fn show_thought(app: &tauri::AppHandle, instance: &str, line: String) {
     let _ = app.emit_to(chat_label(instance), CHAT_THOUGHT_EVENT, &line);
 }
 
-fn handle_inbound_wake(app: &tauri::AppHandle, instance: &str, speech: String) {
+fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
     if let Some(state) = app.try_state::<ChatChannel>() {
-        let _ = state.0.send(ChatMsg::InboundWake(harness::InboundWake {
-            instance: instance.to_string(),
-            speech,
-        }));
+        let _ = state.0.send(ChatMsg::InboundWake(wake));
     }
 }
 
@@ -4447,9 +4444,7 @@ fn main() {
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }
-                    harness::Forwarded::InboundWake(wake) => {
-                        handle_inbound_wake(&forward_to, &wake.instance, wake.speech)
-                    }
+                    harness::Forwarded::InboundWake(wake) => handle_inbound_wake(&forward_to, wake),
                     harness::Forwarded::Thought { instance, line } => {
                         show_thought(&forward_to, &instance, line)
                     }

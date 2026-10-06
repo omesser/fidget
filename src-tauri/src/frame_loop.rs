@@ -870,10 +870,8 @@ pub(crate) fn run_frame_loop(
                 let line = match msg {
                     ChatMsg::Said(line) => line,
                     ChatMsg::InboundWake(wake) => {
-                        // Inbound wake: the Harness started a turn between Fidget prompts.
-                        // Triggers a Director wake so the speech participates in Pace
-                        // and reaches Chat/bubble/Behaviors (#1356 Part 2).
-
+                        // Inbound wake triggers a Director wake so the speech participates
+                        // in Pace and reaches Chat/bubble/Behaviors.
                         if let Some(live) = lives.iter_mut().find(|live| live.id == wake.instance) {
                             live.addressed = true;
                             live.happened = Happened::Proactive;
