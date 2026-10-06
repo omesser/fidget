@@ -76,6 +76,7 @@ All off by default. Switches take `1`/`on`/`true`/`yes` or `0`/`off`/`false`/`no
 | `FIDGET_TRACE_CADENCE` | Bench-only, with no Settings row. The overlay's display frames as `cadence:` lines and the loop's tick count as `cadence-ticks:` once a second, for `scripts/bench-frame-cadence-macos.sh`. Read at launch only |
 | `FIDGET_TRACE_WINDOWS` | Windows only, set to any value: window count and the first 3 bounds on first read |
 | `FIDGET_DEBUG_REINFORCE` | Windows only, with no Settings row: debug logging for overlay `reinforce_overlay` calls (DWM frame extension and style restoration) |
+| `FIDGET_DEBUG_IPC` | Enable file-based debug commands (`~/.fidget-debug-cmd` / `~/.fidget-debug-result`) for `fidget-verify place` and `snapshot`. Off by default. |
 | `FIDGET_CAPTURABLE` | `1` forces the overlay into screen captures, `0` excludes it. Overrides Settings → Presence → "Appear in screenshots and screen shares". For verify scripts and CI. |
 
 ## Verifying the Overlay

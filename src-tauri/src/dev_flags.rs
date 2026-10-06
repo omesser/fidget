@@ -146,6 +146,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_ENGINE.var(),
         #[cfg(windows)]
         DEBUG_REINFORCE.var(),
+        DEBUG_IPC.var(),
         CAPTURABLE.var(),
         DIRECTOR_BLANK.var(),
     ]
@@ -187,6 +188,7 @@ pub fn seed(settings: &Settings) {
     TRACE_ENGINE.seed(settings.trace_engine);
     #[cfg(windows)]
     DEBUG_REINFORCE.seed(false);
+    DEBUG_IPC.seed(false);
     CAPTURABLE.seed(settings.capturable);
     DIRECTOR_BLANK.seed(settings.director_blank);
     TIMEOUT_SECS.store(

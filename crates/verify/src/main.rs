@@ -135,8 +135,8 @@ fn main() -> ExitCode {
                     scenario::run(&repo_root, name, *go, args, &mut report)
                 }
                 Commands::Cleanup => cleanup::run(&mut report),
-                Commands::Place { x, y } => return ExitCode::from(debug_ipc::place(*x, *y)),
-                Commands::Snapshot => return ExitCode::from(debug_ipc::snapshot()),
+                Commands::Place { x, y } => debug_ipc::place(*x, *y, &mut report),
+                Commands::Snapshot => debug_ipc::snapshot(&mut report),
             },
             // Doctor's product is the layout report, so it still runs and
             // records the layout failure itself.
