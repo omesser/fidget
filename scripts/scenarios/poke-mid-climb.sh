@@ -23,7 +23,8 @@ if [ "${1:-}" != --go ]; then
 fi
 bin=${2:?usage: poke-mid-climb.sh --go <fidget binary>}
 root=$(cd "$(dirname "$0")/../.." && pwd)
-out="${TMPDIR:-/tmp}/fidget-scenario-poke-mid-climb-$(date +%Y%m%d-%H%M%S)"
+# Unique per run: the leaves' fixture tests run in parallel and would share check.txt.
+out=$(mktemp -d "${TMPDIR:-/tmp}/fidget-scenario-poke-mid-climb-$(date +%Y%m%d-%H%M%S)-XXXX")
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
 mkdir -p "$out/home" "$tools"
 log="$out/app.log"

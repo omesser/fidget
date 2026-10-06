@@ -36,7 +36,8 @@ check() { # <app log>
   python3 "$root/scripts/scenarios/poke-mid-climb-check.py" "$1" 2> "$out/check.txt" || fail "$(cat "$out/check.txt")"
 }
 
-out="${TMPDIR:-/tmp}/fidget-scenario-poke-mid-climb-$(date +%Y%m%d-%H%M%S)"
+# Unique per run: the leaves' fixture tests run in parallel and would share check.txt.
+out=$(mktemp -d "${TMPDIR:-/tmp}/fidget-scenario-poke-mid-climb-$(date +%Y%m%d-%H%M%S)-XXXX")
 
 if [ -n "${FIDGET_SCENARIO_TRACE:-}" ]; then
   mkdir -p "$out"
