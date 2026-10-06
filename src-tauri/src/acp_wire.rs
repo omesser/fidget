@@ -1166,13 +1166,13 @@ async fn serve(
                 effort,
                 reply,
             }) => {
-                let asked = load.clone().map(SessionId::new);
+                let loading = load.clone().map(SessionId::new);
                 let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
                 // `session/new`. Every update queued for either id is history.
                 let history =
-                    |id: &SessionId| asked.as_ref() == Some(id) || opened.as_ref() == Ok(id);
+                    |id: &SessionId| loading.as_ref() == Some(id) || opened.as_ref() == Ok(id);
                 while let Ok(message) = incoming.try_recv() {
                     if matches!(&message, Incoming::Update(update) if history(&update.session_id)) {
                         continue;
