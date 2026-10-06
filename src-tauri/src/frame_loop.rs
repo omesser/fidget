@@ -1779,7 +1779,7 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let thinking =
-                    (reactive_wake || slots.thinking(&live.id)) && !instance.do_not_disturb();
+                    (reactive_wake || slots.thinking(&live.id)) && !instance.do_not_disturb() && !asking;
 
                 // What the user has seen is what the Engine played, not what
                 // the Director asked for: a refused proposal never reaches
@@ -1859,7 +1859,7 @@ pub(crate) fn run_frame_loop(
                     state: frame.state,
                     happened: live.happened_last,
                     facing: frame.facing as i8,
-                    asking: thinking,
+                    asking,
                 };
                 // Asks whether the deadline moved — a wake landing, the pace
                 // growing under it — not whether it ran down, which it does

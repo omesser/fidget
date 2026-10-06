@@ -2820,7 +2820,8 @@ struct ChatStatus {
     /// `SpritePlacement::mirror`'s answer about the art (#345): the bar says
     /// which way the sprite is walking, which a left strip does not change.
     facing: i8,
-    /// A turn is on the wire. The same bit the thinking ellipsis draws from.
+    /// On this tick only: a touch was dropped because a question waits on the
+    /// user (ADR-0016), so the bubble points at Chat. False otherwise.
     asking: bool,
 }
 
