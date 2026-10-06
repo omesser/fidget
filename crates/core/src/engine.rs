@@ -493,7 +493,10 @@ pub fn bring_off_fullscreen(
     desktop: &Desktop,
 ) -> Vec<Option<Point>> {
     let mut landings = vec![None; feet.len()];
-    let Some(target) = desktop.first_free_display().and_then(|index| monitors.get(index)) else {
+    let Some(target) = desktop
+        .first_free_display()
+        .and_then(|index| monitors.get(index))
+    else {
         return landings;
     };
     let stranded = |at: &Point| {
