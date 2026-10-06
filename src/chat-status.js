@@ -38,7 +38,7 @@ export function statusCells(status, msLeft) {
     // One fact, not both: this cell held the widest pair on the line. It costs
     // nothing — a wake resets the ambient pace as it starts, so the countdown
     // under a turn on the wire is always the full wait over again.
-    director: status?.asking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
+    director: status?.thinking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
     happened: status?.happened ?? NONE,
   };
 }
@@ -49,7 +49,7 @@ export function plainStatus(status, msLeft) {
   if (!status) {
     return "Starting up…";
   }
-  if (status.asking) {
+  if (status.thinking) {
     return "Thinking…";
   }
 

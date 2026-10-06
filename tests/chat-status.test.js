@@ -15,6 +15,7 @@ const push = {
   state: "Grounded",
   happened: "poked",
   facing: 1,
+  thinking: false,
   asking: false,
 };
 
@@ -42,7 +43,7 @@ test("facing left mirrors the arrow", () => {
 });
 
 test("a turn on the wire displaces the countdown it would reset anyway", () => {
-  assert.equal(statusCells({ ...push, asking: true }, 5000).director, "thinking");
+  assert.equal(statusCells({ ...push, thinking: true }, 5000).director, "thinking");
 });
 
 test("no wake coming reads as a dash rather than a number", () => {
@@ -216,7 +217,7 @@ test("an endpoint the Shell could not read draws nothing, not a separator", () =
 // Plain-language status that connects to the visual character's behavior and
 // actions, not only chat state.
 test("plain status says Thinking when a turn is on the wire", () => {
-  assert.equal(plainStatus({ ...push, asking: true }, 12_000), "Thinking…");
+  assert.equal(plainStatus({ ...push, thinking: true }, 12_000), "Thinking…");
 });
 
 test("plain status reflects behavior as human-readable activity", () => {
