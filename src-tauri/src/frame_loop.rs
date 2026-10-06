@@ -2700,8 +2700,6 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
     }
 }
 
-/// Drop the application names the user has not asked for: the frontmost one,
-/// and the earlier ones the read carries in `before`.
 /// Drop front and `before` names without WindowNames consent or when excluded
 /// (ADR-0032). Repeated here: these names arrive by a different call than the
 /// window walk, and exclusion can only match while the name is still present.
