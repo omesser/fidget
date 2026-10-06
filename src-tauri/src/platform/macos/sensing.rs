@@ -99,11 +99,11 @@ mod tests {
     /// permission dialog appeared.
     #[test]
     #[ignore = "needs a real desktop; run by hand"]
-    fn the_live_free_tier_follows_the_real_machine() {
-        let mut tier = DesktopSense::default();
+    fn the_live_desktop_sense_follows_the_real_machine() {
+        let mut sense = DesktopSense::default();
 
         for _ in 0..10 {
-            let activity = tier.read(&MacosActivitySource, &SystemClock);
+            let activity = sense.read(&MacosActivitySource, &SystemClock);
 
             assert!(
                 activity.frontmost_application.is_some(),

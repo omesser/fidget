@@ -1,6 +1,7 @@
-//! The Free sensing tier: frontmost application, how long it and a few earlier
-//! fronts stayed, idle, and the civil clock — none of it costing a permission
-//! prompt. Titles, screen content and the clipboard are absent by construction.
+//! Desktop sensing without permission prompts: frontmost application, how long
+//! it and a few earlier fronts stayed, idle, and the civil clock. Application
+//! names need the window-names consent. Titles, screen content and the clipboard
+//! are absent by construction.
 
 use std::time::{Duration, SystemTime};
 
@@ -75,7 +76,7 @@ fn system_local_time() -> (u8, u8, u8) {
     (weekday as u8, (minutes / 60) as u8, (minutes % 60) as u8)
 }
 
-/// One read of the Free tier.
+/// One read of desktop sensing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activity {
     pub frontmost_application: Option<String>,
@@ -105,7 +106,7 @@ pub struct Activity {
 /// How many earlier front applications a read carries.
 pub const BEFORE_LIMIT: usize = 3;
 
-/// Reads free desktop sensing (frontmost application, earlier fronts with stays,
+/// Reads desktop sensing (frontmost application, earlier fronts with stays,
 /// idle, and the civil clock), and remembers which applications were in front and
 /// for how long, so a caller need not keep that history itself.
 #[derive(Default)]

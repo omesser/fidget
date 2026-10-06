@@ -1306,7 +1306,7 @@ pub(crate) fn run_frame_loop(
             // per character would be the same two AppKit calls bought N times.
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
-                let mut activity = free_tier.read(&activity_source, &SystemClock);
+                let mut activity = desktop_sense.read(&activity_source, &SystemClock);
                 if let Ok(settings) = settings.lock() {
                     withhold_names(
                         &mut activity,
