@@ -374,9 +374,9 @@ pub(crate) fn run_frame_loop(
                             let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
                             let deadline = next_director.min(next_sense);
 
-                            // Cap at 1s: even when idle, gesture and menu response must
-                            // stay timely (menu deadline is bounded, not instant).
-                            let capped = deadline.min(Duration::from_secs(1));
+                            // Cap at 100ms on Windows so GetAsyncKeyState catches
+                            // synthetic right-clicks before the overlay updates.
+                            let capped = deadline.min(Duration::from_millis(100));
                             thread::sleep(capped);
                         }
                     }
