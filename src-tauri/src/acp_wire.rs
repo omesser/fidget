@@ -2,7 +2,7 @@
 //! No SDK type leaves the file. Reversing the crate choice (ADR-0022)
 //! rewrites this file only. The frame loop never sees it (ADR-0004).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -764,7 +764,7 @@ fn run(
             .name("fidget")
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
-                    let _ = updates.send(Incoming::Update(notification.update));
+                    let _ = updates.send(Incoming::Update(notification));
                     Ok(())
                 },
                 agent_client_protocol::on_receive_notification!(),
@@ -1024,7 +1024,7 @@ pub(crate) fn kill_harness_tree(pid: u32) {
 }
 
 enum Incoming {
-    Update(SessionUpdate),
+    Update(SessionNotification),
     Ask(
         RequestPermissionRequest,
         Responder<RequestPermissionResponse>,
@@ -1037,6 +1037,18 @@ enum Incoming {
     Complete(ElicitationId),
 }
 
+/// A `session/request_permission` held open until the user answers it.
+type PendingAsk = (String, Responder<RequestPermissionResponse>);
+
+/// A turn the Harness started on its own, as a cron fire does: updates for a
+/// session with no `session/prompt` open. The text is held and not shown.
+/// Nothing turns it into a wake yet (#1356), which is the gap ADR-0028 names.
+#[derive(Default)]
+struct Inbound {
+    said: Answer,
+    thought: String,
+}
+
 struct PendingElicit {
     form: ElicitationForm,
     responder: Responder<CreateElicitationResponse>,
@@ -1044,11 +1056,13 @@ struct PendingElicit {
     link: Option<ElicitationId>,
 }
 
-/// What `serve` lends a turn: both channels, and the forms that outlive it.
+/// What `serve` lends a turn: both channels, and the forms and asks that
+/// outlive it.
 struct Serving<'a> {
     rx: &'a mut mpsc::UnboundedReceiver<Msg>,
     incoming: &'a mut mpsc::UnboundedReceiver<Incoming>,
     held: &'a mut Vec<PendingElicit>,
+    held_asks: &'a mut Vec<PendingAsk>,
 }
 
 type InflightAuth<'a> = (
@@ -1070,6 +1084,8 @@ async fn serve(
     // and links that outlive a turn. A turn keeps its own, so each is
     // cancelled with what it belongs to.
     let mut forms: Vec<PendingElicit> = Vec::new();
+    let mut asks: Vec<PendingAsk> = Vec::new();
+    let mut inbound: HashMap<SessionId, Inbound> = HashMap::new();
     loop {
         enum Step {
             Auth(Result<(), String>),
@@ -1094,19 +1110,12 @@ async fn serve(
                     Some(command) => Step::Command(command),
                     None => Step::Stop,
                 },
-                message = incoming.recv() => match message {
-                    Some(Incoming::Elicit(request, responder)) => {
-                        hold_form(&mut forms, &request, responder, waiting, on_event);
-                        continue;
+                message = incoming.recv() => {
+                    if let Some(message) = message {
+                        between_turns(message, &mut forms, &mut asks, &mut inbound, waiting, on_event);
                     }
-                    Some(Incoming::Complete(link)) => {
-                        complete_form(&mut forms, &link, on_event);
-                        continue;
-                    }
-                    // History replayed by `session/load`, and anything said
-                    // between turns. Not ours to keep.
-                    _ => continue,
-                },
+                    continue;
+                }
                 () = cx.incoming_closed() => Step::Stop,
             }
         };
@@ -1159,6 +1168,25 @@ async fn serve(
                 reply,
             }) => {
                 let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
+                // ACP replays a loaded conversation as updates before it
+                // answers, so every update queued for this id is history.
+                if let Ok(id) = &opened {
+                    while let Ok(message) = incoming.try_recv() {
+                        if matches!(&message, Incoming::Update(update) if update.session_id == *id)
+                        {
+                            continue;
+                        }
+                        let signing_in = auth.is_some();
+                        between_turns(
+                            message,
+                            &mut forms,
+                            &mut asks,
+                            &mut inbound,
+                            signing_in,
+                            on_event,
+                        );
+                    }
+                }
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
             Step::Command(Msg::Prompt {
@@ -1167,10 +1195,12 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
+                inbound.remove(&id);
                 let serving = Serving {
                     rx: &mut rx,
                     incoming: &mut incoming,
                     held: &mut forms,
+                    held_asks: &mut asks,
                 };
                 let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
@@ -1189,9 +1219,12 @@ async fn serve(
                     Err(error) => Err(error_text(error)),
                 });
             }
-            // No turn is running, so there is no ask to answer and nothing to
-            // cancel.
-            Step::Command(Msg::Cancel | Msg::Answer { .. }) => {}
+            Step::Command(Msg::Answer { request, option }) => {
+                answer_ask(&mut asks, request, option, on_event)
+            }
+            // No turn is running, so there is nothing to cancel. An inbound
+            // turn is the Harness's own, and `session/cancel` is for ours.
+            Step::Command(Msg::Cancel) => {}
             Step::Command(Msg::Shutdown) => {
                 if let Some((_, reply)) = auth.take() {
                     let _ = reply.send(Err("harness exited".to_string()));
@@ -1200,7 +1233,37 @@ async fn serve(
             }
         }
     }
+    cancel_asks(&mut asks, on_event);
     cancel_forms(&mut forms, on_event);
+}
+
+/// One message with no `session/prompt` open, held as a turn would hold it.
+/// `signing_in` is whether Fidget's own `authenticate` is in flight.
+fn between_turns(
+    message: Incoming,
+    forms: &mut Vec<PendingElicit>,
+    asks: &mut Vec<PendingAsk>,
+    inbound: &mut HashMap<SessionId, Inbound>,
+    signing_in: bool,
+    on_event: &OnEvent,
+) {
+    match message {
+        Incoming::Update(update) => {
+            let held = inbound.entry(update.session_id.clone()).or_default();
+            note_update(
+                update.update,
+                &update.session_id,
+                &mut held.said,
+                &mut held.thought,
+                on_event,
+            );
+        }
+        Incoming::Ask(request, responder) => hold_ask(asks, &request, responder, on_event),
+        Incoming::Elicit(request, responder) => {
+            hold_form(forms, &request, responder, signing_in, on_event)
+        }
+        Incoming::Complete(link) => complete_form(forms, &link, on_event),
+    }
 }
 
 /// One `McpChoice` in the protocol's own words.
@@ -1362,7 +1425,12 @@ async fn turn(
     reply: &sync_mpsc::Sender<Progress>,
     on_event: &OnEvent,
 ) -> Result<Reply, TurnError> {
-    let Serving { rx, incoming, held } = serving;
+    let Serving {
+        rx,
+        incoming,
+        held,
+        held_asks,
+    } = serving;
     let sent = cx.send_request(PromptRequest::new(
         session.clone(),
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
@@ -1373,7 +1441,7 @@ async fn turn(
     // that arrives mid-sentence can be shown as the sentence it belongs to.
     // It dies with the turn.
     let mut thought = String::new();
-    let mut asks: Vec<(String, Responder<RequestPermissionResponse>)> = Vec::new();
+    let mut asks: Vec<PendingAsk> = Vec::new();
     let mut forms: Vec<PendingElicit> = Vec::new();
     // Reported on the transition only, and at the top of the loop rather than
     // in the arms that push or settle: several asks can be open at once, and
@@ -1397,12 +1465,10 @@ async fn turn(
             biased;
             message = incoming.recv() => match message {
                 Some(Incoming::Update(update)) => {
-                    note_update(update, session, &mut said, &mut thought, on_event)
+                    note_update(update.update, session, &mut said, &mut thought, on_event)
                 }
                 Some(Incoming::Ask(request, responder)) => {
-                    let ask = permission_ask(&request, responder.id().to_string());
-                    asks.push((ask.request.clone(), responder));
-                    on_event(Event::Permission(ask));
+                    hold_ask(&mut asks, &request, responder, on_event)
                 }
                 // A link that outlives the turn goes to `serve`'s forms, so
                 // `end_turn` does not cancel it and the budget does not stop.
@@ -1444,19 +1510,11 @@ async fn turn(
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
+                // Either list may hold it: an ask can wait from between turns.
                 Some(Msg::Answer { request, option }) => {
-                    if let Some(at) = asks.iter().position(|(id, _)| *id == request) {
-                        let (_, responder) = asks.remove(at);
-                        let _ = responder.respond(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                                option.clone(),
-                            )),
-                        ));
-                        on_event(Event::PermissionSettled {
-                            request,
-                            option: Some(option),
-                        });
-                    }
+                    let mine = asks.iter().any(|(id, _)| *id == request);
+                    let from = if mine { &mut asks } else { &mut *held_asks };
+                    answer_ask(from, request, option, on_event)
                 }
                 Some(Msg::AnswerElicitation { request, answer }) => {
                     let mine = forms.iter().any(|pending| pending.form.request == request);
@@ -1836,6 +1894,46 @@ fn hold_form(
     on_event(Event::Elicitation(form));
 }
 
+/// A permission request the Harness asked, held open and handed on to Chat.
+fn hold_ask(
+    asks: &mut Vec<PendingAsk>,
+    request: &RequestPermissionRequest,
+    responder: Responder<RequestPermissionResponse>,
+    on_event: &OnEvent,
+) {
+    let ask = permission_ask(request, responder.id().to_string());
+    asks.push((ask.request.clone(), responder));
+    on_event(Event::Permission(ask));
+}
+
+/// The user's pick on the open ask it names, if that ask is still open.
+fn answer_ask(asks: &mut Vec<PendingAsk>, request: String, option: String, on_event: &OnEvent) {
+    let Some(at) = asks.iter().position(|(id, _)| *id == request) else {
+        return;
+    };
+    let (_, responder) = asks.remove(at);
+    let _ = responder.respond(RequestPermissionResponse::new(
+        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option.clone())),
+    ));
+    on_event(Event::PermissionSettled {
+        request,
+        option: Some(option),
+    });
+}
+
+/// Every open ask, answered with the protocol's `cancelled`.
+fn cancel_asks(asks: &mut Vec<PendingAsk>, on_event: &OnEvent) {
+    for (request, responder) in asks.drain(..) {
+        let _ = responder.respond(RequestPermissionResponse::new(
+            RequestPermissionOutcome::Cancelled,
+        ));
+        on_event(Event::PermissionSettled {
+            request,
+            option: None,
+        });
+    }
+}
+
 /// The user's answer to the open form it names, if that form is still open.
 fn answer_form(
     forms: &mut Vec<PendingElicit>,
@@ -1899,20 +1997,12 @@ fn cancel_forms(forms: &mut Vec<PendingElicit>, on_event: &OnEvent) {
 /// thought says the turn stopped thinking; the plan goes dark.
 fn end_turn(
     session: &SessionId,
-    asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
+    asks: &mut Vec<PendingAsk>,
     forms: &mut Vec<PendingElicit>,
     thought: &mut String,
     on_event: &OnEvent,
 ) {
-    for (request, responder) in asks.drain(..) {
-        let _ = responder.respond(RequestPermissionResponse::new(
-            RequestPermissionOutcome::Cancelled,
-        ));
-        on_event(Event::PermissionSettled {
-            request,
-            option: None,
-        });
-    }
+    cancel_asks(asks, on_event);
     cancel_forms(forms, on_event);
     if !thought.is_empty() {
         thought.clear();
