@@ -100,8 +100,16 @@ if ($axNeeds -or $axWaiting -or $axSigned) {
     exit 0
 }
 
-if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine("SKIP: bash is not on PATH, so the fixture Harness wrapper cannot run.")
+$bashPath = $null
+$gitBash = "C:\Program Files\Git\bin\bash.exe"
+if (Test-Path -LiteralPath $gitBash -PathType Leaf) {
+    $bashPath = $gitBash
+} else {
+    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bashCmd) { $bashPath = $bashCmd.Path }
+}
+if (-not $bashPath) {
+    [Console]::Error.WriteLine("SKIP: bash not found (tried Git Bash, then PATH)")
     exit 2
 }
 
@@ -115,7 +123,7 @@ $log = Join-Path $out "app.log"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
 # Chat names the Harness by its launcher, the first word of the line.
-$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=auth-sign-in-link count=$marks"
+$harness = "$bashPath $root/scripts/scenarios/fixture-harness.sh $TestBin script=auth-sign-in-link count=$marks"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 $Launcher = "bash"

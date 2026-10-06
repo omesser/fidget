@@ -84,8 +84,16 @@ if ($before -or $after) {
     exit 0
 }
 
-if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine("SKIP: bash is not on PATH, so the fixture Harness wrapper cannot run.")
+$bashPath = $null
+$gitBash = "C:\Program Files\Git\bin\bash.exe"
+if (Test-Path -LiteralPath $gitBash -PathType Leaf) {
+    $bashPath = $gitBash
+} else {
+    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bashCmd) { $bashPath = $bashCmd.Path }
+}
+if (-not $bashPath) {
+    [Console]::Error.WriteLine("SKIP: bash not found (tried Git Bash, then PATH)")
     exit 2
 }
 
@@ -103,7 +111,7 @@ Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 $rootBash = $root -replace '\\', '/'
 $testBinBash = $TestBin -replace '\\', '/'
 $marksBash = $marks -replace '\\', '/'
-$harness = "bash $rootBash/scripts/scenarios/fixture-harness.sh $testBinBash script=scenario-asking count=$marksBash"
+$harness = "$bashPath $rootBash/scripts/scenarios/fixture-harness.sh $testBinBash script=scenario-asking count=$marksBash"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 
