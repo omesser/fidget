@@ -1258,9 +1258,9 @@ fn between_turns(
     on_event: &OnEvent,
 ) {
     match message {
-        // The text gathers in `said` and is not shown: nothing makes an
-        // inbound turn a wake yet. A gap (ADR-0028), not a decision. ponytail:
-        // `said` grows until that session's next prompt; bound it with the wake.
+        // Not shown: nothing makes an inbound turn a wake yet (ADR-0028 gap).
+        // ponytail: `Inbound` keeps every fire's text and thought until the next prompt,
+        // in memory and in one Thinking row. The wake slice (#1356) replaces it.
         Incoming::Update(update) => {
             let held = inbound.entry(update.session_id.clone()).or_default();
             note_update(

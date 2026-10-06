@@ -5294,10 +5294,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// `session/load` replays the conversation as updates before it answers.
-    /// That is history, not a Harness working between turns.
-    /// A load that fails after replaying falls back to `session/new`, and its
-    /// history is still history.
+    /// `session/load` replays the conversation as updates before it answers,
+    /// and a load that fails after replaying falls back to `session/new`.
+    /// Both are history, not a Harness working between turns.
     #[test]
     fn a_loaded_sessions_replay_is_not_work_between_turns() {
         for saved in ["saved-ok", "stale"] {
