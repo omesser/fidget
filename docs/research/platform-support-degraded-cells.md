@@ -145,8 +145,6 @@ Update README Platform Support table to link to ADR-0024 or this research doc fo
 
 ---
 
----
-
 ## Wayland: Fullscreen fade (native Wayland without XWayland)
 
 **Current behavior:**  
