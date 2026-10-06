@@ -11,6 +11,7 @@ sha: `ab6bd57b`
 | Linux: Dock/panel Perch | Only bottom panels detected | Implementation only checks strut[3]; side/top panels ignored | **Pursue to `yes`** - fixable |
 | Windows: Dock/panel Perch | Taskbar from work area (full-width strip) | No Windows API equivalent to CoreDockGetRect for exact bounds | **Document as accepted degrade** |
 | Windows: Fullscreen fade | Works for true fullscreen; unreliable for borderless windowed or maximized apps | Windows apps use mixed fullscreen modes; no reliable exclusive-fullscreen detection | **Document as accepted degrade** |
+| Wayland: Fullscreen fade | Native Wayland fullscreen apps do not trigger fade or move | Wayland gives clients no global window list by design; no compositor-agnostic detection | **Document as accepted degrade** |
 | Linux: Capturable opt-out | Always capturable; setting has no effect | Linux has no platform API to exclude windows from screen capture | **Already documented** in ADR-0024 |
 
 ## Linux: Dock or panel as a Perch
@@ -144,10 +145,46 @@ Update README Platform Support table to link to ADR-0024 or this research doc fo
 
 ---
 
+## Wayland: Fullscreen fade (native Wayland without XWayland)
+
+**Current behavior:**  
+On a pure Wayland session without XWayland, the Character does not move to a free display or fade when a native Wayland app goes fullscreen. The fullscreen rule behaves as if no fullscreen app is present.
+
+**Root constraint:**  
+Wayland protocol design. Wayland gives clients no global window list by design. On pure Wayland sessions, Fidget uses `DisplayOnlySource` (in `src-tauri/src/platform.rs`), which reports displays but no windows. This is the documented degraded mode.
+
+From `src-tauri/src/platform.rs`, the `DisplayOnlySource` implementation:
+> A Wayland session with no XWayland stays DisplayOnlySource: no global window list.
+
+The fullscreen detection function `fullscreen_displays` (in `crates/core/src/visibility.rs`) requires a list of window rectangles. With an empty windows list, it returns all `false`, so the Character never moves to a free display and never fades.
+
+**Options to complete:**
+
+1. **Compositor-specific protocols.** Each major compositor has its own mechanism:
+   - `wlr-foreign-toplevel-management` on wlroots compositors (Sway, Hyprland, river, niri)
+   - GNOME Shell extension or `org.gnome.Shell.Introspect` D-Bus (allowlisted senders only)
+   - KWin scripting
+
+   This would require compositor-specific code paths and ongoing maintenance across multiple compositor implementations. Each compositor's API is different and not guaranteed stable.
+
+2. **xdg-desktop-portal inhibit/idle as proxy.** Apps can request inhibit (don't sleep/lock) via the portal, which correlates with fullscreen but is not the same signal. Unreliable as a fullscreen indicator (media players, presentations, and games all inhibit idle without being fullscreen).
+
+3. **Accept the degraded mode.** XWayland is the canonical Linux path. Pure Wayland without XWayland is explicitly a supported degraded mode (DESIGN.md decision 3, docs/research/wayland-protocols.md). The README already documents: "Rare pure Wayland sessions without an X server fall back to screen edges only."
+
+**V1 call:**  
+**Document as accepted degrade.** This is consistent with the project's existing Wayland stance. XWayland serves the fullscreen rule correctly: it lists X clients, and Fidget's fullscreen detection works there. Pure Wayland is the rare degraded path. The gap applies only to native Wayland fullscreen apps (Firefox Wayland, GNOME apps, etc.); X clients under XWayland still trigger fullscreen fade correctly.
+
+Compositor-specific detection would sprawl across three different compositor families, each with its own maintenance burden and stability risks. Wayland's design decision to withhold global window state is architectural, not a temporary gap.
+
+**Follow-up:**  
+This PR updated the README Platform Support table (Linux fullscreen fade now `degraded⁵`) and added the Wayland fullscreen entry to this document's summary table. The gap is now documented as an accepted degrade.
+
+---
+
 ## V1 Disposition Summary
 
 - **1 cell → `yes`**: Linux Dock/panel Perch (fixable implementation gap)
-- **2 cells → accepted degrade**: Windows Dock/panel Perch, Windows fullscreen fade (platform differences)
+- **3 cells → accepted degrade**: Windows Dock/panel Perch, Windows fullscreen fade, Wayland fullscreen fade (platform differences)
 - **1 cell → already documented**: Linux Capturable (ADR-0024)
 
 Next step: Open follow-up issue for Linux panel detection, update README with footnotes/links for the accepted degrades.
