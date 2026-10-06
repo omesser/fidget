@@ -657,6 +657,25 @@ test("the composer sits above Speech when the two would share a box", () => {
   assert.equal(stacked.y, 300, "one gap above the Speech bubble, not on top of it");
 });
 
+test("the pill follows the sprite across a display seam without clamping", () => {
+  const size = { width: 200, height: 40 };
+  const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
+
+  const spriteNearSeam = { x: -50, y: 400, width: 64, height: 64 };
+  const pos = placeQuickMessage(spriteNearSeam, size, bounds, null);
+
+  const spriteCenterX = spriteNearSeam.x + spriteNearSeam.width / 2;
+  const expectedX = spriteCenterX - size.width / 2;
+  assert.equal(pos.x, expectedX, "pill follows sprite even when sprite is partially off-screen");
+  assert.ok(pos.x < 0, "pill is not clamped to display bounds at seam");
+
+  const spritePastRight = { x: 1900, y: 400, width: 64, height: 64 };
+  const posRight = placeQuickMessage(spritePastRight, size, bounds, null);
+  const expectedRight = spritePastRight.x + spritePastRight.width / 2 - size.width / 2;
+  assert.equal(posRight.x, expectedRight, "pill follows sprite past right edge");
+  assert.ok(posRight.x + size.width > bounds.width, "pill extends past display width");
+});
+
 test("without a clickable link the pill still names the fix as text", () => {
   const gate = gateDouble();
   gate.link = null;

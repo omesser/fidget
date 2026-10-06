@@ -295,17 +295,34 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
 // Same seat as Speech. When that bubble is already there, step clear of it
 // so a hover does not cover the line the Character is saying.
 export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
-  const pos = placeBubble(spriteRect, size, bounds);
-  if (!speechRect) return pos;
-  const overlaps =
-    pos.x < speechRect.x + speechRect.width &&
-    pos.x + size.width > speechRect.x &&
-    pos.y < speechRect.y + speechRect.height &&
-    pos.y + size.height > speechRect.y;
-  if (!overlaps) return pos;
+  const spriteCenterX = spriteRect.x + spriteRect.width / 2;
   const gap = 10;
-  let y = speechRect.y - size.height - gap;
-  if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
-  y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-  return { ...pos, y };
+
+  let x = spriteCenterX - size.width / 2;
+  let y = spriteRect.y - size.height - gap;
+
+  const wouldClampToTop = y < bounds.y;
+  const clampedY = bounds.y;
+  const wouldCoverSprite = wouldClampToTop && (clampedY + size.height > spriteRect.y);
+  let inverted = false;
+
+  if (wouldCoverSprite) {
+    y = spriteRect.y + spriteRect.height + gap;
+    inverted = true;
+  }
+
+  if (speechRect) {
+    const overlaps =
+      x < speechRect.x + speechRect.width &&
+      x + size.width > speechRect.x &&
+      y < speechRect.y + speechRect.height &&
+      y + size.height > speechRect.y;
+    if (overlaps) {
+      y = speechRect.y - size.height - gap;
+      if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
+    }
+  }
+
+  const tailOffset = spriteCenterX - (x + size.width / 2);
+  return { x, y, tailOffset, inverted };
 }
