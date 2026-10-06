@@ -1255,7 +1255,6 @@ fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_eve
 
 /// One message with no `session/prompt` open, held as a turn would hold it.
 /// `signing_in` is whether Fidget's own `authenticate` is in flight.
-///
 /// Between-turn updates accumulate in `Inbound`; flushes emit inbound wakes.
 fn between_turns(
     message: Incoming,
