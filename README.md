@@ -109,13 +109,8 @@ Every example below assumes this setup:
 - The Harness is allowed to use its own tools.
 - The **Window and application names** consent is on in Settings → Privacy. Fidget then reads app names and window titles only, never pixels, and it [never takes screenshots](#computer-use).
 
-> [!IMPORTANT]
-> **No timers.** Fidget doesn't schedule anything. It acts on the Instance Prompt when it next wakes, and the gap between unprompted wakes grows to as much as two hours, so "around 15:00" can land well after 15:00. A poke, a pickup, a Perch, or a chat wakes it at once and resets the gap. **Use a real alarm for anything you can't miss.**
-
 | Paste and edit | How it reacts on a wake |
 |---|---|
-| `I'm deep in debugging today. If iTerm2 is still in front around mid-afternoon (say 15:00), tell me to wrap up. A technician is coming.` | Sees the time and that iTerm2 is still in front, and tells you to wrap up. |
-| `You're my screen-guard buddy. Every couple of hours, nag me to get up and stretch my legs.` | Sees the time on a wake and nags you to stretch, in its own voice. |
 | `If my editor stays in front for a long stretch, ask me to explain the bug to you, like a rubber duck.` | Sees the editor in front on a wake and asks you to walk it through the bug. |
 | `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. |
 | `When I ask you to check something on my machine, do it, then report back in one line, in character.` | Does the check with your Harness's tools and reports back in one line, in character. |
