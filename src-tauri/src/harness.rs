@@ -768,7 +768,14 @@ impl SessionKey {
     }
 }
 
-/// What the session on the wire tells the Chat surface, live.
+/// Between-turn agent text from a Harness-initiated turn.
+#[derive(Clone, Debug)]
+pub struct InboundWake {
+    pub instance: String,
+    pub speech: String,
+}
+
+/// What the session on the wire tells the Chat surface, live or on replay.
 /// `Settled` exists because an ask goes to every open surface and only one
 /// takes the click. Without it the others keep offering live buttons.
 #[derive(Debug)]
@@ -790,6 +797,7 @@ pub enum Forwarded {
     },
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
+    InboundWake(InboundWake),
     /// The attachment moved: preflight finished, or a login went missing or
     /// came back mid-session (#991). Chat's first ReloadChat races preflight,
     /// so a missing launcher would otherwise never reach the landing (#726).
@@ -2264,6 +2272,15 @@ fn note_event(
         // Forwarded and not logged. The Action Log points at the Harness's own
         // session dump rather than copying it (CONTEXT.md), and a reply is not
         // copied there either (ADR-0034).
+        Event::InboundWake { session, speech } => {
+            let instance = owners
+                .lock()
+                .ok()
+                .and_then(|owners| owners.get(&session).cloned());
+            if let Some(instance) = instance {
+                forward(Forwarded::InboundWake(InboundWake { instance, speech }));
+            }
+        }
         Event::Thought { session, text } => {
             let instance = owners
                 .lock()
@@ -3409,7 +3426,7 @@ mod tests {
                         }
                         // Answers, then works on with no prompt open, the way
                         // a Claude Code cron fire does: a tool call, a
-                        // thought, and an ask the user has to answer.
+                        // thought, agent text, and an ask the user has to answer.
                         "between-turn" | "between-turn-held" if prompts == 1 => {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
@@ -3418,6 +3435,7 @@ mod tests {
                             thread::sleep(Duration::from_millis(300));
                             tool_call(&session, "cron fired");
                             thought(&session, "between turns");
+                            chunk(&session, "Your reminder: time to stretch!");
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
                                     "sessionId": &session,
@@ -3640,7 +3658,9 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. }) => {}
+                    Ok(
+                        Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::InboundWake(_),
+                    ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
             }
@@ -5262,16 +5282,19 @@ mod tests {
 
     /// A Harness that works on after its turn ends, as a cron fire does. Its
     /// tool call reaches the Action Log, its thought reaches the Instance's
-    /// Thinking row, and its ask reaches Chat and is answered.
+    /// Thinking row, its agent text reaches Chat/bubble, and its ask reaches
+    /// Chat and is answered.
     #[test]
     fn work_between_turns_reaches_the_user_and_its_ask_is_answered() {
         let (fx, session) = Fixture::new("between-turn");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let mut thoughts = Vec::new();
+        let mut said = Vec::new();
         let ask = loop {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Ask(ask)) => break ask,
                 Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
+                Ok(Forwarded::InboundWake(wake)) => said.push((wake.instance, wake.speech)),
                 Ok(_) => {}
                 Err(_) => panic!("the between-turn ask never reached Chat"),
             }
@@ -5280,6 +5303,13 @@ mod tests {
         assert!(
             thoughts.contains(&("buddy-1".to_string(), "between turns".to_string())),
             "{thoughts:?}"
+        );
+        assert!(
+            said.contains(&(
+                "buddy-1".to_string(),
+                "Your reminder: time to stretch!".to_string()
+            )),
+            "between-turn agent text never reached the user: {said:?}"
         );
         let titles: Vec<Value> = fx
             .events("tool_call")
@@ -5323,19 +5353,60 @@ mod tests {
     }
 
     /// A closed session's thought from between turns has ended, so its
-    /// Thinking row closes with it.
+    /// Thinking row closes with it. Speech accumulated between turns is
+    /// emitted as an inbound wake before the close.
     #[test]
     fn closing_a_session_ends_its_thought_from_between_turns() {
         let (fx, session) = Fixture::new("between-turn");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
-        fx.ask();
+        thread::sleep(Duration::from_millis(400));
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
-        let ended = fx.forwarded.try_iter().any(|forwarded| {
-            matches!(forwarded, Forwarded::Thought { instance, line } if instance == "buddy-1" && line.is_empty())
-        });
-        assert!(ended, "the Thinking row stayed open after close");
+        let mut speech_seen = false;
+        let mut thought_ended = false;
+        for forwarded in fx.forwarded.try_iter() {
+            match forwarded {
+                Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
+                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
+                    speech_seen = true;
+                }
+                Forwarded::Thought { instance, line }
+                    if instance == "buddy-1" && line.is_empty() =>
+                {
+                    thought_ended = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(speech_seen, "between-turn speech was dropped on close");
+        assert!(thought_ended, "the Thinking row stayed open after close");
         session.shutdown();
+    }
+
+    /// Prompting again before between-turn ask arrives still emits the
+    /// accumulated speech as an inbound wake, not drops it.
+    #[test]
+    fn prompting_before_between_turn_ask_flushes_speech() {
+        let (fx, session) = Fixture::new("between-turn");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        thread::sleep(Duration::from_millis(400));
+        let worker = thread::spawn(move || session.complete(&asking("again")));
+        let mut speech_seen = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !speech_seen && std::time::Instant::now() < deadline {
+            match fx.forwarded.try_recv() {
+                Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
+                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
+                    speech_seen = true;
+                }
+                _ => thread::sleep(Duration::from_millis(10)),
+            }
+        }
+        assert!(
+            speech_seen,
+            "between-turn speech was dropped when prompting again"
+        );
+        drop(worker);
     }
 
     /// `session/load` replays the conversation as updates before it answers,

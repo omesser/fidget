@@ -2206,6 +2206,12 @@ fn show_thought(app: &tauri::AppHandle, instance: &str, line: String) {
     let _ = app.emit_to(chat_label(instance), CHAT_THOUGHT_EVENT, &line);
 }
 
+fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
+    if let Some(state) = app.try_state::<ChatChannel>() {
+        let _ = state.0.send(ChatMsg::InboundWake(wake));
+    }
+}
+
 /// Show the agent's plan in every open Chat surface: the session is shared and
 /// the wire does not say whose turn is on it.
 fn show_plan(app: &tauri::AppHandle, steps: &[harness::PlanStep]) {
@@ -2738,6 +2744,7 @@ enum ChatMsg {
     /// change, so a window opened between two would sit at dashes. Sent after
     /// the listener is registered, or it is an answer nobody hears.
     Listening(InstanceId),
+    InboundWake(harness::InboundWake),
 }
 
 /// The sender every Chat surface posts on. Not another `SettingsOp`: every
@@ -4437,6 +4444,7 @@ fn main() {
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }
+                    harness::Forwarded::InboundWake(wake) => handle_inbound_wake(&forward_to, wake),
                     harness::Forwarded::Thought { instance, line } => {
                         show_thought(&forward_to, &instance, line)
                     }

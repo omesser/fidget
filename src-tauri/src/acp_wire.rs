@@ -310,6 +310,12 @@ pub enum Event {
         session: String,
         text: String,
     },
+    /// Between-turn agent text accumulated in `Inbound` and flushed
+    /// when a session transitions (Ask, Elicit, Prompt, or Close).
+    InboundWake {
+        session: String,
+        speech: String,
+    },
     /// A forwarded ask that can no longer be answered. Every open Chat
     /// surface was given the ask, so every one of them has to hear this.
     PermissionSettled {
@@ -1240,22 +1246,16 @@ async fn serve(
     cancel_forms(&mut forms, on_event);
 }
 
-/// ACP v1 says nothing when a turn the Harness started is over, so its
-/// Thinking row ends when Fidget prompts or closes that session.
+/// ACP v1 says nothing when a turn the Harness started is over. Flush any
+/// accumulated between-turn speech and close open thinking when Fidget prompts
+/// or closes that session.
 fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_event: &OnEvent) {
-    if inbound
-        .remove(id)
-        .is_some_and(|held| !held.thought.is_empty())
-    {
-        on_event(Event::Thought {
-            session: id.0.to_string(),
-            text: String::new(),
-        });
-    }
+    flush_inbound(id, inbound, on_event);
 }
 
 /// One message with no `session/prompt` open, held as a turn would hold it.
 /// `signing_in` is whether Fidget's own `authenticate` is in flight.
+/// Between-turn updates accumulate in `Inbound`; flushes emit inbound wakes.
 fn between_turns(
     message: Incoming,
     forms: &mut Vec<PendingElicit>,
@@ -1265,24 +1265,68 @@ fn between_turns(
     on_event: &OnEvent,
 ) {
     match message {
-        // Not shown: nothing makes an inbound turn a wake yet (ADR-0028 gap).
-        // ponytail: `Inbound` keeps every fire's text and thought until the next prompt,
-        // in memory and in one Thinking row. The wake slice (#1356) replaces it.
         Incoming::Update(update) => {
-            let held = inbound.entry(update.session_id.clone()).or_default();
+            let session_id = update.session_id.clone();
+            let held = inbound.entry(session_id.clone()).or_default();
             note_update(
                 update.update,
-                &update.session_id,
+                &session_id,
                 &mut held.said,
                 &mut held.thought,
                 on_event,
             );
         }
-        Incoming::Ask(request, responder) => hold_ask(asks, &request, responder, on_event),
+        Incoming::Ask(request, responder) => {
+            flush_inbound(&request.session_id, inbound, on_event);
+            hold_ask(asks, &request, responder, on_event);
+        }
         Incoming::Elicit(request, responder) => {
-            hold_form(forms, &request, responder, signing_in, on_event)
+            if let Some(session_id) = elicitation_session(&request) {
+                flush_inbound(&session_id, inbound, on_event);
+            }
+            hold_form(forms, &request, responder, signing_in, on_event);
         }
         Incoming::Complete(link) => complete_form(forms, &link, on_event),
+    }
+}
+
+/// Flush accumulated between-turn agent text and thinking as an inbound wake.
+/// Called when a between-turn ask or form arrives, giving each Harness fire
+/// a coherent wake boundary. Clears the entry so multiple fires don't pile up.
+fn flush_inbound(
+    session: &SessionId,
+    inbound: &mut HashMap<SessionId, Inbound>,
+    on_event: &OnEvent,
+) {
+    if let Some(held) = inbound.remove(session) {
+        let speech = held.said.finish();
+        if !speech.is_empty() {
+            on_event(Event::InboundWake {
+                session: session.0.to_string(),
+                speech,
+            });
+        }
+        if !held.thought.is_empty() {
+            on_event(Event::Thought {
+                session: session.0.to_string(),
+                text: String::new(),
+            });
+        }
+    }
+}
+
+/// The session id from an elicitation request, when it's session-scoped.
+fn elicitation_session(request: &CreateElicitationRequest) -> Option<SessionId> {
+    match &request.mode {
+        ElicitationMode::Url(link) => match &link.scope {
+            ElicitationScope::Session(scope) => Some(scope.session_id.clone()),
+            _ => None,
+        },
+        ElicitationMode::Form(form) => match &form.scope {
+            ElicitationScope::Session(scope) => Some(scope.session_id.clone()),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

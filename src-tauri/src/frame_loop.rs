@@ -869,6 +869,34 @@ pub(crate) fn run_frame_loop(
             while let Ok(msg) = chat.try_recv() {
                 let line = match msg {
                     ChatMsg::Said(line) => line,
+                    ChatMsg::InboundWake(wake) => {
+                        // Inbound wake triggers a Director wake so the speech participates
+                        // in Pace and reaches Chat/bubble/Behaviors.
+                        if let Some(live) = lives.iter_mut().find(|live| live.id == wake.instance) {
+                            live.addressed = true;
+                            live.happened = Happened::Proactive;
+                            let _ = app.emit_to(
+                                chat_label(&wake.instance),
+                                CHAT_EVENT,
+                                super::ChatReply {
+                                    said: Some(wake.speech),
+                                    busy: false,
+                                    reacting_to: Some("inbound wake".to_string()),
+                                    you: false,
+                                    thought: false,
+                                    at: Some(
+                                        SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .map_or(0, |since| since.as_millis() as u64),
+                                    ),
+                                    error: None,
+                                    failure: None,
+                                    superseded_by: None,
+                                },
+                            );
+                        }
+                        continue;
+                    }
                     ChatMsg::Listening(id) => {
                         if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
                             live.status_last = None;
