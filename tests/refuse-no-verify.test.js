@@ -17,6 +17,8 @@ test("every spelling that skips hooks is refused", () => {
     ["cargo fmt && GIT_EDITOR=true /usr/bin/git commit --amend -n", "git commit -n"],
     ["git push --no-verify origin HEAD", "git push --no-verify"],
     ["git commit -m 'ok' ; git push --no-verify", "git push --no-verify"],
+    ["git commit --no-veri", "git commit --no-verify"],
+    ["cat <<'EOF' > m\ndon't\nEOF\ngit commit -n", "git commit -n"],
   ]) {
     assert.match(refusal(command) ?? "", new RegExp(`^\`${flag}\``), command);
   }
@@ -28,7 +30,6 @@ test("the hook exits 2 with the reason for every harness's input shape", () => {
   for (const input of [
     { tool_input: { command: "git commit --no-verify" } },
     { toolInput: { command: "git commit --no-verify" } },
-    { command: "git commit --no-verify" },
   ]) {
     const { status, stderr } = run(input);
     assert.equal(status, 2, JSON.stringify(input));
@@ -47,6 +48,10 @@ test("-n elsewhere and the flag inside a message pass", () => {
     `git commit -m "$(cat <<'EOF'\nSkip --no-verify.\n\ngit commit --no-verify is banned.\nEOF\n)"`,
     "echo git commit --no-verify",
     "git commit -mnope",
+    `git commit --message "-n is fine"`,
+    `git commit --author "-n x" -m y`,
+    "git commit -F - <<'EOF'\nfix: x\n\ngit commit --no-verify is banned now.\nEOF",
+    "cat > notes.md <<-EOF\n\tgit push --no-verify skips hooks\n\tEOF\ngit status",
   ]) {
     assert.equal(refusal(command), null, command);
   }
