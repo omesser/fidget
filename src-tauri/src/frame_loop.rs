@@ -10,6 +10,8 @@ use fidget_core::dispatch::{
 };
 use fidget_core::engine::{bring_off_fullscreen, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
+#[cfg(not(unix))]
+use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
@@ -224,11 +226,10 @@ pub(crate) fn run_frame_loop(
         #[cfg(not(unix))]
         let last_mask: Arc<Mutex<Vec<RegionParams>>> =
             Arc::new(Mutex::new(vec![(Vec::new(), Vec::new()); covered.len()]));
-        // The sprite's last three overlay positions. The renderer draws between
-        // the previous two placements, and a new region can land before the
-        // placement it was built for, so the clip sweeps all three.
+        // Each Instance's draw trail, for a Windows region that clips drawing.
         #[cfg(not(unix))]
-        let mut trails: Vec<Option<[(i32, i32); 3]>> = vec![None; covered.len()];
+        let mut trails: std::collections::HashMap<InstanceId, DrawTrail> =
+            std::collections::HashMap::new();
 
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
@@ -515,11 +516,16 @@ pub(crate) fn run_frame_loop(
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(all(unix, not(target_os = "macos")))]
             last_mask
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), (None, 0, 0, 1, 1, Vec::new()));
+            #[cfg(not(unix))]
+            last_mask
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), Default::default());
 
             // Wall time since the last tick that reached the Engine, not
             // since the last loop turn. `SnapshotAssembler` caps a long gap
@@ -2066,6 +2072,21 @@ pub(crate) fn run_frame_loop(
             let ignore = !(presence.visible && (over_sprite || over_control || holding));
             let mut flipped = false;
 
+            #[cfg(not(unix))]
+            {
+                let mut held = std::mem::take(&mut trails);
+                for instance in &placed {
+                    let at = (instance.sprite.x, instance.sprite.y);
+                    let (mask, mirrored, scale) =
+                        (&instance.mask, instance.mirror < 0, instance.sprite.scale);
+                    let trail = match held.remove(&instance.id) {
+                        Some(trail) => trail.advance(at, mask, mirrored, scale),
+                        None => DrawTrail::start(at, mask, mirrored, scale),
+                    };
+                    trails.insert(instance.id.clone(), trail);
+                }
+            }
+
             for (index, display) in displays.frames.iter().enumerate() {
                 let label = overlay_label(index);
                 let Some(window) = app.get_webview_window(&label) else {
@@ -2350,8 +2371,6 @@ pub(crate) fn run_frame_loop(
 
                 #[cfg(not(unix))]
                 {
-                    // Put back only while a sprite is on this overlay.
-                    let trail = trails.get_mut(index).and_then(Option::take);
                     if presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
                             let local = instance.sprite.in_overlay(*display);
@@ -2363,20 +2382,12 @@ pub(crate) fn run_frame_loop(
 
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
-                            let here = (local.x, local.y);
-                            let trail = match trail {
-                                Some([_, before, last]) => [before, last, here],
-                                None => [here; 3],
-                            };
-                            if let Some(slot) = trails.get_mut(index) {
-                                *slot = Some(trail);
-                            }
+                            let offset = (local.x - instance.sprite.x, local.y - instance.sprite.y);
                             let mask_params = (
-                                instance.mask.swept_rects(
-                                    &trail,
-                                    instance.mirror < 0,
-                                    instance.sprite.scale,
-                                ),
+                                trails
+                                    .get(&instance.id)
+                                    .map(|trail| trail.clip_rects(offset))
+                                    .unwrap_or_default(),
                                 platform::overlay_hotspots_for(&label),
                             );
 

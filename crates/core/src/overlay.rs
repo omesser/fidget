@@ -290,8 +290,12 @@ impl DrawTrail {
     /// Rectangles covering both spans the renderer may be drawing, shifted
     /// from shared space by `offset`. A Windows window region clips drawing,
     /// and it can land before or after the placement it was built from.
-    pub fn clip_rects(&self, _offset: (i32, i32)) -> Vec<[i32; 4]> {
-        Vec::new()
+    pub fn clip_rects(&self, (dx, dy): (i32, i32)) -> Vec<[i32; 4]> {
+        let at = self.at.map(|(x, y)| (x + dx, y + dy));
+        let [(previous, previous_mirrored, previous_scale), (latest, mirrored, scale)] = &self.art;
+        let mut rects = previous.swept_rects(&at[..2], *previous_mirrored, *previous_scale);
+        rects.extend(latest.swept_rects(&at[1..], *mirrored, *scale));
+        rects
     }
 }
 

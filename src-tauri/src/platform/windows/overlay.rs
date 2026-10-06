@@ -115,10 +115,8 @@ fn note_overlay(hwnd: u64) {
     }
 }
 
-/// SetWindowRgn from `art`, the sprite's swept ink (`AlphaMask::swept_rects`),
-/// plus hotspots. `None` clears the region (whole window click-through via
-/// WS_EX_TRANSPARENT). `click_through` sets WS_EX_TRANSPARENT; the region
-/// stays either way.
+/// SetWindowRgn from `art` plus hotspots; `None` clears the region.
+/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
@@ -290,10 +288,9 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Apply `art`, `[left, top, right, bottom]` rectangles, and the hotspots,
-/// `[x, y, width, height]`, as the window region. The region also clips what
-/// is drawn, so `art` covers every position the renderer may be drawing the
-/// sprite at, not only the latest one.
+/// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`; hotspots
+/// are `[x, y, width, height]`. The region also clips drawing, which is why
+/// `art` is swept over every position the renderer may draw the sprite at.
 ///
 /// bRedraw=1: With bRedraw=0, the region update could race sprite placement
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
