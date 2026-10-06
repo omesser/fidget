@@ -123,8 +123,9 @@ if ($ax420 -or $ax360 -or $ax320) {
     exit 0
 }
 
-if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine("SKIP: bash is not on PATH, so the fixture Harness wrapper cannot run.")
+. (Join-Path $PSScriptRoot "bash-setup-win.ps1")
+if (-not $bashPath) {
+    [Console]::Error.WriteLine("SKIP: bash not found (tried Git Bash, then PATH)")
     exit 2
 }
 
@@ -137,7 +138,7 @@ $marks = Join-Path $out "harness.log"
 $log = Join-Path $out "app.log"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=scenario-thinking count=$marks"
+$harness = "$bashPath $root/scripts/scenarios/fixture-harness.sh $TestBin script=scenario-thinking count=$marks"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 

@@ -127,8 +127,9 @@ if ($axFailed -or $ax420 -or $ax320 -or $axLive) {
     exit 0
 }
 
-if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine("SKIP: bash is not on PATH, so the fixture Harness wrapper cannot run.")
+. (Join-Path $PSScriptRoot "bash-setup-win.ps1")
+if (-not $bashPath) {
+    [Console]::Error.WriteLine("SKIP: bash not found (tried Git Bash, then PATH)")
     exit 2
 }
 
@@ -143,7 +144,7 @@ $errLog = Join-Path $out "app.err"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
 # `abort-first` prints a dyld line and aborts on its first spawn, then answers.
-$Harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=abort-first count=$marks"
+$Harness = "$bashPath $root/scripts/scenarios/fixture-harness.sh $TestBin script=abort-first count=$marks"
 $paths = @($Harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $Harness" }
 $Name = "bash"

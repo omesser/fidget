@@ -39,6 +39,23 @@ use super::{
 /// next moves. 250ms is under a hide-rule fade, so a launch-hidden Character still goes.
 const FRAME_RESEND: Duration = Duration::from_millis(250);
 
+fn cursor_near_sprite(cursor: Option<(f64, f64)>, sprites: &[(i32, i32, i32, i32)]) -> bool {
+    let Some((cx, cy)) = cursor else {
+        return false;
+    };
+    const INFLATE: f64 = 48.0;
+    for &(sx, sy, sw, sh) in sprites {
+        let left = (sx as f64) - INFLATE;
+        let top = (sy as f64) - INFLATE;
+        let right = (sx as f64) + (sw as f64) + INFLATE;
+        let bottom = (sy as f64) + (sh as f64) + INFLATE;
+        if cx >= left && cx <= right && cy >= top && cy <= bottom {
+            return true;
+        }
+    }
+    false
+}
+
 /// One overlay's last applied shape: mask, x, y, facing, scale, and hotspot
 /// rectangles. Named because clippy's `type_complexity` rejects the tuple
 /// inline. Only X11 keeps one: XShape must not rebuild every tick.
@@ -235,6 +252,9 @@ pub(crate) fn run_frame_loop(
         let mut was_visible = true;
         let mut names_sent: Option<crate::names_hint::NamesHint> = None;
 
+        let mut last_cursor: Option<(f64, f64)> = None;
+        let mut last_sprite_rects: Vec<(i32, i32, i32, i32)> = Vec::new();
+
         loop {
             // The tap follows the setting: checked and granted, it starts here
             // and the arms below block on it; unchecked, Drop stops the tap
@@ -375,9 +395,14 @@ pub(crate) fn run_frame_loop(
                             let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
                             let deadline = next_director.min(next_sense);
 
-                            // Cap at 1s: even when idle, gesture and menu response must
-                            // stay timely (menu deadline is bounded, not instant).
-                            let capped = deadline.min(Duration::from_secs(1));
+                            // Visible idle input polling. Cap at 100ms when the cursor is near a
+                            // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
+                            // at 1s to avoid burning CPU waiting for rare events (right-click).
+                            let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
+                                deadline.min(Duration::from_millis(100))
+                            } else {
+                                deadline.min(Duration::from_secs(1))
+                            };
                             thread::sleep(capped);
                         }
                     }
@@ -438,6 +463,14 @@ pub(crate) fn run_frame_loop(
             let displays = displays.read();
             let cursor_scale = displays.cursor_scale;
 
+            // The Engine works in points; undoing the cursor's scale puts it in that space.
+            // Computed once and reused for both hover detection (last_cursor) and hit tests.
+            let cursor_points = fidget_core::engine::Point {
+                x: cursor.x / cursor_scale,
+                y: cursor.y / cursor_scale,
+            };
+            last_cursor = Some((cursor_points.x, cursor_points.y));
+
             ignoring.resize(displays.frames.len(), None);
             last_frame.resize(displays.frames.len(), None);
             configured
@@ -479,12 +512,6 @@ pub(crate) fn run_frame_loop(
             // so a skipped read or slept machine does not slingshot.
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
-
-            // The Engine works in points; undoing the cursor's scale puts it in that space.
-            let cursor_points = fidget_core::engine::Point {
-                x: cursor.x / cursor_scale,
-                y: cursor.y / cursor_scale,
-            };
 
             // Hit-test in shared space, not an overlay's: every overlay is
             // handed the same sprite in its own coordinates, so one answer
@@ -1356,6 +1383,7 @@ pub(crate) fn run_frame_loop(
             }
 
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
+            last_sprite_rects.clear();
 
             // The window list is re-read at the frame rate while any Instance is
             // riding a moving window. One riding character is reason enough: the
@@ -1933,6 +1961,8 @@ pub(crate) fn run_frame_loop(
                     presence.visible,
                     overlay_drops_the_bubble,
                 );
+
+                last_sprite_rects.push((sprite.x, sprite.y, width, height));
 
                 placed.push(Placed {
                     id: live.id.clone(),
@@ -3015,5 +3045,40 @@ mod tests {
             decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), true),
             OverlayAction::Nothing
         );
+    }
+
+    #[test]
+    fn test_cursor_near_sprite_within_inflated_rect() {
+        let sprites = vec![(100, 100, 126, 128)];
+
+        assert!(cursor_near_sprite(Some((100.0, 100.0)), &sprites));
+        assert!(cursor_near_sprite(Some((113.0, 114.0)), &sprites));
+        assert!(cursor_near_sprite(Some((52.0, 100.0)), &sprites));
+        assert!(cursor_near_sprite(Some((274.0, 164.0)), &sprites));
+    }
+
+    #[test]
+    fn test_cursor_near_sprite_far_away() {
+        let sprites = vec![(100, 100, 126, 128)];
+
+        assert!(!cursor_near_sprite(Some((50.0, 100.0)), &sprites));
+        assert!(!cursor_near_sprite(Some((280.0, 164.0)), &sprites));
+        assert!(!cursor_near_sprite(Some((113.0, 50.0)), &sprites));
+        assert!(!cursor_near_sprite(Some((113.0, 280.0)), &sprites));
+    }
+
+    #[test]
+    fn test_cursor_near_sprite_no_cursor() {
+        let sprites = vec![(100, 100, 126, 128)];
+        assert!(!cursor_near_sprite(None, &sprites));
+    }
+
+    #[test]
+    fn test_cursor_near_sprite_multiple_sprites() {
+        let sprites = vec![(100, 100, 126, 128), (500, 500, 126, 128)];
+
+        assert!(cursor_near_sprite(Some((113.0, 114.0)), &sprites));
+        assert!(cursor_near_sprite(Some((513.0, 514.0)), &sprites));
+        assert!(!cursor_near_sprite(Some((300.0, 300.0)), &sprites));
     }
 }

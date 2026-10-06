@@ -7,15 +7,19 @@ Dump lines are `role|name`. Pass `frames` after the title to append
 `press` performs the first action of the first button named NAME.
 `tray` clicks the tray menu row whose label starts with ROW, through the
 StatusNotifierItem's dbusmenu, then waits for a window titled TITLE.
+`menu` right-clicks the screen point X,Y through xdotool, prints the names
+of the menu items PID then shows, one per line, and presses Escape.
 
 Usage:
   ax-window-linux.py dump PID TITLE [frames]
   ax-window-linux.py size PID TITLE WIDTH HEIGHT
   ax-window-linux.py press PID TITLE NAME
   ax-window-linux.py tray PID TITLE ROW
+  ax-window-linux.py menu PID X Y
 
 Exit 2 when pyatspi is missing, or for `tray` when no StatusNotifierWatcher
-runs. Exit 1 when that window is not in the tree or an action fails.
+runs. Exit 1 when that window is not in the tree, no menu shows, or an
+action fails.
 """
 
 import sys
@@ -153,24 +157,35 @@ def dump(acc, with_frames, depth=0):
             pass
 
 
-def find_window(desktop, pid, title):
-    title = title.lower()
+def find_app(desktop, pid):
     for i in range(desktop.childCount):
         app = desktop.getChildAtIndex(i)
         try:
-            if app.get_process_id() != pid:
-                continue
+            if app.get_process_id() == pid:
+                return app
         except Exception:
             continue
-        for j in range(app.childCount):
-            win = app.getChildAtIndex(j)
-            try:
-                name = win.name or ""
-            except Exception:
-                name = ""
-            if title in name.lower():
-                return win
     return None
+
+
+def find_window(desktop, pid, title):
+    title = title.lower()
+    app = find_app(desktop, pid)
+    if app is None:
+        return None
+    best, best_area = None, -1
+    for j in range(app.childCount):
+        win = app.getChildAtIndex(j)
+        try:
+            name = win.name or ""
+        except Exception:
+            name = ""
+        if title in name.lower():
+            box = extents(win)
+            area = box[2] * box[3] if box else 0
+            if area > best_area:
+                best, best_area = win, area
+    return best
 
 
 def cmd_dump(argv):
@@ -307,6 +322,71 @@ def cmd_press(argv):
     return 0
 
 
+MENU_ITEM_ROLES = {"menu item", "check menu item", "radio menu item"}
+
+
+def showing_menu_items(acc, found, depth=0):
+    """Names of menu items on screen. Only showing subtrees are walked: the
+    tray's GtkMenu lives in the same process with the same rows, hidden."""
+    import pyatspi
+
+    if depth > 30:
+        return
+    try:
+        if not acc.getState().contains(pyatspi.STATE_SHOWING):
+            return
+        role = acc.getRoleName()
+    except Exception:
+        return
+    if role in MENU_ITEM_ROLES:
+        name = node_name(acc)
+        if name:
+            found.append(name)
+        return
+    try:
+        count = acc.childCount
+    except Exception:
+        return
+    for i in range(count):
+        try:
+            showing_menu_items(acc.getChildAtIndex(i), found, depth + 1)
+        except Exception:
+            pass
+
+
+def cmd_menu(argv):
+    if len(argv) != 5:
+        print("usage: ax-window-linux.py menu PID X Y", file=sys.stderr)
+        return 2
+    pid, x, y = int(argv[2]), argv[3], argv[4]
+    try:
+        import pyatspi
+    except ImportError:
+        print("pyatspi is not installed", file=sys.stderr)
+        return 2
+    import subprocess
+    import time
+
+    subprocess.check_call(["xdotool", "mousemove", "--sync", x, y, "click", "3"])
+    items = []
+    for _ in range(20):
+        time.sleep(0.25)
+        app = find_app(pyatspi.Registry.getDesktop(0), pid)
+        if app is None:
+            continue
+        items = []
+        for j in range(app.childCount):
+            showing_menu_items(app.getChildAtIndex(j), items)
+        if items:
+            break
+    subprocess.call(["xdotool", "key", "Escape"])
+    if not items:
+        print(f"pid {pid} showed no menu within 5s", file=sys.stderr)
+        return 1
+    print("\n".join(items))
+    return 0
+
+
 def dbusmenu_find(layout, row):
     item_id, props, children = layout
     if props.get("label", "").replace("_", "").startswith(row):
@@ -395,20 +475,26 @@ def cmd_tray(argv):
     return 1
 
 
-COMMANDS = {"dump": cmd_dump, "size": cmd_size, "press": cmd_press, "tray": cmd_tray}
+COMMANDS = {
+    "dump": cmd_dump,
+    "size": cmd_size,
+    "press": cmd_press,
+    "tray": cmd_tray,
+    "menu": cmd_menu,
+}
 
 
 def main(argv):
     if len(argv) < 2:
         print(
-            "usage: ax-window-linux.py dump|size|press|tray PID TITLE ...",
+            "usage: ax-window-linux.py dump|size|press|tray|menu PID ...",
             file=sys.stderr,
         )
         return 2
     if argv[1] in COMMANDS:
         return COMMANDS[argv[1]](argv)
     print(
-        "usage: ax-window-linux.py dump|size|press|tray PID TITLE ...",
+        "usage: ax-window-linux.py dump|size|press|tray|menu PID ...",
         file=sys.stderr,
     )
     return 2

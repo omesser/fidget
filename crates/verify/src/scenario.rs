@@ -829,6 +829,75 @@ mod tests {
         ),
     ];
 
+    const BEFORE: &str = "FIDGET_SCENARIO_AX_BEFORE";
+    const BUBBLE_GOOD: &[(&str, &str)] = &[
+        (BEFORE, "fixtures/question-bubble-before.txt"),
+        (AFTER, "fixtures/question-bubble-after.txt"),
+    ];
+    const BUBBLE_CASES: &[(&str, Mutate, &str)] = &[
+        (
+            BEFORE,
+            |t| format!("{t}label|Question for you in the\n"),
+            "the question cue showed before the Poke",
+        ),
+        (
+            AFTER,
+            |t| drop_lines(t, "Question for you"),
+            "the bubble does not read 'Question for you in the'",
+        ),
+        (
+            AFTER,
+            |t| edit_lines(t, "Question for you", |l| retype(l, "other")),
+            "the bubble does not read 'Question for you in the'",
+        ),
+        (
+            AFTER,
+            |t| drop_lines(t, "button|chat"),
+            "the bubble has no 'chat' link button",
+        ),
+        (
+            AFTER,
+            |t| edit_lines(t, "button|chat", |l| retype(l, "label")),
+            "the bubble has no 'chat' link button",
+        ),
+    ];
+
+    const MENU: &str = "FIDGET_SCENARIO_MENU";
+    const MENU_GOOD: &[(&str, &str)] = &[(MENU, "fixtures/control-click-menu-items.txt")];
+    const MENU_CASES: &[(&str, Mutate, &str)] = &[
+        (MENU, |t| drop_lines(t, "Chat…"), "no 'Chat…' in the menu"),
+        (
+            MENU,
+            |t| t.replace("Settings…", "Settings"),
+            "no 'Settings…' in the menu",
+        ),
+        (MENU, |t| drop_lines(t, "Quit"), "no 'Quit' in the menu"),
+    ];
+
+    #[cfg(unix)]
+    #[test]
+    fn question_bubble_x11_fails_on_each_broken_assertion() {
+        fixture_cases("question-bubble.x11.sh", BUBBLE_GOOD, BUBBLE_CASES);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn control_click_menu_x11_fails_on_each_broken_assertion() {
+        fixture_cases("control-click-menu.x11.sh", MENU_GOOD, MENU_CASES);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn question_bubble_win_fails_on_each_broken_assertion() {
+        fixture_cases("question-bubble.win.ps1", BUBBLE_GOOD, BUBBLE_CASES);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn control_click_menu_win_fails_on_each_broken_assertion() {
+        fixture_cases("control-click-menu.win.ps1", MENU_GOOD, MENU_CASES);
+    }
+
     #[cfg(unix)]
     #[test]
     fn landing_link_click_x11_fails_on_each_broken_assertion() {
@@ -871,11 +940,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn link_leaves_on_x11_without_a_display_skip() {
+    fn x11_leaves_without_a_display_skip() {
         for script in [
             "landing-link-click.x11.sh",
             "launcher-dies-at-startup.x11.sh",
             "sign-in-button.x11.sh",
+            "question-bubble.x11.sh",
+            "control-click-menu.x11.sh",
         ] {
             assert_exit(&fixture_run(script, &[]), 2, "DISPLAY is unset");
         }
