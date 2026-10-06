@@ -184,7 +184,7 @@ if ($Command -eq "click") {
 
 if ($Command -eq "menu") {
     [FidgetWinEnum]::RightClick($X, $Y)
-    Start-Sleep -Milliseconds 300
+    Start-Sleep -Milliseconds 800
     $items = @()
     for ($n = 0; $n -lt 20 -and $items.Count -eq 0; $n++) {
         Start-Sleep -Milliseconds 250

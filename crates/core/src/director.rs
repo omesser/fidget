@@ -64,6 +64,8 @@ pub enum Happened {
     /// than beside it on `Context`, so nothing can claim a chat turn with no
     /// line, or hang a line off a Proactive wake. Costs `Copy`.
     Chat(String),
+    /// Right-click on the sprite opened the context menu.
+    Menu,
     Proactive,
 }
 
@@ -87,6 +89,7 @@ pub fn happened_cell(happened: &Happened) -> &'static str {
         Happened::Grab => "grabbed",
         Happened::Perch => "perched",
         Happened::Chat(_) => "spoken to",
+        Happened::Menu => "menu",
         Happened::Proactive => "proactive",
     }
 }
@@ -152,7 +155,9 @@ pub enum Claim {
 
 pub fn claim(happened: &Happened) -> Claim {
     match happened {
-        Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch => Claim::Interaction,
+        Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch | Happened::Menu => {
+            Claim::Interaction
+        }
         Happened::Summon => Claim::Opener,
         Happened::Chat(_) => Claim::Line,
         Happened::Proactive => Claim::Ambient,

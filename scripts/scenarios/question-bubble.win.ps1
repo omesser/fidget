@@ -178,8 +178,12 @@ try {
     if (-not (Wait-For 30 { Marked "asked" })) { Fail "no wake reached the Harness; see $err" }
     Start-Sleep -Seconds 1
 
+    Check-Before (Invoke-Dump "before-poke")
+
     # The overlay spans the display, so its centre is not the sprite. The
-    # newest frame trace line says where the sprite is drawn.
+    # newest frame trace line says where the sprite is drawn. Read it
+    # immediately before the Poke so a walking sprite's stale coordinates
+    # do not cause the click to miss.
     $trace = Get-Content -LiteralPath $err
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
     if (-not $size) { Fail "no sprite size in $err" }
@@ -190,7 +194,6 @@ try {
     $x = [int]$at.Matches[0].Groups[1].Value + [int]($w / 2)
     $y = [int]$at.Matches[0].Groups[2].Value + [int]($h / 2)
 
-    Check-Before (Invoke-Dump "before-poke")
     if (-not (Invoke-Ax "poke" @("click", "-X", $x, "-Y", $y))) { Fail "could not click the sprite; see $out\poke.txt" }
     if (-not (Wait-For 3 { Traced '^verbs: .*Poke' })) { Fail "the click did not land as a Poke; see $err" }
     Start-Sleep -Seconds 1

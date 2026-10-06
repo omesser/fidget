@@ -2628,7 +2628,9 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
         Some(Happened::Throw)
     } else if grab_started {
         Some(Happened::Grab)
-    } else if poke_settled || any(|verb| matches!(verb, Verb::Menu)) {
+    } else if any(|verb| matches!(verb, Verb::Menu)) {
+        Some(Happened::Menu)
+    } else if poke_settled {
         Some(Happened::Poke)
     } else if any(|verb| matches!(verb, Verb::Summon)) {
         Some(Happened::Summon)
