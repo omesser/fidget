@@ -982,4 +982,95 @@ mod tests {
     fn sign_in_button_win_fails_on_each_broken_assertion() {
         fixture_cases("sign-in-button.win.ps1", &SIGN_IN_GOOD[..3], SIGN_IN_CASES);
     }
+
+    /// Frame lines after the Poke in `text`, each with its 1-based count.
+    /// The fixture traces a frame every 16 ms: frames 1..=143 fall in the
+    /// check's 2300 ms pause window, and 163 on in its 2600 ms resume window.
+    #[cfg(unix)]
+    fn after_poke(text: &str, mut each: impl FnMut(usize, &str) -> Option<String>) -> String {
+        let mut frames: Option<usize> = None;
+        text.lines()
+            .filter_map(|line| {
+                if line.starts_with("verbs:") && line.contains("Poke") {
+                    frames = Some(0);
+                    return Some(line.to_string());
+                }
+                match frames.as_mut().filter(|_| line.starts_with("frame:")) {
+                    Some(n) => {
+                        *n += 1;
+                        each(*n, line)
+                    }
+                    None => Some(line.to_string()),
+                }
+            })
+            .map(|line| format!("{line}\n"))
+            .collect()
+    }
+
+    /// `text` with only the first `keep` frames after the Poke.
+    #[cfg(unix)]
+    fn keep_after_poke(text: &str, keep: usize) -> String {
+        after_poke(text, |n, line| (n <= keep).then(|| line.to_string()))
+    }
+
+    /// `text` with the `nth` frame after the Poke put through `edit`.
+    #[cfg(unix)]
+    fn edit_after_poke(text: &str, nth: usize, edit: fn(&str) -> String) -> String {
+        after_poke(text, |n, line| {
+            Some(if n == nth {
+                edit(line)
+            } else {
+                line.to_string()
+            })
+        })
+    }
+
+    #[cfg(unix)]
+    const TRACE: &str = "FIDGET_SCENARIO_TRACE";
+
+    #[cfg(unix)]
+    #[test]
+    fn poke_mid_climb_fails_on_each_broken_assertion() {
+        fixture_cases(
+            "poke-mid-climb.sh",
+            &[(TRACE, "fixtures/poke-mid-climb-trace.txt")],
+            &[
+                (
+                    TRACE,
+                    |t| drop_lines(t, "[Poke]"),
+                    "no Poke landed on a climbing sprite",
+                ),
+                (
+                    TRACE,
+                    |t| keep_after_poke(t, 20),
+                    "the trace stops 0.3 s after the Poke",
+                ),
+                (
+                    TRACE,
+                    |t| edit_after_poke(t, 60, |l| l.replace("Climbing", "Falling")),
+                    "the sprite left the wall during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| edit_after_poke(t, 60, |l| l.replace("pos(0,864)", "pos(0,860)")),
+                    "the sprite moved during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| edit_after_poke(t, 1, |l| l.replace("react#0", "react#3")),
+                    "the Poke did not start react over",
+                ),
+                (
+                    TRACE,
+                    |t| edit_after_poke(t, 100, |l| l.replace("climb#0", "climb#3")),
+                    "the sprite climbed in place during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| keep_after_poke(t, 155),
+                    "the sprite did not climb on after the cooldown",
+                ),
+            ],
+        );
+    }
 }
