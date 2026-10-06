@@ -1263,8 +1263,10 @@ fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_eve
 /// One message with no `session/prompt` open, held as a turn would hold it.
 /// `signing_in` is whether Fidget's own `authenticate` is in flight.
 /// 
-/// Between-turn `session/update`s that finish with agent text trigger an
-/// inbound wake, making the speech visible and participating in Director pacing.
+/// Between-turn `session/update`s accumulate in `Inbound`. When a between-turn
+/// ask or form arrives, flush any accumulated agent text as an inbound wake,
+/// making the speech visible and participating in Director pacing. This boundary
+/// gives each Harness fire a coherent wake without inventing protocol.
 fn between_turns(
     message: Incoming,
     forms: &mut Vec<PendingElicit>,
@@ -1284,30 +1286,58 @@ fn between_turns(
                 &mut held.thought,
                 on_event,
             );
-            
-            if update.update.session_update == "turn_complete" {
-                if let Some(held) = inbound.remove(&session_id) {
-                    let speech = held.said.finish();
-                    if !speech.is_empty() {
-                        on_event(Event::InboundWake {
-                            session: session_id.0.to_string(),
-                            speech,
-                        });
-                    }
-                    if !held.thought.is_empty() {
-                        on_event(Event::Thought {
-                            session: session_id.0.to_string(),
-                            text: String::new(),
-                        });
-                    }
-                }
-            }
         }
-        Incoming::Ask(request, responder) => hold_ask(asks, &request, responder, on_event),
+        Incoming::Ask(request, responder) => {
+            flush_inbound(&request.session_id, inbound, on_event);
+            hold_ask(asks, &request, responder, on_event);
+        }
         Incoming::Elicit(request, responder) => {
-            hold_form(forms, &request, responder, signing_in, on_event)
+            if let Some(session_id) = elicitation_session(&request) {
+                flush_inbound(&session_id, inbound, on_event);
+            }
+            hold_form(forms, &request, responder, signing_in, on_event);
         }
         Incoming::Complete(link) => complete_form(forms, &link, on_event),
+    }
+}
+
+/// Flush accumulated between-turn agent text and thinking as an inbound wake.
+/// Called when a between-turn ask or form arrives, giving each Harness fire
+/// a coherent wake boundary. Clears the entry so multiple fires don't pile up.
+fn flush_inbound(
+    session: &SessionId,
+    inbound: &mut HashMap<SessionId, Inbound>,
+    on_event: &OnEvent,
+) {
+    if let Some(held) = inbound.remove(session) {
+        let speech = held.said.finish();
+        if !speech.is_empty() {
+            on_event(Event::InboundWake {
+                session: session.0.to_string(),
+                speech,
+            });
+        }
+        if !held.thought.is_empty() {
+            on_event(Event::Thought {
+                session: session.0.to_string(),
+                text: String::new(),
+            });
+        }
+    }
+}
+
+/// The session id from an elicitation request, when it's session-scoped.
+fn elicitation_session(request: &CreateElicitationRequest) -> Option<SessionId> {
+    match &request.mode {
+        ElicitationMode::Url(link) => match &link.scope {
+            ElicitationScope::Session(scope) => Some(scope.session_id.clone()),
+            _ => None,
+        },
+        ElicitationMode::Form(form) => match &form.scope {
+            ElicitationScope::Session(scope) => Some(scope.session_id.clone()),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

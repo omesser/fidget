@@ -873,12 +873,25 @@ pub(crate) fn run_frame_loop(
                         if let Some(live) = lives.iter_mut().find(|live| live.id == instance) {
                             live.addressed = true;
                             live.happened = Happened::Proactive;
-                            session_log::say(&app, &instance, &speech, SystemTime::now());
-                            let _ = app.emit_to(chat_label(&instance), CHAT_EVENT, ChatLine {
-                                instance: instance.clone(),
-                                text: speech,
-                                echo: false,
-                            });
+                            let _ = app.emit_to(
+                                chat_label(&instance),
+                                CHAT_EVENT,
+                                super::ChatReply {
+                                    said: Some(speech),
+                                    busy: false,
+                                    reacting_to: Some("inbound wake".to_string()),
+                                    you: false,
+                                    thought: false,
+                                    at: Some(
+                                        SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .map_or(0, |since| since.as_millis() as u64),
+                                    ),
+                                    error: None,
+                                    failure: None,
+                                    superseded_by: None,
+                                },
+                            );
                         }
                         continue;
                     }

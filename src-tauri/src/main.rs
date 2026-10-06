@@ -2207,13 +2207,12 @@ fn show_thought(app: &tauri::AppHandle, instance: &str, line: String) {
 }
 
 fn handle_inbound_wake(app: &tauri::AppHandle, instance: &str, speech: String) {
-    let Some(state) = app.try_state::<ChatState>() else {
-        return;
-    };
-    let _ = state.0.send(ChatMsg::InboundWake {
-        instance: instance.to_string(),
-        speech,
-    });
+    if let Some(state) = app.try_state::<ChatChannel>() {
+        let _ = state.0.send(ChatMsg::InboundWake {
+            instance: instance.to_string(),
+            speech,
+        });
+    }
 }
 
 /// Show the agent's plan in every open Chat surface: the session is shared and
