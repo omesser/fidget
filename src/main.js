@@ -349,8 +349,10 @@ function syncQuick(view) {
 // cursor is gone, because :hover is clear once the window ignores it.
 // Runs before the pill is up too: a leave during the dwell cancels it.
 function notePointerLeft(view) {
-  if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
-  else view.quickMachine.leaveSprite();
+  if (petDrag === null) {
+    if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
+    else view.quickMachine.leaveSprite();
+  }
   if (view.quick.matches(":hover")) view.quickMachine.enterPill();
   else view.quickMachine.leavePill();
 }
