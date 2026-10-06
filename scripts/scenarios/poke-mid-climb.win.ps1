@@ -141,13 +141,10 @@ Add-Type -TypeDefinition $preflightCode
 
 function Get-FrontmostFullscreenApp {
     $screens = [System.Windows.Forms.Screen]::AllScreens
-    $frontmost = $null
-    $frontmostZ = [int]::MaxValue
-    $currentZ = 0
-    $foundFrontmost = $false
+    $state = @{ Hit = $null }
     [PreflightCheck]::EnumWindows({
         param($hwnd, $lParam)
-        if (-not $foundFrontmost) {
+        if ($null -eq $state.Hit) {
             $visible = [PreflightCheck]::IsWindowVisible($hwnd)
             if (-not $visible) { return $true }
             $style = [PreflightCheck]::GetWindowLong($hwnd, [PreflightCheck]::GWL_STYLE)
@@ -169,15 +166,14 @@ function Get-FrontmostFullscreenApp {
                     [PreflightCheck]::GetClassName($hwnd, $cls, $cls.Capacity) | Out-Null
                     $title = New-Object System.Text.StringBuilder 512
                     [PreflightCheck]::GetWindowText($hwnd, $title, $title.Capacity) | Out-Null
-                    $script:frontmost = @{Class=$cls.ToString(); Title=$title.ToString()}
-                    $script:foundFrontmost = $true
+                    $state.Hit = @{Class=$cls.ToString(); Title=$title.ToString()}
                     return $false
                 }
             }
         }
         return $true
     }, [IntPtr]::Zero) | Out-Null
-    return $frontmost
+    return $state.Hit
 }
 
 $fullscreenApp = Get-FrontmostFullscreenApp
