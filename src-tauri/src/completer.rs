@@ -361,24 +361,10 @@ pub(crate) mod tests {
 
         Context {
             activity: Activity {
-                frontmost_application: None,
-                frontmost_for: std::time::Duration::ZERO,
-                before: Vec::new(),
-                weekday: 0,
-                switched: false,
-                idle: Duration::ZERO,
-                at: UNIX_EPOCH,
                 hour: 12,
-                minute: 0,
-                displays_asleep: false,
+                ..Activity::quiet()
             },
-            recent: Vec::new(),
-            personality: String::new(),
-            instance_prompt: String::new(),
-            state: State::Grounded,
-            happened: fidget_core::director::Happened::Proactive,
-            standing: String::new(),
-            front_title: None,
+            ..fidget_core::director::tests::quiet_context()
         }
     }
 

@@ -13,7 +13,7 @@ use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
-use fidget_core::sensing::{Activity, FreeTier, SystemClock};
+use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
 use fidget_core::snapshot::SnapshotAssembler;
 use fidget_core::speech;
 use fidget_core::visibility::{fullscreen_displays, Change, Desktop, HideRules};
@@ -168,7 +168,7 @@ pub(crate) fn run_frame_loop(
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
         // the same answer bought several times.
-        let mut free_tier = FreeTier::default();
+        let mut free_tier = DesktopSense::default();
         let activity_source = platform::activity_source();
         let mut since_sense = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;
@@ -2731,18 +2731,14 @@ mod tests {
     fn activity(frontmost: Option<&str>) -> Activity {
         Activity {
             frontmost_application: frontmost.map(String::from),
-            frontmost_for: std::time::Duration::ZERO,
             before: vec![
                 ("Safari".to_string(), std::time::Duration::from_secs(60)),
                 ("Terminal".to_string(), std::time::Duration::from_secs(120)),
             ],
             weekday: 2,
-            switched: false,
-            idle: std::time::Duration::ZERO,
-            at: std::time::SystemTime::UNIX_EPOCH,
             hour: 9,
             minute: 30,
-            displays_asleep: false,
+            ..Activity::quiet()
         }
     }
 

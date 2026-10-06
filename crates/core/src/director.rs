@@ -777,7 +777,7 @@ impl Seeded {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
@@ -855,6 +855,22 @@ mod tests {
             instance_prompt: String::new(),
             state: State::Grounded,
             happened: Happened::Poke,
+            standing: String::new(),
+            front_title: None,
+        }
+    }
+
+    /// A minimal Context fixture for tests that need one and do not care what it says.
+    /// Public for use in other test modules (completer, model, package).
+    #[cfg(test)]
+    pub fn quiet_context() -> Context {
+        Context {
+            activity: Activity::quiet(),
+            recent: Vec::new(),
+            personality: String::new(),
+            instance_prompt: String::new(),
+            state: State::Grounded,
+            happened: Happened::Proactive,
             standing: String::new(),
             front_title: None,
         }

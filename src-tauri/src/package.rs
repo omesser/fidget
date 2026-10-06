@@ -602,20 +602,11 @@ mod tests {
         let moment = Context {
             activity: Activity {
                 frontmost_application: Some("Terminal".to_string()),
-                frontmost_for: std::time::Duration::ZERO,
-                before: Vec::new(),
-                weekday: 0,
-                switched: false,
                 idle,
-                at: UNIX_EPOCH,
-                hour: 0,
-                minute: 0,
-                displays_asleep: false,
+                ..Activity::quiet()
             },
-            recent: Vec::new(),
             personality: character.personality.clone(),
-            instance_prompt: String::new(),
-            state: fidget_core::engine::State::Grounded,
+            ..fidget_core::director::tests::quiet_context()
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
             front_title: None,

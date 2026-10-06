@@ -968,24 +968,13 @@ mod tests {
         let opening = crate::director::character_prompt(
             &crate::director::Context {
                 activity: crate::sensing::Activity {
-                    frontmost_application: None,
-                    frontmost_for: std::time::Duration::ZERO,
-                    before: Vec::new(),
-                    weekday: 0,
-                    switched: false,
-                    idle: std::time::Duration::ZERO,
-                    at: std::time::UNIX_EPOCH,
                     hour: 9,
                     minute: 0,
-                    displays_asleep: false,
+                    ..crate::sensing::Activity::quiet()
                 },
-                recent: Vec::new(),
                 personality: wolf.personality.clone(),
                 instance_prompt: instance.prompt().to_string(),
-                state: crate::engine::State::Grounded,
-                happened: crate::director::Happened::Proactive,
-                standing: String::new(),
-                front_title: None,
+                ..crate::director::tests::quiet_context()
             },
             wolf.behaviors.keys(),
             false,

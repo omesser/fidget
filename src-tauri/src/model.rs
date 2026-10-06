@@ -4446,20 +4446,16 @@ pub(crate) mod tests {
             let context = Context {
                 activity: Activity {
                     frontmost_application: Some("Terminal".to_string()),
-                    frontmost_for: std::time::Duration::ZERO,
-                    before: Vec::new(),
-                    weekday: 0,
                     switched: turn % 3 == 0,
                     idle: Duration::from_secs((turn as u64 % 7) * 30),
                     at: SystemTime::now(),
                     hour: 9 + (turn as u8 % 12),
                     minute: ((turn as u32 * 7) % 60) as u8,
-                    displays_asleep: false,
+                    ..Activity::quiet()
                 },
-                recent: Vec::new(),
                 personality: cat.personality.clone(),
-                instance_prompt: String::new(),
                 state: *state,
+                ..fidget_core::director::tests::quiet_context()
                 happened: happened.clone(),
                 standing: standing.to_string(),
                 front_title: None,

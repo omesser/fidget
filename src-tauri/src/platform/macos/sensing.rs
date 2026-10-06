@@ -79,7 +79,7 @@ fn idle_from_seconds(seconds: f64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidget_core::sensing::{FreeTier, SystemClock};
+    use fidget_core::sensing::{DesktopSense, SystemClock};
 
     /// Hand verification, deliberately not part of the suite: it needs a real
     /// window server, it reads the real clock and it sleeps, all of which
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     #[ignore = "needs a real desktop; run by hand"]
     fn the_live_free_tier_follows_the_real_machine() {
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
 
         for _ in 0..10 {
             let activity = tier.read(&MacosActivitySource, &SystemClock);

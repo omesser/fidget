@@ -105,17 +105,18 @@ pub struct Activity {
 /// How many earlier front applications a read carries.
 pub const BEFORE_LIMIT: usize = 3;
 
-/// Reads the Free tier, and remembers which applications were in front and for
-/// how long, so a caller need not keep that history itself.
+/// Reads free desktop sensing (frontmost application, earlier fronts with stays,
+/// idle, and the civil clock), and remembers which applications were in front and
+/// for how long, so a caller need not keep that history itself.
 #[derive(Default)]
-pub struct FreeTier {
+pub struct DesktopSense {
     previous: Option<String>,
     /// When `previous` came to the front. None before the first read.
     since: Option<SystemTime>,
     before: Vec<(String, Duration)>,
 }
 
-impl FreeTier {
+impl DesktopSense {
     /// Read the source and the clock once. Remembers which applications were
     /// in front and for how long; idle and the civil clock need no memory.
     pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
@@ -161,6 +162,35 @@ pub struct FakeActivitySource {
     pub frontmost_application: Option<String>,
     pub idle: Duration,
     pub displays_asleep: bool,
+}
+
+#[cfg(test)]
+impl Activity {
+    /// A quiet desktop: no application in front, not idle, unix epoch, midnight.
+    /// A minimal fixture for tests that need an Activity and do not care what it says.
+    pub fn quiet() -> Self {
+        use std::time::UNIX_EPOCH;
+        Self {
+            frontmost_application: None,
+            frontmost_for: Duration::ZERO,
+            before: Vec::new(),
+            weekday: 0,
+            switched: false,
+            idle: Duration::ZERO,
+            at: UNIX_EPOCH,
+            hour: 0,
+            minute: 0,
+            displays_asleep: false,
+        }
+    }
+
+    /// A desktop with `frontmost_application` set.
+    pub fn with_frontmost(name: impl Into<String>) -> Self {
+        Self {
+            frontmost_application: Some(name.into()),
+            ..Self::quiet()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -223,7 +253,7 @@ mod tests {
     #[test]
     fn switching_application_signals_a_change_on_that_read_and_not_the_next() {
         let mut source = source("Terminal");
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
 
         let first = tier.read(&source, &stopped_clock());
         assert_eq!(first.frontmost_application.as_deref(), Some("Terminal"));
@@ -248,7 +278,7 @@ mod tests {
     #[test]
     fn nothing_frontmost_is_a_change_from_something_and_back_again() {
         let mut source = source("Terminal");
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
         tier.read(&source, &stopped_clock());
 
         source.frontmost_application = None;
@@ -270,7 +300,7 @@ mod tests {
     #[test]
     fn idle_grows_while_input_stops_and_returns_to_zero_on_the_next_input() {
         let mut source = source("Terminal");
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
 
         assert_eq!(tier.read(&source, &stopped_clock()).idle, Duration::ZERO);
 
@@ -308,7 +338,7 @@ mod tests {
             minute: 13,
         };
 
-        let read = FreeTier::default().read(&source("Terminal"), &clock);
+        let read = DesktopSense::default().read(&source("Terminal"), &clock);
 
         assert_eq!(read.at, UNIX_EPOCH + Duration::from_secs(1_700_000_000));
         assert_eq!(
@@ -332,7 +362,7 @@ mod tests {
     #[test]
     fn earlier_front_applications_are_kept_newest_first_with_their_stay() {
         let mut source = source("Terminal");
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
         tier.read(&source, &at_minute(0));
 
         let settled = tier.read(&source, &at_minute(41));
@@ -361,7 +391,7 @@ mod tests {
     #[test]
     fn a_spell_with_nothing_in_front_is_not_kept() {
         let mut source = source("Terminal");
-        let mut tier = FreeTier::default();
+        let mut tier = DesktopSense::default();
         tier.read(&source, &at_minute(0));
 
         source.frontmost_application = None;
@@ -381,7 +411,7 @@ mod tests {
         let mut source = source("Terminal");
         source.displays_asleep = true;
         assert!(
-            FreeTier::default()
+            DesktopSense::default()
                 .read(&source, &stopped_clock())
                 .displays_asleep
         );

@@ -1,4 +1,5 @@
 use super::{Context, Happened, State, CHAT_LIMIT};
+use crate::sensing::BEFORE_LIMIT;
 
 /// The opening turn: who this is, what it may propose, and this moment. Who
 /// this is comes in two authored layers, the package's Personality Prompt then
@@ -178,6 +179,7 @@ fn desktop_lines(context: &Context) -> String {
     let before: Vec<String> = activity
         .before
         .iter()
+        .take(BEFORE_LIMIT)
         .map(|(name, stayed)| format!("{} {}", flatten(name), minutes(*stayed)))
         .collect();
     if !before.is_empty() {
