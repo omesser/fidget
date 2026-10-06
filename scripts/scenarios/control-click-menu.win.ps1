@@ -325,7 +325,7 @@ try {
     if (-not (Wait-For 15 { Traced '^\d+ frame: .* sprite\(' })) { Fail "Fidget traced no frame; see $traceFile" }
     
     if (Traced '^\d+ presence: hidden') {
-        Fail "overlay hidden (presence: hidden) — see process.log window_source lines"
+        Fail "overlay hidden (presence: hidden) - see process.log window_source lines"
     }
 
     $settled = Wait-Settled

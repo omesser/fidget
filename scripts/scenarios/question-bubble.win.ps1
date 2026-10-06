@@ -348,7 +348,7 @@ try {
     if (-not (Wait-For 30 { Marked "asked" })) { Fail "no wake reached the Harness; see $err" }
     
     if (Traced '^\d+ presence: hidden') {
-        Fail "overlay hidden (presence: hidden) — see process.log window_source lines"
+        Fail "overlay hidden (presence: hidden) - see process.log window_source lines"
     }
     
     Start-Sleep -Seconds 1
