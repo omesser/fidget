@@ -48,8 +48,12 @@ public class FidgetWinEnum {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     public static void Click(int x, int y) {
+        // The overlay passes clicks through until the frame loop sees the
+        // cursor over the sprite, so dwell before pressing and hold briefly.
         SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(150);
         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(120);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
     public static void RightClick(int x, int y) {
