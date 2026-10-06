@@ -61,9 +61,10 @@ pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
-/// Capture exclusion setting. macOS and Windows both support it; Linux degrades
-/// gracefully (no exclusion API).
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+/// File-based debug IPC for test automation. Off by default, with no Settings row.
+pub static DEBUG_IPC: Flag = Flag::new("FIDGET_DEBUG_IPC");
+/// Capture exclusion setting. macOS and Windows support it via platform APIs;
+/// Linux has no exclusion API (ADR-0024) but the setting and UI row are present.
 pub static CAPTURABLE: Flag = Flag::new("FIDGET_CAPTURABLE");
 /// Blank-AI mode. Named from `model` rather than spelled again here:
 /// it is a Director variable, and the row that freezes on it names the same
@@ -146,7 +147,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_ENGINE.var(),
         #[cfg(windows)]
         DEBUG_REINFORCE.var(),
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        DEBUG_IPC.var(),
         CAPTURABLE.var(),
         DIRECTOR_BLANK.var(),
     ]
@@ -188,7 +189,7 @@ pub fn seed(settings: &Settings) {
     TRACE_ENGINE.seed(settings.trace_engine);
     #[cfg(windows)]
     DEBUG_REINFORCE.seed(false);
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    DEBUG_IPC.seed(false);
     CAPTURABLE.seed(settings.capturable);
     DIRECTOR_BLANK.seed(settings.director_blank);
     TIMEOUT_SECS.store(
@@ -358,6 +359,22 @@ mod tests {
             });
             assert_eq!(director_timeout_secs(), Some(45));
             assert_eq!(director_max_tokens(), Some(300));
+        });
+    }
+
+    #[test]
+    fn debug_ipc_env_enables_the_flag() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert!(!DEBUG_IPC.is_on(), "off without env var");
+
+            std::env::set_var(DEBUG_IPC.var(), "1");
+            seed(&Settings::default());
+            std::env::remove_var(DEBUG_IPC.var());
+            assert!(DEBUG_IPC.is_on(), "FIDGET_DEBUG_IPC=1 enables it");
+
+            seed(&Settings::default());
+            assert!(!DEBUG_IPC.is_on(), "back to off when env var cleared");
         });
     }
 

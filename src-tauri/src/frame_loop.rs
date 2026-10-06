@@ -413,6 +413,20 @@ pub(crate) fn run_frame_loop(
             let tracing_director = model::tracing();
             let tracing_clicks = tracing || tracing_frames || tracing_director;
 
+            if dev_flags::DEBUG_IPC.is_on() {
+                if let Some(live) = lives.first() {
+                    let state_str = live
+                        .last_state
+                        .map(|s| format!("{:?}", s))
+                        .unwrap_or_else(|| "None".to_string());
+                    crate::debug::check_debug_commands(
+                        (live.last_position.x as i32, live.last_position.y as i32),
+                        &state_str,
+                        &mut roster,
+                    );
+                }
+            }
+
             let Ok(cursor) = app.cursor_position() else {
                 continue;
             };
@@ -1547,6 +1561,7 @@ pub(crate) fn run_frame_loop(
                     live.last_state = Some(frame.state);
                     live.since_state = Duration::ZERO;
                 }
+                live.last_position = frame.position;
 
                 // Stay Active while moving, a multi-frame animation still
                 // advancing, or idle_ms accruing toward sleep (#183).

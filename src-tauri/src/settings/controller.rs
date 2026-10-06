@@ -72,15 +72,20 @@ pub enum Outcome {
 pub fn handle(event: &Event, draft: &AiDraft<'_>, view: &SettingsView) -> Outcome {
     let description = draft.description;
     match event {
-        Event::SetBool { id, value } => match description.bool_write(id) {
-            Some(_) if description.batched(id) => Outcome::Nothing,
-            Some(field) => {
-                let mut patch = SettingsPatch::default();
-                patch.set_bool(field, *value);
-                Outcome::Apply(patch)
+        Event::SetBool { id, value } => {
+            if description.frozen(id) {
+                return Outcome::Nothing;
             }
-            None => Outcome::Nothing,
-        },
+            match description.bool_write(id) {
+                Some(_) if description.batched(id) => Outcome::Nothing,
+                Some(field) => {
+                    let mut patch = SettingsPatch::default();
+                    patch.set_bool(field, *value);
+                    Outcome::Apply(patch)
+                }
+                None => Outcome::Nothing,
+            }
+        }
         Event::SetText { id, value } => {
             // A batched row lives in the widgets until Apply. Writing here
             // would kill a Harness child the Cancel button still offers (#663).
@@ -276,6 +281,28 @@ mod tests {
             let event = Event::SetText {
                 id: form::DIRECTOR_BASE_URL_ID.into(),
                 value: "https://typed.example".into(),
+            };
+            assert_eq!(
+                handle(&event, &AiDraft::live(&description), &view),
+                Outcome::Nothing,
+            );
+        });
+    }
+
+    /// A frozen checkbox refuses writes, just like a frozen text row.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_frozen_checkbox_refuses_writes() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let description = form::describe();
+            assert!(
+                description.frozen(form::CAPTURABLE_ID),
+                "precondition: capturable is frozen on Linux"
+            );
+            let event = Event::SetBool {
+                id: form::CAPTURABLE_ID.into(),
+                value: false,
             };
             assert_eq!(
                 handle(&event, &AiDraft::live(&description), &view),

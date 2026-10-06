@@ -730,13 +730,12 @@ impl Engine {
         // on is not mistaken for one it arrived at. See the landing below.
         let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
 
-        // The cooldown is a thing the sprite does on its feet. Being picked up or losing the ground ends it, because a cooldown that outlived the ground would refuse the first walk after the landing.
+        // The cooldown is a thing the sprite does on its feet or on a wall. Being picked up or letting go ends it, because a cooldown that outlived the ground would refuse the first walk after the landing.
         // `state` is what the verbs made of it; a fall the world causes is decided at `on_contact` below, so that clear lands one tick late — harmless, since `permitted` refuses a walk while Falling anyway.
-        self.poke_cooldown_ms = match state {
-            State::Grounded | State::Perched => {
-                self.poke_cooldown_ms.saturating_sub(snapshot.elapsed_ms)
-            }
-            _ => 0,
+        self.poke_cooldown_ms = if stopped_by_a_poke(state) {
+            self.poke_cooldown_ms.saturating_sub(snapshot.elapsed_ms)
+        } else {
+            0
         };
 
         if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
@@ -1054,9 +1053,8 @@ impl Engine {
             .iter()
             .any(|verb| matches!(verb, Verb::Poke | Verb::Summon))
         {
-            // On its feet, a Poke also stops them: noticing you does not keep strolling past.
-            // Mid-air it changes nothing about the flight.
-            if matches!(self.state, State::Grounded | State::Perched) {
+            // Noticing you does not keep strolling past, or climbing on.
+            if stopped_by_a_poke(self.state) {
                 self.velocity.x = 0.0;
                 self.poke_cooldown_ms = POKE_COOLDOWN_MS;
             }
@@ -1123,9 +1121,11 @@ impl Engine {
         // `land` needs no such clause: a second arrival comes through a fall, which is a change of name.
         // Everything else keeps its clock across Primitive turns, because restarting each turn would draw the first 600ms of the strip and never the rest.
         let startled = self.on_screen() == Some(Primitive::React);
+        // A climb paused by a Poke keeps one pose: the strip's clock would otherwise climb in place.
+        let paused_climb = self.state == State::Climbing && self.poke_cooldown_ms > 0;
         if new_family || (started && startled) {
             self.animation_ms = 0;
-        } else {
+        } else if !(paused_climb && animation == "climb") {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         }
 
@@ -1226,7 +1226,12 @@ impl Engine {
                 }
             }
             State::Climbing => {
-                let next_y = self.position.y - CLIMB_SPEED * dt;
+                let speed = if self.poke_cooldown_ms > 0 {
+                    0.0
+                } else {
+                    CLIMB_SPEED
+                };
+                let next_y = self.position.y - speed * dt;
 
                 // Climbing the Dock's side ends on its top: the Dock is a Perch, and the feet reaching its top edge is a landing, not a ceiling.
                 // The step inward is what the climb was for — a sprite that stopped clear of the side is standing beside the Dock, not on it.
@@ -1580,6 +1585,11 @@ fn animation_of(primitive: Primitive) -> &'static str {
         // draws none, so the required set stays at nine (ADR-0007).
         Primitive::Jump => "jump",
     }
+}
+
+/// Where a Poke stops the sprite for the cooldown: on its feet or on a wall. Mid-air it changes nothing about the flight.
+fn stopped_by_a_poke(state: State) -> bool {
+    matches!(state, State::Grounded | State::Perched | State::Climbing)
 }
 
 /// Which Animation a State plays.
@@ -3356,6 +3366,86 @@ mod tests {
         let landed = settle(&mut engine, &snapshot(100));
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0);
+    }
+
+    /// The wall gets the floor's answer to a Poke: the climb stops for the
+    /// cooldown, and only then carries on up, since a wall has nowhere to rest.
+    #[test]
+    fn a_poke_mid_climb_pauses_on_the_wall_for_a_beat_then_climbs_on() {
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+        let climbing = engine.tick(&snapshot(100));
+        assert_eq!(climbing.state, State::Climbing);
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!(poked.animation, "react");
+        assert_eq!(poked.state, State::Climbing);
+
+        let paused: Vec<Frame> = (0..24).map(|_| engine.tick(&snapshot(100))).collect();
+        assert!(
+            paused
+                .iter()
+                .all(|frame| frame.state == State::Climbing && frame.position == poked.position),
+            "it stays put on the wall through the cooldown: {paused:?}"
+        );
+        let resting: Vec<&Frame> = paused
+            .iter()
+            .filter(|frame| frame.animation == "climb")
+            .collect();
+        assert!(
+            resting.len() > 1
+                && resting
+                    .iter()
+                    .all(|frame| frame.animation_ms == resting[0].animation_ms),
+            "once the reaction is over it keeps one climb pose, not climbing in place: {paused:?}"
+        );
+
+        let resumed = engine.tick(&snapshot(100));
+        assert_eq!(resumed.state, State::Climbing);
+        assert!(
+            resumed.position.y < poked.position.y,
+            "and climbs on once it is over: {resumed:?}"
+        );
+    }
+
+    /// The pause stops the climb, not the world: a wall that goes away mid-pause still drops the sprite at once.
+    #[test]
+    fn a_climb_paused_by_a_poke_still_lets_go_when_its_display_goes() {
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+
+        let unplugged = engine.tick(&WorldSnapshot {
+            displays: vec![],
+            ..snapshot(100)
+        });
+        assert_eq!(unplugged.state, State::Falling, "{unplugged:?}");
     }
 
     #[test]
