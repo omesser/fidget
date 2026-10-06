@@ -45,6 +45,21 @@ public class FidgetWinEnum {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lp, int n);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    // Every visible top-level window of class `cls`. FindWindow returns the
+    // first `#32768` in z-order, which need not be the popup that is open.
+    public static IntPtr[] Visible(string cls) { return OfClass(cls, true); }
+    public static IntPtr[] OfClass(string cls, bool visibleOnly) {
+        var found = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows((h, l) => {
+            var sb = new StringBuilder(64);
+            GetClassName(h, sb, sb.Capacity);
+            if (sb.ToString() == cls && (!visibleOnly || IsWindowVisible(h))) found.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        return found.ToArray();
+    }
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     public static void Click(int x, int y) {
@@ -147,9 +162,10 @@ function Find-ByControlType($Root, $ControlType) {
 
 # The items of the open Win32 popup menu, or none while no menu is up.
 function Get-PopupMenuItems {
-    $menu = [FidgetWinEnum]::FindWindow("#32768", $null)
-    if ($menu -eq [IntPtr]::Zero) { return }
-    Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem)
+    foreach ($menu in [FidgetWinEnum]::Visible("#32768")) {
+        $items = @(Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem))
+        if ($items.Count -gt 0) { return $items }
+    }
 }
 
 if ($Command -eq "click") {
@@ -166,6 +182,8 @@ if ($Command -eq "menu") {
     }
     [FidgetWinEnum]::Escape()
     if ($items.Count -eq 0) {
+        # Says whether no menu window drew at all or one drew with no items.
+        Write-Output ("no menu: {0} visible #32768, {1} in all" -f [FidgetWinEnum]::Visible("#32768").Count, [FidgetWinEnum]::OfClass("#32768", $false).Count)
         Write-Error "no menu showed within 5s"
         exit 1
     }
