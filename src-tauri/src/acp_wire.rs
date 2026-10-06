@@ -310,9 +310,8 @@ pub enum Event {
         session: String,
         text: String,
     },
-    /// An inbound wake: the Harness started a turn between Fidget prompts,
-    /// with agent text meant for the user. Triggers a Director wake so the
-    /// speech participates in Pace and reaches Chat/bubble/Behaviors (#1356).
+    /// Between-turn agent text accumulated in `Inbound` and flushed
+    /// when a session transitions (Ask, Elicit, Prompt, or Close).
     InboundWake {
         session: String,
         speech: String,

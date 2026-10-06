@@ -2208,10 +2208,10 @@ fn show_thought(app: &tauri::AppHandle, instance: &str, line: String) {
 
 fn handle_inbound_wake(app: &tauri::AppHandle, instance: &str, speech: String) {
     if let Some(state) = app.try_state::<ChatChannel>() {
-        let _ = state.0.send(ChatMsg::InboundWake {
+        let _ = state.0.send(ChatMsg::InboundWake(harness::InboundWake {
             instance: instance.to_string(),
             speech,
-        });
+        }));
     }
 }
 
@@ -2747,13 +2747,7 @@ enum ChatMsg {
     /// change, so a window opened between two would sit at dashes. Sent after
     /// the listener is registered, or it is an answer nobody hears.
     Listening(InstanceId),
-    /// An inbound wake: the Harness started a turn between Fidget prompts with
-    /// agent text. Triggers a Director wake so the speech participates in Pace
-    /// and reaches Chat/bubble/Behaviors (#1356 Part 2).
-    InboundWake {
-        instance: InstanceId,
-        speech: String,
-    },
+    InboundWake(harness::InboundWake),
 }
 
 /// The sender every Chat surface posts on. Not another `SettingsOp`: every
@@ -4453,8 +4447,8 @@ fn main() {
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }
-                    harness::Forwarded::InboundWake { instance, speech } => {
-                        handle_inbound_wake(&forward_to, &instance, speech)
+                    harness::Forwarded::InboundWake(wake) => {
+                        handle_inbound_wake(&forward_to, &wake.instance, wake.speech)
                     }
                     harness::Forwarded::Thought { instance, line } => {
                         show_thought(&forward_to, &instance, line)

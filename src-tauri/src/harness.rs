@@ -771,6 +771,14 @@ impl SessionKey {
 /// What the session on the wire tells the Chat surface, live.
 /// `Settled` exists because an ask goes to every open surface and only one
 /// takes the click. Without it the others keep offering live buttons.
+/// An inbound wake: the Harness started a turn between Fidget prompts
+/// with agent text meant for the user.
+#[derive(Clone, Debug)]
+pub struct InboundWake {
+    pub instance: String,
+    pub speech: String,
+}
+
 #[derive(Debug)]
 pub enum Forwarded {
     Ask(PermissionAsk),
@@ -790,13 +798,7 @@ pub enum Forwarded {
     },
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
-    /// An inbound wake: the Harness started a turn between Fidget prompts,
-    /// with agent text meant for the user. This triggers a Director wake
-    /// so the speech participates in Pace and reaches Chat/bubble/Behaviors.
-    InboundWake {
-        instance: String,
-        speech: String,
-    },
+    InboundWake(InboundWake),
     /// The attachment moved: preflight finished, or a login went missing or
     /// came back mid-session (#991). Chat's first ReloadChat races preflight,
     /// so a missing launcher would otherwise never reach the landing (#726).
@@ -2277,7 +2279,7 @@ fn note_event(
                 .ok()
                 .and_then(|owners| owners.get(&session).cloned());
             if let Some(instance) = instance {
-                forward(Forwarded::InboundWake { instance, speech });
+                forward(Forwarded::InboundWake(InboundWake { instance, speech }));
             }
         }
         Event::Thought { session, text } => {
@@ -3658,9 +3660,7 @@ mod tests {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
                     Ok(
-                        Forwarded::Plan(_)
-                        | Forwarded::Thought { .. }
-                        | Forwarded::InboundWake { .. },
+                        Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::InboundWake(_),
                     ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
@@ -5295,7 +5295,7 @@ mod tests {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Ask(ask)) => break ask,
                 Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
-                Ok(Forwarded::InboundWake { instance, speech }) => said.push((instance, speech)),
+                Ok(Forwarded::InboundWake(wake)) => said.push((wake.instance, wake.speech)),
                 Ok(_) => {}
                 Err(_) => panic!("the between-turn ask never reached Chat"),
             }
@@ -5367,8 +5367,8 @@ mod tests {
         let mut thought_ended = false;
         for forwarded in fx.forwarded.try_iter() {
             match forwarded {
-                Forwarded::InboundWake { instance, speech } if instance == "buddy-1" => {
-                    assert_eq!(speech, "Your reminder: time to stretch!");
+                Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
+                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
                     speech_seen = true;
                 }
                 Forwarded::Thought { instance, line }
@@ -5396,8 +5396,8 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !speech_seen && std::time::Instant::now() < deadline {
             match fx.forwarded.try_recv() {
-                Ok(Forwarded::InboundWake { instance, speech }) if instance == "buddy-1" => {
-                    assert_eq!(speech, "Your reminder: time to stretch!");
+                Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
+                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
                     speech_seen = true;
                 }
                 _ => thread::sleep(Duration::from_millis(10)),
