@@ -4446,6 +4446,9 @@ pub(crate) mod tests {
             let context = Context {
                 activity: Activity {
                     frontmost_application: Some("Terminal".to_string()),
+                    frontmost_for: std::time::Duration::ZERO,
+                    before: Vec::new(),
+                    weekday: 0,
                     switched: turn % 3 == 0,
                     idle: Duration::from_secs((turn as u64 % 7) * 30),
                     at: SystemTime::now(),
@@ -4459,6 +4462,7 @@ pub(crate) mod tests {
                 state: *state,
                 happened: happened.clone(),
                 standing: standing.to_string(),
+                front_title: None,
             };
 
             match director.wake(&context) {

@@ -362,6 +362,9 @@ pub(crate) mod tests {
         Context {
             activity: Activity {
                 frontmost_application: None,
+                frontmost_for: std::time::Duration::ZERO,
+                before: Vec::new(),
+                weekday: 0,
                 switched: false,
                 idle: Duration::ZERO,
                 at: UNIX_EPOCH,
@@ -375,6 +378,7 @@ pub(crate) mod tests {
             state: State::Grounded,
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
+            front_title: None,
         }
     }
 

@@ -24,8 +24,9 @@ pub trait ActivitySource {
 /// tests never depend on what time it happens to be.
 pub trait Clock {
     fn now(&self) -> SystemTime;
-    /// Local civil clock: hour 0–23, minute 0–59.
-    fn local_hm(&self) -> (u8, u8);
+    /// Local civil clock, read once so the day cannot turn between the parts:
+    /// weekday 0–6 from Sunday, hour 0–23, minute 0–59.
+    fn local_time(&self) -> (u8, u8, u8);
 }
 
 /// The system clock. The only implementation that reads the real one.
@@ -36,46 +37,54 @@ impl Clock for SystemClock {
         SystemTime::now()
     }
 
-    fn local_hm(&self) -> (u8, u8) {
-        system_local_hm()
+    fn local_time(&self) -> (u8, u8, u8) {
+        system_local_time()
     }
 }
 
-/// Local hour and minute on this machine. `std` has no civil clock, so libc
-/// `localtime_r` is the OS answer; the non-unix build reports UTC until a local
-/// clock exists there.
+/// Local weekday, hour and minute on this machine. `std` has no civil clock,
+/// so libc `localtime_r` is the OS answer; the non-unix build reports UTC
+/// until a local clock exists there.
 #[cfg(unix)]
-fn system_local_hm() -> (u8, u8) {
+fn system_local_time() -> (u8, u8, u8) {
     // SAFETY: `time` and `localtime_r` write through pointers to locals that
     // outlive the call, and both returns are checked before `tm` is read. Every
     // field of `libc::tm` is an integer or a raw pointer, so all-zero is valid.
     unsafe {
         let mut t: libc::time_t = 0;
         if libc::time(&mut t) == -1 {
-            return (0, 0);
+            return (0, 0, 0);
         }
         let mut tm = std::mem::zeroed::<libc::tm>();
         if libc::localtime_r(&t, &mut tm).is_null() {
-            return (0, 0);
+            return (0, 0, 0);
         }
-        (tm.tm_hour as u8, tm.tm_min as u8)
+        (tm.tm_wday as u8, tm.tm_hour as u8, tm.tm_min as u8)
     }
 }
 
 #[cfg(not(unix))]
-fn system_local_hm() -> (u8, u8) {
+fn system_local_time() -> (u8, u8, u8) {
     let secs = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let minutes = (secs / 60) % (24 * 60);
-    ((minutes / 60) as u8, (minutes % 60) as u8)
+    // 1970-01-01 was a Thursday.
+    let weekday = (secs / 86_400 + 4) % 7;
+    (weekday as u8, (minutes / 60) as u8, (minutes % 60) as u8)
 }
 
 /// One read of the Free tier.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activity {
     pub frontmost_application: Option<String>,
+    /// How long the frontmost application has been in front. Zero when
+    /// nothing is.
+    pub frontmost_for: Duration,
+    /// Up to `BEFORE_LIMIT` applications that were in front earlier, newest
+    /// first, each with how long it stayed there.
+    pub before: Vec<(String, Duration)>,
     /// Whether the frontmost application differs from the previous read, so a
     /// caller need not remember the previous name. The first read of a run counts
     /// as a change, so a Director woken at startup has something to react to.
@@ -83,6 +92,8 @@ pub struct Activity {
     pub idle: Duration,
     /// When this read was taken, from the `Clock`.
     pub at: SystemTime,
+    /// Local weekday, 0–6 from Sunday.
+    pub weekday: u8,
     /// Local civil hour, 0–23. Time of day for the Director, not UTC.
     pub hour: u8,
     /// Local civil minute, 0–59.
@@ -91,27 +102,50 @@ pub struct Activity {
     pub displays_asleep: bool,
 }
 
-/// Reads the Free tier, and remembers just enough of the previous read to tell a
-/// caller that the frontmost application changed.
+/// How many earlier front applications a read carries.
+pub const BEFORE_LIMIT: usize = 3;
+
+/// Reads the Free tier, and remembers which applications were in front and for
+/// how long, so a caller need not keep that history itself.
 #[derive(Default)]
 pub struct FreeTier {
     previous: Option<String>,
+    /// When `previous` came to the front. None before the first read.
+    since: Option<SystemTime>,
+    before: Vec<(String, Duration)>,
 }
 
 impl FreeTier {
     /// Read the source and the clock once. The frontmost application is the only
     /// thing that needs a memory; idle and the time are already the whole answer.
     pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
+        let at = clock.now();
         let frontmost_application = source.frontmost_application();
         let switched = frontmost_application != self.previous;
+        if switched {
+            // A spell with nothing in front is not an application to report.
+            if let (Some(left), Some(since)) = (self.previous.take(), self.since) {
+                let stayed = at.duration_since(since).unwrap_or_default();
+                self.before.insert(0, (left, stayed));
+                self.before.truncate(BEFORE_LIMIT);
+            }
+            self.since = Some(at);
+        }
         self.previous = frontmost_application.clone();
+        let frontmost_for = match (&frontmost_application, self.since) {
+            (Some(_), Some(since)) => at.duration_since(since).unwrap_or_default(),
+            _ => Duration::ZERO,
+        };
 
-        let (hour, minute) = clock.local_hm();
+        let (weekday, hour, minute) = clock.local_time();
         Activity {
             frontmost_application,
+            frontmost_for,
+            before: self.before.clone(),
             switched,
             idle: source.idle(),
-            at: clock.now(),
+            at,
+            weekday,
             hour,
             minute,
             displays_asleep: source.displays_asleep(),
@@ -148,6 +182,7 @@ impl ActivitySource for FakeActivitySource {
 #[cfg(test)]
 pub struct FakeClock {
     pub now: SystemTime,
+    pub weekday: u8,
     pub hour: u8,
     pub minute: u8,
 }
@@ -158,8 +193,8 @@ impl Clock for FakeClock {
         self.now
     }
 
-    fn local_hm(&self) -> (u8, u8) {
-        (self.hour, self.minute)
+    fn local_time(&self) -> (u8, u8, u8) {
+        (self.weekday, self.hour, self.minute)
     }
 }
 
@@ -179,6 +214,7 @@ mod tests {
     fn stopped_clock() -> FakeClock {
         FakeClock {
             now: UNIX_EPOCH,
+            weekday: 0,
             hour: 0,
             minute: 0,
         }
@@ -267,6 +303,7 @@ mod tests {
         // 2023-11-14T22:13:20Z, chosen for being nothing like now.
         let clock = FakeClock {
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            weekday: 2,
             hour: 22,
             minute: 13,
         };
@@ -275,9 +312,67 @@ mod tests {
 
         assert_eq!(read.at, UNIX_EPOCH + Duration::from_secs(1_700_000_000));
         assert_eq!(
-            (read.hour, read.minute),
-            (22, 13),
+            (read.weekday, read.hour, read.minute),
+            (2, 22, 13),
             "local, not derived from `at`"
+        );
+    }
+
+    fn at_minute(minute: u64) -> FakeClock {
+        FakeClock {
+            now: UNIX_EPOCH + Duration::from_secs(minute * 60),
+            weekday: 0,
+            hour: 0,
+            minute: 0,
+        }
+    }
+
+    /// Each application that leaves the front is kept with how long it
+    /// stayed, newest first, and only the last few are kept.
+    #[test]
+    fn earlier_front_applications_are_kept_newest_first_with_their_stay() {
+        let mut source = source("Terminal");
+        let mut tier = FreeTier::default();
+        tier.read(&source, &at_minute(0));
+
+        let settled = tier.read(&source, &at_minute(41));
+        assert_eq!(settled.frontmost_for, Duration::from_secs(41 * 60));
+        assert!(settled.before.is_empty(), "nothing has left the front yet");
+
+        for (minute, next) in [(41, "Safari"), (44, "Mail"), (50, "Slack"), (51, "Notes")] {
+            source.frontmost_application = Some(next.to_string());
+            tier.read(&source, &at_minute(minute));
+        }
+        let read = tier.read(&source, &at_minute(53));
+
+        assert_eq!(read.frontmost_for, Duration::from_secs(2 * 60));
+        let minutes: Vec<(&str, u64)> = read
+            .before
+            .iter()
+            .map(|(name, stayed)| (name.as_str(), stayed.as_secs() / 60))
+            .collect();
+        assert_eq!(
+            minutes,
+            [("Slack", 1), ("Mail", 6), ("Safari", 3)],
+            "Terminal's 41 minutes fell off the end"
+        );
+    }
+
+    #[test]
+    fn a_spell_with_nothing_in_front_is_not_kept() {
+        let mut source = source("Terminal");
+        let mut tier = FreeTier::default();
+        tier.read(&source, &at_minute(0));
+
+        source.frontmost_application = None;
+        let nothing = tier.read(&source, &at_minute(5));
+        assert_eq!(nothing.frontmost_for, Duration::ZERO);
+
+        source.frontmost_application = Some("Safari".to_string());
+        let read = tier.read(&source, &at_minute(9));
+        assert_eq!(
+            read.before,
+            [("Terminal".to_string(), Duration::from_secs(300))]
         );
     }
 

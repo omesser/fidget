@@ -969,6 +969,9 @@ mod tests {
             &crate::director::Context {
                 activity: crate::sensing::Activity {
                     frontmost_application: None,
+                    frontmost_for: std::time::Duration::ZERO,
+                    before: Vec::new(),
+                    weekday: 0,
                     switched: false,
                     idle: std::time::Duration::ZERO,
                     at: std::time::UNIX_EPOCH,
@@ -982,6 +985,7 @@ mod tests {
                 state: crate::engine::State::Grounded,
                 happened: crate::director::Happened::Proactive,
                 standing: String::new(),
+                front_title: None,
             },
             wolf.behaviors.keys(),
             false,

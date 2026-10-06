@@ -602,6 +602,9 @@ mod tests {
         let moment = Context {
             activity: Activity {
                 frontmost_application: Some("Terminal".to_string()),
+                frontmost_for: std::time::Duration::ZERO,
+                before: Vec::new(),
+                weekday: 0,
                 switched: false,
                 idle,
                 at: UNIX_EPOCH,
@@ -615,6 +618,7 @@ mod tests {
             state: fidget_core::engine::State::Grounded,
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
+            front_title: None,
         };
 
         (0..64)
