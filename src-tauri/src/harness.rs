@@ -465,7 +465,10 @@ fn timed_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    without_console_window(&mut command);
+    let suppress_window = !cfg!(windows) || program != "bash";
+    if suppress_window {
+        without_console_window(&mut command);
+    }
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
