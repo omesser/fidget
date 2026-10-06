@@ -25,10 +25,10 @@ const LINKS = [
 const REAL = ".agents/skills";
 const SKILL_LINKS = LINKS.filter(([, target]) => target === `../${REAL}`);
 
-// Skills this repository owns rather than vendors. They prove the directory is
+// A skill this repository owns rather than vendors. It proves the directory is
 // shared, so a sync that blew it away would fail here rather than in six
 // months when someone next runs the verifier.
-const OURS = ["resolving-merge-conflicts", "verify-fidget"];
+const OURS = "verify-fidget";
 
 const skillsIn = (dir) =>
   readdirSync(path(dir), { withFileTypes: true })
@@ -42,12 +42,10 @@ test("the real skills directory holds a non-zero number of skills", () => {
     names.length > 0,
     `${REAL} is empty; every assertion below would pass over nothing`,
   );
-  for (const skill of OURS) {
-    assert.ok(
-      names.includes(skill),
-      `${REAL} has lost ${skill}, which this repository owns. No sync may ever remove it.`,
-    );
-  }
+  assert.ok(
+    names.includes(OURS),
+    `${REAL} has lost ${OURS}, which this repository owns. The pstack sync must never remove it.`,
+  );
 });
 
 for (const [link, target] of LINKS) {
@@ -94,9 +92,7 @@ for (const [link] of SKILL_LINKS) {
       skillsIn(REAL),
       `${link} does not see the same skills as ${REAL}`,
     );
-    for (const skill of OURS) {
-      assert.ok(through.includes(skill), `${link} cannot see ${skill}`);
-    }
+    assert.ok(through.includes(OURS), `${link} cannot see ${OURS}`);
   });
 
   test(`${link} serves a readable SKILL.md for every skill`, () => {
