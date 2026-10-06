@@ -8,6 +8,7 @@
 use crate::character::{Behavior, CursorReaction, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
+use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -479,6 +480,55 @@ pub fn bring_landings(
         landings[index] = Some(Point { x: xs[slot], y });
     }
     Some(landings)
+}
+
+/// Where each sprite on a fullscreen display teleports to the first free display.
+/// `desktop.fullscreen` shares `monitors`' indexes. Everyone else stays put, so
+/// a sprite already moved plans nothing next time; when every display is taken, nobody moves.
+pub fn bring_off_fullscreen(
+    feet: &[Point],
+    widths: &[f64],
+    monitors: &[Rect],
+    floors: &[Rect],
+    desktop: &Desktop,
+) -> Vec<Option<Point>> {
+    let mut landings = vec![None; feet.len()];
+    let Some(target) = desktop
+        .first_free_display()
+        .and_then(|index| monitors.get(index))
+    else {
+        return landings;
+    };
+    let stranded = |at: &Point| {
+        monitors
+            .iter()
+            .zip(&desktop.fullscreen)
+            .any(|(monitor, &taken)| taken && stands_on((at.x, at.y), monitor))
+    };
+    // Bring to the first free display, among only the stranded and those already there.
+    // They are the arrivals and the stayers it lays out. Anyone on another
+    // free display is not in it, so is not swept along.
+    let picked: Vec<usize> = (0..feet.len())
+        .filter(|&index| {
+            let at = &feet[index];
+            stranded(at) || stands_on((at.x, at.y), target)
+        })
+        .collect();
+    let picked_feet: Vec<Point> = picked.iter().map(|&index| feet[index]).collect();
+    let picked_widths: Vec<f64> = picked
+        .iter()
+        .map(|&index| widths.get(index).copied().unwrap_or(0.0))
+        .collect();
+    let centre = Point {
+        x: target.x + target.width / 2.0,
+        y: target.y + target.height / 2.0,
+    };
+    if let Some(planned) = bring_landings(&picked_feet, &picked_widths, monitors, floors, centre) {
+        for (index, landing) in picked.into_iter().zip(planned) {
+            landings[index] = landing;
+        }
+    }
+    landings
 }
 
 fn sprite_span(width: f64) -> f64 {
@@ -6001,6 +6051,41 @@ mod tests {
         );
     }
 
+    /// The same throw with the second display left out of the world (e.g.,
+    /// unplugged): the remaining display's edge is the outer wall now, and
+    /// the sprite stops there.
+    #[test]
+    fn a_sprite_stops_at_the_seam_of_a_display_left_out() {
+        let alone = || WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point { x: 900.0, y: 100.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..alone()
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 400.0, y: 0.0 },
+            }],
+            ..alone()
+        });
+
+        let landed = settle(&mut engine, &alone());
+        // Half a default sprite in from the seam at 1000, on the first floor.
+        assert_eq!(landed.position, Point { x: 936.0, y: 800.0 });
+        assert_eq!(landed.state, State::Grounded);
+    }
+
     #[test]
     fn a_proposal_offered_under_do_not_disturb_is_not_applied() {
         let mut engine = a_resting_sprite();
@@ -7310,6 +7395,99 @@ mod tests {
                 Point { x: 10.0, y: 10.0 },
             ),
             None
+        );
+    }
+
+    /// Fullscreen on the second display. The sprite standing there goes to the
+    /// middle of the free primary floor; the one already on the primary, and
+    /// the one on a third display nobody took, stay where they are.
+    #[test]
+    fn bring_off_fullscreen_moves_only_the_sprites_on_a_fullscreen_display() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+        let third = monitor(-1920.0, 0.0, 1920.0, 1080.0);
+        let monitors = [primary, second, third];
+        let feet = [
+            Point {
+                x: 2500.0,
+                y: 982.0,
+            },
+            Point {
+                x: 400.0,
+                y: 1080.0,
+            },
+            Point {
+                x: -1000.0,
+                y: 1080.0,
+            },
+        ];
+
+        assert_eq!(
+            bring_off_fullscreen(
+                &feet,
+                &[128.0, 128.0, 128.0],
+                &monitors,
+                &monitors,
+                &Desktop {
+                    fullscreen: vec![false, true, false],
+                },
+            ),
+            vec![
+                Some(Point {
+                    x: 960.0,
+                    y: 1080.0
+                }),
+                None,
+                None,
+            ]
+        );
+    }
+
+    /// Nobody stands on the fullscreen display, so nobody moves. This is what
+    /// makes the shell's every-tick call settle after the first move.
+    #[test]
+    fn bring_off_fullscreen_leaves_a_sprite_already_on_a_free_display() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+
+        assert_eq!(
+            bring_off_fullscreen(
+                &[Point {
+                    x: 960.0,
+                    y: 1080.0,
+                }],
+                &[128.0],
+                &[primary, second],
+                &[primary, second],
+                &Desktop {
+                    fullscreen: vec![false, true],
+                },
+            ),
+            vec![None]
+        );
+    }
+
+    /// Every display taken: there is nowhere to go, so nobody moves, and the
+    /// Character fades instead.
+    #[test]
+    fn bring_off_fullscreen_moves_nobody_when_every_display_is_taken() {
+        let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
+        let second = monitor(1920.0, 0.0, 1512.0, 982.0);
+
+        assert_eq!(
+            bring_off_fullscreen(
+                &[Point {
+                    x: 2500.0,
+                    y: 982.0,
+                }],
+                &[128.0],
+                &[primary, second],
+                &[primary, second],
+                &Desktop {
+                    fullscreen: vec![true, true],
+                },
+            ),
+            vec![None]
         );
     }
 

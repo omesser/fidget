@@ -3077,34 +3077,32 @@ fn bring_roster_to_display(
     floors: &[Rect],
     cursor: Point,
 ) {
+    stand_roster(roster, widths, |feet, widths| {
+        fidget_core::engine::bring_landings(feet, widths, monitors, floors, cursor)
+            .unwrap_or_default()
+    });
+}
+
+/// Stand each Instance named in `widths` where `plan` lands it. `plan` gets
+/// their feet and widths in that order and answers at the same indexes.
+fn stand_roster(
+    roster: &mut Roster,
+    widths: &[(InstanceId, f64)],
+    plan: impl FnOnce(&[Point], &[f64]) -> Vec<Option<Point>>,
+) {
     let mut ids = Vec::new();
     let mut feet = Vec::new();
-    for (id, _) in roster.list() {
-        if let Some(instance) = roster.get(&id) {
-            feet.push(instance.feet());
+    let mut spans = Vec::new();
+    for (id, width) in widths {
+        if let Some(instance) = roster.get(id) {
             ids.push(id);
+            feet.push(instance.feet());
+            spans.push(*width);
         }
     }
-    let width_of: Vec<f64> = ids
-        .iter()
-        .map(|id| {
-            widths
-                .iter()
-                .find(|(known, _)| known == id)
-                .map(|(_, width)| *width)
-                .unwrap_or(0.0)
-        })
-        .collect();
-    let Some(landings) =
-        fidget_core::engine::bring_landings(&feet, &width_of, monitors, floors, cursor)
-    else {
-        return;
-    };
-    for (id, landing) in ids.into_iter().zip(landings) {
-        if let Some(at) = landing {
-            if let Some(instance) = roster.get_mut(&id) {
-                instance.stand_at(at);
-            }
+    for (id, landing) in ids.into_iter().zip(plan(&feet, &spans)) {
+        if let (Some(at), Some(instance)) = (landing, roster.get_mut(id)) {
+            instance.stand_at(at);
         }
     }
 }
@@ -5596,6 +5594,52 @@ mod tests {
                 y: 982.0
             }
         );
+    }
+
+    /// Fullscreen on the second display, the frame loop's call. The free
+    /// Instance lands on the primary and stays there on the next tick; the one
+    /// in the user's hand is left out of `widths` and so is not moved.
+    #[test]
+    fn a_fullscreen_display_sends_all_but_a_held_instance_to_the_free_one() {
+        let character = stub_character("BMO");
+        let mut roster = Roster::new();
+        let free = roster.spawn(
+            &character,
+            "Free".to_string(),
+            Point {
+                x: 2300.0,
+                y: 982.0,
+            },
+        );
+        let held_at = Point {
+            x: 2800.0,
+            y: 982.0,
+        };
+        let held = roster.spawn(&character, "Held".to_string(), held_at);
+        let widths = [(free.clone(), 128.0)];
+        let bring_off = |feet: &[Point], widths: &[f64]| {
+            fidget_core::engine::bring_off_fullscreen(
+                feet,
+                widths,
+                &[PRIMARY, SECOND],
+                &[PRIMARY, SECOND],
+                &fidget_core::visibility::Desktop {
+                    fullscreen: vec![false, true],
+                },
+            )
+        };
+
+        stand_roster(&mut roster, &widths, bring_off);
+        stand_roster(&mut roster, &widths, bring_off);
+
+        assert_eq!(
+            roster.get(&free).expect("free").feet(),
+            Point {
+                x: 960.0,
+                y: 1080.0
+            }
+        );
+        assert_eq!(roster.get(&held).expect("held").feet(), held_at);
     }
 
     #[test]

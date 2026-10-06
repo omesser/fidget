@@ -58,9 +58,16 @@ mkdir -p "$out"
 
 APP_PID=""
 PANEL_PID=""
-COVER_PID=""
+COVER_PIDS=()
 SCRATCH_HOME=""
 CLK_TCK=$(getconf CLK_TCK)
+
+stop_covers() {
+  if [ "${#COVER_PIDS[@]}" -gt 0 ]; then
+    kill -TERM "${COVER_PIDS[@]}" 2> /dev/null || true
+  fi
+  COVER_PIDS=()
+}
 
 cleanup() {
   if [ -n "$APP_PID" ]; then
@@ -71,9 +78,7 @@ cleanup() {
   if [ -n "$PANEL_PID" ]; then
     kill -TERM "$PANEL_PID" 2> /dev/null || true
   fi
-  if [ -n "$COVER_PID" ]; then
-    kill -TERM "$COVER_PID" 2> /dev/null || true
-  fi
+  stop_covers
   if [ -n "$SCRATCH_HOME" ]; then
     rm -rf "$SCRATCH_HOME"
   fi
@@ -659,9 +664,16 @@ run_hidden() {
     return 0
   fi
   run_with_overlay hidden
-  xfce4-terminal --disable-server --fullscreen --hide-menubar --hide-scrollbar \
-    --title=fidget-bench-cover -e "sleep $((seconds + 10))" > /dev/null 2>&1 &
-  COVER_PID=$!
+  # One per monitor: with a display left free, the Character moves there instead
+  # of hiding. Each terminal goes fullscreen on the monitor it opens on.
+  local origins
+  origins=$(xrandr --listmonitors 2> /dev/null | awk 'NR > 1 { sub(/^[^+]*/, "", $3); print $3 }')
+  for origin in ${origins:-+0+0}; do
+    xfce4-terminal --disable-server --fullscreen --hide-menubar --hide-scrollbar \
+      --geometry="80x24$origin" --title=fidget-bench-cover \
+      -e "sleep $((seconds + 10))" > /dev/null 2>&1 &
+    COVER_PIDS+=("$!")
+  done
   local _ hidden=0
   for _ in $(seq 1 20); do
     if grep -q 'presence: hidden' "$log"; then
@@ -672,15 +684,13 @@ run_hidden() {
   done
   if [ "$hidden" -ne 1 ]; then
     emit hidden N/A none N/A N/A N/A N/A "fullscreen terminal did not log presence hidden"
-    kill -TERM "$COVER_PID" 2> /dev/null || true
-    COVER_PID=""
+    stop_covers
     stop_app
     return 0
   fi
   sleep 1
   sample_row hidden "$log" "$seconds" "presence hidden under fullscreen terminal"
-  kill -TERM "$COVER_PID" 2> /dev/null || true
-  COVER_PID=""
+  stop_covers
   stop_app
 }
 

@@ -350,7 +350,8 @@ and toggles ignore-mouse-events by hit-testing the sprite's current alpha, so tr
 regions pass clicks through. WindowPet's implementation is the reference under MIT.
 
 Z-order is a single fixed level. Restacking by sprite state is rejected. Hiding is
-implemented as visibility rules: fullscreen frontmost and a global hotkey. Screen
+implemented as visibility rules: fullscreen and a global hotkey. Fullscreen moves the
+character to a free display, and hides it only when every display is taken. Screen
 capture is a separate window-level switch, capturable by default
 ([ADR-0024](./adr/0024-capturable-by-default.md)). Do Not Disturb keeps the character
 visible and quiet.
