@@ -73,7 +73,9 @@ public class FidgetWinEnum {
     }
     public static void RightClick(int x, int y) {
         SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(150);
         mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(120);
         mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero);
     }
     [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
@@ -163,8 +165,15 @@ function Find-ByControlType($Root, $ControlType) {
 # The items of the open Win32 popup menu, or none while no menu is up.
 function Get-PopupMenuItems {
     foreach ($menu in [FidgetWinEnum]::Visible("#32768")) {
-        $items = @(Find-ByControlType ([System.Windows.Automation.AutomationElement]::FromHandle($menu)) ([System.Windows.Automation.ControlType]::MenuItem))
-        if ($items.Count -gt 0) { return $items }
+        try {
+            $element = [System.Windows.Automation.AutomationElement]::FromHandle($menu)
+            if ($null -eq $element) { continue }
+            $items = Find-ByControlType $element ([System.Windows.Automation.ControlType]::MenuItem)
+            if ($null -ne $items -and $items.Count -gt 0) {
+                return @($items)
+            }
+        } catch {
+        }
     }
 }
 

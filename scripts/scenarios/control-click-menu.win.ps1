@@ -84,8 +84,11 @@ $err = Join-Path $out "app.err"
 $marks = Join-Path $out "harness.log"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-# count= gives this run's Harness a unique command line for the kill on exit.
-$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=nop count=$marks"
+# Convert Windows paths to forward slashes for bash.
+$rootBash = $root -replace '\\', '/'
+$testBinBash = $TestBin -replace '\\', '/'
+$marksBash = $marks -replace '\\', '/'
+$harness = "bash $rootBash/scripts/scenarios/fixture-harness.sh $testBinBash script=nop count=$marksBash"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 

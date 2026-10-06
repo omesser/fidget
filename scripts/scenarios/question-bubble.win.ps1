@@ -99,7 +99,11 @@ $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-$harness = "bash $root/scripts/scenarios/fixture-harness.sh $TestBin script=scenario-asking count=$marks"
+# Convert Windows paths to forward slashes for bash.
+$rootBash = $root -replace '\\', '/'
+$testBinBash = $TestBin -replace '\\', '/'
+$marksBash = $marks -replace '\\', '/'
+$harness = "bash $rootBash/scripts/scenarios/fixture-harness.sh $testBinBash script=scenario-asking count=$marksBash"
 $paths = @($harness -split '\s+' | Select-Object -Skip 1)
 if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harness" }
 
