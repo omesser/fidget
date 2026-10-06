@@ -164,7 +164,6 @@ pub struct FakeActivitySource {
     pub displays_asleep: bool,
 }
 
-#[cfg(test)]
 impl Activity {
     /// A quiet desktop: no application in front, not idle, unix epoch, midnight.
     /// A minimal fixture for tests that need an Activity and do not care what it says.

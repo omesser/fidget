@@ -4455,7 +4455,7 @@ pub(crate) mod tests {
                 },
                 personality: cat.personality.clone(),
                 state: *state,
-                ..fidget_core::director::tests::quiet_context()
+                ..fidget_core::director::Context::quiet()
                 happened: happened.clone(),
                 standing: standing.to_string(),
                 front_title: None,

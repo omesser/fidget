@@ -116,6 +116,23 @@ pub struct Context {
     pub front_title: Option<String>,
 }
 
+impl Context {
+    /// A minimal Context fixture for tests: quiet desktop, no recent behaviors,
+    /// no personality, grounded, proactive. Available to all dependent crates.
+    pub fn quiet() -> Self {
+        Self {
+            activity: Activity::quiet(),
+            recent: Vec::new(),
+            personality: String::new(),
+            instance_prompt: String::new(),
+            state: State::Grounded,
+            happened: Happened::Proactive,
+            standing: String::new(),
+            front_title: None,
+        }
+    }
+}
+
 /// One wake on its way to a Completer: the Character Prompt, and who is
 /// asking for it. This seam is all the Harness Completer is handed, so
 /// identity travels with the prompt; the Harness keys the session by both.
@@ -777,7 +794,7 @@ impl Seeded {
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
@@ -855,22 +872,6 @@ pub mod tests {
             instance_prompt: String::new(),
             state: State::Grounded,
             happened: Happened::Poke,
-            standing: String::new(),
-            front_title: None,
-        }
-    }
-
-    /// A minimal Context fixture for tests that need one and do not care what it says.
-    /// Public for use in other test modules (completer, model, package).
-    #[cfg(test)]
-    pub fn quiet_context() -> Context {
-        Context {
-            activity: Activity::quiet(),
-            recent: Vec::new(),
-            personality: String::new(),
-            instance_prompt: String::new(),
-            state: State::Grounded,
-            happened: Happened::Proactive,
             standing: String::new(),
             front_title: None,
         }

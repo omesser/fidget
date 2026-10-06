@@ -974,7 +974,7 @@ mod tests {
                 },
                 personality: wolf.personality.clone(),
                 instance_prompt: instance.prompt().to_string(),
-                ..crate::director::tests::quiet_context()
+                ..crate::director::Context::quiet()
             },
             wolf.behaviors.keys(),
             false,

@@ -364,7 +364,7 @@ pub(crate) mod tests {
                 hour: 12,
                 ..Activity::quiet()
             },
-            ..fidget_core::director::tests::quiet_context()
+            ..fidget_core::director::Context::quiet()
         }
     }
 

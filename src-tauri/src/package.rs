@@ -606,7 +606,7 @@ mod tests {
                 ..Activity::quiet()
             },
             personality: character.personality.clone(),
-            ..fidget_core::director::tests::quiet_context()
+            ..fidget_core::director::Context::quiet()
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
             front_title: None,
