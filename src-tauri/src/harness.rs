@@ -3183,21 +3183,20 @@ mod tests {
                 Some("session/load") => {
                     record(count, "load");
                     record_open(count, &message);
-                    if message.pointer("/params/sessionId").and_then(Value::as_str) == Some("stale")
-                    {
+                    let loaded = message
+                        .pointer("/params/sessionId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    // ACP replays the conversation as updates before it
+                    // answers `session/load`, even one that then fails.
+                    if script == "load-replay" {
+                        tool_call(loaded, "replayed");
+                    }
+                    if loaded == "stale" {
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
                     } else {
-                        // ACP replays the whole conversation as updates
-                        // before it answers `session/load`.
-                        if script == "load-replay" {
-                            let loaded = message
-                                .pointer("/params/sessionId")
-                                .and_then(Value::as_str)
-                                .unwrap_or("");
-                            tool_call(loaded, "replayed");
-                        }
                         let mut result = json!({});
                         if let Some(options) = completer_config_options(script) {
                             result["configOptions"] = options;
@@ -5297,18 +5296,24 @@ mod tests {
 
     /// `session/load` replays the conversation as updates before it answers.
     /// That is history, not a Harness working between turns.
+    /// A load that fails after replaying falls back to `session/new`, and its
+    /// history is still history.
     #[test]
     fn a_loaded_sessions_replay_is_not_work_between_turns() {
-        let (fx, session) = Fixture::new("load-replay");
-        std::fs::write(
-            fx.dir.join(SESSION_FILE),
-            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
-        )
-        .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
-        assert_eq!(fx.count("load"), 1);
-        assert_eq!(fx.events("tool_call"), Vec::<Value>::new());
-        session.shutdown();
+        for saved in ["saved-ok", "stale"] {
+            let (fx, session) = Fixture::new("load-replay");
+            std::fs::write(
+                fx.dir.join(SESSION_FILE),
+                format!(
+                    r#"{{"harness":"fake","sessions":[{{"instance":"buddy-1","character":"bmo","session_id":"{saved}"}}]}}"#
+                ),
+            )
+            .unwrap();
+            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(fx.count("load"), 1);
+            assert_eq!(fx.events("tool_call"), Vec::<Value>::new(), "{saved}");
+            session.shutdown();
+        }
     }
 
     /// The budget guards a Harness that went quiet, not a user who is busy

@@ -1041,8 +1041,7 @@ enum Incoming {
 type PendingAsk = (String, Responder<RequestPermissionResponse>);
 
 /// A turn the Harness started on its own, as a cron fire does: updates for a
-/// session with no `session/prompt` open. The text is held and not shown.
-/// Nothing turns it into a wake yet (#1356), which is the gap ADR-0028 names.
+/// session with no `session/prompt` open.
 #[derive(Default)]
 struct Inbound {
     said: Answer,
@@ -1167,25 +1166,26 @@ async fn serve(
                 effort,
                 reply,
             }) => {
+                let asked = load.clone().map(SessionId::new);
                 let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
                 // ACP replays a loaded conversation as updates before it
-                // answers, so every update queued for this id is history.
-                if let Ok(id) = &opened {
-                    while let Ok(message) = incoming.try_recv() {
-                        if matches!(&message, Incoming::Update(update) if update.session_id == *id)
-                        {
-                            continue;
-                        }
-                        let signing_in = auth.is_some();
-                        between_turns(
-                            message,
-                            &mut forms,
-                            &mut asks,
-                            &mut inbound,
-                            signing_in,
-                            on_event,
-                        );
+                // answers, even a load that then fails and falls back to
+                // `session/new`. Every update queued for either id is history.
+                let history =
+                    |id: &SessionId| asked.as_ref() == Some(id) || opened.as_ref() == Ok(id);
+                while let Ok(message) = incoming.try_recv() {
+                    if matches!(&message, Incoming::Update(update) if history(&update.session_id)) {
+                        continue;
                     }
+                    let signing_in = auth.is_some();
+                    between_turns(
+                        message,
+                        &mut forms,
+                        &mut asks,
+                        &mut inbound,
+                        signing_in,
+                        on_event,
+                    );
                 }
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
@@ -1195,7 +1195,17 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
-                inbound.remove(&id);
+                // ACP v1 says nothing when a turn the Harness started is
+                // over, so its Thinking row ends when Fidget's next one starts.
+                if inbound
+                    .remove(&id)
+                    .is_some_and(|held| !held.thought.is_empty())
+                {
+                    on_event(Event::Thought {
+                        session: id.0.to_string(),
+                        text: String::new(),
+                    });
+                }
                 let serving = Serving {
                     rx: &mut rx,
                     incoming: &mut incoming,
@@ -1248,6 +1258,9 @@ fn between_turns(
     on_event: &OnEvent,
 ) {
     match message {
+        // The text gathers in `said` and is not shown: nothing makes an
+        // inbound turn a wake yet. A gap (ADR-0028), not a decision. ponytail:
+        // `said` grows until that session's next prompt; bound it with the wake.
         Incoming::Update(update) => {
             let held = inbound.entry(update.session_id.clone()).or_default();
             note_update(
