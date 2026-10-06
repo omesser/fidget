@@ -912,6 +912,7 @@ mod tests {
         fixture_cases("sign-in-button.win.ps1", &SIGN_IN_GOOD[..3], SIGN_IN_CASES);
     }
 
+    #[cfg(unix)]
     /// Frame lines after the Poke in `text`, each with its 1-based count.
     /// The fixture traces a frame every 16 ms: frames 1..=143 fall in the
     /// check's 2300 ms pause window, and 163 on in its 2600 ms resume window.
@@ -935,11 +936,13 @@ mod tests {
             .collect()
     }
 
+    #[cfg(unix)]
     /// `text` with only the first `keep` frames after the Poke.
     fn keep_after_poke(text: &str, keep: usize) -> String {
         after_poke(text, |n, line| (n <= keep).then(|| line.to_string()))
     }
 
+    #[cfg(unix)]
     /// `text` with the `nth` frame after the Poke put through `edit`.
     fn edit_after_poke(text: &str, nth: usize, edit: fn(&str) -> String) -> String {
         after_poke(text, |n, line| {
@@ -951,6 +954,7 @@ mod tests {
         })
     }
 
+    #[cfg(unix)]
     const TRACE: &str = "FIDGET_SCENARIO_TRACE";
 
     #[cfg(unix)]
