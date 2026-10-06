@@ -341,33 +341,33 @@ try {
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         $attemptLog = "Attempt $attempt of $maxAttempts"
         Add-Content -LiteralPath $attemptsFile -Value $attemptLog
-        if (-not (Invoke-Ax "menu-$attempt" @("menu", "-TraceFile", $traceFile, "-SpriteW", $w, "-SpriteH", $h))) {
+        $trace = Get-Content -LiteralPath $traceFile
+        $menuCountBefore = @($trace | Select-String -Pattern '^\d+ verbs: .*\[Menu\]').Count
+        if (-not (Invoke-Ax "menu-$attempt" @("menu", "-ProcessId", $proc.Id, "-TraceFile", $traceFile, "-SpriteW", $w, "-SpriteH", $h))) {
             $msg = "no open menu in the UI Automation tree on attempt $attempt; see $out\menu-$attempt.txt"
             Add-Content -LiteralPath $attemptsFile -Value $msg
             if ($attempt -eq $maxAttempts) { Fail $msg }
-            Start-Sleep -Milliseconds 500
+            $settled = Wait-Settled
+            Start-Sleep -Milliseconds 700
             continue
         }
         Start-Sleep -Milliseconds 500
         $trace = Get-Content -LiteralPath $traceFile
-        $clickLine = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
-        if ($clickLine) {
-            Add-Content -LiteralPath $attemptsFile -Value $clickLine.Line
-        }
-        if ($clickLine -and ($clickLine.Line -match '^\d+ click: down hits=\[true\]')) {
-            if (Wait-For 2 { Traced '^\d+ verbs: .*\[Menu\]' }) {
-                $success = $true
-                break
-            }
+        $menuCountAfter = @($trace | Select-String -Pattern '^\d+ verbs: .*\[Menu\]').Count
+        if ($menuCountAfter -gt $menuCountBefore) {
+            $menuFile = Join-Path $out "menu-$attempt.txt"
+            $destFile = Join-Path $out "menu.txt"
+            Copy-Item -LiteralPath $menuFile -Destination $destFile -Force
+            $success = $true
+            break
         }
         if ($attempt -lt $maxAttempts) {
-            Start-Sleep -Milliseconds 500
+            $settled = Wait-Settled
+            Start-Sleep -Milliseconds 700
         }
     }
     if (-not $success) {
-        $trace = Get-Content -LiteralPath $traceFile
-        $lastClick = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
-        Fail "right-click missed after $maxAttempts attempts; last click: $($lastClick.Line)"
+        Fail "right-click did not produce [Menu] verb after $maxAttempts attempts"
     }
     Write-Output "ok: the right-click landed as Menu"
     Check-Items (Join-Path $out "menu.txt")

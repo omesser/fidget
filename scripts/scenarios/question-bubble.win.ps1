@@ -368,33 +368,46 @@ try {
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         $attemptLog = "Attempt $attempt of $maxAttempts"
         Add-Content -LiteralPath $attemptsFile -Value $attemptLog
+        $trace = Get-Content -LiteralPath $traceFile
+        $clickCountBefore = @($trace | Select-String -Pattern '^\d+ click: down ').Count
         if (-not (Invoke-Ax "poke-$attempt" @("click", "-TraceFile", $traceFile, "-SpriteW", $w, "-SpriteH", $h))) {
             $msg = "could not click the sprite on attempt $attempt; see $out\poke-$attempt.txt"
             Add-Content -LiteralPath $attemptsFile -Value $msg
             if ($attempt -eq $maxAttempts) { Fail $msg }
-            Start-Sleep -Milliseconds 500
+            Start-Sleep -Milliseconds 600
             continue
         }
         Start-Sleep -Milliseconds 500
         $trace = Get-Content -LiteralPath $traceFile
-        $clickLine = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
-        if ($clickLine) {
-            Add-Content -LiteralPath $attemptsFile -Value $clickLine.Line
+        $clicksAfter = @($trace | Select-String -Pattern '^\d+ click: down ')
+        $thisAttemptClick = $null
+        if ($clicksAfter.Count -gt $clickCountBefore) {
+            $thisAttemptClick = $clicksAfter[$clickCountBefore]
+            Add-Content -LiteralPath $attemptsFile -Value $thisAttemptClick.Line
         }
-        if ($clickLine -and ($clickLine.Line -match '^\d+ click: down hits=\[true\]')) {
-            if (Wait-For 2 { Traced '^\d+ verbs: .*Poke' }) {
+        if ($thisAttemptClick -and ($thisAttemptClick.Line -match '^\d+ click: down hits=\[true\]')) {
+            $verbsAfter = @($trace | Select-String -Pattern '^\d+ verbs: ')
+            $grabFound = $false
+            $pokeFound = $false
+            for ($i = $verbsAfter.Count - 1; $i -ge 0; $i--) {
+                if ($verbsAfter[$i].Line -match '\[Grab\]') { $grabFound = $true; break }
+                if ($verbsAfter[$i].Line -match 'Poke') { $pokeFound = $true; break }
+            }
+            if ($grabFound) {
+                $msg = "click held past DRAG_DELAY_MS, became Grab instead of Poke on attempt $attempt"
+                Add-Content -LiteralPath $attemptsFile -Value $msg
+                if ($attempt -eq $maxAttempts) { Fail $msg }
+            } elseif ($pokeFound) {
                 $success = $true
                 break
             }
         }
         if ($attempt -lt $maxAttempts) {
-            Start-Sleep -Milliseconds 500
+            Start-Sleep -Milliseconds 600
         }
     }
     if (-not $success) {
-        $trace = Get-Content -LiteralPath $traceFile
-        $lastClick = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
-        Fail "click missed after $maxAttempts attempts; last click: $($lastClick.Line)"
+        Fail "click did not land as Poke after $maxAttempts attempts; see $attemptsFile"
     }
     Start-Sleep -Seconds 1
     Check-After (Invoke-Dump "after-poke")

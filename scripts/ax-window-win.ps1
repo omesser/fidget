@@ -69,7 +69,7 @@ public class FidgetWinEnum {
         SetCursorPos(x, y);
         System.Threading.Thread.Sleep(800);
         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
-        System.Threading.Thread.Sleep(400);
+        System.Threading.Thread.Sleep(80);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
     public static void RightClick(int x, int y) {
@@ -84,6 +84,12 @@ public class FidgetWinEnum {
         keybd_event(0x1B, 0, 0, UIntPtr.Zero);
         keybd_event(0x1B, 0, 0x0002, UIntPtr.Zero);
     }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll")] public static extern int GetMenuItemCount(IntPtr hMenu);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr hMenu, uint item, StringBuilder lpString, int maxCount, uint flags);
+    public const uint MN_GETHMENU = 0x01E1;
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+    public const uint MF_BYPOSITION = 0x0400;
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     [StructLayout(LayoutKind.Sequential)]
@@ -163,9 +169,14 @@ function Find-ByControlType($Root, $ControlType) {
     $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
 }
 
-# The items of the open Win32 popup menu, or none while no menu is up.
 function Get-PopupMenuItems {
-    foreach ($menu in [FidgetWinEnum]::Visible("#32768")) {
+    param([uint32]$FidgetPid = 0)
+    $candidates = [FidgetWinEnum]::OfClass("#32768", $false)
+    $results = @()
+    foreach ($menu in $candidates) {
+        $itemsPid = 0
+        [FidgetWinEnum]::GetWindowThreadProcessId($menu, [ref]$itemsPid) | Out-Null
+        if ($FidgetPid -ne 0 -and $itemsPid -ne $FidgetPid) { continue }
         try {
             $element = [System.Windows.Automation.AutomationElement]::FromHandle($menu)
             if ($null -eq $element) { continue }
@@ -184,7 +195,29 @@ function Get-PopupMenuItems {
             }
         } catch {
         }
+        $hmenu = [IntPtr]::Zero
+        $hmenuResult = [FidgetWinEnum]::SendMessageTimeout($menu, [FidgetWinEnum]::MN_GETHMENU, [IntPtr]::Zero, [IntPtr]::Zero, [FidgetWinEnum]::SMTO_ABORTIFHUNG, 500, [ref]$hmenu)
+        if ($hmenu -ne [IntPtr]::Zero) {
+            $count = [FidgetWinEnum]::GetMenuItemCount($hmenu)
+            if ($count -gt 0) {
+                $names = @()
+                for ($i = 0; $i -lt $count; $i++) {
+                    $sb = New-Object System.Text.StringBuilder 256
+                    $len = [FidgetWinEnum]::GetMenuStringW($hmenu, $i, $sb, $sb.Capacity, [FidgetWinEnum]::MF_BYPOSITION)
+                    if ($len -gt 0) {
+                        $text = $sb.ToString()
+                        $text = $text -replace '&', ''
+                        if ($text.Contains("`t")) { $text = $text.Substring(0, $text.IndexOf("`t")) }
+                        if ($text.Length -gt 0) { $names += $text }
+                    }
+                }
+                if ($names.Count -gt 0) {
+                    return $names
+                }
+            }
+        }
     }
+    return @()
 }
 
 if ($Command -eq "click") {
@@ -225,32 +258,11 @@ if ($Command -eq "click") {
                 Start-Sleep -Milliseconds 150
             }
         }
-        [FidgetWinEnum]::Click($clickX, $clickY)
-        $maxRetries = 3
-        for ($retry = 0; $retry -lt $maxRetries; $retry++) {
-            Start-Sleep -Milliseconds 100
-            $trace = Get-Content -LiteralPath $TraceFile
-            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
-            if ($recent) {
-                $newSx = [int]$recent.Matches[0].Groups[1].Value
-                $newSy = [int]$recent.Matches[0].Groups[2].Value
-                $newCentreX = $newSx + [int]($SpriteW / 2)
-                $newCentreY = $newSy + [int]($SpriteH / 2)
-                $moveDist = [Math]::Sqrt([Math]::Pow($newCentreX - $clickX, 2) + [Math]::Pow($newCentreY - $clickY, 2))
-                if ($moveDist -gt 16 -and $retry -lt ($maxRetries - 1)) {
-                    $clickX = $newCentreX
-                    $clickY = $newCentreY
-                    [FidgetWinEnum]::Click($clickX, $clickY)
-                } else {
-                    break
-                }
-            } else {
-                break
-            }
-        }
     } else {
-        [FidgetWinEnum]::Click($clickX, $clickY)
+        $clickX = $X
+        $clickY = $Y
     }
+    [FidgetWinEnum]::Click($clickX, $clickY)
     exit 0
 }
 
@@ -292,51 +304,36 @@ if ($Command -eq "menu") {
                 Start-Sleep -Milliseconds 150
             }
         }
-        [FidgetWinEnum]::RightClick($clickX, $clickY)
-        $maxRetries = 3
-        for ($retry = 0; $retry -lt $maxRetries; $retry++) {
-            Start-Sleep -Milliseconds 100
-            $trace = Get-Content -LiteralPath $TraceFile
-            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
-            if ($recent) {
-                $newSx = [int]$recent.Matches[0].Groups[1].Value
-                $newSy = [int]$recent.Matches[0].Groups[2].Value
-                $newCentreX = $newSx + [int]($SpriteW / 2)
-                $newCentreY = $newSy + [int]($SpriteH / 2)
-                $moveDist = [Math]::Sqrt([Math]::Pow($newCentreX - $clickX, 2) + [Math]::Pow($newCentreY - $clickY, 2))
-                if ($moveDist -gt 16 -and $retry -lt ($maxRetries - 1)) {
-                    $clickX = $newCentreX
-                    $clickY = $newCentreY
-                    [FidgetWinEnum]::RightClick($clickX, $clickY)
-                } else {
-                    break
-                }
-            } else {
-                break
-            }
-        }
     } else {
-        [FidgetWinEnum]::RightClick($clickX, $clickY)
+        $clickX = $X
+        $clickY = $Y
     }
-    Start-Sleep -Milliseconds 1200
+    [FidgetWinEnum]::RightClick($clickX, $clickY)
+    Start-Sleep -Milliseconds 300
     $items = @()
-    for ($n = 0; $n -lt 30 -and $items.Count -eq 0; $n++) {
-        Start-Sleep -Milliseconds 200
-        $items = @(Get-PopupMenuItems)
+    $pidArg = if ($ProcessId -gt 0) { $ProcessId } else { 0 }
+    for ($n = 0; $n -lt 32 -and $items.Count -eq 0; $n++) {
+        Start-Sleep -Milliseconds 150
+        $items = @(Get-PopupMenuItems -FidgetPid $pidArg)
     }
-    [FidgetWinEnum]::Escape()
     if ($items.Count -eq 0) {
-        $visibleCount = [FidgetWinEnum]::Visible("#32768").Count
-        $allCount = [FidgetWinEnum]::OfClass("#32768", $false).Count
-        Write-Output ("no menu: {0} visible #32768, {1} in all" -f $visibleCount, $allCount)
-        if ($visibleCount -gt 0) {
-            Write-Error "menu window visible but no items found via UI Automation within 6s"
-        } else {
-            Write-Error "no menu window showed within 6s"
-        }
+        $allMenus = [FidgetWinEnum]::OfClass("#32768", $false)
+        Write-Error ("no menu items found via UIA or Win32; {0} #32768 windows exist" -f $allMenus.Count)
         exit 1
     }
-    $items | ForEach-Object { $_.Current.Name }
+    if ($items[0] -is [string]) {
+        $items | ForEach-Object { Write-Output $_ }
+    } else {
+        $items | ForEach-Object { Write-Output $_.Current.Name }
+    }
+    [FidgetWinEnum]::Escape()
+    $closedDeadline = (Get-Date).AddSeconds(1)
+    while ((Get-Date) -lt $closedDeadline) {
+        $remaining = @(Get-PopupMenuItems -FidgetPid $pidArg)
+        if ($remaining.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 50
+    }
+    Start-Sleep -Milliseconds 500
     exit 0
 }
 
