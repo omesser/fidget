@@ -375,32 +375,36 @@ pub(crate) fn run_frame_loop(
                             let deadline = next_director.min(next_sense);
 
                             thread::sleep(deadline);
-                        }
-                        (scheduler::ScheduleMode::Idle, true) => {
-                            let next_director = lives
-                                .iter()
-                                .filter_map(|live| {
-                                    let remaining =
-                                        live.pace.wait().saturating_sub(live.since_wake);
-                                    if remaining.is_zero() {
-                                        None
-                                    } else {
-                                        Some(remaining)
-                                    }
-                                })
-                                .min()
-                                .unwrap_or(Duration::from_secs(3600));
+                    }
+                    (scheduler::ScheduleMode::Idle, true) => {
+                        let next_director = lives
+                            .iter()
+                            .filter_map(|live| {
+                                let remaining =
+                                    live.pace.wait().saturating_sub(live.since_wake);
+                                if remaining.is_zero() {
+                                    None
+                                } else {
+                                    Some(remaining)
+                                }
+                            })
+                            .min()
+                            .unwrap_or(Duration::from_secs(3600));
 
-                            let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
-                            let deadline = next_director.min(next_sense);
+                        let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                        let deadline = next_director.min(next_sense);
 
-                            let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
-                                deadline.min(Duration::from_millis(100))
-                            } else {
-                                deadline.min(Duration::from_secs(1))
-                            };
-                            thread::sleep(capped);
-                        }
+                        // Visible idle input polling. Cap at 100ms when the cursor is near a
+                        // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
+                        // at 1s to avoid burning CPU waiting for rare events (right-click).
+                        const INFLATE: f64 = 48.0;
+                        let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
+                            deadline.min(Duration::from_millis(100))
+                        } else {
+                            deadline.min(Duration::from_secs(1))
+                        };
+                        thread::sleep(capped);
+                    }
                     }
                 }
             }
@@ -445,8 +449,13 @@ pub(crate) fn run_frame_loop(
             let displays = displays.read();
             let cursor_scale = displays.cursor_scale;
 
-            let cursor_at = (cursor.x / cursor_scale, cursor.y / cursor_scale);
-            last_cursor = Some(cursor_at);
+            // The Engine works in points; undoing the cursor's scale puts it in that space.
+            // Computed once and reused for both hover detection (last_cursor) and hit tests.
+            let cursor_points = fidget_core::engine::Point {
+                x: cursor.x / cursor_scale,
+                y: cursor.y / cursor_scale,
+            };
+            last_cursor = Some((cursor_points.x, cursor_points.y));
 
             ignoring.resize(displays.frames.len(), None);
             last_frame.resize(displays.frames.len(), None);
