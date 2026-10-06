@@ -911,4 +911,70 @@ mod tests {
     fn sign_in_button_win_fails_on_each_broken_assertion() {
         fixture_cases("sign-in-button.win.ps1", &SIGN_IN_GOOD[..3], SIGN_IN_CASES);
     }
+
+    /// `text` with the `nth` frame line after the Poke edited by `edit`, and
+    /// every frame line past `keep` dropped.
+    fn after_poke(text: &str, keep: usize, nth: usize, edit: fn(&str) -> String) -> String {
+        let mut frames = None;
+        text.lines()
+            .filter_map(|line| {
+                if line.starts_with("verbs:") && line.contains("Poke") {
+                    frames = Some(0);
+                    return Some(format!("{line}\n"));
+                }
+                let Some(n) = frames.as_mut().filter(|_| line.starts_with("frame:")) else {
+                    return Some(format!("{line}\n"));
+                };
+                *n += 1;
+                match *n {
+                    n if n > keep => None,
+                    n if n == nth => Some(format!("{}\n", edit(line))),
+                    _ => Some(format!("{line}\n")),
+                }
+            })
+            .collect()
+    }
+
+    const TRACE: &str = "FIDGET_SCENARIO_TRACE";
+
+    #[cfg(unix)]
+    #[test]
+    fn poke_mid_climb_fails_on_each_broken_assertion() {
+        fixture_cases(
+            "poke-mid-climb.sh",
+            &[(TRACE, "fixtures/poke-mid-climb-trace.txt")],
+            &[
+                (
+                    TRACE,
+                    |t| drop_lines(t, "[Poke]"),
+                    "no Poke landed on a climbing sprite",
+                ),
+                (
+                    TRACE,
+                    |t| after_poke(t, usize::MAX, 60, |l| l.replace("Climbing", "Falling")),
+                    "the sprite left the wall during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| after_poke(t, usize::MAX, 60, |l| l.replace("pos(0,864)", "pos(0,860)")),
+                    "the sprite moved during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| t.replace("react#", "climb#"),
+                    "no react on the wall after the Poke",
+                ),
+                (
+                    TRACE,
+                    |t| after_poke(t, usize::MAX, 100, |l| l.replace("climb#0", "climb#3")),
+                    "the sprite climbed in place during the pause",
+                ),
+                (
+                    TRACE,
+                    |t| after_poke(t, 155, 0, str::to_string),
+                    "the sprite did not climb on after the cooldown",
+                ),
+            ],
+        );
+    }
 }

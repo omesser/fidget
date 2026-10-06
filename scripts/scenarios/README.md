@@ -40,6 +40,15 @@ the frame trace logs. It checks that no question cue shows before the Poke, and
 that after it the bubble reads "Question for you in the" with a `chat` link
 button.
 
+`poke-mid-climb.sh` takes only the app binary and runs no Harness. It throws
+the sprite at the outer edge of the leftmost or rightmost display with a real
+drag (`scripts/throw-sprite.swift`), then clicks it until one click lands as a
+Poke while it climbs. From the frame trace, it checks that the sprite stays
+Climbing at one position for the 2.5 s cooldown, plays `react`, holds one
+climb frame, and then climbs on. Set `FIDGET_SCENARIO_TRACE` to a saved trace
+to run only the check, as `fixtures/poke-mid-climb-trace.txt` does in
+`crates/verify`.
+
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness
