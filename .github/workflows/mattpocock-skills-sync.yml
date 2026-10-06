@@ -111,7 +111,8 @@ jobs:
           } > /tmp/mattpocock-pr.md
 
           title="chore(mattpocock): Sync vendored skills to ${AFTER:0:12}"
-          if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
+          # Check for an open PR on this head; `gh pr view` matches merged PRs too.
+          if gh pr list --head "$BRANCH" --state open --json number -q '.[0].number' | grep -q .; then
             gh pr edit "$BRANCH" --title "$title" --body-file /tmp/mattpocock-pr.md
           else
             # No label: docs/agents/triage-labels.md labels issues, not pull
