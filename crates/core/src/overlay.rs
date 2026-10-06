@@ -210,6 +210,17 @@ impl AlphaMask {
         let px = if mirrored { self.width - 1 - px } else { px };
         self.opaque[(py * self.width + px) as usize]
     }
+
+    /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
+    /// with the sprite's top-left anywhere between the `trail` positions.
+    pub fn swept_rects(
+        &self,
+        _trail: &[(i32, i32)],
+        _mirrored: bool,
+        _scale: i32,
+    ) -> Vec<[i32; 4]> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
@@ -294,6 +305,29 @@ mod tests {
         assert!(
             !mask.hit(&sprite, 108, 208, false),
             "one point below the sprite"
+        );
+    }
+
+    /// The renderer draws the sprite anywhere between its placements, and a
+    /// Windows window region clips what is drawn, so each run of ink must
+    /// reach from where it starts to where it ends.
+    #[test]
+    fn swept_rects_cover_the_sprite_drawn_between_placements() {
+        let mask = AlphaMask::from_rows(&["##.#", "...."]);
+
+        assert_eq!(
+            mask.swept_rects(&[(10, 0), (16, 3), (13, 1)], false, 2),
+            vec![[10, 0, 20, 5], [16, 0, 24, 5]],
+        );
+    }
+
+    #[test]
+    fn swept_rects_at_rest_are_the_mirrored_ink() {
+        let mask = AlphaMask::from_rows(&["##.#", ".#.."]);
+
+        assert_eq!(
+            mask.swept_rects(&[(10, 20)], true, 2),
+            vec![[10, 20, 12, 22], [14, 20, 18, 22], [14, 22, 16, 24]],
         );
     }
 
