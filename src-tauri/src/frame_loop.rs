@@ -2449,32 +2449,34 @@ pub(crate) fn run_frame_loop(
                                 ignoring[index] = confirmed_ignoring;
                             }
                         } else {
-                            let mask_params = (None, 0, 0, 1, 1, Vec::new());
+                            let confirmed_ignoring = applied_ignoring
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(None);
 
-                            if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
+                            if confirmed_ignoring != Some(true)
+                                && !toggle_in_flight
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(false)
+                            {
+                                toggle_in_flight.lock().unwrap()[index] = true;
                                 let handle = app.clone();
                                 let label_clone = label.clone();
-                                let last_mask_clone = Arc::clone(&last_mask);
                                 let applied_ignoring_clone = Arc::clone(&applied_ignoring);
-                                let mask_params_clone = mask_params.clone();
+                                let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
                                 let overlay_index = index;
 
                                 let _ = app.run_on_main_thread(move || {
+                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if platform::update_input_region(
-                                            &window,
-                                            None,
-                                            0,
-                                            0,
-                                            1,
-                                            1,
-                                            &[],
-                                            true,
-                                        )
-                                        .is_ok()
+                                        if platform::toggle_click_through_only(&window, true)
+                                            .is_ok()
                                         {
-                                            last_mask_clone.lock().unwrap()[overlay_index] =
-                                                mask_params_clone;
                                             applied_ignoring_clone.lock().unwrap()[overlay_index] =
                                                 Some(true);
                                         }
@@ -2482,44 +2484,38 @@ pub(crate) fn run_frame_loop(
                                 });
                             }
 
-                            let confirmed_ignoring = applied_ignoring
-                                .lock()
-                                .unwrap()
-                                .get(index)
-                                .copied()
-                                .unwrap_or(None);
                             if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                                 flipped = true;
                                 ignoring[index] = Some(true);
                             }
                         }
                     } else {
-                        let mask_params = (None, 0, 0, 1, 1, Vec::new());
+                        let confirmed_ignoring = applied_ignoring
+                            .lock()
+                            .unwrap()
+                            .get(index)
+                            .copied()
+                            .unwrap_or(None);
 
-                        if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
+                        if confirmed_ignoring != Some(true)
+                            && !toggle_in_flight
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(false)
+                        {
+                            toggle_in_flight.lock().unwrap()[index] = true;
                             let handle = app.clone();
                             let label_clone = label.clone();
-                            let last_mask_clone = Arc::clone(&last_mask);
                             let applied_ignoring_clone = Arc::clone(&applied_ignoring);
-                            let mask_params_clone = mask_params.clone();
+                            let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
                             let overlay_index = index;
 
                             let _ = app.run_on_main_thread(move || {
+                                toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    if platform::update_input_region(
-                                        &window,
-                                        None,
-                                        0,
-                                        0,
-                                        1,
-                                        1,
-                                        &[],
-                                        true,
-                                    )
-                                    .is_ok()
-                                    {
-                                        last_mask_clone.lock().unwrap()[overlay_index] =
-                                            mask_params_clone;
+                                    if platform::toggle_click_through_only(&window, true).is_ok() {
                                         applied_ignoring_clone.lock().unwrap()[overlay_index] =
                                             Some(true);
                                     }
@@ -2527,12 +2523,6 @@ pub(crate) fn run_frame_loop(
                             });
                         }
 
-                        let confirmed_ignoring = applied_ignoring
-                            .lock()
-                            .unwrap()
-                            .get(index)
-                            .copied()
-                            .unwrap_or(None);
                         if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                             flipped = true;
                             ignoring[index] = Some(true);

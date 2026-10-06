@@ -22,8 +22,8 @@ use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOREDRAW, SWP_NOSIZE,
-    SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
+    HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOREDRAW,
+    SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE, WS_EX_TRANSPARENT,
 };
 
 /// Float above other windows, non-activating. Capturable unless Presence or
@@ -227,6 +227,7 @@ unsafe fn apply_exstyle(hwnd: HWND, current_style: i32, new_style: i32) -> Resul
         return Err("Failed to set extended window styles".to_string());
     }
     // FRAMECHANGED is what makes the extended-style write take effect.
+    // ASYNCWINDOWPOS prevents deadlock when called during a modal drag loop.
     if SetWindowPos(
         hwnd,
         HWND_TOPMOST,
@@ -234,7 +235,12 @@ unsafe fn apply_exstyle(hwnd: HWND, current_style: i32, new_style: i32) -> Resul
         0,
         0,
         0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOREDRAW,
+        SWP_NOMOVE
+            | SWP_NOSIZE
+            | SWP_NOACTIVATE
+            | SWP_FRAMECHANGED
+            | SWP_NOREDRAW
+            | SWP_ASYNCWINDOWPOS,
     ) == 0
     {
         return Err("Failed to apply overlay extended styles".to_string());
