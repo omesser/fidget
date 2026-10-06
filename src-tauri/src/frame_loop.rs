@@ -375,36 +375,36 @@ pub(crate) fn run_frame_loop(
                             let deadline = next_director.min(next_sense);
 
                             thread::sleep(deadline);
-                    }
-                    (scheduler::ScheduleMode::Idle, true) => {
-                        let next_director = lives
-                            .iter()
-                            .filter_map(|live| {
-                                let remaining =
-                                    live.pace.wait().saturating_sub(live.since_wake);
-                                if remaining.is_zero() {
-                                    None
-                                } else {
-                                    Some(remaining)
-                                }
-                            })
-                            .min()
-                            .unwrap_or(Duration::from_secs(3600));
+                        }
+                        (scheduler::ScheduleMode::Idle, true) => {
+                            let next_director = lives
+                                .iter()
+                                .filter_map(|live| {
+                                    let remaining =
+                                        live.pace.wait().saturating_sub(live.since_wake);
+                                    if remaining.is_zero() {
+                                        None
+                                    } else {
+                                        Some(remaining)
+                                    }
+                                })
+                                .min()
+                                .unwrap_or(Duration::from_secs(3600));
 
-                        let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
-                        let deadline = next_director.min(next_sense);
+                            let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                            let deadline = next_director.min(next_sense);
 
-                        // Visible idle input polling. Cap at 100ms when the cursor is near a
-                        // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
-                        // at 1s to avoid burning CPU waiting for rare events (right-click).
-                        const INFLATE: f64 = 48.0;
-                        let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
-                            deadline.min(Duration::from_millis(100))
-                        } else {
-                            deadline.min(Duration::from_secs(1))
-                        };
-                        thread::sleep(capped);
-                    }
+                            // Visible idle input polling. Cap at 100ms when the cursor is near a
+                            // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
+                            // at 1s to avoid burning CPU waiting for rare events (right-click).
+                            const INFLATE: f64 = 48.0;
+                            let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
+                                deadline.min(Duration::from_millis(100))
+                            } else {
+                                deadline.min(Duration::from_secs(1))
+                            };
+                            thread::sleep(capped);
+                        }
                     }
                 }
             }
@@ -498,12 +498,6 @@ pub(crate) fn run_frame_loop(
             // so a skipped read or slept machine does not slingshot.
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
-
-            // The Engine works in points; undoing the cursor's scale puts it in that space.
-            let cursor_points = fidget_core::engine::Point {
-                x: cursor.x / cursor_scale,
-                y: cursor.y / cursor_scale,
-            };
 
             // Hit-test in shared space, not an overlay's: every overlay is
             // handed the same sprite in its own coordinates, so one answer
