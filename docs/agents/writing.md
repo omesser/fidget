@@ -138,3 +138,7 @@ tells a reader which text an agent wrote and which text is the owner's.
 Sign once, at the end of the body. Owner text stays unsigned. If an agent edits
 a body the owner wrote, leave it unsigned and explain the edit in a signed
 comment.
+
+## A Soft+Hard review gate is a signed comment
+
+`docs/agents/soft-hard-review.md` holds the format for a merge gate.
