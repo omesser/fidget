@@ -47,3 +47,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Summon / chat](./summon-chat.md) — double-click opens Chat for that fidget.
 - [Capturable / hide from captures](./capturable.md) — appear-in-screenshots override via env and Settings.
 - [Quick message](./quick-message.md) — hover composer pill above the sprite (send without opening Chat).
+- [Fullscreen apps](./fullscreen.md) — move to a free display, or fade when every display is fullscreen.
