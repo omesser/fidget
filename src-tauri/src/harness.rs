@@ -3410,7 +3410,7 @@ mod tests {
                         // Answers, then works on with no prompt open, the way
                         // a Claude Code cron fire does: a tool call, a
                         // thought, and an ask the user has to answer.
-                        "between-turn" => {
+                        "between-turn" | "between-turn-held" if prompts == 1 => {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                             // Past the turn's end on Fidget's side, or the
@@ -3429,6 +3429,8 @@ mod tests {
                                 }}),
                             );
                         }
+                        // The next turn waits on the ask held from between turns.
+                        "between-turn-held" => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -5291,6 +5293,32 @@ mod tests {
             "the answer never reached the Harness"
         );
         assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// An ask held from between turns is answered while Fidget's next turn
+    /// runs, so the answer has to reach the Harness from inside that turn.
+    #[test]
+    fn a_held_ask_is_answered_during_a_later_turn() {
+        let (fx, session) = Fixture::new("between-turn-held");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(2)));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        let ask = fx.ask();
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("again")))
+        };
+        assert!(fx.wait_for("prompt", 2), "the second turn never went out");
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
+        let settled = fx
+            .forwarded
+            .try_iter()
+            .find_map(|forwarded| match forwarded {
+                Forwarded::Settled { request, option } => Some((request, option)),
+                _ => None,
+            });
+        assert_eq!(settled, Some((ask.request, Some("allow".to_string()))));
         session.shutdown();
     }
 
