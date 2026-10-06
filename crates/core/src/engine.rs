@@ -643,6 +643,11 @@ impl Engine {
         self
     }
 
+    /// A climber stands still on the wall through the post-Poke cooldown and while its feet are held, as a walker does on the floor.
+    fn climb_paused(&self) -> bool {
+        self.state == State::Climbing && (self.poke_cooldown_ms > 0 || self.feet_held)
+    }
+
     /// How far below a display's usable top the feet may be put down.
     fn ceiling_clearance(&self) -> f64 {
         self.sprite_height
@@ -1171,11 +1176,10 @@ impl Engine {
         // `land` needs no such clause: a second arrival comes through a fall, which is a change of name.
         // Everything else keeps its clock across Primitive turns, because restarting each turn would draw the first 600ms of the strip and never the rest.
         let startled = self.on_screen() == Some(Primitive::React);
-        // A climb paused by a Poke keeps one pose: the strip's clock would otherwise climb in place.
-        let paused_climb = self.state == State::Climbing && self.poke_cooldown_ms > 0;
+        // A paused climb keeps one pose: the strip's clock would otherwise climb in place.
         if new_family || (started && startled) {
             self.animation_ms = 0;
-        } else if !(paused_climb && animation == "climb") {
+        } else if !(self.climb_paused() && animation == "climb") {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         }
 
@@ -1276,7 +1280,7 @@ impl Engine {
                 }
             }
             State::Climbing => {
-                let speed = if self.poke_cooldown_ms > 0 {
+                let speed = if self.climb_paused() {
                     0.0
                 } else {
                     CLIMB_SPEED
