@@ -21,6 +21,7 @@ PSTACK_META=.agents/pstack/UPSTREAM.json
 # line. It drives both the skip and the lock file's `excluded` block. Reasons
 # go into JSON verbatim, so no double quotes.
 EXCLUDED='ask-matt|Policy. A router over the whole upstream set, including the four groups this repository does not vendor, so most of what it offers is not here. docs/agents/picking-work.md decides what to work on.
+resolving-merge-conflicts|Dropped upstream but kept here. Upstream removed it in favor of built-in conflict resolution, but this repository still uses it. Now repo-maintained.
 setup-matt-pocock-skills|Already run here, and a re-run only does damage. It scaffolds docs/agents/issue-tracker.md, docs/agents/triage-labels.md and docs/agents/domain.md plus the Agent skills block in AGENTS.md; all four exist and have been hand-edited since. Its step 4 also prefers CLAUDE.md, which here only points at AGENTS.md, so a re-run would write a second Agent skills block into the file that does nothing else. See docs/agents/vendored-skills.md.'
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/sync-exclusions.sh"

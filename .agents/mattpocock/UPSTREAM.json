@@ -11,6 +11,7 @@
   "_excluded": "Names upstream ships under the subpath that this sync deliberately does not vendor. Generated from EXCLUDED in scripts/sync-mattpocock.sh.",
   "excluded": {
     "ask-matt": "Policy. A router over the whole upstream set, including the four groups this repository does not vendor, so most of what it offers is not here. docs/agents/picking-work.md decides what to work on.",
+    "resolving-merge-conflicts": "Dropped upstream but kept here. Upstream removed it in favor of built-in conflict resolution, but this repository still uses it. Now repo-maintained.",
     "setup-matt-pocock-skills": "Already run here, and a re-run only does damage. It scaffolds docs/agents/issue-tracker.md, docs/agents/triage-labels.md and docs/agents/domain.md plus the Agent skills block in AGENTS.md; all four exist and have been hand-edited since. Its step 4 also prefers CLAUDE.md, which here only points at AGENTS.md, so a re-run would write a second Agent skills block into the file that does nothing else. See docs/agents/vendored-skills.md."
   },
   "_skills": "The skill directories under .agents/skills this file owns. Anything else there belongs to pstack or to this repository and is never touched by this sync.",
@@ -26,7 +27,6 @@
     "pr",
     "prototype",
     "research",
-    "resolving-merge-conflicts",
     "retro",
     "tdd",
     "to-spec",

@@ -19,7 +19,6 @@ default. Apply one when the user names it, by reading
 - `pr` — Use when writing a PR body.
 - `prototype` — Build a throwaway prototype to answer a design question. Use when the user wants to sanity-check whether a state model or logic feels right, or explore what a UI should look like.
 - `research` — Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated to a background agent.
-- `resolving-merge-conflicts` — Use when you need to resolve an in-progress git merge/rebase conflict.
 - `retro` — Conduct a retrospective on a coding session.
 - `tdd` — Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
 - `to-spec` — Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed.
