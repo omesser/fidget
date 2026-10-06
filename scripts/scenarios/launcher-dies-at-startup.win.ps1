@@ -127,26 +127,7 @@ if ($axFailed -or $ax420 -or $ax320 -or $axLive) {
     exit 0
 }
 
-function Get-ShortPath([string]$Path) {
-    $code = @"
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern uint GetShortPathName(string lpszLongPath, System.Text.StringBuilder lpszShortPath, uint cchBuffer);
-"@
-    $kernel32 = Add-Type -MemberDefinition $code -Name "Kernel32" -Namespace "Win32" -PassThru -ErrorAction SilentlyContinue
-    $buffer = New-Object System.Text.StringBuilder 260
-    $result = $kernel32::GetShortPathName($Path, $buffer, $buffer.Capacity)
-    if ($result -gt 0) { return $buffer.ToString() }
-    return $Path
-}
-
-$bashPath = $null
-$gitBash = "C:\Program Files\Git\bin\bash.exe"
-if (Test-Path -LiteralPath $gitBash -PathType Leaf) {
-    $bashPath = Get-ShortPath $gitBash
-} else {
-    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
-    if ($bashCmd) { $bashPath = Get-ShortPath $bashCmd.Path }
-}
+. (Join-Path $PSScriptRoot "bash-setup-win.ps1")
 if (-not $bashPath) {
     [Console]::Error.WriteLine("SKIP: bash not found (tried Git Bash, then PATH)")
     exit 2
