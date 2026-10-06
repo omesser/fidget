@@ -1246,27 +1246,17 @@ async fn serve(
     cancel_forms(&mut forms, on_event);
 }
 
-/// ACP v1 says nothing when a turn the Harness started is over, so its
-/// Thinking row ends when Fidget prompts or closes that session.
+/// ACP v1 says nothing when a turn the Harness started is over. Flush any
+/// accumulated between-turn speech and close open thinking when Fidget prompts
+/// or closes that session.
 fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_event: &OnEvent) {
-    if inbound
-        .remove(id)
-        .is_some_and(|held| !held.thought.is_empty())
-    {
-        on_event(Event::Thought {
-            session: id.0.to_string(),
-            text: String::new(),
-        });
-    }
+    flush_inbound(id, inbound, on_event);
 }
 
 /// One message with no `session/prompt` open, held as a turn would hold it.
 /// `signing_in` is whether Fidget's own `authenticate` is in flight.
-/// 
-/// Between-turn `session/update`s accumulate in `Inbound`. When a between-turn
-/// ask or form arrives, flush any accumulated agent text as an inbound wake,
-/// making the speech visible and participating in Director pacing. This boundary
-/// gives each Harness fire a coherent wake without inventing protocol.
+///
+/// Between-turn updates accumulate in `Inbound`; flushes emit inbound wakes.
 fn between_turns(
     message: Incoming,
     forms: &mut Vec<PendingElicit>,

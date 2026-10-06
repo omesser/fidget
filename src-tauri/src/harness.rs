@@ -5347,19 +5347,55 @@ mod tests {
     }
 
     /// A closed session's thought from between turns has ended, so its
-    /// Thinking row closes with it.
+    /// Thinking row closes with it. Speech accumulated between turns is
+    /// emitted as an inbound wake before the close.
     #[test]
     fn closing_a_session_ends_its_thought_from_between_turns() {
         let (fx, session) = Fixture::new("between-turn");
         assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
-        fx.ask();
+        thread::sleep(Duration::from_millis(400));
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
-        let ended = fx.forwarded.try_iter().any(|forwarded| {
-            matches!(forwarded, Forwarded::Thought { instance, line } if instance == "buddy-1" && line.is_empty())
-        });
-        assert!(ended, "the Thinking row stayed open after close");
+        let mut speech_seen = false;
+        let mut thought_ended = false;
+        for forwarded in fx.forwarded.try_iter() {
+            match forwarded {
+                Forwarded::InboundWake { instance, speech } if instance == "buddy-1" => {
+                    assert_eq!(speech, "Your reminder: time to stretch!");
+                    speech_seen = true;
+                }
+                Forwarded::Thought { instance, line } if instance == "buddy-1" && line.is_empty() => {
+                    thought_ended = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(speech_seen, "between-turn speech was dropped on close");
+        assert!(thought_ended, "the Thinking row stayed open after close");
         session.shutdown();
+    }
+
+    /// Prompting again before between-turn ask arrives still emits the
+    /// accumulated speech as an inbound wake, not drops it.
+    #[test]
+    fn prompting_before_between_turn_ask_flushes_speech() {
+        let (fx, session) = Fixture::new("between-turn");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        thread::sleep(Duration::from_millis(400));
+        let worker = thread::spawn(move || session.complete(&asking("again")));
+        let mut speech_seen = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !speech_seen && std::time::Instant::now() < deadline {
+            match fx.forwarded.try_recv() {
+                Ok(Forwarded::InboundWake { instance, speech }) if instance == "buddy-1" => {
+                    assert_eq!(speech, "Your reminder: time to stretch!");
+                    speech_seen = true;
+                }
+                _ => thread::sleep(Duration::from_millis(10)),
+            }
+        }
+        assert!(speech_seen, "between-turn speech was dropped when prompting again");
+        drop(worker);
     }
 
     /// `session/load` replays the conversation as updates before it answers,
