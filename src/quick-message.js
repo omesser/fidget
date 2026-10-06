@@ -1,7 +1,6 @@
 // Hover-to-compose above a Character. The overlay owns the DOM; this decides
 // when the composer is up and whether a press still belongs to the pet.
 
-import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
 
 export const CONNECT_PROMPT = "Connect an AI to talk to me";
