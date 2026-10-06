@@ -227,6 +227,7 @@ unsafe fn apply_exstyle(hwnd: HWND, current_style: i32, new_style: i32) -> Resul
         return Err("Failed to set extended window styles".to_string());
     }
     // FRAMECHANGED is what makes the extended-style write take effect.
+    // ASYNCWINDOWPOS prevents deadlock when called during a modal drag loop.
     if SetWindowPos(
         hwnd,
         HWND_TOPMOST,
