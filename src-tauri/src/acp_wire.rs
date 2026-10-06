@@ -1195,17 +1195,7 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
-                // ACP v1 says nothing when a turn the Harness started is
-                // over, so its Thinking row ends when Fidget's next one starts.
-                if inbound
-                    .remove(&id)
-                    .is_some_and(|held| !held.thought.is_empty())
-                {
-                    on_event(Event::Thought {
-                        session: id.0.to_string(),
-                        text: String::new(),
-                    });
-                }
+                end_inbound(&mut inbound, &id, on_event);
                 let serving = Serving {
                     rx: &mut rx,
                     incoming: &mut incoming,
@@ -1220,8 +1210,10 @@ async fn serve(
                 }
             }
             Step::Command(Msg::Close { session_id, reply }) => {
+                let id = SessionId::new(session_id);
+                end_inbound(&mut inbound, &id, on_event);
                 let outcome = cx
-                    .send_request(CloseSessionRequest::new(session_id))
+                    .send_request(CloseSessionRequest::new(id))
                     .block_task()
                     .await;
                 let _ = reply.send(match outcome {
@@ -1245,6 +1237,20 @@ async fn serve(
     }
     cancel_asks(&mut asks, on_event);
     cancel_forms(&mut forms, on_event);
+}
+
+/// ACP v1 says nothing when a turn the Harness started is over, so its
+/// Thinking row ends when Fidget prompts or closes that session.
+fn end_inbound(inbound: &mut HashMap<SessionId, Inbound>, id: &SessionId, on_event: &OnEvent) {
+    if inbound
+        .remove(id)
+        .is_some_and(|held| !held.thought.is_empty())
+    {
+        on_event(Event::Thought {
+            session: id.0.to_string(),
+            text: String::new(),
+        });
+    }
 }
 
 /// One message with no `session/prompt` open, held as a turn would hold it.

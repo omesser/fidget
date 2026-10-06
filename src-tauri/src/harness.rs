@@ -5322,6 +5322,22 @@ mod tests {
         session.shutdown();
     }
 
+    /// A closed session's thought from between turns has ended, so its
+    /// Thinking row closes with it.
+    #[test]
+    fn closing_a_session_ends_its_thought_from_between_turns() {
+        let (fx, session) = Fixture::new("between-turn");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        fx.ask();
+        let wire = session.current_wire().expect("attached");
+        assert_eq!(wire.close("fresh-id"), Ok(()));
+        let ended = fx.forwarded.try_iter().any(|forwarded| {
+            matches!(forwarded, Forwarded::Thought { instance, line } if instance == "buddy-1" && line.is_empty())
+        });
+        assert!(ended, "the Thinking row stayed open after close");
+        session.shutdown();
+    }
+
     /// `session/load` replays the conversation as updates before it answers,
     /// and a load that fails after replaying falls back to `session/new`.
     /// Both are history, not a Harness working between turns.
