@@ -486,7 +486,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::time::Duration;
 
     use fidget_core::character::{self, Character};
     use fidget_core::director::{Context, StaticDirector};

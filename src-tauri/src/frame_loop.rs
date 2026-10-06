@@ -168,7 +168,7 @@ pub(crate) fn run_frame_loop(
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
         // the same answer bought several times.
-        let mut free_tier = DesktopSense::default();
+        let mut desktop_sense = DesktopSense::default();
         let activity_source = platform::activity_source();
         let mut since_sense = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;

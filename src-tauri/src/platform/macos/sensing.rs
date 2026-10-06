@@ -1,4 +1,4 @@
-//! The Free tier on macOS, without consent.
+//! Desktop sensing on macOS, without permission prompts.
 //!
 //! Three APIs, chosen because none is gated by TCC:
 //!
@@ -91,7 +91,7 @@ mod tests {
     ///     sensing -- --ignored --nocapture
     /// ```
     ///
-    /// It prints the Free tier once a second for ten seconds. Switch
+    /// It prints a desktop sense read once a second for ten seconds. Switch
     /// application while it runs and watch the name follow and `switched`
     /// appear on exactly that read; then take your hands off the keyboard and
     /// watch idle climb, and touch it again to watch idle drop back. What no

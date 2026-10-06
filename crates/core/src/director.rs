@@ -1785,7 +1785,7 @@ mod tests {
         }
     }
 
-    /// The prompt must include every Free-tier field. Settings shows this string.
+    /// The prompt must include every desktop sensing field. Settings shows this string.
     #[test]
     fn the_character_prompt_is_the_payload_the_model_is_sent() {
         let moment = Context {
