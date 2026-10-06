@@ -2955,6 +2955,15 @@ mod tests {
         );
     }
 
+    fn tool_call(session: &str, title: &str) {
+        say(
+            json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                "sessionId": session,
+                "update": {"sessionUpdate": "tool_call", "toolCallId": title, "title": title, "kind": "other", "status": "completed"},
+            }}),
+        );
+    }
+
     /// codex-acp's MCP startup shape: a session-scoped link, unprompted.
     /// `mcp-link` sends it right after `session/new`, and `mcp-link-turn`
     /// inside the first turn, which is where a slow MCP server's lands.
@@ -3180,6 +3189,15 @@ mod tests {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
                     } else {
+                        // ACP replays the whole conversation as updates
+                        // before it answers `session/load`.
+                        if script == "load-replay" {
+                            let loaded = message
+                                .pointer("/params/sessionId")
+                                .and_then(Value::as_str)
+                                .unwrap_or("");
+                            tool_call(loaded, "replayed");
+                        }
                         let mut result = json!({});
                         if let Some(options) = completer_config_options(script) {
                             result["configOptions"] = options;
@@ -3389,6 +3407,28 @@ mod tests {
                             }
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
+                        }
+                        // Answers, then works on with no prompt open, the way
+                        // a Claude Code cron fire does: a tool call, a
+                        // thought, and an ask the user has to answer.
+                        "between-turn" => {
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                            // Past the turn's end on Fidget's side, or the
+                            // turn reads these as its own on the way out.
+                            thread::sleep(Duration::from_millis(300));
+                            tool_call(&session, "cron fired");
+                            thought(&session, "between turns");
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": &session,
+                                    "toolCall": {"toolCallId": "t2", "title": "Remind the user", "kind": "other"},
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
                         }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
@@ -5216,6 +5256,58 @@ mod tests {
         // Every other open window has to retire the row this one answered,
         // and draw the option that actually won rather than its own click.
         assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// A Harness that works on after its turn ends, as a cron fire does. Its
+    /// tool call reaches the Action Log, its thought reaches the Instance's
+    /// Thinking row, and its ask reaches Chat and is answered.
+    #[test]
+    fn work_between_turns_reaches_the_user_and_its_ask_is_answered() {
+        let (fx, session) = Fixture::new("between-turn");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        let mut thoughts = Vec::new();
+        let ask = loop {
+            match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Forwarded::Ask(ask)) => break ask,
+                Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
+                Ok(_) => {}
+                Err(_) => panic!("the between-turn ask never reached Chat"),
+            }
+        };
+        assert_eq!(ask.title.as_deref(), Some("Remind the user"));
+        assert!(
+            thoughts.contains(&("buddy-1".to_string(), "between turns".to_string())),
+            "{thoughts:?}"
+        );
+        let titles: Vec<Value> = fx
+            .events("tool_call")
+            .iter()
+            .map(|line| line["title"].clone())
+            .collect();
+        assert_eq!(titles, [json!("cron fired")]);
+        session.answer_permission(&ask.request, "allow");
+        assert!(
+            fx.wait_for("perm:selected", 1),
+            "the answer never reached the Harness"
+        );
+        assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    /// `session/load` replays the conversation as updates before it answers.
+    /// That is history, not a Harness working between turns.
+    #[test]
+    fn a_loaded_sessions_replay_is_not_work_between_turns() {
+        let (fx, session) = Fixture::new("load-replay");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.events("tool_call"), Vec::<Value>::new());
         session.shutdown();
     }
 
