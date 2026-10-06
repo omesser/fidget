@@ -9,7 +9,7 @@ Hovering the sprite for about 1.5 seconds opens a composer pill above the Charac
 - `qm-auto-hide` after ~3s continuous away from both sprite and pill, an empty pill hides; re-entering either resets the timer.
 - `qm-bubble-yield` while Speech or a thinking bubble is up, an empty pill the pointer left hides after ~1s instead of 3s (#1298).
 - `qm-connect` when no AI can answer yet, the pill shows a connect prompt and an **Open chat** control that opens Chat (not a Summon verb).
-- `qm-freeze` while the pill is visible (or the caret is in it), resting stroll / chase locomotion freezes for that Instance.
+- `qm-freeze` while the pill is visible (or the caret is in it), resting stroll / chase locomotion freezes for that Instance, and a climber holds on the wall (#1366).
 - `qm-chat-suppress` while Chat is open for that Instance, hover does not open the pill; after Chat closes, leave the sprite and hover again to open it.
 
 ## How to get to it (user POV)

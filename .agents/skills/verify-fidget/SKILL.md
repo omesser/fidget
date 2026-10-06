@@ -93,7 +93,7 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | e2e scenario | `cargo run -p fidget-verify -- scenario <name>` prints this host's takeover header; `--go` runs `scripts/scenarios/<name>.sh` (macOS), `<name>.x11.sh`, or `<name>.win.ps1` after the owner's go-ahead (`scripts/scenarios/README.md`) |
 | Windows overlay | `.agents/skills/verify-fidget/helpers/drive-overlay-win.ps1` |
 | Windows Settings | `scripts/verify-settings-webview-phase2-win.ps1` (copy `$Out` into evidence after) |
-| Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (Settings currently stacks below overlay, tracked in #1337) |
+| Linux Settings z-order | `xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh` (exit `0`: Settings stacks above the overlay in the ABOVE band, #1344) |
 | Harness ACP (no sprite) | `FIDGET_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
 | Settings keyboard checks on fixtures | `scripts/test_verify_settings_keyboard.sh` (no app, no Accessibility) |
@@ -101,10 +101,13 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | macOS Settings select | `scripts/verify-settings-webview-select-macos.sh` |
 | macOS Settings clipboard | `scripts/verify-settings-webview-clipboard-macos.sh` |
 | Core + renderer units | `.agents/skills/verify-fidget/helpers/doctor.sh --units` |
+| Read or move the sprite (any OS) | Launch with `FIDGET_DEBUG_IPC=1`, then `target/debug/fidget-verify snapshot` prints `position: (x, y)` and `state: Grounded` (or another state). `target/debug/fidget-verify place --x 300 --y 720` stands every Instance there and prints `placed: (300, 720)` |
 
-Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`), X11 WM_CLASS `Fidget`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.
+Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`, `presence: hidden`/`presence: shown`), `fidget-verify snapshot` output, X11 WM_CLASS `Fidget`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.
 
 `fidget-verify` exits `0` pass, `1` fail, `2` skip (nothing provable on this host), `3` tool error, and `--json` puts one result object on stdout — the contract is `crates/verify/src/contract.rs`.
+
+`place` and `snapshot` talk to the running app through `~/.fidget-debug-cmd` and `~/.fidget-debug-result`, so they reach whichever instance shares that `HOME`. Without `FIDGET_DEBUG_IPC=1` on the app they wait 5 s and exit `3` (`timeout waiting for fidget to respond`). Run the app with a private `HOME` (for example `HOME=$FIDGET_VERIFY_ROOT/home`) when another agent may run fidget on the same machine. `poke` and `summon` skip outside macOS.
 
 ## Evidence
 
