@@ -465,10 +465,7 @@ fn timed_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let suppress_window = !cfg!(windows) || program != "bash";
-    if suppress_window {
-        without_console_window(&mut command);
-    }
+    without_console_window(&mut command);
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -503,12 +500,6 @@ fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
 fn windows_program(program: &str, path_override: Option<&Path>) -> Option<OsString> {
     if program.contains(['/', '\\']) {
         return None;
-    }
-    if program == "bash" && path_override.is_none() {
-        let git_bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
-        if git_bash.is_file() {
-            return Some(git_bash.into_os_string());
-        }
     }
     let dirs: Vec<PathBuf> = match path_override {
         Some(dir) => vec![dir.to_path_buf()],

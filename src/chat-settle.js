@@ -14,7 +14,6 @@ const PREEMPTED_BY = {
   summoned: "You summoned me",
   grabbed: "You picked me up",
   perched: "I perched",
-  menu: "You opened my menu",
   proactive: "My next thought started",
 };
 
