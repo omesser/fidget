@@ -1301,6 +1301,7 @@ name = "fidget-verify"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "fidget-core",
  "serde_json",
  "tempfile",
 ]

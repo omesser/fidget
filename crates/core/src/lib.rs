@@ -3,6 +3,7 @@
 //! to the outside world are declared here as traits and implemented in the shell.
 
 pub mod character;
+pub mod debug;
 pub mod director;
 pub mod dispatch;
 pub mod display;

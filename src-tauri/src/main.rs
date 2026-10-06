@@ -31,6 +31,7 @@ mod chat_surface;
 mod completer;
 mod consent;
 mod cursor_mcp;
+mod debug;
 mod dev_flags;
 mod frame_loop;
 mod harness;
@@ -303,6 +304,7 @@ struct InstanceState {
     happened_last: Option<&'static str>,
     since_state: Duration,
     last_state: Option<State>,
+    last_position: Point,
     addressed: bool,
     happened: Happened,
     pointer: Pointer,
@@ -3512,6 +3514,7 @@ fn spawn_live(
         since_proactive: Duration::ZERO,
         previous_idle: Duration::MAX,
         last_state: None,
+        last_position: start,
         addressed: false,
         happened: Happened::Proactive,
         chat_turn: false,
@@ -3790,6 +3793,7 @@ fn spawn_instances(
             since_proactive: Duration::ZERO,
             previous_idle: Duration::MAX,
             last_state: None,
+            last_position: positions[index],
             addressed: false,
             happened: Happened::Proactive,
             chat_turn: false,
