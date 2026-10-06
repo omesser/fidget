@@ -397,7 +397,6 @@ pub(crate) fn run_frame_loop(
                             // Visible idle input polling. Cap at 100ms when the cursor is near a
                             // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
                             // at 1s to avoid burning CPU waiting for rare events (right-click).
-                            const INFLATE: f64 = 48.0;
                             let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
                                 deadline.min(Duration::from_millis(100))
                             } else {

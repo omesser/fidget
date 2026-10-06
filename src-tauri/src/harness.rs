@@ -5417,13 +5417,12 @@ mod tests {
             Grab,
             Perch,
             Chat("and another thing".into()),
-            Menu,
             Proactive,
         ];
         // No wildcard, so a new variant does not compile until it is listed above.
         for happened in &every {
             match happened {
-                Poke | Throw | Summon | Grab | Perch | Chat(_) | Menu | Proactive => {}
+                Poke | Throw | Summon | Grab | Perch | Chat(_) | Proactive => {}
             }
         }
         for happened in every {
