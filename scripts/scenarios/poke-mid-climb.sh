@@ -53,7 +53,8 @@ else
   [ "$tools/click-cursor" -nt "$root/scripts/click-cursor.swift" ] || swiftc -O "$root/scripts/click-cursor.swift" -o "$tools/click-cursor"
   [ "$tools/throw-sprite" -nt "$root/scripts/throw-sprite.swift" ] || swiftc -O "$root/scripts/throw-sprite.swift" -o "$tools/throw-sprite"
 
-  env HOME="$out/home" FIDGET_DIRECTOR_API_KEY=x FIDGET_TRACE_FRAMES=1 "$bin" > "$log" 2>&1 &
+  env HOME="$out/home" FIDGET_DIRECTOR_API_KEY=x FIDGET_TRACE_FRAMES=1 \
+    FIDGET_CHARACTERS="$root/characters" "$bin" > "$log" 2>&1 &
   pid=$!
   trap 'kill "$pid" 2> /dev/null || true' EXIT
 
