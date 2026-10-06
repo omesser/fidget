@@ -257,6 +257,41 @@ Session handling:
 - † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose`, `copilot` and `antigravity` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](#how-cursor-agent-is-reached)). `opencode`, `grok`, `copilot` and `antigravity` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
+### Inbound Wake Contract
+
+A Harness can work between Fidget's `session/prompt` calls: Claude Code `/loop` and `CronCreate` fires, Hermes scheduled reminders, and any background agent output arrive as ACP `session/update` notifications while no Fidget turn is open. This is an **inbound wake** — the Harness starting a turn on the one session rather than answering one Fidget asked for (ADR-0008).
+
+#### What counts as inbound wake
+
+Between-turn `session/update` carrying agent text, thought, or tool activity the user should see. Not history: a loaded session's replay before `session/load` answers is discarded (#1370). Not attribution metadata: usage and latency stay internal.
+
+#### Interaction with ADR-0008 (one session)
+
+Inbound wakes are still the one Director session per Character Instance. A Harness fire is a turn the Harness started in the same conversation Fidget prompts, not a second session. ADR-0008's wake policy applies: inbound wakes are neither reactive (user-addressed) nor proactive (Fidget's exponential backoff), but they trigger a reactive wake, so Pace is reset and the next proactive wake is pushed out.
+
+#### Visibility
+
+- **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row labeled "inbound wake" when a flush boundary arrives.
+- **Bubble and Behaviors.** The inbound wake sets `addressed = true` on the Instance, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows `addressed`.
+- **Director wake and Pace participation.** An inbound wake behaves like a reactive wake: it sets `addressed = true`, marks `happened = Happened::Proactive`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
+
+#### Flush boundaries
+
+ACP v1 has no end-of-turn notification from the Harness, so accumulated between-turn agent text and thought are flushed when a session transition arrives. The flush boundaries are (#1383):
+
+- **Ask.** A between-turn `session/request_permission` flushes the session's accumulated `Inbound` before the ask is held, giving each Harness fire a coherent wake. The Thinking row is closed (empty thought event) if one was open.
+- **Form.** A between-turn `elicitation/create` with session scope flushes the same way.
+- **Prompt.** A Fidget `session/prompt` flushes and drops the session's `Inbound`, ending its Thinking row if open. The Harness's own turn is over; Fidget's turn begins.
+- **Close.** A Fidget `session/close` flushes and drops the `Inbound` the same way Prompt does.
+
+Multiple Harness fires before Fidget's next prompt previously piled into one undifferentiated accumulator; flushing on each ask or form boundary fixes that (ponytail fix, #1383).
+
+#### Out of scope
+
+- **Attribution gaps.** Between-turn asks are attributed to whichever Instance is mid-turn, not the Instance whose session asked. A Fidget turn treats an update for another session as its own. Both require per-session tracking.
+- **Live Harness scheduled-fire prove.** Unit and fake-ACP proof shipped (#1370, #1383); proving with a real Harness cron is optional follow-on.
+- **Memory scheduling.** Harness cron is session-scoped, jittery, and not portable across Directors. A systematic parse-and-act path for reminders committed to Memory (due-at / remind facts) is future work and does not block this contract.
+
 ### Setting up `pi`
 
 Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; Finder-launched builds inherit launchd's `PATH`, as with every `npx` row. An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`.
