@@ -213,13 +213,48 @@ impl AlphaMask {
 
     /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
     /// with the sprite's top-left anywhere between the `trail` positions.
-    pub fn swept_rects(
-        &self,
-        _trail: &[(i32, i32)],
-        _mirrored: bool,
-        _scale: i32,
-    ) -> Vec<[i32; 4]> {
-        Vec::new()
+    /// One rectangle per horizontal run of ink, stretched over the trail's bounds.
+    pub fn swept_rects(&self, trail: &[(i32, i32)], mirrored: bool, scale: i32) -> Vec<[i32; 4]> {
+        let Some(&(first_x, first_y)) = trail.first() else {
+            return Vec::new();
+        };
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (first_x, first_y, first_x, first_y);
+        for &(x, y) in trail {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+
+        let mut rects = Vec::new();
+        for row in 0..self.height {
+            let drawn = |column: i32| {
+                let px = if mirrored {
+                    self.width - 1 - column
+                } else {
+                    column
+                };
+                self.opaque[(row * self.width + px) as usize]
+            };
+            let mut column = 0;
+            while column < self.width {
+                if !drawn(column) {
+                    column += 1;
+                    continue;
+                }
+                let start = column;
+                while column < self.width && drawn(column) {
+                    column += 1;
+                }
+                rects.push([
+                    min_x + start * scale,
+                    min_y + row * scale,
+                    max_x + column * scale,
+                    max_y + (row + 1) * scale,
+                ]);
+            }
+        }
+        rects
     }
 }
 
