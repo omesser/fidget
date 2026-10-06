@@ -8,7 +8,7 @@ use fidget_core::director::{self, Context, Happened, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::engine::{refuge_landings, BehaviorProposal, State, Verb};
+use fidget_core::engine::{bring_off_fullscreen, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
@@ -1331,7 +1331,7 @@ pub(crate) fn run_frame_loop(
                     .map(|live| (live.id.clone(), sprite_width(&live.character)))
                     .collect();
                 stand_roster(&mut roster, &widths, |feet, widths| {
-                    refuge_landings(
+                    bring_off_fullscreen(
                         feet,
                         widths,
                         &displays.frames,

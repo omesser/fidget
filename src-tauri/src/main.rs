@@ -5613,8 +5613,8 @@ mod tests {
         };
         let held = roster.spawn(&character, "Held".to_string(), held_at);
         let widths = [(free.clone(), 128.0)];
-        let to_refuge = |feet: &[Point], widths: &[f64]| {
-            fidget_core::engine::refuge_landings(
+        let bring_off = |feet: &[Point], widths: &[f64]| {
+            fidget_core::engine::bring_off_fullscreen(
                 feet,
                 widths,
                 &[PRIMARY, SECOND],
@@ -5625,8 +5625,8 @@ mod tests {
             )
         };
 
-        stand_roster(&mut roster, &widths, to_refuge);
-        stand_roster(&mut roster, &widths, to_refuge);
+        stand_roster(&mut roster, &widths, bring_off);
+        stand_roster(&mut roster, &widths, bring_off);
 
         assert_eq!(
             roster.get(&free).expect("free").feet(),

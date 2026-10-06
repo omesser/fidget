@@ -482,10 +482,10 @@ pub fn bring_landings(
     Some(landings)
 }
 
-/// Where each sprite on a fullscreen display lands on the refuge instead.
+/// Where each sprite on a fullscreen display teleports to the first free display.
 /// `desktop.fullscreen` shares `monitors`' indexes. Everyone else stays put, so
-/// a sprite already moved plans nothing next time; with no refuge, nobody moves.
-pub fn refuge_landings(
+/// a sprite already moved plans nothing next time; when every display is taken, nobody moves.
+pub fn bring_off_fullscreen(
     feet: &[Point],
     widths: &[f64],
     monitors: &[Rect],
@@ -493,7 +493,7 @@ pub fn refuge_landings(
     desktop: &Desktop,
 ) -> Vec<Option<Point>> {
     let mut landings = vec![None; feet.len()];
-    let Some(refuge) = desktop.refuge().and_then(|index| monitors.get(index)) else {
+    let Some(target) = desktop.first_free_display().and_then(|index| monitors.get(index)) else {
         return landings;
     };
     let stranded = |at: &Point| {
@@ -502,13 +502,13 @@ pub fn refuge_landings(
             .zip(&desktop.fullscreen)
             .any(|(monitor, &taken)| taken && stands_on((at.x, at.y), monitor))
     };
-    // A Bring to the refuge, among only the stranded and those already there:
-    // they are the arrivals and the stayers it lays out. Anyone on another
+    // Bring to the first free display, among only the stranded and those already there.
+    // They are the arrivals and the stayers it lays out. Anyone on another
     // free display is not in it, so is not swept along.
     let picked: Vec<usize> = (0..feet.len())
         .filter(|&index| {
             let at = &feet[index];
-            stranded(at) || stands_on((at.x, at.y), refuge)
+            stranded(at) || stands_on((at.x, at.y), target)
         })
         .collect();
     let picked_feet: Vec<Point> = picked.iter().map(|&index| feet[index]).collect();
@@ -517,8 +517,8 @@ pub fn refuge_landings(
         .map(|&index| widths.get(index).copied().unwrap_or(0.0))
         .collect();
     let centre = Point {
-        x: refuge.x + refuge.width / 2.0,
-        y: refuge.y + refuge.height / 2.0,
+        x: target.x + target.width / 2.0,
+        y: target.y + target.height / 2.0,
     };
     if let Some(planned) = bring_landings(&picked_feet, &picked_widths, monitors, floors, centre) {
         for (index, landing) in picked.into_iter().zip(planned) {
@@ -7309,7 +7309,7 @@ mod tests {
     /// middle of the free primary floor; the one already on the primary, and
     /// the one on a third display nobody took, stay where they are.
     #[test]
-    fn refuge_landings_moves_only_the_sprites_on_a_fullscreen_display() {
+    fn bring_off_fullscreen_moves_only_the_sprites_on_a_fullscreen_display() {
         let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
         let second = monitor(1920.0, 0.0, 1512.0, 982.0);
         let third = monitor(-1920.0, 0.0, 1920.0, 1080.0);
@@ -7330,7 +7330,7 @@ mod tests {
         ];
 
         assert_eq!(
-            refuge_landings(
+            bring_off_fullscreen(
                 &feet,
                 &[128.0, 128.0, 128.0],
                 &monitors,
@@ -7353,12 +7353,12 @@ mod tests {
     /// Nobody stands on the fullscreen display, so nobody moves. This is what
     /// makes the shell's every-tick call settle after the first move.
     #[test]
-    fn refuge_landings_leaves_a_sprite_already_on_a_free_display() {
+    fn bring_off_fullscreen_leaves_a_sprite_already_on_a_free_display() {
         let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
         let second = monitor(1920.0, 0.0, 1512.0, 982.0);
 
         assert_eq!(
-            refuge_landings(
+            bring_off_fullscreen(
                 &[Point {
                     x: 960.0,
                     y: 1080.0,
@@ -7377,12 +7377,12 @@ mod tests {
     /// Every display taken: there is nowhere to go, so nobody moves, and the
     /// Character fades instead.
     #[test]
-    fn refuge_landings_moves_nobody_when_every_display_is_taken() {
+    fn bring_off_fullscreen_moves_nobody_when_every_display_is_taken() {
         let primary = monitor(0.0, 0.0, 1920.0, 1080.0);
         let second = monitor(1920.0, 0.0, 1512.0, 982.0);
 
         assert_eq!(
-            refuge_landings(
+            bring_off_fullscreen(
                 &[Point {
                     x: 2500.0,
                     y: 982.0,

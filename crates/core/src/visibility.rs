@@ -43,7 +43,7 @@ pub struct Desktop {
 impl Desktop {
     /// The first display no fullscreen application takes: where a Character
     /// standing on a fullscreen one goes. `None` when every display is taken.
-    pub fn refuge(&self) -> Option<usize> {
+    pub fn first_free_display(&self) -> Option<usize> {
         self.fullscreen.iter().position(|taken| !taken)
     }
 }
@@ -138,7 +138,7 @@ impl HideRules {
             Presence::Away
         } else if self.hide_in_fullscreen
             && !desktop.fullscreen.is_empty()
-            && desktop.refuge().is_none()
+            && desktop.first_free_display().is_none()
         {
             Presence::Faded
         } else {
@@ -695,7 +695,7 @@ mod tests {
             ),
         };
         assert_eq!(desktop.fullscreen, [false, true]);
-        assert_eq!(desktop.refuge(), Some(0));
+        assert_eq!(desktop.first_free_display(), Some(0));
 
         let mut rules = HideRules::default();
         assert_eq!(
@@ -736,7 +736,7 @@ mod tests {
             ),
         };
         assert_eq!(both.fullscreen, [true, true]);
-        assert_eq!(both.refuge(), None);
+        assert_eq!(both.first_free_display(), None);
 
         let mut rules = HideRules::default();
         assert_eq!(rules.update(&both), faded_out());
@@ -750,9 +750,9 @@ mod tests {
     }
 
     #[test]
-    fn a_desktop_with_no_displays_has_no_refuge_and_does_not_fade() {
+    fn a_desktop_with_no_displays_has_no_free_display_and_does_not_fade() {
         let none = Desktop::default();
-        assert_eq!(none.refuge(), None);
+        assert_eq!(none.first_free_display(), None);
         assert_eq!(HideRules::default().update(&none), None);
     }
 
