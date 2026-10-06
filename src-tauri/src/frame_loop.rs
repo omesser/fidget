@@ -1778,8 +1778,9 @@ pub(crate) fn run_frame_loop(
                     );
                 }
 
-                let thinking =
-                    (reactive_wake || slots.thinking(&live.id)) && !instance.do_not_disturb() && !asking;
+                let thinking = (reactive_wake || slots.thinking(&live.id))
+                    && !instance.do_not_disturb()
+                    && !asking;
 
                 // What the user has seen is what the Engine played, not what
                 // the Director asked for: a refused proposal never reaches
