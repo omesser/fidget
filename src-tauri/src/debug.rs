@@ -1,15 +1,6 @@
 //! File-based IPC for test scripts: place/snapshot commands.
 
 use std::fs;
-use std::path::PathBuf;
-
-fn cmd_path() -> Option<PathBuf> {
-    Some(fidget_core::memory::home_dir()?.join(".fidget-debug-cmd"))
-}
-
-fn result_path() -> Option<PathBuf> {
-    Some(fidget_core::memory::home_dir()?.join(".fidget-debug-result"))
-}
 
 fn parse_place(text: &str) -> Result<(i32, i32), String> {
     let parts: Vec<&str> = text.split_whitespace().collect();
@@ -39,7 +30,10 @@ pub fn check_debug_commands(
         return;
     }
 
-    let (Some(cmd_path), Some(result_path)) = (cmd_path(), result_path()) else {
+    let (Some(cmd_path), Some(result_path)) = (
+        fidget_core::memory::debug_cmd_path(),
+        fidget_core::memory::debug_result_path(),
+    ) else {
         return;
     };
 

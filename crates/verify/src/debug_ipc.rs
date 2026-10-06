@@ -2,27 +2,21 @@
 //!
 //! The verify binary writes commands to `~/.fidget-debug-cmd`, then polls
 //! `~/.fidget-debug-result` for responses from the running fidget instance.
+//! Requires fidget to run with FIDGET_DEBUG_IPC=1.
 
 use std::fs;
-use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-fn debug_cmd_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".fidget-debug-cmd")
-}
-
-fn debug_result_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".fidget-debug-result")
-}
-
 fn send_command(cmd: &str) -> u8 {
-    let cmd_path = debug_cmd_path();
-    let result_path = debug_result_path();
+    let Some(cmd_path) = fidget_core::memory::debug_cmd_path() else {
+        eprintln!("cannot determine home directory");
+        return 2;
+    };
+    let Some(result_path) = fidget_core::memory::debug_result_path() else {
+        eprintln!("cannot determine home directory");
+        return 2;
+    };
 
     let _ = fs::remove_file(&result_path);
 

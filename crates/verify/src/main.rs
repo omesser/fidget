@@ -69,6 +69,7 @@ enum Commands {
     /// Kill recorded PIDs; remove scratch; keep evidence.
     Cleanup,
     /// Debug: place character at (x,y) in a running fidget instance.
+    /// Requires fidget to run with FIDGET_DEBUG_IPC=1.
     Place {
         /// X coordinate
         #[arg(long)]
@@ -78,6 +79,7 @@ enum Commands {
         y: i32,
     },
     /// Debug: snapshot position/state from a running fidget instance.
+    /// Requires fidget to run with FIDGET_DEBUG_IPC=1.
     Snapshot,
 }
 

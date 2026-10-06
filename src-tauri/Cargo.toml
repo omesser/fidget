@@ -80,8 +80,6 @@ image = {version = "0.25", default-features = false, features = ["png"]}
 # nothing else: already in the tree under keyring and tokio, and a token minted
 # from a clock is a token an attacker can guess.
 getrandom = "0.4"
-# Home directory for debug IPC file paths.
-dirs = "5.0"
 
 [target.'cfg(unix)'.dependencies]
 # Process-group teardown for an `npx` Harness: `getpgid` / `killpg`.
