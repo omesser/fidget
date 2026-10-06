@@ -504,6 +504,12 @@ fn windows_program(program: &str, path_override: Option<&Path>) -> Option<OsStri
     if program.contains(['/', '\\']) {
         return None;
     }
+    if program == "bash" && path_override.is_none() {
+        let git_bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+        if git_bash.is_file() {
+            return Some(git_bash.into_os_string());
+        }
+    }
     let dirs: Vec<PathBuf> = match path_override {
         Some(dir) => vec![dir.to_path_buf()],
         None => std::env::var_os("PATH")
