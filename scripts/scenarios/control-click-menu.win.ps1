@@ -313,7 +313,7 @@ try {
 
     $traceFile = Join-Path $out "home\AppData\Roaming\fidget\process.log"
     if (-not (Wait-For 15 { Test-Path -LiteralPath $traceFile })) { Fail "process.log never appeared; see $err" }
-    
+
     $settingsFile = Join-Path $out "home\AppData\Roaming\fidget\settings.json"
     if (Test-Path -LiteralPath $settingsFile) {
         $settingsContent = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
@@ -321,9 +321,9 @@ try {
             Fail "settings.json does not have hide_in_fullscreen: false as seeded"
         }
     }
-    
+
     if (-not (Wait-For 15 { Traced '^\d+ frame: .* sprite\(' })) { Fail "Fidget traced no frame; see $traceFile" }
-    
+
     if (Traced '^\d+ presence: hidden') {
         Fail "overlay hidden (presence: hidden) - see process.log window_source lines"
     }

@@ -336,7 +336,7 @@ try {
 
     $traceFile = Join-Path $out "home\AppData\Roaming\fidget\process.log"
     if (-not (Wait-For 30 { Test-Path -LiteralPath $traceFile })) { Fail "process.log never appeared; see $err" }
-    
+
     $settingsFile = Join-Path $out "home\AppData\Roaming\fidget\settings.json"
     if (Test-Path -LiteralPath $settingsFile) {
         $settingsContent = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
@@ -344,13 +344,13 @@ try {
             Fail "settings.json does not have hide_in_fullscreen: false as seeded"
         }
     }
-    
+
     if (-not (Wait-For 30 { Marked "asked" })) { Fail "no wake reached the Harness; see $err" }
-    
+
     if (Traced '^\d+ presence: hidden') {
         Fail "overlay hidden (presence: hidden) - see process.log window_source lines"
     }
-    
+
     Start-Sleep -Seconds 1
 
     Check-Before (Invoke-Dump "before-poke")

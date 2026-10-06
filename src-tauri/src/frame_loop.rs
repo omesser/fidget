@@ -38,10 +38,7 @@ use super::{
 /// next moves. 250ms is under a hide-rule fade, so a launch-hidden Character still goes.
 const FRAME_RESEND: Duration = Duration::from_millis(250);
 
-fn cursor_near_sprite(
-    cursor: Option<(f64, f64)>,
-    sprites: &[(i32, i32, i32, i32)],
-) -> bool {
+fn cursor_near_sprite(cursor: Option<(f64, f64)>, sprites: &[(i32, i32, i32, i32)]) -> bool {
     let Some((cx, cy)) = cursor else {
         return false;
     };
@@ -253,7 +250,7 @@ pub(crate) fn run_frame_loop(
         let mut schedule_mode = scheduler::ScheduleMode::Active;
         let mut was_visible = true;
         let mut names_sent: Option<crate::names_hint::NamesHint> = None;
-        
+
         let mut last_cursor: Option<(f64, f64)> = None;
         let mut last_sprite_rects: Vec<(i32, i32, i32, i32)> = Vec::new();
 
@@ -447,7 +444,7 @@ pub(crate) fn run_frame_loop(
             // asking a monitor means `NSScreen`, main-thread only.
             let displays = displays.read();
             let cursor_scale = displays.cursor_scale;
-            
+
             let cursor_at = (cursor.x / cursor_scale, cursor.y / cursor_scale);
             last_cursor = Some(cursor_at);
 
@@ -1926,7 +1923,7 @@ pub(crate) fn run_frame_loop(
                 );
 
                 last_sprite_rects.push((sprite.x, sprite.y, width, height));
-                
+
                 placed.push(Placed {
                     id: live.id.clone(),
                     character: live.character.name.clone(),
@@ -3015,7 +3012,7 @@ mod tests {
     #[test]
     fn test_cursor_near_sprite_within_inflated_rect() {
         let sprites = vec![(100, 100, 126, 128)];
-        
+
         assert!(cursor_near_sprite(Some((100.0, 100.0)), &sprites));
         assert!(cursor_near_sprite(Some((113.0, 114.0)), &sprites));
         assert!(cursor_near_sprite(Some((52.0, 100.0)), &sprites));
@@ -3025,7 +3022,7 @@ mod tests {
     #[test]
     fn test_cursor_near_sprite_far_away() {
         let sprites = vec![(100, 100, 126, 128)];
-        
+
         assert!(!cursor_near_sprite(Some((50.0, 100.0)), &sprites));
         assert!(!cursor_near_sprite(Some((280.0, 164.0)), &sprites));
         assert!(!cursor_near_sprite(Some((113.0, 50.0)), &sprites));
@@ -3041,7 +3038,7 @@ mod tests {
     #[test]
     fn test_cursor_near_sprite_multiple_sprites() {
         let sprites = vec![(100, 100, 126, 128), (500, 500, 126, 128)];
-        
+
         assert!(cursor_near_sprite(Some((113.0, 114.0)), &sprites));
         assert!(cursor_near_sprite(Some((513.0, 514.0)), &sprites));
         assert!(!cursor_near_sprite(Some((300.0, 300.0)), &sprites));
