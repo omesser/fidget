@@ -869,6 +869,19 @@ pub(crate) fn run_frame_loop(
             while let Ok(msg) = chat.try_recv() {
                 let line = match msg {
                     ChatMsg::Said(line) => line,
+                    ChatMsg::InboundWake { instance, speech } => {
+                        if let Some(live) = lives.iter_mut().find(|live| live.id == instance) {
+                            live.addressed = true;
+                            live.happened = Happened::Proactive;
+                            session_log::say(&app, &instance, &speech, SystemTime::now());
+                            let _ = app.emit_to(chat_label(&instance), CHAT_EVENT, ChatLine {
+                                instance: instance.clone(),
+                                text: speech,
+                                echo: false,
+                            });
+                        }
+                        continue;
+                    }
                     ChatMsg::Listening(id) => {
                         if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
                             live.status_last = None;
