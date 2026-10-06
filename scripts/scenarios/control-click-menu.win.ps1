@@ -198,7 +198,7 @@ function Get-FrontmostFullscreenApp {
             $exStyle = [PreflightCheck]::GetWindowLong($hwnd, [PreflightCheck]::GWL_EXSTYLE)
             if (($exStyle -band [PreflightCheck]::WS_EX_TOOLWINDOW) -ne 0) { return $true }
             $cloaked = 0
-            $hr = [PreflightCheck]::DwmGetWindowAttribute($hwnd, [PreflightCheck]::DWMWA_CLOAKED, [ref]$cloaked, [System.Runtime.InteropServices.Marshal]::SizeOf([int]))
+            $hr = [PreflightCheck]::DwmGetWindowAttribute($hwnd, [PreflightCheck]::DWMWA_CLOAKED, [ref]$cloaked, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int]))
             if ($hr -eq 0 -and $cloaked -ne 0) { return $true }
             $rect = New-Object PreflightCheck+RECT
             if (-not [PreflightCheck]::GetWindowRect($hwnd, [ref]$rect)) { return $true }

@@ -51,7 +51,7 @@ $selfTestPokeLine = "1791259420 verbs: Poke"
 $selfTestPresenceHidden = "1791260872 presence: hidden over 500ms"
 $selfTestClickHitTrue = "1791260862 click: down hits=[true] target=Some(0) cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
 $selfTestClickHitFalse = "1791260862 click: down hits=[false] target=None cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
-$selfTestSettledFrame = "1791260861.975 frame: Grounded sprite(2491,1264) walk#0"
+$selfTestSettledFrame = "1791260861.975 frame: 1791260861975 Grounded pos(1720,1328) sprite(2491,1264) land#1"
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\(')) { Write-Error "self-test: frame pattern failed"; exit 1 }
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: frame coordinate pattern failed"; exit 1 }
 if (-not ($selfTestPokeLine -match '^\d+ verbs: .*Poke')) { Write-Error "self-test: Poke pattern failed"; exit 1 }
@@ -59,8 +59,8 @@ if ($selfTestVerbsLine -match '^\d+ verbs: ') { Write-Error "self-test: should n
 if (-not ($selfTestPresenceHidden -match '^\d+ presence: hidden')) { Write-Error "self-test: presence:hidden pattern failed"; exit 1 }
 if (-not ($selfTestClickHitTrue -match '^\d+ click: down hits=\[true\]')) { Write-Error "self-test: click hits=[true] pattern failed"; exit 1 }
 if ($selfTestClickHitFalse -match '^\d+ click: down hits=\[true\]') { Write-Error "self-test: should not match hits=[false]"; exit 1 }
-if (-not ($selfTestSettledFrame -match '^\d+\.?\d* frame: .* Grounded sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: settled frame Grounded pattern failed"; exit 1 }
-if ($selfTestSettledFrame -match 'walk#') { Write-Error "self-test: settled frame should not match walk#"; exit 1 }
+if (-not ($selfTestSettledFrame -match '^\d+\.?\d* frame: .* Grounded .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: settled frame Grounded pattern failed"; exit 1 }
+if ($selfTestSettledFrame -match 'walk#|Falling') { Write-Error "self-test: settled frame should not match walk# or Falling"; exit 1 }
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $script:Evidence = $null
@@ -213,7 +213,7 @@ function Get-FrontmostFullscreenApp {
             $exStyle = [PreflightCheck]::GetWindowLong($hwnd, [PreflightCheck]::GWL_EXSTYLE)
             if (($exStyle -band [PreflightCheck]::WS_EX_TOOLWINDOW) -ne 0) { return $true }
             $cloaked = 0
-            $hr = [PreflightCheck]::DwmGetWindowAttribute($hwnd, [PreflightCheck]::DWMWA_CLOAKED, [ref]$cloaked, [System.Runtime.InteropServices.Marshal]::SizeOf([int]))
+            $hr = [PreflightCheck]::DwmGetWindowAttribute($hwnd, [PreflightCheck]::DWMWA_CLOAKED, [ref]$cloaked, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int]))
             if ($hr -eq 0 -and $cloaked -ne 0) { return $true }
             $rect = New-Object PreflightCheck+RECT
             if (-not [PreflightCheck]::GetWindowRect($hwnd, [ref]$rect)) { return $true }
