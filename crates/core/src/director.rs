@@ -388,18 +388,15 @@ impl<C: Completer> ModelDirector<C> {
         }
     }
 
-    /// What the reply so far lets the character say. Nothing until the
-    /// contract line has been read: a line that could still be a Behavior
-    /// name is held, so `wave` never shows before the speech, and a reply that
-    /// writes no contract line is spoken whole only when it ends. Past that
-    /// line it is exactly what the whole reply would parse to, so the bubble
-    /// only ever grows into the line it ends on.
+    /// What the reply so far lets the character say: nothing until the contract
+    /// line is read, so a Behavior name never shows, then what the whole reply
+    /// would parse to. A reply with no contract line is spoken only when it ends.
     fn speech_so_far(&self, answer: &str) -> Option<String> {
         let answer = answer.trim_end_matches('\r');
         let (lines, tail) = answer.split_at(answer.rfind('\n').map_or(0, |at| at + 1));
-        let named = parse_proposal(lines).is_ok()
+        let contract_read = parse_proposal(lines).is_ok()
             || (tail.contains('|') && contract_line(tail.trim()).is_some());
-        match named.then(|| self.proposal(answer).0)? {
+        match contract_read.then(|| self.proposal(answer).0)? {
             Wake::Proposed(proposal) => proposal.dialogue,
             Wake::Failed => None,
         }
@@ -2506,17 +2503,15 @@ mod tests {
         let woken = director.wake_request(director.request(&context(working(), &[])), &|line| {
             heard.borrow_mut().push(line)
         });
-        let said = match woken.wake {
+        let parsed = match woken.wake {
             Wake::Proposed(proposal) => proposal.dialogue,
             Wake::Failed => None,
         };
-        (heard.into_inner(), said)
+        (heard.into_inner(), parsed)
     }
 
     /// The parse cases above, streamed. Each row is a reply and the last line
-    /// the bubble shows before the turn ends. A line that could still be the
-    /// contract line is held, and a reply that never writes one streams
-    /// nothing: it is spoken whole when it ends, as before.
+    /// the bubble shows before the turn ends.
     #[test]
     fn streamed_speech_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
         let banner = format!("{PI_BANNER}\nwave\nHello!");

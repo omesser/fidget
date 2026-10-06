@@ -2231,7 +2231,7 @@ pub(crate) mod tests {
     /// back every body it was sent. Local servers in scope ignore unknown
     /// fields, so the OpenAI wording is exercised against a stub instead.
     fn server_refusing(field: Field) -> (String, Receiver<String>) {
-        use std::io::{BufRead, BufReader, Read, Write};
+        use std::io::Write;
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().expect("the bound port").port();
@@ -2239,25 +2239,9 @@ pub(crate) mod tests {
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { break };
-                let mut reader = BufReader::new(stream.try_clone().expect("the same socket"));
-                let mut length = 0usize;
-                loop {
-                    let mut line = String::new();
-                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                        return;
-                    }
-                    if line == "\r\n" {
-                        break;
-                    }
-                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                        length = value.trim().parse().unwrap_or(0);
-                    }
-                }
-                let mut body = vec![0; length];
-                if reader.read_exact(&mut body).is_err() {
+                let Some(body) = posted_body(&stream) else {
                     return;
-                }
-                let body = String::from_utf8_lossy(&body).to_string();
+                };
                 let (status, payload) = if body.contains(field.name()) {
                     (
                         "400 Bad Request",
@@ -2289,7 +2273,7 @@ pub(crate) mod tests {
 
     /// A loopback server that answers one POST with `sse` as an event stream.
     fn server_streaming(sse: &'static str) -> String {
-        use std::io::{BufRead, BufReader, Read, Write};
+        use std::io::Write;
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().expect("the bound port").port();
@@ -2297,24 +2281,38 @@ pub(crate) mod tests {
             let Ok((mut stream, _)) = listener.accept() else {
                 return;
             };
-            let mut reader = BufReader::new(stream.try_clone().expect("the same socket"));
-            let mut length = 0usize;
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
-                    break;
-                }
-                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                    length = value.trim().parse().unwrap_or(0);
-                }
+            if posted_body(&stream).is_some() {
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse}"
+                );
             }
-            let _ = reader.read_exact(&mut vec![0; length]);
-            let _ = write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse}"
-            );
         });
         format!("http://127.0.0.1:{port}/v1/chat/completions")
+    }
+
+    /// One request off a loopback socket: the headers, then the body they
+    /// promise. `None` when the client hung up first.
+    fn posted_body(stream: &std::net::TcpStream) -> Option<String> {
+        use std::io::{BufRead, BufReader, Read};
+
+        let mut reader = BufReader::new(stream.try_clone().expect("the same socket"));
+        let mut length = 0usize;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                return None;
+            }
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                length = value.trim().parse().unwrap_or(0);
+            }
+        }
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body).ok()?;
+        Some(String::from_utf8_lossy(&body).to_string())
     }
 
     /// The Model API Director's Speech reaches the bubble delta by delta,

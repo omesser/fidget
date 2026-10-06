@@ -3356,6 +3356,23 @@ mod tests {
                             }
                             stop(&id, "end_turn");
                         }
+                        // `scripts/scenarios/streaming-bubble.sh`. Slow enough
+                        // to photograph the bubble mid-sentence.
+                        "scenario-streaming" => {
+                            chunk(&session, "gre");
+                            thread::sleep(Duration::from_millis(600));
+                            chunk(&session, "et\n");
+                            for (n, word) in "Watch these words arrive one at a time."
+                                .split_inclusive(' ')
+                                .enumerate()
+                            {
+                                chunk(&session, word);
+                                record(count, &format!("word {}", n + 1));
+                                thread::sleep(Duration::from_millis(700));
+                            }
+                            record(count, "spoken");
+                            stop(&id, "end_turn");
+                        }
                         // Thinks before it answers, so each turn's thought
                         // names the session it came from.
                         "thinking" => {

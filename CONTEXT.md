@@ -310,8 +310,7 @@ _Avoid_: talk, say
 A bubble above the sprite showing Speech, held for reading time (900ms
 + 55ms per character, clamped to 2–8 s). A new line replaces the old one.
 While a reply streams, the bubble grows with its Speech and `talk` plays; the
-Behavior name line is held back and never shown. Implemented in #119; streaming
-in #1376.
+Behavior name line is held back and never shown. Implemented in #119.
 _Avoid_: Chat bubble, message, tooltip
 
 **Cue**:
