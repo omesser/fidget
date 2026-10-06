@@ -17,7 +17,9 @@ use std::time::Instant;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
-use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
+use windows_sys::Win32::Graphics::Gdi::{
+    CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
+};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -113,41 +115,19 @@ fn note_overlay(hwnd: u64) {
     }
 }
 
-/// SetWindowRgn carves the click-through region from the sprite's alpha mask.
-/// `None` clears the region (whole window click-through via WS_EX_TRANSPARENT).
-/// `Some` applies the opaque pixels plus hotspots. `click_through` controls
-/// WS_EX_TRANSPARENT: when true (cursor elsewhere), the region stays but the
-/// window is still click-through; when false (cursor over sprite), the region
-/// becomes hit-testable.
-#[allow(clippy::too_many_arguments)]
+/// SetWindowRgn from `art` plus hotspots; `None` clears the region.
+/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&fidget_core::overlay::AlphaMask>,
-    sprite_x: i32,
-    sprite_y: i32,
-    sprite_facing: i32,
-    scale: i32,
+    art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
-
-    if let Some(mask) = mask_data {
-        apply_input_mask(
-            hwnd,
-            mask,
-            sprite_x,
-            sprite_y,
-            sprite_facing,
-            scale,
-            hotspot_rects,
-            click_through,
-        )?;
-    } else {
-        clear_input_region(hwnd)?;
+    match art {
+        Some(art) => apply_input_mask(hwnd, art, hotspot_rects, click_through),
+        None => clear_input_region(hwnd),
     }
-
-    Ok(())
 }
 
 fn set_window_styles(hwnd: HWND) -> Result<(), String> {
@@ -308,130 +288,48 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Apply the alpha mask as the input region using SetWindowRgn.
-/// Facing < 0 mirrors the mask. Hotspot rectangles are OR'd in so a control
-/// drawn outside the art still receives clicks. `click_through` controls
-/// WS_EX_TRANSPARENT: when true, the region is set but the window remains
-/// click-through; when false, the region becomes hit-testable.
+/// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`; hotspots
+/// are `[x, y, width, height]`. The region also clips drawing, which is why
+/// `art` is swept over every position the renderer may draw the sprite at.
 ///
 /// bRedraw=1: With bRedraw=0, the region update could race sprite placement
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
 /// next frame forced a redraw.
-#[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
-    mask: &fidget_core::overlay::AlphaMask,
-    sprite_x: i32,
-    sprite_y: i32,
-    sprite_facing: i32,
-    scale: i32,
+    art: &[[i32; 4]],
     hotspot_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
+    if art.is_empty() {
+        return clear_input_region(hwnd);
+    }
     let rebuild_start = Instant::now();
-
-    let (width, height, opaque) = mask.raw();
-    let scaled_width = width * scale;
-    let scaled_height = height * scale;
-    let opaque_count = opaque.iter().filter(|&&b| b).count();
+    let hotspots = hotspot_rects
+        .iter()
+        .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
     // success, so it is not freed afterward.
     unsafe {
-        let mut combined_rgn: HRGN = std::ptr::null_mut();
-
-        let mirror = sprite_facing < 0;
-        for y in 0..height {
-            for x in 0..width {
-                let idx = (y * width + x) as usize;
-                if opaque[idx] {
-                    let draw_x = if mirror {
-                        (width - 1 - x) * scale
-                    } else {
-                        x * scale
-                    };
-                    let scaled_y = y * scale;
-
-                    let rect_rgn = CreateRectRgn(
-                        sprite_x + draw_x,
-                        sprite_y + scaled_y,
-                        sprite_x + draw_x + scale,
-                        sprite_y + scaled_y + scale,
-                    );
-
-                    if rect_rgn.is_null() {
-                        if !combined_rgn.is_null() {
-                            DeleteObject(combined_rgn);
-                        }
-                        return Err("Failed to create region rectangle".to_string());
-                    }
-
-                    if combined_rgn.is_null() {
-                        combined_rgn = rect_rgn;
-                    } else {
-                        let temp_rgn = CreateRectRgn(0, 0, 0, 0);
-                        if temp_rgn.is_null() {
-                            DeleteObject(combined_rgn);
-                            DeleteObject(rect_rgn);
-                            return Err("Failed to create temp region".to_string());
-                        }
-
-                        if windows_sys::Win32::Graphics::Gdi::CombineRgn(
-                            temp_rgn,
-                            combined_rgn,
-                            rect_rgn,
-                            RGN_OR,
-                        ) == 0
-                        {
-                            DeleteObject(combined_rgn);
-                            DeleteObject(rect_rgn);
-                            DeleteObject(temp_rgn);
-                            return Err("Failed to combine regions".to_string());
-                        }
-
-                        DeleteObject(combined_rgn);
-                        DeleteObject(rect_rgn);
-                        combined_rgn = temp_rgn;
-                    }
-                }
-            }
-        }
-
+        let combined_rgn = CreateRectRgn(0, 0, 0, 0);
         if combined_rgn.is_null() {
-            return clear_input_region(hwnd);
+            return Err("Failed to create region".to_string());
         }
 
-        for &[hx, hy, hw, hh] in hotspot_rects {
-            let hotspot_rgn = CreateRectRgn(hx, hy, hx + hw, hy + hh);
-            if hotspot_rgn.is_null() {
+        for [left, top, right, bottom] in art.iter().copied().chain(hotspots) {
+            let rect_rgn = CreateRectRgn(left, top, right, bottom);
+            if rect_rgn.is_null() {
                 DeleteObject(combined_rgn);
-                return Err("Failed to create hotspot region".to_string());
+                return Err("Failed to create region rectangle".to_string());
             }
-
-            let temp_rgn = CreateRectRgn(0, 0, 0, 0);
-            if temp_rgn.is_null() {
+            let combined = CombineRgn(combined_rgn, combined_rgn, rect_rgn, RGN_OR);
+            DeleteObject(rect_rgn);
+            if combined == 0 {
                 DeleteObject(combined_rgn);
-                DeleteObject(hotspot_rgn);
-                return Err("Failed to create temp region for hotspot".to_string());
+                return Err("Failed to combine regions".to_string());
             }
-
-            if windows_sys::Win32::Graphics::Gdi::CombineRgn(
-                temp_rgn,
-                combined_rgn,
-                hotspot_rgn,
-                RGN_OR,
-            ) == 0
-            {
-                DeleteObject(combined_rgn);
-                DeleteObject(hotspot_rgn);
-                DeleteObject(temp_rgn);
-                return Err("Failed to union hotspot region".to_string());
-            }
-
-            DeleteObject(combined_rgn);
-            DeleteObject(hotspot_rgn);
-            combined_rgn = temp_rgn;
         }
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
@@ -451,13 +349,11 @@ fn apply_input_mask(
         }
     }
 
-    let rebuild_ns = rebuild_start.elapsed().as_nanos() as u64;
-
     if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
-        let rebuild_ms = rebuild_ns as f64 / 1_000_000.0;
         eprintln!(
-            "mask_rebuild: {}x{} @{}x scale, {} opaque pixels, {:.2} ms",
-            scaled_width, scaled_height, scale, opaque_count, rebuild_ms
+            "mask_rebuild: {} rects, {:.2} ms",
+            art.len() + hotspot_rects.len(),
+            rebuild_start.elapsed().as_secs_f64() * 1000.0
         );
     }
 

@@ -627,30 +627,17 @@ pub fn update_input_region(
     )
 }
 
-/// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
-/// `click_through` controls WS_EX_TRANSPARENT.
+/// Windows: SetWindowRgn from the sprite's swept ink rectangles and hotspots.
+/// The region clips drawing as well as input. `click_through` controls
+/// WS_EX_TRANSPARENT.
 #[cfg(not(unix))]
-#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&fidget_core::overlay::AlphaMask>,
-    sprite_x: i32,
-    sprite_y: i32,
-    sprite_facing: i32,
-    scale: i32,
+    art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
-    windows::update_input_region(
-        window,
-        mask_data,
-        sprite_x,
-        sprite_y,
-        sprite_facing,
-        scale,
-        hotspot_rects,
-        click_through,
-    )
+    windows::update_input_region(window, art, hotspot_rects, click_through)
 }
 
 /// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only

@@ -210,6 +210,93 @@ impl AlphaMask {
         let px = if mirrored { self.width - 1 - px } else { px };
         self.opaque[(py * self.width + px) as usize]
     }
+
+    /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
+    /// with the sprite's top-left anywhere between the `trail` positions.
+    /// One rectangle per horizontal run of ink, stretched over the trail's bounds.
+    pub fn swept_rects(&self, trail: &[(i32, i32)], mirrored: bool, scale: i32) -> Vec<[i32; 4]> {
+        let Some(&(first_x, first_y)) = trail.first() else {
+            return Vec::new();
+        };
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (first_x, first_y, first_x, first_y);
+        for &(x, y) in trail {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+
+        let mut rects = Vec::new();
+        for row in 0..self.height {
+            let drawn = |column: i32| {
+                let px = if mirrored {
+                    self.width - 1 - column
+                } else {
+                    column
+                };
+                self.opaque[(row * self.width + px) as usize]
+            };
+            let mut column = 0;
+            while column < self.width {
+                if !drawn(column) {
+                    column += 1;
+                    continue;
+                }
+                let start = column;
+                while column < self.width && drawn(column) {
+                    column += 1;
+                }
+                rects.push([
+                    min_x + start * scale,
+                    min_y + row * scale,
+                    max_x + column * scale,
+                    max_y + (row + 1) * scale,
+                ]);
+            }
+        }
+        rects
+    }
+}
+
+/// One Instance's last three placements in shared space and the art drawn at
+/// the last two. The renderer draws the previous art between the first two
+/// placements until the latest arrives, then the latest art between the last two.
+#[derive(Clone, Debug)]
+pub struct DrawTrail {
+    at: [(i32, i32); 3],
+    art: [(AlphaMask, bool, i32); 2],
+}
+
+impl DrawTrail {
+    /// A trail that has only ever been at `at`, drawing `mask`.
+    pub fn start(at: (i32, i32), mask: &AlphaMask, mirrored: bool, scale: i32) -> Self {
+        let art = (mask.clone(), mirrored, scale);
+        Self {
+            at: [at; 3],
+            art: [art.clone(), art],
+        }
+    }
+
+    /// The trail one placement later.
+    pub fn advance(self, at: (i32, i32), mask: &AlphaMask, mirrored: bool, scale: i32) -> Self {
+        let [_, before, last] = self.at;
+        let [_, latest] = self.art;
+        Self {
+            at: [before, last, at],
+            art: [latest, (mask.clone(), mirrored, scale)],
+        }
+    }
+
+    /// Rectangles covering both spans the renderer may be drawing, shifted
+    /// from shared space by `offset`. A Windows window region clips drawing,
+    /// and it can land before or after the placement it was built from.
+    pub fn clip_rects(&self, (dx, dy): (i32, i32)) -> Vec<[i32; 4]> {
+        let at = self.at.map(|(x, y)| (x + dx, y + dy));
+        let [(previous, previous_mirrored, previous_scale), (latest, mirrored, scale)] = &self.art;
+        let mut rects = previous.swept_rects(&at[..2], *previous_mirrored, *previous_scale);
+        rects.extend(latest.swept_rects(&at[1..], *mirrored, *scale));
+        rects
+    }
 }
 
 #[cfg(test)]
@@ -294,6 +381,45 @@ mod tests {
         assert!(
             !mask.hit(&sprite, 108, 208, false),
             "one point below the sprite"
+        );
+    }
+
+    /// The renderer draws the sprite anywhere between its placements, and a
+    /// Windows window region clips what is drawn, so each run of ink must
+    /// reach from where it starts to where it ends.
+    #[test]
+    fn swept_rects_cover_the_sprite_drawn_between_placements() {
+        let mask = AlphaMask::from_rows(&["##.#", "...."]);
+
+        assert_eq!(
+            mask.swept_rects(&[(10, 0), (16, 3), (13, 1)], false, 2),
+            vec![[10, 0, 20, 5], [16, 0, 24, 5]],
+        );
+    }
+
+    /// A walk changes frame mid-stride. Until the new placement lands, the
+    /// renderer still draws the old frame, so its ink stays in the clip.
+    #[test]
+    fn a_trail_keeps_the_frame_still_on_screen_in_the_clip() {
+        let stride = AlphaMask::from_rows(&["#."]);
+        let next = AlphaMask::from_rows(&[".#"]);
+        let trail = DrawTrail::start((0, 0), &stride, false, 1)
+            .advance((10, 0), &stride, false, 1)
+            .advance((20, 0), &next, false, 1);
+
+        assert_eq!(
+            trail.clip_rects((-100, 5)),
+            vec![[-100, 5, -89, 6], [-89, 5, -78, 6]],
+        );
+    }
+
+    #[test]
+    fn swept_rects_at_rest_are_the_mirrored_ink() {
+        let mask = AlphaMask::from_rows(&["##.#", ".#.."]);
+
+        assert_eq!(
+            mask.swept_rects(&[(10, 20)], true, 2),
+            vec![[10, 20, 12, 22], [14, 20, 18, 22], [14, 22, 16, 24]],
         );
     }
 
