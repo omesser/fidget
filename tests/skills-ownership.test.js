@@ -28,7 +28,7 @@ const OWNERS = [
 // Skills this repository wrote. Neither sync may ever claim one: a claim is
 // what makes it eligible for deletion when it goes missing upstream, and no
 // upstream has ever heard of these.
-const REPO_OWNED = ["verify-fidget"];
+const REPO_OWNED = ["resolving-merge-conflicts", "verify-fidget"];
 
 const owned = (meta) => JSON.parse(readFileSync(path(meta), "utf8")).skills;
 
