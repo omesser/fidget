@@ -39,8 +39,8 @@ _Avoid_: System prompt — that is the Character Prompt, which carries this and 
 **Character Prompt**:
 The opening turn of the Director session: Personality Prompt, Instance Prompt,
 the Behaviors it may propose, and this moment. Later wakes send a short
-follow-up (what just happened, recent Behaviors, time of day, State, frontmost
-window) in the same conversation. Assembled rather than written: two of its
+follow-up (what just happened, recent Behaviors, time of day, State, what the
+user is doing) in the same conversation. Assembled rather than written: two of its
 layers are authored, the whole is never hand-authored. The Prompt tab shows
 the three concatenated layers — app-level instructions, Personality Prompt,
 Instance Prompt — and empty ones say Empty. Inspectable in settings as well.

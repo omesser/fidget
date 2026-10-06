@@ -1,4 +1,4 @@
-//! The Free tier on macOS, without consent.
+//! Desktop sensing on macOS, without permission prompts.
 //!
 //! Three APIs, chosen because none is gated by TCC:
 //!
@@ -79,7 +79,7 @@ fn idle_from_seconds(seconds: f64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidget_core::sensing::{FreeTier, SystemClock};
+    use fidget_core::sensing::{DesktopSense, SystemClock};
 
     /// Hand verification, deliberately not part of the suite: it needs a real
     /// window server, it reads the real clock and it sleeps, all of which
@@ -91,7 +91,7 @@ mod tests {
     ///     sensing -- --ignored --nocapture
     /// ```
     ///
-    /// It prints the Free tier once a second for ten seconds. Switch
+    /// It prints a desktop sense read once a second for ten seconds. Switch
     /// application while it runs and watch the name follow and `switched`
     /// appear on exactly that read; then take your hands off the keyboard and
     /// watch idle climb, and touch it again to watch idle drop back. What no
@@ -99,11 +99,11 @@ mod tests {
     /// permission dialog appeared.
     #[test]
     #[ignore = "needs a real desktop; run by hand"]
-    fn the_live_free_tier_follows_the_real_machine() {
-        let mut tier = FreeTier::default();
+    fn the_live_desktop_sense_follows_the_real_machine() {
+        let mut sense = DesktopSense::default();
 
         for _ in 0..10 {
-            let activity = tier.read(&MacosActivitySource, &SystemClock);
+            let activity = sense.read(&MacosActivitySource, &SystemClock);
 
             assert!(
                 activity.frontmost_application.is_some(),

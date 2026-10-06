@@ -123,26 +123,24 @@ pub(crate) fn follow_up(context: &Context) -> String {
         State::Climbing => "climbing",
         State::Asleep => "asleep",
     };
-    let open = match context.activity.frontmost_application.as_deref() {
-        Some(name) if !name.is_empty() => format!("{name} is the frontmost window"),
-        _ => "nothing is frontmost".to_string(),
-    };
+    let weekday = WEEKDAYS[usize::from(context.activity.weekday % 7)];
+    let desktop = desktop_lines(context);
 
     // Last, after every labelled fact, because it is the only line the user
-    // writes: a paste imitating `state:` or `open:` then reads as part of what
+    // writes: a paste imitating `state:` or `front:` then reads as part of what
     // was said and cannot displace the real value above it.
     let said = match &context.happened {
-        Happened::Chat(line) => format!("they said: {}\n", cut(line)),
+        Happened::Chat(line) => format!("they said: {}\n", cut(line, CHAT_LIMIT)),
         _ => String::new(),
     };
 
     format!(
         "what just happened: {happened}\n\
          recent: {recent}\n\
-         time: {clock}\n\
+         time: {weekday} {clock}\n\
          state: {state}\n\
          standing on: {standing}\n\
-         open: {open}\n\
+         {desktop}\
          {said}",
         standing = if context.standing.is_empty() {
             "nothing"
@@ -152,10 +150,73 @@ pub(crate) fn follow_up(context: &Context) -> String {
     )
 }
 
-/// `line` at `CHAT_LIMIT` characters, cut on a character boundary so a
-/// multi-byte paste cannot panic the slice.
-fn cut(line: &str) -> &str {
-    match line.char_indices().nth(CHAT_LIMIT) {
+const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/// Characters of a window title the prompt keeps. A hint, not a record: the
+/// Harness can call `list_windows` for the rest.
+const TITLE_LIMIT: usize = 24;
+
+/// The `front:`, `before:` and `idle:` lines. Names arrive already gated by
+/// consent and the exclusion list, so this decides only how they read.
+fn desktop_lines(context: &Context) -> String {
+    let activity = &context.activity;
+    let mut lines = String::new();
+    if let Some(name) = activity.frontmost_application.as_deref().map(flatten) {
+        if !name.is_empty() {
+            let title = match context.front_title.as_deref().map(flatten) {
+                Some(title) if !title.is_empty() => {
+                    let short = cut(&title, TITLE_LIMIT);
+                    let more = if short.len() < title.len() { "…" } else { "" };
+                    format!(" \"{short}{more}\"")
+                }
+                _ => String::new(),
+            };
+            let stay = minutes(activity.frontmost_for);
+            lines.push_str(&format!("front: {name}{title} {stay}\n"));
+        }
+    }
+    let before: Vec<String> = activity
+        .before
+        .iter()
+        .map(|(name, stayed)| format!("{} {}", flatten(name), minutes(*stayed)))
+        .collect();
+    if !before.is_empty() {
+        lines.push_str(&format!("before: {}\n", before.join(", ")));
+    }
+    // Under a minute reads as present, and Wayland reports zero always.
+    if activity.idle.as_secs() >= 60 {
+        lines.push_str(&format!("idle: {}\n", minutes(activity.idle)));
+    }
+    lines
+}
+
+/// Whole minutes, the only resolution the prompt spends tokens on.
+fn minutes(lasted: std::time::Duration) -> String {
+    format!("{}m", lasted.as_secs() / 60)
+}
+
+/// Another application's text, flattened so it cannot start a labelled line
+/// of its own or close the quotes around a title. U+2028 is whitespace, not
+/// control, and still reads as a line break.
+fn flatten(text: &str) -> String {
+    text.chars()
+        .filter(|c| *c != '"')
+        .map(|c| {
+            if c.is_control() || c.is_whitespace() {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// `line` at `limit` characters, cut on a character boundary so a multi-byte
+/// paste cannot panic the slice.
+fn cut(line: &str, limit: usize) -> &str {
+    match line.char_indices().nth(limit) {
         Some((end, _)) => &line[..end],
         None => line,
     }

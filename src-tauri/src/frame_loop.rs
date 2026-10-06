@@ -13,7 +13,7 @@ use fidget_core::input::press_target;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
-use fidget_core::sensing::{Activity, FreeTier, SystemClock};
+use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
 use fidget_core::snapshot::SnapshotAssembler;
 use fidget_core::speech;
 use fidget_core::visibility::{fullscreen_displays, Change, Desktop, HideRules};
@@ -168,7 +168,7 @@ pub(crate) fn run_frame_loop(
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
         // the same answer bought several times.
-        let mut free_tier = FreeTier::default();
+        let mut desktop_sense = DesktopSense::default();
         let activity_source = platform::activity_source();
         let mut since_sense = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;
@@ -1306,9 +1306,9 @@ pub(crate) fn run_frame_loop(
             // per character would be the same two AppKit calls bought N times.
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
-                let mut activity = free_tier.read(&activity_source, &SystemClock);
+                let mut activity = desktop_sense.read(&activity_source, &SystemClock);
                 if let Ok(settings) = settings.lock() {
-                    withhold_frontmost_name(
+                    withhold_names(
                         &mut activity,
                         crate::consent::usable(
                             crate::consent::CapabilityId::WindowNames,
@@ -1521,6 +1521,7 @@ pub(crate) fn run_frame_loop(
                                 state: live.last_state.unwrap_or(State::Grounded),
                                 happened: live.happened.clone(),
                                 standing: String::new(),
+                                front_title: None,
                             });
                         }
                     }
@@ -1677,6 +1678,10 @@ pub(crate) fn run_frame_loop(
                             state: frame.state,
                             happened: live.happened.clone(),
                             standing: assembler.standing_on(frame.position),
+                            front_title: activity
+                                .frontmost_application
+                                .as_deref()
+                                .and_then(|name| assembler.front_title(name)),
                         };
                         let was_addressed = live.addressed;
                         if live.addressed {
@@ -2695,13 +2700,10 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
     }
 }
 
-/// Drop the frontmost application's name when the user has not asked for it.
-///
-/// Two reasons, and both end the same way. One consent covers every name the
-/// character reports (ADR-0032), and this name comes from a different call than
-/// the window walk, so the gate is repeated here. An excluded application is
-/// the other reason, and it can only be matched while the name is still there.
-fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denylist: &DenyList) {
+/// Drop front and `before` names without WindowNames consent or when excluded
+/// (ADR-0032). Repeated here: these names arrive by a different call than the
+/// window walk, and exclusion can only match while the name is still present.
+fn withhold_names(activity: &mut Activity, can_read_names: bool, denylist: &DenyList) {
     let denied = activity
         .frontmost_application
         .as_deref()
@@ -2709,6 +2711,9 @@ fn withhold_frontmost_name(activity: &mut Activity, can_read_names: bool, denyli
     if !can_read_names || denied {
         activity.frontmost_application = None;
     }
+    activity
+        .before
+        .retain(|(name, _)| can_read_names && denylist.allows(name));
 }
 
 #[cfg(test)]
@@ -2726,37 +2731,49 @@ mod tests {
     fn activity(frontmost: Option<&str>) -> Activity {
         Activity {
             frontmost_application: frontmost.map(String::from),
-            switched: false,
-            idle: std::time::Duration::ZERO,
-            at: std::time::SystemTime::UNIX_EPOCH,
+            before: vec![
+                ("Safari".to_string(), std::time::Duration::from_secs(60)),
+                ("Terminal".to_string(), std::time::Duration::from_secs(120)),
+            ],
+            weekday: 2,
             hour: 9,
             minute: 30,
-            displays_asleep: false,
+            ..Activity::quiet()
         }
     }
 
-    /// The frontmost application's name is the other half of what ADR-0032
-    /// gates, and it arrives by its own call rather than through the window
-    /// walk.
+    /// The application names are the other half of what ADR-0032 gates, and
+    /// they arrive by their own call rather than through the window walk.
     #[test]
-    fn the_frontmost_name_survives_only_consent_and_the_exclusion_list() {
+    fn application_names_survive_only_consent_and_the_exclusion_list() {
         let allowed = DenyList::default();
         let excluding_terminal = DenyList {
             excluded_applications: vec!["Terminal".to_string()],
             filter_password_fields: true,
         };
 
+        let earlier = |read: &Activity| -> Vec<String> {
+            read.before.iter().map(|(name, _)| name.clone()).collect()
+        };
+
         let mut consented = activity(Some("Terminal"));
-        withhold_frontmost_name(&mut consented, true, &allowed);
+        withhold_names(&mut consented, true, &allowed);
         assert_eq!(consented.frontmost_application.as_deref(), Some("Terminal"));
+        assert_eq!(earlier(&consented), ["Safari", "Terminal"]);
 
         let mut withheld = activity(Some("Terminal"));
-        withhold_frontmost_name(&mut withheld, false, &allowed);
+        withhold_names(&mut withheld, false, &allowed);
         assert_eq!(withheld.frontmost_application, None);
+        assert!(withheld.before.is_empty(), "no consent, no earlier names");
 
         let mut excluded = activity(Some("Terminal"));
-        withhold_frontmost_name(&mut excluded, true, &excluding_terminal);
+        withhold_names(&mut excluded, true, &excluding_terminal);
         assert_eq!(excluded.frontmost_application, None);
+        assert_eq!(
+            earlier(&excluded),
+            ["Safari"],
+            "excluded wherever it appears"
+        );
     }
 
     /// `FakeWindowSource` is `cfg(test)` inside core, so it is not visible

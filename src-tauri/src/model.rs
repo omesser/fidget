@@ -4451,14 +4451,14 @@ pub(crate) mod tests {
                     at: SystemTime::now(),
                     hour: 9 + (turn as u8 % 12),
                     minute: ((turn as u32 * 7) % 60) as u8,
-                    displays_asleep: false,
+                    ..Activity::quiet()
                 },
-                recent: Vec::new(),
                 personality: cat.personality.clone(),
-                instance_prompt: String::new(),
                 state: *state,
                 happened: happened.clone(),
                 standing: standing.to_string(),
+                front_title: None,
+                ..fidget_core::director::Context::quiet()
             };
 
             match director.wake(&context) {

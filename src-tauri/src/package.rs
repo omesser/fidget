@@ -486,7 +486,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::time::Duration;
 
     use fidget_core::character::{self, Character};
     use fidget_core::director::{Context, StaticDirector};
@@ -602,19 +602,14 @@ mod tests {
         let moment = Context {
             activity: Activity {
                 frontmost_application: Some("Terminal".to_string()),
-                switched: false,
                 idle,
-                at: UNIX_EPOCH,
-                hour: 0,
-                minute: 0,
-                displays_asleep: false,
+                ..Activity::quiet()
             },
-            recent: Vec::new(),
             personality: character.personality.clone(),
-            instance_prompt: String::new(),
-            state: fidget_core::engine::State::Grounded,
             happened: fidget_core::director::Happened::Proactive,
             standing: String::new(),
+            front_title: None,
+            ..fidget_core::director::Context::quiet()
         };
 
         (0..64)

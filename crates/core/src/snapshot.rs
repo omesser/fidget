@@ -206,6 +206,22 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     pub fn standing_on(&self, feet: Point) -> String {
         describe_standing(feet, &self.geometry)
     }
+
+    /// The title of `application`'s frontmost titled window, for the Director.
+    pub fn front_title(&self, application: &str) -> Option<String> {
+        front_title(application, &self.geometry)
+    }
+}
+
+/// Windows run frontmost first, so the first titled window `application` owns
+/// is the one in front. Without the window-names consent no window has an
+/// owner to match, so this is None by construction.
+fn front_title(application: &str, geometry: &WorldGeometry) -> Option<String> {
+    geometry
+        .windows
+        .iter()
+        .filter(|window| window.owner.as_deref() == Some(application))
+        .find_map(|window| window.title.clone().filter(|title| !title.is_empty()))
 }
 
 impl<S> Drop for SnapshotAssembler<S> {
@@ -1255,6 +1271,32 @@ mod tests {
             describe_standing(Point { x: 0.0, y: 400.0 }, &desktop),
             "the screen edge"
         );
+    }
+
+    /// A titleless palette in front of the document window must not hide the
+    /// document's title, and another application's title is never borrowed.
+    #[test]
+    fn the_front_title_is_the_first_titled_window_the_application_owns() {
+        let titled = |id, owner: &str, title: Option<&str>| WindowRect {
+            title: title.map(String::from),
+            ..window(id, owner, rect(0.0, 0.0, 100.0, 100.0))
+        };
+        let desktop = WorldGeometry {
+            usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
+            windows: vec![
+                titled(1, "Safari", Some("PR #1354")),
+                titled(2, "Code", None),
+                titled(3, "Code", Some("main.rs — fidget")),
+                titled(4, "Code", Some("lib.rs — fidget")),
+            ],
+            dock: None,
+        };
+
+        assert_eq!(
+            front_title("Code", &desktop).as_deref(),
+            Some("main.rs — fidget")
+        );
+        assert_eq!(front_title("Mail", &desktop), None);
     }
 
     #[test]

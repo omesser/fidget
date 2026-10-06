@@ -86,7 +86,7 @@ A key saved before the first signed run keeps the old list: clear it in Settings
 
 ### Local Model Servers
 
-The fidget wakes all day and every Poke is another wake, so a hosted API meters idling, and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the meter. On loopback it also keeps that context on the machine; a LAN box still receives it. "Local" means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional.
+The fidget wakes all day and every Poke is another wake, so a hosted API meters idling, and each wake sends the clock and, with the window-names consent, the frontmost application, its window title and recent applications off the machine. A server of your own removes the meter. On loopback it also keeps that context on the machine; a LAN box still receives it. "Local" means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name. A local base URL makes `FIDGET_DIRECTOR_API_KEY` optional.
 
 These servers speak `/v1/chat/completions`:
 
