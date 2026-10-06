@@ -44,16 +44,6 @@ pub fn home_dir() -> Option<PathBuf> {
     dirs::home_dir()
 }
 
-/// Debug IPC command path for test scripts to place commands.
-pub fn debug_cmd_path() -> Option<PathBuf> {
-    Some(home_dir()?.join(".fidget-debug-cmd"))
-}
-
-/// Debug IPC result path where fidget writes responses.
-pub fn debug_result_path() -> Option<PathBuf> {
-    Some(home_dir()?.join(".fidget-debug-result"))
-}
-
 /// The one file every Instance and every Harness shares, named here rather than
 /// by each caller so it cannot quietly become two paths, which would look like
 /// a character that forgot. `FIDGET_MEMORY` overrides it for tests and the probe.

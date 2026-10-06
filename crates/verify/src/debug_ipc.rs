@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::contract::{Outcome, RunReport};
 
 fn send_command(cmd: &str, report: &mut RunReport) -> Outcome {
-    let Some(cmd_path) = fidget_core::memory::debug_cmd_path() else {
+    let Some(cmd_path) = fidget_core::debug::debug_cmd_path() else {
         report.check(
             Outcome::Error,
             "debug ipc",
@@ -19,7 +19,7 @@ fn send_command(cmd: &str, report: &mut RunReport) -> Outcome {
         );
         return Outcome::Error;
     };
-    let Some(result_path) = fidget_core::memory::debug_result_path() else {
+    let Some(result_path) = fidget_core::debug::debug_result_path() else {
         report.check(
             Outcome::Error,
             "debug ipc",

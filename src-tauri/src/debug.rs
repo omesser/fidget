@@ -32,8 +32,8 @@ pub fn check_debug_commands(
     }
 
     let (Some(cmd_path), Some(result_path)) = (
-        fidget_core::memory::debug_cmd_path(),
-        fidget_core::memory::debug_result_path(),
+        fidget_core::debug::debug_cmd_path(),
+        fidget_core::debug::debug_result_path(),
     ) else {
         return;
     };
