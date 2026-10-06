@@ -631,7 +631,13 @@ impl Endpoint {
     /// Takes `url` so the probe can show both xAI paths and `complete` can retry.
     /// A fallback retries the same session snapshot; a succeeded drop latches.
     /// `instance` is whose Chat surface a streamed thought is drawn in.
-    pub fn post(&self, url: &str, prompt: &str, instance: &str) -> Result<Reply, String> {
+    pub fn post(
+        &self,
+        url: &str,
+        prompt: &str,
+        instance: &str,
+        said: &dyn Fn(&str),
+    ) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
@@ -640,7 +646,7 @@ impl Endpoint {
         };
         let mut effort = self.takes_effort.load(Ordering::SeqCst) && self.effort.is_some();
         let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
-        let mut reply = self.send(url, &snapshot, wire, effort, cap, instance);
+        let mut reply = self.send(url, &snapshot, wire, effort, cap, instance, said);
         // A loop rather than one retry: three guarded fields, and a validator
         // strict enough to refuse two would otherwise lose the wake. Bounded
         // by the field count so a body that keeps naming one cannot post forever.
@@ -681,7 +687,7 @@ impl Endpoint {
                 Field::Effort => effort = false,
                 Field::Cap => cap = false,
             }
-            reply = self.send(url, &snapshot, wire, effort, cap, instance);
+            reply = self.send(url, &snapshot, wire, effort, cap, instance, said);
             // Evidence, not a guess: the server rejected the field and the
             // request without it worked. A misread 400 fails twice and settles
             // nothing, and neither does a stream that merely broke.
@@ -744,6 +750,7 @@ impl Endpoint {
 
     /// One POST. Both attempts come through here, so the fallback differs
     /// from the first try in exactly one field.
+    #[allow(clippy::too_many_arguments)]
     fn send(
         &self,
         url: &str,
@@ -752,6 +759,7 @@ impl Endpoint {
         effort: bool,
         cap: bool,
         instance: &str,
+        said: &dyn Fn(&str),
     ) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
@@ -824,9 +832,12 @@ impl Endpoint {
                     .into_with_config()
                     .limit(STREAM_LIMIT)
                     .reader();
-                match read_stream(reader, crate::completer::abandoned, |line| {
-                    think(instance, line)
-                }) {
+                match read_stream(
+                    reader,
+                    crate::completer::abandoned,
+                    |line| think(instance, line),
+                    said,
+                ) {
                     Ok((streamed, marked)) => {
                         // Evidence, like the three dropped fields above it:
                         // this host marked its reasoning, so the next turn
@@ -962,14 +973,14 @@ pub(crate) fn note_http_call(
 }
 
 impl Completer for Endpoint {
-    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+    fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         let prompt = &request.prompt;
         if tracing() {
             eprintln!("director: sending POST {} model={}", self.url, self.model);
             trace_block("prompt", prompt);
             eprintln!("director: waiting for model");
         }
-        let result = match self.post(&self.url, prompt, &request.instance) {
+        let result = match self.post(&self.url, prompt, &request.instance, said) {
             Ok(reply) => {
                 if tracing() {
                     trace_block("model", &reply.text);
@@ -984,7 +995,7 @@ impl Completer for Endpoint {
                     if tracing() {
                         eprintln!("director: trying {alt}");
                     }
-                    match self.post(&alt, prompt, &request.instance) {
+                    match self.post(&alt, prompt, &request.instance, said) {
                         Ok(reply) => {
                             if tracing() {
                                 trace_block("model", &reply.text);
@@ -1240,7 +1251,7 @@ fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     println!("POST {url}");
-    match endpoint.post(url, PING, "probe") {
+    match endpoint.post(url, PING, "probe", &|_| {}) {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
             println!();
@@ -1490,13 +1501,15 @@ enum Streamed {
 /// Assemble an SSE reply. Takes a `Read` rather than a response so the
 /// shapes below are checked against canned bytes. `thought` is a parameter
 /// because the Shell's door is a process global that a test cannot reach.
+/// `said` hears the answer so far after every delta.
 fn read_stream(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
     thought: impl Fn(&str),
+    said: impl Fn(&str),
 ) -> Result<(Streamed, bool), String> {
     let mut thinking = String::new();
-    let ended = read_frames(reader, abandoned, &thought, &mut thinking);
+    let ended = read_frames(reader, abandoned, &thought, &said, &mut thinking);
     // The empty thought tells the Chat surface this turn stopped thinking
     // (ADR-0034). Same path as the draw, so all-whitespace thinking, which
     // opened no row, closes none.
@@ -1516,6 +1529,7 @@ fn read_frames(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
     thought: &impl Fn(&str),
+    said: &impl Fn(&str),
     thinking: &mut String,
 ) -> Result<Streamed, String> {
     use std::io::BufRead;
@@ -1577,6 +1591,7 @@ fn read_frames(
                 }
             }
             chunk.push_str(&content.push(&delta));
+            said(content.so_far());
         }
         if !chunk.is_empty() {
             thinking.push_str(&chunk);
@@ -2272,6 +2287,65 @@ pub(crate) mod tests {
         (format!("http://127.0.0.1:{port}/v1/chat/completions"), seen)
     }
 
+    /// A loopback server that answers one POST with `sse` as an event stream.
+    fn server_streaming(sse: &'static str) -> String {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("the bound port").port();
+        thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = BufReader::new(stream.try_clone().expect("the same socket"));
+            let mut length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap_or(0);
+                }
+            }
+            let _ = reader.read_exact(&mut vec![0; length]);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse}"
+            );
+        });
+        format!("http://127.0.0.1:{port}/v1/chat/completions")
+    }
+
+    /// The Model API Director's Speech reaches the bubble delta by delta,
+    /// and the Behavior name never does.
+    #[test]
+    fn a_model_api_answer_is_spoken_as_its_deltas_land() {
+        let url = server_streaming(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\nhe\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"y there\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        ));
+        let director = ModelDirector::new(endpoint_at(&url), ["stroll"], "buddy-1", "bmo", false);
+        let heard = std::cell::RefCell::new(Vec::new());
+
+        let woken = director.wake_request(
+            director.request(&crate::completer::tests::wake_context()),
+            &|line| heard.borrow_mut().push(line),
+        );
+
+        assert_eq!(heard.into_inner(), ["he", "hey there"]);
+        assert_eq!(
+            woken.wake,
+            fidget_core::director::Wake::Proposed(fidget_core::engine::BehaviorProposal {
+                behavior: "stroll".to_string(),
+                dialogue: Some("hey there".to_string()),
+            })
+        );
+    }
+
     /// The field goes out. A server that names it in a rejection gets one
     /// more request without it, and the next wake does not ask again.
     #[test]
@@ -2282,7 +2356,10 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
+            endpoint
+                .post(&url, "hello", "buddy-1", &|_| {})
+                .unwrap()
+                .text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2295,7 +2372,7 @@ pub(crate) mod tests {
         );
 
         endpoint
-            .post(&url, "what just happened: poked", "buddy-1")
+            .post(&url, "what just happened: poked", "buddy-1", &|_| {})
             .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
@@ -2323,7 +2400,7 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         endpoint
-            .post(&url, "hello", "buddy-1")
+            .post(&url, "hello", "buddy-1", &|_| {})
             .expect("the stub answers");
         let asked: serde_json::Value =
             serde_json::from_str(&seen.recv().expect("the request")).expect("the request is JSON");
@@ -2344,7 +2421,10 @@ pub(crate) mod tests {
         endpoint.streams.store(false, Ordering::SeqCst);
 
         assert_eq!(
-            endpoint.post(&url, "hello", "buddy-1").unwrap().text,
+            endpoint
+                .post(&url, "hello", "buddy-1", &|_| {})
+                .unwrap()
+                .text,
             "stroll\nhey",
             "the refusal costs a second POST, not the wake"
         );
@@ -2357,7 +2437,7 @@ pub(crate) mod tests {
         );
 
         endpoint
-            .post(&url, "what just happened: poked", "buddy-1")
+            .post(&url, "what just happened: poked", "buddy-1", &|_| {})
             .unwrap();
         let next_wake = seen.recv().expect("the next wake");
         assert!(
@@ -2511,16 +2591,44 @@ pub(crate) mod tests {
             std::io::Cursor::new(sse),
             || false,
             |line| drawn.borrow_mut().push(line.to_string()),
+            |_| {},
         )
         .unwrap();
         (ended, drawn.into_inner())
     }
 
+    /// Every answer-so-far the stream reported while it was read.
+    fn streamed_answers(sse: &str) -> Vec<String> {
+        let heard = std::cell::RefCell::new(Vec::new());
+        read_stream(
+            std::io::Cursor::new(sse),
+            || false,
+            |_| {},
+            |said| heard.borrow_mut().push(said.to_string()),
+        )
+        .unwrap();
+        heard.into_inner()
+    }
+
     /// Did this stream mark its reasoning? The bit `post` remembers on the host.
     fn streamed_marked(sse: &str) -> bool {
-        read_stream(std::io::Cursor::new(sse), || false, |_| {})
+        read_stream(std::io::Cursor::new(sse), || false, |_| {}, |_| {})
             .unwrap()
             .1
+    }
+
+    /// The answer is reported as it grows, so the bubble can fill before
+    /// `[DONE]`. Tagged reasoning is peeled off first and never reported.
+    #[test]
+    fn a_streamed_answer_is_reported_as_it_grows() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<think>hmm</think>\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\nhey\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(streamed_answers(sse), ["", "stroll", "stroll\nhey"]);
     }
 
     #[test]
@@ -2579,7 +2687,7 @@ pub(crate) mod tests {
             sent: 0,
         };
         assert_eq!(
-            read_stream(dribble, || false, |_| {}).unwrap().0,
+            read_stream(dribble, || false, |_| {}, |_| {}).unwrap().0,
             Streamed::Complete("stroll\nhey".to_string())
         );
     }
@@ -3074,7 +3182,7 @@ pub(crate) mod tests {
             asked.get() > 3
         };
         assert_eq!(
-            read_stream(Endless, abandoned, |_| {}).unwrap().0,
+            read_stream(Endless, abandoned, |_| {}, |_| {}).unwrap().0,
             Streamed::Abandoned
         );
     }
@@ -4215,10 +4323,10 @@ pub(crate) mod tests {
     }
 
     impl<C: Completer> Completer for Reframing<C> {
-        fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+        fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
             let mut sent = request.clone();
             sent.prompt = reframed(&sent.prompt, &self.personality, self.framing);
-            self.inner.complete(&sent)
+            self.inner.complete(&sent, said)
         }
     }
 
@@ -4227,7 +4335,7 @@ pub(crate) mod tests {
     struct Silent;
 
     impl Completer for Silent {
-        fn complete(&self, _request: &WakeRequest) -> Result<Reply, String> {
+        fn complete(&self, _request: &WakeRequest, _: &dyn Fn(&str)) -> Result<Reply, String> {
             Err("no server here".to_string())
         }
     }

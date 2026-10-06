@@ -1460,7 +1460,20 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let mut proposal = None;
-                let arrived = slots.take(&live.id);
+                let arrived = match slots.take(&live.id) {
+                    Some(completer::Arrived::Answered(answered)) => Some(*answered),
+                    // A line with no Behavior, so `talk` plays while it grows
+                    // and Do Not Disturb gates it like any line. The reply's
+                    // own Behavior is applied when it lands.
+                    Some(completer::Arrived::Speech(line)) => {
+                        proposal = Some(BehaviorProposal {
+                            behavior: String::new(),
+                            dialogue: Some(line),
+                        });
+                        None
+                    }
+                    None => None,
+                };
                 let applied = arrived.is_some();
 
                 let answering_chat = arrived

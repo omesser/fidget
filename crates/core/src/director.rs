@@ -190,7 +190,9 @@ pub fn reactive(happened: &Happened) -> bool {
 /// The attached Harness, or the HTTP stand-in in the shell when none is
 /// attached. Tests put a double here.
 pub trait Completer {
-    fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
+    /// One turn. `said` hears the answer written so far each time a chunk of
+    /// it lands, reasoning already peeled off. The `Reply` is the whole of it.
+    fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String>;
 
     /// Whether this Completer has a question out to the user on `instance`'s
     /// turn, so that turn is waiting on a person rather than on a model
@@ -352,12 +354,22 @@ impl<C: Completer> ModelDirector<C> {
     /// declares none of. A near miss arrives as speech, so without this it is
     /// invisible. Reported, never corrected: guessing a correction is ruled out.
     pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
-        self.wake_request(self.request(context))
+        self.wake_request(self.request(context), &|_| {})
     }
 
-    /// Run a wake whose prompt the caller already finished.
-    pub fn wake_request(&self, request: WakeRequest) -> Woken {
-        match self.completer.complete(&request) {
+    /// Run a wake whose prompt the caller already finished. `speaking` hears
+    /// the words the bubble may show while the reply is still arriving, each
+    /// time they change.
+    pub fn wake_request(&self, request: WakeRequest, speaking: &dyn Fn(String)) -> Woken {
+        let last = std::cell::RefCell::new(None);
+        let said = |answer: &str| {
+            let line = self.speech_so_far(answer);
+            if line.is_some() && *last.borrow() != line {
+                last.replace(line.clone());
+                speaking(line.unwrap_or_default());
+            }
+        };
+        match self.completer.complete(&request, &said) {
             // Parsed exactly as a whole reply is. The cap ended the turn, not
             // the contract. The fact that it was cut off rides out beside them.
             Ok(reply) => {
@@ -376,43 +388,58 @@ impl<C: Completer> ModelDirector<C> {
         }
     }
 
+    /// What the reply so far lets the character say. Nothing until the
+    /// contract line has been read: a line that could still be a Behavior
+    /// name is held, so `wave` never shows before the speech, and a reply that
+    /// writes no contract line is spoken whole only when it ends. Past that
+    /// line it is exactly what the whole reply would parse to, so the bubble
+    /// only ever grows into the line it ends on.
+    fn speech_so_far(&self, answer: &str) -> Option<String> {
+        let answer = answer.trim_end_matches('\r');
+        let (lines, tail) = answer.split_at(answer.rfind('\n').map_or(0, |at| at + 1));
+        let named = parse_proposal(lines).is_ok()
+            || (tail.contains('|') && contract_line(tail.trim()).is_some());
+        match named.then(|| self.proposal(answer).0)? {
+            Wake::Proposed(proposal) => proposal.dialogue,
+            Wake::Failed => None,
+        }
+    }
+
     fn parsed(&self, reply: &str) -> (Wake, Option<String>) {
-        {
-            {
-                // The Completer has the opening; later turns stay short
-                // even if this reply failed to parse.
-                self.opened.store(true, Ordering::SeqCst);
-                match parse_proposal(reply) {
-                    // The declared spelling, not the model's: a name written
-                    // at the start of a line comes back capitalised, and the
-                    // Engine looks a Behavior up by the name its Character declared.
-                    Ok(proposal) => match self.declared(&proposal.behavior) {
-                        Some(behavior) => (
-                            Wake::Proposed(BehaviorProposal {
-                                behavior,
-                                dialogue: proposal.dialogue,
-                            }),
-                            None,
-                        ),
-                        None if proposal.behavior.eq_ignore_ascii_case("say") => {
-                            match proposal.dialogue {
-                                Some(line) => (
-                                    Wake::Proposed(BehaviorProposal {
-                                        behavior: String::new(),
-                                        dialogue: Some(line),
-                                    }),
-                                    None,
-                                ),
-                                None => (Wake::Failed, None),
-                            }
-                        }
-                        // `parse_proposal` has already ruled the name a single
-                        // token, so this is the near miss and not prose.
-                        None => (spoken_or_failed(reply), Some(proposal.behavior)),
-                    },
-                    Err(_) => (spoken_or_failed(reply), None),
-                }
-            }
+        // The Completer has the opening; later turns stay short
+        // even if this reply failed to parse.
+        self.opened.store(true, Ordering::SeqCst);
+        self.proposal(reply)
+    }
+
+    fn proposal(&self, reply: &str) -> (Wake, Option<String>) {
+        match parse_proposal(reply) {
+            // The declared spelling, not the model's: a name written
+            // at the start of a line comes back capitalised, and the
+            // Engine looks a Behavior up by the name its Character declared.
+            Ok(proposal) => match self.declared(&proposal.behavior) {
+                Some(behavior) => (
+                    Wake::Proposed(BehaviorProposal {
+                        behavior,
+                        dialogue: proposal.dialogue,
+                    }),
+                    None,
+                ),
+                None if proposal.behavior.eq_ignore_ascii_case("say") => match proposal.dialogue {
+                    Some(line) => (
+                        Wake::Proposed(BehaviorProposal {
+                            behavior: String::new(),
+                            dialogue: Some(line),
+                        }),
+                        None,
+                    ),
+                    None => (Wake::Failed, None),
+                },
+                // `parse_proposal` has already ruled the name a single
+                // token, so this is the near miss and not prose.
+                None => (spoken_or_failed(reply), Some(proposal.behavior)),
+            },
+            Err(_) => (spoken_or_failed(reply), None),
         }
     }
 
@@ -1342,8 +1369,15 @@ mod tests {
     }
 
     impl Completer for Scripted {
-        fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+        /// Writes the reply one character at a time, as a stream would.
+        fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
             *self.seen.lock().expect("the lock is not poisoned") = Some(request.clone());
+            if let Ok(reply) = &self.reply {
+                for (at, _) in reply.text.char_indices().skip(1) {
+                    said(&reply.text[..at]);
+                }
+                said(&reply.text);
+            }
             self.reply.clone()
         }
     }
@@ -2461,6 +2495,71 @@ mod tests {
         match upper.wake(&context(working(), &[])) {
             Wake::Failed => {}
             other => panic!("Say. should fail, not {other:?}"),
+        }
+    }
+
+    /// Streams `reply` one character at a time and returns every line the
+    /// Director let through, then the line the whole reply parsed to.
+    fn streamed(reply: &str) -> (Vec<String>, Option<String>) {
+        let director = directing(Scripted::says(reply), ["prowl", "wave", "stroll", "nap"]);
+        let heard = std::cell::RefCell::new(Vec::new());
+        let woken = director.wake_request(director.request(&context(working(), &[])), &|line| {
+            heard.borrow_mut().push(line)
+        });
+        let said = match woken.wake {
+            Wake::Proposed(proposal) => proposal.dialogue,
+            Wake::Failed => None,
+        };
+        (heard.into_inner(), said)
+    }
+
+    /// The parse cases above, streamed. Each row is a reply and the last line
+    /// the bubble shows before the turn ends. A line that could still be the
+    /// contract line is held, and a reply that never writes one streams
+    /// nothing: it is spoken whole when it ends, as before.
+    #[test]
+    fn streamed_speech_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
+        let banner = format!("{PI_BANNER}\nwave\nHello!");
+        let rows: [(&str, Option<&str>); 19] = [
+            ("stroll\nhey there", Some("hey there")),
+            ("wave", None),
+            ("nap | sleepy", Some("sleepy")),
+            ("Prowl\nMine now.", Some("Mine now.")),
+            ("prowll\nMine now.", Some("prowll\nMine now.")),
+            ("Check\nSomething moved.", Some("Check\nSomething moved.")),
+            ("say | hello", Some("hello")),
+            ("say: hey", None),
+            ("cartwheel", None),
+            ("It's 23:59! Almost a brand new day!", None),
+            ("I'll rest now.\nnap", None),
+            (
+                "I'll rest now.\nnap\nBack in five.",
+                Some("I'll rest now.\nBack in five."),
+            ),
+            (
+                "I'll be right back.\n\nnap\n\nSee you soon.",
+                Some("I'll be right back.\n\n\nSee you soon."),
+            ),
+            ("\n\nwave\n\nHello\n\n", Some("Hello")),
+            ("wave\n   \n\n", None),
+            ("PROWL. | hunting", Some("hunting")),
+            ("nap: | so sleepy...", Some("so sleepy...")),
+            ("say", None),
+            (&banner, Some("Hello!")),
+        ];
+        for (reply, last) in rows {
+            let (heard, said) = streamed(reply);
+            assert_eq!(heard.last().map(String::as_str), last, "{reply:?}");
+            let said = said.unwrap_or_default();
+            for (line, next) in heard.iter().zip(heard.iter().skip(1)) {
+                assert_ne!(line, next, "{reply:?}: a line is sent when it changes");
+            }
+            for line in &heard {
+                assert!(
+                    said.starts_with(line.as_str()),
+                    "{reply:?}: {line:?} never shows on the way to {said:?}"
+                );
+            }
         }
     }
 }

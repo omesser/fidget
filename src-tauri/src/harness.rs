@@ -1157,7 +1157,7 @@ impl Session {
         (at.elapsed() < WITHDRAWAL_GRACE).then_some(winner)
     }
 
-    fn turn(&self, request: &WakeRequest) -> Result<Reply, String> {
+    fn turn(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         let _turn = match self.turn.try_lock() {
             Ok(turn) => turn,
             Err(_) => match self.supersede(request) {
@@ -1171,16 +1171,16 @@ impl Session {
         // released. No window has the lock free and this slot still naming a
         // turn that has ended.
         let _serving = Serving::new(self, &request.instance);
-        let (session_id, outcome) = self.attempt(request)?;
+        let (session_id, outcome) = self.attempt(request, said)?;
         // `session/load` can succeed with a dead id (`hermes`). The first turn
         // is the evidence. Reopen once. Not a loss (already charged), a
         // timeout (would spend the budget twice), or our own cancel (ADR-0012).
         let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
             Err(TurnError::Stopped(reason)) if reason != CANCELLED && self.reopen_loaded(&key) => {
-                self.attempt(request)?
+                self.attempt(request, said)?
             }
-            Err(TurnError::Failed(_)) if self.reopen_loaded(&key) => self.attempt(request)?,
+            Err(TurnError::Failed(_)) if self.reopen_loaded(&key) => self.attempt(request, said)?,
             _ => (session_id, outcome),
         };
         let mut withdrawn = false;
@@ -1257,7 +1257,11 @@ impl Session {
     /// One `session/prompt` on the session `attach` hands over. Split out of
     /// `turn` so the load retry pays the same bookkeeping the first attempt
     /// did. `Err` is a wake that never reached the wire, already refused.
-    fn attempt(&self, request: &WakeRequest) -> Result<(String, Result<Reply, TurnError>), String> {
+    fn attempt(
+        &self,
+        request: &WakeRequest,
+        said: &dyn Fn(&str),
+    ) -> Result<(String, Result<Reply, TurnError>), String> {
         let (wire, session_id) = match self.attach(Some(&SessionKey::from_request(request))) {
             Ok(pair) => pair,
             // A rejected effort is the harness answering, so Chat reads it on
@@ -1284,7 +1288,7 @@ impl Session {
         if let Ok(mut owners) = self.owners.lock() {
             owners.insert(session_id.clone(), request.instance.clone());
         }
-        let outcome = wire.prompt(&session_id, &request.prompt, self.timeout);
+        let outcome = wire.prompt(&session_id, &request.prompt, self.timeout, said);
         // Charge the loss before the outcome is dressed for the caller. A
         // death under every turn must pay the same backoff a failed spawn
         // does. An answering child must not carry a death from hours ago.
@@ -1966,11 +1970,11 @@ impl Session {
 }
 
 impl Completer for Session {
-    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+    fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         if crate::model::tracing() {
             eprintln!("harness: prompt to {}", self.launch.name);
         }
-        let reply = self.turn(request);
+        let reply = self.turn(request, said);
         if crate::model::tracing() {
             match &reply {
                 Ok(reply) if reply.truncated => {
@@ -2137,17 +2141,20 @@ fn probe(session: &Session) -> i32 {
 
     println!("turn");
     println!("  prompt       {PROBE_PROMPT}");
-    let code = match session.turn(&WakeRequest {
-        prompt: PROBE_PROMPT.to_string(),
-        // Reactive, because a probe is someone asking on purpose. Named for
-        // the probe so the Action Log line cannot be read as a character's own wake.
-        instance: "probe".to_string(),
-        character: "probe".to_string(),
-        reactive: true,
-        // The probe sends its own fixed prompt, not a Character's, so the mode
-        // it would have been assembled under decides nothing here.
-        blank: false,
-    }) {
+    let code = match session.turn(
+        &WakeRequest {
+            prompt: PROBE_PROMPT.to_string(),
+            // Reactive, because a probe is someone asking on purpose. Named for
+            // the probe so the Action Log line cannot be read as a character's own wake.
+            instance: "probe".to_string(),
+            character: "probe".to_string(),
+            reactive: true,
+            // The probe sends its own fixed prompt, not a Character's, so the mode
+            // it would have been assembled under decides nothing here.
+            blank: false,
+        },
+        &|_| {},
+    ) {
         Ok(reply) => {
             let text = reply.text;
             println!(
@@ -2842,7 +2849,7 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidget_core::director::{Context, Happened};
+    use fidget_core::director::{Context, Happened, ModelDirector, Wake};
     use fidget_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
@@ -3339,6 +3346,14 @@ mod tests {
                         "working" => {
                             thread::sleep(ASK_WORK);
                             chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
+                        // Writes its answer over three chunks, the Behavior
+                        // name split across two of them.
+                        "speaking" => {
+                            for text in ["wa", "ve\nGood ", "morning"] {
+                                chunk(&session, text);
+                            }
                             stop(&id, "end_turn");
                         }
                         // Thinks before it answers, so each turn's thought
@@ -4061,7 +4076,10 @@ mod tests {
     #[test]
     fn session_new_cwd_is_the_attach_dir_and_durable_files_live_in_the_store() {
         let (fx, session) = Fixture::split("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(
             fx.count(&format!("cwd={}", fx.cwd.display())),
             1,
@@ -4091,7 +4109,10 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 1);
         assert_eq!(
             fx.count(&format!("cwd={}", fx.cwd.display())),
@@ -4121,7 +4142,7 @@ mod tests {
             SessionDataDir::at(data.clone()),
             silent(),
         );
-        let err = session.complete(&asking("hi")).unwrap_err();
+        let err = session.complete(&asking("hi"), &|_| {}).unwrap_err();
         assert!(
             err.contains(&relative.display().to_string()),
             "spawn named the relative path, got {err}"
@@ -4148,7 +4169,7 @@ mod tests {
             SessionDataDir::at(data.clone()),
             silent(),
         );
-        let err = session.complete(&asking("hi")).unwrap_err();
+        let err = session.complete(&asking("hi"), &|_| {}).unwrap_err();
         assert!(
             err.contains(&missing.display().to_string()),
             "spawn named the missing path, got {err}"
@@ -4171,7 +4192,7 @@ mod tests {
             SessionDataDir::at(dir.clone()),
             silent(),
         );
-        let _ = session.complete(&asking("hi"));
+        let _ = session.complete(&asking("hi"), &|_| {});
         assert!(
             dir.is_dir(),
             "empty default is a folder we own; spawn must create it"
@@ -4421,7 +4442,10 @@ mod tests {
     #[test]
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -4443,7 +4467,10 @@ mod tests {
     #[test]
     fn the_session_file_keys_the_id_by_instance_and_character() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let saved: Value =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -4463,11 +4490,11 @@ mod tests {
     fn two_character_instances_do_not_share_an_acp_session() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            session.complete(&asking_as("buddy-1", "bmo", "hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "hi")),
+            session.complete(&asking_as("buddy-2", "bmo", "hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4492,8 +4519,12 @@ mod tests {
     #[test]
     fn each_thought_names_the_instance_whose_session_thought_it() {
         let (fx, session) = Fixture::new("thinking");
-        assert!(session.complete(&asking_as("buddy-a", "rex", "hi")).is_ok());
-        assert!(session.complete(&asking_as("buddy-b", "rex", "hi")).is_ok());
+        assert!(session
+            .complete(&asking_as("buddy-a", "rex", "hi"), &|_| {})
+            .is_ok());
+        assert!(session
+            .complete(&asking_as("buddy-b", "rex", "hi"), &|_| {})
+            .is_ok());
         session.shutdown();
 
         let thoughts: Vec<(String, String)> = fx
@@ -4516,15 +4547,38 @@ mod tests {
         );
     }
 
+    /// The Harness Director's Speech reaches the bubble a chunk at a time,
+    /// before the turn ends, and the Behavior name never does.
+    #[test]
+    fn a_harness_answer_is_spoken_as_its_chunks_land() {
+        let (_fx, session) = Fixture::new("speaking");
+        let director = ModelDirector::new(session, ["wave"], "buddy-1", "bmo", false);
+        let heard = std::cell::RefCell::new(Vec::new());
+
+        let woken = director.wake_request(asking("hi"), &|line| heard.borrow_mut().push(line));
+
+        assert_eq!(heard.into_inner(), ["Good ", "Good morning"]);
+        assert_eq!(
+            woken.wake,
+            Wake::Proposed(BehaviorProposal {
+                behavior: "wave".to_string(),
+                dialogue: Some("Good morning".to_string()),
+            })
+        );
+    }
+
     /// An Instance Prompt change cannot retrofit the opening turn (ADR-0012),
     /// so the next wake must be `session/new`, not a turn on the old id.
     #[test]
     fn dropping_a_conversation_opens_a_new_acp_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.drop_conversation("buddy-1");
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4548,18 +4602,21 @@ mod tests {
     #[test]
     fn dropping_an_instance_forgets_every_lane() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let blank = WakeRequest {
             blank: true,
             ..asking("hi")
         };
-        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&blank, &|_| {}), Ok(Reply::whole("Hello")));
         session.drop_conversation("buddy-1");
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&blank, &|_| {}), Ok(Reply::whole("Hello")));
         session.shutdown();
 
         let prompts = fx.events("prompt");
@@ -4585,11 +4642,14 @@ mod tests {
         )
         .unwrap();
         session.drop_conversation("buddy-1");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 0, "the dropped id was loaded back");
         assert_eq!(fx.count("new"), 1);
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "again")),
+            session.complete(&asking_as("buddy-2", "bmo", "again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(fx.count("load"), 1, "the other Instance was dropped too");
@@ -4611,11 +4671,11 @@ mod tests {
             session.drop_conversation(instance);
         }
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            session.complete(&asking_as("buddy-1", "bmo", "hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "hi")),
+            session.complete(&asking_as("buddy-2", "bmo", "hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4647,16 +4707,16 @@ mod tests {
     fn dropping_one_instance_leaves_the_other_conversation() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            session.complete(&asking_as("buddy-1", "bmo", "a"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "b")),
+            session.complete(&asking_as("buddy-2", "bmo", "b"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.drop_conversation("buddy-1");
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "c")),
+            session.complete(&asking_as("buddy-2", "bmo", "c"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4676,14 +4736,14 @@ mod tests {
     fn a_blank_wake_does_not_continue_the_shaped_session() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            session.complete(&asking_as("buddy-1", "bmo", "hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         let blank = WakeRequest {
             blank: true,
             ..asking_as("buddy-1", "bmo", "hi")
         };
-        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&blank, &|_| {}), Ok(Reply::whole("Hello")));
         session.shutdown();
 
         let prompts = fx.events("prompt");
@@ -4711,15 +4771,15 @@ mod tests {
     fn switching_back_resumes_the_first_instance_session() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            session.complete(&asking_as("buddy-1", "bmo", "a"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "b")),
+            session.complete(&asking_as("buddy-2", "bmo", "b"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "c")),
+            session.complete(&asking_as("buddy-1", "bmo", "c"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4744,15 +4804,15 @@ mod tests {
     fn a_character_switch_does_not_keep_the_previous_transcript() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            session.complete(&asking_as("buddy-1", "bmo", "a"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "timber-wolf", "b")),
+            session.complete(&asking_as("buddy-1", "timber-wolf", "b"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "c")),
+            session.complete(&asking_as("buddy-1", "bmo", "c"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4777,11 +4837,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "again")),
+            session.complete(&asking_as("buddy-1", "bmo", "again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "again")),
+            session.complete(&asking_as("buddy-2", "bmo", "again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         session.shutdown();
@@ -4802,7 +4862,10 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 0, "the leftover id was applied");
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
@@ -4813,7 +4876,10 @@ mod tests {
     #[test]
     fn a_second_shutdown_does_not_reap_again() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
         let again = Instant::now();
         session.shutdown();
@@ -4837,10 +4903,13 @@ mod tests {
     #[test]
     fn shutdown_refuses_a_later_turn() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Err("harness detached".to_string())
         );
     }
@@ -4850,12 +4919,18 @@ mod tests {
     #[test]
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let proactive = WakeRequest {
             reactive: false,
             ..asking("nobody asked")
         };
-        assert_eq!(session.complete(&proactive), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&proactive, &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
 
         let prompts = fx.events("prompt");
@@ -4953,7 +5028,7 @@ mod tests {
     #[test]
     fn a_refusal_is_an_err() {
         let (fx, session) = Fixture::new("refusal");
-        let reply = session.complete(&asking("hi"));
+        let reply = session.complete(&asking("hi"), &|_| {});
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
@@ -5002,7 +5077,10 @@ mod tests {
         let (fx, session) = Fixture::new("completer-effort");
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
         });
         assert_eq!(fx.count("new"), 1);
         assert_eq!(fx.count("prompt"), 1);
@@ -5016,7 +5094,10 @@ mod tests {
                     director_reasoning_effort: level.to_string(),
                     ..crate::settings::Settings::default()
                 });
-                assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+                assert_eq!(
+                    session.complete(&asking("hi"), &|_| {}),
+                    Ok(Reply::whole("Hello"))
+                );
                 crate::dev_flags::seed(&crate::settings::Settings::default());
             });
             assert_eq!(config_lines(&fx), vec![format!("config=reasoning={level}")]);
@@ -5033,7 +5114,10 @@ mod tests {
                 director_reasoning_effort: "medium".to_string(),
                 ..crate::settings::Settings::default()
             });
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             crate::dev_flags::seed(&crate::settings::Settings::default());
         });
         assert_eq!(config_lines(&fx), vec!["config=knob=medium".to_string()]);
@@ -5053,7 +5137,10 @@ mod tests {
                 director_reasoning_effort: "low".to_string(),
                 ..crate::settings::Settings::default()
             });
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             crate::dev_flags::seed(&crate::settings::Settings::default());
         });
         assert_eq!(fx.count("load"), 1);
@@ -5070,7 +5157,7 @@ mod tests {
                 director_reasoning_effort: "high".to_string(),
                 ..crate::settings::Settings::default()
             });
-            let first = session.complete(&asking("hi"));
+            let first = session.complete(&asking("hi"), &|_| {});
             assert!(
                 first
                     .as_ref()
@@ -5089,7 +5176,7 @@ mod tests {
             assert_eq!(fx.count("prompt"), 0, "the rejection is not a prompt");
             assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
             assert!(inspect.alive, "the child is still attached");
-            let second = session.complete(&asking("again"));
+            let second = session.complete(&asking("again"), &|_| {});
             assert!(second.is_err(), "a second wake returns: {second:?}");
             assert!(session.inspect().alive);
             crate::dev_flags::seed(&crate::settings::Settings::default());
@@ -5104,14 +5191,20 @@ mod tests {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             let (fx, session) = Fixture::new("completer-model");
             write_completer_model(&fx.dir, "some-model");
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             assert_eq!(fx.count("new"), 1);
             assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
             session.shutdown();
 
             let (fx, session) = Fixture::new("completer-model");
             write_completer_model(&fx.dir, "   ");
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
             session.shutdown();
 
@@ -5122,7 +5215,10 @@ mod tests {
         )
         .unwrap();
             write_completer_model(&fx.dir, "some-model");
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             assert_eq!(fx.count("load"), 1);
             assert_eq!(fx.count("new"), 0);
             assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
@@ -5136,7 +5232,10 @@ mod tests {
         write_completer_model(&fx.dir, "some-model");
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
         });
         assert_eq!(fx.count("prompt"), 1);
         assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
@@ -5149,7 +5248,7 @@ mod tests {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             let (fx, session) = Fixture::new("completer-model");
             write_completer_model(&fx.dir, "nope");
-            let reply = session.complete(&asking("hi"));
+            let reply = session.complete(&asking("hi"), &|_| {});
             assert!(
                 reply
                     .as_ref()
@@ -5166,7 +5265,7 @@ mod tests {
 
             write_completer_model(&fx.dir, "some-model");
             assert_eq!(
-                session.complete(&asking("again")),
+                session.complete(&asking("again"), &|_| {}),
                 Ok(Reply::whole("Hello"))
             );
             assert_eq!(fx.count("config=llm=some-model"), 1);
@@ -5186,7 +5285,10 @@ mod tests {
                 director_reasoning_effort: "high".to_string(),
                 ..crate::settings::Settings::default()
             });
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             crate::dev_flags::seed(&crate::settings::Settings::default());
         });
         assert_eq!(
@@ -5202,14 +5304,20 @@ mod tests {
     #[test]
     fn garbage_between_messages_is_skipped() {
         let (_fx, session) = Fixture::new("garbage");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
     }
 
     #[test]
     fn initialize_payload_advertises_form_and_url_elicitation() {
         let (fx, session) = Fixture::new("hello");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let params = fx.initialize_params();
         assert_eq!(
             params["clientCapabilities"]["elicitation"],
@@ -5224,7 +5332,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let form = fx.form();
         assert_eq!(form.message, "How should I approach this refactoring?");
@@ -5244,7 +5352,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let form = fx.form();
         session.answer_elicitation(&form.request, ElicitationAnswer::Decline);
@@ -5260,7 +5368,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let ask = fx.ask();
         assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
@@ -5439,7 +5547,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_millis(300)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let ask = fx.ask();
         thread::sleep(Duration::from_millis(900));
@@ -5456,7 +5564,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_millis(300)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let form = fx.form();
         thread::sleep(Duration::from_millis(900));
@@ -5476,7 +5584,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(ASK_WORK * 5 / 3));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let ask = fx.ask();
         session.answer_permission(&ask.request, "allow");
@@ -5494,7 +5602,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_millis(500)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let ask = fx.ask();
         session.answer_permission(&ask.request, "allow");
@@ -5523,12 +5631,12 @@ mod tests {
         let session = Arc::new(session);
         let first = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let ask = fx.ask();
         let second = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("again")))
+            thread::spawn(move || session.complete(&asking("again"), &|_| {}))
         };
         assert_eq!(fx.settled(), (ask.request, None));
         assert!(fx.wait_for("perm:cancelled", 1));
@@ -5569,8 +5677,8 @@ mod tests {
     fn polled(slots: &mut crate::completer::Slots) -> Option<crate::completer::Answered> {
         let id = WOKEN.to_string();
         for _ in 0..300 {
-            if let Some(answered) = slots.take(&id) {
-                return Some(answered);
+            if let Some(crate::completer::Arrived::Answered(answered)) = slots.take(&id) {
+                return Some(*answered);
             }
             thread::sleep(Duration::from_millis(20));
         }
@@ -5730,14 +5838,14 @@ mod tests {
     fn a_slow_turn_is_cancelled_and_the_next_one_works() {
         let (fx, session) = Fixture::new("slow");
         let session = session.with_timeout(Duration::from_millis(500));
-        let reply = session.complete(&asking("hi"));
+        let reply = session.complete(&asking("hi"), &|_| {});
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("cancelled")),
             "{reply:?}"
         );
         assert!(fx.wait_for("cancel", 1));
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(fx.count("spawn"), 1, "cancel is not a respawn");
@@ -5751,12 +5859,12 @@ mod tests {
         // the respawn that has to happen once the wait is over.
         let session = session.with_backoff(Duration::ZERO);
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err("harness exited".to_string())
         );
         assert!(!session.inspect().alive);
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(fx.count("spawn"), 2);
@@ -5771,10 +5879,10 @@ mod tests {
     fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
         let (fx, session) = Fixture::new("die");
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err("harness exited".to_string())
         );
-        let next = session.complete(&asking("again")).unwrap_err();
+        let next = session.complete(&asking("again"), &|_| {}).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
         assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
         session.shutdown();
@@ -5787,11 +5895,11 @@ mod tests {
     fn a_death_before_the_session_opens_buys_the_same_wait() {
         let (fx, session) = Fixture::new("die-opening");
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err("harness exited".to_string())
         );
         assert_eq!(fx.count("new"), 1);
-        let next = session.complete(&asking("again")).unwrap_err();
+        let next = session.complete(&asking("again"), &|_| {}).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
         assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
         session.shutdown();
@@ -5805,11 +5913,11 @@ mod tests {
         let (_fx, session) = Fixture::new("exit");
         let session = session.with_backoff(Duration::ZERO);
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err("harness exited".to_string())
         );
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         let state = session.state.lock().unwrap();
@@ -5825,18 +5933,21 @@ mod tests {
     #[test]
     fn auth_required_names_the_login_and_the_retry_gate_holds() {
         let (fx, session) = Fixture::new("auth");
-        let reply = session.complete(&asking("hi"));
+        let reply = session.complete(&asking("hi"), &|_| {});
         assert_eq!(reply, Err(not_authenticated("fake --login")));
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         // Inside the gate. Fails fast, no second session/new on the wire.
-        assert!(session.complete(&asking("hi")).is_err());
+        assert!(session.complete(&asking("hi"), &|_| {}).is_err());
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
 
         let (fx, session) = Fixture::new("auth");
         let session = session.with_auth_retry(Duration::ZERO);
-        assert!(session.complete(&asking("hi")).is_err());
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert!(session.complete(&asking("hi"), &|_| {}).is_err());
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
         session.shutdown();
@@ -5849,18 +5960,21 @@ mod tests {
     fn a_sign_in_clears_the_landing_only_when_the_next_session_opens() {
         let (fx, session) = Fixture::new("auth-sign-in");
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_authenticated("fake --login"))
         );
         assert_eq!(session.sign_in("fake", "buddy-1", "bmo", false), Ok(()));
         assert_eq!(fx.count("authenticate"), 1);
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
 
         let (fx, session) = Fixture::new("auth-sign-in-noop");
-        assert!(session.complete(&asking("hi")).is_err());
+        assert!(session.complete(&asking("hi"), &|_| {}).is_err());
         assert_eq!(
             session.sign_in("fake", "buddy-1", "bmo", false),
             Err(not_authenticated("fake --login"))
@@ -5884,7 +5998,7 @@ mod tests {
         let (fx, session) = Fixture::new("auth");
         let session = Arc::new(session);
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_authenticated("fake --login"))
         );
         assert!(session.inspect().alive);
@@ -5904,12 +6018,15 @@ mod tests {
             "a pick is not a sign-in button"
         );
         assert_eq!(session.inspect().login, None);
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         session.shutdown();
 
         let (fx, session) = Fixture::new("auth-sign-in-noop");
         let session = Arc::new(session);
-        assert!(session.complete(&asking("hi")).is_err());
+        assert!(session.complete(&asking("hi"), &|_| {}).is_err());
         assert_eq!(
             session.repick(Some(key)),
             Err(not_authenticated("fake --login"))
@@ -5935,7 +6052,7 @@ mod tests {
         ] {
             let (fx, session) = Fixture::new("auth-sign-in-link");
             let session = Arc::new(session);
-            assert!(session.complete(&asking("hi")).is_err());
+            assert!(session.complete(&asking("hi"), &|_| {}).is_err());
             fx.attach_settled();
             let worker = {
                 let session = Arc::clone(&session);
@@ -5965,7 +6082,10 @@ mod tests {
     fn a_link_nobody_asked_for_waits_past_the_turn_and_can_still_be_answered() {
         for script in ["mcp-link", "mcp-link-turn"] {
             let (fx, session) = Fixture::new(script);
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
             let mut form = None;
             while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
                 match forwarded {
@@ -5992,7 +6112,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let form = fx.form();
         assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
@@ -6038,7 +6158,10 @@ mod tests {
     #[test]
     fn a_link_completed_mid_turn_retires_the_row_held_between_turns() {
         let (fx, session) = Fixture::new("mcp-link-complete-turn");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let mut form = None;
         let mut settled = None;
         while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
@@ -6066,14 +6189,14 @@ mod tests {
         for script in ["auth-turn", "auth-turn-32000"] {
             let (fx, session) = Fixture::new(script);
             assert_eq!(
-                session.complete(&asking("hi")),
+                session.complete(&asking("hi"), &|_| {}),
                 Err(not_authenticated("fake --login")),
                 "{script}"
             );
             assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
             fx.attach_settled();
             assert_eq!(
-                session.complete(&asking("again")),
+                session.complete(&asking("again"), &|_| {}),
                 Ok(Reply::whole("Hello"))
             );
             assert_eq!(session.inspect().login, None);
@@ -6091,7 +6214,7 @@ mod tests {
     fn a_failed_turn_carries_the_reason_the_harness_put_in_data() {
         let (_fx, session) = Fixture::new("balance-exhausted");
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(BALANCE_EXHAUSTED.to_string())
         );
         assert_eq!(
@@ -6109,7 +6232,10 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 0);
         assert_eq!(session.inspect().session_id.as_deref(), Some("saved-ok"));
@@ -6121,7 +6247,10 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"stale"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1);
         let saved = std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap();
@@ -6135,7 +6264,10 @@ mod tests {
             r#"{"harness":"other","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 0);
         session.shutdown();
     }
@@ -6151,7 +6283,10 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1, "the dead id was kept");
         assert_eq!(fx.count("prompt"), 2);
@@ -6173,7 +6308,7 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        let reply = session.complete(&asking("hi"));
+        let reply = session.complete(&asking("hi"), &|_| {});
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
@@ -6197,14 +6332,14 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         // The cancel arrives the way a save's does, through the path a newer
         // wake already takes. The loser writes its own line before the winner
         // gets the lock, so what it did with the cancel is settled here.
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         let withdrawn = worker.join().unwrap().unwrap_err();
@@ -6229,7 +6364,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let session = isolated_session(launch, dir.clone(), silent());
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_installed(NOPE)),
             "the wake was answered with an errno"
         );
@@ -6240,7 +6375,7 @@ mod tests {
         // No wait means the next wake asks again rather than being refused, so
         // installing the CLI is picked up without a relaunch.
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_installed(NOPE)),
             "the second wake was refused by a backoff"
         );
@@ -6470,7 +6605,7 @@ mod tests {
         let (fx, session) = Fixture::new("stall-sign-in");
         let session = Arc::new(session);
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_authenticated("fake --login"))
         );
         let worker = {
@@ -6500,7 +6635,7 @@ mod tests {
         let (fx, session) = Fixture::new("stall-authenticate");
         let session = Arc::new(session);
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_authenticated("fake --login"))
         );
         let worker = {
@@ -6530,7 +6665,7 @@ mod tests {
         let (fx, session) = Fixture::new("stall-authenticate");
         let session = Arc::new(session.with_auth_retry(Duration::ZERO));
         assert_eq!(
-            session.complete(&asking("hi")),
+            session.complete(&asking("hi"), &|_| {}),
             Err(not_authenticated("fake --login"))
         );
         let worker = {
@@ -6542,7 +6677,7 @@ mod tests {
             "sign-in never reached authenticate"
         );
         let started = Instant::now();
-        let peer = session.complete(&asking_as("buddy-2", "bmo", "hi"));
+        let peer = session.complete(&asking_as("buddy-2", "bmo", "hi"), &|_| {});
         let elapsed = started.elapsed();
         assert!(
             elapsed < Duration::from_millis(500),
@@ -6559,7 +6694,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
         let started = Instant::now();
@@ -6576,7 +6711,7 @@ mod tests {
         );
         assert_eq!(session.inspect().session_id, None);
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(fx.count("new"), 2, "the dropped id was reused");
@@ -6675,7 +6810,7 @@ mod tests {
     fn a_spawn_that_fails_for_another_reason_stops_saying_not_installed() {
         let (fx, session) = Fixture::new("die-initializing");
         session.note_missing();
-        let reply = session.complete(&asking("hi"));
+        let reply = session.complete(&asking("hi"), &|_| {});
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("initialize")),
             "{reply:?}"
@@ -6772,13 +6907,13 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         // The first prompt is on the wire, so the turn lock is held and the
         // wake below is the one that has to displace it.
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&asking("again"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
         assert_eq!(
@@ -6811,7 +6946,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         // The prompt is on the wire and unanswered. `shutdown` posts into a
         // `turn`, not into `serve`.
@@ -6862,7 +6997,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
         {
@@ -6895,7 +7030,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
         {
@@ -6938,7 +7073,7 @@ mod tests {
         SESSION_SAVE_STALL.store(true, Ordering::SeqCst);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         let until = Instant::now() + Duration::from_secs(5);
         while !SESSION_SAVE_STALLING.load(Ordering::SeqCst) {
@@ -6966,14 +7101,14 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         let poke = WakeRequest {
             instance: "buddy-2".to_string(),
             ..asking("again")
         };
-        assert_eq!(session.complete(&poke), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&poke, &|_| {}), Ok(Reply::whole("Hello")));
         assert!(worker.join().unwrap().is_err(), "the turn was not taken");
 
         // The loser's own line, written while it still held the lock, so it
@@ -7011,7 +7146,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
         session.drop_conversation("buddy-1");
@@ -7043,7 +7178,7 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
         session.drop_conversation("buddy-2");
@@ -7124,11 +7259,11 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(3)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("hi")))
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         assert_eq!(
-            session.complete(&proactive("again")),
+            session.complete(&proactive("again"), &|_| {}),
             Err("harness busy".to_string())
         );
         // Read before the reactive turn's own timeout cancel, which is the
@@ -7199,7 +7334,10 @@ mod tests {
     #[test]
     fn the_probe_waits_for_the_child_to_be_reaped() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         let wire = session.current_wire().expect("attached");
         session.shutdown();
         assert!(
@@ -7775,7 +7913,7 @@ mod tests {
             node_check: None,
         };
         session.update_inspect(|inspect| inspect.unhealthy = Some(failure));
-        let err = session.complete(&asking("hi")).unwrap_err();
+        let err = session.complete(&asking("hi"), &|_| {}).unwrap_err();
         assert_eq!(err, "`npx --version` timed out after 3.0s.");
         assert!(
             !marker.exists(),
