@@ -643,6 +643,11 @@ impl Engine {
         self
     }
 
+    /// A climber stands still on the wall through the post-Poke cooldown and while its feet are held, as a walker does on the floor.
+    fn climb_paused(&self) -> bool {
+        self.state == State::Climbing && (self.poke_cooldown_ms > 0 || self.feet_held)
+    }
+
     /// How far below a display's usable top the feet may be put down.
     fn ceiling_clearance(&self) -> f64 {
         self.sprite_height
@@ -1171,11 +1176,10 @@ impl Engine {
         // `land` needs no such clause: a second arrival comes through a fall, which is a change of name.
         // Everything else keeps its clock across Primitive turns, because restarting each turn would draw the first 600ms of the strip and never the rest.
         let startled = self.on_screen() == Some(Primitive::React);
-        // A climb paused by a Poke keeps one pose: the strip's clock would otherwise climb in place.
-        let paused_climb = self.state == State::Climbing && self.poke_cooldown_ms > 0;
+        // A paused climb keeps one pose: the strip's clock would otherwise climb in place.
         if new_family || (started && startled) {
             self.animation_ms = 0;
-        } else if !(paused_climb && animation == "climb") {
+        } else if !(self.climb_paused() && animation == "climb") {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         }
 
@@ -1276,7 +1280,7 @@ impl Engine {
                 }
             }
             State::Climbing => {
-                let speed = if self.poke_cooldown_ms > 0 {
+                let speed = if self.climb_paused() {
                     0.0
                 } else {
                     CLIMB_SPEED
@@ -3496,6 +3500,106 @@ mod tests {
             ..snapshot(100)
         });
         assert_eq!(unplugged.state, State::Falling, "{unplugged:?}");
+    }
+
+    /// A Throw at the right edge of `one_display`, then one tick up the wall from y 400.
+    fn climbing_engine() -> (Engine, Frame) {
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+        let climbing = engine.tick(&snapshot(100));
+        (engine, climbing)
+    }
+
+    /// The wall gets the floor's answer to a reply bubble: the climb holds in one `climb` pose while the bubble is up, and carries on once it goes.
+    #[test]
+    fn a_reply_bubble_mid_climb_holds_the_sprite_on_the_wall_until_it_goes() {
+        let (mut engine, climbing) = climbing_engine();
+        assert_eq!(climbing.state, State::Climbing);
+        assert_eq!(
+            climbing.position,
+            Point {
+                x: 1000.0,
+                y: 380.0
+            }
+        );
+
+        let bubble = WorldSnapshot {
+            locomotion_frozen: true,
+            ..snapshot(100)
+        };
+        let held: Vec<Frame> = (0..10).map(|_| engine.tick(&bubble)).collect();
+        assert!(
+            held.iter().all(|frame| frame.state == State::Climbing
+                && frame.position
+                    == Point {
+                        x: 1000.0,
+                        y: 380.0
+                    }
+                && frame.animation == "climb"
+                && frame.animation_ms == held[0].animation_ms),
+            "it stays put on the wall in one climb pose while the bubble is up: {held:?}"
+        );
+
+        let resumed = engine.tick(&snapshot(100));
+        assert_eq!(resumed.state, State::Climbing);
+        assert_eq!(
+            resumed.position,
+            Point {
+                x: 1000.0,
+                y: 360.0
+            },
+            "and climbs on once it goes"
+        );
+    }
+
+    /// The hold is what keeps the sprite from letting go at the top under its own bubble, the caret of a quick message included.
+    #[test]
+    fn a_climber_held_one_step_below_the_top_does_not_let_go_until_the_hold_ends() {
+        let (mut engine, _) = climbing_engine();
+        let near_top = (0..12).map(|_| engine.tick(&snapshot(100))).last().unwrap();
+        assert_eq!(
+            near_top.position,
+            Point {
+                x: 1000.0,
+                y: 140.0
+            }
+        );
+
+        for held in [
+            WorldSnapshot {
+                locomotion_frozen: true,
+                ..snapshot(100)
+            },
+            WorldSnapshot {
+                composing: true,
+                ..snapshot(100)
+            },
+        ] {
+            let frames: Vec<Frame> = (0..30).map(|_| engine.tick(&held)).collect();
+            assert!(
+                frames.iter().all(|frame| frame.state == State::Climbing
+                    && frame.position
+                        == Point {
+                            x: 1000.0,
+                            y: 140.0
+                        }),
+                "{frames:?}"
+            );
+        }
+
+        let released = engine.tick(&snapshot(100));
+        assert_eq!(released.position.y, 128.0, "{released:?}");
+        assert_ne!(released.state, State::Climbing, "{released:?}");
     }
 
     #[test]
