@@ -151,12 +151,12 @@ Update README Platform Support table to link to ADR-0024 or this research doc fo
 On a pure Wayland session without XWayland, the Character does not move to a free display or fade when a native Wayland app goes fullscreen. The fullscreen rule behaves as if no fullscreen app is present.
 
 **Root constraint:**  
-Wayland protocol design. Wayland gives clients no global window list by design. On pure Wayland sessions, Fidget uses `DisplayOnlySource` (`src-tauri/src/platform.rs:949-958`), which reports displays but no windows. This is the documented degraded mode.
+Wayland protocol design. Wayland gives clients no global window list by design. On pure Wayland sessions, Fidget uses `DisplayOnlySource` (in `src-tauri/src/platform.rs`), which reports displays but no windows. This is the documented degraded mode.
 
-From `src-tauri/src/platform.rs:1019-1039`:
+From `src-tauri/src/platform.rs`, the `DisplayOnlySource` implementation:
 > A Wayland session with no XWayland stays DisplayOnlySource: no global window list.
 
-The fullscreen detection function `fullscreen_displays` (`crates/core/src/visibility.rs:180-193`) requires a list of window rectangles. With an empty windows list, it returns all `false`, so the Character never moves to a free display and never fades.
+The fullscreen detection function `fullscreen_displays` (in `crates/core/src/visibility.rs`) requires a list of window rectangles. With an empty windows list, it returns all `false`, so the Character never moves to a free display and never fades.
 
 **Options to complete:**
 
@@ -177,9 +177,7 @@ The fullscreen detection function `fullscreen_displays` (`crates/core/src/visibi
 Compositor-specific detection would sprawl across three different compositor families, each with its own maintenance burden and stability risks. Wayland's design decision to withhold global window state is architectural, not a temporary gap.
 
 **Follow-up:**  
-Update README Platform Support table to note that Linux fullscreen fade is "degraded" rather than "yes", with a footnote: "X11 and XWayland: works for all apps. Pure Wayland without XWayland: native Wayland fullscreen apps do not trigger fade or move. XWayland clients still trigger correctly."
-
-Add entry to the table summary documenting the gap for pure Wayland sessions.
+This PR updated the README Platform Support table (Linux fullscreen fade now `degraded⁵`) and added the Wayland fullscreen entry to this document's summary table. The gap is now documented as an accepted degrade.
 
 ---
 
