@@ -29,6 +29,10 @@ let clickableOffArt = false;
 // once. Art, not state, and one entry however many Instances draw from it.
 let characters = {};
 
+// A press on the pet, measured from pointerdown. The composer never arms
+// this: a drag in the field is a selection, and it must not grab the pet.
+let petDrag = null;
+
 const views = new Map();
 
 function currentDisplayBounds() {
@@ -813,9 +817,7 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
-  // A press on the pet, measured from pointerdown. The composer never arms
-  // this: a drag in the field is a selection, and it must not grab the pet.
-  let petDrag = null;
+  petDrag = null;
   document.addEventListener("pointerdown", (event) => {
     const composer = event.target.closest?.(".quick-message");
     const sprite = event.target.closest?.(".sprite");
