@@ -68,9 +68,11 @@ docs/superpowers/
 # which is where the bytes actually live, and Claude Code reads them from
 # nowhere else. An ignored symlink would not exist for a fresh clone. No
 # trailing slash on either: git tracks a symlink as a blob, not a directory.
+# `settings.json` is shared; `settings.local.json` stays personal.
 .claude/*
 !.claude/skills
 !.claude/agents
+!.claude/settings.json
 
 # A dependency install is derived from a manifest, never committed, wherever it
 # lands. The pstack tools under `.agents/skills/*/scripts/` install theirs on
