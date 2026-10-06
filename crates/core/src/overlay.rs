@@ -258,6 +258,43 @@ impl AlphaMask {
     }
 }
 
+/// One Instance's last three placements in shared space and the art drawn at
+/// the last two. The renderer draws the previous art between the first two
+/// placements until the latest arrives, then the latest art between the last two.
+#[derive(Clone, Debug)]
+pub struct DrawTrail {
+    at: [(i32, i32); 3],
+    art: [(AlphaMask, bool, i32); 2],
+}
+
+impl DrawTrail {
+    /// A trail that has only ever been at `at`, drawing `mask`.
+    pub fn start(at: (i32, i32), mask: &AlphaMask, mirrored: bool, scale: i32) -> Self {
+        let art = (mask.clone(), mirrored, scale);
+        Self {
+            at: [at; 3],
+            art: [art.clone(), art],
+        }
+    }
+
+    /// The trail one placement later.
+    pub fn advance(self, at: (i32, i32), mask: &AlphaMask, mirrored: bool, scale: i32) -> Self {
+        let [_, before, last] = self.at;
+        let [_, latest] = self.art;
+        Self {
+            at: [before, last, at],
+            art: [latest, (mask.clone(), mirrored, scale)],
+        }
+    }
+
+    /// Rectangles covering both spans the renderer may be drawing, shifted
+    /// from shared space by `offset`. A Windows window region clips drawing,
+    /// and it can land before or after the placement it was built from.
+    pub fn clip_rects(&self, _offset: (i32, i32)) -> Vec<[i32; 4]> {
+        Vec::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +390,22 @@ mod tests {
         assert_eq!(
             mask.swept_rects(&[(10, 0), (16, 3), (13, 1)], false, 2),
             vec![[10, 0, 20, 5], [16, 0, 24, 5]],
+        );
+    }
+
+    /// A walk changes frame mid-stride. Until the new placement lands, the
+    /// renderer still draws the old frame, so its ink stays in the clip.
+    #[test]
+    fn a_trail_keeps_the_frame_still_on_screen_in_the_clip() {
+        let stride = AlphaMask::from_rows(&["#."]);
+        let next = AlphaMask::from_rows(&[".#"]);
+        let trail = DrawTrail::start((0, 0), &stride, false, 1)
+            .advance((10, 0), &stride, false, 1)
+            .advance((20, 0), &next, false, 1);
+
+        assert_eq!(
+            trail.clip_rects((-100, 5)),
+            vec![[-100, 5, -89, 6], [-89, 5, -78, 6]],
         );
     }
 
