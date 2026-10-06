@@ -114,6 +114,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $out = Join-Path $env:TEMP "fidget-scenario-question-bubble-$stamp"
 $script:Evidence = $out
 New-Item -ItemType Directory -Force -Path (Join-Path $out "home") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $out "appdata") | Out-Null
 $marks = Join-Path $out "harness.log"
 $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
@@ -129,6 +130,7 @@ if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harne
 
 $env:HOME = Join-Path $out "home"
 $env:USERPROFILE = $env:HOME
+$env:APPDATA = Join-Path $out "appdata"
 $env:FIDGET_HARNESS = $harness
 $env:FIDGET_DIRECTOR_WAKE_SECS = "6"
 $env:FIDGET_DIRECTOR_API_KEY = "x"
@@ -173,7 +175,14 @@ try {
         return (Join-Path $out "$Label.ax.txt")
     }
     function Marked([string]$Line) { [bool](Get-Content -LiteralPath $marks | Where-Object { $_ -eq $Line }) }
-    function Traced([string]$Pattern) { [bool](Get-Content -LiteralPath $err | Where-Object { $_ -match $Pattern }) }
+    function Traced([string]$Pattern) {
+        $processLog = Join-Path $env:APPDATA "fidget\process.log"
+        if (Test-Path -LiteralPath $processLog) {
+            [bool](Get-Content -LiteralPath $processLog | Where-Object { $_ -match $Pattern })
+        } else {
+            [bool](Get-Content -LiteralPath $err -ErrorAction SilentlyContinue | Where-Object { $_ -match $Pattern })
+        }
+    }
 
     if (-not (Wait-For 30 { Marked "asked" })) { Fail "no wake reached the Harness; see $err" }
     Start-Sleep -Seconds 1
@@ -184,18 +193,20 @@ try {
     # newest frame trace line says where the sprite is drawn. Read it
     # immediately before the Poke so a walking sprite's stale coordinates
     # do not cause the click to miss.
-    $trace = Get-Content -LiteralPath $err
+    $processLog = Join-Path $env:APPDATA "fidget\process.log"
+    $traceFile = if (Test-Path -LiteralPath $processLog) { $processLog } else { $err }
+    $trace = Get-Content -LiteralPath $traceFile
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
-    if (-not $size) { Fail "no sprite size in $err" }
+    if (-not $size) { Fail "no sprite size in $traceFile" }
     $at = $trace | Select-String -Pattern '^frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
-    if (-not $at) { Fail "no frame trace in $err" }
+    if (-not $at) { Fail "no frame trace in $traceFile" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
     $x = [int]$at.Matches[0].Groups[1].Value + [int]($w / 2)
     $y = [int]$at.Matches[0].Groups[2].Value + [int]($h / 2)
 
     if (-not (Invoke-Ax "poke" @("click", "-X", $x, "-Y", $y))) { Fail "could not click the sprite; see $out\poke.txt" }
-    if (-not (Wait-For 3 { Traced '^verbs: .*Poke' })) { Fail "the click did not land as a Poke; see $err" }
+    if (-not (Wait-For 3 { Traced '^verbs: .*Poke' })) { Fail "the click did not land as a Poke; see $traceFile" }
     Start-Sleep -Seconds 1
     Check-After (Invoke-Dump "after-poke")
     Write-Output "PASS: evidence in $out"

@@ -99,6 +99,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $out = Join-Path $env:TEMP "fidget-scenario-control-click-menu-$stamp"
 $script:Evidence = $out
 New-Item -ItemType Directory -Force -Path (Join-Path $out "home") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $out "appdata") | Out-Null
 $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
 $marks = Join-Path $out "harness.log"
@@ -114,6 +115,7 @@ if ($paths.Count -ne 4) { Fail "a path in the Harness line holds a space: $harne
 
 $env:HOME = Join-Path $out "home"
 $env:USERPROFILE = $env:HOME
+$env:APPDATA = Join-Path $out "appdata"
 $env:FIDGET_HARNESS = $harness
 $env:FIDGET_DIRECTOR_WAKE_SECS = "3600"
 $env:FIDGET_DIRECTOR_API_KEY = "x"
@@ -150,17 +152,26 @@ try {
             Out-File -FilePath (Join-Path $out "$Label.txt") -Encoding utf8
         return ($LASTEXITCODE -eq 0)
     }
-    function Traced([string]$Pattern) { [bool](Get-Content -LiteralPath $err | Where-Object { $_ -match $Pattern }) }
+    function Traced([string]$Pattern) {
+        $processLog = Join-Path $env:APPDATA "fidget\process.log"
+        if (Test-Path -LiteralPath $processLog) {
+            [bool](Get-Content -LiteralPath $processLog | Where-Object { $_ -match $Pattern })
+        } else {
+            [bool](Get-Content -LiteralPath $err -ErrorAction SilentlyContinue | Where-Object { $_ -match $Pattern })
+        }
+    }
 
     # The overlay spans the display, so its centre is not the sprite. The
     # newest frame trace line says where the sprite is drawn.
-    if (-not (Wait-For 15 { Traced '^frame: .* sprite\(' })) { Fail "Fidget traced no frame; see $err" }
+    $processLog = Join-Path $env:APPDATA "fidget\process.log"
+    $traceFile = if (Test-Path -LiteralPath $processLog) { $processLog } else { $err }
+    if (-not (Wait-For 15 { Traced '^frame: .* sprite\(' })) { Fail "Fidget traced no frame; see $traceFile" }
     Start-Sleep -Seconds 2
-    $trace = Get-Content -LiteralPath $err
+    $trace = Get-Content -LiteralPath $traceFile
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
-    if (-not $size) { Fail "no sprite size in $err" }
+    if (-not $size) { Fail "no sprite size in $traceFile" }
     $at = $trace | Select-String -Pattern '^frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
-    if (-not $at) { Fail "no frame trace in $err" }
+    if (-not $at) { Fail "no frame trace in $traceFile" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
     $x = [int]$at.Matches[0].Groups[1].Value + [int]($w / 2)
@@ -168,7 +179,7 @@ try {
     Write-Output "ok: sprite centre ($x,$y)"
 
     if (-not (Invoke-Ax "menu" @("menu", "-X", $x, "-Y", $y))) { Fail "no open menu in the UI Automation tree; see $out\menu.txt" }
-    if (-not (Wait-For 3 { Traced '^verbs: .*\[Menu\]' })) { Fail "the right-click did not land as Menu; see $err" }
+    if (-not (Wait-For 3 { Traced '^verbs: .*\[Menu\]' })) { Fail "the right-click did not land as Menu; see $traceFile" }
     Write-Output "ok: the right-click landed as Menu"
     Check-Items (Join-Path $out "menu.txt")
     Write-Output "PASS: evidence in $out"
