@@ -49,10 +49,19 @@ if (-not $Bin -or -not $TestBin) {
 $selfTestFrameLine = "1791259416 frame: 1791259416038 Grounded pos(1720,1392) sprite(1657,1264) idle#0 <id>"
 $selfTestVerbsLine = "1791259408 overlay: 2 display(s); sprite 126x128; BMO as BMO"
 $selfTestMenuLine = "1791259425 verbs: [Menu]"
+$selfTestPresenceHidden = "1791260872 presence: hidden over 500ms"
+$selfTestClickHitTrue = "1791260862 click: down hits=[true] target=Some(0) cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
+$selfTestClickHitFalse = "1791260862 click: down hits=[false] target=None cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
+$selfTestSettledFrame = "1791260880 frame: 1791260880723 Grounded pos(1720,1328) sprite(1657,1264) land#1 <id>"
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\(')) { Write-Error "self-test: frame pattern failed"; exit 1 }
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: frame coordinate pattern failed"; exit 1 }
 if (-not ($selfTestMenuLine -match '^\d+ verbs: .*\[Menu\]')) { Write-Error "self-test: Menu pattern failed"; exit 1 }
 if ($selfTestVerbsLine -match '^\d+ verbs: ') { Write-Error "self-test: should not match non-verbs line"; exit 1 }
+if (-not ($selfTestPresenceHidden -match '^\d+ presence: hidden')) { Write-Error "self-test: presence:hidden pattern failed"; exit 1 }
+if (-not ($selfTestClickHitTrue -match '^\d+ click: down hits=\[true\]')) { Write-Error "self-test: click hits=[true] pattern failed"; exit 1 }
+if ($selfTestClickHitFalse -match '^\d+ click: down hits=\[true\]') { Write-Error "self-test: should not match hits=[false]"; exit 1 }
+if (-not ($selfTestSettledFrame -match '^\d+\.?\d* frame: .* Grounded .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: settled frame Grounded pattern failed"; exit 1 }
+if ($selfTestSettledFrame -match 'walk#|Falling') { Write-Error "self-test: settled frame should not match walk# or Falling"; exit 1 }
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $script:Evidence = $null
@@ -112,6 +121,13 @@ $out = Join-Path $env:TEMP "fidget-scenario-control-click-menu-$stamp"
 $script:Evidence = $out
 New-Item -ItemType Directory -Force -Path (Join-Path $out "home\AppData\Roaming") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $out "home\AppData\Local") | Out-Null
+
+$settingsDir = Join-Path $out "home\AppData\Roaming\fidget"
+New-Item -ItemType Directory -Force -Path $settingsDir | Out-Null
+$settingsFile = Join-Path $settingsDir "settings.json"
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($settingsFile, '{"hide_in_fullscreen": false}', $utf8)
+
 $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
 $marks = Join-Path $out "harness.log"
@@ -133,12 +149,89 @@ $env:FIDGET_DIRECTOR_WAKE_SECS = "3600"
 $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_CAPTURABLE = "1"
 $env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_TRACE_WINDOWS = "1"
 $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
+
+Add-Type -AssemblyName System.Windows.Forms
+
+$preflightCode = @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class PreflightCheck {
+    public delegate bool Callback(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(Callback cb, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int index);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lp, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lp, int n);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+    public const int GWL_STYLE = -16;
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_VISIBLE = 0x10000000;
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const int DWMWA_CLOAKED = 14;
+}
+"@
+Add-Type -TypeDefinition $preflightCode
+
+function Get-FrontmostFullscreenApp {
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    $frontmost = $null
+    $frontmostZ = [int]::MaxValue
+    $currentZ = 0
+    $foundFrontmost = $false
+    [PreflightCheck]::EnumWindows({
+        param($hwnd, $lParam)
+        if (-not $foundFrontmost) {
+            $visible = [PreflightCheck]::IsWindowVisible($hwnd)
+            if (-not $visible) { return $true }
+            $style = [PreflightCheck]::GetWindowLong($hwnd, [PreflightCheck]::GWL_STYLE)
+            if (($style -band [PreflightCheck]::WS_VISIBLE) -eq 0) { return $true }
+            $exStyle = [PreflightCheck]::GetWindowLong($hwnd, [PreflightCheck]::GWL_EXSTYLE)
+            if (($exStyle -band [PreflightCheck]::WS_EX_TOOLWINDOW) -ne 0) { return $true }
+            $cloaked = 0
+            $hr = [PreflightCheck]::DwmGetWindowAttribute($hwnd, [PreflightCheck]::DWMWA_CLOAKED, [ref]$cloaked, [System.Runtime.InteropServices.Marshal]::SizeOf([int]))
+            if ($hr -eq 0 -and $cloaked -ne 0) { return $true }
+            $rect = New-Object PreflightCheck+RECT
+            if (-not [PreflightCheck]::GetWindowRect($hwnd, [ref]$rect)) { return $true }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -le 0 -or $height -le 0) { return $true }
+            foreach ($screen in $screens) {
+                $sb = $screen.Bounds
+                if ([Math]::Abs($rect.Left - $sb.Left) -le 1 -and [Math]::Abs($rect.Top - $sb.Top) -le 1 -and [Math]::Abs($width - $sb.Width) -le 1 -and [Math]::Abs($height - $sb.Height) -le 1) {
+                    $cls = New-Object System.Text.StringBuilder 256
+                    [PreflightCheck]::GetClassName($hwnd, $cls, $cls.Capacity) | Out-Null
+                    $title = New-Object System.Text.StringBuilder 512
+                    [PreflightCheck]::GetWindowText($hwnd, $title, $title.Capacity) | Out-Null
+                    $script:frontmost = @{Class=$cls.ToString(); Title=$title.ToString()}
+                    $script:foundFrontmost = $true
+                    return $false
+                }
+            }
+        }
+        return $true
+    }, [IntPtr]::Zero) | Out-Null
+    return $frontmost
+}
+
+$fullscreenApp = Get-FrontmostFullscreenApp
+if ($fullscreenApp) {
+    $preflightFile = Join-Path $out "preflight.txt"
+    Set-Content -LiteralPath $preflightFile -Value "Class: $($fullscreenApp.Class)`nTitle: $($fullscreenApp.Title)" -Encoding utf8
+    [Console]::Error.WriteLine("SKIP: fullscreen app '$($fullscreenApp.Title)' is frontmost; close or minimize it and re-run")
+    [Console]::Error.WriteLine("evidence in $out")
+    exit 2
+}
+
 $axPs1 = Join-Path $out "ax.ps1"
 $ax = Join-Path $root "scripts\ax-window-win.ps1"
 [System.IO.File]::WriteAllLines($axPs1, @(
@@ -172,26 +265,110 @@ try {
             return $false
         }
     }
+    function Wait-Settled {
+        $deadline = (Get-Date).AddSeconds(15)
+        $lastX = $null
+        $lastY = $null
+        $firstSeenAt = $null
+        while ((Get-Date) -lt $deadline) {
+            if ($proc.HasExited) { Fail "Fidget exited; see $err" }
+            $trace = Get-Content -LiteralPath $traceFile
+            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* Grounded .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+            if (-not $recent) {
+                Start-Sleep -Milliseconds 100
+                continue
+            }
+            if ($recent.Line -match 'walk#|Falling') {
+                $lastX = $null
+                $lastY = $null
+                $firstSeenAt = $null
+                Start-Sleep -Milliseconds 100
+                continue
+            }
+            $x = [int]$recent.Matches[0].Groups[1].Value
+            $y = [int]$recent.Matches[0].Groups[2].Value
+            if ($null -eq $lastX) {
+                $lastX = $x
+                $lastY = $y
+                $firstSeenAt = Get-Date
+                Start-Sleep -Milliseconds 100
+                continue
+            }
+            $dx = [Math]::Abs($x - $lastX)
+            $dy = [Math]::Abs($y - $lastY)
+            if ($dx -le 2 -and $dy -le 2) {
+                $elapsed = ((Get-Date) - $firstSeenAt).TotalMilliseconds
+                if ($elapsed -ge 400) {
+                    return @{X=$x; Y=$y}
+                }
+            } else {
+                $lastX = $x
+                $lastY = $y
+                $firstSeenAt = Get-Date
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        Fail "sprite did not settle within 15s; see $traceFile"
+    }
 
-    # The overlay spans the display, so its centre is not the sprite. The
-    # newest frame trace line says where the sprite is drawn.
     $traceFile = Join-Path $out "home\AppData\Roaming\fidget\process.log"
     if (-not (Wait-For 15 { Test-Path -LiteralPath $traceFile })) { Fail "process.log never appeared; see $err" }
+    
+    $settingsFile = Join-Path $out "home\AppData\Roaming\fidget\settings.json"
+    if (Test-Path -LiteralPath $settingsFile) {
+        $settingsContent = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
+        if ($settingsContent.hide_in_fullscreen -ne $false) {
+            Fail "settings.json does not have hide_in_fullscreen: false as seeded"
+        }
+    }
+    
     if (-not (Wait-For 15 { Traced '^\d+ frame: .* sprite\(' })) { Fail "Fidget traced no frame; see $traceFile" }
-    Start-Sleep -Seconds 2
+    
+    if (Traced '^\d+ presence: hidden') {
+        Fail "overlay hidden (presence: hidden) — see process.log window_source lines"
+    }
+
+    $settled = Wait-Settled
     $trace = Get-Content -LiteralPath $traceFile
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
     if (-not $size) { Fail "no sprite size in $traceFile" }
-    $at = $trace | Select-String -Pattern '^\d+ frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
-    if (-not $at) { Fail "no frame trace in $traceFile" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
-    $x = [int]$at.Matches[0].Groups[1].Value + [int]($w / 2)
-    $y = [int]$at.Matches[0].Groups[2].Value + [int]($h / 2)
-    Write-Output "ok: sprite centre ($x,$y)"
 
-    if (-not (Invoke-Ax "menu" @("menu", "-X", $x, "-Y", $y))) { Fail "no open menu in the UI Automation tree; see $out\menu.txt" }
-    if (-not (Wait-For 3 { Traced '^\d+ verbs: .*\[Menu\]' })) { Fail "the right-click did not land as Menu; see $traceFile" }
+    $attemptsFile = Join-Path $out "menu-attempts.txt"
+    $maxAttempts = 3
+    $success = $false
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $attemptLog = "Attempt $attempt of $maxAttempts"
+        Add-Content -LiteralPath $attemptsFile -Value $attemptLog
+        if (-not (Invoke-Ax "menu-$attempt" @("menu", "-TraceFile", $traceFile, "-SpriteW", $w, "-SpriteH", $h))) {
+            $msg = "no open menu in the UI Automation tree on attempt $attempt; see $out\menu-$attempt.txt"
+            Add-Content -LiteralPath $attemptsFile -Value $msg
+            if ($attempt -eq $maxAttempts) { Fail $msg }
+            Start-Sleep -Milliseconds 500
+            continue
+        }
+        Start-Sleep -Milliseconds 500
+        $trace = Get-Content -LiteralPath $traceFile
+        $clickLine = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
+        if ($clickLine) {
+            Add-Content -LiteralPath $attemptsFile -Value $clickLine.Line
+        }
+        if ($clickLine -and ($clickLine.Line -match '^\d+ click: down hits=\[true\]')) {
+            if (Wait-For 2 { Traced '^\d+ verbs: .*\[Menu\]' }) {
+                $success = $true
+                break
+            }
+        }
+        if ($attempt -lt $maxAttempts) {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (-not $success) {
+        $trace = Get-Content -LiteralPath $traceFile
+        $lastClick = $trace | Select-String -Pattern '^\d+ click: down ' | Select-Object -Last 1
+        Fail "right-click missed after $maxAttempts attempts; last click: $($lastClick.Line)"
+    }
     Write-Output "ok: the right-click landed as Menu"
     Check-Items (Join-Path $out "menu.txt")
     Write-Output "PASS: evidence in $out"

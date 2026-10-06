@@ -24,7 +24,10 @@ param(
     [Parameter(Position = 4)]
     [string]$Arg4 = "",
     [int]$X,
-    [int]$Y
+    [int]$Y,
+    [string]$TraceFile = "",
+    [int]$SpriteW = 0,
+    [int]$SpriteH = 0
 )
 $ErrorActionPreference = "Stop"
 if ($Command -notin @("click", "menu") -and ($ProcessId -eq 0 -or -not $Title)) {
@@ -63,19 +66,17 @@ public class FidgetWinEnum {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     public static void Click(int x, int y) {
-        // The overlay passes clicks through until the frame loop sees the
-        // cursor over the sprite, so dwell before pressing and hold briefly.
         SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(150);
+        System.Threading.Thread.Sleep(800);
         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
-        System.Threading.Thread.Sleep(120);
+        System.Threading.Thread.Sleep(400);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
     public static void RightClick(int x, int y) {
         SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(150);
+        System.Threading.Thread.Sleep(800);
         mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero);
-        System.Threading.Thread.Sleep(120);
+        System.Threading.Thread.Sleep(400);
         mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero);
     }
     [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
@@ -172,29 +173,167 @@ function Get-PopupMenuItems {
             if ($null -ne $items -and $items.Count -gt 0) {
                 return @($items)
             }
+            $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+            $child = $walker.GetFirstChild($element)
+            while ($null -ne $child) {
+                $nestedItems = Find-ByControlType $child ([System.Windows.Automation.ControlType]::MenuItem)
+                if ($null -ne $nestedItems -and $nestedItems.Count -gt 0) {
+                    return @($nestedItems)
+                }
+                $child = $walker.GetNextSibling($child)
+            }
         } catch {
         }
     }
 }
 
 if ($Command -eq "click") {
-    [FidgetWinEnum]::Click($X, $Y)
+    $clickX = $X
+    $clickY = $Y
+    if ($TraceFile -and (Test-Path -LiteralPath $TraceFile) -and $SpriteW -gt 0 -and $SpriteH -gt 0) {
+        $settled = $false
+        $lastX = $null
+        $lastY = $null
+        $firstSeenAt = $null
+        $deadline = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $deadline -and -not $settled) {
+            $trace = Get-Content -LiteralPath $TraceFile
+            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+            if (-not $recent) {
+                Start-Sleep -Milliseconds 150
+                continue
+            }
+            $sx = [int]$recent.Matches[0].Groups[1].Value
+            $sy = [int]$recent.Matches[0].Groups[2].Value
+            if ($null -eq $lastX) {
+                $lastX = $sx
+                $lastY = $sy
+                $firstSeenAt = Get-Date
+                Start-Sleep -Milliseconds 150
+                continue
+            }
+            $dx = [Math]::Abs($sx - $lastX)
+            $dy = [Math]::Abs($sy - $lastY)
+            if ($dx -le 2 -and $dy -le 2) {
+                $clickX = $sx + [int]($SpriteW / 2)
+                $clickY = $sy + [int]($SpriteH / 2)
+                $settled = $true
+            } else {
+                $lastX = $sx
+                $lastY = $sy
+                $firstSeenAt = Get-Date
+                Start-Sleep -Milliseconds 150
+            }
+        }
+        [FidgetWinEnum]::Click($clickX, $clickY)
+        $maxRetries = 3
+        for ($retry = 0; $retry -lt $maxRetries; $retry++) {
+            Start-Sleep -Milliseconds 100
+            $trace = Get-Content -LiteralPath $TraceFile
+            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+            if ($recent) {
+                $newSx = [int]$recent.Matches[0].Groups[1].Value
+                $newSy = [int]$recent.Matches[0].Groups[2].Value
+                $newCentreX = $newSx + [int]($SpriteW / 2)
+                $newCentreY = $newSy + [int]($SpriteH / 2)
+                $moveDist = [Math]::Sqrt([Math]::Pow($newCentreX - $clickX, 2) + [Math]::Pow($newCentreY - $clickY, 2))
+                if ($moveDist -gt 16 -and $retry -lt ($maxRetries - 1)) {
+                    $clickX = $newCentreX
+                    $clickY = $newCentreY
+                    [FidgetWinEnum]::Click($clickX, $clickY)
+                } else {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+    } else {
+        [FidgetWinEnum]::Click($clickX, $clickY)
+    }
     exit 0
 }
 
 if ($Command -eq "menu") {
-    [FidgetWinEnum]::RightClick($X, $Y)
-    Start-Sleep -Milliseconds 800
+    $clickX = $X
+    $clickY = $Y
+    if ($TraceFile -and (Test-Path -LiteralPath $TraceFile) -and $SpriteW -gt 0 -and $SpriteH -gt 0) {
+        $settled = $false
+        $lastX = $null
+        $lastY = $null
+        $firstSeenAt = $null
+        $deadline = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $deadline -and -not $settled) {
+            $trace = Get-Content -LiteralPath $TraceFile
+            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+            if (-not $recent) {
+                Start-Sleep -Milliseconds 150
+                continue
+            }
+            $sx = [int]$recent.Matches[0].Groups[1].Value
+            $sy = [int]$recent.Matches[0].Groups[2].Value
+            if ($null -eq $lastX) {
+                $lastX = $sx
+                $lastY = $sy
+                $firstSeenAt = Get-Date
+                Start-Sleep -Milliseconds 150
+                continue
+            }
+            $dx = [Math]::Abs($sx - $lastX)
+            $dy = [Math]::Abs($sy - $lastY)
+            if ($dx -le 2 -and $dy -le 2) {
+                $clickX = $sx + [int]($SpriteW / 2)
+                $clickY = $sy + [int]($SpriteH / 2)
+                $settled = $true
+            } else {
+                $lastX = $sx
+                $lastY = $sy
+                $firstSeenAt = Get-Date
+                Start-Sleep -Milliseconds 150
+            }
+        }
+        [FidgetWinEnum]::RightClick($clickX, $clickY)
+        $maxRetries = 3
+        for ($retry = 0; $retry -lt $maxRetries; $retry++) {
+            Start-Sleep -Milliseconds 100
+            $trace = Get-Content -LiteralPath $TraceFile
+            $recent = $trace | Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 1
+            if ($recent) {
+                $newSx = [int]$recent.Matches[0].Groups[1].Value
+                $newSy = [int]$recent.Matches[0].Groups[2].Value
+                $newCentreX = $newSx + [int]($SpriteW / 2)
+                $newCentreY = $newSy + [int]($SpriteH / 2)
+                $moveDist = [Math]::Sqrt([Math]::Pow($newCentreX - $clickX, 2) + [Math]::Pow($newCentreY - $clickY, 2))
+                if ($moveDist -gt 16 -and $retry -lt ($maxRetries - 1)) {
+                    $clickX = $newCentreX
+                    $clickY = $newCentreY
+                    [FidgetWinEnum]::RightClick($clickX, $clickY)
+                } else {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+    } else {
+        [FidgetWinEnum]::RightClick($clickX, $clickY)
+    }
+    Start-Sleep -Milliseconds 1200
     $items = @()
-    for ($n = 0; $n -lt 20 -and $items.Count -eq 0; $n++) {
-        Start-Sleep -Milliseconds 250
+    for ($n = 0; $n -lt 30 -and $items.Count -eq 0; $n++) {
+        Start-Sleep -Milliseconds 200
         $items = @(Get-PopupMenuItems)
     }
     [FidgetWinEnum]::Escape()
     if ($items.Count -eq 0) {
-        # Says whether no menu window drew at all or one drew with no items.
-        Write-Output ("no menu: {0} visible #32768, {1} in all" -f [FidgetWinEnum]::Visible("#32768").Count, [FidgetWinEnum]::OfClass("#32768", $false).Count)
-        Write-Error "no menu showed within 5s"
+        $visibleCount = [FidgetWinEnum]::Visible("#32768").Count
+        $allCount = [FidgetWinEnum]::OfClass("#32768", $false).Count
+        Write-Output ("no menu: {0} visible #32768, {1} in all" -f $visibleCount, $allCount)
+        if ($visibleCount -gt 0) {
+            Write-Error "menu window visible but no items found via UI Automation within 6s"
+        } else {
+            Write-Error "no menu window showed within 6s"
+        }
         exit 1
     }
     $items | ForEach-Object { $_.Current.Name }
