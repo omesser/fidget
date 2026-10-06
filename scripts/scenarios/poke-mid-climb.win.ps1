@@ -1,0 +1,293 @@
+#!/usr/bin/env pwsh
+# Scenario: poke-mid-climb (Windows)
+# On screen: launches Fidget with the Static Director. The sprite is thrown at
+#   a display's side edge and poked while it climbs. Fidget quits when the
+#   scenario ends. No screenshots.
+# Input: a real drag that throws the sprite, then clicks on it until one lands
+#   as a Poke, for up to five throws. The cursor moves; keep hands off the
+#   mouse for the run.
+# Duration: about 20 s, 1 min at most.
+# Grants: a desktop session.
+# Asserts: the Poke starts react over, then the sprite stays Climbing at one
+#   position in one climb frame through the cooldown, and climbs on after it.
+# Fixture: FIDGET_SCENARIO_TRACE=<saved app log> runs only the check and
+#   launches nothing.
+#
+# Usage: poke-mid-climb.win.ps1 --go <fidget binary>
+# Without --go it prints this header, which is the takeover prompt, and exits 2.
+# No param() block: Windows PowerShell binds `--go` as -Go and swallows the
+# next token, so $Go never equals "--go" and the leaf always exits 2.
+$Go = if ($args.Count -gt 0) { $args[0] } else { "" }
+$Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
+$ErrorActionPreference = "Stop"
+
+function Show-Header {
+    $lines = Get-Content -LiteralPath $PSCommandPath
+    $header = @()
+    foreach ($line in $lines | Select-Object -Skip 1) {
+        if ($line.StartsWith("#")) {
+            $header += ($line -replace '^# ?', '')
+        } elseif ($line.Trim().Length -gt 0) {
+            break
+        }
+    }
+    $header -join "`n"
+}
+
+if ($Go -ne "--go") {
+    Show-Header
+    exit 2
+}
+if (-not $Bin) {
+    Write-Error "usage: poke-mid-climb.win.ps1 --go <fidget binary>"
+    exit 1
+}
+
+$root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$script:Evidence = $null
+
+function Fail([string]$Message) {
+    [Console]::Error.WriteLine("FAIL: $Message")
+    if ($script:Evidence) { [Console]::Error.WriteLine("evidence in $($script:Evidence)") }
+    exit 1
+}
+
+# process.log puts epoch seconds before each line; a saved stderr log does not.
+$framePattern = '^(?:\d+ )?frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) '
+$pokePattern = '^(?:\d+ )?verbs:.*Poke'
+
+# poke-mid-climb-check.py in PowerShell, so no Windows host needs Python. Case
+# sensitive and word for word like it: the same broken fixtures fail both.
+function Check-Trace([string]$File) {
+    $frames = [System.Collections.Generic.List[object]]::new()
+    $pokeAt = $null
+    $state = $null
+    foreach ($line in Get-Content -LiteralPath $File -Encoding utf8) {
+        if ($line -cmatch $framePattern) {
+            $frames.Add([pscustomobject]@{
+                    At = [long]$Matches[1]; State = $Matches[2]; X = [int]$Matches[3]; Y = [int]$Matches[4]
+                    Animation = $Matches[5]; Index = [int]$Matches[6]
+                })
+            $state = $Matches[2]
+        } elseif ($null -eq $pokeAt -and $line -cmatch $pokePattern -and $state -ceq "Climbing") {
+            $pokeAt = $frames.Count
+        }
+    }
+    if ($null -eq $pokeAt) { Fail "no Poke landed on a climbing sprite" }
+    $after = @($frames | Select-Object -Skip $pokeAt)
+    # POKE_COOLDOWN_MS is 2500; the windows leave a tick either side of it.
+    $span = if ($after.Count -gt 0) { $after[-1].At - $after[0].At } else { 0 }
+    if ($span -lt 2300) {
+        $seconds = ($span / 1000).ToString("0.0", [Globalization.CultureInfo]::InvariantCulture)
+        Fail "the trace stops $seconds s after the Poke"
+    }
+    $start = $after[0].At
+    $paused = @($after | Where-Object { $_.At - $start -lt 2300 })
+    $resumed = @($after | Where-Object { $_.At - $start -ge 2600 -and $_.At - $start -le 3500 })
+    if ($paused | Where-Object { $_.State -cne "Climbing" }) { Fail "the sprite left the wall during the pause" }
+    if (@($paused | ForEach-Object { "$($_.X),$($_.Y)" } | Sort-Object -Unique).Count -ne 1) {
+        Fail "the sprite moved during the pause"
+    }
+    if ($after[0].Animation -cne "react" -or $after[0].Index -ne 0) { Fail "the Poke did not start react over" }
+    if (@($paused | Where-Object { $_.Animation -ceq "climb" } | ForEach-Object { $_.Index } | Sort-Object -Unique).Count -gt 1) {
+        Fail "the sprite climbed in place during the pause"
+    }
+    $top = $paused[0].Y
+    if (-not ($resumed | Where-Object { $_.State -ceq "Climbing" -and $_.Y -lt $top })) {
+        Fail "the sprite did not climb on after the cooldown"
+    }
+    Write-Output "ok: paused at ($($paused[0].X), $top) for $($paused[-1].At - $start) ms in one climb pose, then climbed on"
+}
+
+if ($env:FIDGET_SCENARIO_TRACE) {
+    Check-Trace $env:FIDGET_SCENARIO_TRACE
+    Write-Output "PASS: fixture trace"
+    exit 0
+}
+
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$out = Join-Path $env:TEMP "fidget-scenario-poke-mid-climb-$stamp"
+$script:Evidence = $out
+$homeDir = Join-Path $out "home"
+New-Item -ItemType Directory -Force -Path (Join-Path $homeDir "AppData\Roaming\fidget") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $homeDir "AppData\Local") | Out-Null
+$utf8 = New-Object System.Text.UTF8Encoding $false
+# A fullscreen window in front would hide the overlay, and the sprite with it.
+[System.IO.File]::WriteAllText((Join-Path $homeDir "AppData\Roaming\fidget\settings.json"), '{"hide_in_fullscreen": false}', $utf8)
+
+$log = Join-Path $out "app.log"
+$err = Join-Path $out "app.err"
+$inputLog = Join-Path $out "input.txt"
+$trace = Join-Path $homeDir "AppData\Roaming\fidget\process.log"
+
+$env:HOME = $homeDir
+$env:USERPROFILE = $homeDir
+$env:APPDATA = Join-Path $homeDir "AppData\Roaming"
+$env:FIDGET_DIRECTOR_API_KEY = "x"
+$env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_CHARACTERS = Join-Path $root "characters"
+
+# In-process, not ax-window-win.ps1 click: a new PowerShell compiles its
+# Add-Type before the click, and a climbing sprite has moved its own height by
+# then. Timings are throw-sprite.swift's and click-cursor.swift's.
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+public class ClimbInput {
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+    const uint Down = 0x0002, Up = 0x0004;
+    public static void Throw(int x, int y, int dx) {
+        SetCursorPos(x, y);
+        Thread.Sleep(120);
+        mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(150);
+        int px = x, py = y;
+        for (int step = 1; step <= 8; step++) {
+            px = x + dx * step / 8;
+            py = y - 10 * step / 8;
+            SetCursorPos(px, py);
+            Thread.Sleep(12);
+        }
+        mouse_event(Up, 0, 0, 0, UIntPtr.Zero);
+    }
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        Thread.Sleep(120);
+        mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(60);
+        mouse_event(Up, 0, 0, 0, UIntPtr.Zero);
+    }
+}
+"@
+
+# The newest frame's state and the sprite's top-left, logged after pos(...).
+function Last-Frame {
+    if (-not (Test-Path -LiteralPath $trace)) { return $null }
+    $line = Get-Content -LiteralPath $trace -Tail 40 | Where-Object { $_ -cmatch $framePattern } | Select-Object -Last 1
+    if ($line -cmatch ' (\w+) pos\(\S+ sprite\((-?\d+),(-?\d+)\) ') {
+        [pscustomobject]@{ State = $Matches[1]; X = [int]$Matches[2]; Y = [int]$Matches[3] }
+    }
+}
+
+function In-State([string]$Pattern) {
+    $frame = Last-Frame
+    [bool]($frame -and $frame.State -cmatch "^($Pattern)$")
+}
+
+function Pokes { @(Select-String -LiteralPath $trace -Pattern $pokePattern -CaseSensitive).Count }
+
+# Resting and not walking: a press on a walking sprite lands where it was, and
+# the drag then throws whatever window is underneath.
+function Wait-Still([int]$Tenths) {
+    for ($n = $Tenths; $n -gt 0; $n--) {
+        if ($proc.HasExited) { Fail "Fidget exited; see $err" }
+        $a = Last-Frame
+        if ($a -and $a.State -cmatch '^(Grounded|Perched)$') {
+            Start-Sleep -Milliseconds 200
+            $b = Last-Frame
+            if ($b.X -eq $a.X -and $b.Y -eq $a.Y -and $b.State -cmatch '^(Grounded|Perched)$') { return $true }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    $false
+}
+
+function Wait-Climbing([int]$Tenths) {
+    for ($n = $Tenths; $n -gt 0; $n--) {
+        if (In-State "Climbing") { return $true }
+        Start-Sleep -Milliseconds 100
+    }
+    $false
+}
+
+$proc = Start-Process -FilePath $Bin -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Normal
+try {
+    for ($n = 120; $n -gt 0 -and -not (Test-Path -LiteralPath $trace); $n--) { Start-Sleep -Milliseconds 250 }
+    if (-not (Test-Path -LiteralPath $trace)) { Fail "process.log never appeared; see $err" }
+
+    if (-not (Wait-Still 300)) { Fail "the sprite never came to rest; see $trace" }
+    $overlay = @(Get-Content -LiteralPath $trace | Where-Object { $_ -match '^(?:\d+ )?overlay: ' })
+    $sizeLine = $overlay | Where-Object { $_ -match ' sprite (\d+)x\d+;' } | Select-Object -First 1
+    if (-not ($sizeLine -match ' sprite (\d+)x\d+;')) { Fail "no sprite size in $trace" }
+    $size = [int]$Matches[1]
+    $half = [int][Math]::Floor($size / 2)
+    # Every display's left and right edge.
+    $displays = @($overlay | Where-Object { $_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)' } | ForEach-Object {
+            [void]($_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)')
+            , @([int]$Matches[2], [int]$Matches[2] + [int]$Matches[1])
+        })
+    if ($displays.Count -eq 0) { Fail "no display bounds in $trace" }
+    $gapMs = 500
+    $gapLine = $overlay | Where-Object { $_ -match 'double-click interval (\d+)ms' } | Select-Object -First 1
+    if ($gapLine -and $gapLine -match 'double-click interval (\d+)ms') { $gapMs = [int]$Matches[1] }
+    $clickGap = $gapMs + 100
+
+    $poked = $false
+    for ($attempt = 1; $attempt -le 5 -and -not $poked; $attempt++) {
+        if (-not (Wait-Still 100)) { continue }
+        $frame = Last-Frame
+        $sx = $frame.X; $sy = $frame.Y
+        $cx = $sx + $half
+        # Toward the nearer side of the sprite's own display, and the far side on
+        # every other attempt, in case the taskbar or a neighbour is in the way.
+        $own = $displays | Where-Object { $_[0] -le $cx -and $cx -lt $_[1] } | Select-Object -First 1
+        if ($own) { $x0, $x1 = $own } else { $x0 = $cx; $x1 = $cx }
+        $nearLeft = ($cx - $x0) -lt ($x1 - $cx)
+        if ($attempt % 2 -eq 0) { $nearLeft = -not $nearLeft }
+        $dx = if ($nearLeft) { -1500 } else { 1500 }
+        [ClimbInput]::Throw($cx, $sy + $half, $dx)
+        Add-Content -LiteralPath $inputLog -Value "threw from ($cx,$($sy + $half)) by $dx"
+
+        if (-not (Wait-Climbing 40)) {
+            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: no climb"
+            continue
+        }
+        $frame = Last-Frame
+        $sx = $frame.X; $sy = $frame.Y
+        $mid = $sx + $half
+        # A wall climb is centred on a display edge; a Perch climb stands clear of it.
+        $edge = $null
+        foreach ($display in $displays) {
+            foreach ($x in $display) {
+                if ($null -eq $edge -and [Math]::Abs($x - $mid) -le 2) { $edge = $x }
+            }
+        }
+        if ($null -eq $edge) {
+            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: climbed a Perch at x=$mid"
+            continue
+        }
+
+        # Only the display's half of the sprite is drawn. Clicks a double-click
+        # interval apart are separate Pokes; stop at the first. Aim near the top,
+        # since it rises while the click travels, but never above the display.
+        $px = if ($sx -lt $edge) { $edge + [int][Math]::Floor($half / 2) } else { $edge - [int][Math]::Floor($half / 2) }
+        $before = Pokes
+        for ($i = 0; $i -lt 6; $i++) {
+            $frame = Last-Frame
+            if (-not $frame -or $frame.State -cne "Climbing") { break }
+            $sy = $frame.Y
+            if ($sy -le $size) { break }
+            $py = $sy + [int][Math]::Floor($half / 9)
+            [ClimbInput]::Click($px, $py)
+            Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
+            Start-Sleep -Milliseconds $clickGap
+            if ((Pokes) -gt $before) {
+                $poked = $true
+                break
+            }
+        }
+        if (-not $poked) {
+            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: no click landed before the climb ended"
+        }
+    }
+    if (-not $poked) { Fail "five throws and no Poke landed mid-climb; see $inputLog" }
+
+    Start-Sleep -Seconds 4
+} finally {
+    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+}
+
+Check-Trace $trace
+Write-Output "PASS: evidence in $out"

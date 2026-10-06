@@ -46,8 +46,9 @@ the sprite at a display's side edge with a real drag
 as a Poke while it climbs. From the frame trace, it checks that the Poke
 starts `react` over, that the sprite stays Climbing at one position in one
 climb frame for the first 2.3 s of the 2.5 s cooldown, and that it climbs on
-by 3.5 s. Set `FIDGET_SCENARIO_TRACE` to a saved app log to run only the
-check, as `fixtures/poke-mid-climb-trace.txt` does in `crates/verify`.
+by 3.5 s (`poke-mid-climb-check.py`). Set `FIDGET_SCENARIO_TRACE` to a saved
+app log to run only the check, as `fixtures/poke-mid-climb-trace.txt` does in
+`crates/verify`.
 
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
@@ -79,8 +80,9 @@ unless Chat is open.
 ## Windows and X11
 
 `thinking-row`, `chat-header-narrow`, `landing-link-click`,
-`launcher-dies-at-startup`, `sign-in-button`, `question-bubble` and
-`control-click-menu` each have `.x11.sh` and `.win.ps1` leaves.
+`launcher-dies-at-startup`, `sign-in-button`, `question-bubble`,
+`control-click-menu` and `poke-mid-climb` each have `.x11.sh` and `.win.ps1`
+leaves.
 `fidget-verify scenario <name>` prints the leaf for this host. With `--go` it
 runs that leaf, or skips when this host has none.
 
@@ -119,6 +121,15 @@ overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
 `control-click-menu` right-clicks the sprite instead. `ax-window-linux.py menu`
 and `ax-window-win.ps1 menu` send that click, print the open menu's items and
 press Escape.
+
+`poke-mid-climb` throws and clicks the same way as on macOS, from the frame
+trace and the `overlay:` lines. X11 sends each gesture as one `xdotool` call.
+Windows sends it from a class the leaf compiles once, because a fresh
+`ax-window-win.ps1` takes longer to start than a climb takes to pass the
+cursor. The Windows leaf reads `process.log` from its private `APPDATA`. The
+macOS and X11 leaves share `poke-mid-climb-check.py`. Windows has the same
+check in PowerShell, with the same messages, so the one broken-fixture table
+in `crates/verify` covers all three.
 
 To check an assertion without a desktop, point the leaf at fixture dumps and
 skip the launch:
