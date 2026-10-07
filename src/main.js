@@ -29,6 +29,14 @@ let clickableOffArt = false;
 // once. Art, not state, and one entry however many Instances draw from it.
 let characters = {};
 
+// A press on the pet, measured from pointerdown. The composer never arms
+// this: a drag in the field is a selection, and it must not grab the pet.
+let petDrag = null;
+
+// Latch for the entire gesture: true from pointerdown on sprite through
+// pointerup/cancel. Stays true even after petDrag clears on threshold cross.
+let gestureActive = false;
+
 const views = new Map();
 
 function currentDisplayBounds() {
@@ -349,10 +357,12 @@ function syncQuick(view) {
 // cursor is gone, because :hover is clear once the window ignores it.
 // Runs before the pill is up too: a leave during the dwell cancels it.
 function notePointerLeft(view) {
-  if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
-  else view.quickMachine.leaveSprite();
-  if (view.quick.matches(":hover")) view.quickMachine.enterPill();
-  else view.quickMachine.leavePill();
+  if (!gestureActive) {
+    if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
+    else view.quickMachine.leaveSprite();
+    if (view.quick.matches(":hover")) view.quickMachine.enterPill();
+    else view.quickMachine.leavePill();
+  }
 }
 
 function attachQuickMessage(view, id) {
@@ -811,15 +821,15 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
-  // A press on the pet, measured from pointerdown. The composer never arms
-  // this: a drag in the field is a selection, and it must not grab the pet.
-  let petDrag = null;
+  petDrag = null;
+  gestureActive = false;
   document.addEventListener("pointerdown", (event) => {
     const composer = event.target.closest?.(".quick-message");
     const sprite = event.target.closest?.(".sprite");
     if (!composer && !sprite) {
       for (const view of views.values()) view.quickMachine.outside();
       petDrag = null;
+      gestureActive = false;
       return;
     }
     const where = composer ? "composer" : "character";
@@ -837,8 +847,10 @@ async function start() {
     }
     if (where === "character" && event.button === 0 && owner) {
       petDrag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      gestureActive = true;
     } else {
       petDrag = null;
+      gestureActive = false;
     }
     if (!reachPet) return;
     if (event.button === 0) {
@@ -865,6 +877,7 @@ async function start() {
   document.addEventListener("pointerup", (event) => {
     if (event.button === 0) {
       petDrag = null;
+      gestureActive = false;
       reportPrimary(false);
     } else if (event.button === 2) {
       reportSecondary(false);
@@ -872,6 +885,7 @@ async function start() {
   });
   document.addEventListener("pointercancel", () => {
     petDrag = null;
+    gestureActive = false;
     reportPrimary(false);
     reportSecondary(false);
   });

@@ -315,6 +315,19 @@ test("a drag is a few pixels of movement, not the click itself", () => {
   assert.equal(crossedDrag(0, DRAG_DISMISS_PX), true);
 });
 
+test("drag cancels hover timer and dismisses pill", () => {
+  const { qm, advance } = harness();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS - 100);
+  assert.equal(qm.visible, false, "not yet visible before timer completes");
+
+  qm.drag();
+  assert.equal(qm.visible, false, "drag dismisses any pending hover");
+
+  advance(200);
+  assert.equal(qm.visible, false, "timer does not fire after drag dismisses");
+});
+
 test("dispose clears the composer so composing cannot stick", () => {
   const { qm, changes, advance } = shown();
   qm.setText("hey");
