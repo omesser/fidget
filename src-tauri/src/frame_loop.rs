@@ -2065,11 +2065,12 @@ pub(crate) fn run_frame_loop(
 
                 // Trace bubble owner changes.
                 if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
-                    let covered_lock = covered.lock().unwrap();
                     let old_label = old_owner
-                        .map(|i| covered_lock[i].as_str())
-                        .unwrap_or("none");
-                    let new_label = owner.map(|i| covered_lock[i].as_str()).unwrap_or("none");
+                        .map(super::overlay_label)
+                        .unwrap_or_else(|| "none".to_string());
+                    let new_label = owner
+                        .map(super::overlay_label)
+                        .unwrap_or_else(|| "none".to_string());
                     let dnd = instance.do_not_disturb();
                     eprintln!(
                         "bubble_owner instance={} changed: {} -> {} dnd={}",
@@ -2085,15 +2086,14 @@ pub(crate) fn run_frame_loop(
                     if let Some(new_owner_idx) = owner {
                         if let Some(qm_state) = platform::overlay_qm_state() {
                             if qm_state.instance == live.id && qm_state.open {
-                                let covered_lock = covered.lock().unwrap();
-                                let new_owner_label = &covered_lock[new_owner_idx];
-                                let old_owner_label = old_owner.map(|i| covered_lock[i].as_str());
+                                let new_owner_label = super::overlay_label(new_owner_idx);
+                                let old_owner_label = old_owner.map(super::overlay_label);
                                 if dev_flags::TRACE_BUBBLE.is_on() {
                                     let dnd = instance.do_not_disturb();
                                     eprintln!(
                                         "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={} dnd={}",
                                         new_owner_label,
-                                        old_owner_label.unwrap_or("none"),
+                                        old_owner_label.as_deref().unwrap_or("none"),
                                         qm_state.instance,
                                         qm_state.open,
                                         qm_state.text,
