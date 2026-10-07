@@ -110,6 +110,27 @@ test("an empty json fence draws no body under the tool name", () => {
   }
 });
 
+test("an empty list or an empty string draws no body", () => {
+  assert.equal(
+    visible({
+      title: "fidget-describe_screen",
+      kind: "other",
+      content: ["```json\n[]\n```"],
+      input: [],
+    }),
+    "fidget-describe_screen",
+  );
+  assert.equal(
+    visible({
+      title: "fidget-describe_screen",
+      kind: "other",
+      content: ['```json\n""\n```'],
+      input: "",
+    }),
+    "fidget-describe_screen",
+  );
+});
+
 test("an empty fence beside a question leaves the question", () => {
   assert.equal(
     visible({

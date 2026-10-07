@@ -52,7 +52,13 @@ function first(list, keep, noun) {
 // what tell a reader what the tool will do with the values. Anything that is
 // not an object has no names to show, so it goes as the one line of JSON it is.
 function argumentLines(input) {
-  if (input === null || input === undefined) {
+  // An empty list or string is no payload, same as an empty object.
+  if (
+    input === null ||
+    input === undefined ||
+    input === "" ||
+    (Array.isArray(input) && input.length === 0)
+  ) {
     return [];
   }
   if (typeof input !== "object" || Array.isArray(input)) {
