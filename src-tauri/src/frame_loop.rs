@@ -12,7 +12,7 @@ use fidget_core::engine::{bring_off_fullscreen, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(unix))]
 use fidget_core::overlay::DrawTrail;
-use fidget_core::overlay::{display_index_for, place_sprite};
+use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
@@ -69,6 +69,13 @@ type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 /// compared, so a trail that settles after a walk still rebuilds it.
 #[cfg(not(unix))]
 type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
+
+/// Takes this Instance's draft from the slot its owning overlay writes. True
+/// while a pill is open, which holds the walk the way a line on screen does.
+fn refresh_draft(id: &str, qm: &mut Option<fidget_core::qm_draft::QmDraft>) -> bool {
+    *qm = platform::qm_draft(id);
+    qm.is_some()
+}
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg(any(test, not(unix)))]
@@ -1667,15 +1674,12 @@ pub(crate) fn run_frame_loop(
                 // neighbour's caret must not stop this one.
                 world.composing =
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
-                // Copy QM draft from platform slot into instance state
-                live.qm = platform::qm_draft(&live.id);
-
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 let speech_visible = live.speech.visible_at(std::time::Instant::now());
-                let qm_open = live.qm.is_some();
-                world.locomotion_frozen = speech_visible || qm_open;
+                let draft_open = refresh_draft(&live.id, &mut live.qm);
+                world.locomotion_frozen = speech_visible || draft_open;
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
@@ -2088,12 +2092,7 @@ pub(crate) fn run_frame_loop(
                     facing: frame.facing,
                 });
 
-                let owner = fidget_core::overlay::bubble_owner(
-                    (frame.position.x, frame.position.y),
-                    &displays.frames,
-                );
-
-
+                let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
                 let dialogue = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),
@@ -3239,6 +3238,44 @@ mod tests {
         );
     }
 
+    /// The pill holds the walk while its draft is open, whichever overlay draws
+    /// it, and lets go once the overlay clears it on send, Esc or a drag.
+    #[test]
+    fn an_open_draft_holds_the_walk_until_it_is_cleared() {
+        let draft = fidget_core::qm_draft::QmDraft {
+            text: "wait".to_string(),
+            focused: false,
+        };
+        let mut qm = None;
+
+        platform::set_qm_draft("walker".to_string(), Some(draft.clone()));
+        assert!(
+            refresh_draft("walker", &mut qm),
+            "an open pill holds the feet"
+        );
+        assert_eq!(qm, Some(draft), "and the Instance carries its text");
+
+        platform::set_qm_draft("walker".to_string(), None);
+        assert!(
+            !refresh_draft("walker", &mut qm),
+            "a cleared draft walks again"
+        );
+        assert_eq!(qm, None);
+    }
+
+    #[test]
+    fn a_neighbours_draft_does_not_hold_this_walk() {
+        let draft = fidget_core::qm_draft::QmDraft {
+            text: "mine".to_string(),
+            focused: true,
+        };
+        platform::set_qm_draft("neighbour".to_string(), Some(draft));
+        let mut qm = None;
+        assert!(!refresh_draft("stroller", &mut qm));
+        assert_eq!(qm, None);
+        platform::set_qm_draft("neighbour".to_string(), None);
+    }
+
     #[test]
     #[allow(clippy::type_complexity)]
     fn decide_region_action_table() {
@@ -3375,38 +3412,6 @@ mod tests {
             chat_dialogue(None, None),
             None,
             "Chat has no dialogue to show when both sources are None"
-        );
-    }
-
-    #[test]
-    fn trace_bubble_formats_match_scenario_patterns() {
-        // Scenario patterns from scripts/scenarios/*.ps1
-        // $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
-
-        // Sample lines matching the Rust format strings
-        let region_line =
-            "overlay overlay-0: region rebuild 42 rects (art 12 + hotspots 3 + painted 2), 1.23 ms";
-
-        // Pattern validation: region line must have "overlay <label>: region rebuild <N> rects (art <A> + hotspots <H> + painted <P>)"
-        assert!(
-            region_line.starts_with("overlay "),
-            "region line must start with 'overlay '"
-        );
-        assert!(
-            region_line.contains(": region rebuild "),
-            "region line must contain ': region rebuild '"
-        );
-        assert!(
-            region_line.contains(" rects (art "),
-            "region line must contain ' rects (art '"
-        );
-        assert!(
-            region_line.contains(" + hotspots "),
-            "region line must contain ' + hotspots '"
-        );
-        assert!(
-            region_line.contains(" + painted "),
-            "region line must contain ' + painted '"
         );
     }
 }

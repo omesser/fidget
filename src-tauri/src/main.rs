@@ -313,8 +313,7 @@ struct InstanceState {
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
-    /// The quick-message draft for this Instance. Carried to the owning overlay
-    /// each frame, like dialogue. Empty text closes on drag, non-empty keeps the pill.
+    /// The open quick-message draft, refreshed from the overlay's report each tick.
     qm: Option<fidget_core::qm_draft::QmDraft>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
@@ -451,6 +450,9 @@ struct SpritePlacement<'a> {
     /// sound by. `None` on every overlay but the bubble owner's: every overlay
     /// draws the art, so a cue from all of them is one sound per display. #277
     cue: Option<&'static str>,
+    /// The open quick-message draft. `None` off the bubble owner, so exactly one
+    /// overlay draws the pill and the text follows the Instance across a seam.
+    qm: Option<&'a fidget_core::qm_draft::QmDraft>,
 }
 
 impl<'a> SpritePlacement<'a> {
@@ -480,6 +482,7 @@ impl<'a> SpritePlacement<'a> {
             chatting: instance.chatting,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
+            qm: instance.qm.as_ref().filter(|_| bubble),
         }
     }
 }
@@ -557,10 +560,8 @@ struct Placed {
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,
-    /// The quick-message draft for this Instance, carried like dialogue.
+    /// The open quick-message draft, carried to the bubble owner like `dialogue`.
     qm: Option<fidget_core::qm_draft::QmDraft>,
-    /// Alpha mask for Unix XShape. Windows builds don't read it, but it's here
-    /// for symmetry with the frame loop's mask tracking.
     #[allow(dead_code)]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -1805,14 +1806,15 @@ fn overlay_composing(instance: String) {
     platform::set_overlay_composing(Some(instance));
 }
 
-/// The overlay's quick message became visible or hidden. Empty means none.
-/// Report the quick-message draft for an Instance. None means closed.
+/// An open pill's text and caret, as the owning overlay reports them.
 #[derive(serde::Deserialize)]
 struct QmDraftPayload {
     text: String,
     focused: bool,
 }
 
+/// The owning overlay's draft for one Instance, on every change. `None` is a
+/// closed pill: sent, Esc, dragged away empty, or the Instance gone.
 #[tauri::command]
 fn overlay_report_qm_draft(instance: String, payload: Option<QmDraftPayload>) {
     platform::set_qm_draft(
@@ -5980,6 +5982,53 @@ mod tests {
             (owner.x, elsewhere.x),
             (80, 2000),
             "each in its own overlay's coordinates, so the halves meet on the seam"
+        );
+    }
+
+    /// A typed draft is never lost on a crossing: it rides with the Instance,
+    /// and only the overlay that owns the bubble is told it, like the line.
+    #[test]
+    fn only_the_bubble_owner_is_told_the_draft() {
+        let left = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let right = Rect { x: 1920.0, ..left };
+        let draft = fidget_core::qm_draft::QmDraft {
+            text: "half a thought".to_string(),
+            focused: true,
+        };
+        let placed = Placed {
+            id: "one".to_string(),
+            character: "bmo".to_string(),
+            sprite: SpriteRect {
+                x: 2000,
+                y: 400,
+                scale: 2,
+            },
+            width: 128,
+            height: 128,
+            animation: "idle".to_string(),
+            frame_index: 0,
+            mirror: 1,
+            dialogue: None,
+            thinking: false,
+            asking: false,
+            chatting: false,
+            cue: None,
+            owner: Some(1),
+            qm: Some(draft.clone()),
+            mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
+                .expect("the 2x2 fixture decodes"),
+        };
+
+        assert_eq!(SpritePlacement::new(&placed, right, 1).qm, Some(&draft));
+        assert_eq!(
+            SpritePlacement::new(&placed, left, 0).qm,
+            None,
+            "one pill, on the display that owns the bubble"
         );
     }
 

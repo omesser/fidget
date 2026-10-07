@@ -9,15 +9,16 @@
 //! The dispatch lives here rather than in `main.rs` so that adding a platform is
 //! one edit in one file.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use fidget_core::qm_draft::QmDraft;
 use fidget_core::sensing::ActivitySource;
 use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
@@ -80,22 +81,21 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
+/// Each Instance's open quick-message draft, as its owning overlay last reported
+/// it. A level, read every tick: the walk holds while one is here.
+static QM_DRAFTS: Mutex<BTreeMap<String, QmDraft>> = Mutex::new(BTreeMap::new());
 
-/// Per-Instance QM drafts. Thin keyed slot — decisions live in core.
-static QM_DRAFTS: Mutex<HashMap<String, fidget_core::qm_draft::QmDraft>> =
-    Mutex::new(HashMap::new());
-
-pub fn set_qm_draft(instance: String, draft: Option<fidget_core::qm_draft::QmDraft>) {
+/// `None` is a closed pill.
+pub fn set_qm_draft(instance: String, draft: Option<QmDraft>) {
     if let Ok(mut drafts) = QM_DRAFTS.lock() {
-        if let Some(d) = draft {
-            drafts.insert(instance, d);
-        } else {
-            drafts.remove(&instance);
-        }
+        match draft {
+            Some(draft) => drafts.insert(instance, draft),
+            None => drafts.remove(&instance),
+        };
     }
 }
 
-pub fn qm_draft(instance: &str) -> Option<fidget_core::qm_draft::QmDraft> {
+pub fn qm_draft(instance: &str) -> Option<QmDraft> {
     QM_DRAFTS
         .lock()
         .ok()
@@ -177,6 +177,7 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
 }
 
 /// The painted rectangles one overlay reported, in its own coordinates.
+#[cfg(not(unix))]
 pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_PAINTED.lock().map_or_else(
         |_| Vec::new(),
