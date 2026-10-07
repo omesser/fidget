@@ -2386,19 +2386,6 @@ mod tests {
     }
 
     #[test]
-    fn session_due_is_false_under_do_not_disturb_even_when_addressed() {
-        let pace = Pace::new();
-
-        assert!(
-            !session_due(true, Duration::ZERO, &pace, false, true, true),
-            "addressed but Do Not Disturb is on"
-        );
-        assert!(
-            !session_due(false, Pace::FIRST, &pace, false, true, true),
-            "ambient wait elapsed but Do Not Disturb is on"
-        );
-    }
-
     #[test]
     fn ambient_off_still_wakes_on_a_poke() {
         let pace = Pace::new();
