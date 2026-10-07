@@ -1898,10 +1898,11 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
             let hwnd = win32_handle.hwnd.get() as HWND;
             unsafe {
                 let foreground = GetForegroundWindow();
-                if foreground != 0 {
-                    let foreground_thread = GetWindowThreadProcessId(foreground, std::ptr::null_mut());
+                if !foreground.is_null() {
+                    let foreground_thread =
+                        GetWindowThreadProcessId(foreground, std::ptr::null_mut());
                     let overlay_thread = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
-                    
+
                     if foreground_thread != overlay_thread {
                         AttachThreadInput(overlay_thread, foreground_thread, 1);
                     }
