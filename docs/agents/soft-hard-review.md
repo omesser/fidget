@@ -49,6 +49,7 @@ or
 - Do not include local runner paths or artifacts (tip SHA, PASS/FAIL, and what was checked only).
 - Agents never merge. Oded merges.
 - Sign off per `docs/agents/writing.md` at the end.
+- After posting a new Soft+Hard gate review on a PR, hide/minimize all prior Soft+Hard gate reviews from the same reviewer on that PR (GitHub: minimize as Outdated) so only a single up-to-date Soft+Hard review remains visible. Do not leave stacked obsolete Cleared/Not cleared gates.
 
 ## Skeleton
 
