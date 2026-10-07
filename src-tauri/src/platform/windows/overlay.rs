@@ -4,8 +4,9 @@
 //! WS_EX_TRANSPARENT) float the overlay above other windows without stealing
 //! focus. SetWindowRgn carves the input region from the sprite's alpha mask
 //! and unions the rectangles the renderer reported, so a control drawn outside
-//! the art still receives clicks and a bubble outside it is not clipped. WDA_EXCLUDEFROMCAPTURE applies only
-//! when the capturable setting, on by default (ADR-0024), is turned off.
+//! the art still receives clicks and a bubble outside it is not clipped.
+//! WDA_EXCLUDEFROMCAPTURE applies only when the capturable setting, on by
+//! default (ADR-0024), is turned off.
 //!
 //! DwmExtendFrameIntoClientArea extends the window frame into the entire client
 //! area, compositing the frame with the client area's glass sheet so the overlay

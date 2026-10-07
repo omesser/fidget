@@ -48,12 +48,26 @@ pub fn region_plan(trail: &[[i32; 4]], rects: &[OverlayRect]) -> RegionPlan {
     }
 }
 
+/// The rects that take clicks, as `[x, y, width, height]`. X11's input shape
+/// gets only these: it clips clicks and not drawing, so a drawn-only rect in
+/// it would catch clicks meant for the window underneath.
+pub fn clickable_rects(rects: &[OverlayRect]) -> Vec<[i32; 4]> {
+    rects
+        .iter()
+        .filter(|rect| rect.clickable)
+        .map(|rect| rect.rect)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// (name, art LTRB, overlay rects, region LTRB; empty is `Clear`)
     type Row<'a> = (&'a str, &'a [[i32; 4]], &'a [OverlayRect], &'a [[i32; 4]]);
+
+    /// (name, overlay rects, clickable XYWH)
+    type ClickRow<'a> = (&'a str, &'a [OverlayRect], &'a [[i32; 4]]);
 
     const fn clickable(rect: [i32; 4]) -> OverlayRect {
         OverlayRect {
@@ -93,6 +107,41 @@ mod tests {
         ];
         for (name, rect, (x, y), takes) in rows {
             assert_eq!(rect.takes_click_at(x, y), takes, "{name}");
+        }
+    }
+
+    /// What X11's input shape gets. Only the rects that take clicks go in;
+    /// the bubble body and the thinking dots stay out so clicks pass them.
+    #[test]
+    fn clickable_rects_table() {
+        let open_chat = clickable([220, 140, 72, 18]);
+        let qm_pill = clickable([130, 60, 160, 36]);
+        let bubble = drawn([120, 80, 200, 90]);
+        let thinking = drawn([150, 100, 48, 24]);
+
+        let rows: &[ClickRow] = &[
+            ("nothing reported", &[], &[]),
+            ("bubble only", &[bubble], &[]),
+            ("thinking only", &[thinking], &[]),
+            (
+                "truncated speech: Open chat + bubble",
+                &[bubble, open_chat],
+                &[[220, 140, 72, 18]],
+            ),
+            (
+                "QM pill + bubble",
+                &[qm_pill, bubble],
+                &[[130, 60, 160, 36]],
+            ),
+            ("QM pill alone", &[qm_pill], &[[130, 60, 160, 36]]),
+            (
+                "everything at once keeps its order",
+                &[bubble, open_chat, thinking, qm_pill],
+                &[[220, 140, 72, 18], [130, 60, 160, 36]],
+            ),
+        ];
+        for (name, rects, expect) in rows {
+            assert_eq!(clickable_rects(rects), *expect, "{name}");
         }
     }
 
