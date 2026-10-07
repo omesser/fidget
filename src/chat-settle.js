@@ -24,6 +24,7 @@ export function preemptedNote(cause) {
 
 export function createChatTurns() {
   const waiting = [];
+  let proactivePending = null;
 
   return {
     typed() {
@@ -37,10 +38,17 @@ export function createChatTurns() {
       if (at >= 0) {
         waiting.splice(at, 1);
       }
+      if (turn === proactivePending) {
+        proactivePending = null;
+      }
     },
 
     popNewest() {
-      return waiting.pop();
+      const turn = waiting.pop();
+      if (turn === proactivePending) {
+        proactivePending = null;
+      }
+      return turn;
     },
 
     newest() {
@@ -49,20 +57,33 @@ export function createChatTurns() {
 
     clear() {
       waiting.length = 0;
+      proactivePending = null;
     },
 
     settle(payload) {
       if (payload.streaming) {
         const turn = waiting.at(-1) ?? null;
         if (!turn) {
-          return { action: "orphan", turn: null, said: payload.said ?? "" };
+          if (!proactivePending) {
+            proactivePending = { alreadyHasSpeechAhead: false, isProactive: true };
+            waiting.push(proactivePending);
+          }
+          proactivePending.alreadyHasSpeechAhead = true;
+          return { action: "speech", turn: proactivePending, said: payload.said ?? "" };
         }
         turn.alreadyHasSpeechAhead = true;
         return { action: "speech", turn, said: payload.said };
       }
-      const turn = waiting.shift();
+      const turn = waiting.at(-1) ?? null;
       if (!turn) {
         return { action: "orphan", turn: null, said: payload.said ?? "" };
+      }
+      if (turn.isProactive && !payload.reacting_to) {
+        return { action: "orphan", turn: null, said: payload.said ?? "" };
+      }
+      waiting.pop();
+      if (turn === proactivePending) {
+        proactivePending = null;
       }
       if (payload.said) {
         for (const leftover of waiting) {
@@ -70,18 +91,12 @@ export function createChatTurns() {
         }
         return { action: "speech", turn, said: payload.said };
       }
-      // The Harness's own words: the diagnosis, drawn under its name.
       if (payload.failure) {
         return { action: "failure", turn, said: payload.failure };
       }
-      // The Shell's line already names the Harness (`harness: ...`, `harness
-      // not authenticated: ...`); a prefix here stacked a fourth (#991).
       if (payload.error) {
         return { action: "error", turn, note: payload.error };
       }
-      // The Shell naming the wake is a fact about this settle, so it is read
-      // first. `alreadyHasSpeechAhead` is only a shape heuristic, and all it
-      // owes a leftover caret is silence instead of a wrong missing answer.
       if (payload.superseded_by) {
         return { action: "preempted", turn, note: preemptedNote(payload.superseded_by) };
       }

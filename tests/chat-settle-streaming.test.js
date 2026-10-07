@@ -64,25 +64,28 @@ test("final reply with no said after streaming Speech is silent, not missing", (
   assert.equal(final.action, "silent", "Speech was already drawn");
 });
 
-test("streaming Speech with no waiting turn is orphan", () => {
+test("streaming Speech with no waiting turn creates a pending proactive turn", () => {
   const turns = createChatTurns();
 
   const outcome = turns.settle({ said: "hey", streaming: true });
 
-  assert.equal(outcome.action, "orphan");
+  assert.equal(outcome.action, "speech", "pending proactive turn created for orphan streaming Speech");
   assert.equal(outcome.said, "hey");
+  assert.ok(outcome.turn, "turn is tracked");
 });
 
 test("proactive reply with streaming Speech (reacting_to set)", () => {
   const turns = createChatTurns();
 
-  const first = turns.settle({ said: "hey", streaming: true, reacting_to: "proactive" });
-  const second = turns.settle({ said: "hey there", streaming: true, reacting_to: "proactive" });
+  const first = turns.settle({ said: "hey", streaming: true });
+  const second = turns.settle({ said: "hey there", streaming: true });
   const final = turns.settle({ said: "hey there friend", reacting_to: "proactive" });
 
-  assert.equal(first.action, "orphan", "proactive has no typed turn");
-  assert.equal(second.action, "orphan");
-  assert.equal(final.action, "orphan");
+  assert.equal(first.action, "speech", "proactive creates one pending turn");
+  assert.equal(second.action, "speech", "subsequent Speeches update same turn");
+  assert.equal(final.action, "speech", "final settles the proactive turn");
+  assert.equal(first.turn, second.turn, "all Speeches grow the same turn");
+  assert.equal(second.turn, final.turn, "final settles same turn");
   assert.equal(first.said, "hey");
   assert.equal(second.said, "hey there");
   assert.equal(final.said, "hey there friend");

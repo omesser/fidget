@@ -1476,22 +1476,24 @@ pub(crate) fn run_frame_loop(
                             behavior: String::new(),
                             dialogue: Some(line.clone()),
                         });
-                        let _ = app.emit_to(
-                            chat_label(&live.id),
-                            CHAT_EVENT,
-                            super::ChatReply {
-                                said: Some(line),
-                                busy: false,
-                                reacting_to: None,
-                                you: false,
-                                thought: false,
-                                at: None,
-                                error: None,
-                                failure: None,
-                                superseded_by: None,
-                                streaming: true,
-                            },
-                        );
+                        if !instance.do_not_disturb() {
+                            let _ = app.emit_to(
+                                chat_label(&live.id),
+                                CHAT_EVENT,
+                                super::ChatReply {
+                                    said: Some(line),
+                                    busy: false,
+                                    reacting_to: None,
+                                    you: false,
+                                    thought: false,
+                                    at: None,
+                                    error: None,
+                                    failure: None,
+                                    superseded_by: None,
+                                    streaming: true,
+                                },
+                            );
+                        }
                         None
                     }
                     None => None,

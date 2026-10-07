@@ -160,9 +160,8 @@ function said(who, text, cls, at) {
   return add(row);
 }
 
-// A turn's answer, opened empty with a blinking caret and appended to as it
-// arrives. Today the Shell hands over a finished Wake, so the append runs once;
-// with chunks, each lands here and the caret stays until the last.
+// A turn's answer, opened empty with a blinking caret. Speech updates grow
+// the row via replaceReply, and the caret stays until the final reply lands.
 function opening_answer() {
   const row = said(them, "", "them");
   const caret = el("caret", "span");
@@ -171,13 +170,9 @@ function opening_answer() {
   return row;
 }
 
-function arrived(row, text, streaming) {
+function arrived(row, text) {
   const body = row.querySelector(".said");
-  if (streaming) {
-    replaceReply(body, text);
-  } else {
-    appendReply(body, text);
-  }
+  replaceReply(body, text);
   log.scrollTop = log.scrollHeight;
 }
 
@@ -799,45 +794,51 @@ async function start() {
       }
       // Whatever the turn said, its thinking is over.
       thinking.landed();
-      if (payload.reacting_to) {
-        // A line the user did not type, in the log as well as the bubble so the
-        // conversation has one place to be read (ADR-0018). Labelled with what
-        // drew it out, or it reads as the answer to whatever is above it.
-        said(`${them} · ${payload.reacting_to}`, payload.said, "them", payload.at);
-        return;
-      }
       const outcome = turns.settle(payload);
       if (outcome.action === "orphan") {
         // An answer with no question in this window: the Instance was asked
         // somewhere else, or this window opened after the line was sent.
-        said(them, outcome.said, "them", payload.at);
+        const label = payload.reacting_to ? `${them} · ${payload.reacting_to}` : them;
+        said(label, outcome.said, "them", payload.at);
         return;
       }
       const turn = outcome.turn;
-      settled(turn.them);
+      if (!turn.them) {
+        turn.them = said(`${them} · ${payload.reacting_to || "unprompted"}`, "", "them", payload.at);
+      }
       if (outcome.action === "speech") {
-        arrived(turn.them, outcome.said, payload.streaming);
+        arrived(turn.them, outcome.said);
+        if (!payload.streaming) {
+          settled(turn.them);
+        }
       } else if (outcome.action === "failure") {
-        turn.them.remove();
-        harnessError(outcome.said);
+        if (turn.alreadyHasSpeechAhead) {
+          settled(turn.them);
+          note(`Harness error: ${outcome.said}`);
+        } else {
+          turn.them.remove();
+          harnessError(outcome.said);
+        }
       } else if (outcome.action === "error") {
-        // The Harness answered with an error. Static weights took the turn
-        // either way, so the row looks like the one below; the error is the
-        // only part the user can act on (ADR-0008).
-        turn.them.remove();
-        note(outcome.note);
+        if (turn.alreadyHasSpeechAhead) {
+          settled(turn.them);
+          note(outcome.note);
+        } else {
+          turn.them.remove();
+          note(outcome.note);
+        }
       } else if (outcome.action === "preempted") {
-        // The question stays in the log, and this is what closes it: a log
-        // that simply stops reads as one still waiting for an answer.
+        settled(turn.them);
         turn.them.remove();
         note(outcome.note);
       } else if (outcome.action === "silent") {
-        turn.them.remove();
+        settled(turn.them);
       } else {
-        // No line: the call failed and static weights took over, silent by
-        // contract, or Do Not Disturb refused. Said out loud, because a log
-        // that stops is indistinguishable from one still waiting.
-        turn.them.remove();
+        if (turn.alreadyHasSpeechAhead) {
+          settled(turn.them);
+        } else {
+          turn.them.remove();
+        }
         note(MISSING_ANSWER);
       }
     },
