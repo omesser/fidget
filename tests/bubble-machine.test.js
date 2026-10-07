@@ -183,4 +183,3 @@ test("hideButKeepTurn preserves aiTurnPending for ownership changes", async () =
   );
   assert.equal(thinkingShown, false, "thinking should stay hidden when speech shows");
 });
-
