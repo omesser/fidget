@@ -374,3 +374,60 @@ fn clear_input_region(hwnd: HWND) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlay_region_includes_painted_bubble_rect() {
+        let art = vec![[10, 10, 50, 50]]; // Sprite DrawTrail
+        let hotspots = vec![[60, 60, 20, 15]]; // QM pill
+        let painted = vec![[100, 20, 150, 80]]; // Bubble rect (speech or thinking)
+
+        let rects = overlay_region_rects(&art, &hotspots, &painted);
+
+        let bubble_rect = [100, 20, 250, 100]; // [left, top, right, bottom]
+        assert!(
+            rects.contains(&bubble_rect),
+            "Region must include painted bubble rect when visible. Expected {:?} in {:?}",
+            bubble_rect,
+            rects
+        );
+    }
+
+    #[test]
+    fn overlay_region_without_painted_rects_omits_bubble() {
+        let art = vec![[10, 10, 50, 50]];
+        let hotspots = vec![[60, 60, 20, 15]];
+        let painted = vec![]; // No painted rects
+
+        let rects = overlay_region_rects(&art, &hotspots, &painted);
+
+        assert_eq!(
+            rects.len(),
+            2,
+            "Region should only have art and hotspots when no painted rects"
+        );
+    }
+
+    fn overlay_region_rects(
+        art: &[[i32; 4]],
+        hotspots: &[[i32; 4]],
+        painted: &[[i32; 4]],
+    ) -> Vec<[i32; 4]> {
+        let hotspot_bounds = hotspots
+            .iter()
+            .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
+
+        let painted_bounds = painted
+            .iter()
+            .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
+
+        art.iter()
+            .copied()
+            .chain(hotspot_bounds)
+            .chain(painted_bounds)
+            .collect()
+    }
+}

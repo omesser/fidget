@@ -463,12 +463,9 @@ function attachQuickMessage(view, id) {
             machine.restore(text);
             return;
           }
-          // Start thinking immediately if this overlay owns the bubble.
-          // Backend's thinking flag will reach here eventually, but aiTurnStarted
-          // shows the ellipsis without waiting for the first frame.
-          if (view.latest?.bubble) {
-            view.bubbles.aiTurnStarted();
-          }
+          // Start AI turn immediately. Backend filters thinking/dialogue by bubble
+          // ownership; non-owner overlays clear aiTurnPending when placement.bubble=false.
+          view.bubbles.aiTurnStarted();
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {

@@ -776,4 +776,48 @@ mod tests {
     fn no_displays_is_no_overlay_to_belong_to() {
         assert_eq!(display_index_for((960.0, 540.0), &[]), None);
     }
+
+    /// Negative-origin displays (portrait monitor LEFT of primary): Windows dual-display geometry
+    /// from live failure (overlay-0 3440x1440 at origin, overlay-1 1200x1920 at negative offset).
+    #[test]
+    fn bubble_owner_with_negative_origin_displays() {
+        let displays = [
+            rect(0.0, 0.0, 3440.0, 1440.0),
+            rect(-1200.0, -209.0, 1200.0, 1920.0),
+        ];
+
+        assert_eq!(bubble_owner((80.0, 80.0), &displays), Some(0), "startup on primary");
+        assert_eq!(bubble_owner((1720.0, 720.0), &displays), Some(0), "center of primary");
+
+        assert_eq!(bubble_owner((-600.0, 500.0), &displays), Some(1), "center of portrait");
+        assert_eq!(bubble_owner((-100.0, 100.0), &displays), Some(1), "near right edge of portrait");
+
+        assert_eq!(bubble_owner((0.0, 100.0), &displays), Some(0), "seam x=0 belongs to primary");
+        assert_eq!(bubble_owner((-1.0, 100.0), &displays), Some(1), "just left of seam is portrait");
+    }
+
+    #[test]
+    fn bubble_owner_with_hysteresis_negative_origin() {
+        let displays = [
+            rect(0.0, 0.0, 3440.0, 1440.0),
+            rect(-1200.0, -209.0, 1200.0, 1920.0),
+        ];
+
+        let mut prev = None;
+
+        let owner = bubble_owner_with_hysteresis((80.0, 80.0), &displays, prev);
+        assert_eq!(owner, Some(0), "starts on primary");
+        prev = owner;
+
+        let owner = bubble_owner_with_hysteresis((5.0, 100.0), &displays, prev);
+        assert_eq!(owner, Some(0), "hysteresis keeps primary near seam");
+        prev = owner;
+
+        let owner = bubble_owner_with_hysteresis((-20.0, 100.0), &displays, prev);
+        assert_eq!(owner, Some(1), "switches to portrait beyond hysteresis");
+        prev = owner;
+
+        let owner = bubble_owner_with_hysteresis((-5.0, 100.0), &displays, prev);
+        assert_eq!(owner, Some(1), "hysteresis keeps portrait near seam");
+    }
 }

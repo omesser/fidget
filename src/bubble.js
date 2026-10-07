@@ -145,6 +145,15 @@ export function createBubbleMachine(io) {
         }, ask ? MAX_DURATION_MS : bubbleDuration(dialogue));
       }
 
+      // Clear aiTurnPending when this overlay loses bubble ownership.
+      // Non-owner should not show thinking from a stale aiTurnStarted call.
+      if (placement.bubble === false && aiTurnPending) {
+        aiTurnPending = false;
+        if (thinkingShown) {
+          hideThinkingNow();
+        }
+      }
+
       thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending;
       const thinkingRose = thinking && !thinkingPrev;
       thinkingPrev = thinking;
