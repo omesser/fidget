@@ -5498,18 +5498,19 @@ mod tests {
         assert_eq!(wire.close("fresh-id"), Ok(()));
         let mut speech_seen = false;
         let mut thought_ended = false;
-        for forwarded in fx.forwarded.try_iter() {
-            match forwarded {
-                Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while (!speech_seen || !thought_ended) && std::time::Instant::now() < deadline {
+            match fx.forwarded.try_recv() {
+                Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
                     assert_eq!(wake.speech, "Your reminder: time to stretch!");
                     speech_seen = true;
                 }
-                Forwarded::Thought { instance, line }
+                Ok(Forwarded::Thought { instance, line })
                     if instance == "buddy-1" && line.is_empty() =>
                 {
                     thought_ended = true;
                 }
-                _ => {}
+                _ => thread::sleep(Duration::from_millis(10)),
             }
         }
         assert!(speech_seen, "between-turn speech was dropped on close");
