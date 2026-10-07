@@ -2570,48 +2570,27 @@ mod tests {
 
     #[test]
     fn session_due_allows_addressed_wakes_under_dnd() {
-        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        let pace = Pace::new();
         assert!(
-            session_due(
-                true,
-                Duration::ZERO,
-                &pace,
-                false,
-                true,
-                true
-            ),
+            session_due(true, Duration::ZERO, &pace, false, true, true),
             "addressed wake proceeds even under DND"
         );
     }
 
     #[test]
     fn session_due_blocks_proactive_wakes_under_dnd() {
-        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        let pace = Pace::new();
         assert!(
-            !session_due(
-                false,
-                Duration::from_secs(120),
-                &pace,
-                false,
-                true,
-                true
-            ),
+            !session_due(false, Duration::from_secs(120), &pace, false, true, true),
             "proactive wake blocked under DND"
         );
     }
 
     #[test]
     fn session_due_allows_proactive_wakes_when_not_dnd() {
-        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        let pace = Pace::new();
         assert!(
-            session_due(
-                false,
-                Duration::from_secs(120),
-                &pace,
-                false,
-                false,
-                true
-            ),
+            session_due(false, Duration::from_secs(120), &pace, false, false, true),
             "proactive wake allowed when not under DND"
         );
     }

@@ -102,7 +102,6 @@ fn decide_overlay_action<Shape: PartialEq>(
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 /// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
 // One over clippy's cap: Director config belongs here, not mixed with window geometry.
-#[allow(clippy::too_many_arguments)]
 /// Decide which dialogue the Chat surface should show.
 /// Chat always shows what the Harness said, even under DND when the Engine
 /// blanks bubble dialogue. Returns the Harness's parsed dialogue if available,
@@ -114,6 +113,7 @@ fn chat_dialogue<'a>(
     parsed_from_harness.or(from_engine_frame)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_frame_loop(
     app: tauri::AppHandle,
     mut roster: Roster,
@@ -1667,7 +1667,8 @@ pub(crate) fn run_frame_loop(
                     // The mark goes into the remembered line once, here:
                     // the Chat surface draws the record. The bubble keeps
                     // the model's words; the parser has already read them (#610).
-                    let dialogue = chat_dialogue(parsed_dialogue.as_deref(), frame.dialogue.as_deref());
+                    let dialogue =
+                        chat_dialogue(parsed_dialogue.as_deref(), frame.dialogue.as_deref());
                     let remembered = dialogue.map(|line| director::marked(line, truncated));
                     session_log::remember_them(
                         &app,
