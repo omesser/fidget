@@ -334,7 +334,12 @@ function syncQuick(view) {
     view.quickField.placeholder,
     view.quickMachine.available,
   );
-  if (view.quickMachine.takeFocus()) view.quickField.focus();
+  if (view.quickMachine.takeFocus()) {
+    window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+      console.error("overlay_request_focus", err);
+    });
+    view.quickField.focus();
+  }
   reportComposing();
   reportQmVisible();
   if (!visible || !view.latest) {

@@ -1881,6 +1881,30 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title, None);
 }
 
+#[tauri::command]
+fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+        let raw_handle = window
+            .window_handle()
+            .map_err(|e| format!("Window handle not available: {e}"))?;
+        if let RawWindowHandle::Win32(win32_handle) = raw_handle.as_raw() {
+            unsafe {
+                SetForegroundWindow(win32_handle.hwnd.get() as _);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window.set_focus().map_err(|e| e.to_string())
+    }
+}
+
 /// Put the overlay over one display. Size before move: growing a window
 /// anchors bottom-left, so resize-after-place pushes the top edge off the
 /// display it was just put on.
@@ -4259,6 +4283,7 @@ fn main() {
             overlay_traces_cadence,
             overlay_cadence,
             overlay_open_chat,
+            overlay_request_focus,
             chat_opening,
             chat_send,
             chat_prompt,
