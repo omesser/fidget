@@ -386,7 +386,7 @@ fn clear_input_region(hwnd: HWND) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use fidget_core::overlay_region::overlay_region_rects;
 
     #[test]
     fn overlay_region_includes_painted_bubble_rect() {
@@ -394,7 +394,7 @@ mod tests {
         let hotspots = vec![[60, 60, 20, 15]];
         let painted = vec![[100, 20, 150, 80]];
 
-        let rects = fidget_core::overlay_region::overlay_region_rects(&art, &hotspots, &painted);
+        let rects = overlay_region_rects(&art, &hotspots, &painted);
 
         let bubble_rect = [100, 20, 250, 100];
         assert!(
@@ -411,7 +411,7 @@ mod tests {
         let hotspots = vec![[60, 60, 20, 15]];
         let painted = vec![];
 
-        let rects = fidget_core::overlay_region::overlay_region_rects(&art, &hotspots, &painted);
+        let rects = overlay_region_rects(&art, &hotspots, &painted);
 
         assert_eq!(
             rects.len(),

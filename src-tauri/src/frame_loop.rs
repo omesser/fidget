@@ -2055,8 +2055,9 @@ pub(crate) fn run_frame_loop(
 
                 // Trace bubble owner changes.
                 if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
-                    let old_label = old_owner.map(|i| covered[i].as_str()).unwrap_or("none");
-                    let new_label = owner.map(|i| covered[i].as_str()).unwrap_or("none");
+                    let covered_lock = covered.lock().unwrap();
+                    let old_label = old_owner.map(|i| covered_lock[i].as_str()).unwrap_or("none");
+                    let new_label = owner.map(|i| covered_lock[i].as_str()).unwrap_or("none");
                     eprintln!(
                         "bubble_owner instance={} changed: {} -> {}",
                         live.id, old_label, new_label
@@ -2068,8 +2069,9 @@ pub(crate) fn run_frame_loop(
                     if let Some(new_owner_idx) = owner {
                         if let Some(qm_state) = platform::overlay_qm_state() {
                             if qm_state.instance == live.id && qm_state.open {
-                                let new_owner_label = &covered[new_owner_idx];
-                                let old_owner_label = old_owner.map(|i| covered[i].as_str());
+                                let covered_lock = covered.lock().unwrap();
+                                let new_owner_label = &covered_lock[new_owner_idx];
+                                let old_owner_label = old_owner.map(|i| covered_lock[i].as_str());
                                 if dev_flags::TRACE_BUBBLE.is_on() {
                                     eprintln!(
                                         "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={}",
