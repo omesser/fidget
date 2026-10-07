@@ -17,7 +17,7 @@ if ($regionLine -notmatch $regionPattern) {
     Write-Host "Pattern: $regionPattern"
     exit 1
 }
-Write-Host "✓ Region line matches pattern"
+Write-Host "PASS: Region line matches pattern"
 
 # Test handoff pattern
 if ($handoffLine -notmatch $handoffPattern) {
@@ -26,6 +26,6 @@ if ($handoffLine -notmatch $handoffPattern) {
     Write-Host "Pattern: $handoffPattern"
     exit 1
 }
-Write-Host "✓ Handoff line matches pattern"
+Write-Host "PASS: Handoff line matches pattern"
 
 Write-Host "PASS: All trace formats match scenario patterns"

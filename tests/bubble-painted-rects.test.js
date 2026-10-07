@@ -62,7 +62,7 @@ test("reportPaintedRects sends empty array when no views have painted rects", ()
   const views = new Map();
   views.set(1, { paintedRect: null });
   views.set(2, { paintedRect: null });
-  
+
   let invokedWith = null;
   const invoke = (cmd, args) => {
     invokedWith = { cmd, args };
@@ -80,7 +80,7 @@ test("reportPaintedRects batches multiple view rects", () => {
   views.set(1, { paintedRect: [10, 20, 100, 50] });
   views.set(2, { paintedRect: [200, 300, 150, 75] });
   views.set(3, { paintedRect: null });
-  
+
   let invokedWith = null;
   const invoke = (cmd, args) => {
     invokedWith = { cmd, args };
@@ -99,7 +99,7 @@ test("reportPaintedRects skips duplicate sends", () => {
   clearCache();
   const views = new Map();
   views.set(1, { paintedRect: [10, 20, 100, 50] });
-  
+
   let invokeCount = 0;
   const invoke = () => {
     invokeCount++;
@@ -117,7 +117,7 @@ test("reportPaintedRects sends update when rects change", () => {
   clearCache();
   const views = new Map();
   views.set(1, { paintedRect: [10, 20, 100, 50] });
-  
+
   let invokeCount = 0;
   const invoke = () => {
     invokeCount++;
@@ -136,7 +136,7 @@ test("reportPaintedRects handles invoke errors", () => {
   clearCache();
   const views = new Map();
   views.set(1, { paintedRect: [10, 20, 100, 50] });
-  
+
   const invoke = () => Promise.reject(new Error("test error"));
 
   // Should not throw
