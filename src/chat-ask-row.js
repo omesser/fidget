@@ -9,7 +9,6 @@ import { drawReply } from "./markdown.js";
 // writes with `textContent` only. The reply rules key off `.said.md`.
 const ELEMENT = {
   title: ["div", "ask-title"],
-  code: ["code", "ask-code"],
   prose: ["div", "ask-prose"],
   metadata: ["div", "ask-metadata"],
 };
@@ -20,7 +19,8 @@ export function drawAskDetails(body, ask) {
     if (kind === "markdown") {
       const host = doc.createElement("div");
       host.className = "said md";
-      drawReply(host, text, doc);
+      // Empty JSON is not a body on this card. A reply keeps that fence.
+      drawReply(host, text, doc, { skipEmptyJson: true });
       if (host.children.length > 0) {
         body.append(host);
       }

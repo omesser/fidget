@@ -139,7 +139,7 @@ test("an execute ask draws the command as text, and the kind and path as metadat
   assert.equal(body.querySelector(".ask-metadata").textContent, "execute · /tmp/<report>");
 });
 
-test("a question is a paragraph, and argument fallback is code", () => {
+test("a question is a paragraph, and input with no content is a json fence", () => {
   const question = render({
     title: "Question",
     kind: "other",
@@ -149,14 +149,15 @@ test("a question is a paragraph, and argument fallback is code", () => {
   assert.equal(question.querySelector("p").textContent, "Which branch? <b>main</b>");
   assert.equal(elements(question).some((node) => node.tagName === "B"), false);
 
-  assert.deepEqual(
-    drawn({ title: "Run", kind: "execute", content: [], input: { command: "pwd" } }),
-    [
-      { tagName: "DIV", className: "ask-title", textContent: "Run" },
-      { tagName: "CODE", className: "ask-code", textContent: "command: pwd" },
-      { tagName: "DIV", className: "ask-metadata", textContent: "execute" },
-    ],
-  );
+  const fallback = render({ title: "Run", kind: "execute", content: [], input: { command: "pwd" } });
+  const code = fallback.querySelector("code");
+
+  assert.equal(fallback.querySelector(".ask-title").textContent, "Run");
+  assert.equal(code.textContent, '{\n  "command": "pwd"\n}');
+  assert.equal(code.parentNode.tagName, "PRE");
+  assert.equal(fallback.textContent.includes("```"), false);
+  assert.equal(fallback.querySelector(".ask-code"), null);
+  assert.equal(fallback.querySelector(".ask-metadata").textContent, "execute");
 });
 
 test("an empty json fence draws no body under the tool name", () => {
@@ -234,6 +235,28 @@ test("bidi and zero-width characters are removed and newlines in a fence stay", 
   assert.equal(code.textContent, "alpha\nbeta");
   assert.equal(code.textContent.includes("\u202E"), false);
   assert.equal(code.textContent.includes("\u200B"), false);
+});
+
+test("an empty input draws no code under the tool name", () => {
+  for (const input of [{}, [], null, ""]) {
+    const body = render({ title: "Tool", kind: "other", content: [], input });
+    assert.equal(body.querySelector(".ask-title").textContent, "Tool", JSON.stringify(input));
+    assert.equal(body.querySelector("code"), null, JSON.stringify(input));
+    assert.equal(body.textContent.includes("```"), false, JSON.stringify(input));
+  }
+});
+
+test("a bidi override in input json is removed and the newlines stay", () => {
+  const body = render({
+    title: "Tool",
+    content: [],
+    input: { note: "a\u202Eb\nc" },
+  });
+  const code = body.querySelector("code");
+
+  assert.equal(code.textContent.includes("\u202E"), false);
+  assert.equal(code.textContent.includes("\n"), true);
+  assert.equal(code.textContent.includes("ab"), true);
 });
 
 test("a javascript link in an ask is not clickable", () => {

@@ -4,10 +4,11 @@
 
 import { Lexer } from "./vendor/marked.esm.js";
 
-// Bidi overrides can reverse an ask, and invisible characters can hide one.
-// Newline and tab stay, because markdown uses them.
+// Bidi controls can reverse a line. U+200B, word joiner and BOM can hide one.
+// Newline and tab stay, because markdown uses them. ZWJ and ZWNJ stay too:
+// joined emoji and some scripts need them.
 const UNSAFE =
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
 
 export function stripUnsafe(text) {
   return String(text ?? "").replace(UNSAFE, "");
@@ -99,7 +100,7 @@ function row(cells, tag, doc) {
   return node;
 }
 
-function blocks(tokens, parent, doc) {
+function blocks(tokens, parent, doc, skipEmptyJson) {
   for (const token of tokens) {
     switch (token.type) {
       // Blank lines, and a link definition that already produced its link.
@@ -120,7 +121,7 @@ function blocks(tokens, parent, doc) {
         break;
       case "blockquote": {
         const quote = doc.createElement("blockquote");
-        blocks(token.tokens ?? [], quote, doc);
+        blocks(token.tokens ?? [], quote, doc, skipEmptyJson);
         parent.append(quote);
         break;
       }
@@ -134,7 +135,7 @@ function blocks(tokens, parent, doc) {
         }
         for (const item of token.items) {
           const li = doc.createElement("li");
-          blocks(item.tokens ?? [], li, doc);
+          blocks(item.tokens ?? [], li, doc, skipEmptyJson);
           list.append(li);
         }
         parent.append(list);
@@ -151,9 +152,8 @@ function blocks(tokens, parent, doc) {
         break;
       }
       case "code": {
-        // An empty payload is not a code block. A blank box would still sit
-        // between a tool name and its buttons.
-        if (emptyJsonBlock(token.text)) {
+        // Set by the ask row. A reply keeps an empty fence, because the model wrote it.
+        if (skipEmptyJson && emptyJsonBlock(token.text)) {
           break;
         }
         // A fence and a table are the two blocks that do not reflow, and the
@@ -196,7 +196,8 @@ function blocks(tokens, parent, doc) {
   }
 }
 
-function emptyJsonBlock(text) {
+// True for a blank code body or JSON `{}`, `[]`, `null`, or `""`.
+export function emptyJsonBlock(text) {
   const body = String(text ?? "").trim();
   if (body === "") {
     return true;
@@ -223,11 +224,11 @@ const drawn = new WeakMap();
 // Draw the whole of `text` into `body`, replacing whatever is there, and put
 // the caret back. Found and re-added with `querySelector` and `append`, never
 // `insertBefore`: the caret may be nested in a block, not a direct child of `body`.
-export function drawReply(body, text, doc = globalThis.document) {
+export function drawReply(body, text, doc = globalThis.document, options) {
   const caret = body.querySelector(".caret");
   drawn.set(body, text ?? "");
   body.replaceChildren();
-  blocks(Lexer.lex(stripUnsafe(text ?? ""), FLAVOUR), body, doc);
+  blocks(Lexer.lex(stripUnsafe(text ?? ""), FLAVOUR), body, doc, options?.skipEmptyJson);
   if (caret) {
     // Inside the last paragraph, so it blinks at the end of the line rather
     // than on one of its own. Anywhere else — a fence, a table, an empty

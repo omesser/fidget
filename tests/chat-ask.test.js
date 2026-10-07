@@ -32,7 +32,7 @@ test("the content is what the row says, under the title", () => {
   ]);
 });
 
-test("the arguments stand in when there is no content, and are code", () => {
+test("the arguments stand in when there is no content, as a json fence", () => {
   const says = askSays({
     ...ask,
     title: "Run a command",
@@ -42,8 +42,10 @@ test("the arguments stand in when there is no content, and are code", () => {
 
   assert.deepEqual(says, [
     { kind: "title", text: "Run a command" },
-    { kind: "code", text: "command: rm -rf /" },
-    { kind: "code", text: "cwd: /Users/oded" },
+    {
+      kind: "markdown",
+      text: '```json\n{\n  "command": "rm -rf /",\n  "cwd": "/Users/oded"\n}\n```',
+    },
     { kind: "metadata", text: "execute" },
   ]);
 });
@@ -85,6 +87,16 @@ test("content wins over the arguments rather than joining them", () => {
   assert.ok(!says.includes("question:"), says);
 });
 
+test("an empty input is not a body", () => {
+  for (const input of [{}, [], null, ""]) {
+    assert.deepEqual(
+      askSays({ ...ask, title: null, input }),
+      [{ kind: "prose", text: "The Harness asked for permission without saying what for." }],
+      JSON.stringify(input),
+    );
+  }
+});
+
 test("an ask with nothing to show says so, and says it as a sentence", () => {
   const says = askText({ ...ask, title: null });
 
@@ -112,20 +124,23 @@ test("a tool that touches a path names the path beside the kind", () => {
   assert.equal(says, "Edit a file\nedit · /Users/oded/src/main.rs");
 });
 
-test("more paths than fit are counted, not listed", () => {
+test("every path is named", () => {
   const says = askText({
     ...ask,
     locations: ["/a.rs", "/b.rs", "/c.rs", "/d.rs", "/e.rs"],
   });
 
-  assert.equal(says, "Question from MCP server\n/a.rs, /b.rs, /c.rs, and 2 more paths");
+  assert.equal(says, "Question from MCP server\n/a.rs, /b.rs, /c.rs, /d.rs, /e.rs");
 });
 
-test("a huge argument payload is bounded and marked", () => {
-  const says = askText({ ...ask, input: { blob: "x".repeat(50_000) } });
+test("a large input is the json the Harness sent", () => {
+  const blob = "x".repeat(50_000);
+  const says = askSays({ ...ask, title: null, input: { blob } });
 
-  assert.ok(says.length <= 600, `${says.length} characters`);
-  assert.ok(says.endsWith("…"), says);
+  assert.equal(says.length, 1);
+  assert.equal(says[0].kind, "markdown");
+  assert.ok(says[0].text.includes(blob), says[0].text.length);
+  assert.ok(!says[0].text.includes("…"));
 });
 
 // The kind and the paths are drawn after the question, so the budget has to
@@ -155,48 +170,43 @@ test("a verbose title cannot crowd out the question", () => {
   assert.ok(says.includes("Which branch should I push to?"), says);
 });
 
-test("more arguments than fit are counted, not listed", () => {
-  const input = Object.fromEntries(
-    Array.from({ length: 20 }, (_, n) => [`arg${n}`, n]),
+test("a title keeps a newline inside its own part", () => {
+  assert.deepEqual(askSays({ ...ask, title: "Question\nedit · /safe/path", content: [] }), [
+    { kind: "title", text: "Question\nedit · /safe/path" },
+  ]);
+});
+
+test("a title loses a bidi override and keeps the rest", () => {
+  assert.deepEqual(askSays({ ...ask, title: "read\u202E/etc/passwd", content: [] }), [
+    { kind: "title", text: "read/etc/passwd" },
+  ]);
+});
+
+test("input that is not an object is still a json fence", () => {
+  assert.deepEqual(askSays({ ...ask, title: null, input: "rm -rf /" }), [
+    { kind: "markdown", text: '```json\n"rm -rf /"\n```' },
+  ]);
+  assert.deepEqual(askSays({ ...ask, title: null, input: ["a", "b"] }), [
+    { kind: "markdown", text: '```json\n[\n  "a",\n  "b"\n]\n```' },
+  ]);
+  assert.deepEqual(askSays({ ...ask, title: null, input: 0 }), [
+    { kind: "markdown", text: "```json\n0\n```" },
+  ]);
+});
+
+test("whitespace the Harness sent stays, and an empty string is not content", () => {
+  assert.deepEqual(
+    askSays({
+      ...ask,
+      title: "   ",
+      content: ["", "  "],
+      input: { command: "pwd" },
+    }),
+    [
+      { kind: "title", text: "   " },
+      { kind: "markdown", text: "  " },
+    ],
   );
-
-  const says = askText({ ...ask, input });
-
-  assert.ok(says.includes("and 14 more arguments"), says);
-  assert.ok(!says.includes("arg7:"), says);
-});
-
-// A title is one element. A newline inside it must not become a second line
-// that looks like the metadata the row writes itself.
-test("a title cannot forge a line of its own", () => {
-  const says = askText({
-    ...ask,
-    title: "Question\nedit · /safe/path",
-    content: [],
-  });
-
-  assert.equal(says, "Question edit · /safe/path");
-  assert.equal(says.split("\n").length, 1);
-});
-
-test("an argument value loses a bidi override and stays one line", () => {
-  assert.equal(askText({ ...ask, title: null, input: { note: "a\u202Eb\nc" } }), "note: ab c");
-});
-
-test("arguments that are not an object still read as one line", () => {
-  assert.equal(askText({ ...ask, title: null, input: "rm -rf /" }), '"rm -rf /"');
-  assert.equal(askText({ ...ask, title: null, input: ["a", "b"] }), '["a","b"]');
-});
-
-test("an ask whose every field is blank is still the sentence", () => {
-  const says = askText({
-    ...ask,
-    title: "   ",
-    content: ["", "  "],
-    input: {},
-  });
-
-  assert.equal(says, "The Harness asked for permission without saying what for.");
 });
 
 test("a missing field is not a crash", () => {
