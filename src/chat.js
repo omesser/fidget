@@ -16,6 +16,7 @@ import { createNamesNotice } from "./chat-names-hint.js";
 import { planSteps } from "./chat-plan.js";
 import { applyChatUiClass } from "./chat-ui-class.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
+import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
@@ -32,6 +33,7 @@ const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
+const recall = createComposerRecall(log);
 // New lines stay under the landing until this Harness can answer.
 let holdLogAtTop = false;
 const plan = document.getElementById("plan");
@@ -698,6 +700,9 @@ function showWho(opening) {
 // memory of this window; Shift+Enter types the newline. `isComposing` is the
 // IME's Enter accepting a candidate, and sending there would cut the word.
 line.addEventListener("keydown", (event) => {
+  if (recall.consume(event, line)) {
+    return;
+  }
   if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
     return;
   }
@@ -729,6 +734,7 @@ composer.addEventListener("submit", (event) => {
       thinking.landed();
       const turn = turns.typed();
       turn.you = said("You", text, "you");
+      recall.release();
       turn.them = opening_answer();
       return invoke("chat_send", { instance, text }).catch((why) => {
         drop(turn);
@@ -757,6 +763,7 @@ function newSession(why) {
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
+  recall.release();
   thinking.clear();
   thinkingRows.clear();
   // Not a child of the log, so replacing the rows above does not clear it.
