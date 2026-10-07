@@ -18,7 +18,7 @@ import {
   placeQuickMessage,
   quickMessageMirror,
 } from "./quick-message.js";
-import { reportPaintedRects, computeBubblePaintedRect } from "./painted-rects.js";
+import { computeBubblePaintedRect, createPaintedReporter } from "./painted-rects.js";
 
 const stage = document.getElementById("stage");
 
@@ -661,8 +661,10 @@ let armed = false;
 // and arms both overlays anyway.
 const SEAM_MARGIN = 8;
 
+const reportPainted = createPaintedReporter(window.__TAURI__.core.invoke);
+
 function reportAllPaintedRects() {
-  reportPaintedRects(views, window.__TAURI__.core.invoke);
+  reportPainted(views);
 }
 
 function needsFrame(view) {

@@ -1,64 +1,29 @@
-// Painted rect calculation for bubble and thinking indicator regions.
-// Windows SetWindowRgn clips drawing as well as hit-testing, so the bubble
-// body and thinking dots must be reported as painted rects to include them
-// in the region. Format is [x, y, width, height] in overlay coordinates.
+// Windows' SetWindowRgn clips drawing as well as clicks, so the bubble body and
+// thinking dots are reported to the Shell, which unions them into the overlay's
+// region. Rects are [x, y, width, height] in overlay coordinates.
 
-let reportedPainted = "";
+// The CSS tail (::before, 10px) hangs below the body, or above it when inverted.
+const TAIL_PX = 10;
 
-/**
- * Compute painted rect for a bubble element when visible.
- * Includes the 10px CSS tail (::before/::after pseudo-elements) that extends beyond offsetHeight.
- * @param {HTMLElement} bubble - The bubble element
- * @param {{x: number, y: number, inverted: boolean}} pos - Position and orientation in overlay coords
- * @returns {[number, number, number, number] | null} [x, y, w, h] or null if hidden
- */
+// Only a bubble that can be read: hidden or mid-fade keeps no region.
 export function computeBubblePaintedRect(bubble, pos) {
-  if (!bubble || !bubble.classList.contains("visible")) {
-    return null;
-  }
-
+  if (!bubble?.classList.contains("visible")) return null;
   const opacity = parseFloat(bubble.style.opacity);
-  if (opacity < 1 && !isNaN(opacity)) {
-    return null;
-  }
-
-  // The CSS tail (::before at bottom: -10px or top: -10px) extends 10px beyond the bubble body.
-  // Inverted bubbles have tail pointing up (extends above), normal bubbles point down (extends below).
-  const tailHeight = 10;
-  const x = Math.round(pos.x);
-  const width = bubble.offsetWidth;
-  const bodyHeight = bubble.offsetHeight;
-
-  if (pos.inverted) {
-    // Tail extends upward: y moves up by tailHeight, height includes tail
-    return [x, Math.round(pos.y) - tailHeight, width, bodyHeight + tailHeight];
-  } else {
-    // Tail extends downward: y stays, height includes tail
-    return [x, Math.round(pos.y), width, bodyHeight + tailHeight];
-  }
+  if (opacity < 1) return null;
+  const y = Math.round(pos.y) - (pos.inverted ? TAIL_PX : 0);
+  return [Math.round(pos.x), y, bubble.offsetWidth, bubble.offsetHeight + TAIL_PX];
 }
 
-/**
- * Batch painted rects from all views and invoke backend if changed.
- * @param {Map} views - Map of view objects with paintedRect property
- * @param {Function} invoke - Tauri invoke function
- */
-export function reportPaintedRects(views, invoke) {
-  const rects = [];
-  for (const view of views.values()) {
-    if (view.paintedRect) rects.push(view.paintedRect);
-  }
-  const serialized = JSON.stringify(rects);
-  if (serialized === reportedPainted) return;
-  reportedPainted = serialized;
-  invoke("overlay_painted_rects", { rects }).catch((err) => {
-    console.error("overlay_painted_rects", err);
-  });
-}
-
-/**
- * Clear painted rects cache for testing.
- */
-export function clearCache() {
-  reportedPainted = "";
+// One call per change with every view's rect, so the Shell never holds half a set.
+export function createPaintedReporter(invoke) {
+  let reported = null;
+  return (views) => {
+    const rects = [...views.values()].map((view) => view.paintedRect).filter(Boolean);
+    const told = JSON.stringify(rects);
+    if (told === reported) return;
+    reported = told;
+    invoke("overlay_painted_rects", { rects }).catch((err) => {
+      console.error("overlay_painted_rects", err);
+    });
+  };
 }

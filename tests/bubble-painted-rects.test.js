@@ -1,157 +1,62 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeBubblePaintedRect, reportPaintedRects, clearCache } from "../src/painted-rects.js";
+import { computeBubblePaintedRect, createPaintedReporter } from "../src/painted-rects.js";
 
-test("computeBubblePaintedRect returns null when bubble is hidden", () => {
-  const bubble = {
-    classList: {
-      contains: () => false,
-    },
-  };
-  const pos = { x: 100, y: 200 };
-  assert.equal(computeBubblePaintedRect(bubble, pos), null);
+const bubble = (visible, opacity) => ({
+  classList: { contains: (cls) => visible && cls === "visible" },
+  style: opacity === undefined ? {} : { opacity },
+  offsetWidth: 200,
+  offsetHeight: 80,
 });
 
-test("computeBubblePaintedRect returns null during fade out", () => {
-  const bubble = {
-    classList: {
-      contains: (cls) => cls === "visible",
-    },
-    style: {
-      opacity: "0.5",
-    },
-    offsetWidth: 300,
-    offsetHeight: 150,
-  };
-  const pos = { x: 100, y: 200 };
-  assert.equal(computeBubblePaintedRect(bubble, pos), null);
+// What Windows must keep in the overlay's region for the bubble: its body and
+// the 10px tail, rounded to pixels. A bubble that cannot be read keeps nothing.
+test("the painted rect is the readable bubble plus its tail", () => {
+  const rows = [
+    ["hidden", bubble(false), { x: 1, y: 2 }, null],
+    ["fading out", bubble(true, "0.4"), { x: 10, y: 20 }, null],
+    ["opaque, tail down", bubble(true, "1"), { x: 10.4, y: 20.6 }, [10, 21, 200, 90]],
+    ["no opacity set yet", bubble(true), { x: 100.7, y: 200.3 }, [101, 200, 200, 90]],
+    [
+      "inverted, tail up",
+      bubble(true, "1"),
+      { x: 10.4, y: 20.6, inverted: true },
+      [10, 11, 200, 90],
+    ],
+  ];
+  for (const [name, element, pos, expected] of rows) {
+    assert.deepEqual(computeBubblePaintedRect(element, pos), expected, name);
+  }
 });
 
-test("computeBubblePaintedRect returns rect when fully visible", () => {
-  const bubble = {
-    classList: {
-      contains: (cls) => cls === "visible",
-    },
-    style: {
-      opacity: "1",
-    },
-    offsetWidth: 300,
-    offsetHeight: 150,
-  };
-  const pos = { x: 100, y: 200 };
-  const rect = computeBubblePaintedRect(bubble, pos);
-  assert.deepEqual(rect, [100, 200, 300, 160]);
-});
-
-test("computeBubblePaintedRect rounds position", () => {
-  const bubble = {
-    classList: {
-      contains: (cls) => cls === "visible",
-    },
-    style: {},
-    offsetWidth: 300,
-    offsetHeight: 150,
-  };
-  const pos = { x: 100.7, y: 200.3 };
-  const rect = computeBubblePaintedRect(bubble, pos);
-  assert.deepEqual(rect, [101, 200, 300, 160]);
-});
-
-test("computeBubblePaintedRect covers the tail above an inverted bubble", () => {
-  const bubble = {
-    classList: {
-      contains: (cls) => cls === "visible",
-    },
-    style: { opacity: "1" },
-    offsetWidth: 200,
-    offsetHeight: 80,
-  };
-  const pos = { x: 10.4, y: 20.6, inverted: true };
-  assert.deepEqual(computeBubblePaintedRect(bubble, pos), [10, 11, 200, 90]);
-});
-
-test("reportPaintedRects sends empty array when no views have painted rects", () => {
-  clearCache();
-  const views = new Map();
-  views.set(1, { paintedRect: null });
-  views.set(2, { paintedRect: null });
-
-  let invokedWith = null;
-  const invoke = (cmd, args) => {
-    invokedWith = { cmd, args };
+test("every view's painted rect reaches the Shell in one call, once per change", () => {
+  const told = [];
+  const report = createPaintedReporter((command, args) => {
+    told.push([command, args]);
     return Promise.resolve();
-  };
-
-  reportPaintedRects(views, invoke);
-  assert.equal(invokedWith.cmd, "overlay_painted_rects");
-  assert.deepEqual(invokedWith.args.rects, []);
-});
-
-test("reportPaintedRects batches multiple view rects", () => {
-  clearCache();
-  const views = new Map();
-  views.set(1, { paintedRect: [10, 20, 100, 50] });
-  views.set(2, { paintedRect: [200, 300, 150, 75] });
-  views.set(3, { paintedRect: null });
-
-  let invokedWith = null;
-  const invoke = (cmd, args) => {
-    invokedWith = { cmd, args };
-    return Promise.resolve();
-  };
-
-  reportPaintedRects(views, invoke);
-  assert.equal(invokedWith.cmd, "overlay_painted_rects");
-  assert.deepEqual(invokedWith.args.rects, [
-    [10, 20, 100, 50],
-    [200, 300, 150, 75],
+  });
+  const views = new Map([
+    [1, { paintedRect: [10, 20, 100, 50] }],
+    [2, { paintedRect: null }],
+    [3, { paintedRect: [200, 300, 150, 75] }],
   ]);
-});
 
-test("reportPaintedRects skips duplicate sends", () => {
-  clearCache();
-  const views = new Map();
-  views.set(1, { paintedRect: [10, 20, 100, 50] });
+  report(views);
+  report(views);
+  assert.deepEqual(told, [
+    [
+      "overlay_painted_rects",
+      {
+        rects: [
+          [10, 20, 100, 50],
+          [200, 300, 150, 75],
+        ],
+      },
+    ],
+  ]);
 
-  let invokeCount = 0;
-  const invoke = () => {
-    invokeCount++;
-    return Promise.resolve();
-  };
-
-  reportPaintedRects(views, invoke);
-  assert.equal(invokeCount, 1);
-
-  reportPaintedRects(views, invoke);
-  assert.equal(invokeCount, 1, "second call with same rects should not invoke");
-});
-
-test("reportPaintedRects sends update when rects change", () => {
-  clearCache();
-  const views = new Map();
-  views.set(1, { paintedRect: [10, 20, 100, 50] });
-
-  let invokeCount = 0;
-  const invoke = () => {
-    invokeCount++;
-    return Promise.resolve();
-  };
-
-  reportPaintedRects(views, invoke);
-  assert.equal(invokeCount, 1);
-
-  views.get(1).paintedRect = [10, 20, 200, 100];
-  reportPaintedRects(views, invoke);
-  assert.equal(invokeCount, 2, "changed rects should trigger another invoke");
-});
-
-test("reportPaintedRects handles invoke errors", () => {
-  clearCache();
-  const views = new Map();
-  views.set(1, { paintedRect: [10, 20, 100, 50] });
-
-  const invoke = () => Promise.reject(new Error("test error"));
-
-  // Should not throw
-  reportPaintedRects(views, invoke);
+  views.get(1).paintedRect = null;
+  views.get(3).paintedRect = null;
+  report(views);
+  assert.deepEqual(told.at(-1), ["overlay_painted_rects", { rects: [] }], "an empty list clears");
 });
