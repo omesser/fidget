@@ -178,7 +178,7 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
 
 /// The painted rectangles one overlay reported, in its own coordinates.
 #[cfg(not(unix))]
-pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
+fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_PAINTED.lock().map_or_else(
         |_| Vec::new(),
         |painted| {
@@ -189,6 +189,25 @@ pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
                 .collect()
         },
     )
+}
+
+/// Everything one overlay draws outside the art, hotspots first.
+#[cfg(not(unix))]
+pub fn overlay_rects_for(label: &str) -> Vec<fidget_core::overlay_region::OverlayRect> {
+    use fidget_core::overlay_region::OverlayRect;
+    let clickable = overlay_hotspots_for(label)
+        .into_iter()
+        .map(|rect| OverlayRect {
+            rect,
+            clickable: true,
+        });
+    let drawn = overlay_painted_for(label)
+        .into_iter()
+        .map(|rect| OverlayRect {
+            rect,
+            clickable: false,
+        });
+    clickable.chain(drawn).collect()
 }
 
 /// The overlay heard the secondary button go down or up. Same miss as the
@@ -665,18 +684,17 @@ pub fn update_input_region(
     )
 }
 
-/// Windows: SetWindowRgn from the sprite's swept ink, hotspots and painted rects.
+/// Windows: SetWindowRgn from the sprite's swept ink and the renderer's rects.
 /// The region clips drawing as well as input. `click_through` controls
 /// WS_EX_TRANSPARENT; returns whether the window now passes clicks.
 #[cfg(not(unix))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
-    hotspot_rects: &[[i32; 4]],
-    painted_rects: &[[i32; 4]],
+    rects: &[fidget_core::overlay_region::OverlayRect],
     click_through: bool,
 ) -> Result<bool, String> {
-    windows::update_input_region(window, art, hotspot_rects, painted_rects, click_through)
+    windows::update_input_region(window, art, rects, click_through)
 }
 
 /// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
