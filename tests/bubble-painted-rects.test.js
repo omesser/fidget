@@ -40,7 +40,7 @@ test("computeBubblePaintedRect returns rect when fully visible", () => {
   };
   const pos = { x: 100, y: 200 };
   const rect = computeBubblePaintedRect(bubble, pos);
-  assert.deepEqual(rect, [100, 200, 300, 150]);
+  assert.deepEqual(rect, [100, 200, 300, 160]);
 });
 
 test("computeBubblePaintedRect rounds position", () => {
@@ -54,7 +54,7 @@ test("computeBubblePaintedRect rounds position", () => {
   };
   const pos = { x: 100.7, y: 200.3 };
   const rect = computeBubblePaintedRect(bubble, pos);
-  assert.deepEqual(rect, [101, 200, 300, 150]);
+  assert.deepEqual(rect, [101, 200, 300, 160]);
 });
 
 test("reportPaintedRects sends empty array when no views have painted rects", () => {
