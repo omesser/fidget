@@ -37,6 +37,34 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
         })
 }
 
+/// Hysteresis margin: feet must move this far (in points) past a seam before
+/// ownership switches. Prevents flicker when feet hover near a display boundary.
+const HYSTERESIS_MARGIN: f64 = 8.0;
+
+/// The one overlay that draws an Instance's speech bubble, with hysteresis to
+/// prevent ownership flicker near seams. Keeps the previous owner until feet
+/// move clearly onto another display.
+pub fn bubble_owner_with_hysteresis(
+    feet: (f64, f64),
+    displays: &[Rect],
+    previous_owner: Option<usize>,
+) -> Option<usize> {
+    // If we have a previous owner and feet are still near that display, keep it
+    if let Some(prev) = previous_owner {
+        if let Some(display) = displays.get(prev) {
+            // Check if feet are still on the previous display or within hysteresis margin
+            if covers(feet, display)
+                || outside_by(feet, display) <= HYSTERESIS_MARGIN * HYSTERESIS_MARGIN
+            {
+                return Some(prev);
+            }
+        }
+    }
+
+    // Otherwise, determine owner normally
+    bubble_owner(feet, displays)
+}
+
 /// How far outside its display feet may be and still be standing on it, in
 /// points. Slack rather than equality because the floor is the display scaled
 /// and clamped, which need not land back on the edge. Squared at the call site.

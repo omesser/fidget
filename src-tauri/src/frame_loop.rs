@@ -2045,7 +2045,12 @@ pub(crate) fn run_frame_loop(
                     facing: frame.facing,
                 });
 
-                let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
+                let owner = fidget_core::overlay::bubble_owner_with_hysteresis(
+                    (frame.position.x, frame.position.y),
+                    &displays.frames,
+                    live.bubble_owner_last,
+                );
+                live.bubble_owner_last = owner;
                 let dialogue = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),

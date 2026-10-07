@@ -463,6 +463,12 @@ function attachQuickMessage(view, id) {
             machine.restore(text);
             return;
           }
+          // Start thinking immediately if this overlay owns the bubble.
+          // Backend's thinking flag will reach here eventually, but aiTurnStarted
+          // shows the ellipsis without waiting for the first frame.
+          if (view.latest?.bubble) {
+            view.bubbles.aiTurnStarted();
+          }
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
@@ -588,12 +594,8 @@ function drawView(view, now) {
   // speechRect and the pill offset see (show/hide also place when idle).
   view.bubbles.frame(latest);
 
-  // Dismiss pill if sprite left this overlay's bounds (seam crossing).
   const spriteOnDisplay = spriteX >= 0 && spriteX < window.innerWidth &&
                           spriteY >= 0 && spriteY < window.innerHeight;
-  if (view.quickMachine.visible && !spriteOnDisplay) {
-    view.quickMachine.dismiss();
-  }
 
   if (latest.visible && spriteOnDisplay) {
     const rect = { x: spriteX, y: spriteY, width: latest.width, height: latest.height };

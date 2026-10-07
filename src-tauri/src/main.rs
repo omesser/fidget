@@ -313,6 +313,9 @@ struct InstanceState {
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
+    /// The display that last owned this Instance's bubble. Hysteresis keeps
+    /// ownership stable near a seam: switch only when feet clearly cross.
+    bubble_owner_last: Option<usize>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -3577,6 +3580,7 @@ fn spawn_live(
         spoken: None,
         speech: SpeechBubble::default(),
         drawn_last: None,
+        bubble_owner_last: None,
         traced_last: None,
         status_last: None,
         status_wake_ms: None,
@@ -3856,6 +3860,7 @@ fn spawn_instances(
             spoken: None,
             speech: SpeechBubble::default(),
             drawn_last: None,
+            bubble_owner_last: None,
             traced_last: None,
             status_last: None,
             status_wake_ms: None,

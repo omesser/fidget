@@ -189,10 +189,10 @@ test("hideButKeepTurn preserves aiTurnPending for ownership changes", async () =
   assert.equal(thinkingShown, false, "thinking should stay hidden when speech shows");
 });
 
-test("backend thinking flag drives display across overlays", async () => {
-  // Simulates backend setting thinking=true after chat_send
+test("backend thinking flag only reaches bubble owner", async () => {
+  // Backend filters thinking by bubble owner: only owner receives thinking=true
   let thinking1 = false;
-  const overlay1 = createBubbleMachine({
+  const owner = createBubbleMachine({
     showSpeech() {},
     hideSpeech() {},
     showThinking() {
@@ -206,7 +206,7 @@ test("backend thinking flag drives display across overlays", async () => {
   });
 
   let thinking2 = false;
-  const overlay2 = createBubbleMachine({
+  const nonOwner = createBubbleMachine({
     showSpeech() {},
     hideSpeech() {},
     showThinking() {
@@ -219,11 +219,12 @@ test("backend thinking flag drives display across overlays", async () => {
     cancel: (id) => clearTimeout(id),
   });
 
-  // Backend broadcasts thinking=true to all overlays after chat_send
-  overlay1.frame({ thinking: true, visible: true });
-  overlay2.frame({ thinking: true, visible: true });
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  assert.equal(thinking1, true, "overlay1 shows thinking from backend");
-  assert.equal(thinking2, true, "overlay2 shows thinking from backend");
+  // Backend sends thinking=true only to bubble owner (owner), not to non-owner
+  owner.frame({ thinking: true, visible: true, bubble: true });
+  nonOwner.frame({ thinking: false, visible: true, bubble: false });
+  
+  // On first rise, grace timer applies (250ms)
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(thinking1, true, "bubble owner shows thinking after grace");
+  assert.equal(thinking2, false, "non-owner never receives thinking flag");
 });
