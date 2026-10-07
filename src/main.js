@@ -231,6 +231,7 @@ function positionBubble(view, spriteRect, displayBounds) {
 
 function speechRect(view) {
   if (!view.bubble.classList.contains("visible")) return null;
+  if (view.bubble.dataset.mode !== "speech") return null;
   return {
     x: parseFloat(view.bubble.style.left) || 0,
     y: parseFloat(view.bubble.style.top) || 0,

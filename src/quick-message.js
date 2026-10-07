@@ -99,11 +99,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   }
 
   function startAutoHideIfNeeded() {
-    if (disposed || !visible || hasText() || overSprite || overPill) return;
+    if (disposed || !visible || hasText() || focused || overSprite || overPill) return;
     if (autoHideTimer !== null) return;
     autoHideTimer = schedule(() => {
       autoHideTimer = null;
-      if (disposed || !visible || hasText() || overSprite || overPill) return;
+      if (disposed || !visible || hasText() || focused || overSprite || overPill) return;
       hide();
     }, bubbleUp ? BUBBLE_YIELD_MS : AUTO_HIDE_DELAY_MS);
   }
@@ -236,6 +236,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     blur() {
       if (!focused) return;
       focused = false;
+      startAutoHideIfNeeded();
       if (visible) changed();
     },
     keydown(key, mods = {}) {
