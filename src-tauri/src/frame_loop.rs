@@ -265,6 +265,16 @@ pub(crate) fn run_frame_loop(
         // Counted apart from `frame:` lines, so the tick rate can be read with
         // FIDGET_TRACE_FRAMES off and its per-tick print ruled out as the cause.
         let counting_ticks = crate::tracing_cadence();
+
+        // Log DND state at startup when TRACE_BUBBLE is on.
+        if dev_flags::TRACE_BUBBLE.is_on() {
+            let dnd = settings
+                .lock()
+                .ok()
+                .map(|s| s.do_not_disturb)
+                .unwrap_or(false);
+            eprintln!("startup: dnd={}", if dnd { "on" } else { "off" });
+        }
         let mut counted_ticks: u32 = 0;
         let mut counted_since = Instant::now();
         let mut last_tick = Instant::now();
@@ -2056,11 +2066,17 @@ pub(crate) fn run_frame_loop(
                 // Trace bubble owner changes.
                 if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
                     let covered_lock = covered.lock().unwrap();
-                    let old_label = old_owner.map(|i| covered_lock[i].as_str()).unwrap_or("none");
+                    let old_label = old_owner
+                        .map(|i| covered_lock[i].as_str())
+                        .unwrap_or("none");
                     let new_label = owner.map(|i| covered_lock[i].as_str()).unwrap_or("none");
+                    let dnd = instance.do_not_disturb();
                     eprintln!(
-                        "bubble_owner instance={} changed: {} -> {}",
-                        live.id, old_label, new_label
+                        "bubble_owner instance={} changed: {} -> {} dnd={}",
+                        live.id,
+                        old_label,
+                        new_label,
+                        if dnd { "on" } else { "off" }
                     );
                 }
 
@@ -2073,14 +2089,16 @@ pub(crate) fn run_frame_loop(
                                 let new_owner_label = &covered_lock[new_owner_idx];
                                 let old_owner_label = old_owner.map(|i| covered_lock[i].as_str());
                                 if dev_flags::TRACE_BUBBLE.is_on() {
+                                    let dnd = instance.do_not_disturb();
                                     eprintln!(
-                                        "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={}",
+                                        "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={} dnd={}",
                                         new_owner_label,
                                         old_owner_label.unwrap_or("none"),
                                         qm_state.instance,
                                         qm_state.open,
                                         qm_state.text,
-                                        qm_state.focused
+                                        qm_state.focused,
+                                        if dnd { "on" } else { "off" }
                                     );
                                 }
 

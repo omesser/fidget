@@ -1812,6 +1812,9 @@ impl Settings {
             self.proactive_wakes = value;
         }
         if let Some(value) = patch.do_not_disturb {
+            if value != self.do_not_disturb && crate::dev_flags::TRACE_BUBBLE.is_on() {
+                eprintln!("settings: dnd={}", if value { "on" } else { "off" });
+            }
             self.do_not_disturb = value;
         }
         if let Some(value) = patch.sound {

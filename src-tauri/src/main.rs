@@ -1885,9 +1885,15 @@ fn overlay_painted_rects(window: tauri::Window, rects: Vec<[i32; 4]>) {
 
 /// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
 #[tauri::command]
-fn overlay_trace_bubble(label: String, message: String) {
+fn overlay_trace_bubble(app: tauri::AppHandle, label: String, message: String) {
     if dev_flags::TRACE_BUBBLE.is_on() {
-        eprintln!("overlay {}: {}", label, message);
+        let dnd = do_not_disturb(&app);
+        eprintln!(
+            "overlay {}: {} dnd={}",
+            label,
+            message,
+            if dnd { "on" } else { "off" }
+        );
     }
 }
 
