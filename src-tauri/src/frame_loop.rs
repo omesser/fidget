@@ -79,7 +79,7 @@ enum OverlayAction {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg(any(test, not(unix)))]
+#[cfg(test)]
 enum RegionAction {
     ApplyMask,
     ToggleClickThrough,
@@ -88,7 +88,7 @@ enum RegionAction {
 
 /// Decide overlay action based on content (art, hotspots, painted) and ignore flag.
 /// Pure function for table-testing the content→action decision.
-#[cfg(any(test, not(unix)))]
+#[cfg(test)]
 fn decide_region_action(
     sprite: &[[i32; 4]],
     hotspots: &[[i32; 4]],
@@ -2096,12 +2096,12 @@ pub(crate) fn run_frame_loop(
 
                 // Update QM drag latch: set when QM closed by drag, clear on Send/owner-change.
                 // The latch means "dismissed by drag during THIS ownership", not "was ever open".
-                
+
                 // Check if this instance was just dismissed by drag
                 if platform::take_overlay_qm_drag_dismiss(&live.id) {
                     live.qm_drag_latch = true;
                 }
-                
+
                 if let Some(qm_state) = platform::overlay_qm_state() {
                     if qm_state.instance == live.id {
                         // Clear latch when QM is open (Send/Esc clears drag state)
@@ -3338,7 +3338,14 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn decide_region_action_table() {
         // (name, sprite, hotspots, painted, ignore, expect)
-        let rows: &[(&str, &[[i32; 4]], &[[i32; 4]], &[[i32; 4]], bool, RegionAction)] = &[
+        let rows: &[(
+            &str,
+            &[[i32; 4]],
+            &[[i32; 4]],
+            &[[i32; 4]],
+            bool,
+            RegionAction,
+        )] = &[
             (
                 "sprite → ApplyMask",
                 &[[10, 20, 50, 80]],
