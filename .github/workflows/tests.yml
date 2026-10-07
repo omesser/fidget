@@ -114,40 +114,14 @@ jobs:
           chmod +x shfmt && sudo mv shfmt /usr/local/bin/
           shfmt --version
 
-      - name: Resolve the shellcheck bottle
-        # A hit never saves, so the key is the bottle and a new one misses.
-        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
-        id: shellcheck
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: 1
-        run: |
-          files=$(brew info --json=v2 shellcheck \
-            | jq -r '.formulae[0].bottle.stable.files | select(. != null) | tostring')
-          if [ -z "$files" ]; then
-            echo "shellcheck has no stable bottle"
-            exit 1
-          fi
-          echo "hash=$(printf '%s' "$files" | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-
-      - name: Cache the shellcheck bottle
-        # One bottle, in its own directory. The image's Homebrew cache is every
-        # bottle the runner already fetched, and uploading that is the wrong size.
-        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/homebrew-shellcheck
-          key: brew-${{ runner.os }}-${{ runner.arch }}-shellcheck-${{ steps.shellcheck.outputs.hash }}
-          restore-keys: brew-${{ runner.os }}-${{ runner.arch }}-shellcheck-
-
       - name: Install shellcheck
-        # Linux gets shellcheck from the apt step below, so apt updates once.
-        # No auto-update: it refreshes every formula, then ignores this bottle.
+        # Linux gets shellcheck from apt below, so apt updates once.
+        # No auto-update: it refreshes every formula before this install.
+        # Caching the bottle costs more than the few seconds it takes to fetch.
         if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
-        run: |
-          export HOMEBREW_CACHE="$HOME/.cache/homebrew-shellcheck"
-          brew install shellcheck
+        run: brew install shellcheck
 
       - name: Resolve the Linux package URIs
         # The URI list is the lockfile, so apt-get update runs before the cache key.
