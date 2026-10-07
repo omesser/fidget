@@ -237,6 +237,21 @@ test("bidi and zero-width characters are removed and newlines in a fence stay", 
   assert.equal(code.textContent.includes("\u200B"), false);
 });
 
+test("an empty fence with no title says so instead of a blank card", () => {
+  const body = render({
+    title: null,
+    kind: "execute",
+    content: ["```json\n{}\n```"],
+    input: { title: "Teams" },
+    locations: [],
+  });
+
+  assert.equal(body.textContent, "The Harness asked for permission without saying what for.");
+  assert.equal(body.querySelector("code"), null);
+  assert.equal(body.textContent.includes("Teams"), false);
+  assert.equal(body.textContent.includes("execute"), false);
+});
+
 test("an empty input draws no code under the tool name", () => {
   for (const input of [{}, [], null, ""]) {
     const body = render({ title: "Tool", kind: "other", content: [], input });

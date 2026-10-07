@@ -87,6 +87,57 @@ test("content wins over the arguments rather than joining them", () => {
   assert.ok(!says.includes("question:"), says);
 });
 
+test("content is stripped by the renderer, not before it", () => {
+  const text = "read\u202E/etc";
+  const says = askSays({ ...ask, content: [text] });
+
+  assert.equal(says.find((part) => part.kind === "markdown").text, text);
+});
+
+test("an empty fence and nothing else says so", () => {
+  const sentence = "The Harness asked for permission without saying what for.";
+  for (const content of ["```json\n{}\n```", "```json\n[]\n```", "```\nnull\n```"]) {
+    assert.deepEqual(
+      askSays({
+        ...ask,
+        title: null,
+        kind: "execute",
+        content: [content],
+        input: { title: "Teams" },
+        locations: [],
+      }),
+      [{ kind: "prose", text: sentence }],
+      content,
+    );
+  }
+});
+
+test("an empty fence beside real content keeps the content", () => {
+  assert.deepEqual(
+    askSays({
+      ...ask,
+      title: null,
+      content: ["```json\n{}\n```", "Which branch?"],
+      input: { title: "Teams" },
+    }),
+    [{ kind: "markdown", text: "Which branch?" }],
+  );
+});
+
+test("an empty fence beside a path leaves the path and hides the input", () => {
+  assert.equal(
+    askText({
+      ...ask,
+      title: null,
+      kind: "edit",
+      content: ["```json\n{}\n```", ""],
+      input: { title: "Teams" },
+      locations: ["/a.rs"],
+    }),
+    "edit · /a.rs",
+  );
+});
+
 test("an empty input is not a body", () => {
   for (const input of [{}, [], null, ""]) {
     assert.deepEqual(

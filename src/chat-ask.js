@@ -1,4 +1,4 @@
-import { emptyJsonBlock, stripUnsafe } from "./markdown.js";
+import { emptyJsonBlock, onlyEmptyJson, stripUnsafe } from "./markdown.js";
 
 // What a permission ask says, as parts the consent row draws. Its own
 // module because chat.js reaches window.__TAURI__ as it loads and cannot be
@@ -37,12 +37,15 @@ export function clamp(text, limit) {
 export function askSays(ask) {
   const title = stripUnsafe(ask?.title ?? "");
   const kind = stripUnsafe(ask?.kind ?? "");
-  const content = (ask?.content ?? []).map((text) => stripUnsafe(text)).filter((text) => text.length > 0);
+  const content = (ask?.content ?? []).map((text) => String(text ?? "")).filter((text) => text.length > 0);
   const paths = (ask?.locations ?? []).map((where) => stripUnsafe(where)).filter((text) => text.length > 0);
+  // An empty fence is not a body. Dropping it here keeps the sentence, and
+  // keeps `input` from standing in for text the Harness did send.
+  const visible = content.filter((text) => !onlyEmptyJson(text));
   // Content first, the arguments as the fallback, never both: a tool that
   // sends its question as content usually repeats it in `input`.
   const details = content.length > 0
-    ? content.map((text) => ({ kind: "markdown", text }))
+    ? visible.map((text) => ({ kind: "markdown", text }))
     : inputMarkdown(ask?.input);
   // `other` is `ToolKind::Other`, which says only that the Harness declined to
   // classify the call. Every other kind separates reading from writing from

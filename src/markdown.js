@@ -216,6 +216,12 @@ export function emptyJsonBlock(text) {
   }
 }
 
+// True when every block is an empty JSON fence. The ask then has no body.
+export function onlyEmptyJson(text) {
+  const tokens = Lexer.lex(String(text ?? ""), FLAVOUR).filter((token) => token.type !== "space");
+  return tokens.length > 0 && tokens.every((token) => token.type === "code" && emptyJsonBlock(token.text));
+}
+
 // The reply drawn in each row so far, so a chunk can be added to it. Keyed on
 // the element because that is what the surface holds; a removed row takes its
 // entry with it.
