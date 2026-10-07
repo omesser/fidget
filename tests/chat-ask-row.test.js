@@ -79,3 +79,63 @@ test("a prose question stays prose, and argument fallback is code", () => {
     ],
   );
 });
+
+function visible(ask) {
+  return drawn(ask)
+    .map((part) => part.textContent)
+    .join("\n");
+}
+
+test("an empty json fence draws no body under the tool name", () => {
+  for (const content of [
+    "```json\n{}\n```",
+    "```json\n{ }\n```",
+    "```json\n[]\n```",
+    "```json\nnull\n```",
+    "```json\n\n```",
+    "```\n{}\n```",
+  ]) {
+    assert.equal(
+      visible({
+        title: "fidget-describe_screen",
+        kind: "other",
+        content: [content],
+        input: {},
+        locations: [],
+      }),
+      "fidget-describe_screen",
+      content,
+    );
+  }
+});
+
+test("an empty fence beside a question leaves the question", () => {
+  assert.equal(
+    visible({
+      title: "Question",
+      kind: "other",
+      content: ["```json\n{}\n```", "Which branch?"],
+      input: { question: "Which branch?" },
+    }),
+    "Question\nWhich branch?",
+  );
+});
+
+test("an empty fence yields the arguments, and a filled fence stays", () => {
+  assert.equal(
+    visible({
+      title: "fidget-list_windows",
+      kind: "read",
+      content: ["```json\n{}\n```"],
+      input: { title: "Teams" },
+    }),
+    "fidget-list_windows\ntitle: Teams\nread",
+  );
+  const kept = visible({
+    title: "fidget-list_windows",
+    kind: "read",
+    content: ['```json\n{"title":"Teams"}\n```'],
+    input: {},
+  });
+  assert.equal(kept.includes("Teams"), true, kept);
+});
