@@ -12,6 +12,7 @@ import {
   applyQuickMessageGate,
   createQuickMessage,
   crossedDrag,
+  keepOnDrag,
   placeQuickMessage,
   quickMessageConnects,
   quickMessageMirror,
@@ -258,9 +259,8 @@ test("existing dismiss paths still work with auto-hide feature", () => {
   qm.outside();
   assert.equal(qm.visible, false);
 
-  // Show again and test drag dismiss (needs blur since drag only dismisses when empty AND unfocused)
+  // Show again and test drag dismiss
   const { qm: qm2 } = shown();
-  qm2.blur();
   qm2.drag();
   assert.equal(qm2.visible, false);
 
@@ -281,8 +281,7 @@ test("blurring the field keeps the pill and releases the typing hold", () => {
   assert.equal(qm.typing, true);
 });
 
-test("click outside, a pet drag, and a double-click dismiss, draft included", () => {
-  // outside and summon always dismiss, even with draft text
+test("click outside and a double-click dismiss, draft included", () => {
   for (const dismiss of ["outside", "summon"]) {
     const { qm } = shown();
     qm.setText("hey");
@@ -292,12 +291,20 @@ test("click outside, a pet drag, and a double-click dismiss, draft included", ()
     assert.equal(qm.typing, false, dismiss);
   }
 
-  // drag does NOT dismiss when text is present (BUG3 fix)
-  const { qm } = shown();
-  qm.setText("hey");
-  qm.drag();
-  assert.equal(qm.visible, true, "drag preserves pill with text");
-  assert.equal(qm.text, "hey", "text is preserved");
+});
+
+test("a pet drag closes an empty pill, caret or not, and keeps a typed one", () => {
+  const empty = shown().qm;
+  assert.equal(empty.typing, true, "a fresh pill holds the caret");
+  empty.drag();
+  assert.equal(empty.visible, false);
+  assert.equal(empty.draft, null, "a closed pill reports no draft");
+
+  const typed = shown().qm;
+  typed.setText("hey");
+  typed.drag();
+  assert.equal(typed.visible, true);
+  assert.deepEqual(typed.draft, { text: "hey", focused: true }, "the draft rides on");
 });
 
 test("a poke still reaches the pet and does not dismiss the composer", () => {
@@ -318,6 +325,15 @@ test("a drag is a few pixels of movement, not the click itself", () => {
   assert.equal(crossedDrag(DRAG_DISMISS_PX - 1, 0), false);
   assert.equal(crossedDrag(DRAG_DISMISS_PX, 0), true);
   assert.equal(crossedDrag(0, DRAG_DISMISS_PX), true);
+});
+
+test("a drag keeps the pill only for text worth keeping", () => {
+  const rows = [
+    ["", false, "an empty pill closes"],
+    ["   ", false, "whitespace is empty, the same as Send sees it"],
+    ["hey", true, "typed text follows the Character"],
+  ];
+  for (const [text, keep, why] of rows) assert.equal(keepOnDrag(text), keep, why);
 });
 
 test("drag cancels hover timer and dismisses pill", () => {

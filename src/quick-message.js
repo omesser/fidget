@@ -61,6 +61,12 @@ export function crossedDrag(dx, dy) {
   return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
 }
 
+// A typed line is never lost to a drag: the pill follows the Character to
+// whichever display owns it. An empty one closes, as any click away does.
+export function keepOnDrag(text) {
+  return text.trim().length > 0;
+}
+
 export function createQuickMessage({ schedule, clear, send, onChange, available = true }) {
   let visible = false;
   let text = "";
@@ -173,6 +179,10 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     get typing() {
       return visible && focused && ready;
     },
+    // What the owning overlay reports, so the text survives a seam crossing.
+    get draft() {
+      return visible ? { text, focused } : null;
+    },
     takeFocus() {
       if (!claimFocus) return false;
       claimFocus = false;
@@ -270,11 +280,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     outside: dismissOpen,
     drag() {
-      // Empty text closes on drag (main's dismissOpen), non-empty keeps pill.
-      if (!hasText()) {
-        text = "";
-        hide();
-      }
+      if (!keepOnDrag(text)) dismissOpen();
     },
     summon() {
       yielded = true;
