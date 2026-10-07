@@ -78,6 +78,34 @@ enum OverlayAction {
     Nothing,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+#[cfg(any(test, not(unix)))]
+enum RegionAction {
+    ApplyMask,
+    ToggleClickThrough,
+    Nothing,
+}
+
+/// Decide overlay action based on content (art, hotspots, painted) and ignore flag.
+/// Pure function for table-testing the content→action decision.
+#[cfg(any(test, not(unix)))]
+fn decide_region_action(
+    sprite: &[[i32; 4]],
+    hotspots: &[[i32; 4]],
+    painted: &[[i32; 4]],
+    ignore: bool,
+) -> RegionAction {
+    let has_content = !sprite.is_empty() || !hotspots.is_empty() || !painted.is_empty();
+
+    if has_content {
+        RegionAction::ApplyMask
+    } else if ignore {
+        RegionAction::Nothing
+    } else {
+        RegionAction::ToggleClickThrough
+    }
+}
+
 #[cfg(any(test, not(unix)))]
 fn decide_overlay_action<Shape: PartialEq>(
     last_mask: Option<&Shape>,
@@ -2066,14 +2094,23 @@ pub(crate) fn run_frame_loop(
                 );
                 live.bubble_owner_last = owner;
 
-                // Update QM latch: set when QM opens for this instance, clear on instance change.
+                // Update QM drag latch: set when QM closed by drag, clear on Send/owner-change.
+                // The latch means "dismissed by drag during THIS ownership", not "was ever open".
+                
+                // Check if this instance was just dismissed by drag
+                if platform::take_overlay_qm_drag_dismiss(&live.id) {
+                    live.qm_drag_latch = true;
+                }
+                
                 if let Some(qm_state) = platform::overlay_qm_state() {
                     if qm_state.instance == live.id {
+                        // Clear latch when QM is open (Send/Esc clears drag state)
                         if qm_state.open {
-                            live.qm_was_open_for_instance = true;
+                            live.qm_drag_latch = false;
                         }
-                    } else if live.qm_was_open_for_instance {
-                        live.qm_was_open_for_instance = false;
+                    } else if live.qm_drag_latch {
+                        // Clear latch on instance change (different instance now has QM)
+                        live.qm_drag_latch = false;
                     }
                 }
 
@@ -2110,7 +2147,7 @@ pub(crate) fn run_frame_loop(
                         old_owner,
                         owner,
                         qm_snapshot.as_ref(),
-                        live.qm_was_open_for_instance,
+                        live.qm_drag_latch,
                     ) {
                         let new_owner_label = super::overlay_label(plan.to_overlay);
                         let old_owner_label = plan.from_overlay.map(super::overlay_label);
@@ -2145,6 +2182,9 @@ pub(crate) fn run_frame_loop(
                         };
 
                         app.emit_to(new_owner_label, "qm-handoff", handoff).ok();
+
+                        // Consume the drag latch after handoff
+                        live.qm_drag_latch = false;
 
                         if plan.dismiss_old {
                             if let Some(old_label) = old_owner_label {
@@ -2566,11 +2606,12 @@ pub(crate) fn run_frame_loop(
                             )
                         };
 
-                        // Only proceed if there's something to show: sprite art, hotspots, or painted.
-                        if !mask_params.0.is_empty()
+                        // Decide what to do based on content: sprite art, hotspots, painted.
+                        let has_content = !mask_params.0.is_empty()
                             || !mask_params.1.is_empty()
-                            || !mask_params.2.is_empty()
-                        {
+                            || !mask_params.2.is_empty();
+
+                        if has_content {
                             let action = decide_overlay_action(
                                 last_mask.lock().unwrap().get(index),
                                 &mask_params,
@@ -2685,6 +2726,52 @@ pub(crate) fn run_frame_loop(
                             {
                                 flipped = true;
                                 ignoring[index] = confirmed_ignoring;
+                            }
+                        } else {
+                            // Empty fallback: when art+hotspots+painted all empty, force click-through
+                            // and reset last_mask so next content rebuilds the region.
+                            let confirmed_ignoring = applied_ignoring
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(None);
+
+                            if confirmed_ignoring != Some(true)
+                                && !toggle_in_flight
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(false)
+                            {
+                                toggle_in_flight.lock().unwrap()[index] = true;
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                let applied_ignoring_clone = Arc::clone(&applied_ignoring);
+                                let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
+                                let last_mask_clone = Arc::clone(&last_mask);
+                                let overlay_index = index;
+
+                                let _ = app.run_on_main_thread(move || {
+                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        if platform::toggle_click_through_only(&window, true)
+                                            .is_ok()
+                                        {
+                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
+                                                Some(true);
+                                            // Reset last_mask so next content forces rebuild
+                                            last_mask_clone.lock().unwrap()[overlay_index] =
+                                                (Vec::new(), Vec::new(), Vec::new());
+                                        }
+                                    }
+                                });
+                            }
+
+                            if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
+                                flipped = true;
+                                ignoring[index] = Some(true);
                             }
                         }
                     } else {
@@ -3245,6 +3332,67 @@ mod tests {
             decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), true),
             OverlayAction::Nothing
         );
+    }
+
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn decide_region_action_table() {
+        // (name, sprite, hotspots, painted, ignore, expect)
+        let rows: &[(&str, &[[i32; 4]], &[[i32; 4]], &[[i32; 4]], bool, RegionAction)] = &[
+            (
+                "sprite → ApplyMask",
+                &[[10, 20, 50, 80]],
+                &[],
+                &[],
+                false,
+                RegionAction::ApplyMask,
+            ),
+            (
+                "hotspots only → ApplyMask",
+                &[],
+                &[[100, 100, 20, 15]],
+                &[],
+                false,
+                RegionAction::ApplyMask,
+            ),
+            (
+                "painted only → ApplyMask",
+                &[],
+                &[],
+                &[[50, 60, 200, 80]],
+                false,
+                RegionAction::ApplyMask,
+            ),
+            (
+                "empty not-ignoring → ToggleClickThrough",
+                &[],
+                &[],
+                &[],
+                false,
+                RegionAction::ToggleClickThrough,
+            ),
+            (
+                "empty already-ignoring → Nothing",
+                &[],
+                &[],
+                &[],
+                true,
+                RegionAction::Nothing,
+            ),
+            (
+                "sprite + hotspots + painted → ApplyMask",
+                &[[10, 20, 50, 80]],
+                &[[100, 100, 20, 15]],
+                &[[50, 60, 200, 80]],
+                false,
+                RegionAction::ApplyMask,
+            ),
+        ];
+
+        for (name, sprite, hotspots, painted, ignore, expect) in rows {
+            let got = decide_region_action(sprite, hotspots, painted, *ignore);
+            assert_eq!(got, *expect, "{name}");
+        }
     }
 
     #[test]
