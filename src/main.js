@@ -285,11 +285,8 @@ function traceBubble(message) {
 let reportedComposing = null;
 const drafts = createDraftReporter(window.__TAURI__.core.invoke);
 
-// Only the owner speaks for the draft. An overlay hiding its pill because it
-// lost the bubble must not tell the Shell the pill closed.
 function reportDraft(view) {
-  if (view.quickMachine.owner) drafts.report(view.id, view.quickMachine.draft);
-  else drafts.release(view.id);
+  drafts.sync(view.id, view.quickMachine);
 }
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill

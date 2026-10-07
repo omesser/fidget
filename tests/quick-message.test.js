@@ -855,3 +855,55 @@ test("the overlay that loses the bubble hides its pill and lets the draft go", (
   assert.ok(changes.length > before, "the overlay hears the pill go");
   assert.equal(qm.owner, false, "and knows not to report it closed");
 });
+
+// Two overlays and the Shell's keyed slot, wired the way main.js wires them.
+function twoOverlays() {
+  const slot = new Map();
+  const invoke = (command, { instance, payload }) => {
+    if (payload) slot.set(instance, payload);
+    else slot.delete(instance);
+    return Promise.resolve();
+  };
+  const overlay = () => {
+    const harnessed = harness();
+    const drafts = createDraftReporter(invoke);
+    return { ...harnessed, sync: () => drafts.sync("a", harnessed.qm) };
+  };
+  return { slot, left: overlay(), right: overlay() };
+}
+
+test("a pill sent as the bubble moves on stays sent on the new owner", () => {
+  const { slot, left, right } = twoOverlays();
+  left.qm.setOwner(true, null);
+  right.qm.setOwner(false, null);
+  left.qm.enterSprite();
+  left.advance(HOVER_DELAY_MS);
+  left.qm.setText("half a thought");
+  left.sync();
+
+  // The Shell reads the slot for this tick's placement, then the send lands.
+  const carried = slot.get("a");
+  left.qm.keydown("Enter");
+  left.sync();
+  right.qm.setOwner(true, carried);
+  right.sync();
+  left.qm.setOwner(false, null);
+  left.sync();
+
+  right.qm.setOwner(true, slot.get("a") ?? null);
+  right.sync();
+  assert.equal(right.qm.visible, false, "the sent line does not come back");
+  assert.equal(slot.has("a"), false, "and nothing holds the walk");
+});
+
+test("a carried draft is this overlay's to report once it is typed into", () => {
+  const { slot, right } = twoOverlays();
+  right.qm.setOwner(true, { text: "half", focused: true });
+  right.sync();
+  right.qm.setText("half a thought");
+  right.sync();
+  assert.deepEqual(slot.get("a"), { text: "half a thought", focused: true });
+
+  right.qm.setOwner(true, slot.get("a"));
+  assert.equal(right.qm.visible, true, "the line being typed stays");
+});

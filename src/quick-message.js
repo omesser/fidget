@@ -86,6 +86,9 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let ready = available;
   // Whether this overlay owns the Instance's bubble, as the last placement said.
   let owned = false;
+  // The open draft came from the Shell and is untouched here, so it stays only
+  // while the Shell still carries it.
+  let carried = false;
 
   function changed() {
     if (!disposed) onChange?.();
@@ -120,6 +123,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   function hide() {
     cancelHover();
     cancelAutoHide();
+    carried = false;
     const was = visible;
     visible = false;
     focused = false;
@@ -235,6 +239,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     setText(value) {
       if (!ready) return;
       text = value;
+      carried = false;
       if (hasText()) {
         cancelAutoHide();
       } else {
@@ -295,9 +300,12 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     get owner() {
       return owned;
     },
+    get carried() {
+      return carried;
+    },
     // Every frame names the owner. Gaining it opens the carried draft. Keeping
-    // it ignores the draft, which trails the typing and any close the Shell has
-    // not heard yet. Losing it hides the pill; the Shell still holds the text.
+    // it ignores a trailing draft, except that a carried pill goes once the
+    // Shell drops it: the old owner closed it as the bubble moved on.
     setOwner(next, draft) {
       if (disposed) return;
       const gained = next && !owned;
@@ -308,10 +316,18 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
         hide();
         return;
       }
-      if (!gained || !draft) return;
+      if (!gained) {
+        if (carried && visible && !draft) {
+          text = "";
+          hide();
+        }
+        return;
+      }
+      if (!draft) return;
       cancelHover();
       visible = true;
       text = ready ? draft.text : "";
+      carried = true;
       focused = ready && draft.focused;
       claimFocus = focused;
       changed();
@@ -355,6 +371,12 @@ export function createDraftReporter(invoke) {
     // told is no longer what the Shell holds.
     release(instance) {
       reported.delete(instance);
+    },
+    // Only the owner speaks, and not for a draft the Shell handed it: echoed
+    // back, that could land after the old owner's close and revive it.
+    sync(instance, machine) {
+      if (machine.owner && !machine.carried) this.report(instance, machine.draft);
+      else this.release(instance);
     },
   };
 }
