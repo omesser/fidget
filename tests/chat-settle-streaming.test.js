@@ -351,3 +351,54 @@ test("proactive stream superseded by typed turn: proactive row removed", () => {
   assert.equal(final.turn, typedTurn, "final targets typed turn");
   assert.equal(turns.newest(), null, "typed turn settled");
 });
+
+test("QM echo: typed turn, stream, final produces one growing row with plain label", () => {
+  const turns = createChatTurns();
+  const body = doc.createElement("div");
+  body.className = "said md";
+  const caret = doc.createElement("span");
+  caret.className = "caret";
+  body.append(caret);
+
+  const turn = turns.typed();
+  assert.ok(turn, "QM echo creates a typed turn");
+  assert.equal(turns.newest(), turn, "turn registered in waiting queue");
+
+  const stream1 = turns.settle({ said: "thinking", streaming: true });
+  assert.equal(stream1.action, "speech", "streaming Speech finds typed turn");
+  assert.equal(stream1.turn, turn, "speech targets the typed turn");
+  replaceReply(body, stream1.said, doc);
+  assert.equal(body.textContent.trim(), "thinking");
+  assert.ok(body.querySelector(".caret"), "caret present during streaming");
+
+  const stream2 = turns.settle({ said: "thinking more", streaming: true });
+  assert.equal(stream2.turn, turn, "subsequent speech grows same turn");
+  replaceReply(body, stream2.said, doc);
+  assert.equal(body.textContent.trim(), "thinking more");
+
+  const final = turns.settle({ said: "final answer" });
+  assert.equal(final.action, "speech", "final settles the typed turn");
+  assert.equal(final.turn, turn, "final targets same turn");
+  replaceReply(body, final.said, doc);
+  caret.remove();
+  assert.equal(body.textContent, "final answer", "one row with final text, no duplication");
+  assert.equal(turns.newest(), null, "turn settled, no stuck caret");
+});
+
+test("QM echo typed turn supersedes proactive pending", () => {
+  const turns = createChatTurns();
+
+  const proactiveSpeech = turns.settle({ said: "unprompted thinking", streaming: true });
+  assert.equal(proactiveSpeech.action, "speech", "proactive Speech creates pending turn");
+  const proactiveTurn = proactiveSpeech.turn;
+  assert.ok(proactiveTurn.isProactive, "turn marked as proactive");
+
+  const typedTurn = turns.typed();
+  assert.notEqual(turns.newest(), proactiveTurn, "QM echo typed() removes proactive turn");
+  assert.equal(turns.newest(), typedTurn, "typed turn is now newest");
+
+  const final = turns.settle({ said: "answer to QM prompt" });
+  assert.equal(final.action, "speech", "final settles typed turn");
+  assert.equal(final.turn, typedTurn, "final targets typed turn, not proactive");
+  assert.equal(turns.newest(), null, "typed turn settled");
+});

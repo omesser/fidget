@@ -777,7 +777,9 @@ async function start() {
     "chat",
     ({ payload }) => {
       if (payload.you) {
-        said("You", payload.said ?? "", "you", payload.at);
+        const turn = turns.typed();
+        turn.you = said("You", payload.said ?? "", "you", payload.at);
+        turn.them = opening_answer();
         return;
       }
       if (payload.thought) {
