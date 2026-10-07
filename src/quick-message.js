@@ -64,6 +64,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let visible = false;
   let text = "";
   let focused = false;
+  let pendingRestore = null; // Text to restore when available becomes true
   let claimFocus = false;
   let disposed = false;
   let hoverTimer = null;
@@ -115,6 +116,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     visible = false;
     focused = false;
     claimFocus = false;
+    pendingRestore = null; // Clear pending on hide
     if (was) changed();
   }
 
@@ -226,11 +228,18 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       ready = next;
       if (!ready) {
         // The placeholder is the only place this pill can say why. A draft
-        // would hide that sentence.
-        text = "";
+        // would hide that sentence. But preserve pendingRestore for handoff.
+        if (!pendingRestore) {
+          text = "";
+        }
         focused = false;
         claimFocus = false;
       } else if (visible) {
+        // Now available: apply pending restore if any
+        if (pendingRestore !== null) {
+          text = pendingRestore;
+          pendingRestore = null;
+        }
         focused = true;
         claimFocus = true;
       }
@@ -286,9 +295,10 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       if (disposed) return;
       visible = true;
       if (!ready) {
-        // A refused send had already hidden the pill. Bring it back so the
-        // unavailable sentence is on screen, not the line that could not go.
-        text = "";
+        // Not ready yet (chat opening check pending). Hold the text until available.
+        // This handles qm-handoff arriving before chat_opening completes.
+        pendingRestore = value;
+        text = ""; // Show placeholder until ready
         focused = false;
         claimFocus = false;
         changed();
@@ -301,6 +311,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     dismiss() {
       text = "";
+      pendingRestore = null; // Clear pending on dismiss
       hide();
     },
     hideWithoutReport,

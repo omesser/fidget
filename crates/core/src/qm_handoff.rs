@@ -45,9 +45,14 @@ pub fn plan_qm_handoff(
     if !open {
         return None;
     }
-    let (instance, text, focused) = {
-        let q = qm?;
-        (q.instance.clone(), q.text.clone(), q.focused)
+    // When latch is set but qm snapshot is None (drag cleared state before ownership flip),
+    // handoff with empty text. The latch means the pill was open during this crossing.
+    let (instance, text, focused) = match qm {
+        Some(q) => (q.instance.clone(), q.text.clone(), q.focused),
+        None => {
+            // Latch fire with no snapshot: can't know instance. Caller must filter.
+            return None;
+        }
     };
     Some(QmHandoffPlan {
         instance,

@@ -872,6 +872,13 @@ async function start() {
   await window.__TAURI__.event.listen(
     "qm-handoff",
     ({ payload }) => {
+      // Trace handoff for DESKTOP diagnosis (FIDGET_TRACE_BUBBLE)
+      if (window.__TAURI__?.core) {
+        window.__TAURI__.core.invoke("overlay_trace_bubble", {
+          line: `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`,
+        }).catch(() => {});
+      }
+
       let view = views.get(payload.instance);
       if (!view) {
         // Handoff can arrive before the first frame event on this overlay.
@@ -893,6 +900,13 @@ async function start() {
           }
         }
         syncQuick(view);
+
+        // Trace after syncQuick to show hotspot/painted state
+        if (window.__TAURI__?.core) {
+          window.__TAURI__.core.invoke("overlay_trace_bubble", {
+            line: `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`,
+          }).catch(() => {});
+        }
       }
     },
     { target: overlay.label },

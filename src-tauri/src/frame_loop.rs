@@ -2102,14 +2102,18 @@ pub(crate) fn run_frame_loop(
                     live.qm_drag_latch = true;
                 }
 
+                // Clear latch when: (1) different instance owns QM, or (2) this instance closed
+                // QM (submit/dismiss/Esc). Don't clear during drag when open stays true for typed pills.
                 if let Some(qm_state) = platform::overlay_qm_state() {
                     if qm_state.instance == live.id {
-                        // Clear latch when QM is open (Send/Esc clears drag state)
-                        if qm_state.open {
+                        // This instance owns QM. Clear latch only if QM was closed (not during drag).
+                        // During drag, typed/focused pills call onDragDismiss (sets latch) but stay open.
+                        // Latch must survive until ownership change for plan_qm_handoff to fire.
+                        if !qm_state.open && live.qm_drag_latch {
                             live.qm_drag_latch = false;
                         }
                     } else if live.qm_drag_latch {
-                        // Clear latch on instance change (different instance now has QM)
+                        // Different instance now has QM: clear our latch
                         live.qm_drag_latch = false;
                     }
                 }
