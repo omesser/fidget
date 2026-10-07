@@ -2790,6 +2790,10 @@ struct ChatReply {
     /// did it, because "you poked me" reads as cause and "dropped" as a bug (#890).
     #[serde(default)]
     superseded_by: Option<&'static str>,
+    /// Streaming answer-so-far from Speech, not the final reply. The turn
+    /// stays open; the row replaces content instead of appending.
+    #[serde(default)]
+    streaming: bool,
 }
 
 /// What the Shell owes a Chat surface when a newer wake cancels the slot
@@ -2807,6 +2811,7 @@ fn cancelled_caret(chat_turn: bool, by: &Happened) -> Option<ChatReply> {
         error: None,
         failure: None,
         superseded_by: Some(happened_cell(by)),
+        streaming: false,
     })
 }
 
@@ -2891,6 +2896,7 @@ fn chat_ready(
                     error: None,
                     failure: None,
                     superseded_by: None,
+                    streaming: false,
                     at: Some(
                         turn.at
                             .duration_since(UNIX_EPOCH)

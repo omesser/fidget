@@ -19,7 +19,7 @@ import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
-import { appendReply, drawReply } from "./markdown.js";
+import { appendReply, drawReply, replaceReply } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -171,8 +171,13 @@ function opening_answer() {
   return row;
 }
 
-function arrived(row, text) {
-  appendReply(row.querySelector(".said"), text);
+function arrived(row, text, streaming) {
+  const body = row.querySelector(".said");
+  if (streaming) {
+    replaceReply(body, text);
+  } else {
+    appendReply(body, text);
+  }
   log.scrollTop = log.scrollHeight;
 }
 
@@ -811,7 +816,7 @@ async function start() {
       const turn = outcome.turn;
       settled(turn.them);
       if (outcome.action === "speech") {
-        arrived(turn.them, outcome.said);
+        arrived(turn.them, outcome.said, payload.streaming);
       } else if (outcome.action === "failure") {
         turn.them.remove();
         harnessError(outcome.said);

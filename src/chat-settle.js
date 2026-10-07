@@ -52,6 +52,14 @@ export function createChatTurns() {
     },
 
     settle(payload) {
+      if (payload.streaming) {
+        const turn = waiting.at(-1) ?? null;
+        if (!turn) {
+          return { action: "orphan", turn: null, said: payload.said ?? "" };
+        }
+        turn.alreadyHasSpeechAhead = true;
+        return { action: "speech", turn, said: payload.said };
+      }
       const turn = waiting.shift();
       if (!turn) {
         return { action: "orphan", turn: null, said: payload.said ?? "" };

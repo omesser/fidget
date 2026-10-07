@@ -912,6 +912,7 @@ pub(crate) fn run_frame_loop(
                                     error: None,
                                     failure: None,
                                     superseded_by: None,
+                                    streaming: false,
                                 },
                             );
                         }
@@ -1000,6 +1001,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1027,6 +1029,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1049,6 +1052,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1075,6 +1079,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                 }
@@ -1484,6 +1489,7 @@ pub(crate) fn run_frame_loop(
                                 error: None,
                                 failure: None,
                                 superseded_by: None,
+                                streaming: true,
                             },
                         );
                         None
@@ -1671,6 +1677,7 @@ pub(crate) fn run_frame_loop(
                             error,
                             failure,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                 } else if applied {
