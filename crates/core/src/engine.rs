@@ -673,9 +673,9 @@ impl Engine {
     }
 
     /// Toggle Do Not Disturb. The character stays visible. The Shell starts no unprompted
-    /// wakes (`director::due` and `director::session_due` return false for proactive); Behavior
-    /// proposals are refused. Replies to prompted interactions still show in both the speech
-    /// bubble and Chat. Poke, Grab, and Throw still work.
+    /// wakes (`director::due` and `director::session_due` return false for proactive); proactive
+    /// Behavior proposals are refused. Reactive proposals (replies to Poke, Chat, Grab, Throw, etc.)
+    /// still play. Replies to prompted interactions show in both the speech bubble and Chat.
     ///
     /// A walk already under way has to be sat down too. Walk velocity outlives the Primitive that started it, so refusing the next proposal would otherwise leave the sprite pacing.
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
@@ -1074,13 +1074,13 @@ impl Engine {
 
         // A proposal is advisory, so a Behavior this Character does not declare is refused rather than reported, and refusing it interrupts nothing.
         // After the sprite has been moved, so the State the gate reads is the one the tick ends in. A walk therefore takes its first step on the tick after the proposal, which is what SPEC.md asks for.
-        // Do Not Disturb refuses proposals before they reach the State gate, so the Character stops starting things while staying visible.
+        // Do Not Disturb refuses proactive proposals before they reach the State gate, while reactive proposals (replies to Poke, Chat, etc.) still play.
         let mut behavior = None;
         // The State gate's refusals only. Do Not Disturb is a silence the
         // user asked for, and an undeclared name is traced at the parse.
         let mut refused = None;
         if let Some(proposal) = &snapshot.proposal {
-            if !self.do_not_disturb {
+            if !self.do_not_disturb || addressed {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
                     // Mid-cooldown, `play` refuses a chain that would move the sprite — whole, greeting included, since a Behavior is one thing to refuse. A line or a gesture on its own plays.
                     // What comes after the cooldown is the Director's fresh call, not the interrupted walk resuming.
