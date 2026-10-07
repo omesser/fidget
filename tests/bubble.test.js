@@ -10,6 +10,7 @@ import {
   bubbleDuration,
   wrapText,
   placeBubble,
+  readableBubbleRect,
   createBubbleMachine,
   THINKING_GRACE_MS,
   THINKING_MIN_HOLD_MS,
@@ -575,4 +576,30 @@ test("a truncated reply is spoken without the mark visible", () => {
     ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
     "the next whole line is not marked with the last one's mark",
   );
+});
+
+// What Windows must keep in the overlay's region for the bubble: its body and
+// the 10px tail, rounded to pixels. A bubble that cannot be read keeps nothing.
+test("the bubble's region is the readable bubble plus its tail", () => {
+  const bubble = (visible, opacity) => ({
+    classList: { contains: (cls) => visible && cls === "visible" },
+    style: opacity === undefined ? {} : { opacity },
+    offsetWidth: 200,
+    offsetHeight: 80,
+  });
+  const rows = [
+    ["hidden", bubble(false), { x: 1, y: 2 }, null],
+    ["fading out", bubble(true, "0.4"), { x: 10, y: 20 }, null],
+    ["opaque, tail down", bubble(true, "1"), { x: 10.4, y: 20.6 }, [10, 21, 200, 90]],
+    ["no opacity set yet", bubble(true), { x: 100.7, y: 200.3 }, [101, 200, 200, 90]],
+    [
+      "inverted, tail up",
+      bubble(true, "1"),
+      { x: 10.4, y: 20.6, inverted: true },
+      [10, 11, 200, 90],
+    ],
+  ];
+  for (const [name, element, pos, expected] of rows) {
+    assert.deepEqual(readableBubbleRect(element, pos), expected, name);
+  }
 });

@@ -282,3 +282,17 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 
   return { x, y, tailOffset, inverted: wouldCoverSprite };
 }
+
+// The CSS tail (::before, 10px) hangs below the body, or above it when inverted.
+const TAIL_PX = 10;
+
+// Where a bubble that can be read is drawn, as [x, y, width, height] with its
+// tail: Windows' region clips drawing, so this has to be in it. Hidden or
+// mid-fade is null.
+export function readableBubbleRect(bubble, pos) {
+  if (!bubble?.classList.contains("visible")) return null;
+  const opacity = parseFloat(bubble.style.opacity);
+  if (opacity < 1) return null;
+  const y = Math.round(pos.y) - (pos.inverted ? TAIL_PX : 0);
+  return [Math.round(pos.x), y, bubble.offsetWidth, bubble.offsetHeight + TAIL_PX];
+}

@@ -2287,7 +2287,12 @@ pub(crate) fn run_frame_loop(
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
                             let (_width, _height, opaque) = instance.mask.raw();
-                            let hotspots = platform::overlay_hotspots_for(&label);
+                            // X11's shape clips clicks, not drawing, so drawn-only rects stay out.
+                            let hotspots: Vec<[i32; 4]> = platform::overlay_rects_for(&label)
+                                .into_iter()
+                                .filter(|rect| rect.clickable)
+                                .map(|rect| rect.rect)
+                                .collect();
                             let mask_params = (
                                 Some(opaque.to_vec()),
                                 local.x,

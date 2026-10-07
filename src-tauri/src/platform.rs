@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use fidget_core::overlay_region::OverlayRect;
 use fidget_core::quick_message::QmDraft;
 use fidget_core::sensing::ActivitySource;
 use fidget_core::window_source::{Rect, WindowSource};
@@ -120,94 +121,42 @@ pub fn set_overlay_primary(down: bool) {
     }
 }
 
-/// Rectangles one overlay wants clicks over, besides the art: `(label, [x, y,
-/// width, height])` in that overlay's own coordinates. A `Vec` because
-/// `Vec::new` is const; only the "Open chat" control (#547) ever fills it.
-static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
+/// What each overlay draws outside the art, in its own coordinates. A `Vec`
+/// because `Vec::new` is const.
+static OVERLAY_RECTS: Mutex<Vec<(String, OverlayRect)>> = Mutex::new(Vec::new());
 
-/// Painted UI rectangles (bubble, thinking) per overlay: `(label, [x, y, width, height])`.
-/// These go into the Windows region but are NOT clickable.
-static OVERLAY_PAINTED: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
-
-/// Replace everything `label` asked for. An empty list is how an overlay says
-/// it wants nothing but the art again.
-pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
-    let Ok(mut hotspots) = OVERLAY_HOTSPOTS.lock() else {
+/// Replace everything `label` reported. An empty list is how an overlay says
+/// it draws nothing but the art again.
+pub fn set_overlay_rects(label: &str, rects: Vec<OverlayRect>) {
+    let Ok(mut all) = OVERLAY_RECTS.lock() else {
         return;
     };
-    hotspots.retain(|(owner, _)| owner != label);
-    hotspots.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
-}
-
-/// Update painted rects for an overlay. Windows unions these into the region.
-pub fn set_overlay_painted(label: &str, rects: Vec<[i32; 4]>) {
-    // Region invalidated automatically on next frame: RegionParams includes
-    // painted, so last_mask comparison detects change and triggers rebuild.
-    let Ok(mut painted) = OVERLAY_PAINTED.lock() else {
-        return;
-    };
-    painted.retain(|(owner, _)| owner != label);
-    painted.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
+    all.retain(|(owner, _)| owner != label);
+    all.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
 }
 
 /// Whether `label`'s overlay wants the click at `(x, y)`, in its coordinates.
 pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
-    OVERLAY_HOTSPOTS.lock().is_ok_and(|hotspots| {
-        hotspots.iter().any(|(owner, [left, top, width, height])| {
-            owner == label && x >= *left && x < left + width && y >= *top && y < top + height
-        })
+    OVERLAY_RECTS.lock().is_ok_and(|all| {
+        all.iter()
+            .any(|(owner, rect)| owner == label && rect.takes_click_at(x, y))
     })
 }
 
-/// The hotspot rectangles one overlay reported, in its own coordinates.
+/// The rectangles one overlay reported, in its own coordinates.
 /// Not `cfg`'d out on macOS: the neighbour-isolation test lives here, and
 /// compiling it only on X11/Windows would skip it on the machine this is written on.
 #[allow(dead_code)]
-pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
-    OVERLAY_HOTSPOTS.lock().map_or_else(
+pub fn overlay_rects_for(label: &str) -> Vec<OverlayRect> {
+    OVERLAY_RECTS.lock().map_or_else(
         |_| Vec::new(),
-        |hotspots| {
-            hotspots
-                .iter()
+        |all| {
+            all.iter()
                 .filter(|(owner, _)| owner == label)
                 .map(|(_, rect)| *rect)
                 .collect()
         },
     )
-}
-
-/// The painted rectangles one overlay reported, in its own coordinates.
-#[cfg(not(unix))]
-fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
-    OVERLAY_PAINTED.lock().map_or_else(
-        |_| Vec::new(),
-        |painted| {
-            painted
-                .iter()
-                .filter(|(owner, _)| owner == label)
-                .map(|(_, rect)| *rect)
-                .collect()
-        },
-    )
-}
-
-/// Everything one overlay draws outside the art, hotspots first.
-#[cfg(not(unix))]
-pub fn overlay_rects_for(label: &str) -> Vec<fidget_core::overlay_region::OverlayRect> {
-    use fidget_core::overlay_region::OverlayRect;
-    let clickable = overlay_hotspots_for(label)
-        .into_iter()
-        .map(|rect| OverlayRect {
-            rect,
-            clickable: true,
-        });
-    let drawn = overlay_painted_for(label)
-        .into_iter()
-        .map(|rect| OverlayRect {
-            rect,
-            clickable: false,
-        });
-    clickable.chain(drawn).collect()
 }
 
 /// The overlay heard the secondary button go down or up. Same miss as the
@@ -691,7 +640,7 @@ pub fn update_input_region(
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
-    rects: &[fidget_core::overlay_region::OverlayRect],
+    rects: &[OverlayRect],
     click_through: bool,
 ) -> Result<bool, String> {
     windows::update_input_region(window, art, rects, click_through)
@@ -1316,58 +1265,39 @@ mod tests {
         assert_eq!(overlay_composing(), None);
     }
 
-    /// The bubble's "Open chat" control (#547) belongs to the overlay that
-    /// drew it. A neighbour must not stop passing clicks at the same
-    /// coordinates, and a gone bubble must take its rectangle with it.
+    /// What an overlay reports belongs to it. A neighbour must not stop
+    /// passing clicks at the same coordinates or draw the same rects, and a
+    /// gone bubble must take its rectangles with it.
     #[test]
-    fn a_hotspot_belongs_to_one_overlay_and_goes_when_it_does() {
-        set_overlay_hotspots("overlay-test-a", vec![[10, 20, 30, 40]]);
-        set_overlay_hotspots("overlay-test-b", vec![]);
+    fn overlay_rects_belong_to_one_overlay_and_go_when_it_clears_them() {
+        let open_chat = OverlayRect {
+            rect: [10, 20, 30, 40],
+            clickable: true,
+        };
+        let bubble = OverlayRect {
+            rect: [0, 0, 100, 80],
+            clickable: false,
+        };
+        set_overlay_rects("overlay-test-a", vec![open_chat, bubble]);
+        set_overlay_rects("overlay-test-b", vec![bubble]);
 
-        assert!(over_overlay_hotspot("overlay-test-a", 10, 20), "top left");
-        assert!(
-            over_overlay_hotspot("overlay-test-a", 39, 59),
-            "bottom right"
-        );
-        assert!(
-            !over_overlay_hotspot("overlay-test-a", 40, 60),
-            "the far edges are outside, as a rectangle's are"
-        );
+        assert_eq!(overlay_rects_for("overlay-test-a"), vec![open_chat, bubble]);
+        assert_eq!(overlay_rects_for("overlay-test-b"), vec![bubble]);
+        assert!(overlay_rects_for("overlay-test-none").is_empty());
+        assert!(over_overlay_hotspot("overlay-test-a", 20, 30), "Open chat");
         assert!(
             !over_overlay_hotspot("overlay-test-b", 20, 30),
-            "the neighbour asked for nothing there"
+            "the neighbour's bubble is only drawn"
         );
 
-        set_overlay_hotspots("overlay-test-a", vec![]);
+        set_overlay_rects("overlay-test-a", vec![]);
+        assert!(overlay_rects_for("overlay-test-a").is_empty());
         assert!(
             !over_overlay_hotspot("overlay-test-a", 20, 30),
             "the bubble is gone and so is its rectangle"
         );
-    }
 
-    /// `overlay_hotspots_for` returns exactly the rectangles the named overlay
-    /// reported, and nothing from its neighbours.
-    #[test]
-    fn hotspots_for_retrieves_only_the_named_overlay() {
-        set_overlay_hotspots("overlay-for-a", vec![[1, 2, 3, 4], [5, 6, 7, 8]]);
-        set_overlay_hotspots("overlay-for-b", vec![[10, 20, 30, 40]]);
-
-        let a = overlay_hotspots_for("overlay-for-a");
-        assert_eq!(a, vec![[1, 2, 3, 4], [5, 6, 7, 8]], "both rects for a");
-
-        let b = overlay_hotspots_for("overlay-for-b");
-        assert_eq!(b, vec![[10, 20, 30, 40]], "only b's rect");
-
-        let none = overlay_hotspots_for("overlay-for-none");
-        assert!(none.is_empty(), "an overlay that reported nothing");
-
-        set_overlay_hotspots("overlay-for-a", vec![]);
-        assert!(
-            overlay_hotspots_for("overlay-for-a").is_empty(),
-            "clearing wipes all rects"
-        );
-
-        set_overlay_hotspots("overlay-for-b", vec![]);
+        set_overlay_rects("overlay-test-b", vec![]);
     }
 
     /// A click can begin and end between two polls. The level alone reads

@@ -17,6 +17,14 @@ pub struct OverlayRect {
     pub clickable: bool,
 }
 
+impl OverlayRect {
+    /// Whether a click at `(x, y)`, in overlay coordinates, lands on this.
+    pub fn takes_click_at(&self, x: i32, y: i32) -> bool {
+        let [left, top, width, height] = self.rect;
+        self.clickable && x >= left && x < left + width && y >= top && y < top + height
+    }
+}
+
 /// What a Windows overlay's `SetWindowRgn` gets this frame.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RegionPlan {
@@ -28,11 +36,11 @@ pub enum RegionPlan {
 /// Clears only when there is nothing at all to keep: no sprite and no rect.
 /// `trail` is already `[left, top, right, bottom]`.
 pub fn region_plan(trail: &[[i32; 4]], rects: &[OverlayRect]) -> RegionPlan {
-    let drawn = rects.iter().map(|OverlayRect { rect, .. }| {
+    let bounds = rects.iter().map(|OverlayRect { rect, .. }| {
         let [x, y, width, height] = *rect;
         [x, y, x + width, y + height]
     });
-    let region: Vec<RegionRect> = trail.iter().copied().chain(drawn).collect();
+    let region: Vec<RegionRect> = trail.iter().copied().chain(bounds).collect();
     if region.is_empty() {
         RegionPlan::Clear
     } else {
@@ -58,6 +66,33 @@ mod tests {
         OverlayRect {
             rect,
             clickable: false,
+        }
+    }
+
+    /// Only a clickable rect stops the overlay passing a click, over its
+    /// pixels and not one past them.
+    #[test]
+    fn only_a_clickable_rect_takes_a_click() {
+        let open_chat = clickable([220, 140, 72, 18]);
+        let qm_pill = clickable([130, 60, 160, 36]);
+        let bubble = drawn([120, 80, 200, 90]);
+        let thinking = drawn([150, 100, 48, 24]);
+
+        let rows = [
+            ("Open chat, top left", open_chat, (220, 140), true),
+            ("Open chat, bottom right", open_chat, (291, 157), true),
+            (
+                "Open chat, past the far edges",
+                open_chat,
+                (292, 158),
+                false,
+            ),
+            ("the quick pill", qm_pill, (200, 70), true),
+            ("the bubble body", bubble, (200, 120), false),
+            ("the thinking dots", thinking, (170, 110), false),
+        ];
+        for (name, rect, (x, y), takes) in rows {
+            assert_eq!(rect.takes_click_at(x, y), takes, "{name}");
         }
     }
 

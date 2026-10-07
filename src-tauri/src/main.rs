@@ -1854,19 +1854,12 @@ fn overlay_cadence(window: tauri::Window, frames: Vec<(f64, bool, Option<f64>, f
     }
 }
 
-/// Where this overlay wants a click besides the art. The bubble's "Open chat"
-/// control sits above the head, outside the alpha mask; the renderer says
-/// where in its own coordinates and the frame loop converts.
+/// What this overlay draws outside the art, in its own coordinates. Only the
+/// renderer knows where, because it lays the bubble and the pill out; the
+/// frame loop converts and takes a click over the clickable ones.
 #[tauri::command]
-fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
-    platform::set_overlay_hotspots(window.label(), rects);
-}
-
-/// Painted UI rects (bubble, thinking) this overlay draws. Windows unions these
-/// into the input region so SetWindowRgn doesn't clip the bubble away. Not clickable.
-#[tauri::command]
-fn overlay_painted_rects(window: tauri::Window, rects: Vec<[i32; 4]>) {
-    platform::set_overlay_painted(window.label(), rects);
+fn overlay_rects(window: tauri::Window, rects: Vec<fidget_core::overlay_region::OverlayRect>) {
+    platform::set_overlay_rects(window.label(), rects);
 }
 
 /// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
@@ -4339,8 +4332,7 @@ fn main() {
             overlay_secondary,
             overlay_composing,
             overlay_report_qm_draft,
-            overlay_hotspots,
-            overlay_painted_rects,
+            overlay_rects,
             overlay_trace_bubble,
             overlay_hit_tests_hotspots,
             overlay_traces_cadence,
