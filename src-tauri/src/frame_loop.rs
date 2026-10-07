@@ -2484,10 +2484,12 @@ pub(crate) fn run_frame_loop(
                                     mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         let (art, hotspots) = &mask_params_clone;
+                                        let painted = crate::platform::overlay_painted_for(&label_clone);
                                         match platform::update_input_region(
                                             &window,
                                             Some(art.as_slice()),
                                             hotspots,
+                                            &painted,
                                             click_through,
                                         ) {
                                             Ok(()) => {

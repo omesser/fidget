@@ -79,19 +79,50 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
-/// Which Instance has a visible quick message pill. A level, not an edge:
-/// the hold lasts as long as the pill is shown.
-static OVERLAY_QM_VISIBLE: Mutex<Option<String>> = Mutex::new(None);
+/// Quick message state: instance, open, text, focused.
+#[derive(Clone, Debug, Default)]
+pub struct QmState {
+    pub instance: String,
+    pub open: bool,
+    pub text: String,
+    pub focused: bool,
+}
 
-/// Empty is none. The overlay sends "" when the pill hides.
-pub fn set_overlay_qm_visible(instance: Option<String>) {
-    if let Ok(mut slot) = OVERLAY_QM_VISIBLE.lock() {
-        *slot = instance.filter(|id| !id.is_empty());
+/// Which Instance has a visible quick message pill and its state.
+static OVERLAY_QM_STATE: Mutex<Option<QmState>> = Mutex::new(None);
+
+/// Update QM state. Empty instance means none.
+pub fn set_overlay_qm_state(state: Option<QmState>) {
+    if let Ok(mut slot) = OVERLAY_QM_STATE.lock() {
+        *slot = state.filter(|s| !s.instance.is_empty());
     }
 }
 
+pub fn overlay_qm_state() -> Option<QmState> {
+    OVERLAY_QM_STATE.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Legacy: which instance has QM visible (ignores text/focus).
 pub fn overlay_qm_visible() -> Option<String> {
-    OVERLAY_QM_VISIBLE.lock().ok().and_then(|slot| slot.clone())
+    overlay_qm_state().map(|s| s.instance)
+}
+
+/// Legacy setter: visible/hidden without text/focus.
+pub fn set_overlay_qm_visible(instance: Option<String>) {
+    if let Some(id) = instance {
+        if id.is_empty() {
+            set_overlay_qm_state(None);
+        } else {
+            set_overlay_qm_state(Some(QmState {
+                instance: id,
+                open: true,
+                text: String::new(),
+                focused: false,
+            }));
+        }
+    } else {
+        set_overlay_qm_state(None);
+    }
 }
 
 /// Which mouse buttons one tick found down. One type so X11 pays one
@@ -117,6 +148,10 @@ pub fn set_overlay_primary(down: bool) {
 /// `Vec::new` is const; only the "Open chat" control (#547) ever fills it.
 static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
 
+/// Painted UI rectangles (bubble, thinking) per overlay: `(label, [x, y, width, height])`.
+/// These go into the Windows region but are NOT clickable.
+static OVERLAY_PAINTED: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
+
 /// Replace everything `label` asked for. An empty list is how an overlay says
 /// it wants nothing but the art again.
 pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
@@ -125,6 +160,15 @@ pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
     };
     hotspots.retain(|(owner, _)| owner != label);
     hotspots.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
+}
+
+/// Update painted rects for an overlay. Windows unions these into the region.
+pub fn set_overlay_painted(label: &str, rects: Vec<[i32; 4]>) {
+    let Ok(mut painted) = OVERLAY_PAINTED.lock() else {
+        return;
+    };
+    painted.retain(|(owner, _)| owner != label);
+    painted.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
 }
 
 /// Whether `label`'s overlay wants the click at `(x, y)`, in its coordinates.
@@ -145,6 +189,21 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
         |_| Vec::new(),
         |hotspots| {
             hotspots
+                .iter()
+                .filter(|(owner, _)| owner == label)
+                .map(|(_, rect)| *rect)
+                .collect()
+        },
+    )
+}
+
+/// The painted rectangles one overlay reported, in its own coordinates.
+#[allow(dead_code)]
+pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
+    OVERLAY_PAINTED.lock().map_or_else(
+        |_| Vec::new(),
+        |painted| {
+            painted
                 .iter()
                 .filter(|(owner, _)| owner == label)
                 .map(|(_, rect)| *rect)
@@ -635,9 +694,10 @@ pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
-    windows::update_input_region(window, art, hotspot_rects, click_through)
+    windows::update_input_region(window, art, hotspot_rects, painted_rects, click_through)
 }
 
 /// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only

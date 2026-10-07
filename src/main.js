@@ -167,6 +167,27 @@ function createView(id) {
   // the cursor before it fades.
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
+  function reportPaintedRect(visible) {
+    if (visible && bubble.classList.contains("visible")) {
+      setTimeout(() => {
+        const rect = bubble.getBoundingClientRect();
+        const rects = [{
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        }];
+        window.__TAURI__.core.invoke("overlay_painted_rects", { rects }).catch((err) => {
+          console.error("overlay_painted_rects", err);
+        });
+      }, 0);
+    } else {
+      window.__TAURI__.core.invoke("overlay_painted_rects", { rects: [] }).catch((err) => {
+        console.error("overlay_painted_rects", err);
+      });
+    }
+  }
+
   view.bubbles = createBubbleMachine({
     showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
@@ -176,14 +197,10 @@ function createView(id) {
       view.bubbleContent.textContent = lines.join("\n");
       more.textContent = "Open chat";
       bubble.removeAttribute("data-ask");
-      // Set before `show`, which measures the bubble to place it: the control
-      // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
+      reportPaintedRect(true);
     },
-    // The question waiting in Chat (ADR-0016). The last word is the control;
-    // where the overlay cannot take that click it is plain text, and Summon
-    // still opens Chat.
     showAsk() {
       view.bubbleContent.textContent = clickableOffArt
         ? "Question for you in the "
@@ -192,16 +209,20 @@ function createView(id) {
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
+      reportPaintedRect(true);
     },
     hideSpeech() {
       hide();
+      reportPaintedRect(false);
     },
     showThinking() {
-      // The same box in the other mode. main.css hides the control outside
-      // speech, so the attribute left over from the last line draws nothing.
       show("thinking");
+      reportPaintedRect(true);
     },
-    hideThinking: hide,
+    hideThinking() {
+      hide();
+      reportPaintedRect(false);
+    },
   });
 
   attachQuickMessage(view, id);

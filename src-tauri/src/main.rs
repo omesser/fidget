@@ -1808,6 +1808,25 @@ fn overlay_qm_visible(instance: String) {
     platform::set_overlay_qm_visible(Some(instance));
 }
 
+#[derive(serde::Deserialize)]
+struct QmStatePayload {
+    instance: String,
+    open: bool,
+    text: String,
+    focused: bool,
+}
+
+/// The overlay's quick message state with text and focus.
+#[tauri::command]
+fn overlay_qm_state(payload: QmStatePayload) {
+    platform::set_overlay_qm_state(Some(platform::QmState {
+        instance: payload.instance,
+        open: payload.open,
+        text: payload.text,
+        focused: payload.focused,
+    }));
+}
+
 /// Same witness for the right button. Without it a right-click on the sprite
 /// is swallowed by the webview and the session poll never sees a Menu.
 #[tauri::command]
@@ -4302,7 +4321,9 @@ fn main() {
             overlay_secondary,
             overlay_composing,
             overlay_qm_visible,
+            overlay_qm_state,
             overlay_hotspots,
+            overlay_painted_rects,
             overlay_hit_tests_hotspots,
             overlay_traces_cadence,
             overlay_cadence,

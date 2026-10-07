@@ -115,17 +115,18 @@ fn note_overlay(hwnd: u64) {
     }
 }
 
-/// SetWindowRgn from `art` plus hotspots; `None` clears the region.
+/// SetWindowRgn from `art` plus hotspots plus painted rects; `None` clears the region.
 /// `click_through` sets WS_EX_TRANSPARENT; the region stays either way.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     match art {
-        Some(art) => apply_input_mask(hwnd, art, hotspot_rects, click_through),
+        Some(art) => apply_input_mask(hwnd, art, hotspot_rects, painted_rects, click_through),
         None => clear_input_region(hwnd),
     }
 }
