@@ -39,31 +39,6 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
 
 /// Hysteresis margin: feet must move this far (in points) past a seam before
 /// ownership switches. Prevents flicker when feet hover near a display boundary.
-const HYSTERESIS_MARGIN: f64 = 8.0;
-
-/// The one overlay that draws an Instance's speech bubble, with hysteresis to
-/// prevent ownership flicker near seams. Keeps the previous owner until feet
-/// move clearly onto another display.
-pub fn bubble_owner_with_hysteresis(
-    feet: (f64, f64),
-    displays: &[Rect],
-    previous_owner: Option<usize>,
-) -> Option<usize> {
-    // If we have a previous owner and feet are still near that display, keep it
-    if let Some(prev) = previous_owner {
-        if let Some(display) = displays.get(prev) {
-            // Check if feet are still on the previous display or within hysteresis margin
-            if covers(feet, display)
-                || outside_by(feet, display) <= HYSTERESIS_MARGIN * HYSTERESIS_MARGIN
-            {
-                return Some(prev);
-            }
-        }
-    }
-
-    // Otherwise, determine owner normally
-    bubble_owner(feet, displays)
-}
 
 /// How far outside its display feet may be and still be standing on it, in
 /// points. Slack rather than equality because the floor is the display scaled
@@ -821,27 +796,16 @@ mod tests {
     }
 
     #[test]
-    fn bubble_owner_with_hysteresis_negative_origin() {
+    fn bubble_owner_negative_origin() {
         let displays = [
             rect(0.0, 0.0, 3440.0, 1440.0),
             rect(-1200.0, -209.0, 1200.0, 1920.0),
         ];
 
-        let mut prev = None;
+        let owner = bubble_owner((80.0, 80.0), &displays);
+        assert_eq!(owner, Some(0), "primary display");
 
-        let owner = bubble_owner_with_hysteresis((80.0, 80.0), &displays, prev);
-        assert_eq!(owner, Some(0), "starts on primary");
-        prev = owner;
-
-        let owner = bubble_owner_with_hysteresis((5.0, 100.0), &displays, prev);
-        assert_eq!(owner, Some(0), "hysteresis keeps primary near seam");
-        prev = owner;
-
-        let owner = bubble_owner_with_hysteresis((-20.0, 100.0), &displays, prev);
-        assert_eq!(owner, Some(1), "switches to portrait beyond hysteresis");
-        prev = owner;
-
-        let owner = bubble_owner_with_hysteresis((-5.0, 100.0), &displays, prev);
-        assert_eq!(owner, Some(1), "hysteresis keeps portrait near seam");
+        let owner = bubble_owner((-20.0, 100.0), &displays);
+        assert_eq!(owner, Some(1), "portrait display with negative origin");
     }
 }

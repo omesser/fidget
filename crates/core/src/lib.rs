@@ -12,7 +12,6 @@ pub mod input;
 pub mod memory;
 pub mod overlay;
 pub mod overlay_region;
-pub mod qm_handoff;
 pub mod roster;
 pub mod scheduler;
 pub mod sensing;
