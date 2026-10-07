@@ -303,11 +303,9 @@ export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   const wouldClampToTop = y < bounds.y;
   const clampedY = bounds.y;
   const wouldCoverSprite = wouldClampToTop && (clampedY + size.height > spriteRect.y);
-  let inverted = false;
 
   if (wouldCoverSprite) {
     y = spriteRect.y + spriteRect.height + gap;
-    inverted = true;
   }
 
   if (speechRect) {
@@ -322,6 +320,7 @@ export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
     }
   }
 
+  const inverted = y > spriteRect.y + spriteRect.height / 2;
   const tailOffset = spriteCenterX - (x + size.width / 2);
   return { x, y, tailOffset, inverted };
 }

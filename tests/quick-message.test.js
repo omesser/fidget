@@ -657,6 +657,26 @@ test("the composer sits above Speech when the two would share a box", () => {
   assert.equal(stacked.y, 300, "one gap above the Speech bubble, not on top of it");
 });
 
+test("inverted flag matches final vertical position relative to sprite", () => {
+  const sprite = { x: 100, y: 50, width: 64, height: 64 };
+  const size = { width: 200, height: 40 };
+  const bounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const above = placeQuickMessage(sprite, size, bounds, null);
+  assert.equal(above.y, 0, "pill sits 10px above sprite top");
+  assert.equal(above.inverted, false, "inverted is false when pill is above sprite center");
+
+  const nearTop = { x: 100, y: 30, width: 64, height: 64 };
+  const flipped = placeQuickMessage(nearTop, size, bounds, null);
+  assert.equal(flipped.y, 104, "pill flips below sprite when it would cover it");
+  assert.equal(flipped.inverted, true, "inverted is true when pill is below sprite center");
+
+  const speech = { x: 32, y: 104, width: 200, height: 80 };
+  const pushed = placeQuickMessage(nearTop, size, bounds, speech);
+  assert.ok(pushed.y < 104, "pill moves above speech to avoid collision");
+  assert.equal(pushed.inverted, false, "inverted reflects final position above sprite");
+});
+
 test("the pill follows the sprite across a display seam without clamping", () => {
   const size = { width: 200, height: 40 };
   const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
