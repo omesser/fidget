@@ -143,21 +143,77 @@ test("an empty fence beside a question leaves the question", () => {
   );
 });
 
-test("an empty fence yields the arguments, and a filled fence stays", () => {
-  assert.equal(
-    visible({
-      title: "fidget-list_windows",
-      kind: "read",
-      content: ["```json\n{}\n```"],
-      input: { title: "Teams" },
-    }),
-    "fidget-list_windows\ntitle: Teams\nread",
-  );
-  const kept = visible({
+test("an empty fence yields the arguments", () => {
+  const text = visible({
     title: "fidget-list_windows",
     kind: "read",
-    content: ['```json\n{"title":"Teams"}\n```'],
+    content: ["```json\n{}\n```"],
+    input: { title: "Teams" },
+  });
+
+  assert.equal(text, "fidget-list_windows\ntitle: Teams\nread");
+  assert.equal(text.includes("```"), false);
+});
+
+test("a filled json fence draws its fields as code and no fence", () => {
+  assert.deepEqual(
+    drawn({
+      title: "fidget-list_windows",
+      kind: "read",
+      content: ['```json\n{"title":"Teams","limit":5}\n```'],
+      input: {},
+    }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "fidget-list_windows" },
+      { tagName: "CODE", className: "ask-code", textContent: "title: Teams" },
+      { tagName: "CODE", className: "ask-code", textContent: "limit: 5" },
+      { tagName: "DIV", className: "ask-metadata", textContent: "read" },
+    ],
+  );
+});
+
+test("a non-json fence draws its body as one code line", () => {
+  assert.deepEqual(
+    drawn({
+      title: "Run",
+      kind: "other",
+      content: ["```sh\nls\nread · /etc/passwd\n```"],
+      input: {},
+    }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "Run" },
+      { tagName: "CODE", className: "ask-code", textContent: "ls read · /etc/passwd" },
+    ],
+  );
+});
+
+test("prose around a fence stays prose and the fence is unwrapped", () => {
+  assert.deepEqual(
+    drawn({
+      title: "Question",
+      kind: "other",
+      content: ['Check this\n```json\n{"title":"Teams"}\n```\nbefore allowing'],
+      input: { question: "not shown" },
+    }),
+    [
+      { tagName: "DIV", className: "ask-title", textContent: "Question" },
+      { tagName: "DIV", className: "ask-prose", textContent: "Check this" },
+      { tagName: "CODE", className: "ask-code", textContent: "title: Teams" },
+      { tagName: "DIV", className: "ask-prose", textContent: "before allowing" },
+    ],
+  );
+});
+
+test("a json fence keeps the argument cap", () => {
+  const payload = Object.fromEntries(Array.from({ length: 8 }, (_, n) => [`arg${n}`, n]));
+  const text = visible({
+    title: "Tool",
+    kind: "read",
+    content: [`\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``],
     input: {},
   });
-  assert.equal(kept.includes("Teams"), true, kept);
+
+  assert.equal(text.includes("```"), false, text);
+  assert.equal(text.includes("and 2 more arguments"), true, text);
+  assert.equal(text.includes("arg6:"), false, text);
 });

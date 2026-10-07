@@ -79,32 +79,72 @@ function withinBudget(parts) {
   return lines.map((text, at) => ({ kind: parts[at].kind, text }));
 }
 
-// A harness puts the arguments in a json fence. Flattening an empty payload
-// leaves the fence characters, and the row would draw them as text.
-function emptyJsonFence(text) {
-  const raw = String(text).trim();
-  const multi = /^```[^\n`]*\r?\n([\s\S]*?)\r?\n```$/.exec(raw);
-  const line = /^```[A-Za-z0-9_+-]*[ \t]*([\s\S]*?)[ \t]*```$/.exec(raw);
-  const body = (multi ?? line)?.[1];
-  if (body === undefined) {
-    return false;
+// A harness wraps arguments in a fence. Flattening would keep the markers,
+// and the row would draw them as text. The body is the ask. The markers are not.
+const FENCE =
+  /(`{3,})([^\n`]*)\r?\n([\s\S]*?)\r?\n\1[ \t]*|(`{3,})([A-Za-z0-9_+.#-]*)[ \t]*([^`]*?)\4/g;
+
+function fencePieces(text) {
+  const raw = String(text ?? "");
+  const pieces = [];
+  let at = 0;
+  for (const match of raw.matchAll(FENCE)) {
+    if (match.index > at) {
+      pieces.push({ fence: false, text: raw.slice(at, match.index) });
+    }
+    pieces.push({ fence: true, body: match[3] ?? match[6] ?? "" });
+    at = match.index + match[0].length;
   }
-  const payload = body.trim();
-  if (payload === "") {
-    return true;
+  if (at < raw.length || pieces.length === 0) {
+    pieces.push({ fence: false, text: raw.slice(at) });
   }
+  return pieces;
+}
+
+function readJson(body) {
   try {
-    const value = JSON.parse(payload);
-    if (value === null || value === "") {
-      return true;
-    }
-    if (Array.isArray(value)) {
-      return value.length === 0;
-    }
-    return typeof value === "object" && Object.keys(value).length === 0;
+    return { value: JSON.parse(String(body).trim()) };
   } catch {
-    return false;
+    return null;
   }
+}
+
+// Content entries, unwrapped. A fence whose body is JSON uses the argument
+// lines. Any other fence is one code line. Prose beside a fence stays prose.
+function contentLines(ask) {
+  const plainKind = ask?.kind === "execute" ? "code" : "prose";
+  const lines = [];
+  for (const entry of ask?.content ?? []) {
+    const pieces = fencePieces(entry);
+    if (!pieces.some((piece) => piece.fence)) {
+      const text = flat(entry ?? "");
+      if (text) {
+        lines.push({ kind: plainKind, text });
+      }
+      continue;
+    }
+    for (const piece of pieces) {
+      if (!piece.fence) {
+        const text = flat(piece.text);
+        if (text) {
+          lines.push({ kind: "prose", text });
+        }
+        continue;
+      }
+      const parsed = readJson(piece.body);
+      if (parsed) {
+        for (const text of argumentLines(parsed.value)) {
+          lines.push({ kind: "code", text });
+        }
+        continue;
+      }
+      const text = flat(piece.body);
+      if (text) {
+        lines.push({ kind: "code", text });
+      }
+    }
+  }
+  return lines;
 }
 
 // What the row draws, in order: `{ kind, text }` per line, `kind` one of
@@ -114,15 +154,12 @@ export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
   const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
-  const content = (ask?.content ?? [])
-    .filter((text) => !emptyJsonFence(text))
-    .map(flat)
-    .filter(Boolean);
+  const fromContent = contentLines(ask);
   // Content first, arguments as the fallback, never both: a tool that sends
   // its question as content usually repeats it in `input`. Content is a
   // command only when the ask runs something; an argument line always is.
-  const details = content.length > 0
-    ? content.map((text) => ({ kind: ask?.kind === "execute" ? "code" : "prose", text }))
+  const details = fromContent.length > 0
+    ? fromContent
     : argumentLines(ask?.input).map((text) => ({ kind: "code", text }));
 
   const paths = (ask?.locations ?? [])
