@@ -1,12 +1,11 @@
-// Red contract test for QM/speech/thinking overlay behavior at seam crossings.
-// These tests MUST FAIL at 318b325d and PASS after the fix.
+// Contract tests for QM/speech/thinking overlay behavior at seam crossings.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createBubbleMachine } from "../src/bubble.js";
 import { createQuickMessage } from "../src/quick-message.js";
 
-test("RED: ownership flip drops speech immediately", () => {
+test("ownership flip must drop speech immediately", () => {
   let speechShown = null;
   const machine = createBubbleMachine({
     showSpeech(text) {
@@ -30,7 +29,7 @@ test("RED: ownership flip drops speech immediately", () => {
   assert.equal(speechShown, null, "speech must hide immediately when ownership flips");
 });
 
-test("RED: ownership flicker cancels grace timer preventing ellipsis", async () => {
+test("ownership flicker must cancel grace timer (no ellipsis after re-entry)", async () => {
   let thinkingShown = false;
   const machine = createBubbleMachine({
     showSpeech() {},
@@ -57,11 +56,10 @@ test("RED: ownership flicker cancels grace timer preventing ellipsis", async () 
   // Should show thinking immediately with no grace since turn already started
   machine.frame({ thinking: true, visible: true });
 
-  // At tip 318b325d, this re-arms grace timer instead of showing immediately
   assert.equal(
     thinkingShown,
     true,
-    "RED: thinking should show immediately on re-entry (must fail at 318b325d)"
+    "thinking must show immediately on re-entry after ownership flicker"
   );
 });
 

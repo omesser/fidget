@@ -1,5 +1,4 @@
-// Table-driven audit for #1391 tip 89fb28d7.
-// Rows marked RED must fail at tip; GREEN rows lock correct pure contracts.
+// Table-driven contract tests for #1391.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,56 +17,50 @@ function read(rel) {
 
 // --- (a) Region rebuild wiring (source = tip's actual shape) -----------------
 
-test("RED: RegionParams must be a 3-tuple including painted", () => {
+test("RegionParams must be a 3-tuple including painted", () => {
   const src = read("src-tauri/src/frame_loop.rs");
-  // Tip today:
-  //   type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>);
-  // Required:
-  //   type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
   const threeTuple =
     /type RegionParams\s*=\s*\(\s*Vec<\s*\[\s*i32\s*;\s*4\s*\]\s*>\s*,\s*Vec<\s*\[\s*i32\s*;\s*4\s*\]\s*>\s*,\s*Vec<\s*\[\s*i32\s*;\s*4\s*\]\s*>\s*\)/;
   assert.match(
     src,
     threeTuple,
-    "RED tip 89fb28d7: RegionParams is (art, hotspots) only — painted changes never trigger ApplyMask"
+    "RegionParams must include painted so painted changes trigger ApplyMask"
   );
 });
 
-test("RED: set_overlay_painted must invalidate the region (not only store)", () => {
+test("set_overlay_painted must invalidate the region (not only store)", () => {
   const platform = read("src-tauri/src/platform.rs");
   const mainCmd = read("src-tauri/src/main.rs");
   const paintedSetter = platform.slice(
     platform.indexOf("pub fn set_overlay_painted"),
     platform.indexOf("pub fn set_overlay_painted") + 500
   );
-  // Tip only retain+extend. Required: mark dirty / clear last_mask / force rebuild.
   const invalidates =
     /last_mask|invalidate|dirty|rebuild|force_region|region_dirty/i.test(paintedSetter) ||
     /overlay_painted_rects[\s\S]{0,400}(last_mask|invalidate|dirty|rebuild)/i.test(mainCmd);
   assert.ok(
     invalidates,
-    "RED tip 89fb28d7: set_overlay_painted only stores rects; idle bubble never gets into SetWindowRgn"
+    "set_overlay_painted must mark region dirty so idle bubble gets into SetWindowRgn"
   );
 });
 
-test("GREEN: overlay_region_rects / apply_input_mask already union painted when given", () => {
+test("overlay_region_rects / apply_input_mask union painted when given", () => {
   const core = read("crates/core/src/overlay_region.rs");
   const win = read("src-tauri/src/platform/windows/overlay.rs");
   assert.match(core, /chain\(painted_bounds\)/);
   assert.match(win, /overlay_region_rects\(art, hotspot_rects, painted_rects\)/);
 });
 
-test("RED: Windows must build region for painted rects on overlay without sprite", () => {
+test("Windows must build region for painted rects on overlay without sprite", () => {
   const frame = read("src-tauri/src/frame_loop.rs");
   // Windows branch must check painted even when sprite_on_overlay is None.
   // Bubble straddling seam: character on overlay-0, bubble extends to overlay-1.
-  // At tip, "if let Some(instance) = sprite_on_overlay" skips overlay-1 entirely.
   const buildsRegionWithoutSprite =
     /else\s*\{[\s\S]{0,300}painted[\s\S]{0,300}overlay_painted_for/i.test(frame) ||
     /painted\s*=[\s\S]{0,200}overlay_painted_for[\s\S]{0,300}if\s+!painted\.is_empty/i.test(frame);
   assert.ok(
     buildsRegionWithoutSprite,
-    "RED: Windows frame_loop must build region when painted non-empty even without sprite"
+    "Windows frame_loop must build region when painted non-empty even without sprite"
   );
 });
 
@@ -255,19 +248,19 @@ function tipHandoff(seq) {
   return events;
 }
 
-test("RED: empty pill drag-clear must not skip handoff", () => {
+test("empty pill drag-clear must not skip handoff", () => {
   const frame = read("src-tauri/src/frame_loop.rs");
   const main = read("src-tauri/src/main.rs");
-  // Required: latch qm_was_open across drag/dismiss, use plan_qm_handoff
-  const hasLatch = /qm_was_open/.test(main);
+  // Required: latch for drag dismissal, use plan_qm_handoff
+  const hasLatch = /qm_drag_latch|qm_was_open/.test(main);
   const usesPlanQmHandoff = /plan_qm_handoff/.test(frame);
   assert.ok(
     hasLatch && usesPlanQmHandoff,
-    "RED tip handoff race: must latch qm_was_open and use plan_qm_handoff to survive drag-clear"
+    "must latch drag dismissal and use plan_qm_handoff to survive drag-clear"
   );
 });
 
-test("GREEN: focused draft survives drag and handoffs", () => {
+test("focused draft survives drag and handoffs", () => {
   const events = tipHandoff({
     initialBackend: { open: true, text: "hello", focused: true },
     steps: [
@@ -278,16 +271,15 @@ test("GREEN: focused draft survives drag and handoffs", () => {
   assert.deepEqual(events, ["handoff_to_1"]);
 });
 
-test("RED: old owner must be told to dismiss on handoff", () => {
+test("old owner must be told to dismiss on handoff", () => {
   const main = read("src/main.js");
   const frame = read("src-tauri/src/frame_loop.rs");
-  // Tip emit_to(new_owner only). Required: also dismiss old owner (event or flag).
   const emitsOnlyNew = /emit_to\(\s*new_owner_label\s*,\s*"qm-handoff"/.test(frame);
   const oldDismiss =
     /qm-handoff[\s\S]{0,800}dismiss|from_overlay[\s\S]{0,400}dismiss|handoff.*old/i.test(main);
   assert.ok(
     !emitsOnlyNew || oldDismiss,
-    "RED tip: qm-handoff goes only to new owner; old overlay keeps/orphans its pill DOM"
+    "qm-handoff must also dismiss old owner to prevent orphaned pill DOM"
   );
 });
 
@@ -330,7 +322,7 @@ test("painted rect table", () => {
   }
 });
 
-test("GREEN: reportPaintedRects batches and dedupes", () => {
+test("reportPaintedRects batches and dedupes", () => {
   clearCache();
   const views = new Map([[1, { paintedRect: [1, 2, 3, 4] }]]);
   let n = 0;
