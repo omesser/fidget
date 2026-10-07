@@ -1,14 +1,14 @@
 #!/usr/bin/env pwsh
-# Test that FIDGET_TRACE_BUBBLE format strings match qm-handoff-dual-display.win.ps1 patterns
+# Test that FIDGET_TRACE_BUBBLE format strings match pill-dual-display.win.ps1 patterns
 $ErrorActionPreference = "Stop"
 
 # Patterns from the scenario
 $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
-$handoffPattern = '^(?:\d+ )?overlay (\S+): pill handoff from (\S+) open=(\S+) text="([^"]*)" focused=(\S+)'
+$followPattern = '^(?:\d+ )?overlay (\S+): pill follows instance=(\S+) chars=(\d+) focused=(\S+)'
 
 # Sample log lines matching the Rust format strings
 $regionLine = 'overlay overlay-0: region rebuild 42 rects (art 12 + hotspots 3 + painted 2), 1.23 ms'
-$handoffLine = 'overlay overlay-1: pill handoff from overlay-0 open=true text="test message" focused=true dnd=off'
+$followLine = 'overlay overlay-1: pill follows instance=buddy-1 chars=12 focused=true dnd=off'
 
 # Test region pattern
 if ($regionLine -notmatch $regionPattern) {
@@ -19,13 +19,13 @@ if ($regionLine -notmatch $regionPattern) {
 }
 Write-Host "PASS: Region line matches pattern"
 
-# Test handoff pattern
-if ($handoffLine -notmatch $handoffPattern) {
-    Write-Error "Handoff line does not match pattern"
-    Write-Host "Line:    $handoffLine"
-    Write-Host "Pattern: $handoffPattern"
+# Test follow pattern
+if ($followLine -notmatch $followPattern) {
+    Write-Error "Follow line does not match pattern"
+    Write-Host "Line:    $followLine"
+    Write-Host "Pattern: $followPattern"
     exit 1
 }
-Write-Host "PASS: Handoff line matches pattern"
+Write-Host "PASS: Follow line matches pattern"
 
 Write-Host "PASS: All trace formats match scenario patterns"

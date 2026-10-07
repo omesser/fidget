@@ -801,7 +801,13 @@ async function start() {
         view.cues.event(view.latest);
         view.quickMachine.setChatOpen(sprite.chatting);
         // The pill goes where the bubble goes, carrying the Shell's draft.
+        const owned = view.quickMachine.owner;
         view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
+        if (!owned && view.quickMachine.owner && view.quickMachine.visible) {
+          // A length, not the text: a trace is no place for what was typed.
+          const chars = view.quickMachine.text.length;
+          traceBubble(`pill follows instance=${sprite.id} chars=${chars} focused=${Boolean(sprite.qm?.focused)}`);
+        }
         notePointerLeft(view);
 
         if (changed && needsFrame(view)) arm();

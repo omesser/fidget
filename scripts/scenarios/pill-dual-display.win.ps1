@@ -1,19 +1,18 @@
 #!/usr/bin/env pwsh
-# Scenario: qm-handoff-dual-display (Windows)
+# Scenario: pill-dual-display (Windows)
 # On screen: launches Fidget with dual displays (3440x1440@(0,0) + 1200x1920@(-1200,-209)).
-#   Sends QM -> thinking -> speech, drags sprite across displays, watches pill handoff.
+#   A static-director wake shows speech; the pill is typed into and carried across the seam.
 #   Fidget quits when the scenario ends. No screenshots.
-# Input: types into QM pill, drags sprite from right display to left,
-#   watches for pill handoff and bubble region paint. The cursor moves;
-#   keep hands off the mouse for the run.
+# Input: none automated. During a 20 s wait a person hovers the sprite, types
+#   into the pill, and drags the sprite to the other display.
 # Duration: about 30 s.
 # Grants: a desktop session with dual displays matching geometry above.
 # Asserts: painted bubble rect included in Windows region while visible,
-#   pill handoff to new owner overlay on display cross, no orphan ellipsis.
+#   a typed pill reopens on the new owner overlay on display cross.
 # Fixture: FIDGET_SCENARIO_TRACE=<saved stderr> runs only the check and
 #   launches nothing.
 #
-# Usage: qm-handoff-dual-display.win.ps1 --go <fidget binary>
+# Usage: pill-dual-display.win.ps1 --go <fidget binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 $Go = if ($args.Count -gt 0) { $args[0] } else { "" }
 $Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
@@ -37,7 +36,7 @@ if ($Go -ne "--go") {
     exit 2
 }
 if (-not $Bin) {
-    Write-Error "usage: qm-handoff-dual-display.win.ps1 --go <fidget binary>"
+    Write-Error "usage: pill-dual-display.win.ps1 --go <fidget binary>"
     exit 1
 }
 
@@ -52,14 +51,14 @@ function Fail([string]$Message) {
 
 # Patterns for FIDGET_TRACE_BUBBLE=1 stderr output
 $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
-$handoffPattern = '^(?:\d+ )?overlay (\S+): pill handoff from (\S+) open=(\S+) text="([^"]*)" focused=(\S+)'
+$followPattern = '^(?:\d+ )?overlay (\S+): pill follows instance=(\S+) chars=(\d+) focused=(\S+)'
 $bubbleShowPattern = '^(?:\d+ )?overlay (\S+): showSpeech|showThinking'
 $bubbleHidePattern = '^(?:\d+ )?overlay (\S+): hideSpeech|hideThinking'
 
 function Check-Trace([string]$File) {
     $sawRegionWithPainted = $false
     $sawRegionWithoutPainted = $false
-    $sawHandoff = $false
+    $sawFollow = $false
     $bubbleVisible = $false
     $paintedWhileVisible = $false
 
@@ -80,18 +79,10 @@ function Check-Trace([string]$File) {
             } else {
                 $sawRegionWithoutPainted = $true
             }
-        } elseif ($line -cmatch $handoffPattern) {
-            $sawHandoff = $true
-            $toOverlay = $Matches[1]
-            $fromOverlay = $Matches[2]
-            $open = $Matches[3]
-            $text = $Matches[4]
-            $focused = $Matches[5]
-            if ($open -ne "true") {
-                Fail "pill handoff has open=$open, want true"
-            }
-            if ($text.Length -eq 0) {
-                Fail "pill handoff has empty text, want preserved text"
+        } elseif ($line -cmatch $followPattern) {
+            $sawFollow = $true
+            if ([int]$Matches[3] -eq 0) {
+                Fail "pill followed with no text, want the typed draft"
             }
         }
     }
@@ -105,11 +96,11 @@ function Check-Trace([string]$File) {
     if (-not $sawRegionWithoutPainted) {
         Fail "region never cleared painted rects after hide"
     }
-    if (-not $sawHandoff) {
-        Fail "no pill handoff across displays"
+    if (-not $sawFollow) {
+        Fail "the pill never reopened on another overlay"
     }
 
-    Write-Host "PASS: painted rect in region while visible, cleared after hide, pill handoff preserved state"
+    Write-Host "PASS: painted rect in region while visible, cleared after hide, pill followed with its draft"
 }
 
 # Fixture mode: check a saved trace and exit
@@ -128,7 +119,7 @@ if ($displays.Count -lt 2) {
 # Run Fidget with trace enabled
 $tempDir = [System.IO.Path]::GetTempPath()
 $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$traceFile = Join-Path $tempDir "fidget-qm-handoff-trace-$timestamp.log"
+$traceFile = Join-Path $tempDir "fidget-pill-dual-display-trace-$timestamp.log"
 $script:Evidence = $traceFile
 
 Write-Host "scenario: launching Fidget with FIDGET_TRACE_BUBBLE=1, static director"
@@ -139,27 +130,13 @@ $process = Start-Process -FilePath $Bin -NoNewWindow -PassThru -RedirectStandard
 
 Start-Sleep -Seconds 2
 
-# Automated scenario steps using static director and simulated events:
-# 1. Static director generates initial wake (FIDGET_DIRECTOR_WAKE_SECS=2)
-# 2. Speech bubble appears automatically (static director provides canned response)
-# 3. QM pill opens on the first overlay when bubble shows (automatic in bubble.js)
-# 4. Cross-display handoff is triggered by frame_loop.rs bubble_owner detection
-#
-# The following steps are still PARTIALLY MANUAL as of this commit:
-# - Moving the sprite across display seam: No dev hook exists yet. To fully automate,
-#   add a dev-only command `#[tauri::command] fn dev_move_sprite(instance: u32, x: i32, y: i32)`
-#   behind FIDGET_DEV_HOOKS flag that calls engine.set_position() and emits frame events.
-# - Typing into QM pill: UI Automation APIs exist on Windows (IUIAutomation) but are not
-#   yet wired. For now, the scenario runs Fidget and waits while the static director
-#   and automatic QM pill opening/handoff logic execute, then checks the trace log for
-#   expected region rebuild and handoff patterns.
+# The static director's wake brings up a speech bubble on its own. Opening the
+# pill, typing, and dragging the sprite across the seam have no hook yet, so a
+# person does them within the wait; the trace is checked afterwards.
 
-Write-Host "scenario: Fidget running with static director. QM pill should open automatically."
-Write-Host "Automated: wake -> speech bubble -> QM pill open"
-Write-Host "Manual (not yet hooked): drag sprite across displays to trigger handoff"
-Write-Host ""
-Write-Host "Waiting 10s for static director wake and automatic QM pill..."
-Start-Sleep -Seconds 10
+Write-Host "scenario: Fidget running with static director."
+Write-Host "Within 20s: hover the sprite, type into the pill, drag the sprite to the other display."
+Start-Sleep -Seconds 20
 
 # For a full automated run, a dev hook would simulate the drag here:
 # Invoke-Expression "$Bin dev-move-sprite --instance 0 --x -600 --y 500"
