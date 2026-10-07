@@ -1886,14 +1886,27 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            AttachThreadInput, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+        };
 
         let raw_handle = window
             .window_handle()
             .map_err(|e| format!("Window handle not available: {e}"))?;
         if let RawWindowHandle::Win32(win32_handle) = raw_handle.as_raw() {
+            let hwnd = win32_handle.hwnd.get() as HWND;
             unsafe {
-                SetForegroundWindow(win32_handle.hwnd.get() as _);
+                let foreground = GetForegroundWindow();
+                if foreground != 0 {
+                    let foreground_thread = GetWindowThreadProcessId(foreground, std::ptr::null_mut());
+                    let overlay_thread = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
+                    
+                    if foreground_thread != overlay_thread {
+                        AttachThreadInput(overlay_thread, foreground_thread, 1);
+                    }
+                }
+                SetForegroundWindow(hwnd);
             }
         }
         Ok(())
