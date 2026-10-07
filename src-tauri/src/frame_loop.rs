@@ -12,7 +12,7 @@ use fidget_core::engine::{bring_off_fullscreen, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(unix))]
 use fidget_core::overlay::DrawTrail;
-use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
+use fidget_core::overlay::{display_index_for, place_sprite};
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
