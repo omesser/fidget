@@ -825,12 +825,55 @@ pub(crate) mod tests {
     /// with the Behavior name already cut from it, and then the reply.
     #[test]
     fn take_hands_over_the_speech_before_the_reply() {
+        use std::sync::{Arc, Barrier};
+
+        struct SynchronizedAnswers {
+            behavior: &'static str,
+            speech_barrier: Arc<Barrier>,
+        }
+
+        impl Completer for SynchronizedAnswers {
+            fn complete(&self, _: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
+                said(self.behavior);
+                self.speech_barrier.wait();
+                Ok(Reply::whole(self.behavior))
+            }
+        }
+
+        let speech_barrier = Arc::new(Barrier::new(2));
         let mut slots = Slots::new();
         let id = "fidget".to_string();
 
-        slots.wake(&id, answering("stroll\nhey there", 40), wake_context());
+        slots.wake(
+            &id,
+            Arc::new(ModelDirector::new(
+                SynchronizedAnswers {
+                    behavior: "stroll\nhey there",
+                    speech_barrier: Arc::clone(&speech_barrier),
+                },
+                ["stroll", "nap"],
+                "fidget",
+                "cat",
+                false,
+            )),
+            wake_context(),
+        );
 
-        let seen = arrivals(&mut slots, &id);
+        let mut seen = Vec::new();
+        for _ in 0..200 {
+            match slots.take(&id) {
+                Some(Arrived::Answered(answered)) => {
+                    seen.push(Arrived::Answered(answered));
+                    break;
+                }
+                Some(speech) => {
+                    seen.push(speech);
+                    speech_barrier.wait();
+                }
+                None => thread::sleep(Duration::from_millis(5)),
+            }
+        }
+
         let speech: Vec<&str> = seen
             .iter()
             .filter_map(|arrived| match arrived {
