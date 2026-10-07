@@ -242,23 +242,4 @@ mod tests {
         );
     }
 
-    /// Documents tip's bug as a comparison: tip key = (art, hotspots) only.
-    #[test]
-    fn tip_bug_region_params_omit_painted_so_idle_bubble_never_rebuilds() {
-        // Tip RegionParams type (frame_loop.rs): (Vec<[i32;4]>, Vec<[i32;4]>)
-        type TipRegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>);
-        let art = vec![[0, 0, 10, 10]];
-        let hotspots: Vec<[i32; 4]> = vec![];
-        let last: TipRegionParams = (art.clone(), hotspots.clone());
-        let next: TipRegionParams = (art, hotspots);
-        // Painted went [] → [[bubble]] but tip key unchanged:
-        let tip_thinks_unchanged = last == next;
-        assert!(
-            !tip_thinks_unchanged,
-            "RED at tip 89fb28d7: RegionParams omits painted, so decide_overlay_action \
-             returns Nothing when an idle bubble/thinking appears. Fix: include painted \
-             in the comparison key (see windows_region_key) and/or invalidate on \
-             overlay_painted_rects."
-        );
-    }
 }

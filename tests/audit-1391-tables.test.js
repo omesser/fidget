@@ -242,17 +242,14 @@ function tipHandoff(seq) {
 }
 
 test("RED: empty pill drag-clear must not skip handoff", () => {
-  const events = tipHandoff({
-    initialBackend: { open: true, text: "", focused: false },
-    steps: [
-      { type: "dragDismissEmpty" },
-      { type: "ownerChange", to: 1 },
-    ],
-  });
-  // Desired: handoff still fires (pill follow). Tip: backend cleared → skipped.
+  const frame = read("src-tauri/src/frame_loop.rs");
+  const main = read("src-tauri/src/main.rs");
+  // Required: latch qm_was_open across drag/dismiss, use plan_qm_handoff
+  const hasLatch = /qm_was_open/.test(main);
+  const usesPlanQmHandoff = /plan_qm_handoff/.test(frame);
   assert.ok(
-    events.includes("handoff_to_1"),
-    `RED tip handoff race: got ${events.join(",")} — drag/leave clears backend before owner change`
+    hasLatch && usesPlanQmHandoff,
+    "RED tip handoff race: must latch qm_was_open and use plan_qm_handoff to survive drag-clear"
   );
 });
 

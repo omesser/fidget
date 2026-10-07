@@ -116,20 +116,4 @@ mod tests {
         }
     }
 
-    /// RED documentation: tip skips handoff when backend cleared.
-    #[test]
-    fn tip_bug_cleared_backend_skips_handoff() {
-        // Tip logic: if let Some(qm) = overlay_qm_state() { if qm.open { emit } }
-        let tip_would_emit = |qm: Option<&QmSnapshot>| qm.is_some_and(|q| q.open);
-        assert!(
-            tip_would_emit(Some(&open("", false))),
-            "sanity"
-        );
-        assert!(
-            tip_would_emit(None),
-            "RED tip 89fb28d7: after drag/leave clears backend, tipHandoff skips; \
-             pill vanishes instead of following. Latch was_open across owner change \
-             (and dismiss old owner explicitly)."
-        );
-    }
 }

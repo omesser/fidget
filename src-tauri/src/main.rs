@@ -316,6 +316,9 @@ struct InstanceState {
     /// The display that last owned this Instance's bubble. Hysteresis keeps
     /// ownership stable near a seam: switch only when feet clearly cross.
     bubble_owner_last: Option<usize>,
+    /// Latch for QM handoff: whether QM was open for this instance. Survives
+    /// drag/dismiss so handoff fires even after backend state cleared (#1391).
+    qm_was_open_for_instance: bool,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -3621,6 +3624,7 @@ fn spawn_live(
         speech: SpeechBubble::default(),
         drawn_last: None,
         bubble_owner_last: None,
+        qm_was_open_for_instance: false,
         traced_last: None,
         status_last: None,
         status_wake_ms: None,
@@ -3901,6 +3905,7 @@ fn spawn_instances(
             speech: SpeechBubble::default(),
             drawn_last: None,
             bubble_owner_last: None,
+            qm_was_open_for_instance: false,
             traced_last: None,
             status_last: None,
             status_wake_ms: None,

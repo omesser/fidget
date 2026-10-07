@@ -17,7 +17,7 @@ import {
   placeQuickMessage,
   quickMessageMirror,
 } from "./quick-message.js";
-import { reportPaintedRects } from "./painted-rects.js";
+import { reportPaintedRects, computeBubblePaintedRect } from "./painted-rects.js";
 
 const stage = document.getElementById("stage");
 
@@ -258,14 +258,7 @@ function positionBubble(view, spriteRect, displayBounds) {
     : null;
 
   // Painted rect for Windows input region: the bubble body, not the hotspot control.
-  view.paintedRect = view.bubble.classList.contains("visible")
-    ? [
-        Math.round(pos.x),
-        Math.round(pos.y),
-        view.bubble.offsetWidth,
-        view.bubble.offsetHeight,
-      ]
-    : null;
+  view.paintedRect = computeBubblePaintedRect(view.bubble, pos);
   reportAllPaintedRects();
 }
 
@@ -320,11 +313,9 @@ function reportQmState(view) {
   const serialized = JSON.stringify(state);
   if (serialized === reportedQmState) return;
   reportedQmState = serialized;
-  if (state.open) {
-    window.__TAURI__.core.invoke("overlay_qm_state", state).catch((err) => {
-      console.error("overlay_qm_state", err);
-    });
-  }
+  window.__TAURI__.core.invoke("overlay_qm_state", state).catch((err) => {
+    console.error("overlay_qm_state", err);
+  });
 }
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill
@@ -900,6 +891,19 @@ async function start() {
             console.error("overlay_request_focus after handoff", err);
           });
         }
+      }
+    },
+    { target: overlay.label },
+  );
+
+  // Pill dismiss: when bubble_owner changes and this overlay is the old owner,
+  // dismiss the local pill DOM without clearing backend state (new owner has it).
+  await window.__TAURI__.event.listen(
+    "qm-dismiss",
+    ({ payload }) => {
+      const view = views.get(payload.instance);
+      if (view && view.quickMachine.visible) {
+        view.quickMachine.hide();
       }
     },
     { target: overlay.label },

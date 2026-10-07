@@ -65,45 +65,6 @@ test("RED: ownership flicker cancels grace timer preventing ellipsis", async () 
   );
 });
 
-test("PASS: drawView no longer dismisses pill on !spriteOnDisplay", () => {
-  // At tip 318b325d, drawView in main.js called machine.dismiss() when
-  // !spriteOnDisplay (sprite left overlay bounds during seam crossing).
-  // This caused the pill to vanish mid-typing.
-  //
-  // Fix: Removed the dismiss() call from drawView (lines 592-595 at tip).
-  // Now the pill follows the unclamped placeQuickMessage positioning
-  // and stays visible across seam crossings.
-  //
-  // This test verifies the fix is present by checking main.js doesn't
-  // contain the dismiss() call pattern.
-  assert.ok(
-    true,
-    "drawView dismiss() call removed (manual verification in main.js line ~592)"
-  );
-});
-
-test("PASS: drag() dismisses empty unfocused pill, preserves focused/text pill", () => {
-  const machine = createQuickMessage({
-    schedule: (fn, ms) => setTimeout(fn, ms),
-    clear: (timer) => clearTimeout(timer),
-    available: true,
-    onChange() {},
-    send() {},
-  });
-
-  // Simulate pill visible but empty and unfocused (hover opened it)
-  machine.enterSprite();
-  // Force visible for test (bypass hover delay)
-  machine.setChatOpen(false);
-  machine.setAvailable(true);
-  // Quick-message.js drag() logic: dismisses only if !hasText() && !focused
-  // Since we can't easily make it visible in unit test without waiting,
-  // just verify the logic is correct by inspection.
-  assert.ok(
-    true,
-    "drag() respects focus/text gate per quick-message.js line 254"
-  );
-});
 
 test("PASS: thinking is only sent to bubble owner (validates backend behavior)", () => {
   let thinking1 = false;

@@ -164,6 +164,8 @@ pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
 
 /// Update painted rects for an overlay. Windows unions these into the region.
 pub fn set_overlay_painted(label: &str, rects: Vec<[i32; 4]>) {
+    // Region invalidated automatically on next frame: RegionParams includes
+    // painted, so last_mask comparison detects change and triggers rebuild.
     let Ok(mut painted) = OVERLAY_PAINTED.lock() else {
         return;
     };

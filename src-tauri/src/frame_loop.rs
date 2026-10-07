@@ -64,11 +64,11 @@ fn cursor_near_sprite(cursor: Option<(f64, f64)>, sprites: &[(i32, i32, i32, i32
 #[cfg(any(test, all(unix, not(target_os = "macos"))))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
-/// One Windows overlay's last applied region: the sprite's swept ink, then the
-/// hotspots. The region is what gets compared, so a trail that settles after a
-/// walk still rebuilds it.
+/// One Windows overlay's last applied region: the sprite's swept ink, the
+/// hotspots, and the painted bubble/thinking rects. The region is what gets
+/// compared, so a trail that settles after a walk still rebuilds it.
 #[cfg(not(unix))]
-type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>);
+type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg(any(test, not(unix)))]
@@ -235,7 +235,7 @@ pub(crate) fn run_frame_loop(
             ]));
         #[cfg(not(unix))]
         let last_mask: Arc<Mutex<Vec<RegionParams>>> =
-            Arc::new(Mutex::new(vec![(Vec::new(), Vec::new()); covered.len()]));
+            Arc::new(Mutex::new(vec![(Vec::new(), Vec::new(), Vec::new()); covered.len()]));
         // Each Instance's draw trail, for a Windows region that clips drawing.
         #[cfg(not(unix))]
         let mut trails: std::collections::HashMap<InstanceId, DrawTrail> =
@@ -2063,6 +2063,17 @@ pub(crate) fn run_frame_loop(
                 );
                 live.bubble_owner_last = owner;
 
+                // Update QM latch: set when QM opens for this instance, clear on instance change.
+                if let Some(qm_state) = platform::overlay_qm_state() {
+                    if qm_state.instance == live.id {
+                        if qm_state.open {
+                            live.qm_was_open_for_instance = true;
+                        }
+                    } else if live.qm_was_open_for_instance {
+                        live.qm_was_open_for_instance = false;
+                    }
+                }
+
                 // Trace bubble owner changes.
                 if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
                     let old_label = old_owner
@@ -2083,42 +2094,64 @@ pub(crate) fn run_frame_loop(
 
                 // Pill handoff: when bubble owner changes and QM is open, transfer the pill.
                 if owner != old_owner {
-                    if let Some(new_owner_idx) = owner {
-                        if let Some(qm_state) = platform::overlay_qm_state() {
-                            if qm_state.instance == live.id && qm_state.open {
-                                let new_owner_label = super::overlay_label(new_owner_idx);
-                                let old_owner_label = old_owner.map(super::overlay_label);
-                                if dev_flags::TRACE_BUBBLE.is_on() {
-                                    let dnd = instance.do_not_disturb();
-                                    eprintln!(
-                                        "overlay {}: pill handoff from {} open={} text={:?} focused={} dnd={}",
-                                        new_owner_label,
-                                        old_owner_label.as_deref().unwrap_or("none"),
-                                        qm_state.open,
-                                        qm_state.text,
-                                        qm_state.focused,
-                                        if dnd { "on" } else { "off" }
-                                    );
-                                }
+                    let qm_snapshot = platform::overlay_qm_state()
+                        .filter(|qm| qm.instance == live.id)
+                        .map(|qm| fidget_core::qm_handoff::QmSnapshot {
+                            instance: qm.instance.clone(),
+                            open: qm.open,
+                            text: qm.text.clone(),
+                            focused: qm.focused,
+                        });
+                    
+                    if let Some(plan) = fidget_core::qm_handoff::plan_qm_handoff(
+                        old_owner,
+                        owner,
+                        qm_snapshot.as_ref(),
+                        live.qm_was_open_for_instance,
+                    ) {
+                        let new_owner_label = super::overlay_label(plan.to_overlay);
+                        let old_owner_label = plan.from_overlay.map(super::overlay_label);
 
+                        if dev_flags::TRACE_BUBBLE.is_on() {
+                            let dnd = instance.do_not_disturb();
+                            eprintln!(
+                                "overlay {}: pill handoff from {} open=true text={:?} focused={} dnd={}",
+                                new_owner_label,
+                                old_owner_label.as_deref().unwrap_or("none"),
+                                plan.text,
+                                plan.focused,
+                                if dnd { "on" } else { "off" }
+                            );
+                        }
+
+                        #[derive(Clone, serde::Serialize)]
+                        struct QmHandoff {
+                            from_overlay: Option<String>,
+                            instance: String,
+                            open: bool,
+                            text: String,
+                            focused: bool,
+                        }
+
+                        let handoff = QmHandoff {
+                            from_overlay: old_owner_label.clone().map(|s| s.to_string()),
+                            instance: plan.instance.clone(),
+                            open: true,
+                            text: plan.text.clone(),
+                            focused: plan.focused,
+                        };
+
+                        app.emit_to(new_owner_label, "qm-handoff", handoff).ok();
+
+                        if plan.dismiss_old {
+                            if let Some(old_label) = old_owner_label {
                                 #[derive(Clone, serde::Serialize)]
-                                struct QmHandoff {
-                                    from_overlay: Option<String>,
+                                struct QmDismiss {
                                     instance: String,
-                                    open: bool,
-                                    text: String,
-                                    focused: bool,
                                 }
-
-                                let handoff = QmHandoff {
-                                    from_overlay: old_owner_label.map(|s| s.to_string()),
-                                    instance: qm_state.instance.clone(),
-                                    open: qm_state.open,
-                                    text: qm_state.text.clone(),
-                                    focused: qm_state.focused,
-                                };
-
-                                app.emit_to(new_owner_label, "qm-handoff", handoff).ok();
+                                app.emit_to(old_label, "qm-dismiss", QmDismiss {
+                                    instance: plan.instance.clone(),
+                                }).ok();
                             }
                         }
                     }
@@ -2514,6 +2547,7 @@ pub(crate) fn run_frame_loop(
                                     .map(|trail| trail.clip_rects(offset))
                                     .unwrap_or_default(),
                                 platform::overlay_hotspots_for(&label),
+                                platform::overlay_painted_for(&label),
                             );
 
                             let action = decide_overlay_action(
@@ -2556,13 +2590,12 @@ pub(crate) fn run_frame_loop(
                                 let _ = app.run_on_main_thread(move || {
                                     mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        let (art, hotspots) = &mask_params_clone;
-                                        let painted = crate::platform::overlay_painted_for(&label_clone);
+                                        let (art, hotspots, painted) = &mask_params_clone;
                                         match platform::update_input_region(
                                             &window,
                                             Some(art.as_slice()),
                                             hotspots,
-                                            &painted,
+                                            painted,
                                             click_through,
                                         ) {
                                             Ok(()) => {
