@@ -99,7 +99,7 @@ bytemuck = "1.16"
 gtk = "0.18"
 # The Linux taskbar anchor is a GTK window. Pixbuf is how that window takes
 # the same PNG the bundle uses as its icon.
-gdk-pixbuf = "0.18"
+gdk-pixbuf = "0.22"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
