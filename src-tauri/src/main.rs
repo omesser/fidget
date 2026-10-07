@@ -5812,6 +5812,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dialogue_reaches_bubble_under_dnd() {
+        let t0 = Instant::now();
+        let mut spoken = None;
+
+        let dialogue = carry_line(&mut spoken, Some("hello there"), Some(0), t0);
+
+        assert_eq!(
+            dialogue.as_deref(),
+            Some("hello there"),
+            "under DND, dialogue still reaches carry_line and the bubble"
+        );
+    }
+
     /// #178 and #277: every overlay is told about every Instance, and only the
     /// one that owns the bubble is told the line, the indicator and the cue.
     /// The webview used to strip these for itself.

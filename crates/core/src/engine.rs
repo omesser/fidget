@@ -672,7 +672,10 @@ impl Engine {
         self
     }
 
-    /// Toggle Do Not Disturb. The Character stays visible but stops starting things: no Director proposals are applied and no unprompted dialogue is spoken. Poke, Grab, and Throw still work.
+    /// Toggle Do Not Disturb. The character stays visible. The Shell starts no unprompted
+    /// wakes (`director::due` and `director::session_due` return false for proactive); Behavior
+    /// proposals are refused. Replies to prompted interactions still show in both the speech
+    /// bubble and Chat. Poke, Grab, and Throw still work.
     ///
     /// A walk already under way has to be sat down too. Walk velocity outlives the Primitive that started it, so refusing the next proposal would otherwise leave the sprite pacing.
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
@@ -6284,7 +6287,7 @@ mod tests {
     }
 
     #[test]
-    fn dialogue_reaches_the_frame_under_do_not_disturb() {
+    fn engine_passes_dialogue_through_regardless_of_dnd() {
         let mut engine = a_resting_sprite();
         engine.set_do_not_disturb(true);
 
@@ -6299,7 +6302,7 @@ mod tests {
         assert_eq!(
             frame.dialogue,
             Some("hello there".to_string()),
-            "dialogue populates Frame under DND so Chat surface works"
+            "Engine passes dialogue through; DND blocking happens at Director level"
         );
         assert_eq!(frame.animation, "idle", "behavior is refused under DND");
     }

@@ -599,15 +599,16 @@ pub fn session_due(
     do_not_disturb: bool,
     proactive_allowed: bool,
 ) -> bool {
-    if do_not_disturb {
-        // Character stays visible and Poke still works.
-        return false;
-    }
     if displays_asleep {
-        // Unlike Do Not Disturb, this would drop Poke too.
         return false;
     }
-    addressed || (proactive_allowed && since_proactive >= pace.wait())
+    if addressed {
+        return true;
+    }
+    if do_not_disturb {
+        return false;
+    }
+    proactive_allowed && since_proactive >= pace.wait()
 }
 
 /// The reply was not a Behavior name. Fall back instead of guessing.
@@ -2565,5 +2566,53 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn session_due_allows_addressed_wakes_under_dnd() {
+        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        assert!(
+            session_due(
+                true,
+                Duration::ZERO,
+                &pace,
+                false,
+                true,
+                true
+            ),
+            "addressed wake proceeds even under DND"
+        );
+    }
+
+    #[test]
+    fn session_due_blocks_proactive_wakes_under_dnd() {
+        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        assert!(
+            !session_due(
+                false,
+                Duration::from_secs(120),
+                &pace,
+                false,
+                true,
+                true
+            ),
+            "proactive wake blocked under DND"
+        );
+    }
+
+    #[test]
+    fn session_due_allows_proactive_wakes_when_not_dnd() {
+        let pace = Pace::new(Duration::from_secs(60), DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER);
+        assert!(
+            session_due(
+                false,
+                Duration::from_secs(120),
+                &pace,
+                false,
+                false,
+                true
+            ),
+            "proactive wake allowed when not under DND"
+        );
     }
 }
