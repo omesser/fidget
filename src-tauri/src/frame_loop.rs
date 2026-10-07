@@ -103,8 +103,7 @@ fn decide_overlay_action<Shape: PartialEq>(
 /// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
 // One over clippy's cap: Director config belongs here, not mixed with window geometry.
 /// Decide which dialogue the Chat surface should show.
-/// Chat always shows what the Harness said, even under DND when the Engine
-/// blanks bubble dialogue. Returns the Harness's parsed dialogue if available,
+/// Returns the Harness's parsed dialogue if available,
 /// otherwise falls back to the Engine's frame dialogue.
 fn chat_dialogue<'a>(
     parsed_from_harness: Option<&'a str>,
@@ -1021,11 +1020,7 @@ pub(crate) fn run_frame_loop(
                 // Answer an unaskable line here rather than park it:
                 // `happened` is one slot only a wake clears. Displays
                 // asleep is not this case: a line taken first is asked when they wake.
-                let askable = config.enabled
-                    && live.model.is_some()
-                    && roster
-                        .get(&live.id)
-                        .is_some_and(|instance| !instance.do_not_disturb());
+                let askable = config.enabled && live.model.is_some();
                 if !askable {
                     let _ = app.emit_to(
                         chat_label(&live.id),
@@ -1881,7 +1876,6 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let thinking = (reactive_wake || slots.thinking(&live.id))
-                    && !instance.do_not_disturb()
                     && !live
                         .model
                         .as_ref()
@@ -3213,11 +3207,11 @@ mod tests {
     }
 
     #[test]
-    fn chat_dialogue_shows_harness_words_even_when_engine_blanks_under_dnd() {
+    fn chat_dialogue_shows_harness_words_even_when_engine_dialogue_absent() {
         assert_eq!(
             chat_dialogue(Some("harness said this"), None),
             Some("harness said this"),
-            "Chat shows Harness words even when Engine blanked dialogue (e.g. under DND)"
+            "Chat shows Harness words even when Engine dialogue is absent"
         );
     }
 
