@@ -1532,6 +1532,7 @@ pub struct SettingsPatch {
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
     pub trace_engine: Option<bool>,
+    pub trace_bubble: Option<bool>,
     pub capturable: Option<bool>,
     #[serde(default)]
     pub use_accessibility: Option<bool>,
@@ -1810,6 +1811,9 @@ impl Settings {
             self.proactive_wakes = value;
         }
         if let Some(value) = patch.do_not_disturb {
+            if value != self.do_not_disturb && crate::dev_flags::TRACE_BUBBLE.is_on() {
+                eprintln!("settings: dnd={}", if value { "on" } else { "off" });
+            }
             self.do_not_disturb = value;
         }
         if let Some(value) = patch.sound {
@@ -1893,6 +1897,9 @@ impl Settings {
         }
         if let Some(value) = patch.trace_engine {
             self.trace_engine = value;
+        }
+        if let Some(value) = patch.trace_bubble {
+            self.trace_bubble = value;
         }
         if let Some(value) = patch.completer.director_blank {
             self.director_blank = value;
@@ -2069,6 +2076,7 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
+    pub trace_bubble: bool,
     /// Blank-AI mode: built-in prompt layers emptied, Instance Prompt kept
     /// (#657, #680).
     pub director_blank: bool,
@@ -2143,6 +2151,7 @@ impl Default for Settings {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
+            trace_bubble: false,
             director_blank: false,
             capturable: true,
             use_accessibility: false,
@@ -2409,6 +2418,7 @@ mod tests {
             trace_hittest: true,
             trace_director: true,
             trace_engine: true,
+            trace_bubble: true,
             director_blank: true,
             capturable: true,
             chat_ui: "minimal".into(),
@@ -2824,6 +2834,7 @@ mod tests {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
+            trace_bubble: false,
             director_blank: false,
             capturable: true,
             chat_ui: "minimal".into(),

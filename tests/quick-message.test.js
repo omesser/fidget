@@ -11,7 +11,9 @@ import {
   DRAG_DISMISS_PX,
   applyQuickMessageGate,
   createQuickMessage,
+  createDraftReporter,
   crossedDrag,
+  keepOnDrag,
   placeQuickMessage,
   quickMessageConnects,
   quickMessageMirror,
@@ -144,19 +146,29 @@ test("leaving after the pill is up does not dismiss it immediately", () => {
   assert.equal(qm.typing, true);
 });
 
+test("an empty pill holding the caret stays until the caret leaves", () => {
+  const { qm, advance } = shown();
+
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(AUTO_HIDE_DELAY_MS * 2);
+  assert.equal(qm.visible, true, "someone is about to type");
+
+  qm.blur();
+  advance(AUTO_HIDE_DELAY_MS);
+  assert.equal(qm.visible, false);
+});
+
 test("pill auto-hides after 3s if empty and pointer leaves both sprite and pill", () => {
   const { qm, advance } = shown();
 
-  // No text entered, leave sprite
+  qm.blur();
   qm.leaveSprite();
-  // Also leave pill
   qm.leavePill();
 
-  // After 2.9s, still visible
   advance(2900);
   assert.equal(qm.visible, true, "pill stays visible before 3s");
 
-  // After 3s total, hides
   advance(100);
   assert.equal(qm.visible, false, "pill auto-hides after 3s continuous away");
 });
@@ -178,15 +190,13 @@ test("auto-hide cancels if pointer re-enters sprite before 3s", () => {
 test("re-entering sprite resets auto-hide timer to fresh 3s on next leave", () => {
   const { qm, advance } = shown();
 
-  // Leave both, wait 2s (partial)
+  qm.blur();
   qm.leaveSprite();
   qm.leavePill();
   advance(2000);
 
-  // Re-enter sprite (cancels timer)
   qm.enterSprite();
 
-  // Leave again - should start fresh 3s, not continue from 2s
   qm.leaveSprite();
   advance(2900);
   assert.equal(qm.visible, true, "pill still visible at 2.9s of fresh timer");
@@ -226,6 +236,7 @@ test("auto-hide treats whitespace-only as empty", () => {
   const { qm, advance } = shown();
 
   qm.setText("   ");
+  qm.blur();
   qm.leaveSprite();
   qm.leavePill();
 
@@ -284,8 +295,8 @@ test("blurring the field keeps the pill and releases the typing hold", () => {
   assert.equal(qm.typing, true);
 });
 
-test("click outside, a pet drag, and a double-click dismiss, draft included", () => {
-  for (const dismiss of ["outside", "drag", "summon"]) {
+test("click outside and a double-click dismiss, draft included", () => {
+  for (const dismiss of ["outside", "summon"]) {
     const { qm } = shown();
     qm.setText("hey");
     qm[dismiss]();
@@ -293,6 +304,21 @@ test("click outside, a pet drag, and a double-click dismiss, draft included", ()
     assert.equal(qm.text, "", dismiss);
     assert.equal(qm.typing, false, dismiss);
   }
+
+});
+
+test("a pet drag closes an empty pill, caret or not, and keeps a typed one", () => {
+  const empty = shown().qm;
+  assert.equal(empty.typing, true, "a fresh pill holds the caret");
+  empty.drag();
+  assert.equal(empty.visible, false);
+  assert.equal(empty.draft, null, "a closed pill reports no draft");
+
+  const typed = shown().qm;
+  typed.setText("hey");
+  typed.drag();
+  assert.equal(typed.visible, true);
+  assert.deepEqual(typed.draft, { text: "hey", focused: true }, "the draft rides on");
 });
 
 test("a poke still reaches the pet and does not dismiss the composer", () => {
@@ -313,6 +339,15 @@ test("a drag is a few pixels of movement, not the click itself", () => {
   assert.equal(crossedDrag(DRAG_DISMISS_PX - 1, 0), false);
   assert.equal(crossedDrag(DRAG_DISMISS_PX, 0), true);
   assert.equal(crossedDrag(0, DRAG_DISMISS_PX), true);
+});
+
+test("a drag keeps the pill only for text worth keeping", () => {
+  const rows = [
+    ["", false, "an empty pill closes"],
+    ["   ", false, "whitespace is empty, the same as Send sees it"],
+    ["hey", true, "typed text follows the Character"],
+  ];
+  for (const [text, keep, why] of rows) assert.equal(keepOnDrag(text), keep, why);
 });
 
 test("drag cancels hover timer and dismisses pill", () => {
@@ -407,6 +442,7 @@ test("Chat opening keeps a draft in an open pill", () => {
 
 test("a bubble takes an idle pill the pointer has left", () => {
   const { qm, advance } = shown();
+  qm.blur();
   qm.leaveSprite();
   assert.equal(qm.visible, true, "auto-hide has not run yet");
 
@@ -422,6 +458,7 @@ test("a bubble waits for the pointer to leave the sprite and the pill", () => {
   advance(10_000);
   assert.equal(qm.visible, true, "a hovered pill stays over the bubble");
 
+  qm.blur();
   qm.leaveSprite();
   advance(BUBBLE_YIELD_MS - 1);
   qm.enterPill();
@@ -657,6 +694,37 @@ test("the composer sits above Speech when the two would share a box", () => {
   assert.equal(stacked.y, 300, "one gap above the Speech bubble, not on top of it");
 });
 
+test("inverted flag matches final vertical position relative to sprite", () => {
+  const sprite = { x: 100, y: 50, width: 64, height: 64 };
+  const size = { width: 200, height: 40 };
+  const bounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const above = placeQuickMessage(sprite, size, bounds, null);
+  assert.equal(above.y, 0, "pill sits 10px above sprite top");
+  assert.equal(above.inverted, false, "inverted is false when pill is above sprite center");
+
+  const nearTop = { x: 100, y: 30, width: 64, height: 64 };
+  const flipped = placeQuickMessage(nearTop, size, bounds, null);
+  assert.equal(flipped.y, 104, "pill flips below sprite when it would cover it");
+  assert.equal(flipped.inverted, true, "inverted is true when pill is below sprite center");
+
+  const speech = { x: 32, y: 104, width: 200, height: 80 };
+  const pushed = placeQuickMessage(nearTop, size, bounds, speech);
+  assert.ok(pushed.y < 104, "pill moves above speech to avoid collision");
+  assert.equal(pushed.inverted, false, "inverted reflects final position above sprite");
+});
+
+test("the pill stays whole on its display, like Speech, when the sprite reaches an edge", () => {
+  const size = { width: 200, height: 40 };
+  const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
+
+  const pastLeft = placeQuickMessage({ x: -50, y: 400, width: 64, height: 64 }, size, bounds, null);
+  assert.equal(pastLeft.x, 0, "slides in from the seam rather than hanging off it");
+
+  const pastRight = placeQuickMessage({ x: 1900, y: 400, width: 64, height: 64 }, size, bounds, null);
+  assert.equal(pastRight.x, 1720, "and in from the right edge");
+});
+
 test("without a clickable link the pill still names the fix as text", () => {
   const gate = gateDouble();
   gate.link = null;
@@ -664,4 +732,178 @@ test("without a clickable link the pill still names the fix as text", () => {
   assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
   assert.equal(gate.field.disabled, true);
   assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
+});
+
+function shellDouble() {
+  const told = [];
+  const invoke = (command, args) => {
+    told.push([command, args]);
+    return Promise.resolve();
+  };
+  return { told, invoke };
+}
+
+test("each Instance's closed pill reaches the Shell, even when two close together", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+
+  drafts.report("a", { text: "hi", focused: true });
+  drafts.report("b", { text: "yo", focused: false });
+  drafts.report("a", null);
+  drafts.report("b", null);
+  drafts.report("b", null);
+
+  assert.deepEqual(
+    told.slice(-2),
+    [
+      ["overlay_report_qm_draft", { instance: "a", payload: null }],
+      ["overlay_report_qm_draft", { instance: "b", payload: null }],
+    ],
+    "both closes are told, so neither Character is left holding its walk",
+  );
+  assert.equal(told.length, 4, "an unchanged draft is not told again");
+});
+
+test("a removed Instance's draft is cleared, so its walk is not held", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+
+  drafts.report("gone", { text: "half", focused: true });
+  drafts.forget("gone");
+
+  assert.deepEqual(told.at(-1), ["overlay_report_qm_draft", { instance: "gone", payload: null }]);
+});
+
+test("an overlay that gets the bubble back tells the Shell its draft, even one told before", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+  const typed = { text: "again", focused: true };
+
+  drafts.report("a", typed);
+  // Another overlay owned the bubble since, and its reports replaced this one.
+  drafts.release("a");
+  drafts.report("a", typed);
+
+  assert.equal(told.length, 2, "the Shell holds whatever the last owner said, not this");
+  assert.deepEqual(told.at(-1), ["overlay_report_qm_draft", { instance: "a", payload: typed }]);
+});
+
+// `setOwner` is what each placement says: whether this overlay owns the
+// Instance's bubble, and the draft the Shell carries to that owner.
+const DRAFT = { text: "half a thought", focused: true };
+
+test("the overlay that gains the bubble opens the pill with the carried draft", () => {
+  const { qm } = harness();
+  qm.setOwner(false, null);
+  qm.setOwner(true, DRAFT);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "half a thought", "the typed text is not lost on the crossing");
+  assert.equal(qm.typing, true);
+  assert.equal(qm.takeFocus(), true, "it had the caret, so it takes it back");
+});
+
+test("a fresh overlay's first frame as owner counts as gaining it", () => {
+  const { qm } = harness();
+  qm.setOwner(true, { text: "half", focused: false });
+  assert.equal(qm.text, "half");
+  assert.equal(qm.typing, false, "no caret it did not have");
+  assert.equal(qm.takeFocus(), false, "so it does not take focus");
+});
+
+test("a frame that keeps the owner leaves what is being typed alone", () => {
+  const { qm } = harness();
+  qm.setOwner(true, DRAFT);
+  qm.takeFocus();
+  qm.setText("half a thought, and more");
+
+  qm.setOwner(true, DRAFT);
+  assert.equal(qm.text, "half a thought, and more", "a draft one report behind is not news");
+  assert.equal(qm.takeFocus(), false, "nor a reason to move the caret");
+});
+
+test("a frame still carrying a sent, dismissed, or dragged-away draft does not reopen it", () => {
+  const close = {
+    send(qm) {
+      qm.keydown("Enter");
+    },
+    dismiss(qm) {
+      qm.dismiss();
+    },
+    drag(qm) {
+      qm.setText("");
+      qm.drag();
+    },
+  };
+  for (const [how, act] of Object.entries(close)) {
+    const { qm } = harness();
+    qm.setOwner(true, DRAFT);
+    act(qm);
+    assert.equal(qm.visible, false, how);
+    qm.setOwner(true, DRAFT);
+    assert.equal(qm.visible, false, `${how}: the Shell has not heard the close yet`);
+  }
+});
+
+test("the overlay that loses the bubble hides its pill and lets the draft go", () => {
+  const { qm, changes } = harness();
+  qm.setOwner(true, DRAFT);
+  const before = changes.length;
+
+  qm.setOwner(false, null);
+  assert.equal(qm.visible, false);
+  assert.equal(qm.text, "", "the Shell holds the draft now, not this overlay");
+  assert.ok(changes.length > before, "the overlay hears the pill go");
+  assert.equal(qm.owner, false, "and knows not to report it closed");
+});
+
+// Two overlays and the Shell's keyed slot, wired the way main.js wires them.
+function twoOverlays() {
+  const slot = new Map();
+  const invoke = (command, { instance, payload }) => {
+    if (payload) slot.set(instance, payload);
+    else slot.delete(instance);
+    return Promise.resolve();
+  };
+  const overlay = () => {
+    const harnessed = harness();
+    const drafts = createDraftReporter(invoke);
+    return { ...harnessed, sync: () => drafts.sync("a", harnessed.qm) };
+  };
+  return { slot, left: overlay(), right: overlay() };
+}
+
+test("a pill sent as the bubble moves on stays sent on the new owner", () => {
+  const { slot, left, right } = twoOverlays();
+  left.qm.setOwner(true, null);
+  right.qm.setOwner(false, null);
+  left.qm.enterSprite();
+  left.advance(HOVER_DELAY_MS);
+  left.qm.setText("half a thought");
+  left.sync();
+
+  // The Shell reads the slot for this tick's placement, then the send lands.
+  const carried = slot.get("a");
+  left.qm.keydown("Enter");
+  left.sync();
+  right.qm.setOwner(true, carried);
+  right.sync();
+  left.qm.setOwner(false, null);
+  left.sync();
+
+  right.qm.setOwner(true, slot.get("a") ?? null);
+  right.sync();
+  assert.equal(right.qm.visible, false, "the sent line does not come back");
+  assert.equal(slot.has("a"), false, "and nothing holds the walk");
+});
+
+test("a carried draft is this overlay's to report once it is typed into", () => {
+  const { slot, right } = twoOverlays();
+  right.qm.setOwner(true, { text: "half", focused: true });
+  right.sync();
+  right.qm.setText("half a thought");
+  right.sync();
+  assert.deepEqual(slot.get("a"), { text: "half a thought", focused: true });
+
+  right.qm.setOwner(true, slot.get("a"));
+  assert.equal(right.qm.visible, true, "the line being typed stays");
 });

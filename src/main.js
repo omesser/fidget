@@ -12,11 +12,13 @@ import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
+  createDraftReporter,
   createQuickMessage,
   crossedDrag,
   placeQuickMessage,
   quickMessageMirror,
 } from "./quick-message.js";
+import { computeBubblePaintedRect, createPaintedReporter } from "./painted-rects.js";
 
 const stage = document.getElementById("stage");
 
@@ -97,6 +99,7 @@ function createView(id) {
   stage.append(bubble, sprite, cueLayer);
 
   const view = {
+    id,
     sprite,
     bubble,
     bubbleContent,
@@ -106,6 +109,10 @@ function createView(id) {
     // not drawn. `reportHotspots` sends the set across; see there for why the
     // renderer is the one who has to.
     hotspot: null,
+    // Where the bubble is, in overlay coordinates: [x, y, width, height] as integers,
+    // or null when not visible. Windows unions this into the input region so the
+    // bubble body isn't clipped away by SetWindowRgn.
+    paintedRect: null,
     // The two most recent placements and when each arrived. Drawing one sample
     // behind, interpolated, buys continuous motion (see interpolate.js); the
     // hit-test uses the unlagged position, so it leads the screen by one sample.
@@ -158,6 +165,8 @@ function createView(id) {
     bubble.classList.remove("visible");
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
+    view.paintedRect = null;
+    reportAllPaintedRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
@@ -180,6 +189,7 @@ function createView(id) {
       // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
+      traceBubble(`showSpeech instance=${id}`);
     },
     // The question waiting in Chat (ADR-0016). The last word is the control;
     // where the overlay cannot take that click it is plain text, and Summon
@@ -192,16 +202,22 @@ function createView(id) {
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
+      traceBubble(`showAsk instance=${id}`);
     },
     hideSpeech() {
       hide();
+      traceBubble(`hideSpeech instance=${id}`);
     },
     showThinking() {
       // The same box in the other mode. main.css hides the control outside
       // speech, so the attribute left over from the last line draws nothing.
       show("thinking");
+      traceBubble(`showThinking instance=${id}`);
     },
-    hideThinking: hide,
+    hideThinking() {
+      hide();
+      traceBubble(`hideThinking instance=${id}`);
+    },
   });
 
   attachQuickMessage(view, id);
@@ -227,10 +243,19 @@ function positionBubble(view, spriteRect, displayBounds) {
         view.more.offsetHeight,
       ]
     : null;
+
+  // Painted rect for Windows input region: the bubble body, not the hotspot control.
+  view.paintedRect = computeBubblePaintedRect(view.bubble, pos);
+  reportAllPaintedRects();
 }
 
 function speechRect(view) {
   if (!view.bubble.classList.contains("visible")) return null;
+  // Only a line to read, and not one fading out, is worth stepping the pill
+  // clear of; dots or a fading box would push it up for nothing.
+  if (view.bubble.dataset.mode !== "speech") return null;
+  const opacity = parseFloat(view.bubble.style.opacity);
+  if (opacity < 1 && !isNaN(opacity)) return null;
   return {
     x: parseFloat(view.bubble.style.left) || 0,
     y: parseFloat(view.bubble.style.top) || 0,
@@ -251,8 +276,18 @@ function positionQuick(view, spriteRect) {
       : null;
 }
 
+// FIDGET_TRACE_BUBBLE: the Shell prints it to stderr only when the flag is on.
+function traceBubble(message) {
+  const label = window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label;
+  window.__TAURI__.core.invoke("overlay_trace_bubble", { label, message }).catch(() => {});
+}
+
 let reportedComposing = null;
-let reportedQmVisible = null;
+const drafts = createDraftReporter(window.__TAURI__.core.invoke);
+
+function reportDraft(view) {
+  drafts.sync(view.id, view.quickMachine);
+}
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill
 // stays frozen until one says chat can answer.
@@ -301,21 +336,6 @@ function reportComposing() {
   });
 }
 
-function reportQmVisible() {
-  let id = "";
-  for (const [viewId, view] of views) {
-    if (view.quickMachine.visible) {
-      id = viewId;
-      break;
-    }
-  }
-  if (id === reportedQmVisible) return;
-  reportedQmVisible = id;
-  window.__TAURI__.core.invoke("overlay_qm_visible", { instance: id }).catch((err) => {
-    console.error("overlay_qm_visible", err);
-  });
-}
-
 function syncQuick(view) {
   const visible = view.quickMachine.visible;
   view.quick.classList.toggle("visible", visible);
@@ -334,9 +354,14 @@ function syncQuick(view) {
     view.quickField.placeholder,
     view.quickMachine.available,
   );
-  if (view.quickMachine.takeFocus()) view.quickField.focus();
+  if (view.quickMachine.takeFocus()) {
+    window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+      console.error("overlay_request_focus", err);
+    });
+    view.quickField.focus();
+  }
   reportComposing();
-  reportQmVisible();
+  reportDraft(view);
   if (!visible || !view.latest) {
     view.quickHotspot = null;
     reportHotspots();
@@ -439,6 +464,7 @@ function attachQuickMessage(view, id) {
       syncQuick(view);
     },
     send(text) {
+      // The dots show on send, not after the opening check comes back.
       view.bubbles.aiTurnStarted();
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
@@ -536,7 +562,7 @@ function removeView(id) {
   // After the view is gone, so a scan cannot still name it. dispose already
   // dropped the caret; this is the report that clears a stale id.
   reportComposing();
-  reportQmVisible();
+  drafts.forget(id);
 }
 
 function drawView(view, now) {
@@ -564,6 +590,8 @@ function drawView(view, now) {
     // A control nobody can see is not one to click, and a fading bubble is
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
+    view.paintedRect = null;
+    reportAllPaintedRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
@@ -629,6 +657,12 @@ let armed = false;
 // at a seam. Eight costs nothing: a sprite that close to the edge straddles it
 // and arms both overlays anyway.
 const SEAM_MARGIN = 8;
+
+const reportPainted = createPaintedReporter(window.__TAURI__.core.invoke);
+
+function reportAllPaintedRects() {
+  reportPainted(views);
+}
 
 function needsFrame(view) {
   return onDisplay(view.previous, view.latest, currentDisplayBounds(), SEAM_MARGIN);
@@ -738,8 +772,9 @@ async function start() {
         // One overlay owns each Instance's bubble (`bubble_owner`), and the
         // Shell sends the line, the indicator and the cue to that one only.
         // Speech hides on its reading timer, not on the next frame, so the
-        // overlay that just lost ownership drops its bubble once, on the change.
-        if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideAllNow();
+        // overlay that just lost ownership drops its bubble once, on the change,
+        // keeping the turn so a reply landing mid-crossing still shows.
+        if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideButKeepTurn();
 
         const placement = {
           ...sprite,
@@ -765,6 +800,14 @@ async function start() {
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
         view.quickMachine.setChatOpen(sprite.chatting);
+        // The pill goes where the bubble goes, carrying the Shell's draft.
+        const owned = view.quickMachine.owner;
+        view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
+        if (!owned && view.quickMachine.owner && view.quickMachine.visible) {
+          // A length, not the text: a trace is no place for what was typed.
+          const chars = view.quickMachine.text.length;
+          traceBubble(`pill follows instance=${sprite.id} chars=${chars} focused=${Boolean(sprite.qm?.focused)}`);
+        }
         notePointerLeft(view);
 
         if (changed && needsFrame(view)) arm();
@@ -872,6 +915,8 @@ async function start() {
     for (const view of views.values()) view.quickMachine.summon();
   });
   window.addEventListener("blur", () => {
+    // A pet drag can take focus from the overlay. The drag decides the pill.
+    if (gestureActive) return;
     for (const view of views.values()) view.quickMachine.outside();
   });
   document.addEventListener("pointerup", (event) => {

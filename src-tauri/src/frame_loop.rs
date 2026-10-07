@@ -13,6 +13,7 @@ use fidget_core::input::press_target;
 #[cfg(not(unix))]
 use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
+use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
@@ -64,11 +65,11 @@ fn cursor_near_sprite(cursor: Option<(f64, f64)>, sprites: &[(i32, i32, i32, i32
 #[cfg(any(test, all(unix, not(target_os = "macos"))))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
-/// One Windows overlay's last applied region: the sprite's swept ink, then the
-/// hotspots. The region is what gets compared, so a trail that settles after a
-/// walk still rebuilds it.
+/// One Windows overlay's last applied region: the sprite's swept ink, the
+/// hotspots, and the painted bubble/thinking rects. The region is what gets
+/// compared, so a trail that settles after a walk still rebuilds it.
 #[cfg(not(unix))]
-type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>);
+type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg(any(test, not(unix)))]
@@ -76,6 +77,34 @@ enum OverlayAction {
     ApplyMask,
     ToggleOnly,
     Nothing,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[cfg(any(test, not(unix)))]
+enum RegionAction {
+    ApplyMask,
+    ToggleClickThrough,
+    Nothing,
+}
+
+/// `region_plan` says whether there is anything to keep; an overlay with nothing
+/// passes clicks, and one already doing so needs no call.
+#[cfg(any(test, not(unix)))]
+fn decide_region_action(
+    sprite: &[[i32; 4]],
+    hotspots: &[[i32; 4]],
+    painted: &[[i32; 4]],
+    ignore: bool,
+) -> RegionAction {
+    use fidget_core::overlay_region::{region_plan, RegionPlan};
+
+    if region_plan(sprite, hotspots, painted) != RegionPlan::Clear {
+        RegionAction::ApplyMask
+    } else if ignore {
+        RegionAction::Nothing
+    } else {
+        RegionAction::ToggleClickThrough
+    }
 }
 
 #[cfg(any(test, not(unix)))]
@@ -235,7 +264,10 @@ pub(crate) fn run_frame_loop(
             ]));
         #[cfg(not(unix))]
         let last_mask: Arc<Mutex<Vec<RegionParams>>> =
-            Arc::new(Mutex::new(vec![(Vec::new(), Vec::new()); covered.len()]));
+            Arc::new(Mutex::new(vec![
+                (Vec::new(), Vec::new(), Vec::new());
+                covered.len()
+            ]));
         // Each Instance's draw trail, for a Windows region that clips drawing.
         #[cfg(not(unix))]
         let mut trails: std::collections::HashMap<InstanceId, DrawTrail> =
@@ -265,6 +297,16 @@ pub(crate) fn run_frame_loop(
         // Counted apart from `frame:` lines, so the tick rate can be read with
         // FIDGET_TRACE_FRAMES off and its per-tick print ruled out as the cause.
         let counting_ticks = crate::tracing_cadence();
+
+        // Log DND state at startup when TRACE_BUBBLE is on.
+        if dev_flags::TRACE_BUBBLE.is_on() {
+            let dnd = settings
+                .lock()
+                .ok()
+                .map(|s| s.do_not_disturb)
+                .unwrap_or(false);
+            eprintln!("startup: dnd={}", if dnd { "on" } else { "off" });
+        }
         let mut counted_ticks: u32 = 0;
         let mut counted_since = Instant::now();
         let mut last_tick = Instant::now();
@@ -1629,10 +1671,8 @@ pub(crate) fn run_frame_loop(
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
-                let speech_visible = live.speech.visible_at(std::time::Instant::now());
-                let qm_visible =
-                    platform::overlay_qm_visible().as_deref() == Some(live.id.as_str());
-                world.locomotion_frozen = speech_visible || qm_visible;
+                live.qm = platform::qm_draft(&live.id);
+                world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
@@ -2079,6 +2119,7 @@ pub(crate) fn run_frame_loop(
                     chatting: chat_is_up(&app, &live.id),
                     cue: frame.cue,
                     owner,
+                    qm: live.qm.clone(),
                     mask: drawn.mask.clone(),
                 });
             }
@@ -2427,17 +2468,34 @@ pub(crate) fn run_frame_loop(
                                 && local.y < display.height as i32
                         });
 
-                        if let Some(instance) = sprite_on_overlay {
+                        let mask_params = if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
                             let offset = (local.x - instance.sprite.x, local.y - instance.sprite.y);
-                            let mask_params = (
+                            (
                                 trails
                                     .get(&instance.id)
                                     .map(|trail| trail.clip_rects(offset))
                                     .unwrap_or_default(),
                                 platform::overlay_hotspots_for(&label),
-                            );
+                                platform::overlay_painted_for(&label),
+                            )
+                        } else {
+                            // No sprite, but check for painted rects (bubble straddling seam).
+                            (
+                                Vec::new(),
+                                platform::overlay_hotspots_for(&label),
+                                platform::overlay_painted_for(&label),
+                            )
+                        };
 
+                        let region_action = decide_region_action(
+                            &mask_params.0,
+                            &mask_params.1,
+                            &mask_params.2,
+                            ignore,
+                        );
+
+                        if region_action == RegionAction::ApplyMask {
                             let action = decide_overlay_action(
                                 last_mask.lock().unwrap().get(index),
                                 &mask_params,
@@ -2478,20 +2536,21 @@ pub(crate) fn run_frame_loop(
                                 let _ = app.run_on_main_thread(move || {
                                     mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        let (art, hotspots) = &mask_params_clone;
+                                        let (art, hotspots, painted) = &mask_params_clone;
                                         match platform::update_input_region(
                                             &window,
                                             Some(art.as_slice()),
                                             hotspots,
+                                            painted,
                                             click_through,
                                         ) {
-                                            Ok(()) => {
+                                            Ok(passes_clicks) => {
                                                 mask_applied_clone.lock().unwrap()[overlay_index] =
                                                     true;
                                                 last_mask_clone.lock().unwrap()[overlay_index] =
                                                     mask_params_clone;
                                                 applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                    Some(click_through);
+                                                    Some(passes_clicks);
                                                 if trace {
                                                     eprintln!(
                                                         "overlay: {label_clone} input mask applied"
@@ -2552,7 +2611,9 @@ pub(crate) fn run_frame_loop(
                                 flipped = true;
                                 ignoring[index] = confirmed_ignoring;
                             }
-                        } else {
+                        } else if region_action == RegionAction::ToggleClickThrough {
+                            // Nothing to draw: pass clicks through, and forget the last region
+                            // so whatever comes next rebuilds it.
                             let confirmed_ignoring = applied_ignoring
                                 .lock()
                                 .unwrap()
@@ -2573,6 +2634,7 @@ pub(crate) fn run_frame_loop(
                                 let label_clone = label.clone();
                                 let applied_ignoring_clone = Arc::clone(&applied_ignoring);
                                 let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
+                                let last_mask_clone = Arc::clone(&last_mask);
                                 let overlay_index = index;
 
                                 let _ = app.run_on_main_thread(move || {
@@ -2583,11 +2645,25 @@ pub(crate) fn run_frame_loop(
                                         {
                                             applied_ignoring_clone.lock().unwrap()[overlay_index] =
                                                 Some(true);
+                                            last_mask_clone.lock().unwrap()[overlay_index] =
+                                                (Vec::new(), Vec::new(), Vec::new());
                                         }
                                     }
                                 });
                             }
 
+                            if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
+                                flipped = true;
+                                ignoring[index] = Some(true);
+                            }
+                        } else {
+                            // Already passing clicks: only catch up with a toggle that landed.
+                            let confirmed_ignoring = applied_ignoring
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(None);
                             if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                                 flipped = true;
                                 ignoring[index] = Some(true);
@@ -3150,6 +3226,27 @@ mod tests {
         assert_eq!(
             decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), true),
             OverlayAction::Nothing
+        );
+    }
+
+    /// Whether there is a region at all is `region_plan`'s call (core table);
+    /// this only adds what an empty overlay still has to do about clicks.
+    #[test]
+    fn an_empty_overlay_passes_clicks_once() {
+        let bubble = [[50, 60, 200, 80]];
+        assert_eq!(
+            decide_region_action(&[], &[], &bubble, true),
+            RegionAction::ApplyMask,
+            "a bubble alone keeps a region, even on a click-through overlay"
+        );
+        assert_eq!(
+            decide_region_action(&[], &[], &[], false),
+            RegionAction::ToggleClickThrough
+        );
+        assert_eq!(
+            decide_region_action(&[], &[], &[], true),
+            RegionAction::Nothing,
+            "already passing clicks"
         );
     }
 

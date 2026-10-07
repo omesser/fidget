@@ -313,6 +313,8 @@ struct InstanceState {
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
+    /// The open quick-message draft, refreshed from the overlay's report each tick.
+    qm: Option<fidget_core::quick_message::QmDraft>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -448,6 +450,9 @@ struct SpritePlacement<'a> {
     /// sound by. `None` on every overlay but the bubble owner's: every overlay
     /// draws the art, so a cue from all of them is one sound per display. #277
     cue: Option<&'static str>,
+    /// The open quick-message draft. `None` off the bubble owner, so exactly one
+    /// overlay draws the pill and the text follows the Instance across a seam.
+    qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
 impl<'a> SpritePlacement<'a> {
@@ -477,6 +482,7 @@ impl<'a> SpritePlacement<'a> {
             chatting: instance.chatting,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
+            qm: instance.qm.as_ref().filter(|_| bubble),
         }
     }
 }
@@ -554,6 +560,8 @@ struct Placed {
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,
+    /// The open quick-message draft, carried to the bubble owner like `dialogue`.
+    qm: Option<fidget_core::quick_message::QmDraft>,
     #[allow(dead_code)]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -1798,11 +1806,11 @@ fn overlay_composing(instance: String) {
     platform::set_overlay_composing(Some(instance));
 }
 
-/// The overlay's quick message became visible or hidden. Empty means none.
-/// Read each tick, so movement freezes while the pill is up.
+/// The owning overlay's draft for one Instance, on every change. `None` is a
+/// closed pill: sent, dismissed, dragged away empty, or the Instance gone.
 #[tauri::command]
-fn overlay_qm_visible(instance: String) {
-    platform::set_overlay_qm_visible(Some(instance));
+fn overlay_report_qm_draft(instance: String, payload: Option<fidget_core::quick_message::QmDraft>) {
+    platform::set_qm_draft(instance, payload);
 }
 
 /// Same witness for the right button. Without it a right-click on the sprite
@@ -1854,6 +1862,27 @@ fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
     platform::set_overlay_hotspots(window.label(), rects);
 }
 
+/// Painted UI rects (bubble, thinking) this overlay draws. Windows unions these
+/// into the input region so SetWindowRgn doesn't clip the bubble away. Not clickable.
+#[tauri::command]
+fn overlay_painted_rects(window: tauri::Window, rects: Vec<[i32; 4]>) {
+    platform::set_overlay_painted(window.label(), rects);
+}
+
+/// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
+#[tauri::command]
+fn overlay_trace_bubble(app: tauri::AppHandle, label: String, message: String) {
+    if dev_flags::TRACE_BUBBLE.is_on() {
+        let dnd = do_not_disturb(&app);
+        eprintln!(
+            "overlay {}: {} dnd={}",
+            label,
+            message,
+            if dnd { "on" } else { "off" }
+        );
+    }
+}
+
 /// Chat window title: Instance name, or the id when the roster holds no row.
 /// The id is a real fallback: a Character switch can drop the row between
 /// the click and this lookup, and a window titled by id is better than none.
@@ -1879,6 +1908,60 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
         })
         .unwrap_or_else(|| id.clone());
     open_chat(&app, &id, title, None);
+}
+
+/// The pill reopening on a new owner takes the caret. Windows refuses
+/// SetForegroundWindow to a background thread, so the overlay borrows the
+/// foreground thread's input for the call.
+#[tauri::command]
+fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+        };
+
+        #[link(name = "user32")]
+        extern "system" {
+            fn AttachThreadInput(idattach: u32, idattachto: u32, fattach: i32) -> i32;
+        }
+
+        let raw_handle = window
+            .window_handle()
+            .map_err(|e| format!("Window handle not available: {e}"))?;
+        if let RawWindowHandle::Win32(win32_handle) = raw_handle.as_raw() {
+            let hwnd = win32_handle.hwnd.get() as HWND;
+            // SAFETY: hwnd is this live overlay's window; the thread ids come from
+            // Win32 for live windows, and any attach is undone before returning.
+            unsafe {
+                let foreground = GetForegroundWindow();
+                let mut attached = None;
+                if !foreground.is_null() {
+                    let foreground_thread =
+                        GetWindowThreadProcessId(foreground, std::ptr::null_mut());
+                    let overlay_thread = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
+
+                    if foreground_thread != overlay_thread
+                        && AttachThreadInput(overlay_thread, foreground_thread, 1) != 0
+                    {
+                        attached = Some((overlay_thread, foreground_thread));
+                    }
+                }
+                SetForegroundWindow(hwnd);
+                if let Some((overlay_thread, foreground_thread)) = attached {
+                    AttachThreadInput(overlay_thread, foreground_thread, 0);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window.set_focus().map_err(|e| e.to_string())
+    }
 }
 
 /// Put the overlay over one display. Size before move: growing a window
@@ -3534,6 +3617,7 @@ fn spawn_live(
         spoken: None,
         speech: SpeechBubble::default(),
         drawn_last: None,
+        qm: None,
         traced_last: None,
         status_last: None,
         status_wake_ms: None,
@@ -3813,6 +3897,7 @@ fn spawn_instances(
             spoken: None,
             speech: SpeechBubble::default(),
             drawn_last: None,
+            qm: None,
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
@@ -4253,12 +4338,15 @@ fn main() {
             overlay_primary,
             overlay_secondary,
             overlay_composing,
-            overlay_qm_visible,
+            overlay_report_qm_draft,
             overlay_hotspots,
+            overlay_painted_rects,
+            overlay_trace_bubble,
             overlay_hit_tests_hotspots,
             overlay_traces_cadence,
             overlay_cadence,
             overlay_open_chat,
+            overlay_request_focus,
             chat_opening,
             chat_send,
             chat_prompt,
@@ -5857,6 +5945,7 @@ mod tests {
             chatting: true,
             cue: Some(Cue::Poke),
             owner: Some(1),
+            qm: None,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
@@ -5891,6 +5980,53 @@ mod tests {
             (owner.x, elsewhere.x),
             (80, 2000),
             "each in its own overlay's coordinates, so the halves meet on the seam"
+        );
+    }
+
+    /// A typed draft is never lost on a crossing: it rides with the Instance,
+    /// and only the overlay that owns the bubble is told it, like the line.
+    #[test]
+    fn only_the_bubble_owner_is_told_the_draft() {
+        let left = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let right = Rect { x: 1920.0, ..left };
+        let draft = fidget_core::quick_message::QmDraft {
+            text: "half a thought".to_string(),
+            focused: true,
+        };
+        let placed = Placed {
+            id: "one".to_string(),
+            character: "bmo".to_string(),
+            sprite: SpriteRect {
+                x: 2000,
+                y: 400,
+                scale: 2,
+            },
+            width: 128,
+            height: 128,
+            animation: "idle".to_string(),
+            frame_index: 0,
+            mirror: 1,
+            dialogue: None,
+            thinking: false,
+            asking: false,
+            chatting: false,
+            cue: None,
+            owner: Some(1),
+            qm: Some(draft.clone()),
+            mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
+                .expect("the 2x2 fixture decodes"),
+        };
+
+        assert_eq!(SpritePlacement::new(&placed, right, 1).qm, Some(&draft));
+        assert_eq!(
+            SpritePlacement::new(&placed, left, 0).qm,
+            None,
+            "one pill, on the display that owns the bubble"
         );
     }
 

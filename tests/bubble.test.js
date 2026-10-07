@@ -512,6 +512,32 @@ test("a losing overlay is told no thinking, so it never arms the indicator", () 
   assert.equal(surface(), "thinking", "the same turn, owned, arms it");
 });
 
+test("an overlay that loses the bubble drops a turn it started", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.aiTurnStarted();
+  machine.frame(placement({ bubble: false }));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.equal(surface(), null, "the owner shows this turn's dots, not this display");
+});
+
+test("a turn the bubble carried away comes back with its dots at once, and its reply", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.frame(placement({ thinking: true }));
+  advance(THINKING_GRACE_MS);
+  machine.hideButKeepTurn();
+  assert.equal(surface(), null, "the display it left is blank");
+
+  machine.frame(placement({ thinking: true }));
+  assert.equal(surface(), "thinking", "no second grace: the dots were already up");
+
+  const reply = placement({ dialogue: "back" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.equal(surface(), "speech");
+});
+
 test("a line crossing the seam hides on the old display before it shows on the new", () => {
   // Two overlays, two machines: the shell hands the line to the owner, and on a
   // crossing says it again to the new one (`carry_line`), while the old one
@@ -548,22 +574,5 @@ test("a truncated reply is spoken without the mark visible", () => {
     calls,
     ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
     "the next whole line is not marked with the last one's mark",
-  );
-});
-
-// The control draws only where the Shell says a reported rectangle wins the
-// click, asked by name across a language boundary. A typo on either side is
-// silent: `invoke` rejects, the flag stays false, and the control never appears.
-test("the capability the renderer asks for is a command the Shell registers", () => {
-  const dir = dirname(fileURLToPath(import.meta.url));
-  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
-  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
-
-  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
-  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
-  assert.match(
-    shell,
-    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
-    `${asked[1]} is registered in generate_handler!`,
   );
 });

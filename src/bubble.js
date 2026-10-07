@@ -78,6 +78,8 @@ export function createBubbleMachine(io) {
   let minHoldTimer = null;
   let thinkingShown = false;
   let thinking = false;
+  let thinkingPrev = false;
+  let wasInterrupted = false;
   // Latched when a quick-message send starts the AI turn; cleared by dialogue, abandon, or hide-all.
   // Without it, frame() would clear thinking before the Engine raises the flag.
   let aiTurnPending = false;
@@ -143,16 +145,45 @@ export function createBubbleMachine(io) {
         }, ask ? MAX_DURATION_MS : bubbleDuration(dialogue));
       }
 
-      thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending;
-      if (thinking) {
-        if (!thinkingShown && graceTimer === null && !speechShowing) {
-          armGrace();
+      // Clear aiTurnPending when this overlay loses bubble ownership.
+      // Non-owner should not show thinking from a stale aiTurnStarted call.
+      if (placement.bubble === false && aiTurnPending) {
+        aiTurnPending = false;
+        if (thinkingShown) {
+          hideThinkingNow();
         }
-      } else if (graceTimer !== null) {
-        cancel(graceTimer);
-        graceTimer = null;
-      } else if (thinkingShown && minHoldTimer === null) {
-        hideThinkingNow();
+      }
+
+      thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending;
+      const thinkingRose = thinking && !thinkingPrev;
+      thinkingPrev = thinking;
+
+      if (thinking) {
+        if (!thinkingShown && !speechShowing) {
+          // Show immediately when thinking rises after interruption (ownership re-entry)
+          // to prevent flicker from cancelling ellipsis display.
+          if (thinkingRose && wasInterrupted && graceTimer === null) {
+            thinkingShown = true;
+            wasInterrupted = false;
+            io.showThinking();
+            if (minHoldTimer === null) {
+              minHoldTimer = schedule(() => {
+                minHoldTimer = null;
+                if (!thinking) hideThinkingNow();
+              }, THINKING_MIN_HOLD_MS);
+            }
+          } else if (graceTimer === null) {
+            armGrace();
+          }
+        }
+      } else {
+        wasInterrupted = false;
+        if (graceTimer !== null) {
+          cancel(graceTimer);
+          graceTimer = null;
+        } else if (thinkingShown && minHoldTimer === null) {
+          hideThinkingNow();
+        }
       }
     },
 
@@ -203,6 +234,24 @@ export function createBubbleMachine(io) {
       speechShowing = false;
       pendingDialogue = null;
       pendingAsk = false;
+      io.hideSpeech();
+    },
+
+    // Hide speech and thinking but preserve aiTurnPending and pendingDialogue.
+    // Used when bubble ownership changes mid-turn: the old owner hides its
+    // bubbles, but the new owner must still show the incoming dialogue.
+    hideButKeepTurn() {
+      const hadThinking = thinking || graceTimer !== null || aiTurnPending;
+      hideThinkingNow();
+      if (hadThinking) {
+        wasInterrupted = true;
+      }
+      thinkingPrev = false;
+      if (speechTimer !== null) {
+        cancel(speechTimer);
+        speechTimer = null;
+      }
+      speechShowing = false;
       io.hideSpeech();
     },
   };

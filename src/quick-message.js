@@ -61,6 +61,12 @@ export function crossedDrag(dx, dy) {
   return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
 }
 
+// A typed line is never lost to a drag: the pill follows the Character to
+// whichever display owns it. An empty one closes, as any click away does.
+export function keepOnDrag(text) {
+  return text.trim().length > 0;
+}
+
 export function createQuickMessage({ schedule, clear, send, onChange, available = true }) {
   let visible = false;
   let text = "";
@@ -78,6 +84,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let chatOpen = false;
   let bubbleUp = false;
   let ready = available;
+  // Whether this overlay owns the Instance's bubble, as the last placement said.
+  let owned = false;
+  // The open draft came from the Shell and is untouched here, so it stays only
+  // while the Shell still carries it.
+  let carried = false;
 
   function changed() {
     if (!disposed) onChange?.();
@@ -100,11 +111,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   }
 
   function startAutoHideIfNeeded() {
-    if (disposed || !visible || hasText() || overSprite || overPill) return;
+    if (disposed || !visible || hasText() || focused || overSprite || overPill) return;
     if (autoHideTimer !== null) return;
     autoHideTimer = schedule(() => {
       autoHideTimer = null;
-      if (disposed || !visible || hasText() || overSprite || overPill) return;
+      if (disposed || !visible || hasText() || focused || overSprite || overPill) return;
       hide();
     }, bubbleUp ? BUBBLE_YIELD_MS : AUTO_HIDE_DELAY_MS);
   }
@@ -112,6 +123,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   function hide() {
     cancelHover();
     cancelAutoHide();
+    carried = false;
     const was = visible;
     visible = false;
     focused = false;
@@ -161,6 +173,10 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     get typing() {
       return visible && focused && ready;
+    },
+    // What the owning overlay reports, so the text survives a seam crossing.
+    get draft() {
+      return visible ? { text, focused } : null;
     },
     takeFocus() {
       if (!claimFocus) return false;
@@ -223,6 +239,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     setText(value) {
       if (!ready) return;
       text = value;
+      carried = false;
       if (hasText()) {
         cancelAutoHide();
       } else {
@@ -237,6 +254,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     blur() {
       if (!focused) return;
       focused = false;
+      startAutoHideIfNeeded();
       if (visible) changed();
     },
     keydown(key, mods = {}) {
@@ -250,7 +268,9 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       report();
     },
     outside: dismissOpen,
-    drag: dismissOpen,
+    drag() {
+      if (!keepOnDrag(text)) dismissOpen();
+    },
     summon() {
       yielded = true;
       dismissOpen();
@@ -277,6 +297,41 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       text = "";
       hide();
     },
+    get owner() {
+      return owned;
+    },
+    get carried() {
+      return carried;
+    },
+    // Every frame names the owner. Gaining it opens the carried draft. Keeping
+    // it ignores a trailing draft, except that a carried pill goes once the
+    // Shell drops it: the old owner closed it as the bubble moved on.
+    setOwner(next, draft) {
+      if (disposed) return;
+      const gained = next && !owned;
+      owned = next;
+      if (!next) {
+        if (!visible) return;
+        text = "";
+        hide();
+        return;
+      }
+      if (!gained) {
+        if (carried && visible && !draft) {
+          text = "";
+          hide();
+        }
+        return;
+      }
+      if (!draft) return;
+      cancelHover();
+      visible = true;
+      text = ready ? draft.text : "";
+      carried = true;
+      focused = ready && draft.focused;
+      claimFocus = focused;
+      changed();
+    },
     dispose() {
       // Tell the overlay while this Instance is still mapped. The composing
       // report scans views, and a removed one must not leave its caret held.
@@ -288,6 +343,40 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       claimFocus = false;
       if (!disposed) onChange?.();
       disposed = true;
+    },
+  };
+}
+
+// Tells the Shell each Instance's draft once per change. Remembered per
+// Instance: one shared memory swallows the second of two closes, and that
+// Character stands still for good.
+export function createDraftReporter(invoke) {
+  const reported = new Map();
+  const tell = (instance, payload) =>
+    invoke("overlay_report_qm_draft", { instance, payload }).catch((err) => {
+      console.error("overlay_report_qm_draft", err);
+    });
+  return {
+    report(instance, draft) {
+      const told = JSON.stringify(draft);
+      if (reported.get(instance) === told) return;
+      reported.set(instance, told);
+      tell(instance, draft);
+    },
+    forget(instance) {
+      reported.delete(instance);
+      tell(instance, null);
+    },
+    // Another overlay speaks for this Instance now, so what this one last
+    // told is no longer what the Shell holds.
+    release(instance) {
+      reported.delete(instance);
+    },
+    // Only the owner speaks, and not for a draft the Shell handed it: echoed
+    // back, that could land after the old owner's close and revive it.
+    sync(instance, machine) {
+      if (machine.owner && !machine.carried) this.report(instance, machine.draft);
+      else this.release(instance);
     },
   };
 }
@@ -307,5 +396,6 @@ export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   let y = speechRect.y - size.height - gap;
   if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
   y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-  return { ...pos, y };
+  // The step can cross the sprite, so the tail reads the final seat.
+  return { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
 }

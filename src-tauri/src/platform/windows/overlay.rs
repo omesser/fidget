@@ -14,6 +14,7 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
+use fidget_core::overlay_region::{region_plan, RegionPlan};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
@@ -115,18 +116,27 @@ fn note_overlay(hwnd: u64) {
     }
 }
 
-/// SetWindowRgn from `art` plus hotspots; `None` clears the region.
-/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way.
+/// SetWindowRgn from `art` plus hotspots plus painted rects; `None` clears the region.
+/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way. Returns
+/// whether the window now passes clicks, which a cleared region forces.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let hwnd = overlay_hwnd(window)?;
     match art {
-        Some(art) => apply_input_mask(hwnd, art, hotspot_rects, click_through),
-        None => clear_input_region(hwnd),
+        Some(art) => apply_input_mask(
+            window,
+            hwnd,
+            art,
+            hotspot_rects,
+            painted_rects,
+            click_through,
+        ),
+        None => clear_input_region(hwnd).map(|()| true),
     }
 }
 
@@ -289,25 +299,26 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 }
 
 /// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`; hotspots
-/// are `[x, y, width, height]`. The region also clips drawing, which is why
-/// `art` is swept over every position the renderer may draw the sprite at.
+/// and painted are `[x, y, width, height]`. The region also clips drawing, which
+/// is why `art` is swept over every position the renderer may draw the sprite at,
+/// and painted rects (bubble, thinking) must be included so Windows doesn't clip them.
 ///
 /// bRedraw=1: With bRedraw=0, the region update could race sprite placement
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
 /// next frame forced a redraw.
 fn apply_input_mask(
+    window: &tauri::WebviewWindow,
     hwnd: HWND,
     art: &[[i32; 4]],
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
-    if art.is_empty() {
-        return clear_input_region(hwnd);
-    }
+) -> Result<bool, String> {
     let rebuild_start = Instant::now();
-    let hotspots = hotspot_rects
-        .iter()
-        .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
+    let rects = match region_plan(art, hotspot_rects, painted_rects) {
+        RegionPlan::Clear => return clear_input_region(hwnd).map(|()| true),
+        RegionPlan::Apply(rects) => rects,
+    };
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
@@ -318,7 +329,7 @@ fn apply_input_mask(
             return Err("Failed to create region".to_string());
         }
 
-        for [left, top, right, bottom] in art.iter().copied().chain(hotspots) {
+        for [left, top, right, bottom] in rects.iter().copied() {
             let rect_rgn = CreateRectRgn(left, top, right, bottom);
             if rect_rgn.is_null() {
                 DeleteObject(combined_rgn);
@@ -349,15 +360,22 @@ fn apply_input_mask(
         }
     }
 
-    if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
+    let trace_bubble = std::env::var("FIDGET_TRACE_BUBBLE").is_ok();
+    let trace_mask = std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok();
+
+    if trace_bubble || trace_mask {
         eprintln!(
-            "mask_rebuild: {} rects, {:.2} ms",
-            art.len() + hotspot_rects.len(),
+            "overlay {}: region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
+            window.label(),
+            rects.len(),
+            art.len(),
+            hotspot_rects.len(),
+            painted_rects.len(),
             rebuild_start.elapsed().as_secs_f64() * 1000.0
         );
     }
 
-    Ok(())
+    Ok(click_through)
 }
 
 /// Clear the input region, making the entire window click-through.

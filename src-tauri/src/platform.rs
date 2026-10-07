@@ -9,6 +9,7 @@
 //! The dispatch lives here rather than in `main.rs` so that adding a platform is
 //! one edit in one file.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 #[cfg(unix)]
@@ -17,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use fidget_core::quick_message::QmDraft;
 use fidget_core::sensing::ActivitySource;
 use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
@@ -79,19 +81,25 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
-/// Which Instance has a visible quick message pill. A level, not an edge:
-/// the hold lasts as long as the pill is shown.
-static OVERLAY_QM_VISIBLE: Mutex<Option<String>> = Mutex::new(None);
+/// Each Instance's open quick-message draft, as its owning overlay last reported
+/// it. A level, read every tick: the walk holds while one is here.
+static QM_DRAFTS: Mutex<BTreeMap<String, QmDraft>> = Mutex::new(BTreeMap::new());
 
-/// Empty is none. The overlay sends "" when the pill hides.
-pub fn set_overlay_qm_visible(instance: Option<String>) {
-    if let Ok(mut slot) = OVERLAY_QM_VISIBLE.lock() {
-        *slot = instance.filter(|id| !id.is_empty());
+/// `None` is a closed pill.
+pub fn set_qm_draft(instance: String, draft: Option<QmDraft>) {
+    if let Ok(mut drafts) = QM_DRAFTS.lock() {
+        match draft {
+            Some(draft) => drafts.insert(instance, draft),
+            None => drafts.remove(&instance),
+        };
     }
 }
 
-pub fn overlay_qm_visible() -> Option<String> {
-    OVERLAY_QM_VISIBLE.lock().ok().and_then(|slot| slot.clone())
+pub fn qm_draft(instance: &str) -> Option<QmDraft> {
+    QM_DRAFTS
+        .lock()
+        .ok()
+        .and_then(|drafts| drafts.get(instance).cloned())
 }
 
 /// Which mouse buttons one tick found down. One type so X11 pays one
@@ -117,6 +125,10 @@ pub fn set_overlay_primary(down: bool) {
 /// `Vec::new` is const; only the "Open chat" control (#547) ever fills it.
 static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
 
+/// Painted UI rectangles (bubble, thinking) per overlay: `(label, [x, y, width, height])`.
+/// These go into the Windows region but are NOT clickable.
+static OVERLAY_PAINTED: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
+
 /// Replace everything `label` asked for. An empty list is how an overlay says
 /// it wants nothing but the art again.
 pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
@@ -125,6 +137,17 @@ pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
     };
     hotspots.retain(|(owner, _)| owner != label);
     hotspots.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
+}
+
+/// Update painted rects for an overlay. Windows unions these into the region.
+pub fn set_overlay_painted(label: &str, rects: Vec<[i32; 4]>) {
+    // Region invalidated automatically on next frame: RegionParams includes
+    // painted, so last_mask comparison detects change and triggers rebuild.
+    let Ok(mut painted) = OVERLAY_PAINTED.lock() else {
+        return;
+    };
+    painted.retain(|(owner, _)| owner != label);
+    painted.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
 }
 
 /// Whether `label`'s overlay wants the click at `(x, y)`, in its coordinates.
@@ -145,6 +168,21 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
         |_| Vec::new(),
         |hotspots| {
             hotspots
+                .iter()
+                .filter(|(owner, _)| owner == label)
+                .map(|(_, rect)| *rect)
+                .collect()
+        },
+    )
+}
+
+/// The painted rectangles one overlay reported, in its own coordinates.
+#[cfg(not(unix))]
+pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
+    OVERLAY_PAINTED.lock().map_or_else(
+        |_| Vec::new(),
+        |painted| {
+            painted
                 .iter()
                 .filter(|(owner, _)| owner == label)
                 .map(|(_, rect)| *rect)
@@ -627,17 +665,18 @@ pub fn update_input_region(
     )
 }
 
-/// Windows: SetWindowRgn from the sprite's swept ink rectangles and hotspots.
+/// Windows: SetWindowRgn from the sprite's swept ink, hotspots and painted rects.
 /// The region clips drawing as well as input. `click_through` controls
-/// WS_EX_TRANSPARENT.
+/// WS_EX_TRANSPARENT; returns whether the window now passes clicks.
 #[cfg(not(unix))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
-    windows::update_input_region(window, art, hotspot_rects, click_through)
+) -> Result<bool, String> {
+    windows::update_input_region(window, art, hotspot_rects, painted_rects, click_through)
 }
 
 /// Toggle WS_EX_TRANSPARENT without reapplying the region. Used when only
@@ -1136,6 +1175,22 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 mod tests {
     use super::*;
 
+    /// The frame loop copies this slot into each Instance every tick, so a
+    /// draft reaches only its own Instance and a cleared one is gone.
+    #[test]
+    fn each_instance_reads_only_its_own_draft() {
+        let draft = QmDraft {
+            text: "wait".to_string(),
+            focused: true,
+        };
+        set_qm_draft("drafting".to_string(), Some(draft.clone()));
+        assert_eq!(qm_draft("drafting"), Some(draft));
+        assert_eq!(qm_draft("neighbour"), None, "a neighbour carries nothing");
+
+        set_qm_draft("drafting".to_string(), None);
+        assert_eq!(qm_draft("drafting"), None, "a closed pill leaves no draft");
+    }
+
     /// A webview built after setup has to suppress again. The last drop is
     /// what lets this process hear Ctrl+C, so the quit handler still runs.
     #[test]
@@ -1241,37 +1296,6 @@ mod tests {
         assert_eq!(overlay_composing().as_deref(), Some("buddy-a"));
         set_overlay_composing(Some(String::new()));
         assert_eq!(overlay_composing(), None);
-    }
-
-    #[test]
-    fn qm_visible_names_one_instance_until_the_pill_hides() {
-        set_overlay_qm_visible(Some("buddy-b".to_string()));
-        assert_eq!(overlay_qm_visible().as_deref(), Some("buddy-b"));
-        set_overlay_qm_visible(Some(String::new()));
-        assert_eq!(overlay_qm_visible(), None);
-    }
-
-    #[test]
-    fn qm_visible_freezes_locomotion_for_the_owning_instance() {
-        let id = "bmo-instance".to_string();
-        set_overlay_qm_visible(Some(id.clone()));
-
-        let speech_visible = false;
-        let qm_visible_for_this_instance = overlay_qm_visible().as_deref() == Some(&id);
-        let locomotion_frozen = speech_visible || qm_visible_for_this_instance;
-
-        assert!(
-            locomotion_frozen,
-            "QM visible for this instance should freeze locomotion"
-        );
-
-        let qm_visible_for_other = overlay_qm_visible().as_deref() == Some("other-id");
-        assert!(
-            !qm_visible_for_other,
-            "QM not visible for a different instance"
-        );
-
-        set_overlay_qm_visible(None);
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that

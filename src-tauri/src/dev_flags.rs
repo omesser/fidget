@@ -58,6 +58,7 @@ pub static TRACE_FRAMES: Flag = Flag::new("FIDGET_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("FIDGET_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("FIDGET_TRACE_DIRECTOR");
 pub static TRACE_ENGINE: Flag = Flag::new("FIDGET_TRACE_ENGINE");
+pub static TRACE_BUBBLE: Flag = Flag::new("FIDGET_TRACE_BUBBLE");
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
@@ -145,6 +146,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
         TRACE_ENGINE.var(),
+        TRACE_BUBBLE.var(),
         #[cfg(windows)]
         DEBUG_REINFORCE.var(),
         DEBUG_IPC.var(),
@@ -187,6 +189,7 @@ pub fn seed(settings: &Settings) {
     TRACE_HITTEST.seed(settings.trace_hittest);
     TRACE_DIRECTOR.seed(settings.trace_director);
     TRACE_ENGINE.seed(settings.trace_engine);
+    TRACE_BUBBLE.seed(settings.trace_bubble);
     #[cfg(windows)]
     DEBUG_REINFORCE.seed(false);
     DEBUG_IPC.seed(false);
