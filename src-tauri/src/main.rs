@@ -316,9 +316,10 @@ struct InstanceState {
     /// The display that last owned this Instance's bubble. Hysteresis keeps
     /// ownership stable near a seam: switch only when feet clearly cross.
     bubble_owner_last: Option<usize>,
-    /// Latch for QM handoff: whether QM was open for this instance. Survives
-    /// drag/dismiss so handoff fires even after backend state cleared (#1391).
-    qm_was_open_for_instance: bool,
+    /// Latch for QM handoff: whether QM was dismissed by drag/leave during
+    /// this ownership period. Means "closed by drag THIS crossing", not "was ever open".
+    /// Set on drag/leave dismiss, cleared on Send/Esc/click-away/auto-hide, consumed on handoff.
+    qm_drag_latch: bool,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -1828,6 +1829,13 @@ fn overlay_qm_state(payload: QmStatePayload) {
         text: payload.text,
         focused: payload.focused,
     }));
+}
+
+/// The overlay's quick message was dismissed by drag/leave.
+/// Sets the drag latch for handoff across ownership changes.
+#[tauri::command]
+fn overlay_qm_drag_dismiss(instance: String) {
+    platform::set_overlay_qm_drag_dismiss(Some(instance));
 }
 
 /// Same witness for the right button. Without it a right-click on the sprite
@@ -3624,7 +3632,7 @@ fn spawn_live(
         speech: SpeechBubble::default(),
         drawn_last: None,
         bubble_owner_last: None,
-        qm_was_open_for_instance: false,
+        qm_drag_latch: false,
         traced_last: None,
         status_last: None,
         status_wake_ms: None,
@@ -3905,7 +3913,7 @@ fn spawn_instances(
             speech: SpeechBubble::default(),
             drawn_last: None,
             bubble_owner_last: None,
-            qm_was_open_for_instance: false,
+            qm_drag_latch: false,
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
@@ -4348,6 +4356,7 @@ fn main() {
             overlay_composing,
             overlay_qm_visible,
             overlay_qm_state,
+            overlay_qm_drag_dismiss,
             overlay_hotspots,
             overlay_painted_rects,
             overlay_trace_bubble,

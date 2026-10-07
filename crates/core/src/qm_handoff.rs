@@ -28,21 +28,20 @@ pub struct QmHandoffPlan {
 
 /// Plan a handoff.
 ///
-/// `retain_open_across_drag`: when true, an empty unfocused pill still follows
-/// (hover pill). Tip clears backend on dismiss before owner change, which drops
-/// the handoff — callers should latch "was open for this instance" across the
-/// drag, not trust a post-dismiss backend snapshot alone.
+/// `drag_latch`: when true, the pill was dismissed by drag/leave during this
+/// ownership period, so it should follow even if backend state is cleared.
+/// The latch means "closed by drag THIS crossing", not "was ever open".
 pub fn plan_qm_handoff(
     old_owner: Option<usize>,
     new_owner: Option<usize>,
     qm: Option<&QmSnapshot>,
-    was_open_for_instance: bool,
+    drag_latch: bool,
 ) -> Option<QmHandoffPlan> {
     let new_owner = new_owner?;
     if old_owner == Some(new_owner) {
         return None;
     }
-    let open = qm.map(|q| q.open).unwrap_or(false) || was_open_for_instance;
+    let open = qm.map(|q| q.open).unwrap_or(false) || drag_latch;
     if !open {
         return None;
     }
@@ -84,7 +83,7 @@ mod tests {
             bool,
             bool,
         )] = &[
-            // name, old, new, qm, was_open_latch, expect_some
+            // name, old, new, qm, drag_latch, expect_some
             (
                 "no owner change",
                 Some(0),
@@ -94,20 +93,36 @@ mod tests {
                 false,
             ),
             (
-                "draft follows",
+                "draft follows (backend still open)",
                 Some(0),
                 Some(1),
                 Some(open("hi", true)),
+                false,
+                true,
+            ),
+            (
+                "closed by Send then owner change → no handoff",
+                Some(0),
+                Some(1),
+                None,
+                false,
+                false,
+            ),
+            (
+                "closed by drag then owner change → handoff",
+                Some(0),
+                Some(1),
+                Some(open("", false)),
                 true,
                 true,
             ),
             (
-                "empty hover: tip cleared backend but latch keeps handoff",
+                "slot cleared + drag latch → handoff (empty text OK)",
                 Some(0),
                 Some(1),
-                None,
+                Some(open("", false)),
                 true,
-                false, // no qm snapshot → cannot rebuild text; latch alone insufficient without snapshot
+                true,
             ),
             (
                 "backend still open after focused drag",
@@ -116,14 +131,6 @@ mod tests {
                 Some(open("hi", true)),
                 false,
                 true,
-            ),
-            (
-                "neither open nor latch",
-                Some(0),
-                Some(1),
-                None,
-                false,
-                false,
             ),
             (
                 "backend open empty unfocused",

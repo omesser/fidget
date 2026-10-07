@@ -91,6 +91,9 @@ pub struct QmState {
 /// Which Instance has a visible quick message pill and its state.
 static OVERLAY_QM_STATE: Mutex<Option<QmState>> = Mutex::new(None);
 
+/// Which Instance had QM dismissed by drag/leave (for latch).
+static OVERLAY_QM_DRAG_DISMISS: Mutex<Option<String>> = Mutex::new(None);
+
 /// Update QM state. Empty instance means none.
 pub fn set_overlay_qm_state(state: Option<QmState>) {
     if let Ok(mut slot) = OVERLAY_QM_STATE.lock() {
@@ -100,6 +103,24 @@ pub fn set_overlay_qm_state(state: Option<QmState>) {
 
 pub fn overlay_qm_state() -> Option<QmState> {
     OVERLAY_QM_STATE.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Set the drag dismiss latch for an instance.
+pub fn set_overlay_qm_drag_dismiss(instance: Option<String>) {
+    if let Ok(mut slot) = OVERLAY_QM_DRAG_DISMISS.lock() {
+        *slot = instance.filter(|s| !s.is_empty());
+    }
+}
+
+/// Check and consume the drag dismiss latch for an instance.
+pub fn take_overlay_qm_drag_dismiss(instance: &str) -> bool {
+    if let Ok(mut slot) = OVERLAY_QM_DRAG_DISMISS.lock() {
+        if slot.as_deref() == Some(instance) {
+            *slot = None;
+            return true;
+        }
+    }
+    false
 }
 
 /// Legacy: which instance has QM visible (ignores text/focus).
