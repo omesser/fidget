@@ -861,16 +861,19 @@ async function start() {
     { target: overlay.label },
   );
 
-  // Pill handoff: when bubble_owner changes and this overlay is the new owner
-  // with QM already open, reopen the pill with the transferred state.
+  // Pill handoff: when bubble_owner changes, reopen pill on new owner and dismiss on old.
   await window.__TAURI__.event.listen(
     "qm-handoff",
     ({ payload }) => {
-      const view = views.get(payload.instance);
-      if (!view) return;
+      let view = views.get(payload.instance);
+      if (!view) {
+        // Handoff can arrive before the first frame event on this overlay.
+        // Create the view so the pill can be restored immediately.
+        view = createView(payload.instance);
+        views.set(payload.instance, view);
+      }
 
-      // Old owner closes its pill without clearing the shared state.
-      // New owner reopens with the text and focus state.
+      // Reopen with transferred text and focus state.
       if (payload.open) {
         // restore() sets visible, text, focused, and claimFocus
         view.quickMachine.restore(payload.text);
