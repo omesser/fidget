@@ -1204,14 +1204,10 @@ impl Engine {
             animation: self.animation,
             animation_ms: self.animation_ms,
             variant_draw: self.variant_draw,
-            dialogue: if self.do_not_disturb {
-                None
-            } else {
-                snapshot
-                    .proposal
-                    .as_ref()
-                    .and_then(|proposal| proposal.dialogue.clone())
-            },
+            dialogue: snapshot
+                .proposal
+                .as_ref()
+                .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
             playing_behavior: self.playing_behavior.clone(),
             playing_primitive: self.on_screen(),
@@ -6288,11 +6284,11 @@ mod tests {
     }
 
     #[test]
-    fn unprompted_director_dialogue_is_not_spoken_under_do_not_disturb() {
+    fn dialogue_reaches_the_frame_under_do_not_disturb() {
         let mut engine = a_resting_sprite();
         engine.set_do_not_disturb(true);
 
-        let silent = engine.tick(&WorldSnapshot {
+        let frame = engine.tick(&WorldSnapshot {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: Some("hello there".to_string()),
@@ -6301,9 +6297,11 @@ mod tests {
         });
 
         assert_eq!(
-            silent.dialogue, None,
-            "unprompted dialogue is refused under Do Not Disturb"
+            frame.dialogue,
+            Some("hello there".to_string()),
+            "dialogue populates Frame under DND so Chat surface works"
         );
+        assert_eq!(frame.animation, "idle", "behavior is refused under DND");
     }
 
     #[test]

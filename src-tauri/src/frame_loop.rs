@@ -1467,33 +1467,32 @@ pub(crate) fn run_frame_loop(
                 let mut proposal = None;
                 let arrived = match slots.take(&live.id) {
                     Some(completer::Arrived::Answered(answered)) => Some(*answered),
-                    // A line with no Behavior, so `talk` plays while it grows
-                    // and Do Not Disturb gates it like any line. The reply's
-                    // own Behavior is applied when it lands. The same speech
-                    // also updates the Chat row so both surfaces stream together.
+                    // A line with no Behavior, so `talk` plays while it grows.
+                    // The reply's own Behavior is applied when it lands. The
+                    // same speech also updates the Chat row so both surfaces
+                    // stream together. The Chat surface always streams,
+                    // regardless of Do Not Disturb; DND gates only the bubble.
                     Some(completer::Arrived::Speech(line)) => {
                         proposal = Some(BehaviorProposal {
                             behavior: String::new(),
                             dialogue: Some(line.clone()),
                         });
-                        if !instance.do_not_disturb() {
-                            let _ = app.emit_to(
-                                chat_label(&live.id),
-                                CHAT_EVENT,
-                                super::ChatReply {
-                                    said: Some(line),
-                                    busy: false,
-                                    reacting_to: None,
-                                    you: false,
-                                    thought: false,
-                                    at: None,
-                                    error: None,
-                                    failure: None,
-                                    superseded_by: None,
-                                    streaming: true,
-                                },
-                            );
-                        }
+                        let _ = app.emit_to(
+                            chat_label(&live.id),
+                            CHAT_EVENT,
+                            super::ChatReply {
+                                said: Some(line),
+                                busy: false,
+                                reacting_to: None,
+                                you: false,
+                                thought: false,
+                                at: None,
+                                error: None,
+                                failure: None,
+                                superseded_by: None,
+                                streaming: true,
+                            },
+                        );
                         None
                     }
                     None => None,
@@ -2041,12 +2040,13 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                let dialogue = super::carry_line(
-                    &mut live.spoken,
-                    frame.dialogue.as_deref(),
-                    owner,
-                    Instant::now(),
-                );
+                let bubble_line = if instance.do_not_disturb() {
+                    None
+                } else {
+                    frame.dialogue.as_deref()
+                };
+                let dialogue =
+                    super::carry_line(&mut live.spoken, bubble_line, owner, Instant::now());
                 let overlay_drops_the_bubble = !presence.visible && presence.fade_ms == 0;
                 speech::note_speech(
                     &mut live.speech,
