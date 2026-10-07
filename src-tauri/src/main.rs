@@ -1806,24 +1806,11 @@ fn overlay_composing(instance: String) {
     platform::set_overlay_composing(Some(instance));
 }
 
-/// An open pill's text and caret, as the owning overlay reports them.
-#[derive(serde::Deserialize)]
-struct QmDraftPayload {
-    text: String,
-    focused: bool,
-}
-
 /// The owning overlay's draft for one Instance, on every change. `None` is a
-/// closed pill: sent, Esc, dragged away empty, or the Instance gone.
+/// closed pill: sent, dismissed, dragged away empty, or the Instance gone.
 #[tauri::command]
-fn overlay_report_qm_draft(instance: String, payload: Option<QmDraftPayload>) {
-    platform::set_qm_draft(
-        instance,
-        payload.map(|p| fidget_core::qm_draft::QmDraft {
-            text: p.text,
-            focused: p.focused,
-        }),
-    );
+fn overlay_report_qm_draft(instance: String, payload: Option<fidget_core::qm_draft::QmDraft>) {
+    platform::set_qm_draft(instance, payload);
 }
 
 /// Same witness for the right button. Without it a right-click on the sprite
