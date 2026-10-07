@@ -93,8 +93,8 @@ enum RegionAction {
     Nothing,
 }
 
-/// Decide overlay action based on content (art, hotspots, painted) and ignore flag.
-/// Pure function for table-testing the content→action decision.
+/// An overlay with no sprite on it can still draw a bubble straddling the seam,
+/// so painted rects alone keep a region; only nothing at all passes clicks.
 #[cfg(any(test, not(unix)))]
 fn decide_region_action(
     sprite: &[[i32; 4]],
@@ -3239,7 +3239,7 @@ mod tests {
     }
 
     /// The pill holds the walk while its draft is open, whichever overlay draws
-    /// it, and lets go once the overlay clears it on send, Esc or a drag.
+    /// it, and lets go once the overlay clears it on send, dismiss or a drag.
     #[test]
     fn an_open_draft_holds_the_walk_until_it_is_cleared() {
         let draft = fidget_core::qm_draft::QmDraft {
@@ -3276,18 +3276,19 @@ mod tests {
         platform::set_qm_draft("neighbour".to_string(), None);
     }
 
+    /// (name, sprite, hotspots, painted, already ignoring, expected)
+    type RegionRow<'a> = (
+        &'a str,
+        &'a [[i32; 4]],
+        &'a [[i32; 4]],
+        &'a [[i32; 4]],
+        bool,
+        RegionAction,
+    );
+
     #[test]
-    #[allow(clippy::type_complexity)]
     fn decide_region_action_table() {
-        // (name, sprite, hotspots, painted, ignore, expect)
-        let rows: &[(
-            &str,
-            &[[i32; 4]],
-            &[[i32; 4]],
-            &[[i32; 4]],
-            bool,
-            RegionAction,
-        )] = &[
+        let rows: &[RegionRow] = &[
             (
                 "sprite → ApplyMask",
                 &[[10, 20, 50, 80]],
