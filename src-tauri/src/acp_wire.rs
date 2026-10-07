@@ -1207,6 +1207,20 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
+                // Drain any pending updates for this session before flushing,
+                // so between-turn speech that has been emitted but not yet
+                // processed doesn't get dropped.
+                while let Ok(message) = incoming.try_recv() {
+                    let signing_in = auth.is_some();
+                    between_turns(
+                        message,
+                        &mut forms,
+                        &mut asks,
+                        &mut inbound,
+                        signing_in,
+                        on_event,
+                    );
+                }
                 end_inbound(&mut inbound, &id, on_event);
                 let serving = Serving {
                     rx: &mut rx,
@@ -1223,6 +1237,20 @@ async fn serve(
             }
             Step::Command(Msg::Close { session_id, reply }) => {
                 let id = SessionId::new(session_id);
+                // Drain any pending updates for this session before flushing,
+                // so between-turn speech that has been emitted but not yet
+                // processed doesn't get dropped.
+                while let Ok(message) = incoming.try_recv() {
+                    let signing_in = auth.is_some();
+                    between_turns(
+                        message,
+                        &mut forms,
+                        &mut asks,
+                        &mut inbound,
+                        signing_in,
+                        on_event,
+                    );
+                }
                 end_inbound(&mut inbound, &id, on_event);
                 let outcome = cx
                     .send_request(CloseSessionRequest::new(id))
