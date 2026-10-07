@@ -804,23 +804,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// Every `take` up to and including the reply, for a test that watches
-    /// the Speech arrive ahead of it.
-    fn arrivals(slots: &mut Slots, id: &InstanceId) -> Vec<Arrived> {
-        let mut seen = Vec::new();
-        for _ in 0..200 {
-            match slots.take(id) {
-                Some(Arrived::Answered(answered)) => {
-                    seen.push(Arrived::Answered(answered));
-                    break;
-                }
-                Some(speech) => seen.push(speech),
-                None => thread::sleep(Duration::from_millis(5)),
-            }
-        }
-        seen
-    }
-
     /// The frame loop hears the Speech while the reply is still on the wire,
     /// with the Behavior name already cut from it, and then the reply.
     #[test]
