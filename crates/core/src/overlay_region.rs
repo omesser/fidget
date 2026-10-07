@@ -7,7 +7,7 @@ pub type RegionRect = [i32; 4];
 
 /// `trail` is already `[left, top, right, bottom]`; `hotspots` and `painted`
 /// are `[x, y, width, height]`. Painted rects draw but are not clickable.
-pub fn overlay_region_rects(
+fn overlay_region_rects(
     trail: &[[i32; 4]],
     hotspots: &[[i32; 4]],
     painted: &[[i32; 4]],
@@ -28,11 +28,30 @@ pub fn overlay_region_rects(
         .collect()
 }
 
+/// What a Windows overlay's `SetWindowRgn` gets this frame.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RegionPlan {
+    /// Nothing to draw: no region, and the window passes every click.
+    Clear,
+    Apply(Vec<RegionRect>),
+}
+
+/// Clears only when there is nothing at all to keep: no sprite, no control,
+/// no painted bubble.
+pub fn region_plan(trail: &[[i32; 4]], hotspots: &[[i32; 4]], painted: &[[i32; 4]]) -> RegionPlan {
+    let rects = overlay_region_rects(trail, hotspots, painted);
+    if rects.is_empty() {
+        RegionPlan::Clear
+    } else {
+        RegionPlan::Apply(rects)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// (name, art LTRB, hotspots XYWH, painted XYWH, expected region LTRB)
+    /// (name, art LTRB, hotspots XYWH, painted XYWH, region LTRB; empty is `Clear`)
     type Row<'a> = (
         &'a str,
         &'a [[i32; 4]],
@@ -41,8 +60,10 @@ mod tests {
         &'a [[i32; 4]],
     );
 
+    /// The plan `apply_input_mask` carries out. An overlay without the sprite
+    /// still keeps a bubble straddling the seam, or a control, in its region.
     #[test]
-    fn region_composition_table() {
+    fn region_plan_table() {
         let art = [[100, 200, 180, 328]]; // sprite swept bounds
         let more_hotspot = [220, 140, 72, 18]; // "Open chat"
         let bubble = [120, 80, 200, 90];
@@ -50,7 +71,7 @@ mod tests {
         let qm_pill = [130, 60, 160, 36];
 
         let rows: &[Row] = &[
-            ("nothing to draw", &[], &[], &[], &[]),
+            ("nothing to draw clears", &[], &[], &[], &[]),
             (
                 "bubble fully on owner",
                 &art,
@@ -64,13 +85,6 @@ mod tests {
                 &[],
                 &[thinking],
                 &[[100, 200, 180, 328], [150, 100, 198, 124]],
-            ),
-            (
-                "QM pill only (as hotspot)",
-                &art,
-                &[qm_pill],
-                &[],
-                &[[100, 200, 180, 328], [130, 60, 290, 96]],
             ),
             (
                 "QM hotspot + bubble painted",
@@ -102,16 +116,30 @@ mod tests {
                 &[[100, 200, 180, 328]],
             ),
             (
-                "bubble straddling seam onto non-sprite overlay",
+                "no sprite, bubble straddling the seam",
                 &[],
                 &[],
                 &[bubble],
                 &[[120, 80, 320, 170]],
             ),
+            (
+                "no sprite, a control still on this display",
+                &[],
+                &[more_hotspot],
+                &[],
+                &[[220, 140, 292, 158]],
+            ),
         ];
 
         for (name, trail, hotspots, painted, expect) in rows {
-            let got = overlay_region_rects(trail, hotspots, painted);
+            let plan = region_plan(trail, hotspots, painted);
+            if expect.is_empty() {
+                assert_eq!(plan, RegionPlan::Clear, "{name}");
+                continue;
+            }
+            let RegionPlan::Apply(got) = plan else {
+                panic!("{name}: cleared, want a region of {expect:?}");
+            };
             assert_eq!(got.len(), expect.len(), "{name}: rect count");
             for rect in *expect {
                 assert!(got.contains(rect), "{name}: missing {rect:?} in {got:?}");

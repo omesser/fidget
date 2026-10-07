@@ -14,6 +14,7 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
+use fidget_core::overlay_region::{region_plan, RegionPlan};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
@@ -116,14 +117,15 @@ fn note_overlay(hwnd: u64) {
 }
 
 /// SetWindowRgn from `art` plus hotspots plus painted rects; `None` clears the region.
-/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way.
+/// `click_through` sets WS_EX_TRANSPARENT; the region stays either way. Returns
+/// whether the window now passes clicks, which a cleared region forces.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
     hotspot_rects: &[[i32; 4]],
     painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let hwnd = overlay_hwnd(window)?;
     match art {
         Some(art) => apply_input_mask(
@@ -134,7 +136,7 @@ pub fn update_input_region(
             painted_rects,
             click_through,
         ),
-        None => clear_input_region(hwnd),
+        None => clear_input_region(hwnd).map(|()| true),
     }
 }
 
@@ -311,14 +313,12 @@ fn apply_input_mask(
     hotspot_rects: &[[i32; 4]],
     painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
-    if art.is_empty() {
-        return clear_input_region(hwnd);
-    }
+) -> Result<bool, String> {
     let rebuild_start = Instant::now();
-
-    let rects =
-        fidget_core::overlay_region::overlay_region_rects(art, hotspot_rects, painted_rects);
+    let rects = match region_plan(art, hotspot_rects, painted_rects) {
+        RegionPlan::Clear => return clear_input_region(hwnd).map(|()| true),
+        RegionPlan::Apply(rects) => rects,
+    };
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
@@ -375,7 +375,7 @@ fn apply_input_mask(
         );
     }
 
-    Ok(())
+    Ok(click_through)
 }
 
 /// Clear the input region, making the entire window click-through.

@@ -93,8 +93,8 @@ enum RegionAction {
     Nothing,
 }
 
-/// An overlay with no sprite on it can still draw a bubble straddling the seam,
-/// so painted rects alone keep a region; only nothing at all passes clicks.
+/// `region_plan` says whether there is anything to keep; an overlay with nothing
+/// passes clicks, and one already doing so needs no call.
 #[cfg(any(test, not(unix)))]
 fn decide_region_action(
     sprite: &[[i32; 4]],
@@ -102,9 +102,9 @@ fn decide_region_action(
     painted: &[[i32; 4]],
     ignore: bool,
 ) -> RegionAction {
-    let has_content = !sprite.is_empty() || !hotspots.is_empty() || !painted.is_empty();
+    use fidget_core::overlay_region::{region_plan, RegionPlan};
 
-    if has_content {
+    if region_plan(sprite, hotspots, painted) != RegionPlan::Clear {
         RegionAction::ApplyMask
     } else if ignore {
         RegionAction::Nothing
@@ -2551,13 +2551,13 @@ pub(crate) fn run_frame_loop(
                                             painted,
                                             click_through,
                                         ) {
-                                            Ok(()) => {
+                                            Ok(passes_clicks) => {
                                                 mask_applied_clone.lock().unwrap()[overlay_index] =
                                                     true;
                                                 last_mask_clone.lock().unwrap()[overlay_index] =
                                                     mask_params_clone;
                                                 applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                    Some(click_through);
+                                                    Some(passes_clicks);
                                                 if trace {
                                                     eprintln!(
                                                         "overlay: {label_clone} input mask applied"
@@ -3274,73 +3274,25 @@ mod tests {
         platform::set_qm_draft("neighbour".to_string(), None);
     }
 
-    /// (name, sprite, hotspots, painted, already ignoring, expected)
-    type RegionRow<'a> = (
-        &'a str,
-        &'a [[i32; 4]],
-        &'a [[i32; 4]],
-        &'a [[i32; 4]],
-        bool,
-        RegionAction,
-    );
-
+    /// Whether there is a region at all is `region_plan`'s call (core table);
+    /// this only adds what an empty overlay still has to do about clicks.
     #[test]
-    fn decide_region_action_table() {
-        let rows: &[RegionRow] = &[
-            (
-                "sprite → ApplyMask",
-                &[[10, 20, 50, 80]],
-                &[],
-                &[],
-                false,
-                RegionAction::ApplyMask,
-            ),
-            (
-                "hotspots only → ApplyMask",
-                &[],
-                &[[100, 100, 20, 15]],
-                &[],
-                false,
-                RegionAction::ApplyMask,
-            ),
-            (
-                "painted only → ApplyMask",
-                &[],
-                &[],
-                &[[50, 60, 200, 80]],
-                false,
-                RegionAction::ApplyMask,
-            ),
-            (
-                "empty not-ignoring → ToggleClickThrough",
-                &[],
-                &[],
-                &[],
-                false,
-                RegionAction::ToggleClickThrough,
-            ),
-            (
-                "empty already-ignoring → Nothing",
-                &[],
-                &[],
-                &[],
-                true,
-                RegionAction::Nothing,
-            ),
-            (
-                "sprite + hotspots + painted → ApplyMask",
-                &[[10, 20, 50, 80]],
-                &[[100, 100, 20, 15]],
-                &[[50, 60, 200, 80]],
-                false,
-                RegionAction::ApplyMask,
-            ),
-        ];
-
-        for (name, sprite, hotspots, painted, ignore, expect) in rows {
-            let got = decide_region_action(sprite, hotspots, painted, *ignore);
-            assert_eq!(got, *expect, "{name}");
-        }
+    fn an_empty_overlay_passes_clicks_once() {
+        let bubble = [[50, 60, 200, 80]];
+        assert_eq!(
+            decide_region_action(&[], &[], &bubble, true),
+            RegionAction::ApplyMask,
+            "a bubble alone keeps a region, even on a click-through overlay"
+        );
+        assert_eq!(
+            decide_region_action(&[], &[], &[], false),
+            RegionAction::ToggleClickThrough
+        );
+        assert_eq!(
+            decide_region_action(&[], &[], &[], true),
+            RegionAction::Nothing,
+            "already passing clicks"
+        );
     }
 
     #[test]

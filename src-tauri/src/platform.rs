@@ -665,9 +665,9 @@ pub fn update_input_region(
     )
 }
 
-/// Windows: SetWindowRgn from the sprite's swept ink rectangles and hotspots.
+/// Windows: SetWindowRgn from the sprite's swept ink, hotspots and painted rects.
 /// The region clips drawing as well as input. `click_through` controls
-/// WS_EX_TRANSPARENT.
+/// WS_EX_TRANSPARENT; returns whether the window now passes clicks.
 #[cfg(not(unix))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
@@ -675,7 +675,7 @@ pub fn update_input_region(
     hotspot_rects: &[[i32; 4]],
     painted_rects: &[[i32; 4]],
     click_through: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     windows::update_input_region(window, art, hotspot_rects, painted_rects, click_through)
 }
 
