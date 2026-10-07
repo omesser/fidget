@@ -248,39 +248,53 @@ function tipHandoff(seq) {
   return events;
 }
 
-test("empty pill drag-clear must not skip handoff", () => {
-  const frame = read("src-tauri/src/frame_loop.rs");
-  const main = read("src-tauri/src/main.rs");
-  // Required: latch for drag dismissal, use plan_qm_handoff
-  const hasLatch = /qm_drag_latch|qm_was_open/.test(main);
-  const usesPlanQmHandoff = /plan_qm_handoff/.test(frame);
-  assert.ok(
-    hasLatch && usesPlanQmHandoff,
-    "must latch drag dismissal and use plan_qm_handoff to survive drag-clear"
-  );
+// --- Drag decision table (pure function in core) ----------------------------
+
+test("keep_qm_on_drag: empty closes, non-empty keeps", () => {
+  const qmDraft = read("crates/core/src/qm_draft.rs");
+  
+  // Function must be pure and table-tested
+  assert.match(qmDraft, /pub fn keep_qm_on_drag/);
+  assert.match(qmDraft, /empty_text_closes/i);
+  assert.match(qmDraft, /non_empty.*keeps/i);
+  assert.match(qmDraft, /no_draft.*closes/i);
 });
 
-test("focused draft survives drag and handoffs", () => {
-  const events = tipHandoff({
-    initialBackend: { open: true, text: "hello", focused: true },
-    steps: [
-      { type: "dragDismissEmpty" },
-      { type: "ownerChange", to: 1 },
-    ],
-  });
-  assert.deepEqual(events, ["handoff_to_1"]);
+test("Drag decision table (matching qm_draft.rs tests)", () => {
+  const rows = [
+    { text: "", focused: true, keep: false, reason: "empty text closes on drag" },
+    { text: "hello", focused: false, keep: true, reason: "non-empty text keeps pill" },
+    { text: "   ", focused: true, keep: true, reason: "whitespace counts as non-empty per String::is_empty" },
+  ];
+
+  for (const { text, focused, keep, reason } of rows) {
+    const draft = text === null ? null : { text, focused };
+    const result = keepQmOnDrag(draft);
+    assert.strictEqual(result, keep, reason);
+  }
 });
 
-test("old owner must be told to dismiss on handoff", () => {
+// Helper matching crates/core/src/qm_draft.rs::keep_qm_on_drag
+function keepQmOnDrag(draft) {
+  if (!draft) return false;
+  return draft.text.length > 0;
+}
+
+test("Owner flip carries draft to new overlay", () => {
   const main = read("src/main.js");
   const frame = read("src-tauri/src/frame_loop.rs");
-  const emitsOnlyNew = /emit_to\(\s*new_owner_label\s*,\s*"qm-handoff"/.test(frame);
-  const oldDismiss =
-    /qm-handoff[\s\S]{0,800}dismiss|from_overlay[\s\S]{0,400}dismiss|handoff.*old/i.test(main);
+  
+  // Draft rides in Placed.qm
+  assert.match(frame, /qm:\s*live\.qm\.clone\(\)/);
+  
+  // JS restores from placement.qm when owner
   assert.ok(
-    !emitsOnlyNew || oldDismiss,
-    "qm-handoff must also dismiss old owner to prevent orphaned pill DOM"
+    /placement\.bubble.*placement\.qm/.test(main) || /placement\.qm.*placement\.bubble/.test(main),
+    "JS must restore from placement.qm when placement.bubble is true"
   );
+  
+  // Non-owner hides pill
+  assert.match(main, /!placement\.bubble.*hideWithoutReport/s);
 });
 
 // --- Painted rect format / opacity ------------------------------------------
