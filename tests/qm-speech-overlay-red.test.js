@@ -56,7 +56,7 @@ test("RED: ownership flicker cancels grace timer preventing ellipsis", async () 
   // Owner returns immediately (AI turn still in flight)
   // Should show thinking immediately with no grace since turn already started
   machine.frame({ thinking: true, visible: true });
-  
+
   // At tip 318b325d, this re-arms grace timer instead of showing immediately
   assert.equal(
     thinkingShown,
