@@ -2386,7 +2386,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn ambient_off_still_wakes_on_a_poke() {
         let pace = Pace::new();
 
