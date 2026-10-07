@@ -1888,8 +1888,13 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            AttachThreadInput, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+            GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
         };
+
+        #[link(name = "user32")]
+        extern "system" {
+            fn AttachThreadInput(idattach: u32, idattachto: u32, fattach: i32) -> i32;
+        }
 
         let raw_handle = window
             .window_handle()
