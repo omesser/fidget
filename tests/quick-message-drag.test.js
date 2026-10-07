@@ -63,7 +63,7 @@ test("drag dismisses pill when empty and unfocused", async () => {
   machine.enterSprite();
   await new Promise((resolve) => setTimeout(resolve, HOVER_DELAY_MS + 100));
   assert.equal(machine.visible, true);
-  
+
   machine.blur();
 
   machine.drag();

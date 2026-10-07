@@ -258,8 +258,9 @@ test("existing dismiss paths still work with auto-hide feature", () => {
   qm.outside();
   assert.equal(qm.visible, false);
 
-  // Show again and test drag dismiss
+  // Show again and test drag dismiss (needs blur since drag only dismisses when empty AND unfocused)
   const { qm: qm2 } = shown();
+  qm2.blur();
   qm2.drag();
   assert.equal(qm2.visible, false);
 
@@ -281,7 +282,8 @@ test("blurring the field keeps the pill and releases the typing hold", () => {
 });
 
 test("click outside, a pet drag, and a double-click dismiss, draft included", () => {
-  for (const dismiss of ["outside", "drag", "summon"]) {
+  // outside and summon always dismiss, even with draft text
+  for (const dismiss of ["outside", "summon"]) {
     const { qm } = shown();
     qm.setText("hey");
     qm[dismiss]();
@@ -289,6 +291,13 @@ test("click outside, a pet drag, and a double-click dismiss, draft included", ()
     assert.equal(qm.text, "", dismiss);
     assert.equal(qm.typing, false, dismiss);
   }
+
+  // drag does NOT dismiss when text is present (BUG3 fix)
+  const { qm } = shown();
+  qm.setText("hey");
+  qm.drag();
+  assert.equal(qm.visible, true, "drag preserves pill with text");
+  assert.equal(qm.text, "hey", "text is preserved");
 });
 
 test("a poke still reaches the pet and does not dismiss the composer", () => {

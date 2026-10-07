@@ -205,6 +205,19 @@ export function createBubbleMachine(io) {
       pendingAsk = false;
       io.hideSpeech();
     },
+
+    // Hide speech and thinking but preserve aiTurnPending and pendingDialogue.
+    // Used when bubble ownership changes mid-turn: the old owner hides its
+    // bubbles, but the new owner must still show the incoming dialogue.
+    hideButKeepTurn() {
+      hideThinkingNow();
+      if (speechTimer !== null) {
+        cancel(speechTimer);
+        speechTimer = null;
+      }
+      speechShowing = false;
+      io.hideSpeech();
+    },
   };
 }
 

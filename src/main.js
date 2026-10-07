@@ -745,7 +745,9 @@ async function start() {
         // Shell sends the line, the indicator and the cue to that one only.
         // Speech hides on its reading timer, not on the next frame, so the
         // overlay that just lost ownership drops its bubble once, on the change.
-        if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideAllNow();
+        // However, thinking and pending AI turns must survive ownership changes:
+        // a character crossing a seam mid-turn would drop the reply otherwise.
+        if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideButKeepTurn();
 
         const placement = {
           ...sprite,
