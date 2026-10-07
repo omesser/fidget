@@ -808,6 +808,12 @@ async function start() {
       }
       if (outcome.action === "speech") {
         arrived(turn.them, outcome.said);
+        if (!payload.streaming && outcome.reacting_to) {
+          const label = turn.them.querySelector(".who-label");
+          if (label) {
+            label.textContent = `${them} · ${outcome.reacting_to}`;
+          }
+        }
         if (!payload.streaming) {
           settled(turn.them);
         }

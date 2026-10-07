@@ -29,6 +29,11 @@ export function createChatTurns() {
   return {
     typed() {
       const turn = { alreadyHasSpeechAhead: false };
+      if (proactivePending && waiting.includes(proactivePending)) {
+        const at = waiting.indexOf(proactivePending);
+        waiting.splice(at, 1);
+        proactivePending = null;
+      }
       waiting.push(turn);
       return turn;
     },
@@ -78,9 +83,6 @@ export function createChatTurns() {
       if (!turn) {
         return { action: "orphan", turn: null, said: payload.said ?? "" };
       }
-      if (turn.isProactive && !payload.reacting_to) {
-        return { action: "orphan", turn: null, said: payload.said ?? "" };
-      }
       waiting.pop();
       if (turn === proactivePending) {
         proactivePending = null;
@@ -89,7 +91,7 @@ export function createChatTurns() {
         for (const leftover of waiting) {
           leftover.alreadyHasSpeechAhead = true;
         }
-        return { action: "speech", turn, said: payload.said };
+        return { action: "speech", turn, said: payload.said, reacting_to: payload.reacting_to };
       }
       if (payload.failure) {
         return { action: "failure", turn, said: payload.failure };

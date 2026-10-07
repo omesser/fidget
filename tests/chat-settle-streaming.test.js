@@ -306,3 +306,48 @@ test("drawn text: failed turn after streaming keeps partial", () => {
   caret.remove();
   assert.equal(body.textContent, "partial answer", "partial text kept after failure");
 });
+
+test("QM pill: stream→final produces one row, no stuck caret", () => {
+  const turns = createChatTurns();
+  const body = doc.createElement("div");
+  body.className = "said md";
+  const caret = doc.createElement("span");
+  caret.className = "caret";
+  body.append(caret);
+
+  const first = turns.settle({ said: "thinking", streaming: true });
+  assert.equal(first.action, "speech", "orphan Speech creates proactivePending");
+  replaceReply(body, first.said, doc);
+  assert.equal(body.textContent.trim(), "thinking");
+
+  const second = turns.settle({ said: "thinking about it", streaming: true });
+  assert.equal(second.action, "speech", "subsequent Speech updates same turn");
+  assert.equal(second.turn, first.turn, "same turn tracked");
+  replaceReply(body, second.said, doc);
+  assert.equal(body.textContent.trim(), "thinking about it");
+
+  const final = turns.settle({ said: "thinking about it more", reacting_to: null });
+  assert.equal(final.action, "speech", "final settles proactivePending even without reacting_to");
+  assert.equal(final.turn, first.turn, "final settles same turn");
+  replaceReply(body, final.said, doc);
+  caret.remove();
+  assert.equal(body.textContent, "thinking about it more", "one row with final text");
+  assert.equal(turns.newest(), null, "turn settled, no stuck caret in waiting");
+});
+
+test("proactive stream superseded by typed turn: proactive row removed", () => {
+  const turns = createChatTurns();
+
+  const proactiveSpeech = turns.settle({ said: "thinking", streaming: true });
+  assert.equal(proactiveSpeech.action, "speech", "proactive Speech creates pending turn");
+  const proactiveTurn = proactiveSpeech.turn;
+
+  const typedTurn = turns.typed();
+  assert.notEqual(turns.newest(), proactiveTurn, "proactive turn removed when typed turn pushed");
+  assert.equal(turns.newest(), typedTurn, "typed turn is now newest");
+
+  const final = turns.settle({ said: "answer to typed question" });
+  assert.equal(final.action, "speech", "typed turn gets the final");
+  assert.equal(final.turn, typedTurn, "final targets typed turn");
+  assert.equal(turns.newest(), null, "typed turn settled");
+});
