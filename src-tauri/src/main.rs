@@ -4080,7 +4080,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     window.set_size_request(1, 1);
     window.set_default_size(1, 1);
     window.set_opacity(0.0);
-    if let Ok(icon) = gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(
+    if let Ok(icon) = gtk::gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(
         include_bytes!("../icons/icon.png").as_slice(),
     )) {
         window.set_icon(Some(&icon));
