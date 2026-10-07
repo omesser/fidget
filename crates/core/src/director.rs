@@ -394,12 +394,12 @@ impl<C: Completer> ModelDirector<C> {
     fn speech_so_far(&self, answer: &str) -> Option<String> {
         let answer = answer.trim_end_matches('\r');
         let (lines, tail) = answer.split_at(answer.rfind('\n').map_or(0, |at| at + 1));
-        
+
         // Contract is found if complete lines parse successfully, OR the tail
         // has a '|' and matches the contract pattern (inline speech like "wave | hi")
         let contract_found = parse_proposal(lines).is_ok()
             || (tail.contains('|') && contract_line(tail.trim()).is_some());
-        
+
         // Once we've seen the contract, parse the whole answer to extract speech
         if contract_found {
             match self.proposal(answer).0 {
