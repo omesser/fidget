@@ -147,6 +147,15 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     hide();
   }
 
+  function dismissOpenWithDragLatch() {
+    cancelHover();
+    if (!visible) return;
+    // Set drag latch BEFORE clearing state
+    if (onDragDismiss) onDragDismiss();
+    text = "";
+    hide();
+  }
+
   function submit() {
     const line = text.trim();
     if (!ready || !visible || !line) return false;
@@ -260,8 +269,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     outside: dismissOpen,
     drag() {
       if (!hasText() && !focused) {
-        if (onDragDismiss) onDragDismiss();
-        dismissOpen();
+        dismissOpenWithDragLatch();
       }
     },
     summon() {

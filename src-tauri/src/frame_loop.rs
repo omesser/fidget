@@ -79,7 +79,7 @@ enum OverlayAction {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg(test)]
+#[cfg(any(test, not(unix)))]
 enum RegionAction {
     ApplyMask,
     ToggleClickThrough,
@@ -88,7 +88,7 @@ enum RegionAction {
 
 /// Decide overlay action based on content (art, hotspots, painted) and ignore flag.
 /// Pure function for table-testing the content→action decision.
-#[cfg(test)]
+#[cfg(any(test, not(unix)))]
 fn decide_region_action(
     sprite: &[[i32; 4]],
     hotspots: &[[i32; 4]],
@@ -2607,11 +2607,14 @@ pub(crate) fn run_frame_loop(
                         };
 
                         // Decide what to do based on content: sprite art, hotspots, painted.
-                        let has_content = !mask_params.0.is_empty()
-                            || !mask_params.1.is_empty()
-                            || !mask_params.2.is_empty();
+                        let region_action = decide_region_action(
+                            &mask_params.0,
+                            &mask_params.1,
+                            &mask_params.2,
+                            ignore,
+                        );
 
-                        if has_content {
+                        if region_action == RegionAction::ApplyMask {
                             let action = decide_overlay_action(
                                 last_mask.lock().unwrap().get(index),
                                 &mask_params,
@@ -2727,9 +2730,9 @@ pub(crate) fn run_frame_loop(
                                 flipped = true;
                                 ignoring[index] = confirmed_ignoring;
                             }
-                        } else {
-                            // Empty fallback: when art+hotspots+painted all empty, force click-through
-                            // and reset last_mask so next content rebuilds the region.
+                        } else if region_action == RegionAction::ToggleClickThrough {
+                            // Empty fallback: when art+hotspots+painted all empty and not already ignoring,
+                            // force click-through and reset last_mask so next content rebuilds the region.
                             let confirmed_ignoring = applied_ignoring
                                 .lock()
                                 .unwrap()
@@ -2769,6 +2772,18 @@ pub(crate) fn run_frame_loop(
                                 });
                             }
 
+                            if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
+                                flipped = true;
+                                ignoring[index] = Some(true);
+                            }
+                        } else {
+                            // RegionAction::Nothing: empty and already ignoring, just sync state
+                            let confirmed_ignoring = applied_ignoring
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(None);
                             if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
                                 flipped = true;
                                 ignoring[index] = Some(true);
