@@ -28,6 +28,12 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # Linux only. The URI hash and the install both read this, so the
+      # cache key cannot name a different set from the one apt fetches.
+      APT_PACKAGES: >-
+        libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+        libayatana-appindicator3-dev shellcheck gnome-keyring
 
     steps:
       - name: Check out the repository
@@ -108,6 +114,21 @@ jobs:
           chmod +x shfmt && sudo mv shfmt /usr/local/bin/
           shfmt --version
 
+      - name: Resolve the shellcheck bottle
+        # A hit never saves, so the key is the bottle and a new one misses.
+        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
+        id: shellcheck
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          files=$(brew info --json=v2 shellcheck \
+            | jq -r '.formulae[0].bottle.stable.files | select(. != null) | tostring')
+          if [ -z "$files" ]; then
+            echo "shellcheck has no stable bottle"
+            exit 1
+          fi
+          echo "hash=$(printf '%s' "$files" | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache the shellcheck bottle
         # One bottle, in its own directory. The image's Homebrew cache is every
         # bottle the runner already fetched, and uploading that is the wrong size.
@@ -115,31 +136,23 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/homebrew-shellcheck
-          key: brew-${{ runner.os }}-${{ runner.arch }}-shellcheck
+          key: brew-${{ runner.os }}-${{ runner.arch }}-shellcheck-${{ steps.shellcheck.outputs.hash }}
+          restore-keys: brew-${{ runner.os }}-${{ runner.arch }}-shellcheck-
 
       - name: Install shellcheck
         # Linux gets shellcheck from the apt step below, so apt updates once.
         # No auto-update: it refreshes every formula, then ignores this bottle.
         if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
         run: |
           export HOMEBREW_CACHE="$HOME/.cache/homebrew-shellcheck"
-          export HOMEBREW_NO_AUTO_UPDATE=1
           brew install shellcheck
 
-      - name: Cache apt archives
-        # The download is the slow part, about 80 MB. Unpacking still happens.
-        # The dir is under $HOME because apt's own cache is root-owned, so the
-        # cache action could not read it. A newer deb is fetched beside these.
+      - name: Resolve the Linux package URIs
+        # The URI list is the lockfile, so apt-get update runs before the cache key.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt/archives
-          key: apt-${{ runner.os }}-${{ runner.arch }}-webkit2gtk-4.1-gtk-3-rsvg-patchelf-ayatana-shellcheck-gnome-keyring
-          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install the Linux system packages
-        # gnome-keyring is the Secret Service the KeyringStore tests reach.
-        if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
+        id: apt
         run: |
           # Drop the image's Chrome apt source: nothing below needs it, and a bad
           # index there fails `apt-get update`. Matched by URL because its file
@@ -147,15 +160,38 @@ jobs:
           sudo find /etc/apt/sources.list.d -type f \
             -exec grep -lE 'dl\.google\.com' {} + 2>/dev/null \
             | sudo xargs -r rm -vf
+          sudo apt-get update
+          read -r -a packages <<< "$APT_PACKAGES"
+          sudo apt-get install --print-uris -y "${packages[@]}" >"$RUNNER_TEMP/apt-uris"
+          uris=$(grep "^'" "$RUNNER_TEMP/apt-uris" || true)
+          if [ -z "$uris" ]; then
+            echo "apt printed no package URIs"
+            exit 1
+          fi
+          echo "hash=$(printf '%s\n' "$uris" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache apt archives
+        # Archives only. Unpacking still happens, and the action cannot read
+        # root's apt cache. The key is this install's URIs, so a new deb misses
+        # and the previous archives restore.
+        if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt.outputs.hash }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install the Linux system packages
+        # gnome-keyring is the Secret Service the KeyringStore tests reach.
+        if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
+        run: |
           # The image may delete archives after install. The cache is those debs.
           mkdir -p "$HOME/.cache/apt/archives/partial"
-          sudo apt-get update
+          read -r -a packages <<< "$APT_PACKAGES"
           sudo apt-get \
             -o "Dir::Cache::archives=$HOME/.cache/apt/archives" \
             -o APT::Keep-Downloaded-Packages=true \
-            install -y \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
-            libayatana-appindicator3-dev shellcheck gnome-keyring
+            install -y "${packages[@]}"
           rm -f "$HOME/.cache/apt/archives/lock"
 
       - name: Cache the pre-commit hook environments
