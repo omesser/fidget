@@ -131,24 +131,39 @@ $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $traceFile = Join-Path $tempDir "fidget-qm-handoff-trace-$timestamp.log"
 $script:Evidence = $traceFile
 
-Write-Host "scenario: launching Fidget with FIDGET_TRACE_BUBBLE=1"
+Write-Host "scenario: launching Fidget with FIDGET_TRACE_BUBBLE=1, static director"
 $env:FIDGET_TRACE_BUBBLE = "1"
 $env:FIDGET_DIRECTOR = "static"
+$env:FIDGET_DIRECTOR_WAKE_SECS = "2"
 $process = Start-Process -FilePath $Bin -NoNewWindow -PassThru -RedirectStandardError $traceFile
 
 Start-Sleep -Seconds 2
 
-# TODO: Automate via UI Automation or send fake input
-# For now, manual steps with generous timing:
-Write-Host "scenario: manual steps required:"
-Write-Host "  1. Click QM pill on right display character"
-Write-Host "  2. Type 'test message' and press Enter"
-Write-Host "  3. Wait for thinking -> speech"
-Write-Host "  4. Drag sprite from right display to left display"
-Write-Host "  5. Watch for pill reopen on left overlay"
+# Automated scenario steps using static director and simulated events:
+# 1. Static director generates initial wake (FIDGET_DIRECTOR_WAKE_SECS=2)
+# 2. Speech bubble appears automatically (static director provides canned response)
+# 3. QM pill opens on the first overlay when bubble shows (automatic in bubble.js)
+# 4. Cross-display handoff is triggered by frame_loop.rs bubble_owner detection
+#
+# The following steps are still PARTIALLY MANUAL as of this commit:
+# - Moving the sprite across display seam: No dev hook exists yet. To fully automate,
+#   add a dev-only command `#[tauri::command] fn dev_move_sprite(instance: u32, x: i32, y: i32)`
+#   behind FIDGET_DEV_HOOKS flag that calls engine.set_position() and emits frame events.
+# - Typing into QM pill: UI Automation APIs exist on Windows (IUIAutomation) but are not
+#   yet wired. For now, the scenario runs Fidget and waits while the static director
+#   and automatic QM pill opening/handoff logic execute, then checks the trace log for
+#   expected region rebuild and handoff patterns.
+
+Write-Host "scenario: Fidget running with static director. QM pill should open automatically."
+Write-Host "Automated: wake -> speech bubble -> QM pill open"
+Write-Host "Manual (not yet hooked): drag sprite across displays to trigger handoff"
 Write-Host ""
-Write-Host "Waiting 30s for manual steps..."
-Start-Sleep -Seconds 30
+Write-Host "Waiting 10s for static director wake and automatic QM pill..."
+Start-Sleep -Seconds 10
+
+# For a full automated run, a dev hook would simulate the drag here:
+# Invoke-Expression "$Bin dev-move-sprite --instance 0 --x -600 --y 500"
+# Start-Sleep -Seconds 2
 
 # Stop Fidget
 Stop-Process -Id $process.Id -Force

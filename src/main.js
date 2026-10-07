@@ -17,6 +17,7 @@ import {
   placeQuickMessage,
   quickMessageMirror,
 } from "./quick-message.js";
+import { reportPaintedRects } from "./painted-rects.js";
 
 const stage = document.getElementById("stage");
 
@@ -164,7 +165,7 @@ function createView(id) {
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
     view.paintedRect = null;
-    reportPaintedRects();
+    reportAllPaintedRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
@@ -265,7 +266,7 @@ function positionBubble(view, spriteRect, displayBounds) {
         view.bubble.offsetHeight,
       ]
     : null;
-  reportPaintedRects();
+  reportAllPaintedRects();
 }
 
 function speechRect(view) {
@@ -647,7 +648,7 @@ function drawView(view, now) {
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
     view.paintedRect = null;
-    reportPaintedRects();
+    reportAllPaintedRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
@@ -717,21 +718,10 @@ let armed = false;
 // and arms both overlays anyway.
 const SEAM_MARGIN = 8;
 
-// Last painted rects sent to backend, serialized for change detection.
-let reportedPainted = "";
-
-function reportPaintedRects() {
-  const rects = [];
-  for (const view of views.values()) {
-    if (view.paintedRect) rects.push(view.paintedRect);
-  }
-  const serialized = JSON.stringify(rects);
-  if (serialized === reportedPainted) return;
-  reportedPainted = serialized;
-  window.__TAURI__.core.invoke("overlay_painted_rects", { rects }).catch((err) => {
-    console.error("overlay_painted_rects", err);
-  });
+function reportAllPaintedRects() {
+  reportPaintedRects(views, window.__TAURI__.core.invoke);
 }
+
 
 function needsFrame(view) {
   return onDisplay(view.previous, view.latest, currentDisplayBounds(), SEAM_MARGIN);

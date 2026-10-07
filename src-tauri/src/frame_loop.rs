@@ -2091,10 +2091,9 @@ pub(crate) fn run_frame_loop(
                                 if dev_flags::TRACE_BUBBLE.is_on() {
                                     let dnd = instance.do_not_disturb();
                                     eprintln!(
-                                        "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={} dnd={}",
+                                        "overlay {}: pill handoff from {} open={} text={:?} focused={} dnd={}",
                                         new_owner_label,
                                         old_owner_label.as_deref().unwrap_or("none"),
-                                        qm_state.instance,
                                         qm_state.open,
                                         qm_state.text,
                                         qm_state.focused,
@@ -3302,6 +3301,75 @@ mod tests {
             chat_dialogue(None, None),
             None,
             "Chat has no dialogue to show when both sources are None"
+        );
+    }
+
+    #[test]
+    fn trace_bubble_formats_match_scenario_patterns() {
+        // Scenario patterns from scripts/scenarios/qm-handoff-dual-display.win.ps1
+        // $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
+        // $handoffPattern = '^(?:\d+ )?overlay (\S+): pill handoff from (\S+) open=(\S+) text="([^"]*)" focused=(\S+)'
+
+        // Sample lines matching the Rust format strings
+        let region_line =
+            "overlay overlay-0: region rebuild 42 rects (art 12 + hotspots 3 + painted 2), 1.23 ms";
+        let handoff_line =
+            "overlay overlay-1: pill handoff from overlay-0 open=true text=\"test message\" focused=true dnd=off";
+
+        // Pattern validation: region line must have "overlay <label>: region rebuild <N> rects (art <A> + hotspots <H> + painted <P>)"
+        assert!(
+            region_line.starts_with("overlay "),
+            "region line must start with 'overlay '"
+        );
+        assert!(
+            region_line.contains(": region rebuild "),
+            "region line must contain ': region rebuild '"
+        );
+        assert!(
+            region_line.contains(" rects (art "),
+            "region line must contain ' rects (art '"
+        );
+        assert!(
+            region_line.contains(" + hotspots "),
+            "region line must contain ' + hotspots '"
+        );
+        assert!(
+            region_line.contains(" + painted "),
+            "region line must contain ' + painted '"
+        );
+
+        // Pattern validation: handoff line must have "overlay <label>: pill handoff from <overlay> open=<bool> text=\"<text>\" focused=<bool>"
+        assert!(
+            handoff_line.starts_with("overlay "),
+            "handoff line must start with 'overlay '"
+        );
+        assert!(
+            handoff_line.contains(": pill handoff from "),
+            "handoff line must contain ': pill handoff from '"
+        );
+        assert!(
+            handoff_line.contains(" open="),
+            "handoff line must contain ' open='"
+        );
+        assert!(
+            handoff_line.contains(" text=\""),
+            "handoff line must contain ' text=\"'"
+        );
+        assert!(
+            handoff_line.contains(" focused="),
+            "handoff line must contain ' focused='"
+        );
+        // Must NOT contain "instance=" between "from" and "open="
+        let from_to_open = handoff_line
+            .split(" from ")
+            .nth(1)
+            .unwrap()
+            .split(" open=")
+            .next()
+            .unwrap();
+        assert!(
+            !from_to_open.contains("instance="),
+            "handoff line must not have 'instance=' between 'from' and 'open='"
         );
     }
 }

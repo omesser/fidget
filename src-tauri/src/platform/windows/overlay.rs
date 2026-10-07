@@ -126,7 +126,14 @@ pub fn update_input_region(
 ) -> Result<(), String> {
     let hwnd = overlay_hwnd(window)?;
     match art {
-        Some(art) => apply_input_mask(hwnd, art, hotspot_rects, painted_rects, click_through),
+        Some(art) => apply_input_mask(
+            window,
+            hwnd,
+            art,
+            hotspot_rects,
+            painted_rects,
+            click_through,
+        ),
         None => clear_input_region(hwnd),
     }
 }
@@ -298,6 +305,7 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
 /// next frame forced a redraw.
 fn apply_input_mask(
+    window: &tauri::Window,
     hwnd: HWND,
     art: &[[i32; 4]],
     hotspot_rects: &[[i32; 4]],
@@ -357,7 +365,8 @@ fn apply_input_mask(
 
     if trace_bubble || trace_mask {
         eprintln!(
-            "region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
+            "overlay {}: region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
+            window.label(),
             rects.len(),
             art.len(),
             hotspot_rects.len(),

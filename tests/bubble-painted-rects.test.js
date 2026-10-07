@@ -1,52 +1,144 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { computeBubblePaintedRect, reportPaintedRects, clearCache } from "../src/painted-rects.js";
 
-test("reportPaintedRects sends [x,y,w,h] arrays", () => {
-  const rects = [
-    [10, 20, 100, 50],
-    [150, 200, 80, 60],
-  ];
-
-  const serialized = JSON.stringify(rects);
-  const parsed = JSON.parse(serialized);
-
-  assert.strictEqual(parsed.length, 2, "Two rects");
-  assert.deepStrictEqual(parsed[0], [10, 20, 100, 50], "First rect as [x,y,w,h]");
-  assert.deepStrictEqual(parsed[1], [150, 200, 80, 60], "Second rect as [x,y,w,h]");
-});
-
-test("painted rect cleared on hide", () => {
-  const paintedRect = null;
-  assert.strictEqual(paintedRect, null, "Painted rect cleared when bubble hidden");
-});
-
-test("painted rect set from positionBubble", () => {
+test("computeBubblePaintedRect returns null when bubble is hidden", () => {
+  const bubble = {
+    classList: {
+      contains: () => false,
+    },
+  };
   const pos = { x: 100, y: 200 };
-  const bubbleSize = { width: 150, height: 80 };
-
-  const paintedRect = [
-    Math.round(pos.x),
-    Math.round(pos.y),
-    bubbleSize.width,
-    bubbleSize.height,
-  ];
-
-  assert.deepStrictEqual(paintedRect, [100, 200, 150, 80], "Painted rect from bubble position");
+  assert.equal(computeBubblePaintedRect(bubble, pos), null);
 });
 
-test("painted rects batched per view", () => {
-  const views = [
-    { paintedRect: [10, 20, 100, 50] },
-    { paintedRect: null },
-    { paintedRect: [150, 200, 80, 60] },
-  ];
+test("computeBubblePaintedRect returns null during fade out", () => {
+  const bubble = {
+    classList: {
+      contains: (cls) => cls === "visible",
+    },
+    style: {
+      opacity: "0.5",
+    },
+    offsetWidth: 300,
+    offsetHeight: 150,
+  };
+  const pos = { x: 100, y: 200 };
+  assert.equal(computeBubblePaintedRect(bubble, pos), null);
+});
 
-  const rects = [];
-  for (const view of views) {
-    if (view.paintedRect) rects.push(view.paintedRect);
-  }
+test("computeBubblePaintedRect returns rect when fully visible", () => {
+  const bubble = {
+    classList: {
+      contains: (cls) => cls === "visible",
+    },
+    style: {
+      opacity: "1",
+    },
+    offsetWidth: 300,
+    offsetHeight: 150,
+  };
+  const pos = { x: 100, y: 200 };
+  const rect = computeBubblePaintedRect(bubble, pos);
+  assert.deepEqual(rect, [100, 200, 300, 150]);
+});
 
-  assert.strictEqual(rects.length, 2, "Only visible bubbles reported");
-  assert.deepStrictEqual(rects[0], [10, 20, 100, 50]);
-  assert.deepStrictEqual(rects[1], [150, 200, 80, 60]);
+test("computeBubblePaintedRect rounds position", () => {
+  const bubble = {
+    classList: {
+      contains: (cls) => cls === "visible",
+    },
+    style: {},
+    offsetWidth: 300,
+    offsetHeight: 150,
+  };
+  const pos = { x: 100.7, y: 200.3 };
+  const rect = computeBubblePaintedRect(bubble, pos);
+  assert.deepEqual(rect, [101, 200, 300, 150]);
+});
+
+test("reportPaintedRects sends empty array when no views have painted rects", () => {
+  clearCache();
+  const views = new Map();
+  views.set(1, { paintedRect: null });
+  views.set(2, { paintedRect: null });
+  
+  let invokedWith = null;
+  const invoke = (cmd, args) => {
+    invokedWith = { cmd, args };
+    return Promise.resolve();
+  };
+
+  reportPaintedRects(views, invoke);
+  assert.equal(invokedWith.cmd, "overlay_painted_rects");
+  assert.deepEqual(invokedWith.args.rects, []);
+});
+
+test("reportPaintedRects batches multiple view rects", () => {
+  clearCache();
+  const views = new Map();
+  views.set(1, { paintedRect: [10, 20, 100, 50] });
+  views.set(2, { paintedRect: [200, 300, 150, 75] });
+  views.set(3, { paintedRect: null });
+  
+  let invokedWith = null;
+  const invoke = (cmd, args) => {
+    invokedWith = { cmd, args };
+    return Promise.resolve();
+  };
+
+  reportPaintedRects(views, invoke);
+  assert.equal(invokedWith.cmd, "overlay_painted_rects");
+  assert.deepEqual(invokedWith.args.rects, [
+    [10, 20, 100, 50],
+    [200, 300, 150, 75],
+  ]);
+});
+
+test("reportPaintedRects skips duplicate sends", () => {
+  clearCache();
+  const views = new Map();
+  views.set(1, { paintedRect: [10, 20, 100, 50] });
+  
+  let invokeCount = 0;
+  const invoke = () => {
+    invokeCount++;
+    return Promise.resolve();
+  };
+
+  reportPaintedRects(views, invoke);
+  assert.equal(invokeCount, 1);
+
+  reportPaintedRects(views, invoke);
+  assert.equal(invokeCount, 1, "second call with same rects should not invoke");
+});
+
+test("reportPaintedRects sends update when rects change", () => {
+  clearCache();
+  const views = new Map();
+  views.set(1, { paintedRect: [10, 20, 100, 50] });
+  
+  let invokeCount = 0;
+  const invoke = () => {
+    invokeCount++;
+    return Promise.resolve();
+  };
+
+  reportPaintedRects(views, invoke);
+  assert.equal(invokeCount, 1);
+
+  views.get(1).paintedRect = [10, 20, 200, 100];
+  reportPaintedRects(views, invoke);
+  assert.equal(invokeCount, 2, "changed rects should trigger another invoke");
+});
+
+test("reportPaintedRects handles invoke errors", () => {
+  clearCache();
+  const views = new Map();
+  views.set(1, { paintedRect: [10, 20, 100, 50] });
+  
+  const invoke = () => Promise.reject(new Error("test error"));
+
+  // Should not throw
+  reportPaintedRects(views, invoke);
 });
