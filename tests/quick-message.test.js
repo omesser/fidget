@@ -147,16 +147,13 @@ test("leaving after the pill is up does not dismiss it immediately", () => {
 test("pill auto-hides after 3s if empty and pointer leaves both sprite and pill", () => {
   const { qm, advance } = shown();
 
-  // No text entered, leave sprite
+  qm.blur();
   qm.leaveSprite();
-  // Also leave pill
   qm.leavePill();
 
-  // After 2.9s, still visible
   advance(2900);
   assert.equal(qm.visible, true, "pill stays visible before 3s");
 
-  // After 3s total, hides
   advance(100);
   assert.equal(qm.visible, false, "pill auto-hides after 3s continuous away");
 });
@@ -178,15 +175,13 @@ test("auto-hide cancels if pointer re-enters sprite before 3s", () => {
 test("re-entering sprite resets auto-hide timer to fresh 3s on next leave", () => {
   const { qm, advance } = shown();
 
-  // Leave both, wait 2s (partial)
+  qm.blur();
   qm.leaveSprite();
   qm.leavePill();
   advance(2000);
 
-  // Re-enter sprite (cancels timer)
   qm.enterSprite();
 
-  // Leave again - should start fresh 3s, not continue from 2s
   qm.leaveSprite();
   advance(2900);
   assert.equal(qm.visible, true, "pill still visible at 2.9s of fresh timer");
@@ -226,6 +221,7 @@ test("auto-hide treats whitespace-only as empty", () => {
   const { qm, advance } = shown();
 
   qm.setText("   ");
+  qm.blur();
   qm.leaveSprite();
   qm.leavePill();
 
@@ -407,6 +403,7 @@ test("Chat opening keeps a draft in an open pill", () => {
 
 test("a bubble takes an idle pill the pointer has left", () => {
   const { qm, advance } = shown();
+  qm.blur();
   qm.leaveSprite();
   assert.equal(qm.visible, true, "auto-hide has not run yet");
 
@@ -422,6 +419,7 @@ test("a bubble waits for the pointer to leave the sprite and the pill", () => {
   advance(10_000);
   assert.equal(qm.visible, true, "a hovered pill stays over the bubble");
 
+  qm.blur();
   qm.leaveSprite();
   advance(BUBBLE_YIELD_MS - 1);
   qm.enterPill();
