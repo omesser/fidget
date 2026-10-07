@@ -222,7 +222,7 @@ test("backend thinking flag only reaches bubble owner", async () => {
   // Backend sends thinking=true only to bubble owner (owner), not to non-owner
   owner.frame({ thinking: true, visible: true, bubble: true });
   nonOwner.frame({ thinking: false, visible: true, bubble: false });
-  
+
   // On first rise, grace timer applies (250ms)
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(thinking1, true, "bubble owner shows thinking after grace");
