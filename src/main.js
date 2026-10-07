@@ -370,8 +370,6 @@ function syncQuick(view) {
     arm();
     return;
   }
-  // Force layout before measuring: offsetHeight can be stale if CSS just changed.
-  void view.quick.offsetHeight;
   positionQuick(view, {
     x: Math.round(view.latest.x),
     y: Math.round(view.latest.y),
@@ -774,9 +772,8 @@ async function start() {
         // One overlay owns each Instance's bubble (`bubble_owner`), and the
         // Shell sends the line, the indicator and the cue to that one only.
         // Speech hides on its reading timer, not on the next frame, so the
-        // overlay that just lost ownership drops its bubble once, on the change.
-        // However, thinking and pending AI turns must survive ownership changes:
-        // a character crossing a seam mid-turn would drop the reply otherwise.
+        // overlay that just lost ownership drops its bubble once, on the change,
+        // keeping the turn so a reply landing mid-crossing still shows.
         if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideButKeepTurn();
 
         const placement = {
