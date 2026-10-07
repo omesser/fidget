@@ -235,7 +235,10 @@ pub(crate) fn run_frame_loop(
             ]));
         #[cfg(not(unix))]
         let last_mask: Arc<Mutex<Vec<RegionParams>>> =
-            Arc::new(Mutex::new(vec![(Vec::new(), Vec::new(), Vec::new()); covered.len()]));
+            Arc::new(Mutex::new(vec![
+                (Vec::new(), Vec::new(), Vec::new());
+                covered.len()
+            ]));
         // Each Instance's draw trail, for a Windows region that clips drawing.
         #[cfg(not(unix))]
         let mut trails: std::collections::HashMap<InstanceId, DrawTrail> =
@@ -2102,7 +2105,7 @@ pub(crate) fn run_frame_loop(
                             text: qm.text.clone(),
                             focused: qm.focused,
                         });
-                    
+
                     if let Some(plan) = fidget_core::qm_handoff::plan_qm_handoff(
                         old_owner,
                         owner,
@@ -2149,9 +2152,14 @@ pub(crate) fn run_frame_loop(
                                 struct QmDismiss {
                                     instance: String,
                                 }
-                                app.emit_to(old_label, "qm-dismiss", QmDismiss {
-                                    instance: plan.instance.clone(),
-                                }).ok();
+                                app.emit_to(
+                                    old_label,
+                                    "qm-dismiss",
+                                    QmDismiss {
+                                        instance: plan.instance.clone(),
+                                    },
+                                )
+                                .ok();
                             }
                         }
                     }

@@ -46,9 +46,9 @@ pub fn plan_qm_handoff(
     if !open {
         return None;
     }
-    let (instance, text, focused) = match qm {
-        Some(q) => (q.instance.clone(), q.text.clone(), q.focused),
-        None => return None,
+    let (instance, text, focused) = {
+        let q = qm?;
+        (q.instance.clone(), q.text.clone(), q.focused)
     };
     Some(QmHandoffPlan {
         instance,
@@ -74,11 +74,33 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn handoff_table() {
-        let rows: &[(&str, Option<usize>, Option<usize>, Option<QmSnapshot>, bool, bool)] = &[
+        let rows: &[(
+            &str,
+            Option<usize>,
+            Option<usize>,
+            Option<QmSnapshot>,
+            bool,
+            bool,
+        )] = &[
             // name, old, new, qm, was_open_latch, expect_some
-            ("no owner change", Some(0), Some(0), Some(open("x", true)), true, false),
-            ("draft follows", Some(0), Some(1), Some(open("hi", true)), true, true),
+            (
+                "no owner change",
+                Some(0),
+                Some(0),
+                Some(open("x", true)),
+                true,
+                false,
+            ),
+            (
+                "draft follows",
+                Some(0),
+                Some(1),
+                Some(open("hi", true)),
+                true,
+                true,
+            ),
             (
                 "empty hover: tip cleared backend but latch keeps handoff",
                 Some(0),
@@ -95,7 +117,14 @@ mod tests {
                 false,
                 true,
             ),
-            ("neither open nor latch", Some(0), Some(1), None, false, false),
+            (
+                "neither open nor latch",
+                Some(0),
+                Some(1),
+                None,
+                false,
+                false,
+            ),
             (
                 "backend open empty unfocused",
                 Some(0),
@@ -115,5 +144,4 @@ mod tests {
             }
         }
     }
-
 }

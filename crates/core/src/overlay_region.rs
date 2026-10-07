@@ -51,10 +51,7 @@ pub fn windows_region_key(
 }
 
 /// Whether the Windows region must be re-applied.
-pub fn windows_region_must_rebuild(
-    last: &WindowsRegionKey,
-    next: &WindowsRegionKey,
-) -> bool {
+pub fn windows_region_must_rebuild(last: &WindowsRegionKey, next: &WindowsRegionKey) -> bool {
     last != next
 }
 
@@ -132,6 +129,7 @@ mod tests {
 
     /// Table: (name, art LTRB, hotspots XYWH, painted XYWH, expect LTRB contains)
     #[test]
+    #[allow(clippy::type_complexity)]
     fn region_composition_table() {
         let art = [[100, 200, 180, 328]]; // sprite swept bounds
         let more_hotspot = [220, 140, 72, 18]; // "Open chat"
@@ -194,16 +192,9 @@ mod tests {
 
         for (name, trail, hotspots, painted, expect) in rows {
             let got = overlay_region_rects(trail, hotspots, painted);
-            assert_eq!(
-                got.len(),
-                expect.len(),
-                "{name}: rect count"
-            );
+            assert_eq!(got.len(), expect.len(), "{name}: rect count");
             for rect in *expect {
-                assert!(
-                    got.contains(rect),
-                    "{name}: missing {rect:?} in {got:?}"
-                );
+                assert!(got.contains(rect), "{name}: missing {rect:?} in {got:?}");
             }
         }
     }
@@ -241,5 +232,4 @@ mod tests {
             "idle sprite + new painted bubble must force SetWindowRgn rebuild"
         );
     }
-
 }
