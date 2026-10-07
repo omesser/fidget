@@ -114,6 +114,14 @@ mod tests {
                 false,
             ),
             (
+                "latch but no snapshot → no handoff (can't get instance)",
+                Some(0),
+                Some(1),
+                None,
+                true,
+                false,
+            ),
+            (
                 "closed by drag then owner change → handoff",
                 Some(0),
                 Some(1),

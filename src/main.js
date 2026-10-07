@@ -188,10 +188,10 @@ function createView(id) {
       bubble.removeAttribute("data-ask");
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
-      window.__TAURI__.core.invoke("overlay_trace_bubble", {
-        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        message: `showSpeech instance=${id}`,
-      }).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble",
+        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        `showSpeech instance=${id}`
+      ).catch(() => {});
     },
     // Ask bubble: prompt to open Chat for a question. Shorter text, distinct style.
     // Shown when the backend signals the user needs to answer in Chat.
@@ -203,33 +203,33 @@ function createView(id) {
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
-      window.__TAURI__.core.invoke("overlay_trace_bubble", {
-        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        message: `showAsk instance=${id}`,
-      }).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble",
+        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        `showAsk instance=${id}`
+      ).catch(() => {});
     },
     hideSpeech() {
       hide();
-      window.__TAURI__.core.invoke("overlay_trace_bubble", {
-        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        message: `hideSpeech instance=${id}`,
-      }).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble",
+        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        `hideSpeech instance=${id}`
+      ).catch(() => {});
     },
     // Thinking indicator: animated dots, no text. Shown while AI is generating a reply.
     // Smaller than speech bubble, centered differently, no truncation control.
     showThinking() {
       show("thinking");
-      window.__TAURI__.core.invoke("overlay_trace_bubble", {
-        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        message: `showThinking instance=${id}`,
-      }).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble",
+        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        `showThinking instance=${id}`
+      ).catch(() => {});
     },
     hideThinking() {
       hide();
-      window.__TAURI__.core.invoke("overlay_trace_bubble", {
-        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        message: `hideThinking instance=${id}`,
-      }).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble",
+        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        `hideThinking instance=${id}`
+      ).catch(() => {});
     },
   });
 
@@ -320,7 +320,8 @@ function reportQmState(view) {
   const serialized = JSON.stringify(state);
   if (serialized === reportedQmState) return;
   reportedQmState = serialized;
-  window.__TAURI__.core.invoke("overlay_qm_state", state).catch((err) => {
+  // Tauri 2 maps invoke args by parameter name
+  window.__TAURI__.core.invoke("overlay_qm_state", { payload: state }).catch((err) => {
     console.error("overlay_qm_state", err);
   });
 }
@@ -511,6 +512,9 @@ function attachQuickMessage(view, id) {
       });
     },
     send(text) {
+      // Start AI turn immediately (ellipsis). Backend filters thinking/dialogue by bubble
+      // ownership; non-owner overlays clear aiTurnPending when placement.bubble=false.
+      view.bubbles.aiTurnStarted();
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
         .invoke("chat_opening", { instance: id })
@@ -523,9 +527,6 @@ function attachQuickMessage(view, id) {
             machine.restore(text);
             return;
           }
-          // Start AI turn immediately. Backend filters thinking/dialogue by bubble
-          // ownership; non-owner overlays clear aiTurnPending when placement.bubble=false.
-          view.bubbles.aiTurnStarted();
           return window.__TAURI__.core.invoke("chat_send", { instance: id, text, echo: true });
         })
         .catch((err) => {
@@ -874,9 +875,10 @@ async function start() {
     ({ payload }) => {
       // Trace handoff for DESKTOP diagnosis (FIDGET_TRACE_BUBBLE)
       if (window.__TAURI__?.core) {
-        window.__TAURI__.core.invoke("overlay_trace_bubble", {
-          line: `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`,
-        }).catch(() => {});
+        window.__TAURI__.core.invoke("overlay_trace_bubble",
+          overlay.label,
+          `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`
+        ).catch(() => {});
       }
 
       let view = views.get(payload.instance);
@@ -903,9 +905,10 @@ async function start() {
 
         // Trace after syncQuick to show hotspot/painted state
         if (window.__TAURI__?.core) {
-          window.__TAURI__.core.invoke("overlay_trace_bubble", {
-            line: `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`,
-          }).catch(() => {});
+          window.__TAURI__.core.invoke("overlay_trace_bubble",
+            overlay.label,
+            `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`
+          ).catch(() => {});
         }
       }
     },
