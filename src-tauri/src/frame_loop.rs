@@ -2495,7 +2495,6 @@ pub(crate) fn run_frame_loop(
                             )
                         };
 
-                        // Decide what to do based on content: sprite art, hotspots, painted.
                         let region_action = decide_region_action(
                             &mask_params.0,
                             &mask_params.1,
@@ -2620,8 +2619,8 @@ pub(crate) fn run_frame_loop(
                                 ignoring[index] = confirmed_ignoring;
                             }
                         } else if region_action == RegionAction::ToggleClickThrough {
-                            // Empty fallback: when art+hotspots+painted all empty and not already ignoring,
-                            // force click-through and reset last_mask so next content rebuilds the region.
+                            // Nothing to draw: pass clicks through, and forget the last region
+                            // so whatever comes next rebuilds it.
                             let confirmed_ignoring = applied_ignoring
                                 .lock()
                                 .unwrap()
@@ -2653,7 +2652,6 @@ pub(crate) fn run_frame_loop(
                                         {
                                             applied_ignoring_clone.lock().unwrap()[overlay_index] =
                                                 Some(true);
-                                            // Reset last_mask so next content forces rebuild
                                             last_mask_clone.lock().unwrap()[overlay_index] =
                                                 (Vec::new(), Vec::new(), Vec::new());
                                         }
@@ -2666,7 +2664,7 @@ pub(crate) fn run_frame_loop(
                                 ignoring[index] = Some(true);
                             }
                         } else {
-                            // RegionAction::Nothing: empty and already ignoring, just sync state
+                            // Already passing clicks: only catch up with a toggle that landed.
                             let confirmed_ignoring = applied_ignoring
                                 .lock()
                                 .unwrap()
