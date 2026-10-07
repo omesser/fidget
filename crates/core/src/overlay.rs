@@ -749,8 +749,8 @@ mod tests {
         assert_eq!(display_index_for((960.0, 540.0), &[]), None);
     }
 
-    /// Negative-origin displays (portrait monitor LEFT of primary): Windows dual-display geometry
-    /// from live failure (overlay-0 3440x1440 at origin, overlay-1 1200x1920 at negative offset).
+    /// A portrait display left of the primary sits at a negative origin, and the
+    /// seam column still belongs to the display whose window starts there.
     #[test]
     fn bubble_owner_with_negative_origin_displays() {
         let displays = [
@@ -790,19 +790,5 @@ mod tests {
             Some(1),
             "just left of seam is portrait"
         );
-    }
-
-    #[test]
-    fn bubble_owner_negative_origin() {
-        let displays = [
-            rect(0.0, 0.0, 3440.0, 1440.0),
-            rect(-1200.0, -209.0, 1200.0, 1920.0),
-        ];
-
-        let owner = bubble_owner((80.0, 80.0), &displays);
-        assert_eq!(owner, Some(0), "primary display");
-
-        let owner = bubble_owner((-20.0, 100.0), &displays);
-        assert_eq!(owner, Some(1), "portrait display with negative origin");
     }
 }
