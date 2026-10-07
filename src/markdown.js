@@ -4,6 +4,16 @@
 
 import { Lexer } from "./vendor/marked.esm.js";
 
+// Bidi controls can reverse a line. U+200B, word joiner and BOM can hide one.
+// Newline and tab stay, because markdown uses them. ZWJ and ZWNJ stay too:
+// joined emoji and some scripts need them.
+const UNSAFE =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+
+export function stripUnsafe(text) {
+  return String(text ?? "").replace(UNSAFE, "");
+}
+
 // GFM, because that is what harnesses emit: tables and task lists from Claude
 // Code, fenced code with an info string from Codex, and Zed's ACP client turns
 // the same extensions on. CommonMark alone would draw a table as a run of pipes.
@@ -90,7 +100,7 @@ function row(cells, tag, doc) {
   return node;
 }
 
-function blocks(tokens, parent, doc) {
+function blocks(tokens, parent, doc, skipEmptyJson) {
   for (const token of tokens) {
     switch (token.type) {
       // Blank lines, and a link definition that already produced its link.
@@ -111,7 +121,7 @@ function blocks(tokens, parent, doc) {
         break;
       case "blockquote": {
         const quote = doc.createElement("blockquote");
-        blocks(token.tokens ?? [], quote, doc);
+        blocks(token.tokens ?? [], quote, doc, skipEmptyJson);
         parent.append(quote);
         break;
       }
@@ -125,7 +135,7 @@ function blocks(tokens, parent, doc) {
         }
         for (const item of token.items) {
           const li = doc.createElement("li");
-          blocks(item.tokens ?? [], li, doc);
+          blocks(item.tokens ?? [], li, doc, skipEmptyJson);
           list.append(li);
         }
         parent.append(list);
@@ -142,6 +152,10 @@ function blocks(tokens, parent, doc) {
         break;
       }
       case "code": {
+        // Set by the ask row. A reply keeps an empty fence, because the model wrote it.
+        if (skipEmptyJson && emptyJsonBlock(token.text)) {
+          break;
+        }
         // A fence and a table are the two blocks that do not reflow, and the
         // Chat window opens 420 points wide. The scroll goes on a wrapper so the
         // overflow stays inside the row instead of widening it.
@@ -182,6 +196,32 @@ function blocks(tokens, parent, doc) {
   }
 }
 
+// True for a blank code body or JSON `{}`, `[]`, `null`, or `""`.
+export function emptyJsonBlock(text) {
+  const body = String(text ?? "").trim();
+  if (body === "") {
+    return true;
+  }
+  try {
+    const value = JSON.parse(body);
+    if (value === null || value === "") {
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+    return typeof value === "object" && Object.keys(value).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+// True when every block is an empty JSON fence. The ask then has no body.
+export function onlyEmptyJson(text) {
+  const tokens = Lexer.lex(String(text ?? ""), FLAVOUR).filter((token) => token.type !== "space");
+  return tokens.length > 0 && tokens.every((token) => token.type === "code" && emptyJsonBlock(token.text));
+}
+
 // The reply drawn in each row so far, so a chunk can be added to it. Keyed on
 // the element because that is what the surface holds; a removed row takes its
 // entry with it.
@@ -190,11 +230,11 @@ const drawn = new WeakMap();
 // Draw the whole of `text` into `body`, replacing whatever is there, and put
 // the caret back. Found and re-added with `querySelector` and `append`, never
 // `insertBefore`: the caret may be nested in a block, not a direct child of `body`.
-export function drawReply(body, text, doc = globalThis.document) {
+export function drawReply(body, text, doc = globalThis.document, options) {
   const caret = body.querySelector(".caret");
   drawn.set(body, text ?? "");
   body.replaceChildren();
-  blocks(Lexer.lex(text ?? "", FLAVOUR), body, doc);
+  blocks(Lexer.lex(stripUnsafe(text ?? ""), FLAVOUR), body, doc, options?.skipEmptyJson);
   if (caret) {
     // Inside the last paragraph, so it blinks at the end of the line rather
     // than on one of its own. Anywhere else — a fence, a table, an empty

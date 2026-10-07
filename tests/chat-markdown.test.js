@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { appendReply, drawReply } from "../src/markdown.js";
+import { appendReply, drawReply, stripUnsafe } from "../src/markdown.js";
 
 class Node {
   constructor() {
@@ -147,6 +147,39 @@ function sketch(node) {
   const cls = node.className ? `.${node.className.trim().replace(/\s+/g, ".")}` : "";
   return `${node.tagName.toLowerCase()}${cls}[${node.childNodes.map(sketch).join(" ")}]`;
 }
+
+test("unsafe characters are stripped and newline and tab stay", () => {
+  const cases = [
+    ["\u202A\u202B\u202C\u202D\u202E", ""],
+    ["\u2066\u2067\u2068\u2069", ""],
+    ["\u200B\u2060\uFEFF", ""],
+    ["\u200C\u200D", "\u200C\u200D"],
+    ["a\u0000b\u0007c\u007Fd\u0085e", "abcde"],
+    ["keep\n\tthem", "keep\n\tthem"],
+    ["read\u202E/etc/passwd", "read/etc/passwd"],
+  ];
+
+  for (const [input, expected] of cases) {
+    assert.equal(stripUnsafe(input), expected, JSON.stringify(input));
+  }
+});
+
+test("an empty json fence in a reply still draws", () => {
+  const body = draw("the config is now\n\n```json\n{}\n```");
+  const code = elements(body).find((node) => node.tagName === "CODE");
+
+  assert.equal(elements(body).find((node) => node.tagName === "P").textContent, "the config is now");
+  assert.equal(code.textContent, "{}");
+  assert.equal(body.textContent.includes("```"), false);
+});
+
+test("a joined emoji and a zwnj word survive a reply", () => {
+  const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+  const word = "می\u200Cخواهم";
+
+  assert.equal(draw(family).textContent, family);
+  assert.equal(draw(word).textContent, word);
+});
 
 test("emphasis, code and strikethrough become elements, not punctuation", () => {
   const body = draw("**bold** and _italic_ and `code` and ~~gone~~");

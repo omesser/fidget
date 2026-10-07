@@ -3,20 +3,31 @@
 // can, so the DOM shape has a test.
 
 import { askSays } from "./chat-ask.js";
+import { drawReply } from "./markdown.js";
 
-// One element per part. Code is a real <code> so it shares the paint reply
-// code gets, and every part reaches the DOM through textContent only.
+// One element per plain part. Harness content goes through `drawReply`, which
+// writes with `textContent` only. The reply rules key off `.said.md`.
 const ELEMENT = {
   title: ["div", "ask-title"],
-  code: ["code", "ask-code"],
   prose: ["div", "ask-prose"],
   metadata: ["div", "ask-metadata"],
 };
 
 export function drawAskDetails(body, ask) {
+  const doc = body.ownerDocument;
   for (const { kind, text } of askSays(ask)) {
+    if (kind === "markdown") {
+      const host = doc.createElement("div");
+      host.className = "said md";
+      // Empty JSON is not a body on this card. A reply keeps that fence.
+      drawReply(host, text, doc, { skipEmptyJson: true });
+      if (host.children.length > 0) {
+        body.append(host);
+      }
+      continue;
+    }
     const [tag, className] = ELEMENT[kind];
-    const node = body.ownerDocument.createElement(tag);
+    const node = doc.createElement(tag);
     node.className = className;
     node.textContent = text;
     body.append(node);
