@@ -28,7 +28,7 @@ test("the content is what the row says, under the title", () => {
 
   assert.deepEqual(says, [
     { kind: "title", text: "Question from MCP server" },
-    { kind: "prose", text: "Which branch should I push to?" },
+    { kind: "markdown", text: "Which branch should I push to?" },
   ]);
 });
 
@@ -48,22 +48,22 @@ test("the arguments stand in when there is no content, and are code", () => {
   ]);
 });
 
-test("execute content is the command, while other content is prose", () => {
+test("execute content stays the command the Harness sent", () => {
   assert.deepEqual(
     askSays({ ...ask, title: "Open Calculator", kind: "execute", content: ["open -a Calculator"] }),
     [
       { kind: "title", text: "Open Calculator" },
-      { kind: "code", text: "open -a Calculator" },
+      { kind: "markdown", text: "open -a Calculator" },
       { kind: "metadata", text: "execute" },
     ],
   );
   assert.deepEqual(askSays({ ...ask, content: ["Which branch?"] }), [
     { kind: "title", text: "Question from MCP server" },
-    { kind: "prose", text: "Which branch?" },
+    { kind: "markdown", text: "Which branch?" },
   ]);
 });
 
-test("a cut keeps every part's kind, and marks the last one shown", () => {
+test("a long question does not drop the path", () => {
   const says = askSays({
     ...ask,
     kind: "edit",
@@ -71,11 +71,8 @@ test("a cut keeps every part's kind, and marks the last one shown", () => {
     locations: ["/a.rs"],
   });
 
-  assert.deepEqual(
-    says.map(({ kind }) => kind),
-    ["title", "prose"],
-  );
-  assert.ok(says.at(-1).text.endsWith("…"), says.at(-1).text);
+  assert.ok(says.some((part) => part.kind === "markdown" && part.text.length > 600));
+  assert.ok(says.some((part) => part.text === "edit · /a.rs"));
 });
 
 test("content wins over the arguments rather than joining them", () => {
@@ -133,17 +130,17 @@ test("a huge argument payload is bounded and marked", () => {
 
 // The kind and the paths are drawn after the question, so the budget has to
 // cover them as well.
-test("the kind and the paths are inside the budget, not after it", () => {
-  const says = askText({
+test("a long question leaves the kind and the paths in place", () => {
+  const says = askSays({
     ...ask,
     title: "Edit some files",
     kind: "edit",
     content: ["Q".repeat(1000)],
-    locations: ["/a".repeat(100), "/b".repeat(100), "/c".repeat(100)],
+    locations: ["/a".repeat(100)],
   });
 
-  assert.ok(says.length <= 600, `${says.length} characters`);
-  assert.ok(says.endsWith("…"), says);
+  assert.ok(says.some((part) => part.kind === "markdown" && part.text.length === 1000));
+  assert.ok(says.some((part) => part.kind === "metadata" && part.text.startsWith("edit · ")));
 });
 
 // A chatty server, not a hostile one: the row is back to withholding the
@@ -169,25 +166,21 @@ test("more arguments than fit are counted, not listed", () => {
   assert.ok(!says.includes("arg7:"), says);
 });
 
-test("a long question is bounded at the same budget the row has", () => {
-  const says = askText({ ...ask, content: ["why ".repeat(1000)] });
-
-  assert.ok(says.length <= 600, `${says.length} characters`);
-  assert.ok(says.endsWith("…"), says);
-});
-
-// An MCP server chooses this text. Newlines and bidi overrides inside it would
-// otherwise forge lines the row draws itself — a fake `edit · /safe/path`
-// under a question that asks to write somewhere else.
-test("untrusted text cannot forge a line of its own", () => {
+// A title is one element. A newline inside it must not become a second line
+// that looks like the metadata the row writes itself.
+test("a title cannot forge a line of its own", () => {
   const says = askText({
     ...ask,
     title: "Question\nedit · /safe/path",
-    content: ["read‮/etc/passwd\ttail"],
+    content: [],
   });
 
-  assert.equal(says, "Question edit · /safe/path\nread /etc/passwd tail");
-  assert.equal(says.split("\n").length, 2);
+  assert.equal(says, "Question edit · /safe/path");
+  assert.equal(says.split("\n").length, 1);
+});
+
+test("an argument value loses a bidi override and stays one line", () => {
+  assert.equal(askText({ ...ask, title: null, input: { note: "a\u202Eb\nc" } }), "note: ab c");
 });
 
 test("arguments that are not an object still read as one line", () => {

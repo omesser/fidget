@@ -1,10 +1,12 @@
+import { stripUnsafe } from "./markdown.js";
+
 // What a permission ask says, as parts the consent row draws. Its own
 // module because chat.js reaches window.__TAURI__ as it loads and cannot be
 // imported outside a webview; this can, so it has a test.
 
 // Everything but the copy here is untrusted: `title`, `content`, `input` and
-// `locations` come from the Harness, and an MCP server can steer all four. The
-// caller writes each part with `textContent` and this file produces no markup.
+// `locations` come from the Harness, and an MCP server can steer all four.
+// This file produces no markup. The row draws content through `drawReply`.
 
 // How much of an ask the row may draw, in characters: about eleven wrapped
 // lines in a 420-point window, enough for a question and its arguments, short
@@ -27,9 +29,9 @@ const PATHS = 3;
 // this window dropped.
 const SILENT = "The Harness asked for permission without saying what for.";
 
-// One untrusted string, flattened to plain text on one line: a newline, tab or
-// bidi override inside a tool's arguments could forge a fact the Harness never
-// sent. `\p{C}` is every control and format character; `\s` finishes the whitespace.
+// One untrusted string on one line. A newline or bidi mark in a title, a path,
+// or a question could forge a line the Harness never sent. `\p{C}` is every
+// control and format character; `\s` finishes the whitespace.
 export function flat(text) {
   return String(text)
     .replace(/\p{C}+/gu, " ")
@@ -48,6 +50,11 @@ function first(list, keep, noun) {
     : list;
 }
 
+// An argument is one line. A newline in a value would split that line.
+function oneLine(text) {
+  return stripUnsafe(text).replace(/\s+/g, " ").trim();
+}
+
 // The arguments as `key: value` lines rather than a JSON dump: the names are
 // what tell a reader what the tool will do with the values. Anything that is
 // not an object has no names to show, so it goes as the one line of JSON it is.
@@ -62,11 +69,11 @@ function argumentLines(input) {
     return [];
   }
   if (typeof input !== "object" || Array.isArray(input)) {
-    return [clamp(flat(JSON.stringify(input)), VALUE_LIMIT)];
+    return [clamp(oneLine(JSON.stringify(input)), VALUE_LIMIT)];
   }
   const named = Object.entries(input).map(([key, raw]) => {
     const shown = typeof raw === "string" ? raw : (JSON.stringify(raw) ?? String(raw));
-    return `${flat(key)}: ${clamp(flat(shown), VALUE_LIMIT)}`;
+    return `${oneLine(key)}: ${clamp(oneLine(shown), VALUE_LIMIT)}`;
   });
   return first(named, ARGUMENTS, "arguments");
 }
@@ -79,87 +86,18 @@ function withinBudget(parts) {
   return lines.map((text, at) => ({ kind: parts[at].kind, text }));
 }
 
-// A harness wraps arguments in a fence. Flattening would keep the markers,
-// and the row would draw them as text. The body is the ask. The markers are not.
-const FENCE =
-  /(`{3,})([^\n`]*)\r?\n([\s\S]*?)\r?\n\1[ \t]*|(`{3,})([A-Za-z0-9_+.#-]*)[ \t]*([^`]*?)\4/g;
-
-function fencePieces(text) {
-  const raw = String(text ?? "");
-  const pieces = [];
-  let at = 0;
-  for (const match of raw.matchAll(FENCE)) {
-    if (match.index > at) {
-      pieces.push({ fence: false, text: raw.slice(at, match.index) });
-    }
-    pieces.push({ fence: true, body: match[3] ?? match[6] ?? "" });
-    at = match.index + match[0].length;
-  }
-  if (at < raw.length || pieces.length === 0) {
-    pieces.push({ fence: false, text: raw.slice(at) });
-  }
-  return pieces;
-}
-
-function readJson(body) {
-  try {
-    return { value: JSON.parse(String(body).trim()) };
-  } catch {
-    return null;
-  }
-}
-
-// Content entries, unwrapped. A fence whose body is JSON uses the argument
-// lines. Any other fence is one code line. Prose beside a fence stays prose.
-function contentLines(ask) {
-  const plainKind = ask?.kind === "execute" ? "code" : "prose";
-  const lines = [];
-  for (const entry of ask?.content ?? []) {
-    const pieces = fencePieces(entry);
-    if (!pieces.some((piece) => piece.fence)) {
-      const text = flat(entry ?? "");
-      if (text) {
-        lines.push({ kind: plainKind, text });
-      }
-      continue;
-    }
-    for (const piece of pieces) {
-      if (!piece.fence) {
-        const text = flat(piece.text);
-        if (text) {
-          lines.push({ kind: "prose", text });
-        }
-        continue;
-      }
-      const parsed = readJson(piece.body);
-      if (parsed) {
-        for (const text of argumentLines(parsed.value)) {
-          lines.push({ kind: "code", text });
-        }
-        continue;
-      }
-      const text = flat(piece.body);
-      if (text) {
-        lines.push({ kind: "code", text });
-      }
-    }
-  }
-  return lines;
-}
-
-// What the row draws, in order: `{ kind, text }` per line, `kind` one of
-// title, code, prose or metadata. Code is the thing being approved and gets a
-// `<code>` from the renderer; metadata is the `kind · paths` tail.
+// What the row draws, in order: `{ kind, text }`. `markdown` is Harness
+// content, drawn by `drawReply`. `code` is an argument line. `metadata` is
+// the `kind · paths` tail.
 export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
   const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
-  const fromContent = contentLines(ask);
+  const content = (ask?.content ?? []).map((text) => String(text ?? "")).filter((text) => text.trim());
   // Content first, arguments as the fallback, never both: a tool that sends
-  // its question as content usually repeats it in `input`. Content is a
-  // command only when the ask runs something; an argument line always is.
-  const details = fromContent.length > 0
-    ? fromContent
+  // its question as content usually repeats it in `input`.
+  const details = content.length > 0
+    ? content.map((text) => ({ kind: "markdown", text }))
     : argumentLines(ask?.input).map((text) => ({ kind: "code", text }));
 
   const paths = (ask?.locations ?? [])
@@ -179,9 +117,21 @@ export function askSays(ask) {
   if (!title && details.length === 0 && paths.length === 0) {
     return [{ kind: "prose", text: SILENT }];
   }
-  return withinBudget(
-    [{ kind: "title", text: title }, ...details, { kind: "metadata", text: about }].filter(({ text }) => text),
+  const parts = [{ kind: "title", text: title }, ...details, { kind: "metadata", text: about }].filter(
+    ({ text }) => text,
   );
+  // The length cap is for the lines this module writes. Harness content is
+  // markdown, and the log scrolls, so it is not cut here.
+  const at = parts.findIndex((part) => part.kind === "markdown");
+  if (at < 0) {
+    return withinBudget(parts);
+  }
+  const tail = parts.slice(at).filter((part) => part.kind !== "markdown");
+  return [...budget(parts.slice(0, at)), ...parts.filter((part) => part.kind === "markdown"), ...budget(tail)];
+}
+
+function budget(parts) {
+  return parts.length === 0 ? [] : withinBudget(parts);
 }
 
 // An elicitation form's question. Same flattening as a permission ask: the
