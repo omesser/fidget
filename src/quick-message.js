@@ -60,7 +60,7 @@ export function crossedDrag(dx, dy) {
   return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
 }
 
-export function createQuickMessage({ schedule, clear, send, onChange, available = true }) {
+export function createQuickMessage({ schedule, clear, send, onChange, available = true, onDragDismiss }) {
   let visible = false;
   let text = "";
   let focused = false;
@@ -116,6 +116,14 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     focused = false;
     claimFocus = false;
     if (was) changed();
+  }
+
+  function hideWithoutReport() {
+    cancelHover();
+    cancelAutoHide();
+    visible = false;
+    focused = false;
+    claimFocus = false;
   }
 
   function show() {
@@ -251,7 +259,10 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     outside: dismissOpen,
     drag() {
-      if (!hasText() && !focused) dismissOpen();
+      if (!hasText() && !focused) {
+        if (onDragDismiss) onDragDismiss();
+        dismissOpen();
+      }
     },
     summon() {
       yielded = true;
@@ -279,6 +290,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       text = "";
       hide();
     },
+    hideWithoutReport,
     dispose() {
       // Tell the overlay while this Instance is still mapped. The composing
       // report scans views, and a removed one must not leave its caret held.
