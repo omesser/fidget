@@ -192,6 +192,10 @@ jobs:
             -o "Dir::Cache::archives=$HOME/.cache/apt/archives" \
             -o APT::Keep-Downloaded-Packages=true \
             install -y "${packages[@]}"
+          # apt writes these as root. The cache action runs as the runner, and
+          # tar refuses a directory it cannot list. partial is an in-flight download.
+          sudo chown -R "$USER" "$HOME/.cache/apt/archives"
+          rm -rf "$HOME/.cache/apt/archives/partial"
           rm -f "$HOME/.cache/apt/archives/lock"
 
       - name: Cache the pre-commit hook environments
