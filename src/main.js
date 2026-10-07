@@ -310,7 +310,7 @@ function reportQmState(view) {
   // Exception: if pill is visible but no frame yet (handoff before frame), report anyway.
   if (view.latest && !view.latest.bubble) return;
   if (!view.latest && !view.quickMachine.visible) return;
-  
+
   const state = {
     instance: view.id,
     open: view.quickMachine.visible,
