@@ -11,6 +11,7 @@ import {
   DRAG_DISMISS_PX,
   applyQuickMessageGate,
   createQuickMessage,
+  createDraftReporter,
   crossedDrag,
   keepOnDrag,
   placeQuickMessage,
@@ -718,4 +719,112 @@ test("without a clickable link the pill still names the fix as text", () => {
   assert.equal(gate.field.placeholder, "Connect an AI to talk to me");
   assert.equal(gate.field.disabled, true);
   assert.equal(gate.send.hidden, false, "with no link to stand in, Send keeps its place");
+});
+
+function shellDouble() {
+  const told = [];
+  const invoke = (command, args) => {
+    told.push([command, args]);
+    return Promise.resolve();
+  };
+  return { told, invoke };
+}
+
+test("each Instance's closed pill reaches the Shell, even when two close together", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+
+  drafts.report("a", { text: "hi", focused: true });
+  drafts.report("b", { text: "yo", focused: false });
+  drafts.report("a", null);
+  drafts.report("b", null);
+  drafts.report("b", null);
+
+  assert.deepEqual(
+    told.slice(-2),
+    [
+      ["overlay_report_qm_draft", { instance: "a", payload: null }],
+      ["overlay_report_qm_draft", { instance: "b", payload: null }],
+    ],
+    "both closes are told, so neither Character is left holding its walk",
+  );
+  assert.equal(told.length, 4, "an unchanged draft is not told again");
+});
+
+test("a removed Instance's draft is cleared, so its walk is not held", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+
+  drafts.report("gone", { text: "half", focused: true });
+  drafts.forget("gone");
+
+  assert.deepEqual(told.at(-1), ["overlay_report_qm_draft", { instance: "gone", payload: null }]);
+});
+
+// `setOwner` is what each placement says: whether this overlay owns the
+// Instance's bubble, and the draft the Shell carries to that owner.
+const DRAFT = { text: "half a thought", focused: true };
+
+test("the overlay that gains the bubble opens the pill with the carried draft", () => {
+  const { qm } = harness();
+  qm.setOwner(false, null);
+  qm.setOwner(true, DRAFT);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "half a thought", "the typed text is not lost on the crossing");
+  assert.equal(qm.typing, true);
+  assert.equal(qm.takeFocus(), true, "it had the caret, so it takes it back");
+});
+
+test("a fresh overlay's first frame as owner counts as gaining it", () => {
+  const { qm } = harness();
+  qm.setOwner(true, { text: "half", focused: false });
+  assert.equal(qm.text, "half");
+  assert.equal(qm.typing, false, "no caret it did not have");
+  assert.equal(qm.takeFocus(), false, "so it does not take focus");
+});
+
+test("a frame that keeps the owner leaves what is being typed alone", () => {
+  const { qm } = harness();
+  qm.setOwner(true, DRAFT);
+  qm.takeFocus();
+  qm.setText("half a thought, and more");
+
+  qm.setOwner(true, DRAFT);
+  assert.equal(qm.text, "half a thought, and more", "a draft one report behind is not news");
+  assert.equal(qm.takeFocus(), false, "nor a reason to move the caret");
+});
+
+test("a frame still carrying a sent, dismissed, or dragged-away draft does not reopen it", () => {
+  const close = {
+    send(qm) {
+      qm.keydown("Enter");
+    },
+    dismiss(qm) {
+      qm.dismiss();
+    },
+    drag(qm) {
+      qm.setText("");
+      qm.drag();
+    },
+  };
+  for (const [how, act] of Object.entries(close)) {
+    const { qm } = harness();
+    qm.setOwner(true, DRAFT);
+    act(qm);
+    assert.equal(qm.visible, false, how);
+    qm.setOwner(true, DRAFT);
+    assert.equal(qm.visible, false, `${how}: the Shell has not heard the close yet`);
+  }
+});
+
+test("the overlay that loses the bubble hides its pill and lets the draft go", () => {
+  const { qm, changes } = harness();
+  qm.setOwner(true, DRAFT);
+  const before = changes.length;
+
+  qm.setOwner(false, null);
+  assert.equal(qm.visible, false);
+  assert.equal(qm.text, "", "the Shell holds the draft now, not this overlay");
+  assert.ok(changes.length > before, "the overlay hears the pill go");
+  assert.equal(qm.owner, false, "and knows not to report it closed");
 });

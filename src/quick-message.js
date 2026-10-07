@@ -71,7 +71,6 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let visible = false;
   let text = "";
   let focused = false;
-  let pendingRestore = null; // Text to restore when available becomes true
   let claimFocus = false;
   let disposed = false;
   let hoverTimer = null;
@@ -85,6 +84,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let chatOpen = false;
   let bubbleUp = false;
   let ready = available;
+  // Whether this overlay owns the Instance's bubble, as the last placement said.
+  let owned = false;
 
   function changed() {
     if (!disposed) onChange?.();
@@ -123,16 +124,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     visible = false;
     focused = false;
     claimFocus = false;
-    pendingRestore = null; // Clear pending on hide
     if (was) changed();
-  }
-
-  function hideWithoutReport() {
-    cancelHover();
-    cancelAutoHide();
-    visible = false;
-    focused = false;
-    claimFocus = false;
   }
 
   function show() {
@@ -155,7 +147,6 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     text = "";
     hide();
   }
-
 
   function submit() {
     const line = text.trim();
@@ -231,18 +222,11 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       ready = next;
       if (!ready) {
         // The placeholder is the only place this pill can say why. A draft
-        // would hide that sentence. But preserve pendingRestore.
-        if (!pendingRestore) {
-          text = "";
-        }
+        // would hide that sentence.
+        text = "";
         focused = false;
         claimFocus = false;
       } else if (visible) {
-        // Now available: apply pending restore if any
-        if (pendingRestore !== null) {
-          text = pendingRestore;
-          pendingRestore = null;
-        }
         focused = true;
         claimFocus = true;
       }
@@ -291,10 +275,9 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       if (disposed) return;
       visible = true;
       if (!ready) {
-        // Not ready yet (chat opening check pending). Hold the text until available.
-        // This handles placement.qm arriving before chat_opening completes.
-        pendingRestore = value;
-        text = ""; // Show placeholder until ready
+        // A refused send had already hidden the pill. Bring it back so the
+        // unavailable sentence is on screen, not the line that could not go.
+        text = "";
         focused = false;
         claimFocus = false;
         changed();
@@ -307,10 +290,32 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     dismiss() {
       text = "";
-      pendingRestore = null; // Clear pending on dismiss
       hide();
     },
-    hideWithoutReport,
+    get owner() {
+      return owned;
+    },
+    // Every frame names the owner. Gaining it opens the carried draft. Keeping
+    // it ignores the draft, which trails the typing and any close the Shell has
+    // not heard yet. Losing it hides the pill; the Shell still holds the text.
+    setOwner(next, draft) {
+      if (disposed) return;
+      const gained = next && !owned;
+      owned = next;
+      if (!next) {
+        if (!visible) return;
+        text = "";
+        hide();
+        return;
+      }
+      if (!gained || !draft) return;
+      cancelHover();
+      visible = true;
+      text = ready ? draft.text : "";
+      focused = ready && draft.focused;
+      claimFocus = focused;
+      changed();
+    },
     dispose() {
       // Tell the overlay while this Instance is still mapped. The composing
       // report scans views, and a removed one must not leave its caret held.
@@ -322,6 +327,29 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       claimFocus = false;
       if (!disposed) onChange?.();
       disposed = true;
+    },
+  };
+}
+
+// Tells the Shell each Instance's draft once per change. Remembered per
+// Instance: one shared memory swallows the second of two closes, and that
+// Character stands still for good.
+export function createDraftReporter(invoke) {
+  const reported = new Map();
+  const tell = (instance, payload) =>
+    invoke("overlay_report_qm_draft", { instance, payload }).catch((err) => {
+      console.error("overlay_report_qm_draft", err);
+    });
+  return {
+    report(instance, draft) {
+      const told = JSON.stringify(draft);
+      if (reported.get(instance) === told) return;
+      reported.set(instance, told);
+      tell(instance, draft);
+    },
+    forget(instance) {
+      reported.delete(instance);
+      tell(instance, null);
     },
   };
 }
