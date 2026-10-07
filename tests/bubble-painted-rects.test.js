@@ -57,6 +57,19 @@ test("computeBubblePaintedRect rounds position", () => {
   assert.deepEqual(rect, [101, 200, 300, 160]);
 });
 
+test("computeBubblePaintedRect covers the tail above an inverted bubble", () => {
+  const bubble = {
+    classList: {
+      contains: (cls) => cls === "visible",
+    },
+    style: { opacity: "1" },
+    offsetWidth: 200,
+    offsetHeight: 80,
+  };
+  const pos = { x: 10.4, y: 20.6, inverted: true };
+  assert.deepEqual(computeBubblePaintedRect(bubble, pos), [10, 11, 200, 90]);
+});
+
 test("reportPaintedRects sends empty array when no views have painted rects", () => {
   clearCache();
   const views = new Map();

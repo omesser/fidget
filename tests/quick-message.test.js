@@ -146,6 +146,19 @@ test("leaving after the pill is up does not dismiss it immediately", () => {
   assert.equal(qm.typing, true);
 });
 
+test("an empty pill holding the caret stays until the caret leaves", () => {
+  const { qm, advance } = shown();
+
+  qm.leaveSprite();
+  qm.leavePill();
+  advance(AUTO_HIDE_DELAY_MS * 2);
+  assert.equal(qm.visible, true, "someone is about to type");
+
+  qm.blur();
+  advance(AUTO_HIDE_DELAY_MS);
+  assert.equal(qm.visible, false);
+});
+
 test("pill auto-hides after 3s if empty and pointer leaves both sprite and pill", () => {
   const { qm, advance } = shown();
 
