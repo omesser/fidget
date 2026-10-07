@@ -11,6 +11,7 @@ pub mod engine;
 pub mod input;
 pub mod memory;
 pub mod overlay;
+pub mod qm_draft;
 pub mod overlay_region;
 pub mod roster;
 pub mod scheduler;

@@ -313,13 +313,9 @@ struct InstanceState {
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
-    /// The display that last owned this Instance's bubble. Hysteresis keeps
-    /// ownership stable near a seam: switch only when feet clearly cross.
-    bubble_owner_last: Option<usize>,
-    /// Latch for QM handoff: whether QM was dismissed by drag/leave during
-    /// this ownership period. Means "closed by drag THIS crossing", not "was ever open".
-    /// Set on drag/leave dismiss, cleared on Send/Esc/click-away/auto-hide, consumed on handoff.
-    qm_drag_latch: bool,
+    /// The quick-message draft for this Instance. Carried to the owning overlay
+    /// each frame, like dialogue. Empty text closes on drag, non-empty keeps the pill.
+    qm: Option<fidget_core::qm_draft::QmDraft>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -561,6 +557,8 @@ struct Placed {
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,
+    /// The quick-message draft for this Instance, carried like dialogue.
+    qm: Option<fidget_core::qm_draft::QmDraft>,
     #[allow(dead_code)]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -3631,8 +3629,7 @@ fn spawn_live(
         spoken: None,
         speech: SpeechBubble::default(),
         drawn_last: None,
-        bubble_owner_last: None,
-        qm_drag_latch: false,
+        qm: None,
         traced_last: None,
         status_last: None,
         status_wake_ms: None,

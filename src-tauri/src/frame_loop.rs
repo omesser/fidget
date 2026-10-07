@@ -2086,128 +2086,11 @@ pub(crate) fn run_frame_loop(
                     facing: frame.facing,
                 });
 
-                let old_owner = live.bubble_owner_last;
-                let owner = fidget_core::overlay::bubble_owner_with_hysteresis(
+                let owner = fidget_core::overlay::bubble_owner(
                     (frame.position.x, frame.position.y),
                     &displays.frames,
-                    old_owner,
                 );
-                live.bubble_owner_last = owner;
 
-                // Update QM drag latch: set when QM closed by drag, clear on Send/owner-change.
-                // The latch means "dismissed by drag during THIS ownership", not "was ever open".
-
-                // Check if this instance was just dismissed by drag
-                if platform::take_overlay_qm_drag_dismiss(&live.id) {
-                    live.qm_drag_latch = true;
-                }
-
-                // Clear latch when: (1) different instance owns QM, or (2) this instance closed
-                // QM (submit/dismiss/Esc). Don't clear during drag when open stays true for typed pills.
-                if let Some(qm_state) = platform::overlay_qm_state() {
-                    if qm_state.instance == live.id {
-                        // This instance owns QM. Clear latch only if QM was closed (not during drag).
-                        // During drag, typed/focused pills call onDragDismiss (sets latch) but stay open.
-                        // Latch must survive until ownership change for plan_qm_handoff to fire.
-                        if !qm_state.open && live.qm_drag_latch {
-                            live.qm_drag_latch = false;
-                        }
-                    } else if live.qm_drag_latch {
-                        // Different instance now has QM: clear our latch
-                        live.qm_drag_latch = false;
-                    }
-                }
-
-                // Trace bubble owner changes.
-                if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
-                    let old_label = old_owner
-                        .map(super::overlay_label)
-                        .unwrap_or_else(|| "none".to_string());
-                    let new_label = owner
-                        .map(super::overlay_label)
-                        .unwrap_or_else(|| "none".to_string());
-                    let dnd = instance.do_not_disturb();
-                    eprintln!(
-                        "bubble_owner instance={} changed: {} -> {} dnd={}",
-                        live.id,
-                        old_label,
-                        new_label,
-                        if dnd { "on" } else { "off" }
-                    );
-                }
-
-                // Pill handoff: when bubble owner changes and QM is open, transfer the pill.
-                if owner != old_owner {
-                    let qm_snapshot = platform::overlay_qm_state()
-                        .filter(|qm| qm.instance == live.id)
-                        .map(|qm| fidget_core::qm_handoff::QmSnapshot {
-                            instance: qm.instance.clone(),
-                            open: qm.open,
-                            text: qm.text.clone(),
-                            focused: qm.focused,
-                        });
-
-                    if let Some(plan) = fidget_core::qm_handoff::plan_qm_handoff(
-                        old_owner,
-                        owner,
-                        qm_snapshot.as_ref(),
-                        live.qm_drag_latch,
-                    ) {
-                        let new_owner_label = super::overlay_label(plan.to_overlay);
-                        let old_owner_label = plan.from_overlay.map(super::overlay_label);
-
-                        if dev_flags::TRACE_BUBBLE.is_on() {
-                            let dnd = instance.do_not_disturb();
-                            eprintln!(
-                                "overlay {}: pill handoff from {} open=true text={:?} focused={} dnd={}",
-                                new_owner_label,
-                                old_owner_label.as_deref().unwrap_or("none"),
-                                plan.text,
-                                plan.focused,
-                                if dnd { "on" } else { "off" }
-                            );
-                        }
-
-                        #[derive(Clone, serde::Serialize)]
-                        struct QmHandoff {
-                            from_overlay: Option<String>,
-                            instance: String,
-                            open: bool,
-                            text: String,
-                            focused: bool,
-                        }
-
-                        let handoff = QmHandoff {
-                            from_overlay: old_owner_label.clone().map(|s| s.to_string()),
-                            instance: plan.instance.clone(),
-                            open: true,
-                            text: plan.text.clone(),
-                            focused: plan.focused,
-                        };
-
-                        app.emit_to(new_owner_label, "qm-handoff", handoff).ok();
-
-                        // Consume the drag latch after handoff
-                        live.qm_drag_latch = false;
-
-                        if plan.dismiss_old {
-                            if let Some(old_label) = old_owner_label {
-                                #[derive(Clone, serde::Serialize)]
-                                struct QmDismiss {
-                                    instance: String,
-                                }
-                                app.emit_to(
-                                    old_label,
-                                    "qm-dismiss",
-                                    QmDismiss {
-                                        instance: plan.instance.clone(),
-                                    },
-                                )
-                                .ok();
-                            }
-                        }
-                    }
-                }
 
                 let dialogue = super::carry_line(
                     &mut live.spoken,
@@ -2242,6 +2125,7 @@ pub(crate) fn run_frame_loop(
                     chatting: chat_is_up(&app, &live.id),
                     cue: frame.cue,
                     owner,
+                    qm: live.qm.clone(),
                     mask: drawn.mask.clone(),
                 });
             }
@@ -3494,15 +3378,12 @@ mod tests {
 
     #[test]
     fn trace_bubble_formats_match_scenario_patterns() {
-        // Scenario patterns from scripts/scenarios/qm-handoff-dual-display.win.ps1
+        // Scenario patterns from scripts/scenarios/*.ps1
         // $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
-        // $handoffPattern = '^(?:\d+ )?overlay (\S+): pill handoff from (\S+) open=(\S+) text="([^"]*)" focused=(\S+)'
 
         // Sample lines matching the Rust format strings
         let region_line =
             "overlay overlay-0: region rebuild 42 rects (art 12 + hotspots 3 + painted 2), 1.23 ms";
-        let handoff_line =
-            "overlay overlay-1: pill handoff from overlay-0 open=true text=\"test message\" focused=true dnd=off";
 
         // Pattern validation: region line must have "overlay <label>: region rebuild <N> rects (art <A> + hotspots <H> + painted <P>)"
         assert!(
