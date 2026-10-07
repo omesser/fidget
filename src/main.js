@@ -365,20 +365,9 @@ function reportComposing() {
   });
 }
 
-function reportQmVisible() {
-  let id = "";
-  for (const [viewId, view] of views) {
-    if (view.quickMachine.visible) {
-      id = viewId;
-      break;
-    }
-  }
-  if (id === reportedQmVisible) return;
-  reportedQmVisible = id;
-  window.__TAURI__.core.invoke("overlay_qm_visible", { instance: id }).catch((err) => {
-    console.error("overlay_qm_visible", err);
-  });
-}
+// Removed: reportQmVisible() was overwriting QmState with empty text/focused.
+// reportQmState() now reports full state including open field.
+// Backend overlay_qm_visible() derives visibility from overlay_qm_state().
 
 function syncQuick(view) {
   const visible = view.quickMachine.visible;
@@ -405,7 +394,6 @@ function syncQuick(view) {
     view.quickField.focus();
   }
   reportComposing();
-  reportQmVisible();
   reportQmState(view);
   if (!visible || !view.latest) {
     view.quickHotspot = null;
@@ -615,7 +603,7 @@ function removeView(id) {
   // After the view is gone, so a scan cannot still name it. dispose already
   // dropped the caret; this is the report that clears a stale id.
   reportComposing();
-  reportQmVisible();
+  // reportQmState is called by syncQuick which was already called during dispose
 }
 
 function drawView(view, now) {
@@ -884,10 +872,10 @@ async function start() {
       // Old owner closes its pill without clearing the shared state.
       // New owner reopens with the text and focus state.
       if (payload.open) {
-        view.quickMachine.setText(payload.text);
-        view.quickMachine.show();
+        // restore() sets visible, text, focused, and claimFocus
+        view.quickMachine.restore(payload.text);
         if (payload.focused) {
-          view.quickMachine.requestFocus();
+          view.quickMachine.focus();
           if (window.__TAURI__ && window.__TAURI__.core) {
             window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
               console.error("overlay_request_focus after handoff", err);
@@ -1004,6 +992,8 @@ async function start() {
     for (const view of views.values()) view.quickMachine.summon();
   });
   window.addEventListener("blur", () => {
+    // Don't dismiss during active gesture (pet drag). The drag handler will set latch.
+    if (gestureActive) return;
     for (const view of views.values()) view.quickMachine.outside();
   });
   document.addEventListener("pointerup", (event) => {
