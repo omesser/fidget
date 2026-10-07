@@ -188,10 +188,10 @@ function createView(id) {
       bubble.removeAttribute("data-ask");
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
-      window.__TAURI__.core.invoke("overlay_trace_bubble",
-        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        `showSpeech instance=${id}`
-      ).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showSpeech instance=${id}`,
+      }).catch(() => {});
     },
     // Ask bubble: prompt to open Chat for a question. Shorter text, distinct style.
     // Shown when the backend signals the user needs to answer in Chat.
@@ -203,33 +203,33 @@ function createView(id) {
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
-      window.__TAURI__.core.invoke("overlay_trace_bubble",
-        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        `showAsk instance=${id}`
-      ).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showAsk instance=${id}`,
+      }).catch(() => {});
     },
     hideSpeech() {
       hide();
-      window.__TAURI__.core.invoke("overlay_trace_bubble",
-        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        `hideSpeech instance=${id}`
-      ).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `hideSpeech instance=${id}`,
+      }).catch(() => {});
     },
     // Thinking indicator: animated dots, no text. Shown while AI is generating a reply.
     // Smaller than speech bubble, centered differently, no truncation control.
     showThinking() {
       show("thinking");
-      window.__TAURI__.core.invoke("overlay_trace_bubble",
-        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        `showThinking instance=${id}`
-      ).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showThinking instance=${id}`,
+      }).catch(() => {});
     },
     hideThinking() {
       hide();
-      window.__TAURI__.core.invoke("overlay_trace_bubble",
-        window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
-        `hideThinking instance=${id}`
-      ).catch(() => {});
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `hideThinking instance=${id}`,
+      }).catch(() => {});
     },
   });
 
@@ -875,10 +875,10 @@ async function start() {
     ({ payload }) => {
       // Trace handoff for DESKTOP diagnosis (FIDGET_TRACE_BUBBLE)
       if (window.__TAURI__?.core) {
-        window.__TAURI__.core.invoke("overlay_trace_bubble",
-          overlay.label,
-          `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`
-        ).catch(() => {});
+        window.__TAURI__.core.invoke("overlay_trace_bubble", {
+          label: overlay.label,
+          message: `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`,
+        }).catch(() => {});
       }
 
       let view = views.get(payload.instance);
@@ -905,10 +905,10 @@ async function start() {
 
         // Trace after syncQuick to show hotspot/painted state
         if (window.__TAURI__?.core) {
-          window.__TAURI__.core.invoke("overlay_trace_bubble",
-            overlay.label,
-            `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`
-          ).catch(() => {});
+          window.__TAURI__.core.invoke("overlay_trace_bubble", {
+            label: overlay.label,
+            message: `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`,
+          }).catch(() => {});
         }
       }
     },

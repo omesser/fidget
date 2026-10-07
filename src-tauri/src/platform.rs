@@ -124,8 +124,11 @@ pub fn take_overlay_qm_drag_dismiss(instance: &str) -> bool {
 }
 
 /// Legacy: which instance has QM visible (ignores text/focus).
+/// Only returns the instance when the QM is actually open.
 pub fn overlay_qm_visible() -> Option<String> {
-    overlay_qm_state().map(|s| s.instance)
+    overlay_qm_state()
+        .filter(|s| s.open)
+        .map(|s| s.instance)
 }
 
 /// Legacy setter: visible/hidden without text/focus.
@@ -1355,6 +1358,42 @@ mod tests {
         );
 
         set_overlay_qm_visible(None);
+    }
+
+    #[test]
+    fn qm_visible_returns_none_when_closed() {
+        let id = "test-instance".to_string();
+        // Set QM state with open=false
+        set_overlay_qm_state(Some(QmState {
+            instance: id.clone(),
+            open: false,
+            text: "some text".to_string(),
+            focused: false,
+        }));
+
+        // overlay_qm_visible should return None because open=false
+        assert_eq!(
+            overlay_qm_visible(),
+            None,
+            "overlay_qm_visible should return None when QM is closed (open=false)"
+        );
+
+        // Now set open=true
+        set_overlay_qm_state(Some(QmState {
+            instance: id.clone(),
+            open: true,
+            text: "some text".to_string(),
+            focused: false,
+        }));
+
+        // Now it should return the instance
+        assert_eq!(
+            overlay_qm_visible(),
+            Some(id),
+            "overlay_qm_visible should return instance when QM is open (open=true)"
+        );
+
+        set_overlay_qm_state(None);
     }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that

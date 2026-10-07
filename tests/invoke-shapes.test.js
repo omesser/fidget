@@ -48,16 +48,15 @@ test("overlay_trace_bubble invoke shape matches Rust signature", () => {
   const mainJs = readFileSync("src/main.js", "utf8");
   const mainRs = readFileSync("src-tauri/src/main.rs", "utf8");
 
-  // Find all overlay_trace_bubble invokes
-  const traceInvokes = mainJs.match(/invoke\("overlay_trace_bubble"[^;)]+\)/g);
+  // Find all overlay_trace_bubble invokes - need to match across newlines
+  const tracePattern = /invoke\("overlay_trace_bubble",\s*\{[\s\S]*?\}\)/g;
+  const traceInvokes = mainJs.match(tracePattern);
   assert.ok(traceInvokes && traceInvokes.length > 0, "overlay_trace_bubble invokes not found");
 
-  // Verify none use the wrong shape { label:, message: } or { line: }
+  // Verify all pass a single object literal with {label, message}
   for (const invoke of traceInvokes) {
-    assert.ok(
-      !invoke.includes("{ label:") && !invoke.includes("{ line:"),
-      `overlay_trace_bubble must pass label and message as separate args, not an object: ${invoke.substring(0, 100)}`
-    );
+    assert.ok(invoke.includes("label:"), `overlay_trace_bubble object must have label key: ${invoke.substring(0, 100)}`);
+    assert.ok(invoke.includes("message:"), `overlay_trace_bubble object must have message key: ${invoke.substring(0, 100)}`);
   }
 
   // Rust signature: fn overlay_trace_bubble(app: ..., label: String, message: String)
