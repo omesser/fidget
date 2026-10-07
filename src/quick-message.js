@@ -250,7 +250,9 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       report();
     },
     outside: dismissOpen,
-    drag: dismissOpen,
+    drag() {
+      if (!hasText() && !focused) dismissOpen();
+    },
     summon() {
       yielded = true;
       dismissOpen();
