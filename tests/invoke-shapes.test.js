@@ -3,46 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 // This test pins JS invoke call shapes against Rust command signatures
-// to catch mismatches like the overlay_qm_state bug (7f89d150).
-
-test("overlay_qm_state invoke shape matches Rust signature", () => {
-  const mainJs = readFileSync("src/main.js", "utf8");
-  const mainRs = readFileSync("src-tauri/src/main.rs", "utf8");
-
-  // Find the invoke call in main.js
-  const invokeMatch = mainJs.match(/invoke\("overlay_qm_state",\s*\{([^}]+)\}/);
-  assert.ok(invokeMatch, "overlay_qm_state invoke not found in main.js");
-  const jsPayload = invokeMatch[1].trim();
-
-  // Rust signature: fn overlay_qm_state(payload: QmStatePayload)
-  // JS must call with { payload: {...} } in Tauri 2
-  assert.ok(jsPayload.startsWith("payload:"), "overlay_qm_state must pass { payload: {...} } in Tauri 2");
-
-  // Verify the Rust command exists with the expected signature
-  assert.ok(
-    /fn overlay_qm_state\(payload: QmStatePayload\)/.test(mainRs),
-    "Rust overlay_qm_state signature not found or changed"
-  );
-});
-
-test("overlay_qm_drag_dismiss invoke shape matches Rust signature", () => {
-  const mainJs = readFileSync("src/main.js", "utf8");
-  const mainRs = readFileSync("src-tauri/src/main.rs", "utf8");
-
-  // Find the invoke call
-  const invokeMatch = mainJs.match(/invoke\("overlay_qm_drag_dismiss",\s*\{([^}]+)\}/);
-  assert.ok(invokeMatch, "overlay_qm_drag_dismiss invoke not found");
-  const jsPayload = invokeMatch[1].trim();
-
-  // Rust signature: fn overlay_qm_drag_dismiss(instance: String)
-  // JS must pass { instance: "..." }
-  assert.ok(jsPayload.startsWith("instance:"), "overlay_qm_drag_dismiss must pass { instance }");
-
-  assert.ok(
-    /fn overlay_qm_drag_dismiss\(instance: String\)/.test(mainRs),
-    "Rust overlay_qm_drag_dismiss signature not found or changed"
-  );
-});
+// to catch mismatches like the Tauri 2 parameter mapping bugs.
 
 test("overlay_trace_bubble invoke shape matches Rust signature", () => {
   const mainJs = readFileSync("src/main.js", "utf8");
@@ -63,5 +24,27 @@ test("overlay_trace_bubble invoke shape matches Rust signature", () => {
   assert.ok(
     /fn overlay_trace_bubble\([^)]*label: String,\s*message: String/.test(mainRs),
     "Rust overlay_trace_bubble signature not found or changed"
+  );
+});
+
+test("overlay_report_qm_draft invoke shape matches Rust signature", () => {
+  const mainJs = readFileSync("src/main.js", "utf8");
+  const mainRs = readFileSync("src-tauri/src/main.rs", "utf8");
+
+  // Find overlay_report_qm_draft invokes
+  const draftPattern = /invoke\("overlay_report_qm_draft",\s*\{[\s\S]*?\}\)/g;
+  const draftInvokes = mainJs.match(draftPattern);
+  assert.ok(draftInvokes && draftInvokes.length > 0, "overlay_report_qm_draft invokes not found");
+
+  // Verify all pass {instance, payload} where payload is object or null
+  for (const invoke of draftInvokes) {
+    assert.ok(invoke.includes("instance:"), `overlay_report_qm_draft must have instance key: ${invoke.substring(0, 100)}`);
+    assert.ok(invoke.includes("payload:"), `overlay_report_qm_draft must have payload key: ${invoke.substring(0, 100)}`);
+  }
+
+  // Rust signature: fn overlay_report_qm_draft(instance: String, payload: Option<QmDraftPayload>)
+  assert.ok(
+    /fn overlay_report_qm_draft\([^)]*instance: String,\s*payload: Option<QmDraftPayload>/.test(mainRs),
+    "Rust overlay_report_qm_draft signature not found or changed"
   );
 });

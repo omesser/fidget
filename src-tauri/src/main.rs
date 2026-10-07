@@ -559,6 +559,8 @@ struct Placed {
     owner: Option<usize>,
     /// The quick-message draft for this Instance, carried like dialogue.
     qm: Option<fidget_core::qm_draft::QmDraft>,
+    /// Alpha mask for Unix XShape. Windows builds don't read it, but it's here
+    /// for symmetry with the frame loop's mask tracking.
     #[allow(dead_code)]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -1804,36 +1806,23 @@ fn overlay_composing(instance: String) {
 }
 
 /// The overlay's quick message became visible or hidden. Empty means none.
-/// Read each tick, so movement freezes while the pill is up.
-#[tauri::command]
-fn overlay_qm_visible(instance: String) {
-    platform::set_overlay_qm_visible(Some(instance));
-}
-
+/// Report the quick-message draft for an Instance. None means closed.
 #[derive(serde::Deserialize)]
-struct QmStatePayload {
-    instance: String,
-    open: bool,
+struct QmDraftPayload {
     text: String,
     focused: bool,
 }
 
-/// The overlay's quick message state with text and focus.
 #[tauri::command]
-fn overlay_qm_state(payload: QmStatePayload) {
-    platform::set_overlay_qm_state(Some(platform::QmState {
-        instance: payload.instance,
-        open: payload.open,
-        text: payload.text,
-        focused: payload.focused,
-    }));
-}
-
-/// The overlay's quick message was dismissed by drag/leave.
-/// Sets the drag latch for handoff across ownership changes.
-#[tauri::command]
-fn overlay_qm_drag_dismiss(instance: String) {
-    platform::set_overlay_qm_drag_dismiss(Some(instance));
+fn overlay_report_qm_draft(instance: String, payload: Option<QmDraftPayload>) {
+    INSTANCES.with_borrow_mut(|instances| {
+        if let Some(live) = instances.get_mut(&instance) {
+            live.qm = payload.map(|p| fidget_core::qm_draft::QmDraft {
+                text: p.text,
+                focused: p.focused,
+            });
+        }
+    });
 }
 
 /// Same witness for the right button. Without it a right-click on the sprite
@@ -4351,9 +4340,7 @@ fn main() {
             overlay_primary,
             overlay_secondary,
             overlay_composing,
-            overlay_qm_visible,
-            overlay_qm_state,
-            overlay_qm_drag_dismiss,
+            overlay_report_qm_draft,
             overlay_hotspots,
             overlay_painted_rects,
             overlay_trace_bubble,

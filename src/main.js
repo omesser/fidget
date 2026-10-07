@@ -300,30 +300,31 @@ let reportedComposing = null;
 let reportedQmVisible = null;
 let reportedQmState = "";
 
-// Report the full QM state: instance, open, text, focused. Backend uses this
-// for pill handoff: when bubble_owner changes and the new owner has QM open,
-// it emits qm-handoff to transfer the pill with its state.
-// CRITICAL: Only the overlay that owns the bubble should report QM state.
-// Non-owner overlays reporting open:false text:"" would wipe the owner's draft.
+// Report this Instance's QM draft. The backend stores it per-Instance and
+// carries it to the owning overlay each frame (like dialogue). None means closed.
 function reportQmState(view) {
   // Only report if this overlay owns the bubble for this instance.
-  // Exception: if pill is visible but no frame yet (handoff before frame), report anyway.
   if (view.latest && !view.latest.bubble) return;
-  if (!view.latest && !view.quickMachine.visible) return;
 
-  const state = {
-    instance: view.id,
-    open: view.quickMachine.visible,
-    text: view.quickField.value,
-    focused: document.activeElement === view.quickField,
-  };
-  const serialized = JSON.stringify(state);
+  const draft = view.quickMachine.visible
+    ? {
+        text: view.quickField.value,
+        focused: document.activeElement === view.quickField,
+      }
+    : null;
+
+  const serialized = JSON.stringify(draft);
   if (serialized === reportedQmState) return;
   reportedQmState = serialized;
-  // Tauri 2 maps invoke args by parameter name
-  window.__TAURI__.core.invoke("overlay_qm_state", { payload: state }).catch((err) => {
-    console.error("overlay_qm_state", err);
-  });
+
+  window.__TAURI__.core
+    .invoke("overlay_report_qm_draft", {
+      instance: view.id,
+      payload: draft,
+    })
+    .catch((err) => {
+      console.error("overlay_report_qm_draft", err);
+    });
 }
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill
@@ -373,9 +374,6 @@ function reportComposing() {
   });
 }
 
-// Removed: reportQmVisible() was overwriting QmState with empty text/focused.
-// reportQmState() now reports full state including open field.
-// Backend overlay_qm_visible() derives visibility from overlay_qm_state().
 
 function syncQuick(view) {
   const visible = view.quickMachine.visible;
@@ -852,6 +850,23 @@ async function start() {
         // desktop: whether the Character is on screen, and whether it may be heard.
         view.cues.event(view.latest);
         view.quickMachine.setChatOpen(sprite.chatting);
+
+        // Restore QM pill from per-Instance draft when this overlay owns the bubble.
+        if (placement.bubble && placement.qm) {
+          if (!view.quickMachine.visible || view.quickField.value !== placement.qm.text) {
+            view.quickMachine.restore(placement.qm.text);
+            if (placement.qm.focused && document.activeElement !== view.quickField) {
+              view.quickMachine.focus();
+              window.__TAURI__.core.invoke("overlay_request_focus").catch(() => {});
+            }
+            syncQuick(view);
+          }
+        } else if (!placement.bubble && view.quickMachine.visible) {
+          // Hide pill when this overlay no longer owns the bubble.
+          view.quickMachine.hideWithoutReport();
+          syncQuick(view);
+        }
+
         notePointerLeft(view);
 
         if (changed && needsFrame(view)) arm();
@@ -864,71 +879,6 @@ async function start() {
         if (!seen.has(id)) {
           removeView(id);
         }
-      }
-    },
-    { target: overlay.label },
-  );
-
-  // Pill handoff: when bubble_owner changes, reopen pill on new owner and dismiss on old.
-  await window.__TAURI__.event.listen(
-    "qm-handoff",
-    ({ payload }) => {
-      // Trace handoff for DESKTOP diagnosis (FIDGET_TRACE_BUBBLE)
-      if (window.__TAURI__?.core) {
-        window.__TAURI__.core.invoke("overlay_trace_bubble", {
-          label: overlay.label,
-          message: `JS qm-handoff rx: instance=${payload.instance} from=${payload.from_overlay ?? "none"} open=${payload.open} text.len=${payload.text?.length ?? 0} focused=${payload.focused}`,
-        }).catch(() => {});
-      }
-
-      let view = views.get(payload.instance);
-      if (!view) {
-        // Handoff can arrive before the first frame event on this overlay.
-        // Create the view so the pill can be restored immediately.
-        view = createView(payload.instance);
-        views.set(payload.instance, view);
-      }
-
-      // Reopen with transferred text and focus state.
-      if (payload.open) {
-        // restore() sets visible, text, focused, and claimFocus
-        view.quickMachine.restore(payload.text);
-        if (payload.focused) {
-          view.quickMachine.focus();
-          if (window.__TAURI__ && window.__TAURI__.core) {
-            window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
-              console.error("overlay_request_focus after handoff", err);
-            });
-          }
-        }
-        syncQuick(view);
-
-        // Trace after syncQuick to show hotspot/painted state
-        if (window.__TAURI__?.core) {
-          window.__TAURI__.core.invoke("overlay_trace_bubble", {
-            label: overlay.label,
-            message: `JS after syncQuick: quickHotspot=${view.quickHotspot ? "set" : "null"} latest.bubble=${view.latest?.bubble ?? "no-latest"}`,
-          }).catch(() => {});
-        }
-      }
-    },
-    { target: overlay.label },
-  );
-
-  // Pill dismiss: when bubble_owner changes and this overlay is the old owner,
-  // dismiss the local pill DOM without clearing backend state (new owner has it).
-  await window.__TAURI__.event.listen(
-    "qm-dismiss",
-    ({ payload }) => {
-      const view = views.get(payload.instance);
-      if (view && view.quickMachine.visible) {
-        view.quickMachine.hideWithoutReport();
-        // Don't call syncQuick: hideWithoutReport already changed the machine,
-        // and syncQuick would call reportQmState which would write open:false
-        // after the new owner's handoff. Just update the DOM.
-        view.quick.classList.toggle("visible", false);
-        view.quickHotspot = null;
-        reportHotspots();
       }
     },
     { target: overlay.label },

@@ -79,75 +79,6 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
-/// Quick message state: instance, open, text, focused.
-#[derive(Clone, Debug, Default)]
-pub struct QmState {
-    pub instance: String,
-    pub open: bool,
-    pub text: String,
-    pub focused: bool,
-}
-
-/// Which Instance has a visible quick message pill and its state.
-static OVERLAY_QM_STATE: Mutex<Option<QmState>> = Mutex::new(None);
-
-/// Which Instance had QM dismissed by drag/leave (for latch).
-static OVERLAY_QM_DRAG_DISMISS: Mutex<Option<String>> = Mutex::new(None);
-
-/// Update QM state. Empty instance means none.
-pub fn set_overlay_qm_state(state: Option<QmState>) {
-    if let Ok(mut slot) = OVERLAY_QM_STATE.lock() {
-        *slot = state.filter(|s| !s.instance.is_empty());
-    }
-}
-
-pub fn overlay_qm_state() -> Option<QmState> {
-    OVERLAY_QM_STATE.lock().ok().and_then(|slot| slot.clone())
-}
-
-/// Set the drag dismiss latch for an instance.
-pub fn set_overlay_qm_drag_dismiss(instance: Option<String>) {
-    if let Ok(mut slot) = OVERLAY_QM_DRAG_DISMISS.lock() {
-        *slot = instance.filter(|s| !s.is_empty());
-    }
-}
-
-/// Check and consume the drag dismiss latch for an instance.
-pub fn take_overlay_qm_drag_dismiss(instance: &str) -> bool {
-    if let Ok(mut slot) = OVERLAY_QM_DRAG_DISMISS.lock() {
-        if slot.as_deref() == Some(instance) {
-            *slot = None;
-            return true;
-        }
-    }
-    false
-}
-
-/// Legacy: which instance has QM visible (ignores text/focus).
-/// Only returns the instance when the QM is actually open.
-pub fn overlay_qm_visible() -> Option<String> {
-    overlay_qm_state()
-        .filter(|s| s.open)
-        .map(|s| s.instance)
-}
-
-/// Legacy setter: visible/hidden without text/focus.
-pub fn set_overlay_qm_visible(instance: Option<String>) {
-    if let Some(id) = instance {
-        if id.is_empty() {
-            set_overlay_qm_state(None);
-        } else {
-            set_overlay_qm_state(Some(QmState {
-                instance: id,
-                open: true,
-                text: String::new(),
-                focused: false,
-            }));
-        }
-    } else {
-        set_overlay_qm_state(None);
-    }
-}
 
 /// Which mouse buttons one tick found down. One type so X11 pays one
 /// XQueryPointer instead of two (#268), and so both consuming witness reads
@@ -224,7 +155,6 @@ pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
 }
 
 /// The painted rectangles one overlay reported, in its own coordinates.
-#[allow(dead_code)]
 pub fn overlay_painted_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_PAINTED.lock().map_or_else(
         |_| Vec::new(),
@@ -1338,63 +1268,8 @@ mod tests {
     }
 
     #[test]
-    fn qm_visible_freezes_locomotion_for_the_owning_instance() {
-        let id = "bmo-instance".to_string();
-        set_overlay_qm_visible(Some(id.clone()));
-
-        let speech_visible = false;
-        let qm_visible_for_this_instance = overlay_qm_visible().as_deref() == Some(&id);
-        let locomotion_frozen = speech_visible || qm_visible_for_this_instance;
-
-        assert!(
-            locomotion_frozen,
-            "QM visible for this instance should freeze locomotion"
-        );
-
-        let qm_visible_for_other = overlay_qm_visible().as_deref() == Some("other-id");
-        assert!(
-            !qm_visible_for_other,
-            "QM not visible for a different instance"
-        );
-
-        set_overlay_qm_visible(None);
-    }
 
     #[test]
-    fn qm_visible_returns_none_when_closed() {
-        let id = "test-instance".to_string();
-        // Set QM state with open=false
-        set_overlay_qm_state(Some(QmState {
-            instance: id.clone(),
-            open: false,
-            text: "some text".to_string(),
-            focused: false,
-        }));
-
-        // overlay_qm_visible should return None because open=false
-        assert_eq!(
-            overlay_qm_visible(),
-            None,
-            "overlay_qm_visible should return None when QM is closed (open=false)"
-        );
-
-        // Now set open=true
-        set_overlay_qm_state(Some(QmState {
-            instance: id.clone(),
-            open: true,
-            text: "some text".to_string(),
-            focused: false,
-        }));
-
-        // Now it should return the instance
-        assert_eq!(
-            overlay_qm_visible(),
-            Some(id),
-            "overlay_qm_visible should return instance when QM is open (open=true)"
-        );
-
-        set_overlay_qm_state(None);
-    }
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that
     /// drew it. A neighbour must not stop passing clicks at the same
