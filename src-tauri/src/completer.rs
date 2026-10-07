@@ -31,10 +31,10 @@ pub enum AnyCompleter {
 }
 
 impl Completer for AnyCompleter {
-    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+    fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         match self {
-            AnyCompleter::Http(endpoint) => endpoint.complete(request),
-            AnyCompleter::Harness(session) => session.complete(request),
+            AnyCompleter::Http(endpoint) => endpoint.complete(request, said),
+            AnyCompleter::Harness(session) => session.complete(request, said),
         }
     }
 
@@ -107,10 +107,18 @@ pub enum Woke {
     AwaitingUser,
 }
 
-/// One worker's answer, stamped with the call it belongs to.
+/// One worker's delivery, stamped with the call it belongs to.
 struct Delivered {
     epoch: u64,
-    answered: Answered,
+    arrived: Arrived,
+}
+
+/// What `take` hands the frame loop for the Instance's current call.
+pub enum Arrived {
+    /// The Speech so far, while the reply is still arriving. Each one
+    /// replaces the last, and the reply settles it.
+    Speech(String),
+    Answered(Box<Answered>),
 }
 
 /// What one wake came back with.
@@ -233,18 +241,21 @@ impl Slots {
             ABANDONED.with_borrow_mut(|flag| *flag = Some(abandoned));
             // Always send. A panic here would leave the slot waiting forever
             // and skip StaticDirector on every later tick.
+            let speaking = |line| {
+                let _ = tx.send(Delivered {
+                    epoch,
+                    arrived: Arrived::Speech(line),
+                });
+            };
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let woken = match line {
-                    Some(line) => {
-                        let mut request = director.request(&context);
-                        if !request.prompt.ends_with('\n') {
-                            request.prompt.push('\n');
-                        }
-                        request.prompt.push_str(&line);
-                        director.wake_request(request)
+                let mut request = director.request(&context);
+                if let Some(line) = line {
+                    if !request.prompt.ends_with('\n') {
+                        request.prompt.push('\n');
                     }
-                    None => director.wake_and_near_miss(&context),
-                };
+                    request.prompt.push_str(&line);
+                }
+                let woken = director.wake_request(request, &speaking);
                 // Traced here, beside the reply it came from. The Action Log
                 // takes it from `take` instead, where a superseded reply has
                 // already been dropped.
@@ -262,31 +273,36 @@ impl Slots {
             });
             let _ = tx.send(Delivered {
                 epoch,
-                answered: Answered {
+                arrived: Arrived::Answered(Box::new(Answered {
                     wake: woken.wake,
                     context,
                     near_miss: woken.near_miss,
                     truncated: woken.truncated,
-                },
+                })),
             });
         });
         Woke::Started
     }
 
-    /// The reply for `id`, with the moment it was computed for.
-    /// A superseded moment is dropped here rather than handed out for a
-    /// caller to compare.
-    pub fn take(&mut self, id: &InstanceId) -> Option<Answered> {
+    /// The reply for `id`, with the moment it was computed for, or else the
+    /// newest Speech of a reply still arriving. A superseded moment is
+    /// dropped here rather than handed out for a caller to compare, and so
+    /// is its Speech.
+    pub fn take(&mut self, id: &InstanceId) -> Option<Arrived> {
         let slot = self.slots.get_mut(id)?;
+        let mut speech = None;
         while let Ok(delivered) = slot.rx.try_recv() {
             if delivered.epoch != slot.epoch {
                 continue;
             }
-            slot.waiting = false;
-            slot.reactive = false;
-            return Some(delivered.answered);
+            if let Arrived::Answered(_) = delivered.arrived {
+                slot.waiting = false;
+                slot.reactive = false;
+                return Some(delivered.arrived);
+            }
+            speech = Some(delivered.arrived);
         }
-        None
+        speech
     }
 
     /// Drop whatever `id` has on the wire, and forget the Instance.
@@ -523,7 +539,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Watchful {
-        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
+        fn complete(&self, _: &WakeRequest, _: &dyn Fn(&str)) -> Result<Reply, String> {
             for _ in 0..400 {
                 if abandoned() {
                     self.saw.store(true, Ordering::SeqCst);
@@ -553,7 +569,9 @@ pub(crate) mod tests {
     }
 
     impl Completer for Answers {
-        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
+        /// Writes the whole reply at once, then takes `delay` to end the turn.
+        fn complete(&self, _: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
+            said(self.behavior);
             thread::sleep(self.delay);
             Ok(Reply::whole(self.behavior))
         }
@@ -580,7 +598,7 @@ pub(crate) mod tests {
         }
 
         impl Completer for Noted {
-            fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
+            fn complete(&self, request: &WakeRequest, _: &dyn Fn(&str)) -> Result<Reply, String> {
                 *self.prompt.lock().expect("prompt lock") = request.prompt.clone();
                 Ok(Reply::whole("idle"))
             }
@@ -630,8 +648,8 @@ pub(crate) mod tests {
     /// Poll the slot the way the frame loop does, until an answer lands.
     fn polled(slots: &mut Slots, id: &InstanceId) -> Option<Answered> {
         for _ in 0..200 {
-            if let Some(taken) = slots.take(id) {
-                return Some(taken);
+            if let Some(Arrived::Answered(answered)) = slots.take(id) {
+                return Some(*answered);
             }
             thread::sleep(Duration::from_millis(5));
         }
@@ -783,6 +801,103 @@ pub(crate) mod tests {
         assert!(
             waited_for(&saw),
             "the superseded worker ran on without ever seeing that it had been dropped"
+        );
+    }
+
+    /// The frame loop hears the Speech while the reply is still on the wire,
+    /// with the Behavior name already cut from it, and then the reply.
+    #[test]
+    fn take_hands_over_the_speech_before_the_reply() {
+        use std::sync::{Arc, Barrier};
+
+        struct SynchronizedAnswers {
+            behavior: &'static str,
+            speech_barrier: Arc<Barrier>,
+        }
+
+        impl Completer for SynchronizedAnswers {
+            fn complete(&self, _: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
+                said(self.behavior);
+                self.speech_barrier.wait();
+                Ok(Reply::whole(self.behavior))
+            }
+        }
+
+        let speech_barrier = Arc::new(Barrier::new(2));
+        let mut slots = Slots::new();
+        let id = "fidget".to_string();
+
+        slots.wake(
+            &id,
+            Arc::new(ModelDirector::new(
+                SynchronizedAnswers {
+                    behavior: "stroll\nhey there",
+                    speech_barrier: Arc::clone(&speech_barrier),
+                },
+                ["stroll", "nap"],
+                "fidget",
+                "cat",
+                false,
+            )),
+            wake_context(),
+        );
+
+        let mut seen = Vec::new();
+        for _ in 0..200 {
+            match slots.take(&id) {
+                Some(Arrived::Answered(answered)) => {
+                    seen.push(Arrived::Answered(answered));
+                    break;
+                }
+                Some(speech) => {
+                    seen.push(speech);
+                    speech_barrier.wait();
+                }
+                None => thread::sleep(Duration::from_millis(5)),
+            }
+        }
+
+        let speech: Vec<&str> = seen
+            .iter()
+            .filter_map(|arrived| match arrived {
+                Arrived::Speech(line) => Some(line.as_str()),
+                Arrived::Answered(_) => None,
+            })
+            .collect();
+        assert_eq!(speech, ["hey there"]);
+        assert!(
+            matches!(seen.last(), Some(Arrived::Answered(answered)) if behavior_of(&answered.wake) == "stroll"),
+            "the reply still lands after its Speech"
+        );
+    }
+
+    /// A superseded call's words are dropped like its reply, so the bubble
+    /// never grows with an answer to a moment the fidget has left.
+    #[test]
+    fn a_superseded_call_speaks_no_further() {
+        let mut slots = Slots::new();
+        let id = "fidget".to_string();
+
+        slots.wake(&id, answering("stroll\nstale words", 60), wake_context());
+        slots.wake(
+            &id,
+            answering("nap\nfresh words", 0),
+            Context {
+                happened: Happened::Poke,
+                ..wake_context()
+            },
+        );
+        thread::sleep(Duration::from_millis(200));
+
+        let mut speech = Vec::new();
+        while let Some(arrived) = slots.take(&id) {
+            if let Arrived::Speech(line) = arrived {
+                speech.push(line);
+            }
+        }
+        assert!(
+            !speech.iter().any(|line| line == "stale words"),
+            "got {speech:?}"
         );
     }
 }

@@ -40,6 +40,13 @@ the frame trace logs. It checks that no question cue shows before the Poke, and
 that after it the bubble reads "Question for you in the" with a `chat` link
 button.
 
+`streaming-bubble.sh` takes the same two binaries. Its fixture answers the
+first wake one word at a time. It photographs the region around the sprite
+twice mid-reply and once after, and checks from the overlay's Accessibility
+dump that the bubble grows, never shows the Behavior name, and ends on the
+whole line, and from the frame trace that `talk` plays while it grows. It has
+no X11 or Windows leaf yet.
+
 `poke-mid-climb.sh` takes only the app binary and runs no Harness. It throws
 the sprite at a display's side edge with a real drag
 (`scripts/scenarios/throw-sprite.swift`), then clicks it until one click lands

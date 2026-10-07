@@ -210,3 +210,9 @@ export function drawReply(body, text, doc = globalThis.document) {
 export function appendReply(body, chunk, doc = globalThis.document) {
   drawReply(body, (drawn.get(body) ?? "") + chunk, doc);
 }
+
+// Replace the reply with the full answer-so-far. Used for streaming Speech
+// events where the Shell sends the complete text each time, not incremental chunks.
+export function replaceReply(body, text, doc = globalThis.document) {
+  drawReply(body, text, doc);
+}

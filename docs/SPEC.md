@@ -120,8 +120,9 @@ that adding a character is drawing, not programming.
 26. As a user, I want to keep the character out of screen captures and shares, so that I do
     not have to explain it in a meeting.
 27. As a user, I want the character to respect Do Not Disturb (#84), so that it stays visible
-    but quiet — proposals are refused and unprompted dialogue is not spoken — while Poke,
-    Grab, and Throw still work.
+    but does not start unprompted wakes — the Shell refuses proactive wakes and Behavior
+    proposals are not applied — while replies to prompted interactions still show in both the
+    speech bubble and Chat, and Poke, Grab, and Throw still work.
 28. As a user, I want a hotkey that hides and shows the character instantly, so that I can
     banish it without opening settings.
 

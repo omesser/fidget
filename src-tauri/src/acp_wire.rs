@@ -473,6 +473,8 @@ enum Progress {
     Asked,
     /// Nothing is open any more. A fresh budget starts.
     Settled,
+    /// The answer so far, after a chunk of it landed.
+    Said(String),
     Done(Result<Reply, TurnError>),
 }
 
@@ -587,12 +589,14 @@ impl Wire {
     /// not the user: it stops while an ask or form waits on them and starts
     /// over whole once the last one is settled (#1001). Past it,
     /// `session/cancel` goes out and the reply is waited on for
-    /// `CANCEL_GRACE` so the wire is quiet again.
+    /// `CANCEL_GRACE` so the wire is quiet again. `said` hears the answer so
+    /// far each time a chunk of it lands.
     pub fn prompt(
         &self,
         session_id: &str,
         text: &str,
         timeout: Duration,
+        said: &dyn Fn(&str),
     ) -> Result<Reply, TurnError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
@@ -610,6 +614,7 @@ impl Wire {
             };
             match next {
                 Ok(Progress::Done(outcome)) => return outcome,
+                Ok(Progress::Said(text)) => said(&text),
                 Ok(Progress::Asked) => deadline = None,
                 Ok(Progress::Settled) => deadline = Some(Instant::now() + timeout),
                 Err(RecvTimeoutError::Disconnected) => return Err(TurnError::Lost),
@@ -622,7 +627,7 @@ impl Wire {
                     loop {
                         match rx.recv_timeout(grace.saturating_duration_since(Instant::now())) {
                             Ok(Progress::Done(_)) | Err(_) => return Err(TurnError::Timeout),
-                            Ok(Progress::Asked | Progress::Settled) => {}
+                            Ok(Progress::Asked | Progress::Settled | Progress::Said(_)) => {}
                         }
                     }
                 }
@@ -1202,6 +1207,20 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
+                // Drain any pending updates for this session before flushing,
+                // so between-turn speech that has been emitted but not yet
+                // processed doesn't get dropped.
+                while let Ok(message) = incoming.try_recv() {
+                    let signing_in = auth.is_some();
+                    between_turns(
+                        message,
+                        &mut forms,
+                        &mut asks,
+                        &mut inbound,
+                        signing_in,
+                        on_event,
+                    );
+                }
                 end_inbound(&mut inbound, &id, on_event);
                 let serving = Serving {
                     rx: &mut rx,
@@ -1218,6 +1237,20 @@ async fn serve(
             }
             Step::Command(Msg::Close { session_id, reply }) => {
                 let id = SessionId::new(session_id);
+                // Drain any pending updates for this session before flushing,
+                // so between-turn speech that has been emitted but not yet
+                // processed doesn't get dropped.
+                while let Ok(message) = incoming.try_recv() {
+                    let signing_in = auth.is_some();
+                    between_turns(
+                        message,
+                        &mut forms,
+                        &mut asks,
+                        &mut inbound,
+                        signing_in,
+                        on_event,
+                    );
+                }
                 end_inbound(&mut inbound, &id, on_event);
                 let outcome = cx
                     .send_request(CloseSessionRequest::new(id))
@@ -1529,7 +1562,11 @@ async fn turn(
             biased;
             message = incoming.recv() => match message {
                 Some(Incoming::Update(update)) => {
-                    note_update(update.update, session, &mut said, &mut thought, on_event)
+                    let answered = matches!(update.update, SessionUpdate::AgentMessageChunk(_));
+                    note_update(update.update, session, &mut said, &mut thought, on_event);
+                    if answered {
+                        let _ = reply.send(Progress::Said(said.so_far().to_string()));
+                    }
                 }
                 Some(Incoming::Ask(request, responder)) => {
                     hold_ask(&mut asks, &request, responder, on_event)
@@ -1901,6 +1938,11 @@ impl Answer {
                 }
             }
         }
+    }
+
+    /// The answer so far, short of a tail that may yet open a tag.
+    pub(crate) fn so_far(&self) -> &str {
+        &self.said
     }
 
     /// The whole answer. A held tail that never became a tag is answer text,

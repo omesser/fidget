@@ -672,7 +672,10 @@ impl Engine {
         self
     }
 
-    /// Toggle Do Not Disturb. The Character stays visible but stops starting things: no Director proposals are applied and no unprompted dialogue is spoken. Poke, Grab, and Throw still work.
+    /// Toggle Do Not Disturb. The character stays visible. The Shell starts no unprompted
+    /// wakes (`director::due` and `director::session_due` return false for proactive); Behavior
+    /// proposals are refused. Replies to prompted interactions still show in both the speech
+    /// bubble and Chat. Poke, Grab, and Throw still work.
     ///
     /// A walk already under way has to be sat down too. Walk velocity outlives the Primitive that started it, so refusing the next proposal would otherwise leave the sprite pacing.
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
@@ -1204,14 +1207,10 @@ impl Engine {
             animation: self.animation,
             animation_ms: self.animation_ms,
             variant_draw: self.variant_draw,
-            dialogue: if self.do_not_disturb {
-                None
-            } else {
-                snapshot
-                    .proposal
-                    .as_ref()
-                    .and_then(|proposal| proposal.dialogue.clone())
-            },
+            dialogue: snapshot
+                .proposal
+                .as_ref()
+                .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
             playing_behavior: self.playing_behavior.clone(),
             playing_primitive: self.on_screen(),
@@ -6288,11 +6287,11 @@ mod tests {
     }
 
     #[test]
-    fn unprompted_director_dialogue_is_not_spoken_under_do_not_disturb() {
+    fn engine_passes_dialogue_through_regardless_of_dnd() {
         let mut engine = a_resting_sprite();
         engine.set_do_not_disturb(true);
 
-        let silent = engine.tick(&WorldSnapshot {
+        let frame = engine.tick(&WorldSnapshot {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: Some("hello there".to_string()),
@@ -6301,9 +6300,11 @@ mod tests {
         });
 
         assert_eq!(
-            silent.dialogue, None,
-            "unprompted dialogue is refused under Do Not Disturb"
+            frame.dialogue,
+            Some("hello there".to_string()),
+            "Engine passes dialogue through; DND blocking happens at Director level"
         );
+        assert_eq!(frame.animation, "idle", "behavior is refused under DND");
     }
 
     #[test]
