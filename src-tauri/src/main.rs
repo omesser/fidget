@@ -314,7 +314,7 @@ struct InstanceState {
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
     /// The open quick-message draft, refreshed from the overlay's report each tick.
-    qm: Option<fidget_core::qm_draft::QmDraft>,
+    qm: Option<fidget_core::quick_message::QmDraft>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -452,7 +452,7 @@ struct SpritePlacement<'a> {
     cue: Option<&'static str>,
     /// The open quick-message draft. `None` off the bubble owner, so exactly one
     /// overlay draws the pill and the text follows the Instance across a seam.
-    qm: Option<&'a fidget_core::qm_draft::QmDraft>,
+    qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
 impl<'a> SpritePlacement<'a> {
@@ -561,7 +561,7 @@ struct Placed {
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,
     /// The open quick-message draft, carried to the bubble owner like `dialogue`.
-    qm: Option<fidget_core::qm_draft::QmDraft>,
+    qm: Option<fidget_core::quick_message::QmDraft>,
     #[allow(dead_code)]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -1809,7 +1809,7 @@ fn overlay_composing(instance: String) {
 /// The owning overlay's draft for one Instance, on every change. `None` is a
 /// closed pill: sent, dismissed, dragged away empty, or the Instance gone.
 #[tauri::command]
-fn overlay_report_qm_draft(instance: String, payload: Option<fidget_core::qm_draft::QmDraft>) {
+fn overlay_report_qm_draft(instance: String, payload: Option<fidget_core::quick_message::QmDraft>) {
     platform::set_qm_draft(instance, payload);
 }
 
@@ -5994,7 +5994,7 @@ mod tests {
             height: 1080.0,
         };
         let right = Rect { x: 1920.0, ..left };
-        let draft = fidget_core::qm_draft::QmDraft {
+        let draft = fidget_core::quick_message::QmDraft {
             text: "half a thought".to_string(),
             focused: true,
         };

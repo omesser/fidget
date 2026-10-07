@@ -13,6 +13,7 @@ use fidget_core::input::press_target;
 #[cfg(not(unix))]
 use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
+use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
@@ -69,13 +70,6 @@ type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 /// compared, so a trail that settles after a walk still rebuilds it.
 #[cfg(not(unix))]
 type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
-
-/// Takes this Instance's draft from the slot its owning overlay writes. True
-/// while a pill is open, which holds the walk the way a line on screen does.
-fn refresh_draft(id: &str, qm: &mut Option<fidget_core::qm_draft::QmDraft>) -> bool {
-    *qm = platform::qm_draft(id);
-    qm.is_some()
-}
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg(any(test, not(unix)))]
@@ -1677,9 +1671,8 @@ pub(crate) fn run_frame_loop(
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
-                let speech_visible = live.speech.visible_at(std::time::Instant::now());
-                let draft_open = refresh_draft(&live.id, &mut live.qm);
-                world.locomotion_frozen = speech_visible || draft_open;
+                live.qm = platform::qm_draft(&live.id);
+                world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
@@ -3234,44 +3227,6 @@ mod tests {
             decide_overlay_action(Some(&old_mask), &new_mask, true, false, Some(false), true),
             OverlayAction::Nothing
         );
-    }
-
-    /// The pill holds the walk while its draft is open, whichever overlay draws
-    /// it, and lets go once the overlay clears it on send, dismiss or a drag.
-    #[test]
-    fn an_open_draft_holds_the_walk_until_it_is_cleared() {
-        let draft = fidget_core::qm_draft::QmDraft {
-            text: "wait".to_string(),
-            focused: false,
-        };
-        let mut qm = None;
-
-        platform::set_qm_draft("walker".to_string(), Some(draft.clone()));
-        assert!(
-            refresh_draft("walker", &mut qm),
-            "an open pill holds the feet"
-        );
-        assert_eq!(qm, Some(draft), "and the Instance carries its text");
-
-        platform::set_qm_draft("walker".to_string(), None);
-        assert!(
-            !refresh_draft("walker", &mut qm),
-            "a cleared draft walks again"
-        );
-        assert_eq!(qm, None);
-    }
-
-    #[test]
-    fn a_neighbours_draft_does_not_hold_this_walk() {
-        let draft = fidget_core::qm_draft::QmDraft {
-            text: "mine".to_string(),
-            focused: true,
-        };
-        platform::set_qm_draft("neighbour".to_string(), Some(draft));
-        let mut qm = None;
-        assert!(!refresh_draft("stroller", &mut qm));
-        assert_eq!(qm, None);
-        platform::set_qm_draft("neighbour".to_string(), None);
     }
 
     /// Whether there is a region at all is `region_plan`'s call (core table);

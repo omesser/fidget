@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use fidget_core::qm_draft::QmDraft;
+use fidget_core::quick_message::QmDraft;
 use fidget_core::sensing::ActivitySource;
 use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
@@ -1174,6 +1174,22 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frame loop copies this slot into each Instance every tick, so a
+    /// draft reaches only its own Instance and a cleared one is gone.
+    #[test]
+    fn each_instance_reads_only_its_own_draft() {
+        let draft = QmDraft {
+            text: "wait".to_string(),
+            focused: true,
+        };
+        set_qm_draft("drafting".to_string(), Some(draft.clone()));
+        assert_eq!(qm_draft("drafting"), Some(draft));
+        assert_eq!(qm_draft("neighbour"), None, "a neighbour carries nothing");
+
+        set_qm_draft("drafting".to_string(), None);
+        assert_eq!(qm_draft("drafting"), None, "a closed pill leaves no draft");
+    }
 
     /// A webview built after setup has to suppress again. The last drop is
     /// what lets this process hear Ctrl+C, so the quit handler still runs.
