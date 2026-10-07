@@ -94,6 +94,7 @@ test("an empty json fence draws no body under the tool name", () => {
     "```json\nnull\n```",
     "```json\n\n```",
     "```\n{}\n```",
+    "```json {} ```",
   ]) {
     assert.equal(
       visible({

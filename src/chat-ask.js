@@ -73,6 +73,34 @@ function withinBudget(parts) {
   return lines.map((text, at) => ({ kind: parts[at].kind, text }));
 }
 
+// A harness puts the arguments in a json fence. Flattening an empty payload
+// leaves the fence characters, and the row would draw them as text.
+function emptyJsonFence(text) {
+  const raw = String(text).trim();
+  const multi = /^```[^\n`]*\r?\n([\s\S]*?)\r?\n```$/.exec(raw);
+  const line = /^```[A-Za-z0-9_+-]*[ \t]*([\s\S]*?)[ \t]*```$/.exec(raw);
+  const body = (multi ?? line)?.[1];
+  if (body === undefined) {
+    return false;
+  }
+  const payload = body.trim();
+  if (payload === "") {
+    return true;
+  }
+  try {
+    const value = JSON.parse(payload);
+    if (value === null || value === "") {
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+    return typeof value === "object" && Object.keys(value).length === 0;
+  } catch {
+    return false;
+  }
+}
+
 // What the row draws, in order: `{ kind, text }` per line, `kind` one of
 // title, code, prose or metadata. Code is the thing being approved and gets a
 // `<code>` from the renderer; metadata is the `kind · paths` tail.
@@ -80,7 +108,10 @@ export function askSays(ask) {
   // The title is untrusted too, and a verbose one would spend the row's budget
   // before the question arrived, from a merely chatty server.
   const title = clamp(flat(ask?.title ?? ""), VALUE_LIMIT);
-  const content = (ask?.content ?? []).map(flat).filter(Boolean);
+  const content = (ask?.content ?? [])
+    .filter((text) => !emptyJsonFence(text))
+    .map(flat)
+    .filter(Boolean);
   // Content first, arguments as the fallback, never both: a tool that sends
   // its question as content usually repeats it in `input`. Content is a
   // command only when the ask runs something; an argument line always is.
