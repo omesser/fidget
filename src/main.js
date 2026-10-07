@@ -510,6 +510,11 @@ function attachQuickMessage(view, id) {
     onChange() {
       syncQuick(view);
     },
+    onDragDismiss() {
+      window.__TAURI__.core.invoke("overlay_qm_drag_dismiss", { instance: id }).catch((err) => {
+        console.error("overlay_qm_drag_dismiss", err);
+      });
+    },
     send(text) {
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
@@ -883,14 +888,13 @@ async function start() {
         view.quickMachine.show();
         if (payload.focused) {
           view.quickMachine.requestFocus();
+          if (window.__TAURI__ && window.__TAURI__.core) {
+            window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+              console.error("overlay_request_focus after handoff", err);
+            });
+          }
         }
         syncQuick(view);
-
-        if (window.__TAURI__ && window.__TAURI__.core) {
-          window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
-            console.error("overlay_request_focus after handoff", err);
-          });
-        }
       }
     },
     { target: overlay.label },
@@ -903,7 +907,8 @@ async function start() {
     ({ payload }) => {
       const view = views.get(payload.instance);
       if (view && view.quickMachine.visible) {
-        view.quickMachine.hide();
+        view.quickMachine.hideWithoutReport();
+        syncQuick(view);
       }
     },
     { target: overlay.label },
