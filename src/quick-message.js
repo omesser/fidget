@@ -60,7 +60,7 @@ export function crossedDrag(dx, dy) {
   return dx * dx + dy * dy >= DRAG_DISMISS_PX * DRAG_DISMISS_PX;
 }
 
-export function createQuickMessage({ schedule, clear, send, onChange, available = true, onDragDismiss }) {
+export function createQuickMessage({ schedule, clear, send, onChange, available = true }) {
   let visible = false;
   let text = "";
   let focused = false;
@@ -149,14 +149,6 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     hide();
   }
 
-  function dismissOpenWithDragLatch() {
-    cancelHover();
-    if (!visible) return;
-    // Set drag latch BEFORE clearing state
-    if (onDragDismiss) onDragDismiss();
-    text = "";
-    hide();
-  }
 
   function submit() {
     const line = text.trim();
@@ -228,7 +220,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       ready = next;
       if (!ready) {
         // The placeholder is the only place this pill can say why. A draft
-        // would hide that sentence. But preserve pendingRestore for handoff.
+        // would hide that sentence. But preserve pendingRestore.
         if (!pendingRestore) {
           text = "";
         }
@@ -277,11 +269,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     outside: dismissOpen,
     drag() {
-      // Always set drag latch when dragging so handoff can fire on ownership change.
-      // Typed/focused pills don't dismiss locally (they follow), but empty unfocused pills do.
-      if (visible && onDragDismiss) onDragDismiss();
-
-      if (!hasText() && !focused) {
+      // Empty text closes on drag (main's dismissOpen), non-empty keeps pill.
+      if (!hasText()) {
         text = "";
         hide();
       }
@@ -296,7 +285,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
       visible = true;
       if (!ready) {
         // Not ready yet (chat opening check pending). Hold the text until available.
-        // This handles qm-handoff arriving before chat_opening completes.
+        // This handles placement.qm arriving before chat_opening completes.
         pendingRestore = value;
         text = ""; // Show placeholder until ready
         focused = false;
@@ -333,33 +322,17 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
 // Same seat as Speech. When that bubble is already there, step clear of it
 // so a hover does not cover the line the Character is saying.
 export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
-  const spriteCenterX = spriteRect.x + spriteRect.width / 2;
+  const pos = placeBubble(spriteRect, size, bounds);
+  if (!speechRect) return pos;
+  const overlaps =
+    pos.x < speechRect.x + speechRect.width &&
+    pos.x + size.width > speechRect.x &&
+    pos.y < speechRect.y + speechRect.height &&
+    pos.y + size.height > speechRect.y;
+  if (!overlaps) return pos;
   const gap = 10;
-
-  let x = spriteCenterX - size.width / 2;
-  let y = spriteRect.y - size.height - gap;
-
-  const wouldClampToTop = y < bounds.y;
-  const clampedY = bounds.y;
-  const wouldCoverSprite = wouldClampToTop && (clampedY + size.height > spriteRect.y);
-
-  if (wouldCoverSprite) {
-    y = spriteRect.y + spriteRect.height + gap;
-  }
-
-  if (speechRect) {
-    const overlaps =
-      x < speechRect.x + speechRect.width &&
-      x + size.width > speechRect.x &&
-      y < speechRect.y + speechRect.height &&
-      y + size.height > speechRect.y;
-    if (overlaps) {
-      y = speechRect.y - size.height - gap;
-      if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
-    }
-  }
-
-  const inverted = y > spriteRect.y + spriteRect.height / 2;
-  const tailOffset = spriteCenterX - (x + size.width / 2);
-  return { x, y, tailOffset, inverted };
+  let y = speechRect.y - size.height - gap;
+  if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
+  y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
+  return { ...pos, y };
 }

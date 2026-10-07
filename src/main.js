@@ -314,8 +314,8 @@ function reportQmState(view) {
     : null;
 
   const serialized = JSON.stringify(draft);
-  if (serialized === reportedQmState) return;
-  reportedQmState = serialized;
+  if (serialized === view.reportedQm) return;
+  view.reportedQm = serialized;
 
   window.__TAURI__.core
     .invoke("overlay_report_qm_draft", {
@@ -504,11 +504,6 @@ function attachQuickMessage(view, id) {
     onChange() {
       syncQuick(view);
     },
-    onDragDismiss() {
-      window.__TAURI__.core.invoke("overlay_qm_drag_dismiss", { instance: id }).catch((err) => {
-        console.error("overlay_qm_drag_dismiss", err);
-      });
-    },
     send(text) {
       // Start AI turn immediately (ellipsis). Backend filters thinking/dialogue by bubble
       // ownership; non-owner overlays clear aiTurnPending when placement.bubble=false.
@@ -609,7 +604,11 @@ function removeView(id) {
   // After the view is gone, so a scan cannot still name it. dispose already
   // dropped the caret; this is the report that clears a stale id.
   reportComposing();
-  // reportQmState is called by syncQuick which was already called during dispose
+  // Clear the QM draft for this Instance
+  window.__TAURI__.core.invoke("overlay_report_qm_draft", {
+    instance: id,
+    payload: null,
+  }).catch(() => {});
 }
 
 function drawView(view, now) {
@@ -851,16 +850,16 @@ async function start() {
         view.cues.event(view.latest);
         view.quickMachine.setChatOpen(sprite.chatting);
 
-        // Restore QM pill from per-Instance draft when this overlay owns the bubble.
-        if (placement.bubble && placement.qm) {
-          if (!view.quickMachine.visible || view.quickField.value !== placement.qm.text) {
-            view.quickMachine.restore(placement.qm.text);
-            if (placement.qm.focused && document.activeElement !== view.quickField) {
-              view.quickMachine.focus();
-              window.__TAURI__.core.invoke("overlay_request_focus").catch(() => {});
-            }
-            syncQuick(view);
+        // Restore QM pill from per-Instance draft when this overlay GAINS ownership.
+        // Only apply on ownership change (previous view.latest?.bubble was falsy, now true).
+        const gainedOwnership = !view.latest?.bubble && placement.bubble;
+        if (gainedOwnership && placement.qm) {
+          view.quickMachine.restore(placement.qm.text);
+          if (placement.qm.focused) {
+            view.quickMachine.focus();
+            window.__TAURI__.core.invoke("overlay_request_focus").catch(() => {});
           }
+          syncQuick(view);
         } else if (!placement.bubble && view.quickMachine.visible) {
           // Hide pill when this overlay no longer owns the bubble.
           view.quickMachine.hideWithoutReport();

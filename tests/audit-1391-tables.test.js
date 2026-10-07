@@ -248,49 +248,19 @@ function tipHandoff(seq) {
   return events;
 }
 
-// --- Drag decision table (pure function in core) ----------------------------
+// --- Per-Instance draft (no handoff) ----------------------------------------
 
-test("keep_qm_on_drag: empty closes, non-empty keeps", () => {
-  const qmDraft = read("crates/core/src/qm_draft.rs");
-  
-  // Function must be pure and table-tested
-  assert.match(qmDraft, /pub fn keep_qm_on_drag/);
-  assert.match(qmDraft, /empty_text_closes/i);
-  assert.match(qmDraft, /non_empty.*keeps/i);
-  assert.match(qmDraft, /no_draft.*closes/i);
-});
-
-test("Drag decision table (matching qm_draft.rs tests)", () => {
-  const rows = [
-    { text: "", focused: true, keep: false, reason: "empty text closes on drag" },
-    { text: "hello", focused: false, keep: true, reason: "non-empty text keeps pill" },
-    { text: "   ", focused: true, keep: true, reason: "whitespace counts as non-empty per String::is_empty" },
-  ];
-
-  for (const { text, focused, keep, reason } of rows) {
-    const draft = text === null ? null : { text, focused };
-    const result = keepQmOnDrag(draft);
-    assert.strictEqual(result, keep, reason);
-  }
-});
-
-// Helper matching crates/core/src/qm_draft.rs::keep_qm_on_drag
-function keepQmOnDrag(draft) {
-  if (!draft) return false;
-  return draft.text.length > 0;
-}
-
-test("Owner flip carries draft to new overlay", () => {
+test("Draft rides in Placed.qm like dialogue", () => {
   const main = read("src/main.js");
   const frame = read("src-tauri/src/frame_loop.rs");
   
   // Draft rides in Placed.qm
   assert.match(frame, /qm:\s*live\.qm\.clone\(\)/);
   
-  // JS restores from placement.qm when owner
+  // JS restores from placement.qm only when GAINING ownership
   assert.ok(
-    /placement\.bubble.*placement\.qm/.test(main) || /placement\.qm.*placement\.bubble/.test(main),
-    "JS must restore from placement.qm when placement.bubble is true"
+    /gainedOwnership.*placement\.qm/.test(main),
+    "JS must restore only on ownership change, not per-frame"
   );
   
   // Non-owner hides pill

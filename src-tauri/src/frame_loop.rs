@@ -1667,6 +1667,9 @@ pub(crate) fn run_frame_loop(
                 // neighbour's caret must not stop this one.
                 world.composing =
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
+                // Copy QM draft from platform slot into instance state
+                live.qm = platform::qm_draft(&live.id);
+
                 world.verbs = std::mem::take(&mut live.verbs);
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
@@ -3404,40 +3407,6 @@ mod tests {
         assert!(
             region_line.contains(" + painted "),
             "region line must contain ' + painted '"
-        );
-
-        // Pattern validation: handoff line must have "overlay <label>: pill handoff from <overlay> open=<bool> text=\"<text>\" focused=<bool>"
-        assert!(
-            handoff_line.starts_with("overlay "),
-            "handoff line must start with 'overlay '"
-        );
-        assert!(
-            handoff_line.contains(": pill handoff from "),
-            "handoff line must contain ': pill handoff from '"
-        );
-        assert!(
-            handoff_line.contains(" open="),
-            "handoff line must contain ' open='"
-        );
-        assert!(
-            handoff_line.contains(" text=\""),
-            "handoff line must contain ' text=\"'"
-        );
-        assert!(
-            handoff_line.contains(" focused="),
-            "handoff line must contain ' focused='"
-        );
-        // Must NOT contain "instance=" between "from" and "open="
-        let from_to_open = handoff_line
-            .split(" from ")
-            .nth(1)
-            .unwrap()
-            .split(" open=")
-            .next()
-            .unwrap();
-        assert!(
-            !from_to_open.contains("instance="),
-            "handoff line must not have 'instance=' between 'from' and 'open='"
         );
     }
 }

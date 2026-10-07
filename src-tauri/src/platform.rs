@@ -13,6 +13,7 @@ use std::fs;
 use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -79,6 +80,27 @@ pub fn overlay_composing() -> Option<String> {
     OVERLAY_COMPOSING.lock().ok().and_then(|slot| slot.clone())
 }
 
+
+/// Per-Instance QM drafts. Thin keyed slot — decisions live in core.
+static QM_DRAFTS: Mutex<HashMap<String, fidget_core::qm_draft::QmDraft>> =
+    Mutex::new(HashMap::new());
+
+pub fn set_qm_draft(instance: String, draft: Option<fidget_core::qm_draft::QmDraft>) {
+    if let Ok(mut drafts) = QM_DRAFTS.lock() {
+        if let Some(d) = draft {
+            drafts.insert(instance, d);
+        } else {
+            drafts.remove(&instance);
+        }
+    }
+}
+
+pub fn qm_draft(instance: &str) -> Option<fidget_core::qm_draft::QmDraft> {
+    QM_DRAFTS
+        .lock()
+        .ok()
+        .and_then(|drafts| drafts.get(instance).cloned())
+}
 
 /// Which mouse buttons one tick found down. One type so X11 pays one
 /// XQueryPointer instead of two (#268), and so both consuming witness reads
@@ -1258,18 +1280,6 @@ mod tests {
         set_overlay_composing(Some(String::new()));
         assert_eq!(overlay_composing(), None);
     }
-
-    #[test]
-    fn qm_visible_names_one_instance_until_the_pill_hides() {
-        set_overlay_qm_visible(Some("buddy-b".to_string()));
-        assert_eq!(overlay_qm_visible().as_deref(), Some("buddy-b"));
-        set_overlay_qm_visible(Some(String::new()));
-        assert_eq!(overlay_qm_visible(), None);
-    }
-
-    #[test]
-
-    #[test]
 
     /// The bubble's "Open chat" control (#547) belongs to the overlay that
     /// drew it. A neighbour must not stop passing clicks at the same

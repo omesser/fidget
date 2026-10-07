@@ -37,9 +37,6 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
         })
 }
 
-/// Hysteresis margin: feet must move this far (in points) past a seam before
-/// ownership switches. Prevents flicker when feet hover near a display boundary.
-
 /// How far outside its display feet may be and still be standing on it, in
 /// points. Slack rather than equality because the floor is the display scaled
 /// and clamped, which need not land back on the edge. Squared at the call site.

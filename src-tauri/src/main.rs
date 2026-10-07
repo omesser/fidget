@@ -1815,14 +1815,13 @@ struct QmDraftPayload {
 
 #[tauri::command]
 fn overlay_report_qm_draft(instance: String, payload: Option<QmDraftPayload>) {
-    INSTANCES.with_borrow_mut(|instances| {
-        if let Some(live) = instances.get_mut(&instance) {
-            live.qm = payload.map(|p| fidget_core::qm_draft::QmDraft {
-                text: p.text,
-                focused: p.focused,
-            });
-        }
-    });
+    platform::set_qm_draft(
+        instance,
+        payload.map(|p| fidget_core::qm_draft::QmDraft {
+            text: p.text,
+            focused: p.focused,
+        }),
+    );
 }
 
 /// Same witness for the right button. Without it a right-click on the sprite
@@ -3898,8 +3897,7 @@ fn spawn_instances(
             spoken: None,
             speech: SpeechBubble::default(),
             drawn_last: None,
-            bubble_owner_last: None,
-            qm_drag_latch: false,
+            qm: None,
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
@@ -5947,6 +5945,7 @@ mod tests {
             chatting: true,
             cue: Some(Cue::Poke),
             owner: Some(1),
+            qm: None,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
