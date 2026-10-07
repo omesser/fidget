@@ -1923,6 +1923,9 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title, None);
 }
 
+/// The pill reopening on a new owner takes the caret. Windows refuses
+/// SetForegroundWindow to a background thread, so the overlay borrows the
+/// foreground thread's input for the call.
 #[tauri::command]
 fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -1943,18 +1946,26 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
             .map_err(|e| format!("Window handle not available: {e}"))?;
         if let RawWindowHandle::Win32(win32_handle) = raw_handle.as_raw() {
             let hwnd = win32_handle.hwnd.get() as HWND;
+            // SAFETY: hwnd is this live overlay's window; the thread ids come from
+            // Win32 for live windows, and any attach is undone before returning.
             unsafe {
                 let foreground = GetForegroundWindow();
+                let mut attached = None;
                 if !foreground.is_null() {
                     let foreground_thread =
                         GetWindowThreadProcessId(foreground, std::ptr::null_mut());
                     let overlay_thread = GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
 
-                    if foreground_thread != overlay_thread {
-                        AttachThreadInput(overlay_thread, foreground_thread, 1);
+                    if foreground_thread != overlay_thread
+                        && AttachThreadInput(overlay_thread, foreground_thread, 1) != 0
+                    {
+                        attached = Some((overlay_thread, foreground_thread));
                     }
                 }
                 SetForegroundWindow(hwnd);
+                if let Some((overlay_thread, foreground_thread)) = attached {
+                    AttachThreadInput(overlay_thread, foreground_thread, 0);
+                }
             }
         }
         Ok(())
