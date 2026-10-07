@@ -305,7 +305,7 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
 /// next frame forced a redraw.
 fn apply_input_mask(
-    window: &tauri::Window,
+    window: &tauri::WebviewWindow,
     hwnd: HWND,
     art: &[[i32; 4]],
     hotspot_rects: &[[i32; 4]],
