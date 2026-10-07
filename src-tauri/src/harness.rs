@@ -5412,7 +5412,7 @@ mod tests {
     #[test]
     fn work_between_turns_reaches_the_user_and_its_ask_is_answered() {
         let (fx, session) = Fixture::new("between-turn");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&asking("hi"), &|_| {}), Ok(Reply::whole("Hello")));
         let mut thoughts = Vec::new();
         let mut said = Vec::new();
         let ask = loop {
@@ -5457,11 +5457,11 @@ mod tests {
     fn a_held_ask_is_answered_during_a_later_turn() {
         let (fx, session) = Fixture::new("between-turn-held");
         let session = Arc::new(session.with_timeout(Duration::from_secs(2)));
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&asking("hi"), &|_| {}), Ok(Reply::whole("Hello")));
         let ask = fx.ask();
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("again")))
+            thread::spawn(move || session.complete(&asking("again"), &|_| {}))
         };
         assert!(fx.wait_for("prompt", 2), "the second turn never went out");
         session.answer_permission(&ask.request, "allow");
@@ -5483,7 +5483,7 @@ mod tests {
     #[test]
     fn closing_a_session_ends_its_thought_from_between_turns() {
         let (fx, session) = Fixture::new("between-turn");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&asking("hi"), &|_| {}), Ok(Reply::whole("Hello")));
         thread::sleep(Duration::from_millis(400));
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
@@ -5513,9 +5513,9 @@ mod tests {
     #[test]
     fn prompting_before_between_turn_ask_flushes_speech() {
         let (fx, session) = Fixture::new("between-turn");
-        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(session.complete(&asking("hi"), &|_| {}), Ok(Reply::whole("Hello")));
         thread::sleep(Duration::from_millis(400));
-        let worker = thread::spawn(move || session.complete(&asking("again")));
+        let worker = thread::spawn(move || session.complete(&asking("again"), &|_| {}));
         let mut speech_seen = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !speech_seen && std::time::Instant::now() < deadline {
@@ -5548,7 +5548,7 @@ mod tests {
                 ),
             )
             .unwrap();
-            assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+            assert_eq!(session.complete(&asking("hi"), &|_| {}), Ok(Reply::whole("Hello")));
             assert_eq!(fx.count("load"), 1);
             assert_eq!(fx.events("tool_call"), Vec::<Value>::new(), "{saved}");
             session.shutdown();

@@ -389,16 +389,25 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     /// What the reply so far lets the character say: nothing until the contract
-    /// line is read, so a Behavior name never shows, then what the whole reply
-    /// would parse to. A reply with no contract line is spoken only when it ends.
+    /// line is found, then the speech extracted by the same parse logic the final
+    /// reply uses. This is the only shaping: extracting speech from the parsed reply.
     fn speech_so_far(&self, answer: &str) -> Option<String> {
         let answer = answer.trim_end_matches('\r');
         let (lines, tail) = answer.split_at(answer.rfind('\n').map_or(0, |at| at + 1));
-        let contract_read = parse_proposal(lines).is_ok()
+        
+        // Contract is found if complete lines parse successfully, OR the tail
+        // has a '|' and matches the contract pattern (inline speech like "wave | hi")
+        let contract_found = parse_proposal(lines).is_ok()
             || (tail.contains('|') && contract_line(tail.trim()).is_some());
-        match contract_read.then(|| self.proposal(answer).0)? {
-            Wake::Proposed(proposal) => proposal.dialogue,
-            Wake::Failed => None,
+        
+        // Once we've seen the contract, parse the whole answer to extract speech
+        if contract_found {
+            match self.proposal(answer).0 {
+                Wake::Proposed(proposal) => proposal.dialogue,
+                Wake::Failed => None,
+            }
+        } else {
+            None
         }
     }
 

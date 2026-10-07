@@ -1464,12 +1464,28 @@ pub(crate) fn run_frame_loop(
                     Some(completer::Arrived::Answered(answered)) => Some(*answered),
                     // A line with no Behavior, so `talk` plays while it grows
                     // and Do Not Disturb gates it like any line. The reply's
-                    // own Behavior is applied when it lands.
+                    // own Behavior is applied when it lands. The same speech
+                    // also updates the Chat row so both surfaces stream together.
                     Some(completer::Arrived::Speech(line)) => {
                         proposal = Some(BehaviorProposal {
                             behavior: String::new(),
-                            dialogue: Some(line),
+                            dialogue: Some(line.clone()),
                         });
+                        let _ = app.emit_to(
+                            chat_label(&live.id),
+                            CHAT_EVENT,
+                            super::ChatReply {
+                                said: Some(line),
+                                busy: false,
+                                reacting_to: None,
+                                you: false,
+                                thought: false,
+                                at: None,
+                                error: None,
+                                failure: None,
+                                superseded_by: None,
+                            },
+                        );
                         None
                     }
                     None => None,
