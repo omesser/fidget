@@ -146,7 +146,6 @@ test("hideButKeepTurn preserves aiTurnPending for ownership changes", async () =
   let thinkingShown = false;
   let speechShown = null;
   const machine = createBubbleMachine({
-    instance: "test-instance-1",
     showSpeech(text) {
       speechShown = text;
     },
@@ -163,26 +162,22 @@ test("hideButKeepTurn preserves aiTurnPending for ownership changes", async () =
     cancel: (id) => clearTimeout(id),
   });
 
-  // Setup global map in mock window
-  global.window = { aiTurnsPending: new Map() };
-
-  // User submits QM message, AI turn starts
-  machine.aiTurnStarted();
+  // User submits QM message, AI turn starts (simulated via backend's thinking flag)
+  machine.frame({ thinking: true, visible: true });
   await new Promise((resolve) => setTimeout(resolve, 250));
-  assert.equal(thinkingShown, true, "thinking should show after aiTurnStarted");
-  assert.equal(global.window.aiTurnsPending.get("test-instance-1"), true, "global flag set");
+  assert.equal(thinkingShown, true, "thinking should show from backend flag");
 
   // Character crosses monitor seam, ownership changes, old owner hides bubbles
   machine.hideButKeepTurn();
   assert.equal(thinkingShown, false, "thinking should hide immediately");
   assert.equal(speechShown, null, "speech should hide immediately");
-  assert.equal(
-    global.window.aiTurnsPending.get("test-instance-1"),
-    true,
-    "global flag preserved during ownership change",
-  );
 
-  // Reply arrives on new owner (which has same aiTurnPending state)
+  // New owner receives frame with thinking flag still true (backend tracks it)
+  machine.frame({ thinking: true, visible: true });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(thinkingShown, true, "thinking reappears on new owner from backend flag");
+
+  // Reply arrives
   machine.event({ dialogue: "Hello from QM!" });
   machine.frame({ dialogue: "Hello from QM!", thinking: false, visible: true });
 
@@ -192,29 +187,14 @@ test("hideButKeepTurn preserves aiTurnPending for ownership changes", async () =
     "speech should show despite ownership change mid-turn",
   );
   assert.equal(thinkingShown, false, "thinking should stay hidden when speech shows");
-  assert.equal(
-    global.window.aiTurnsPending.has("test-instance-1"),
-    false,
-    "global flag cleared after dialogue",
-  );
-
-  delete global.window;
 });
 
-test("global AI turn state survives ownership flip", async () => {
-  // Simulate two overlays with bubble machines for the same instance
-  global.window = { aiTurnsPending: new Map() };
-
+test("backend thinking flag drives display across overlays", async () => {
+  // Simulates backend setting thinking=true after chat_send
   let thinking1 = false;
-  let speech1 = null;
   const overlay1 = createBubbleMachine({
-    instance: "test-instance-2",
-    showSpeech(text) {
-      speech1 = text;
-    },
-    hideSpeech() {
-      speech1 = null;
-    },
+    showSpeech() {},
+    hideSpeech() {},
     showThinking() {
       thinking1 = true;
     },
@@ -226,15 +206,9 @@ test("global AI turn state survives ownership flip", async () => {
   });
 
   let thinking2 = false;
-  let speech2 = null;
   const overlay2 = createBubbleMachine({
-    instance: "test-instance-2",
-    showSpeech(text) {
-      speech2 = text;
-    },
-    hideSpeech() {
-      speech2 = null;
-    },
+    showSpeech() {},
+    hideSpeech() {},
     showThinking() {
       thinking2 = true;
     },
@@ -245,31 +219,11 @@ test("global AI turn state survives ownership flip", async () => {
     cancel: (id) => clearTimeout(id),
   });
 
-  // QM send happens on overlay1
-  overlay1.aiTurnStarted();
+  // Backend broadcasts thinking=true to all overlays after chat_send
+  overlay1.frame({ thinking: true, visible: true });
+  overlay2.frame({ thinking: true, visible: true });
   await new Promise((resolve) => setTimeout(resolve, 250));
-  assert.equal(thinking1, true, "overlay1 shows thinking");
-  assert.equal(thinking2, false, "overlay2 not started yet");
 
-  // Character crosses seam, overlay1 loses ownership
-  overlay1.hideButKeepTurn();
-  assert.equal(thinking1, false, "overlay1 thinking hidden");
-
-  // Overlay2 receives next frame with thinking flag from backend + global flag
-  overlay2.frame({ thinking: false, visible: true });
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  assert.equal(thinking2, true, "overlay2 shows thinking from global flag");
-
-  // Reply arrives on overlay2
-  overlay2.event({ dialogue: "Cross-seam reply" });
-  overlay2.frame({ dialogue: "Cross-seam reply", thinking: false, visible: true });
-
-  assert.equal(speech2, "Cross-seam reply", "overlay2 shows speech");
-  assert.equal(
-    global.window.aiTurnsPending.has("test-instance-2"),
-    false,
-    "global flag cleared",
-  );
-
-  delete global.window;
+  assert.equal(thinking1, true, "overlay1 shows thinking from backend");
+  assert.equal(thinking2, true, "overlay2 shows thinking from backend");
 });

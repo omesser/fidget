@@ -37,11 +37,6 @@ let petDrag = null;
 // pointerup/cancel. Stays true even after petDrag clears on threshold cross.
 let gestureActive = false;
 
-// Track which instances have AI turns in flight (QM send before response arrives).
-// Shared across ownership changes so thinking/dialogue survive seam crossings.
-const aiTurnsPending = new Map();
-window.aiTurnsPending = aiTurnsPending;
-
 const views = new Map();
 
 function currentDisplayBounds() {
@@ -173,7 +168,6 @@ function createView(id) {
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
   view.bubbles = createBubbleMachine({
-    instance: id,
     showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
@@ -238,6 +232,10 @@ function positionBubble(view, spriteRect, displayBounds) {
 function speechRect(view) {
   if (!view.bubble.classList.contains("visible")) return null;
   if (view.bubble.dataset.mode !== "speech") return null;
+  // During fade-out transitions, bubble still has "visible" class but is transparent.
+  // Don't reserve space for it while fading.
+  const opacity = parseFloat(view.bubble.style.opacity);
+  if (opacity < 1 && !isNaN(opacity)) return null;
   return {
     x: parseFloat(view.bubble.style.left) || 0,
     y: parseFloat(view.bubble.style.top) || 0,
@@ -453,7 +451,6 @@ function attachQuickMessage(view, id) {
       syncQuick(view);
     },
     send(text) {
-      view.bubbles.aiTurnStarted();
       const token = (view.gateToken = (view.gateToken ?? 0) + 1);
       window.__TAURI__.core
         .invoke("chat_opening", { instance: id })
