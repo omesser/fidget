@@ -1607,7 +1607,6 @@ pub enum BoolField {
     TraceHittest,
     TraceDirector,
     TraceEngine,
-    TraceBubble,
     DirectorBlank,
     /// Apply writes the project `.mcp.json` when Pi is the Harness. Default on.
     PiProjectMcp,
@@ -1677,7 +1676,6 @@ impl SettingsPatch {
             BoolField::TraceHittest => self.trace_hittest = Some(value),
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
-            BoolField::TraceBubble => self.trace_bubble = Some(value),
             BoolField::DirectorBlank => self.completer.director_blank = Some(value),
             BoolField::PiProjectMcp => self.completer.pi_project_mcp = Some(value),
             BoolField::Capturable => self.capturable = Some(value),
