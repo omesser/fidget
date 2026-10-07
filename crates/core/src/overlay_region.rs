@@ -188,6 +188,13 @@ mod tests {
                 &[],
                 &[[100, 200, 180, 328]],
             ),
+            (
+                "bubble straddling seam onto non-sprite overlay",
+                &[],
+                &[],
+                &[bubble],
+                &[[120, 80, 320, 170]],
+            ),
         ];
 
         for (name, trail, hotspots, painted, expect) in rows {

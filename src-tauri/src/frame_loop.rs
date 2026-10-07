@@ -2546,18 +2546,31 @@ pub(crate) fn run_frame_loop(
                                 && local.y < display.height as i32
                         });
 
-                        if let Some(instance) = sprite_on_overlay {
+                        let mask_params = if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
                             let offset = (local.x - instance.sprite.x, local.y - instance.sprite.y);
-                            let mask_params = (
+                            (
                                 trails
                                     .get(&instance.id)
                                     .map(|trail| trail.clip_rects(offset))
                                     .unwrap_or_default(),
                                 platform::overlay_hotspots_for(&label),
                                 platform::overlay_painted_for(&label),
-                            );
+                            )
+                        } else {
+                            // No sprite, but check for painted rects (bubble straddling seam).
+                            (
+                                Vec::new(),
+                                platform::overlay_hotspots_for(&label),
+                                platform::overlay_painted_for(&label),
+                            )
+                        };
 
+                        // Only proceed if there's something to show: sprite art, hotspots, or painted.
+                        if !mask_params.0.is_empty()
+                            || !mask_params.1.is_empty()
+                            || !mask_params.2.is_empty()
+                        {
                             let action = decide_overlay_action(
                                 last_mask.lock().unwrap().get(index),
                                 &mask_params,
@@ -2672,46 +2685,6 @@ pub(crate) fn run_frame_loop(
                             {
                                 flipped = true;
                                 ignoring[index] = confirmed_ignoring;
-                            }
-                        } else {
-                            let confirmed_ignoring = applied_ignoring
-                                .lock()
-                                .unwrap()
-                                .get(index)
-                                .copied()
-                                .unwrap_or(None);
-
-                            if confirmed_ignoring != Some(true)
-                                && !toggle_in_flight
-                                    .lock()
-                                    .unwrap()
-                                    .get(index)
-                                    .copied()
-                                    .unwrap_or(false)
-                            {
-                                toggle_in_flight.lock().unwrap()[index] = true;
-                                let handle = app.clone();
-                                let label_clone = label.clone();
-                                let applied_ignoring_clone = Arc::clone(&applied_ignoring);
-                                let toggle_in_flight_clone = Arc::clone(&toggle_in_flight);
-                                let overlay_index = index;
-
-                                let _ = app.run_on_main_thread(move || {
-                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
-                                    if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if platform::toggle_click_through_only(&window, true)
-                                            .is_ok()
-                                        {
-                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                Some(true);
-                                        }
-                                    }
-                                });
-                            }
-
-                            if confirmed_ignoring == Some(true) && ignoring[index] != Some(true) {
-                                flipped = true;
-                                ignoring[index] = Some(true);
                             }
                         }
                     } else {

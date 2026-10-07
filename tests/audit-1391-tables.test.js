@@ -57,6 +57,20 @@ test("GREEN: overlay_region_rects / apply_input_mask already union painted when 
   assert.match(win, /overlay_region_rects\(art, hotspot_rects, painted_rects\)/);
 });
 
+test("RED: Windows must build region for painted rects on overlay without sprite", () => {
+  const frame = read("src-tauri/src/frame_loop.rs");
+  // Windows branch must check painted even when sprite_on_overlay is None.
+  // Bubble straddling seam: character on overlay-0, bubble extends to overlay-1.
+  // At tip, "if let Some(instance) = sprite_on_overlay" skips overlay-1 entirely.
+  const buildsRegionWithoutSprite =
+    /else\s*\{[\s\S]{0,300}painted[\s\S]{0,300}overlay_painted_for/i.test(frame) ||
+    /painted\s*=[\s\S]{0,200}overlay_painted_for[\s\S]{0,300}if\s+!painted\.is_empty/i.test(frame);
+  assert.ok(
+    buildsRegionWithoutSprite,
+    "RED: Windows frame_loop must build region when painted non-empty even without sprite"
+  );
+});
+
 // --- (b) Ownership routing table --------------------------------------------
 
 // Pure reimplementation matching crates/core/src/overlay.rs (for dual-display rows).
