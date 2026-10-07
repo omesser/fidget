@@ -303,7 +303,14 @@ let reportedQmState = "";
 // Report the full QM state: instance, open, text, focused. Backend uses this
 // for pill handoff: when bubble_owner changes and the new owner has QM open,
 // it emits qm-handoff to transfer the pill with its state.
+// CRITICAL: Only the overlay that owns the bubble should report QM state.
+// Non-owner overlays reporting open:false text:"" would wipe the owner's draft.
 function reportQmState(view) {
+  // Only report if this overlay owns the bubble for this instance.
+  // Exception: if pill is visible but no frame yet (handoff before frame), report anyway.
+  if (view.latest && !view.latest.bubble) return;
+  if (!view.latest && !view.quickMachine.visible) return;
+  
   const state = {
     instance: view.id,
     open: view.quickMachine.visible,
@@ -899,7 +906,12 @@ async function start() {
       const view = views.get(payload.instance);
       if (view && view.quickMachine.visible) {
         view.quickMachine.hideWithoutReport();
-        syncQuick(view);
+        // Don't call syncQuick: hideWithoutReport already changed the machine,
+        // and syncQuick would call reportQmState which would write open:false
+        // after the new owner's handoff. Just update the DOM.
+        view.quick.classList.toggle("visible", false);
+        view.quickHotspot = null;
+        reportHotspots();
       }
     },
     { target: overlay.label },
