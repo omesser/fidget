@@ -7,8 +7,9 @@ let reportedPainted = "";
 
 /**
  * Compute painted rect for a bubble element when visible.
+ * Includes the 10px CSS tail (::before/::after pseudo-elements) that extends beyond offsetHeight.
  * @param {HTMLElement} bubble - The bubble element
- * @param {{x: number, y: number}} pos - Position in overlay coords
+ * @param {{x: number, y: number, inverted: boolean}} pos - Position and orientation in overlay coords
  * @returns {[number, number, number, number] | null} [x, y, w, h] or null if hidden
  */
 export function computeBubblePaintedRect(bubble, pos) {
@@ -21,12 +22,20 @@ export function computeBubblePaintedRect(bubble, pos) {
     return null;
   }
 
-  return [
-    Math.round(pos.x),
-    Math.round(pos.y),
-    bubble.offsetWidth,
-    bubble.offsetHeight,
-  ];
+  // The CSS tail (::before at bottom: -10px or top: -10px) extends 10px beyond the bubble body.
+  // Inverted bubbles have tail pointing up (extends above), normal bubbles point down (extends below).
+  const tailHeight = 10;
+  const x = Math.round(pos.x);
+  const width = bubble.offsetWidth;
+  const bodyHeight = bubble.offsetHeight;
+
+  if (pos.inverted) {
+    // Tail extends upward: y moves up by tailHeight, height includes tail
+    return [x, Math.round(pos.y) - tailHeight, width, bodyHeight + tailHeight];
+  } else {
+    // Tail extends downward: y stays, height includes tail
+    return [x, Math.round(pos.y), width, bodyHeight + tailHeight];
+  }
 }
 
 /**

@@ -291,19 +291,30 @@ test("painted rect table", () => {
     {
       name: "hidden → null",
       bubble: { classList: { contains: () => false }, style: {}, offsetWidth: 10, offsetHeight: 10 },
-      pos: { x: 1, y: 2 },
+      pos: { x: 1, y: 2, inverted: false },
       expect: null,
     },
     {
-      name: "visible opaque → xywh",
+      name: "visible opaque normal (tail down) → xywh + 10px tail",
       bubble: {
         classList: { contains: (c) => c === "visible" },
         style: { opacity: "1" },
         offsetWidth: 200,
         offsetHeight: 80,
       },
-      pos: { x: 10.4, y: 20.6 },
-      expect: [10, 21, 200, 80],
+      pos: { x: 10.4, y: 20.6, inverted: false },
+      expect: [10, 21, 200, 90],
+    },
+    {
+      name: "visible opaque inverted (tail up) → y-10, xywh + 10px tail",
+      bubble: {
+        classList: { contains: (c) => c === "visible" },
+        style: { opacity: "1" },
+        offsetWidth: 200,
+        offsetHeight: 80,
+      },
+      pos: { x: 10.4, y: 20.6, inverted: true },
+      expect: [10, 11, 200, 90],
     },
     {
       name: "fading → null",
@@ -313,7 +324,7 @@ test("painted rect table", () => {
         offsetWidth: 200,
         offsetHeight: 80,
       },
-      pos: { x: 10, y: 20 },
+      pos: { x: 10, y: 20, inverted: false },
       expect: null,
     },
   ];

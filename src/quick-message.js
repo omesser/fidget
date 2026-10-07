@@ -268,8 +268,13 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     },
     outside: dismissOpen,
     drag() {
+      // Always set drag latch when dragging so handoff can fire on ownership change.
+      // Typed/focused pills don't dismiss locally (they follow), but empty unfocused pills do.
+      if (visible && onDragDismiss) onDragDismiss();
+      
       if (!hasText() && !focused) {
-        dismissOpenWithDragLatch();
+        text = "";
+        hide();
       }
     },
     summon() {
