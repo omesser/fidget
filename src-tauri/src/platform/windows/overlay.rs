@@ -290,8 +290,9 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
 }
 
 /// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`; hotspots
-/// are `[x, y, width, height]`. The region also clips drawing, which is why
-/// `art` is swept over every position the renderer may draw the sprite at.
+/// and painted are `[x, y, width, height]`. The region also clips drawing, which
+/// is why `art` is swept over every position the renderer may draw the sprite at,
+/// and painted rects (bubble, thinking) must be included so Windows doesn't clip them.
 ///
 /// bRedraw=1: With bRedraw=0, the region update could race sprite placement
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
@@ -300,15 +301,19 @@ fn apply_input_mask(
     hwnd: HWND,
     art: &[[i32; 4]],
     hotspot_rects: &[[i32; 4]],
+    painted_rects: &[[i32; 4]],
     click_through: bool,
 ) -> Result<(), String> {
     if art.is_empty() {
         return clear_input_region(hwnd);
     }
     let rebuild_start = Instant::now();
-    let hotspots = hotspot_rects
-        .iter()
-        .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
+
+    let rects = fidget_core::overlay_region::overlay_region_rects(
+        art,
+        hotspot_rects,
+        painted_rects,
+    );
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
@@ -319,7 +324,7 @@ fn apply_input_mask(
             return Err("Failed to create region".to_string());
         }
 
-        for [left, top, right, bottom] in art.iter().copied().chain(hotspots) {
+        for [left, top, right, bottom] in rects.iter().copied() {
             let rect_rgn = CreateRectRgn(left, top, right, bottom);
             if rect_rgn.is_null() {
                 DeleteObject(combined_rgn);
@@ -350,10 +355,16 @@ fn apply_input_mask(
         }
     }
 
-    if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
+    let trace_bubble = std::env::var("FIDGET_TRACE_BUBBLE").is_ok();
+    let trace_mask = std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok();
+
+    if trace_bubble || trace_mask {
         eprintln!(
-            "mask_rebuild: {} rects, {:.2} ms",
-            art.len() + hotspot_rects.len(),
+            "region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
+            rects.len(),
+            art.len(),
+            hotspot_rects.len(),
+            painted_rects.len(),
             rebuild_start.elapsed().as_secs_f64() * 1000.0
         );
     }
@@ -382,13 +393,13 @@ mod tests {
 
     #[test]
     fn overlay_region_includes_painted_bubble_rect() {
-        let art = vec![[10, 10, 50, 50]]; // Sprite DrawTrail
-        let hotspots = vec![[60, 60, 20, 15]]; // QM pill
-        let painted = vec![[100, 20, 150, 80]]; // Bubble rect (speech or thinking)
+        let art = vec![[10, 10, 50, 50]];
+        let hotspots = vec![[60, 60, 20, 15]];
+        let painted = vec![[100, 20, 150, 80]];
 
-        let rects = overlay_region_rects(&art, &hotspots, &painted);
+        let rects = fidget_core::overlay_region::overlay_region_rects(&art, &hotspots, &painted);
 
-        let bubble_rect = [100, 20, 250, 100]; // [left, top, right, bottom]
+        let bubble_rect = [100, 20, 250, 100];
         assert!(
             rects.contains(&bubble_rect),
             "Region must include painted bubble rect when visible. Expected {:?} in {:?}",
@@ -401,34 +412,14 @@ mod tests {
     fn overlay_region_without_painted_rects_omits_bubble() {
         let art = vec![[10, 10, 50, 50]];
         let hotspots = vec![[60, 60, 20, 15]];
-        let painted = vec![]; // No painted rects
+        let painted = vec![];
 
-        let rects = overlay_region_rects(&art, &hotspots, &painted);
+        let rects = fidget_core::overlay_region::overlay_region_rects(&art, &hotspots, &painted);
 
         assert_eq!(
             rects.len(),
             2,
             "Region should only have art and hotspots when no painted rects"
         );
-    }
-
-    fn overlay_region_rects(
-        art: &[[i32; 4]],
-        hotspots: &[[i32; 4]],
-        painted: &[[i32; 4]],
-    ) -> Vec<[i32; 4]> {
-        let hotspot_bounds = hotspots
-            .iter()
-            .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
-
-        let painted_bounds = painted
-            .iter()
-            .map(|&[x, y, width, height]| [x, y, x + width, y + height]);
-
-        art.iter()
-            .copied()
-            .chain(hotspot_bounds)
-            .chain(painted_bounds)
-            .collect()
     }
 }

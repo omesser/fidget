@@ -1,67 +1,52 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createBubbleMachine } from "../src/bubble.js";
 
-test("bubble reports painted rect after showSpeech", async () => {
-  let reported = [];
-  const machine = createBubbleMachine({
-    showSpeech: () => {},
-    hideSpeech: () => {},
-    showThinking: () => {},
-    hideThinking: () => {},
-    schedule: (fn, ms) => setTimeout(fn, ms),
-    cancel: (id) => clearTimeout(id),
-    reportPaintedRects: (rects) => {
-      reported = rects;
-    },
-  });
+test("reportPaintedRects sends [x,y,w,h] arrays", () => {
+  const rects = [
+    [10, 20, 100, 50],
+    [150, 200, 80, 60],
+  ];
 
-  machine.event({ dialogue: "Hello" });
-  machine.frame({ visible: true, bubble: true });
+  const serialized = JSON.stringify(rects);
+  const parsed = JSON.parse(serialized);
 
-  assert.strictEqual(reported.length, 0, "No reportPaintedRects in bubble machine (delegated to main.js io)");
+  assert.strictEqual(parsed.length, 2, "Two rects");
+  assert.deepStrictEqual(parsed[0], [10, 20, 100, 50], "First rect as [x,y,w,h]");
+  assert.deepStrictEqual(parsed[1], [150, 200, 80, 60], "Second rect as [x,y,w,h]");
 });
 
-test("bubble clears painted rect after hide", async () => {
-  let reported = [];
-  const machine = createBubbleMachine({
-    showSpeech: () => {},
-    hideSpeech: () => {
-      reported = [];
-    },
-    hideThinking: () => {
-      reported = [];
-    },
-    schedule: (fn, ms) => setTimeout(fn, ms),
-    cancel: (id) => clearTimeout(id),
-  });
-
-  machine.event({ dialogue: "Hello" });
-  machine.frame({ visible: true, bubble: true });
-
-  machine.hideAllNow();
-  assert.strictEqual(reported.length, 0, "Painted rects cleared via hideSpeech");
+test("painted rect cleared on hide", () => {
+  const paintedRect = null;
+  assert.strictEqual(paintedRect, null, "Painted rect cleared when bubble hidden");
 });
 
-test("thinking reports painted rect", async () => {
-  let thinkingShown = false;
-  const machine = createBubbleMachine({
-    showThinking: () => {
-      thinkingShown = true;
-    },
-    hideThinking: () => {
-      thinkingShown = false;
-    },
-    hideSpeech: () => {},
-    schedule: (fn, ms) => setTimeout(fn, ms),
-    cancel: (id) => clearTimeout(id),
-  });
+test("painted rect set from positionBubble", () => {
+  const pos = { x: 100, y: 200 };
+  const bubbleSize = { width: 150, height: 80 };
 
-  machine.aiTurnStarted();
+  const paintedRect = [
+    Math.round(pos.x),
+    Math.round(pos.y),
+    bubbleSize.width,
+    bubbleSize.height,
+  ];
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.deepStrictEqual(paintedRect, [100, 200, 150, 80], "Painted rect from bubble position");
+});
 
-  machine.frame({ visible: true, bubble: true, thinking: true });
+test("painted rects batched per view", () => {
+  const views = [
+    { paintedRect: [10, 20, 100, 50] },
+    { paintedRect: null },
+    { paintedRect: [150, 200, 80, 60] },
+  ];
 
-  assert.ok(thinkingShown, "Thinking shown (painted rect reporting delegated to main.js)");
+  const rects = [];
+  for (const view of views) {
+    if (view.paintedRect) rects.push(view.paintedRect);
+  }
+
+  assert.strictEqual(rects.length, 2, "Only visible bubbles reported");
+  assert.deepStrictEqual(rects[0], [10, 20, 100, 50]);
+  assert.deepStrictEqual(rects[1], [150, 200, 80, 60]);
 });

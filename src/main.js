@@ -97,6 +97,7 @@ function createView(id) {
   stage.append(bubble, sprite, cueLayer);
 
   const view = {
+    id,
     sprite,
     bubble,
     bubbleContent,
@@ -106,6 +107,10 @@ function createView(id) {
     // not drawn. `reportHotspots` sends the set across; see there for why the
     // renderer is the one who has to.
     hotspot: null,
+    // Where the bubble is, in overlay coordinates: [x, y, width, height] as integers,
+    // or null when not visible. Windows unions this into the input region so the
+    // bubble body isn't clipped away by SetWindowRgn.
+    paintedRect: null,
     // The two most recent placements and when each arrived. Drawing one sample
     // behind, interpolated, buys continuous motion (see interpolate.js); the
     // hit-test uses the unlagged position, so it leads the screen by one sample.
@@ -158,6 +163,8 @@ function createView(id) {
     bubble.classList.remove("visible");
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
+    view.paintedRect = null;
+    reportPaintedRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
@@ -167,28 +174,9 @@ function createView(id) {
   // the cursor before it fades.
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
-  function reportPaintedRect(visible) {
-    if (visible && bubble.classList.contains("visible")) {
-      setTimeout(() => {
-        const rect = bubble.getBoundingClientRect();
-        const rects = [{
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        }];
-        window.__TAURI__.core.invoke("overlay_painted_rects", { rects }).catch((err) => {
-          console.error("overlay_painted_rects", err);
-        });
-      }, 0);
-    } else {
-      window.__TAURI__.core.invoke("overlay_painted_rects", { rects: [] }).catch((err) => {
-        console.error("overlay_painted_rects", err);
-      });
-    }
-  }
-
   view.bubbles = createBubbleMachine({
+    // Speech bubble: measure text, wrap it, show truncation control when needed.
+    // The backend sends dialogue text; the frontend measures, wraps, and renders it.
     showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
@@ -199,8 +187,13 @@ function createView(id) {
       bubble.removeAttribute("data-ask");
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
-      reportPaintedRect(true);
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showSpeech instance=${id}`,
+      }).catch(() => {});
     },
+    // Ask bubble: prompt to open Chat for a question. Shorter text, distinct style.
+    // Shown when the backend signals the user needs to answer in Chat.
     showAsk() {
       view.bubbleContent.textContent = clickableOffArt
         ? "Question for you in the "
@@ -209,19 +202,33 @@ function createView(id) {
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
-      reportPaintedRect(true);
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showAsk instance=${id}`,
+      }).catch(() => {});
     },
     hideSpeech() {
       hide();
-      reportPaintedRect(false);
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `hideSpeech instance=${id}`,
+      }).catch(() => {});
     },
+    // Thinking indicator: animated dots, no text. Shown while AI is generating a reply.
+    // Smaller than speech bubble, centered differently, no truncation control.
     showThinking() {
       show("thinking");
-      reportPaintedRect(true);
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `showThinking instance=${id}`,
+      }).catch(() => {});
     },
     hideThinking() {
       hide();
-      reportPaintedRect(false);
+      window.__TAURI__.core.invoke("overlay_trace_bubble", {
+        label: window.__TAURI__.webviewWindow.getCurrentWebviewWindow().label,
+        message: `hideThinking instance=${id}`,
+      }).catch(() => {});
     },
   });
 
@@ -248,6 +255,17 @@ function positionBubble(view, spriteRect, displayBounds) {
         view.more.offsetHeight,
       ]
     : null;
+
+  // Painted rect for Windows input region: the bubble body, not the hotspot control.
+  view.paintedRect = view.bubble.classList.contains("visible")
+    ? [
+        Math.round(pos.x),
+        Math.round(pos.y),
+        view.bubble.offsetWidth,
+        view.bubble.offsetHeight,
+      ]
+    : null;
+  reportPaintedRects();
 }
 
 function speechRect(view) {
@@ -257,6 +275,13 @@ function speechRect(view) {
   // Don't reserve space for it while fading.
   const opacity = parseFloat(view.bubble.style.opacity);
   if (opacity < 1 && !isNaN(opacity)) return null;
+  // Painted rect is already [x, y, width, height] integers.
+  view.paintedRect = [
+    parseFloat(view.bubble.style.left) || 0,
+    parseFloat(view.bubble.style.top) || 0,
+    view.bubble.offsetWidth,
+    view.bubble.offsetHeight,
+  ];
   return {
     x: parseFloat(view.bubble.style.left) || 0,
     y: parseFloat(view.bubble.style.top) || 0,
@@ -279,6 +304,27 @@ function positionQuick(view, spriteRect) {
 
 let reportedComposing = null;
 let reportedQmVisible = null;
+let reportedQmState = "";
+
+// Report the full QM state: instance, open, text, focused. Backend uses this
+// for pill handoff: when bubble_owner changes and the new owner has QM open,
+// it emits qm-handoff to transfer the pill with its state.
+function reportQmState(view) {
+  const state = {
+    instance: view.id,
+    open: view.quickMachine.visible,
+    text: view.quickField.value,
+    focused: document.activeElement === view.quickField,
+  };
+  const serialized = JSON.stringify(state);
+  if (serialized === reportedQmState) return;
+  reportedQmState = serialized;
+  if (state.open) {
+    window.__TAURI__.core.invoke("overlay_qm_state", state).catch((err) => {
+      console.error("overlay_qm_state", err);
+    });
+  }
+}
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill
 // stays frozen until one says chat can answer.
@@ -368,6 +414,7 @@ function syncQuick(view) {
   }
   reportComposing();
   reportQmVisible();
+  reportQmState(view);
   if (!visible || !view.latest) {
     view.quickHotspot = null;
     reportHotspots();
@@ -599,6 +646,8 @@ function drawView(view, now) {
     // A control nobody can see is not one to click, and a fading bubble is
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
+    view.paintedRect = null;
+    reportPaintedRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
@@ -667,6 +716,22 @@ let armed = false;
 // at a seam. Eight costs nothing: a sprite that close to the edge straddles it
 // and arms both overlays anyway.
 const SEAM_MARGIN = 8;
+
+// Last painted rects sent to backend, serialized for change detection.
+let reportedPainted = "";
+
+function reportPaintedRects() {
+  const rects = [];
+  for (const view of views.values()) {
+    if (view.paintedRect) rects.push(view.paintedRect);
+  }
+  const serialized = JSON.stringify(rects);
+  if (serialized === reportedPainted) return;
+  reportedPainted = serialized;
+  window.__TAURI__.core.invoke("overlay_painted_rects", { rects }).catch((err) => {
+    console.error("overlay_painted_rects", err);
+  });
+}
 
 function needsFrame(view) {
   return onDisplay(view.previous, view.latest, currentDisplayBounds(), SEAM_MARGIN);
@@ -816,6 +881,34 @@ async function start() {
       for (const id of [...views.keys()]) {
         if (!seen.has(id)) {
           removeView(id);
+        }
+      }
+    },
+    { target: overlay.label },
+  );
+
+  // Pill handoff: when bubble_owner changes and this overlay is the new owner
+  // with QM already open, reopen the pill with the transferred state.
+  await window.__TAURI__.event.listen(
+    "qm-handoff",
+    ({ payload }) => {
+      const view = views.get(payload.instance);
+      if (!view) return;
+
+      // Old owner closes its pill without clearing the shared state.
+      // New owner reopens with the text and focus state.
+      if (payload.open) {
+        view.quickMachine.setText(payload.text);
+        view.quickMachine.show();
+        if (payload.focused) {
+          view.quickMachine.requestFocus();
+        }
+        syncQuick(view);
+
+        if (window.__TAURI__ && window.__TAURI__.core) {
+          window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+            console.error("overlay_request_focus after handoff", err);
+          });
         }
       }
     },

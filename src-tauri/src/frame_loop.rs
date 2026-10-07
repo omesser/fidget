@@ -2045,12 +2045,68 @@ pub(crate) fn run_frame_loop(
                     facing: frame.facing,
                 });
 
+                let old_owner = live.bubble_owner_last;
                 let owner = fidget_core::overlay::bubble_owner_with_hysteresis(
                     (frame.position.x, frame.position.y),
                     &displays.frames,
-                    live.bubble_owner_last,
+                    old_owner,
                 );
                 live.bubble_owner_last = owner;
+
+                // Trace bubble owner changes.
+                if dev_flags::TRACE_BUBBLE.is_on() && owner != old_owner {
+                    let old_label = old_owner.map(|i| covered[i].as_str()).unwrap_or("none");
+                    let new_label = owner.map(|i| covered[i].as_str()).unwrap_or("none");
+                    eprintln!(
+                        "bubble_owner instance={} changed: {} -> {}",
+                        live.id,
+                        old_label,
+                        new_label
+                    );
+                }
+
+                // Pill handoff: when bubble owner changes and QM is open, transfer the pill.
+                if owner != old_owner {
+                    if let Some(new_owner_idx) = owner {
+                        if let Some(qm_state) = platform::overlay_qm_state() {
+                            if qm_state.instance == live.id && qm_state.open {
+                                let new_owner_label = &covered[new_owner_idx];
+                                let old_owner_label = old_owner.map(|i| covered[i].as_str());
+                                if dev_flags::TRACE_BUBBLE.is_on() {
+                                    eprintln!(
+                                        "overlay {}: pill handoff from {} instance={} open={} text={:?} focused={}",
+                                        new_owner_label,
+                                        old_owner_label.unwrap_or("none"),
+                                        qm_state.instance,
+                                        qm_state.open,
+                                        qm_state.text,
+                                        qm_state.focused
+                                    );
+                                }
+
+                                #[derive(Clone, serde::Serialize)]
+                                struct QmHandoff {
+                                    from_overlay: Option<String>,
+                                    instance: String,
+                                    open: bool,
+                                    text: String,
+                                    focused: bool,
+                                }
+
+                                let handoff = QmHandoff {
+                                    from_overlay: old_owner_label.map(|s| s.to_string()),
+                                    instance: qm_state.instance.clone(),
+                                    open: qm_state.open,
+                                    text: qm_state.text.clone(),
+                                    focused: qm_state.focused,
+                                };
+
+                                app.emit_to(new_owner_label, "qm-handoff", handoff).ok();
+                            }
+                        }
+                    }
+                }
+
                 let dialogue = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),

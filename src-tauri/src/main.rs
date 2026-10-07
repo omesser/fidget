@@ -1876,6 +1876,21 @@ fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
     platform::set_overlay_hotspots(window.label(), rects);
 }
 
+/// Painted UI rects (bubble, thinking) this overlay draws. Windows unions these
+/// into the input region so SetWindowRgn doesn't clip the bubble away. Not clickable.
+#[tauri::command]
+fn overlay_painted_rects(window: tauri::Window, rects: Vec<[i32; 4]>) {
+    platform::set_overlay_painted(window.label(), rects);
+}
+
+/// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
+#[tauri::command]
+fn overlay_trace_bubble(label: String, message: String) {
+    if dev_flags::TRACE_BUBBLE.is_on() {
+        eprintln!("overlay {}: {}", label, message);
+    }
+}
+
 /// Chat window title: Instance name, or the id when the roster holds no row.
 /// The id is a real fallback: a Character switch can drop the row between
 /// the click and this lookup, and a window titled by id is better than none.
@@ -4324,6 +4339,7 @@ fn main() {
             overlay_qm_state,
             overlay_hotspots,
             overlay_painted_rects,
+            overlay_trace_bubble,
             overlay_hit_tests_hotspots,
             overlay_traces_cadence,
             overlay_cadence,

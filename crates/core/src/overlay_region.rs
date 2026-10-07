@@ -3,7 +3,6 @@
 /// Regions define which pixels are drawn and receive input. On Windows, `SetWindowRgn`
 /// clips both. The region must include sprite DrawTrail, hotspots (clickable controls),
 /// and painted rects (bubble body, thinking dots) so Windows doesn't clip them away.
-
 /// Rectangle in overlay coordinates: `[left, top, right, bottom]`.
 pub type RegionRect = [i32; 4];
 
