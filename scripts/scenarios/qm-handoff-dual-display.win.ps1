@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # Scenario: qm-handoff-dual-display (Windows)
 # On screen: launches Fidget with dual displays (3440x1440@(0,0) + 1200x1920@(-1200,-209)).
-#   Sends QM → thinking → speech, drags sprite across displays, watches pill handoff.
+#   Sends QM -> thinking -> speech, drags sprite across displays, watches pill handoff.
 #   Fidget quits when the scenario ends. No screenshots.
 # Input: types into QM pill, drags sprite from right display to left,
 #   watches for pill handoff and bubble region paint. The cursor moves;
@@ -143,7 +143,7 @@ Start-Sleep -Seconds 2
 Write-Host "scenario: manual steps required:"
 Write-Host "  1. Click QM pill on right display character"
 Write-Host "  2. Type 'test message' and press Enter"
-Write-Host "  3. Wait for thinking → speech"
+Write-Host "  3. Wait for thinking -> speech"
 Write-Host "  4. Drag sprite from right display to left display"
 Write-Host "  5. Watch for pill reopen on left overlay"
 Write-Host ""

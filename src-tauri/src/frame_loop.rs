@@ -2059,9 +2059,7 @@ pub(crate) fn run_frame_loop(
                     let new_label = owner.map(|i| covered[i].as_str()).unwrap_or("none");
                     eprintln!(
                         "bubble_owner instance={} changed: {} -> {}",
-                        live.id,
-                        old_label,
-                        new_label
+                        live.id, old_label, new_label
                     );
                 }
 

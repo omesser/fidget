@@ -309,11 +309,8 @@ fn apply_input_mask(
     }
     let rebuild_start = Instant::now();
 
-    let rects = fidget_core::overlay_region::overlay_region_rects(
-        art,
-        hotspot_rects,
-        painted_rects,
-    );
+    let rects =
+        fidget_core::overlay_region::overlay_region_rects(art, hotspot_rects, painted_rects);
 
     // SAFETY: hwnd is valid. Region handles are checked for null and freed on
     // every error path. SetWindowRgn takes ownership of combined_rgn on
