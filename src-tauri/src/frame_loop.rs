@@ -102,6 +102,16 @@ fn decide_overlay_action<Shape: PartialEq>(
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 /// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
 // One over clippy's cap: Director config belongs here, not mixed with window geometry.
+/// Decide which dialogue the Chat surface should show.
+/// Returns the Harness's parsed dialogue if available,
+/// otherwise falls back to the Engine's frame dialogue.
+fn chat_dialogue<'a>(
+    parsed_from_harness: Option<&'a str>,
+    from_engine_frame: Option<&'a str>,
+) -> Option<&'a str> {
+    parsed_from_harness.or(from_engine_frame)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_frame_loop(
     app: tauri::AppHandle,
@@ -912,6 +922,7 @@ pub(crate) fn run_frame_loop(
                                     error: None,
                                     failure: None,
                                     superseded_by: None,
+                                    streaming: false,
                                 },
                             );
                         }
@@ -1000,6 +1011,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1008,11 +1020,7 @@ pub(crate) fn run_frame_loop(
                 // Answer an unaskable line here rather than park it:
                 // `happened` is one slot only a wake clears. Displays
                 // asleep is not this case: a line taken first is asked when they wake.
-                let askable = config.enabled
-                    && live.model.is_some()
-                    && roster
-                        .get(&live.id)
-                        .is_some_and(|instance| !instance.do_not_disturb());
+                let askable = config.enabled && live.model.is_some();
                 if !askable {
                     let _ = app.emit_to(
                         chat_label(&live.id),
@@ -1027,6 +1035,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1049,6 +1058,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                     continue;
@@ -1075,6 +1085,7 @@ pub(crate) fn run_frame_loop(
                             error: None,
                             failure: None,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                 }
@@ -1460,7 +1471,36 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let mut proposal = None;
-                let arrived = slots.take(&live.id);
+                let arrived = match slots.take(&live.id) {
+                    Some(completer::Arrived::Answered(answered)) => Some(*answered),
+                    // A line with no Behavior, so `talk` plays while it grows.
+                    // The reply's own Behavior is applied when it lands. The same
+                    // speech updates the Chat row so both surfaces stream together.
+                    Some(completer::Arrived::Speech(line)) => {
+                        proposal = Some(BehaviorProposal {
+                            behavior: String::new(),
+                            dialogue: Some(line.clone()),
+                        });
+                        let _ = app.emit_to(
+                            chat_label(&live.id),
+                            CHAT_EVENT,
+                            super::ChatReply {
+                                said: Some(line),
+                                busy: false,
+                                reacting_to: None,
+                                you: false,
+                                thought: false,
+                                at: None,
+                                error: None,
+                                failure: None,
+                                superseded_by: None,
+                                streaming: true,
+                            },
+                        );
+                        None
+                    }
+                    None => None,
+                };
                 let applied = arrived.is_some();
 
                 let answering_chat = arrived
@@ -1483,6 +1523,7 @@ pub(crate) fn run_frame_loop(
                 // the line would be spoken as the model's own and pushed back
                 // into the session as its last turn (#610, `bubble.js`).
                 let mut truncated = false;
+                let mut parsed_dialogue = None;
                 if let Some(completer::Answered {
                     wake,
                     context,
@@ -1517,6 +1558,9 @@ pub(crate) fn run_frame_loop(
                                 eprintln!("director: {} failed; Static fallback", live.id)
                             }
                         }
+                    }
+                    if let Wake::Proposed(ref parsed) = wake {
+                        parsed_dialogue = parsed.dialogue.clone();
                     }
                     proposal = director::fallback(wake, &mut live.director, &context);
                     if model::tracing() {
@@ -1618,10 +1662,9 @@ pub(crate) fn run_frame_loop(
                     // The mark goes into the remembered line once, here:
                     // the Chat surface draws the record. The bubble keeps
                     // the model's words; the parser has already read them (#610).
-                    let remembered = frame
-                        .dialogue
-                        .as_deref()
-                        .map(|line| director::marked(line, truncated));
+                    let dialogue =
+                        chat_dialogue(parsed_dialogue.as_deref(), frame.dialogue.as_deref());
+                    let remembered = dialogue.map(|line| director::marked(line, truncated));
                     session_log::remember_them(
                         &app,
                         &live.id,
@@ -1642,6 +1685,7 @@ pub(crate) fn run_frame_loop(
                             error,
                             failure,
                             superseded_by: None,
+                            streaming: false,
                         },
                     );
                 } else if applied {
@@ -1832,7 +1876,6 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let thinking = (reactive_wake || slots.thinking(&live.id))
-                    && !instance.do_not_disturb()
                     && !live
                         .model
                         .as_ref()
@@ -3143,5 +3186,41 @@ mod tests {
         assert!(cursor_near_sprite(Some((113.0, 114.0)), &sprites));
         assert!(cursor_near_sprite(Some((513.0, 514.0)), &sprites));
         assert!(!cursor_near_sprite(Some((300.0, 300.0)), &sprites));
+    }
+
+    #[test]
+    fn chat_dialogue_prefers_parsed_from_harness() {
+        assert_eq!(
+            chat_dialogue(Some("harness said this"), Some("engine said this")),
+            Some("harness said this"),
+            "Chat shows Harness words even when Engine has different dialogue"
+        );
+    }
+
+    #[test]
+    fn chat_dialogue_falls_back_to_engine_frame_when_no_harness_parse() {
+        assert_eq!(
+            chat_dialogue(None, Some("engine said this")),
+            Some("engine said this"),
+            "Chat shows Engine dialogue when no Harness parse available"
+        );
+    }
+
+    #[test]
+    fn chat_dialogue_shows_harness_words_even_when_engine_dialogue_absent() {
+        assert_eq!(
+            chat_dialogue(Some("harness said this"), None),
+            Some("harness said this"),
+            "Chat shows Harness words even when Engine dialogue is absent"
+        );
+    }
+
+    #[test]
+    fn chat_dialogue_returns_none_when_both_absent() {
+        assert_eq!(
+            chat_dialogue(None, None),
+            None,
+            "Chat has no dialogue to show when both sources are None"
+        );
     }
 }
