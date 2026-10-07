@@ -69,6 +69,7 @@ export const THINKING_MIN_HOLD_MS = 600;
 export function createBubbleMachine(io) {
   const schedule = io.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
+  const instance = io.instance;
 
   let pendingDialogue = null;
   let pendingAsk = false;
@@ -81,6 +82,21 @@ export function createBubbleMachine(io) {
   // Latched when a quick-message send starts the AI turn; cleared by dialogue, abandon, or hide-all.
   // Without it, frame() would clear thinking before the Engine raises the flag.
   let aiTurnPending = false;
+
+  // Global AI turn tracking across overlays.
+  function getGlobalAiTurnPending() {
+    if (!instance || typeof window === "undefined" || !window.aiTurnsPending) return false;
+    return window.aiTurnsPending.get(instance) || false;
+  }
+
+  function setGlobalAiTurnPending(value) {
+    if (!instance || typeof window === "undefined" || !window.aiTurnsPending) return;
+    if (value) {
+      window.aiTurnsPending.set(instance, true);
+    } else {
+      window.aiTurnsPending.delete(instance);
+    }
+  }
 
   function hideThinkingNow() {
     if (graceTimer !== null) {
@@ -128,6 +144,7 @@ export function createBubbleMachine(io) {
       // or the line would pop up whenever the sprite next fades in.
       if ((dialogue || ask) && placement.visible) {
         aiTurnPending = false;
+        setGlobalAiTurnPending(false);
         hideThinkingNow();
         if (speechTimer !== null) cancel(speechTimer);
         speechShowing = true;
@@ -143,7 +160,7 @@ export function createBubbleMachine(io) {
         }, ask ? MAX_DURATION_MS : bubbleDuration(dialogue));
       }
 
-      thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending;
+      thinking = Boolean(placement.thinking && placement.visible) || aiTurnPending || getGlobalAiTurnPending();
       if (thinking) {
         if (!thinkingShown && graceTimer === null && !speechShowing) {
           armGrace();
@@ -160,6 +177,7 @@ export function createBubbleMachine(io) {
     // Cleared by dialogue/ask, aiTurnAbandoned, or hideAllNow — not by Engine thinking:false.
     aiTurnStarted() {
       aiTurnPending = true;
+      setGlobalAiTurnPending(true);
       thinking = true;
       if (speechTimer !== null) {
         cancel(speechTimer);
@@ -188,6 +206,7 @@ export function createBubbleMachine(io) {
     // chat_send refused or the gate froze: abandon the AI turn we armed.
     aiTurnAbandoned() {
       aiTurnPending = false;
+      setGlobalAiTurnPending(false);
       thinking = false;
       hideThinkingNow();
     },
@@ -195,6 +214,7 @@ export function createBubbleMachine(io) {
     // The hide hotkey's instant answer: nothing may stay or come back.
     hideAllNow() {
       aiTurnPending = false;
+      setGlobalAiTurnPending(false);
       hideThinkingNow();
       if (speechTimer !== null) {
         cancel(speechTimer);

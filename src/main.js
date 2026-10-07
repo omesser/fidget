@@ -37,6 +37,11 @@ let petDrag = null;
 // pointerup/cancel. Stays true even after petDrag clears on threshold cross.
 let gestureActive = false;
 
+// Track which instances have AI turns in flight (QM send before response arrives).
+// Shared across ownership changes so thinking/dialogue survive seam crossings.
+const aiTurnsPending = new Map();
+window.aiTurnsPending = aiTurnsPending;
+
 const views = new Map();
 
 function currentDisplayBounds() {
@@ -168,6 +173,7 @@ function createView(id) {
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
   view.bubbles = createBubbleMachine({
+    instance: id,
     showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
@@ -349,6 +355,8 @@ function syncQuick(view) {
     arm();
     return;
   }
+  // Force layout before measuring: offsetHeight can be stale if CSS just changed.
+  void view.quick.offsetHeight;
   positionQuick(view, {
     x: Math.round(view.latest.x),
     y: Math.round(view.latest.y),
@@ -583,7 +591,14 @@ function drawView(view, now) {
   // speechRect and the pill offset see (show/hide also place when idle).
   view.bubbles.frame(latest);
 
-  if (latest.visible) {
+  // Dismiss pill if sprite left this overlay's bounds (seam crossing).
+  const spriteOnDisplay = spriteX >= 0 && spriteX < window.innerWidth &&
+                          spriteY >= 0 && spriteY < window.innerHeight;
+  if (view.quickMachine.visible && !spriteOnDisplay) {
+    view.quickMachine.dismiss();
+  }
+
+  if (latest.visible && spriteOnDisplay) {
     const rect = { x: spriteX, y: spriteY, width: latest.width, height: latest.height };
     if (view.bubble.classList.contains("visible")) {
       positionBubble(view, rect, currentDisplayBounds());
