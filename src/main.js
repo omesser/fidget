@@ -360,9 +360,9 @@ function notePointerLeft(view) {
   if (!gestureActive) {
     if (view.sprite.matches(":hover")) view.quickMachine.enterSprite();
     else view.quickMachine.leaveSprite();
+    if (view.quick.matches(":hover")) view.quickMachine.enterPill();
+    else view.quickMachine.leavePill();
   }
-  if (view.quick.matches(":hover")) view.quickMachine.enterPill();
-  else view.quickMachine.leavePill();
 }
 
 function attachQuickMessage(view, id) {
