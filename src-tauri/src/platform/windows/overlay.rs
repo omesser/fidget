@@ -356,21 +356,13 @@ fn apply_input_mask(
     let trace_mask = std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok();
 
     if trace_bubble || trace_mask {
-        let dnd = window
-            .state::<crate::SettingsState>()
-            .settings
-            .lock()
-            .ok()
-            .map(|s| s.do_not_disturb)
-            .unwrap_or(false);
         eprintln!(
-            "region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms dnd={}",
+            "region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
             rects.len(),
             art.len(),
             hotspot_rects.len(),
             painted_rects.len(),
-            rebuild_start.elapsed().as_secs_f64() * 1000.0,
-            if dnd { "on" } else { "off" }
+            rebuild_start.elapsed().as_secs_f64() * 1000.0
         );
     }
 

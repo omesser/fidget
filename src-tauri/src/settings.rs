@@ -1607,6 +1607,7 @@ pub enum BoolField {
     TraceHittest,
     TraceDirector,
     TraceEngine,
+    TraceBubble,
     DirectorBlank,
     /// Apply writes the project `.mcp.json` when Pi is the Harness. Default on.
     PiProjectMcp,
