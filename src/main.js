@@ -289,6 +289,7 @@ const drafts = createDraftReporter(window.__TAURI__.core.invoke);
 // lost the bubble must not tell the Shell the pill closed.
 function reportDraft(view) {
   if (view.quickMachine.owner) drafts.report(view.id, view.quickMachine.draft);
+  else drafts.release(view.id);
 }
 
 // A newer opening, from the command or from `chat-opening`, wins. The pill

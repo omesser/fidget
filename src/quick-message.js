@@ -351,6 +351,11 @@ export function createDraftReporter(invoke) {
       reported.delete(instance);
       tell(instance, null);
     },
+    // Another overlay speaks for this Instance now, so what this one last
+    // told is no longer what the Shell holds.
+    release(instance) {
+      reported.delete(instance);
+    },
   };
 }
 

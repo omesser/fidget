@@ -774,6 +774,20 @@ test("a removed Instance's draft is cleared, so its walk is not held", () => {
   assert.deepEqual(told.at(-1), ["overlay_report_qm_draft", { instance: "gone", payload: null }]);
 });
 
+test("an overlay that gets the bubble back tells the Shell its draft, even one told before", () => {
+  const { told, invoke } = shellDouble();
+  const drafts = createDraftReporter(invoke);
+  const typed = { text: "again", focused: true };
+
+  drafts.report("a", typed);
+  // Another overlay owned the bubble since, and its reports replaced this one.
+  drafts.release("a");
+  drafts.report("a", typed);
+
+  assert.equal(told.length, 2, "the Shell holds whatever the last owner said, not this");
+  assert.deepEqual(told.at(-1), ["overlay_report_qm_draft", { instance: "a", payload: typed }]);
+});
+
 // `setOwner` is what each placement says: whether this overlay owns the
 // Instance's bubble, and the draft the Shell carries to that owner.
 const DRAFT = { text: "half a thought", focused: true };
