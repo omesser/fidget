@@ -684,23 +684,15 @@ test("inverted flag matches final vertical position relative to sprite", () => {
   assert.equal(pushed.inverted, false, "inverted reflects final position above sprite");
 });
 
-test("the pill follows the sprite across a display seam without clamping", () => {
+test("the pill stays whole on its display, like Speech, when the sprite reaches an edge", () => {
   const size = { width: 200, height: 40 };
   const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
 
-  const spriteNearSeam = { x: -50, y: 400, width: 64, height: 64 };
-  const pos = placeQuickMessage(spriteNearSeam, size, bounds, null);
+  const pastLeft = placeQuickMessage({ x: -50, y: 400, width: 64, height: 64 }, size, bounds, null);
+  assert.equal(pastLeft.x, 0, "slides in from the seam rather than hanging off it");
 
-  const spriteCenterX = spriteNearSeam.x + spriteNearSeam.width / 2;
-  const expectedX = spriteCenterX - size.width / 2;
-  assert.equal(pos.x, expectedX, "pill follows sprite even when sprite is partially off-screen");
-  assert.ok(pos.x < 0, "pill is not clamped to display bounds at seam");
-
-  const spritePastRight = { x: 1900, y: 400, width: 64, height: 64 };
-  const posRight = placeQuickMessage(spritePastRight, size, bounds, null);
-  const expectedRight = spritePastRight.x + spritePastRight.width / 2 - size.width / 2;
-  assert.equal(posRight.x, expectedRight, "pill follows sprite past right edge");
-  assert.ok(posRight.x + size.width > bounds.width, "pill extends past display width");
+  const pastRight = placeQuickMessage({ x: 1900, y: 400, width: 64, height: 64 }, size, bounds, null);
+  assert.equal(pastRight.x, 1720, "and in from the right edge");
 });
 
 test("without a clickable link the pill still names the fix as text", () => {

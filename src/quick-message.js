@@ -1,6 +1,7 @@
 // Hover-to-compose above a Character. The overlay owns the DOM; this decides
 // when the composer is up and whether a press still belongs to the pet.
 
+import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
 
 export const CONNECT_PROMPT = "Connect an AI to talk to me";
@@ -334,5 +335,6 @@ export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   let y = speechRect.y - size.height - gap;
   if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
   y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-  return { ...pos, y };
+  // The step can cross the sprite, so the tail reads the final seat.
+  return { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
 }
