@@ -26,21 +26,22 @@ pub(crate) const CHAT_SESSION_EVENT: &str = "chat-session";
 /// is waiting on, and are not a wake (#1393).
 pub(crate) const CHAT_RESTORED_EVENT: &str = "chat-restored";
 
-/// Forwarded `session/request_permission` to every open Chat surface. The
-/// session is shared and the Shell does not know which window the user is
-/// looking at. The first answer wins. fidget never answers it.
+/// Forwarded `session/request_permission` to the Chat surface of the Instance
+/// that owes it, or to every open one when none does (`draws_in`). The first
+/// answer wins. fidget never answers it.
 pub(crate) const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
-/// A forwarded `elicitation/create` form. Same fan-out as a permission ask:
-/// every open Chat surface draws it, the first answer wins.
+/// A forwarded `elicitation/create` form, addressed as a permission ask is.
+/// The first answer wins.
 pub(crate) const CHAT_ELICITATION_EVENT: &str = "chat-elicitation";
 
 /// The Harness's whole thought so far, for the Thinking row in the log. Each
 /// one replaces the last; an empty one is the turn saying it has stopped.
 pub(crate) const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 
-/// The event carrying the agent's plan to every open Chat surface. Each one
-/// replaces the whole list, and an empty one is the turn taking it away.
+/// The event carrying the agent's plan to the Chat surface of the Instance
+/// whose session planned. Each one replaces the whole list, and an empty one
+/// is the turn taking it away.
 pub(crate) const CHAT_PLAN_EVENT: &str = "chat-plan";
 
 /// Chat UI selection change, telling each chat surface to swap its root class.
@@ -49,8 +50,9 @@ pub(crate) const CHAT_UI_EVENT: &str = "chat-ui";
 pub(crate) const CHAT_APPEARANCE_EVENT: &str = "chat-appearance";
 
 /// Retires one forwarded request in every open Chat surface, by request id.
-/// The ask went to all of them and one took the click; the rest would
-/// otherwise keep offering buttons on a question already answered.
+/// An ask no Instance owes went to all of them and one took the click; the
+/// rest would otherwise keep offering buttons on a question already answered.
+/// A window that never drew the request ignores it.
 pub(crate) const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 
 /// What retires one row in every open Chat surface.

@@ -867,13 +867,31 @@ pub struct Restored {
     pub history: Vec<Replayed>,
 }
 
+/// Whose Chat draws a forwarded ask or form.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Owner {
+    /// The Instance that owes the answer. Only its Chat draws the row.
+    Instance(String),
+    /// Nobody can be named, so every Chat draws the row and any can answer.
+    EveryChat,
+}
+
 /// What the session on the wire tells the Chat surface, live or on replay.
-/// `Settled` exists because an ask goes to every open surface and only one
-/// takes the click. Without it the others keep offering live buttons.
+/// `Settled` exists because an ask can be drawn on more than one surface and
+/// only one takes the click. Without it the others keep offering live buttons.
 #[derive(Debug)]
 pub enum Forwarded {
-    Ask(PermissionAsk),
-    Form(ElicitationForm),
+    /// `owner` is the asking session's Instance, or the turn holder for a
+    /// form no session scopes. `EveryChat` when neither is known.
+    Ask {
+        owner: Owner,
+        ask: PermissionAsk,
+    },
+    /// Addressed as `Ask` is.
+    Form {
+        owner: Owner,
+        form: ElicitationForm,
+    },
     /// A request that is no longer answerable, and the option that won it.
     /// `None` when nothing was picked and the turn simply ended.
     Settled {
@@ -888,7 +906,11 @@ pub enum Forwarded {
         line: String,
     },
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
-    Plan(Vec<PlanStep>),
+    /// `instance` is whose session planned.
+    Plan {
+        instance: String,
+        steps: Vec<PlanStep>,
+    },
     InboundWake(InboundWake),
     Restored(Restored),
     /// The attachment moved: preflight finished, a session opened, or a login
@@ -921,7 +943,9 @@ pub struct Session {
     /// Instance whose wake holds `turn`. One child serves every Instance
     /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
     /// name lands on whichever character is mid-reply.
-    serving_instance: Mutex<Option<String>>,
+    /// Shared with the wire's reader, which names it as the owner of a form
+    /// no session scopes.
+    serving_instance: Arc<Mutex<Option<String>>>,
     /// Questions the Harness has put to the user that nothing has settled,
     /// by request id to the asking session (or `Turn` when none). The Instance
     /// is resolved through `owners` when `awaiting_user` reads, so an ask that
@@ -1056,7 +1080,7 @@ impl Session {
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
-            serving_instance: Mutex::new(None),
+            serving_instance: Arc::default(),
             asked: Arc::default(),
             owners: Arc::default(),
             withdrawing: Mutex::new(None),
@@ -1765,10 +1789,11 @@ impl Session {
         let forward = Arc::clone(&self.forward);
         let asked = Arc::clone(&self.asked);
         let owners = Arc::clone(&self.owners);
+        let serving = Arc::clone(&self.serving_instance);
         let spawned = Wire::spawn(
             self.launch.command(cwd, mcp_stdio().is_some()),
             self.attach_timeout(),
-            Box::new(move |event| note_event(&data, &forward, &asked, &owners, event)),
+            Box::new(move |event| note_event(&data, &forward, &asked, &owners, &serving, event)),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -2180,13 +2205,22 @@ impl Asker {
         owners: Option<&HashMap<String, String>>,
         serving: Option<&str>,
     ) -> bool {
+        self.instance(owners, serving) == Some(instance)
+    }
+
+    /// The Instance that owes the answer, if one can be named.
+    fn instance<'a>(
+        &self,
+        owners: Option<&'a HashMap<String, String>>,
+        serving: Option<&'a str>,
+    ) -> Option<&'a str> {
         match self {
             Self::Session(session) => match owners.and_then(|owners| owners.get(session)) {
-                Some(owner) => owner == instance,
+                Some(owner) => Some(owner),
                 // A session this child never opened, or not yet recorded.
-                None => serving == Some(instance),
+                None => serving,
             },
-            Self::Turn => serving == Some(instance),
+            Self::Turn => serving,
         }
     }
 }
@@ -2233,12 +2267,14 @@ pub fn run_probe() -> i32 {
         // permission request (ADR-0022), and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
         Arc::new(Box::new(|forwarded| match forwarded {
-            Forwarded::Ask(ask) => println!(
+            Forwarded::Ask { ask, .. } => println!(
                 "  permission   {} [{}]",
                 ask.title.as_deref().unwrap_or("—"),
                 ask.request
             ),
-            Forwarded::Form(form) => println!("  elicitation  {} [{}]", form.message, form.request),
+            Forwarded::Form { form, .. } => {
+                println!("  elicitation  {} [{}]", form.message, form.request)
+            }
             _ => {}
         }) as Forward),
     ));
@@ -2417,8 +2453,26 @@ fn note_event(
     forward: &Forward,
     asked: &Mutex<HashMap<String, Asker>>,
     owners: &Mutex<HashMap<String, String>>,
+    serving: &Mutex<Option<String>>,
     event: Event,
 ) {
+    let instance_of = |session: &str| owners.lock().ok()?.get(session).cloned();
+    // Chat is named once, on arrival. `awaiting_user` resolves the same
+    // `Asker` each time it reads, so an ask on a session still opening outside
+    // a wake is drawn in the turn holder's Chat but owed by its own Instance
+    // once the open records it (docs/harness.md).
+    let owe = |request: &str, asker: Asker| {
+        let serving = serving.lock().ok().and_then(|serving| serving.clone());
+        let instance = owners.lock().ok().and_then(|owners| {
+            asker
+                .instance(Some(&owners), serving.as_deref())
+                .map(str::to_string)
+        });
+        if let Ok(mut asked) = asked.lock() {
+            asked.insert(request.to_string(), asker);
+        }
+        instance.map_or(Owner::EveryChat, Owner::Instance)
+    };
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
         // turn shows the surface no phases. ADR-0028 bounds what a later
@@ -2433,13 +2487,15 @@ fn note_event(
             "tool_call",
             json!({"id": id, "title": title, "kind": kind, "status": status}),
         ),
-        Event::Plan(steps) => {
+        Event::Plan { session, steps } => {
             // Guarded because `end_turn` clears the plan on every turn, and an
             // unguarded line would log a zero-step plan for turns that had none.
             if !steps.is_empty() {
                 action_log::append(dir, "plan", json!({"entries": steps.len()}));
             }
-            forward(Forwarded::Plan(steps));
+            if let Some(instance) = instance_of(&session) {
+                forward(Forwarded::Plan { instance, steps });
+            }
         }
         Event::Usage { used, size } => {
             action_log::append(dir, "usage_update", json!({"used": used, "size": size}))
@@ -2450,10 +2506,8 @@ fn note_event(
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            if let Ok(mut asked) = asked.lock() {
-                asked.insert(ask.request.clone(), Asker::of(Some(&session)));
-            }
-            forward(Forwarded::Ask(ask));
+            let owner = owe(&ask.request, Asker::of(Some(&session)));
+            forward(Forwarded::Ask { owner, ask });
         }
         Event::Elicitation { session, form } => {
             action_log::append(
@@ -2461,10 +2515,8 @@ fn note_event(
                 "elicitation_create",
                 json!({"request": form.request, "field": form.field}),
             );
-            if let Ok(mut asked) = asked.lock() {
-                asked.insert(form.request.clone(), Asker::of(session.as_deref()));
-            }
-            forward(Forwarded::Form(form));
+            let owner = owe(&form.request, Asker::of(session.as_deref()));
+            forward(Forwarded::Form { owner, form });
         }
         Event::PermissionSettled { request, option } => {
             if let Ok(mut asked) = asked.lock() {
@@ -2476,20 +2528,12 @@ fn note_event(
         // session dump rather than copying it (CONTEXT.md), and a reply is not
         // copied there either (ADR-0034).
         Event::InboundWake { session, speech } => {
-            let instance = owners
-                .lock()
-                .ok()
-                .and_then(|owners| owners.get(&session).cloned());
-            if let Some(instance) = instance {
+            if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::InboundWake(InboundWake { instance, speech }));
             }
         }
         Event::Thought { session, text } => {
-            let instance = owners
-                .lock()
-                .ok()
-                .and_then(|owners| owners.get(&session).cloned());
-            if let Some(instance) = instance {
+            if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::Thought {
                     instance,
                     line: text,
@@ -3754,6 +3798,34 @@ mod tests {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
+                        // While this turn runs, the other Instance's session
+                        // plans, asks and sends a form; then this one plans.
+                        "crosstalk-rows" => {
+                            let plan = |session: &str, step: &str| {
+                                say(
+                                    json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                                        "sessionId": session,
+                                        "update": {"sessionUpdate": "plan", "entries": [
+                                            {"content": step, "priority": "medium", "status": "in_progress"},
+                                        ]},
+                                    }}),
+                                )
+                            };
+                            plan("fresh-id", "B's step");
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": "fresh-id",
+                                    "toolCall": {"toolCallId": "t3", "title": "Remind the other user", "kind": "other"},
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                    ],
+                                }}),
+                            );
+                            mcp_link("fresh-id", None);
+                            plan(&session, "A's step");
+                            chunk(&session, "Hello");
+                            stop(&id, "end_turn");
+                        }
                         "exit" | "load-history" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -3966,9 +4038,9 @@ mod tests {
         fn ask(&self) -> PermissionAsk {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                    Ok(Forwarded::Ask(ask)) => return ask,
+                    Ok(Forwarded::Ask { ask, .. }) => return ask,
                     Ok(
-                        Forwarded::Plan(_)
+                        Forwarded::Plan { .. }
                         | Forwarded::Thought { .. }
                         | Forwarded::InboundWake(_)
                         | Forwarded::Restored(_)
@@ -3982,7 +4054,7 @@ mod tests {
         fn form(&self) -> ElicitationForm {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                    Ok(Forwarded::Form(form)) => return form,
+                    Ok(Forwarded::Form { form, .. }) => return form,
                     Ok(Forwarded::Restored(_) | Forwarded::AttachSettled) => {}
                     other => panic!("expected a form, got {:?}", other.map(|_| "other")),
                 }
@@ -4019,8 +4091,9 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::AttachSettled) => return,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::Restored(_)) => {
-                    }
+                    Ok(
+                        Forwarded::Plan { .. } | Forwarded::Thought { .. } | Forwarded::Restored(_),
+                    ) => {}
                     other => panic!("expected AttachSettled, got {other:?}"),
                 }
             }
@@ -4308,6 +4381,7 @@ mod tests {
             &forward,
             &Mutex::default(),
             &owners,
+            &Mutex::default(),
             Event::Thought {
                 session: "session-b".to_string(),
                 text: "Reading the roster".to_string(),
@@ -4339,21 +4413,89 @@ mod tests {
             &dir,
             &forward,
             &Mutex::default(),
+            &Mutex::new(HashMap::from([(
+                "session-a".to_string(),
+                "buddy-a".to_string(),
+            )])),
             &Mutex::default(),
-            Event::Plan(vec![PlanStep {
-                content: "read the roster".to_string(),
-                priority: "high".to_string(),
-                status: "in_progress".to_string(),
-            }]),
+            Event::Plan {
+                session: "session-a".to_string(),
+                steps: vec![PlanStep {
+                    content: "read the roster".to_string(),
+                    priority: "high".to_string(),
+                    status: "in_progress".to_string(),
+                }],
+            },
         );
 
         assert!(matches!(
             forwarded.try_recv(),
-            Ok(Forwarded::Plan(steps)) if steps[0].content == "read the roster"
+            Ok(Forwarded::Plan { instance, steps })
+                if instance == "buddy-a" && steps[0].content == "read the roster"
         ));
         let logged = std::fs::read_to_string(dir.join(action_log::FILE)).unwrap();
         assert!(logged.contains(r#""entries":1"#), "{logged}");
         assert!(!logged.contains("read the roster"), "{logged}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A form no session scopes, as a sign-in link, is owed by the Instance
+    /// whose turn is running. Between turns nobody owes it, so every Chat
+    /// draws it and whichever is open can answer (#1422).
+    #[test]
+    fn a_form_no_session_scopes_goes_to_the_turn_holder_or_to_every_chat() {
+        let dir = std::env::temp_dir().join(format!("fidget-unscoped-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+        let sign_in = |request: &str| Event::Elicitation {
+            session: None,
+            form: ElicitationForm {
+                request: request.to_string(),
+                message: "Enter ABCD-1234 on the sign-in page.".to_string(),
+                field: String::new(),
+                options: Vec::new(),
+                url: Some("https://example.test/device?code=ABCD-1234".to_string()),
+                waits: false,
+            },
+        };
+        let serving = Mutex::new(Some("buddy-a".to_string()));
+        let owners = Mutex::default();
+
+        note_event(
+            &dir,
+            &forward,
+            &Mutex::default(),
+            &owners,
+            &serving,
+            sign_in("1"),
+        );
+        *serving.lock().unwrap() = None;
+        note_event(
+            &dir,
+            &forward,
+            &Mutex::default(),
+            &owners,
+            &serving,
+            sign_in("2"),
+        );
+
+        let owed: Vec<_> = forwarded
+            .try_iter()
+            .map(|row| match row {
+                Forwarded::Form { owner, form } => (form.request, owner),
+                other => panic!("expected a form, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            owed,
+            [
+                ("1".to_string(), Owner::Instance("buddy-a".to_string())),
+                ("2".to_string(), Owner::EveryChat),
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4373,13 +4515,20 @@ mod tests {
             &dir,
             &forward,
             &Mutex::default(),
+            &Mutex::new(HashMap::from([(
+                "session-a".to_string(),
+                "buddy-a".to_string(),
+            )])),
             &Mutex::default(),
-            Event::Plan(Vec::new()),
+            Event::Plan {
+                session: "session-a".to_string(),
+                steps: Vec::new(),
+            },
         );
 
         assert!(matches!(
             forwarded.try_recv(),
-            Ok(Forwarded::Plan(steps)) if steps.is_empty()
+            Ok(Forwarded::Plan { instance, steps }) if instance == "buddy-a" && steps.is_empty()
         ));
         assert!(!dir.join(action_log::FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);
@@ -5992,7 +6141,7 @@ mod tests {
         let mut said = Vec::new();
         let ask = loop {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Ask(ask)) => break ask,
+                Ok(Forwarded::Ask { ask, .. }) => break ask,
                 Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
                 Ok(Forwarded::InboundWake(wake)) => said.push((wake.instance, wake.speech)),
                 Ok(_) => {}
@@ -6138,7 +6287,7 @@ mod tests {
         let mut wakes = Vec::new();
         let ask = loop {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Ask(ask)) => break ask,
+                Ok(Forwarded::Ask { ask, .. }) => break ask,
                 Ok(Forwarded::InboundWake(wake)) => wakes.push((wake.instance, wake.speech)),
                 Ok(_) => {}
                 Err(_) => panic!("B's ask never reached Chat"),
@@ -6214,6 +6363,72 @@ mod tests {
         assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
         session.answer_permission(&ask.request, "allow");
         session.shutdown();
+    }
+
+    /// Two Chats are open, A's and B's. While A's turn runs, B's session
+    /// plans, asks and sends a form. A's Chat draws none of those rows, and
+    /// B's Chat draws none of A's plan (#1422).
+    #[test]
+    fn a_second_chat_shows_none_of_the_first_chats_ask_form_or_plan_rows() {
+        let (fx, session) = Fixture::new("crosstalk-rows");
+        let b = SessionKey {
+            instance: "buddy-b".to_string(),
+            character: "bmo".to_string(),
+            blank: false,
+        };
+        let (_, opened) = session.attach(Some(&b)).expect("B's session opens");
+        assert_eq!(opened, "fresh-id");
+        assert_eq!(
+            session.complete(&asking_as("buddy-a", "bmo", "hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        let rows: Vec<_> = fx
+            .forwarded
+            .try_iter()
+            .filter_map(|row| chat_rows(&row))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("plan: B's step".to_string(), vec!["chat-buddy-b"]),
+                (
+                    "ask: Remind the other user".to_string(),
+                    vec!["chat-buddy-b"]
+                ),
+                (
+                    "form: Authenticate with MCP server linear".to_string(),
+                    vec!["chat-buddy-b"]
+                ),
+                ("plan: A's step".to_string(), vec!["chat-buddy-a"]),
+                ("plan: ".to_string(), vec!["chat-buddy-a"]),
+            ]
+        );
+        session.shutdown();
+    }
+
+    /// Each ask, form and plan row, and the Chats out of A's and B's that
+    /// `main.rs` draws it in.
+    fn chat_rows(row: &Forwarded) -> Option<(String, Vec<&'static str>)> {
+        let (row, owner) = match row {
+            Forwarded::Ask { owner, ask } => (
+                format!("ask: {}", ask.title.as_deref().unwrap_or("")),
+                owner.clone(),
+            ),
+            Forwarded::Form { owner, form } => (format!("form: {}", form.message), owner.clone()),
+            Forwarded::Plan { instance, steps } => (
+                format!(
+                    "plan: {}",
+                    steps.first().map_or("", |step| step.content.as_str())
+                ),
+                Owner::Instance(instance.clone()),
+            ),
+            _ => return None,
+        };
+        let chats = ["chat-buddy-a", "chat-buddy-b"]
+            .into_iter()
+            .filter(|label| crate::draws_in(&owner, label))
+            .collect();
+        Some((row, chats))
     }
 
     /// An ask queued on the new session before `session/new` answers is owed
@@ -6300,7 +6515,7 @@ mod tests {
                 Forwarded::InboundWake(wake) => {
                     panic!("replay woke {}: {}", wake.instance, wake.speech)
                 }
-                Forwarded::Plan(steps) if !steps.is_empty() => {
+                Forwarded::Plan { steps, .. } if !steps.is_empty() => {
                     panic!("replay drew a live plan: {steps:?}")
                 }
                 Forwarded::Thought { line, .. } if !line.is_empty() => {
@@ -6932,7 +7147,7 @@ mod tests {
             let mut form = None;
             while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
                 match forwarded {
-                    Forwarded::Form(link) => form = Some(link),
+                    Forwarded::Form { form: link, .. } => form = Some(link),
                     Forwarded::Settled { request, .. } => panic!("{script}: {request} was retired"),
                     _ => {}
                 }
@@ -7010,7 +7225,7 @@ mod tests {
         let mut settled = None;
         while let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(500)) {
             match forwarded {
-                Forwarded::Form(link) => form = Some(link),
+                Forwarded::Form { form: link, .. } => form = Some(link),
                 Forwarded::Settled { request, option } => settled = Some((request, option)),
                 _ => {}
             }
