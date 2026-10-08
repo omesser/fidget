@@ -5676,7 +5676,7 @@ mod tests {
         let (fx, session) = Fixture::new("permission-fidget");
 
         assert_eq!(
-            session.complete(&asking("describe screen")),
+            session.complete(&asking("describe screen"), &|_| {}),
             Ok(Reply::whole("ok:allow"))
         );
         assert!(fx.wait_for("perm:selected", 1));
@@ -5685,7 +5685,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("run shell")))
+            thread::spawn(move || session.complete(&asking("run shell"), &|_| {}))
         };
         let ask = fx.ask();
         assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
@@ -5703,7 +5703,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete(&asking("describe screen")))
+            thread::spawn(move || session.complete(&asking("describe screen"), &|_| {}))
         };
 
         let ask = fx.ask();

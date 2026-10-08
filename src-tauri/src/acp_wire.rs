@@ -1295,6 +1295,7 @@ async fn serve(
                         &mut forms,
                         &mut asks,
                         &mut inbound,
+                        &fidget_mcp_sessions,
                         signing_in,
                         on_event,
                     );
@@ -1335,6 +1336,7 @@ async fn serve(
                         &mut forms,
                         &mut asks,
                         &mut inbound,
+                        &fidget_mcp_sessions,
                         signing_in,
                         on_event,
                     );
