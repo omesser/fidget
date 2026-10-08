@@ -1644,16 +1644,16 @@ impl Session {
         match crate::cursor_mcp::install(cwd, &endpoint.url, &endpoint.authorization()) {
             Ok(installed) => {
                 if let Ok(mut slot) = self.cursor.lock() {
-                    let tracked = slot.get_or_insert(installed);
-                    if let Err(why) = tracked.approve_fidget_tools() {
-                        eprintln!("harness: cursor permissions: {why}");
-                    }
+                    slot.get_or_insert(installed);
                 }
             }
             Err(why) => {
                 eprintln!("harness: cursor mcp: {why}");
                 return;
             }
+        }
+        if let Err(why) = crate::cursor_mcp::allow_tools(cwd) {
+            eprintln!("harness: cursor permissions: {why}");
         }
         if let Err(why) = crate::cursor_mcp::enable(Path::new(&self.launch.argv[0]), cwd) {
             eprintln!("harness: cursor mcp: {why}");
@@ -4201,6 +4201,35 @@ mod tests {
         );
         assert_eq!(fx.count("mcp=http"), expected_acp_server);
         session.shutdown();
+    }
+
+    /// Detach takes the token back out of `.cursor/mcp.json` and leaves the
+    /// `Mcp(fidget:*)` allow in `.cursor/cli.json` for the next attach.
+    #[test]
+    fn a_cursor_attach_leaves_its_tool_allow_after_detach() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+        let (fx, mut session) = Fixture::new("hello");
+        session.launch.name = "cursor-agent".into();
+        let cursor = fx.cwd.join(".cursor");
+        let read = |name: &str| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(cursor.join(name)).unwrap()).unwrap()
+        };
+        let allowed = json!({"permissions": {"allow": ["Mcp(fidget:*)"]}});
+
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(read("cli.json"), allowed);
+        assert!(read("mcp.json")["mcpServers"]["fidget"]["url"].is_string());
+
+        session.shutdown();
+        assert_eq!(read("cli.json"), allowed);
+        assert!(
+            !cursor.join("mcp.json").exists(),
+            "the token outlived detach"
+        );
     }
 
     #[test]

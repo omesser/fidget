@@ -347,14 +347,14 @@ Two kinds of link open Chat: one that arrives during Fidget's own `authenticate`
 
 1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
 2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
-3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`, preserving other project permissions. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
+3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json` unless it is already there, preserving other project permissions. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
 4. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
 
 URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.
 
 Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
 
-Detach removes the MCP entry and the CLI permission only if Fidget added it, and removes files and the directory it created when empty. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
+Detach removes the MCP entry, and `mcp.json` and `.cursor/` if attach created them and nothing else is left in them. The `Mcp(fidget:*)` allow in `cli.json` stays, because it holds no credential and the next attach would add it again. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
 
 ### Pointing a Harness you run yourself at Fidget
 

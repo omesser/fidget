@@ -54,16 +54,6 @@ pub struct Installed {
     file: PathBuf,
     created_dir: bool,
     created_file: bool,
-    permission: Option<PermissionGrant>,
-}
-
-#[derive(Debug)]
-struct PermissionGrant {
-    file: PathBuf,
-    created_file: bool,
-    created_permissions: bool,
-    created_allow: bool,
-    added: bool,
 }
 
 /// Merge the `fidget` server into `<cwd>/.cursor/mcp.json` beside whatever
@@ -100,7 +90,6 @@ pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, 
         file,
         created_dir,
         created_file,
-        permission: None,
     })
 }
 
@@ -173,49 +162,40 @@ pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
     }
 }
 
-impl Installed {
-    /// Cursor's CLI permission rule approves calls to Fidget's server while
-    /// leaving the user's global configuration and other project rules alone.
-    pub fn approve_fidget_tools(&mut self) -> Result<(), String> {
-        if self.permission.is_some() {
-            return Ok(());
-        }
-        let file = self.file.with_file_name(CLI_FILE);
-        let (mut root, created_file) = match fs::read_to_string(&file) {
-            Ok(text) => (parse(&file, &text)?, false),
-            Err(error) if error.kind() == ErrorKind::NotFound => (json!({}), true),
-            Err(error) => return Err(format!("{}: {error}", file.display())),
-        };
-        let object = root.as_object_mut().expect("parse checked");
-        let created_permissions = !object.contains_key("permissions");
-        let permissions = object
-            .entry("permissions")
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-            .ok_or_else(|| format!("{}: permissions is not an object", file.display()))?;
-        let created_allow = !permissions.contains_key("allow");
-        let allow = permissions
-            .entry("allow")
-            .or_insert_with(|| json!([]))
-            .as_array_mut()
-            .ok_or_else(|| format!("{}: permissions.allow is not an array", file.display()))?;
-        let added = !allow
-            .iter()
-            .any(|item| item.as_str() == Some(TOOL_PERMISSION));
-        if added {
-            allow.push(json!(TOOL_PERMISSION));
-            write(&file, &root)?;
-        }
-        self.permission = Some(PermissionGrant {
-            file,
-            created_file,
-            created_permissions,
-            created_allow,
-            added,
-        });
-        Ok(())
+/// Add `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`,
+/// beside the project's other rules. It stays after detach, because it holds
+/// no credential and the next attach would add it again.
+pub fn allow_tools(cwd: &Path) -> Result<(), String> {
+    let file = cwd.join(DIR).join(CLI_FILE);
+    let mut root = match fs::read_to_string(&file) {
+        Ok(text) => parse(&file, &text)?,
+        Err(error) if error.kind() == ErrorKind::NotFound => json!({}),
+        Err(error) => return Err(format!("{}: {error}", file.display())),
+    };
+    let allow = root
+        .as_object_mut()
+        .expect("parse checked the root is an object")
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| format!("{}: permissions is not an object", file.display()))?
+        .entry("allow")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or_else(|| format!("{}: permissions.allow is not an array", file.display()))?;
+    if allow
+        .iter()
+        .any(|item| item.as_str() == Some(TOOL_PERMISSION))
+    {
+        return Ok(());
     }
+    allow.push(json!(TOOL_PERMISSION));
+    let dir = cwd.join(DIR);
+    fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    write(&file, &root)
+}
 
+impl Installed {
     /// Undo `install`. Nothing here fails loudly: a quit is not the moment
     /// to refuse, so each step logs and the next still runs.
     ///
@@ -223,11 +203,6 @@ impl Installed {
     /// approval and instead marks the server never to load again, which would
     /// break the next attach.
     pub fn remove(self) {
-        if let Some(permission) = &self.permission {
-            if let Err(why) = permission.remove() {
-                eprintln!("harness: cursor mcp: {why}");
-            }
-        }
         if let Err(why) = self.remove_entry() {
             eprintln!("harness: cursor mcp: {why}");
         }
@@ -265,45 +240,6 @@ impl Installed {
     }
 }
 
-impl PermissionGrant {
-    fn remove(&self) -> Result<(), String> {
-        if !self.added {
-            return Ok(());
-        }
-        let text = match fs::read_to_string(&self.file) {
-            Ok(text) => text,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(format!("{}: {error}", self.file.display())),
-        };
-        let mut root = parse(&self.file, &text)?;
-        let object = root.as_object_mut().expect("parse checked");
-        let Some(permissions) = object.get_mut("permissions").and_then(Value::as_object_mut) else {
-            return Ok(());
-        };
-        let Some(allow) = permissions.get_mut("allow").and_then(Value::as_array_mut) else {
-            return Ok(());
-        };
-        let Some(index) = allow
-            .iter()
-            .position(|item| item.as_str() == Some(TOOL_PERMISSION))
-        else {
-            return Ok(());
-        };
-        allow.remove(index);
-        if self.created_allow && allow.is_empty() {
-            permissions.remove("allow");
-        }
-        if self.created_permissions && permissions.is_empty() {
-            object.remove("permissions");
-        }
-        if self.created_file && object.is_empty() {
-            fs::remove_file(&self.file).map_err(|error| format!("{}: {error}", self.file.display()))
-        } else {
-            write(&self.file, &root)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,24 +260,25 @@ mod tests {
     }
 
     #[test]
-    fn scoped_cli_permission_is_added_and_removed_with_a_fresh_attach() {
-        let cwd = dir("permission-fresh");
-        let mut installed = install(&cwd, URL, AUTH).expect("installed");
-        installed.approve_fidget_tools().expect("approved");
-
-        let file = cwd.join(DIR).join(CLI_FILE);
-        assert_eq!(
-            read(&file),
-            json!({"permissions": {"allow": ["Mcp(fidget:*)"]}})
-        );
+    fn the_fidget_allow_outlives_detach_after_a_fresh_attach() {
+        let cwd = dir("allow-fresh");
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("allowed");
 
         installed.remove();
-        assert!(!cwd.join(DIR).exists(), ".cursor was left behind");
+        assert_eq!(
+            read(&cwd.join(DIR).join(CLI_FILE)),
+            json!({"permissions": {"allow": ["Mcp(fidget:*)"]}})
+        );
+        assert!(
+            !cwd.join(DIR).join(FILE).exists(),
+            "the token outlived detach"
+        );
     }
 
     #[test]
-    fn scoped_cli_permission_preserves_other_rules_and_user_edits() {
-        let cwd = dir("permission-existing");
+    fn allowing_again_keeps_one_rule_beside_the_projects_own() {
+        let cwd = dir("allow-existing");
         let file = cwd.join(DIR).join(CLI_FILE);
         fs::create_dir_all(cwd.join(DIR)).unwrap();
         fs::write(
@@ -349,69 +286,53 @@ mod tests {
             r#"{"version":1,"permissions":{"allow":["Shell(git)"],"deny":["Mcp(other:*)"]}}"#,
         )
         .unwrap();
-        let mut installed = install(&cwd, URL, AUTH).expect("installed");
-        installed.approve_fidget_tools().expect("approved");
-        installed.approve_fidget_tools().expect("idempotent");
+        let expected = json!({
+            "version": 1,
+            "permissions": {
+                "allow": ["Shell(git)", "Mcp(fidget:*)"],
+                "deny": ["Mcp(other:*)"]
+            }
+        });
 
-        let mut config = read(&file);
-        assert_eq!(
-            config["permissions"]["allow"],
-            json!(["Shell(git)", "Mcp(fidget:*)"])
-        );
-        config["permissions"]["allow"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!("Read(src/**)"));
-        write(&file, &config).unwrap();
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("allowed");
+        allow_tools(&cwd).expect("allowed again");
+        assert_eq!(read(&file), expected);
 
         installed.remove();
-        assert_eq!(
-            read(&file),
-            json!({
-                "version": 1,
-                "permissions": {
-                    "allow": ["Shell(git)", "Read(src/**)"],
-                    "deny": ["Mcp(other:*)"]
-                }
-            })
-        );
+        let installed = install(&cwd, URL, AUTH).expect("installed again");
+        allow_tools(&cwd).expect("allowed on the next attach");
+        installed.remove();
+        assert_eq!(read(&file), expected);
     }
 
     #[test]
-    fn preexisting_fidget_permission_is_not_removed() {
-        let cwd = dir("permission-user-owned");
+    fn a_rule_already_there_leaves_the_file_byte_for_byte() {
+        let cwd = dir("allow-user-owned");
         let file = cwd.join(DIR).join(CLI_FILE);
         fs::create_dir_all(cwd.join(DIR)).unwrap();
-        fs::write(&file, r#"{"permissions":{"allow":["Mcp(fidget:*)"]}}"#).unwrap();
-        let mut installed = install(&cwd, URL, AUTH).expect("installed");
-        installed.approve_fidget_tools().expect("already approved");
+        let text = r#"{"permissions":{"allow":["Mcp(fidget:*)"]}}"#;
+        fs::write(&file, text).unwrap();
 
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("already allowed");
         installed.remove();
-        assert_eq!(
-            read(&file),
-            json!({"permissions": {"allow": ["Mcp(fidget:*)"]}})
-        );
+        assert_eq!(fs::read_to_string(&file).unwrap(), text);
     }
 
     #[test]
     fn malformed_cli_permissions_are_left_untouched() {
-        let cwd = dir("permission-invalid");
+        let cwd = dir("allow-invalid");
         let file = cwd.join(DIR).join(CLI_FILE);
         fs::create_dir_all(cwd.join(DIR)).unwrap();
         fs::write(&file, r#"{"permissions":{"allow":"all"}}"#).unwrap();
-        let mut installed = install(&cwd, URL, AUTH).expect("installed");
 
-        let err = installed
-            .approve_fidget_tools()
-            .expect_err("accepted invalid allow");
+        let err = allow_tools(&cwd).expect_err("accepted invalid allow");
         assert!(err.contains("permissions.allow"), "{err}");
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             r#"{"permissions":{"allow":"all"}}"#
         );
-        installed.remove();
-        assert!(!cwd.join(DIR).join(FILE).exists());
-        assert!(file.exists());
     }
 
     #[test]
