@@ -997,11 +997,7 @@ pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache)
                     *cache.0.lock().unwrap() = read_displays(&app_clone);
                 }
 
-                let displays = cache.read();
-                (
-                    displays.usable_frames,
-                    displays.dock.map(|(bounds, _)| bounds),
-                )
+                cache.read().usable_frames
             }
         },
         can_read_titles,

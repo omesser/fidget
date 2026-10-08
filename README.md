@@ -264,7 +264,7 @@ What works today on each OS.
 
 **Degraded cell notes:**
 
-1. **Linux Dock/panel:** Bottom panels work as Perches; side and top panels stay as reserved strips. Fixable; tracked in [#1300](https://github.com/omesser/fidget/issues/1300).
+1. **Linux desktop panels:** Desktop panels come from each display's work area, as on Windows: a bottom one is the floor, a side one is a wall, and a top one is the ceiling. Under a window manager that publishes no per-monitor work area (xfwm4), a desktop panel on a display that isn't primary is ignored. Tracked in [#1300](https://github.com/omesser/fidget/issues/1300).
 2. **Windows Dock/panel:** Taskbar from work area (full-width strip) rather than exact island bounds. Taskbar spans the edge by design; no Windows API equivalent to macOS's `CoreDockGetRect`.
 3. **Windows fullscreen:** Fades for true fullscreen and properly-sized borderless windowed modes. Apps using non-standard fullscreen or leaving gaps may not trigger fade.
 4. **Linux Capturable:** Always capturable. Linux has no platform API to exclude windows from capture tools ([ADR-0024](./docs/adr/0024-capturable-by-default.md)).

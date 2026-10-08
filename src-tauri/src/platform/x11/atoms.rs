@@ -7,8 +7,7 @@
 //!
 //! Resolution can fail because the connection can. `atoms` then returns None
 //! and each caller bails the way it already bailed on a failed intern: a window
-//! that cannot be classified is skipped, undecorated geometry stands, no strut
-//! is found.
+//! that cannot be classified is skipped and undecorated geometry stands.
 
 use std::sync::OnceLock;
 use x11rb::protocol::xproto::{self, Atom};
@@ -27,9 +26,7 @@ pub struct Atoms {
     pub net_wm_state_above: Atom,
     pub net_wm_state_skip_pager: Atom,
     pub net_wm_state_skip_taskbar: Atom,
-    pub net_wm_strut_partial: Atom,
     pub net_wm_window_type: Atom,
-    pub net_wm_window_type_dock: Atom,
     pub net_wm_window_type_normal: Atom,
     pub utf8_string: Atom,
 }
@@ -53,9 +50,7 @@ fn intern_all() -> Option<Atoms> {
         net_wm_state_above: intern(conn, "_NET_WM_STATE_ABOVE")?,
         net_wm_state_skip_pager: intern(conn, "_NET_WM_STATE_SKIP_PAGER")?,
         net_wm_state_skip_taskbar: intern(conn, "_NET_WM_STATE_SKIP_TASKBAR")?,
-        net_wm_strut_partial: intern(conn, "_NET_WM_STRUT_PARTIAL")?,
         net_wm_window_type: intern(conn, "_NET_WM_WINDOW_TYPE")?,
-        net_wm_window_type_dock: intern(conn, "_NET_WM_WINDOW_TYPE_DOCK")?,
         net_wm_window_type_normal: intern(conn, "_NET_WM_WINDOW_TYPE_NORMAL")?,
         utf8_string: intern(conn, "UTF8_STRING")?,
     })

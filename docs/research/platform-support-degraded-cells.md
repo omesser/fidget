@@ -4,6 +4,8 @@ Investigation of the four "degraded" cells in the README Platform Support table,
 
 sha: `ab6bd57b`
 
+Shipped since (#1300): the Linux Dock/panel finding was superseded; X11 no longer reads `_NET_WM_STRUT_PARTIAL`, and desktop panels come only from the work area, as on Windows.
+
 ## Summary
 
 | Cell | Current Behavior | Root Constraint | V1 Disposition |
