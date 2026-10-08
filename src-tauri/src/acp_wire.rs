@@ -2,7 +2,7 @@
 //! No SDK type leaves the file. Reversing the crate choice (ADR-0022)
 //! rewrites this file only. The frame loop never sees it (ADR-0004).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -20,7 +20,8 @@ use agent_client_protocol::schema::v1::{
     ElicitationPropertySchema, ElicitationScope, ElicitationSessionScope,
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio, MessageId,
-    NewSessionRequest, PermissionOptionKind, Plan, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    Meta, NewSessionRequest, Plan, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
     SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
     SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
@@ -485,6 +486,7 @@ enum Msg {
         load: Option<String>,
         cwd: PathBuf,
         mcp: Option<McpChoice>,
+        claude_mcp_approval: bool,
         /// Empty sends no model option.
         model: String,
         /// `None` sends no effort option.
@@ -613,11 +615,16 @@ impl Wire {
 
     /// `session/load` when `load` names one, falling back to `session/new`.
     /// An empty `model` or effort is not sent.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keep ACP session fields explicit at the wire boundary"
+    )]
     pub fn open(
         &self,
         load: Option<String>,
         cwd: &Path,
         mcp: Option<McpChoice>,
+        claude_mcp_approval: bool,
         timeout: Duration,
         model: &str,
         effort: Option<&str>,
@@ -628,6 +635,7 @@ impl Wire {
                 load,
                 cwd: cwd.to_path_buf(),
                 mcp,
+                claude_mcp_approval,
                 model: model.to_string(),
                 effort: effort.map(str::to_string),
                 reply,
@@ -1152,7 +1160,6 @@ async fn serve(
     let mut forms: Vec<PendingElicit> = Vec::new();
     let mut asks: Vec<PendingAsk> = Vec::new();
     let mut inbound: HashMap<SessionId, Inbound> = HashMap::new();
-    let mut fidget_mcp_sessions: HashSet<SessionId> = HashSet::new();
     loop {
         enum Step {
             Auth(Result<(), String>),
@@ -1179,7 +1186,7 @@ async fn serve(
                 },
                 message = incoming.recv() => {
                     if let Some(message) = message {
-                        between_turns(message, &mut forms, &mut asks, &mut inbound, &fidget_mcp_sessions, waiting, on_event);
+                        between_turns(message, &mut forms, &mut asks, &mut inbound, waiting, on_event);
                     }
                     continue;
                 }
@@ -1230,20 +1237,22 @@ async fn serve(
                 load,
                 cwd,
                 mcp,
+                claude_mcp_approval,
                 model,
                 effort,
                 reply,
             }) => {
                 let loading = load.clone().map(SessionId::new);
-                let registered_fidget_mcp = mcp.is_some();
-                let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
-                if let Ok(id) = &opened {
-                    if registered_fidget_mcp {
-                        fidget_mcp_sessions.insert(id.clone());
-                    } else {
-                        fidget_mcp_sessions.remove(id);
-                    }
-                }
+                let opened = open(
+                    cx,
+                    load,
+                    &cwd,
+                    mcp,
+                    claude_mcp_approval,
+                    &model,
+                    effort.as_deref(),
+                )
+                .await;
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
                 // `session/new`. Every update queued for either id is history,
@@ -1268,7 +1277,6 @@ async fn serve(
                         &mut forms,
                         &mut asks,
                         &mut inbound,
-                        &fidget_mcp_sessions,
                         signing_in,
                         on_event,
                     );
@@ -1295,7 +1303,6 @@ async fn serve(
                         &mut forms,
                         &mut asks,
                         &mut inbound,
-                        &fidget_mcp_sessions,
                         signing_in,
                         on_event,
                     );
@@ -1308,16 +1315,7 @@ async fn serve(
                     held_asks: &mut asks,
                     inbound: &mut inbound,
                 };
-                let outcome = turn(
-                    cx,
-                    &id,
-                    serving,
-                    &fidget_mcp_sessions,
-                    &text,
-                    &reply,
-                    on_event,
-                )
-                .await;
+                let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
                 let _ = reply.send(Progress::Done(outcome));
                 if lost {
@@ -1336,13 +1334,11 @@ async fn serve(
                         &mut forms,
                         &mut asks,
                         &mut inbound,
-                        &fidget_mcp_sessions,
                         signing_in,
                         on_event,
                     );
                 }
                 end_inbound(&mut inbound, &id, on_event);
-                fidget_mcp_sessions.remove(&id);
                 let outcome = cx
                     .send_request(CloseSessionRequest::new(id))
                     .block_task()
@@ -1563,7 +1559,6 @@ fn between_turns(
     forms: &mut Vec<PendingElicit>,
     asks: &mut Vec<PendingAsk>,
     inbound: &mut HashMap<SessionId, Inbound>,
-    fidget_mcp_sessions: &HashSet<SessionId>,
     signing_in: bool,
     on_event: &OnEvent,
 ) {
@@ -1581,7 +1576,7 @@ fn between_turns(
         }
         Incoming::Ask(request, responder) => {
             flush_inbound(&request.session_id, inbound, on_event);
-            hold_ask(asks, &request, responder, fidget_mcp_sessions, on_event);
+            hold_ask(asks, &request, responder, on_event);
         }
         Incoming::Elicit(request, responder) => {
             if let Some(session_id) = elicitation_session(&request) {
@@ -1667,6 +1662,15 @@ fn mcp_server(choice: &McpChoice) -> McpServer {
     }
 }
 
+fn claude_mcp_meta(approve: bool) -> Option<Meta> {
+    approve.then(|| {
+        Meta::from_iter([(
+            "claudeCode".to_string(),
+            serde_json::json!({"options": {"allowedTools": ["mcp__fidget__*"]}}),
+        )])
+    })
+}
+
 /// `session/load` when asked and answered, else `session/new`. Raw requests
 /// rather than the SDK's session builders. Those tear the connection down
 /// when the Harness refuses, and `auth_required` is a refusal we recover from.
@@ -1675,13 +1679,19 @@ async fn open(
     load: Option<String>,
     cwd: &Path,
     mcp: Option<McpChoice>,
+    claude_mcp_approval: bool,
     model: &str,
     effort: Option<&str>,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
+    let approval = || claude_mcp_meta(claude_mcp_approval && mcp.is_some());
     let loaded = if let Some(id) = load {
         match cx
-            .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
+            .send_request(
+                LoadSessionRequest::new(id.clone(), cwd)
+                    .mcp_servers(servers())
+                    .meta(approval()),
+            )
             .block_task()
             .await
         {
@@ -1697,7 +1707,11 @@ async fn open(
     let (session_id, options) = match loaded {
         Some(opened) => opened,
         None => cx
-            .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+            .send_request(
+                NewSessionRequest::new(cwd)
+                    .mcp_servers(servers())
+                    .meta(approval()),
+            )
             .block_task()
             .await
             .map(|response| (response.session_id, response.config_options))
@@ -1798,7 +1812,6 @@ async fn turn(
     cx: &ConnectionTo<Agent>,
     session: &SessionId,
     serving: Serving<'_>,
-    fidget_mcp_sessions: &HashSet<SessionId>,
     text: &str,
     reply: &sync_mpsc::Sender<Progress>,
     on_event: &OnEvent,
@@ -1856,7 +1869,7 @@ async fn turn(
                     }
                 }
                 Some(Incoming::Ask(request, responder)) => {
-                    hold_ask(&mut asks, &request, responder, fidget_mcp_sessions, on_event)
+                    hold_ask(&mut asks, &request, responder, on_event)
                 }
                 // A link that outlives the turn goes to `serve`'s forms, so
                 // `end_turn` does not cancel it and the budget does not stop.
@@ -1937,8 +1950,8 @@ async fn turn(
 }
 
 /// Every field of the tool call a consent row could read, as plain values.
-/// A diff is a path and an image is nothing. The programmatic tool name is
-/// read for the Fidget MCP permission policy, not shown as consent copy.
+/// A diff is a path and an image is nothing. `name` is not here. The SDK
+/// gates it behind `unstable_tool_call_name`, which this crate does not enable.
 fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionAsk {
     let fields = &request.tool_call.fields;
     let mut locations: Vec<String> = fields
@@ -2281,50 +2294,13 @@ fn hold_form(
     });
 }
 
-/// A permission option for a tool of the MCP server this session was handed.
-/// Other servers can put "fidget" in a title, but the programmatic name must
-/// carry the exact namespace assigned to the registered server.
-fn fidget_mcp_permission(
-    request: &RequestPermissionRequest,
-    registered: bool,
-) -> Option<&agent_client_protocol::schema::v1::PermissionOption> {
-    if !registered {
-        return None;
-    }
-    let name = request.tool_call.fields.name.as_deref()?;
-    if !["mcp__fidget__", "fidget__", "fidget-"]
-        .iter()
-        .any(|prefix| {
-            name.strip_prefix(prefix)
-                .is_some_and(|tool| !tool.is_empty())
-        })
-    {
-        return None;
-    }
-    request
-        .options
-        .iter()
-        .find(|option| option.kind == PermissionOptionKind::AllowOnce)
-}
-
 /// A permission request the Harness asked, held open and handed on to Chat.
 fn hold_ask(
     asks: &mut Vec<PendingAsk>,
     request: &RequestPermissionRequest,
     responder: Responder<RequestPermissionResponse>,
-    fidget_mcp_sessions: &HashSet<SessionId>,
     on_event: &OnEvent,
 ) {
-    if let Some(option) =
-        fidget_mcp_permission(request, fidget_mcp_sessions.contains(&request.session_id))
-    {
-        let _ = responder.respond(RequestPermissionResponse::new(
-            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                option.option_id.clone(),
-            )),
-        ));
-        return;
-    }
     let ask = permission_ask(request, responder.id().to_string());
     asks.push((ask.request.clone(), responder));
     on_event(Event::Permission {
@@ -2863,49 +2839,6 @@ mod tests {
         }))
         .expect("a permission request");
         permission_ask(&request, "7".to_string())
-    }
-
-    #[test]
-    fn fidget_mcp_permission_requires_registration_and_a_qualified_name() {
-        let request = |name: &str, title: &str| -> RequestPermissionRequest {
-            serde_json::from_value(serde_json::json!({
-                "sessionId": "s1",
-                "toolCall": {"toolCallId": "t1", "name": name, "title": title},
-                "options": [
-                    {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
-                    {"optionId": "always", "name": "Always allow", "kind": "allow_always"}
-                ]
-            }))
-            .unwrap()
-        };
-
-        for name in [
-            "mcp__fidget__describe_screen",
-            "fidget__list_windows",
-            "fidget-speak",
-        ] {
-            let ask = request(name, "A Fidget tool");
-            assert_eq!(
-                fidget_mcp_permission(&ask, true)
-                    .unwrap()
-                    .option_id
-                    .0
-                    .as_ref(),
-                "once"
-            );
-            assert!(fidget_mcp_permission(&ask, false).is_none());
-        }
-        for name in [
-            "shell",
-            "mcp__other__fidget_speak",
-            "mcp__fidgetish__speak",
-            "mcp__fidget__",
-        ] {
-            assert!(fidget_mcp_permission(&request(name, "mcp__fidget__speak"), true).is_none());
-        }
-        let mut only_durable = request("mcp__fidget__speak", "Speak");
-        only_durable.options.remove(0);
-        assert!(fidget_mcp_permission(&only_durable, true).is_none());
     }
 
     /// Nothing downstream can draw what this file does not forward.
