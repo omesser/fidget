@@ -15,6 +15,9 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 const MARK: &str = "__FIDGET_LOGIN_PATH__";
 
+/// Where a launcher's own folders end and the system's begin.
+const SYSTEM_DIRS: &[&str] = &["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+
 /// Homebrew, version-manager shims and per-user installers, for when the login
 /// shell does not answer.
 const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -44,8 +47,8 @@ impl fmt::Display for Failure {
     }
 }
 
-/// Puts the login shell's `PATH` in front of ours, so every child Fidget
-/// spawns finds what a new terminal finds. A terminal launch already has it.
+/// Merges the login shell's `PATH` into ours, so every child Fidget spawns
+/// finds what a new terminal finds. A terminal launch already has it.
 pub fn adopt() {
     if std::io::stdin().is_terminal() {
         fidget::eprintln_and_log!("path: started from a terminal, kept its PATH");
@@ -81,10 +84,12 @@ fn login_shell() -> PathBuf {
     }
 }
 
-/// `-l` reads `.zprofile` or `.bash_profile`, and `-i` reads `.zshrc` or
-/// `.bashrc`. A session of its own, so an interactive shell never takes a
-/// terminal. Done at the second mark rather than at end of output, because a
-/// job the rc files leave running keeps the pipe open.
+/// `-l` reads `.zprofile`, or bash's `.bash_profile` or `.profile`, and `-i`
+/// adds zsh's `.zshrc`. Bash reads `.bashrc` only when one of those sources
+/// it, as the Debian, Ubuntu and Fedora defaults do. A session of its own, so
+/// an interactive shell never takes a terminal. Done at the second mark rather
+/// than at end of output, because a job the rc files leave running keeps the
+/// pipe open.
 fn login_shell_path(
     shell: &Path,
     home: &Path,
@@ -151,11 +156,26 @@ fn mark_at(bytes: &[u8]) -> Option<usize> {
         .position(|window| window == MARK.as_bytes())
 }
 
-/// The shell's folders in order, then the inherited ones it lacks.
+/// The inherited folders before its first system folder, then the shell's,
+/// then the rest of the inherited ones, each once. A login shell rebuilds
+/// `PATH` system first (Debian's `/etc/profile`, macOS `path_helper`), so
+/// without the split a launcher's own folder would lose to `/usr/bin`. An
+/// empty entry, which would mean the working directory, is dropped.
 fn merged(inherited: &OsStr, shell: &OsStr) -> OsString {
+    let inherited: Vec<PathBuf> = std::env::split_paths(inherited).collect();
+    let system_at = inherited
+        .iter()
+        .position(|dir| SYSTEM_DIRS.iter().any(|system| dir == Path::new(system)))
+        .unwrap_or(inherited.len());
+    let (leading, rest) = inherited.split_at(system_at);
     let mut dirs: Vec<PathBuf> = Vec::new();
-    for dir in std::env::split_paths(shell).chain(std::env::split_paths(inherited)) {
-        if !dirs.contains(&dir) {
+    for dir in leading
+        .iter()
+        .cloned()
+        .chain(std::env::split_paths(shell))
+        .chain(rest.iter().cloned())
+    {
+        if !dir.as_os_str().is_empty() && !dirs.contains(&dir) {
             dirs.push(dir);
         }
     }
