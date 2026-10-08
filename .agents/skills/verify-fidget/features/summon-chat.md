@@ -22,11 +22,11 @@ Preconditions:
 - A real interactive display for Chat window proof; Xvfb can still prove the Summon verb.
 - Doctor green for the lane.
 
-- **macOS Summon (preferred).** Run `cargo run -p fidget-verify -- summon`. Real double-click, asserts `verbs:.*Summon`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/summon/`.
-- **Summon verb (X11 hand-rolled).** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool mousedown 1; sleep 0.12; xdotool mouseup 1; sleep 0.08; xdotool mousedown 1; sleep 0.12; xdotool mouseup 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$FIDGET_VERIFY_EVIDENCE/summon-chat/`.
-- **Chat window.** After the double-click, observe a Chat window belonging to the fidget. On X11 it is a `Fidget` class client titled with the Character's name (`xdotool search --name '^Buddy Bot$'` for the default Character) and its status bar reads `Idle` with an Advanced disclosure. Xvfb plus openbox is enough. Capture a screenshot with `FIDGET_CAPTURABLE=1` into evidence when the platform allows.
-- **Harness without sprite.** Chat Completer wiring without the overlay: `FIDGET_HARNESS=<name> scripts/probe-harness.sh` (exit `0` = end_turn). This does **not** prove Summon UI; record it as harness-only if used.
-- **Proof.** Require the Summon verb line for the gesture path. Treat Chat window visibility as a second observer when a GUI session exists.
+- **macOS Summon (preferred):** Run `cargo run -p fidget-verify -- summon`. Real double-click, asserts `verbs:.*Summon`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/summon/`.
+- **Summon verb (X11 hand-rolled):** After overlay is up (or after a successful `drive-overlay-x11.sh` with `--keep`-style hold if you extend the helper), locate sprite feet `pos()` from the last `frame:` line. Click the body above the feet: `xdotool mousemove --sync $X $(($Y - 40))`, then `xdotool mousedown 1; sleep 0.12; xdotool mouseup 1; sleep 0.08; xdotool mousedown 1; sleep 0.12; xdotool mouseup 1`. Assert `grep -E 'verbs:.*Summon' "$TRACE_LOG"`. Copy the matching lines into `$FIDGET_VERIFY_EVIDENCE/summon-chat/`.
+- **Chat window:** After the double-click, observe a Chat window belonging to the fidget. On X11 it is a `Fidget` class client titled with the Character's name (`xdotool search --name '^Buddy Bot$'` for the default Character) and its status bar reads `Idle` with an Advanced disclosure. Xvfb plus openbox is enough. Capture a screenshot with `FIDGET_CAPTURABLE=1` into evidence when the platform allows.
+- **Harness without sprite:** Chat Completer wiring without the overlay: `FIDGET_HARNESS=<name> scripts/probe-harness.sh` (exit `0` = end_turn). This does **not** prove Summon UI; record it as harness-only if used.
+- **Proof:** Require the Summon verb line for the gesture path. Treat Chat window visibility as a second observer when a GUI session exists.
 
 ## Gotchas
 

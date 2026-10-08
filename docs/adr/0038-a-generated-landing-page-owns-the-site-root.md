@@ -49,12 +49,12 @@ only.
 
 ## Considered Options
 
-- **Keep the directory at the root and point the About field at the README.**
+- **Keep the directory at the root and point the About field at the README:**
   A visitor from a post lands on GitHub's file view, with the pitch below the
   file list on a phone.
-- **A hand-written landing page.** The Described class. It drifts from the
+- **A hand-written landing page:** The Described class. It drifts from the
   README the first time either changes.
-- **Ship the Dated mockup at the root.** It is frozen by definition, so it
+- **Ship the Dated mockup at the root:** It is frozen by definition, so it
   would be wrong after the next character or Harness lands.
 
 ## Consequences

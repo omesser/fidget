@@ -11,14 +11,14 @@ chatty. A session wake spends tokens, so it is not a heartbeat.
 
 ## Considered Options
 
-- **Standalone inference API forever.** An OpenAI-compatible Completer for
+- **Standalone inference API forever:** An OpenAI-compatible Completer for
   idle Behaviors, a Harness for chat. Cheap ambient life without installing
   an agent — and two voices, two memories of what just happened. Rejected.
-- **Harness is the only model, including before attach.** No Completer at
+- **Harness is the only model, including before attach:** No Completer at
   all. Correct end state; leaves #11 with nothing to measure against Static
   until #16 lands. The HTTP path stays as a disposable Completer behind the
   same `Director` trait.
-- **Fixed interval (two minutes, or a settings slider).** Predictable, and
+- **Fixed interval (two minutes, or a settings slider):** Predictable, and
   a bill for scratching. Rejected for any path that reaches a model.
 
 ## Wake policy

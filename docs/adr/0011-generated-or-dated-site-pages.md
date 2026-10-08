@@ -72,18 +72,18 @@ generator enumerates and copies named files, never a source directory wholesale.
 
 - **A real landing page** — what the app is, screenshots, install links. Two
   front doors that drift.
-- **Mirroring `docs/SPEC.md`, the ADRs and `CONTEXT.md`.** github.com renders
+- **Mirroring `docs/SPEC.md`, the ADRs and `CONTEXT.md`:** github.com renders
   them, and Jekyll does not run here, so a mirror needs a build step in order to
   be worse.
-- **A downloads page.** GitHub Releases is that page and it updates itself.
-- **A Perch and physics sandbox.** A second implementation of `crates/core`
+- **A downloads page:** GitHub Releases is that page and it updates itself.
+- **A Perch and physics sandbox:** A second implementation of `crates/core`
   physics in JavaScript, ungeneratable from the Rust and guaranteed to drift.
   The best-looking idea here and the clearest reject.
-- **A Behavior and Primitive explorer.** It is a table, and tables are
+- **A Behavior and Primitive explorer:** It is a table, and tables are
   Markdown's home turf.
-- **An in-browser wasm demo.** Its own project, and the payoff misrepresents a
+- **An in-browser wasm demo:** Its own project, and the payoff misrepresents a
   thing whose whole point is sitting on top of your other windows.
-- **A version archive.** Machinery for a problem two pages do not have.
+- **A version archive:** Machinery for a problem two pages do not have.
 
 ## Consequences
 

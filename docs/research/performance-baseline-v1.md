@@ -12,11 +12,11 @@ Fidget is the product. A fidget is one running instance. Character stays the nam
 
 The rank is milliseconds of one core per second in the scenario that was measured. A cost that only happens while the pointer is on the sprite, or only while riding, is ranked on that rate.
 
-1. **Software paint of a moving overlay on this VM.** A 60 s read of `/proc`, pointer at (2, 2), held the heavier `WebKitWebProcess` at 83.8% of one core across 1475 walk frames and 612 climb frames. That is 838 ms of one core per second. Xtigervnc in that same window was 36.2%. The scripted 15 s walk from `scripts/bench-gpu-compositing-linux.sh`, 495 walk frames with the pointer away, held Xtigervnc at 54.5%, which is 545 ms per second. That script does not sample the fidget tree. Held-still idle on the same machine held the heavier `WebKitWebProcess` at 5.4% and Xtigervnc at 3.0%. GPU% is unavailable. `glxinfo -B` reports `llvmpipe` and acceleration off, and there is no DRM device. A Mac with a GPU measured 0.6% GPU and 0.06 W for the perched case, in the macOS GPU section.
+1. **Software paint of a moving overlay on this VM:** A 60 s read of `/proc`, pointer at (2, 2), held the heavier `WebKitWebProcess` at 83.8% of one core across 1475 walk frames and 612 climb frames. That is 838 ms of one core per second. Xtigervnc in that same window was 36.2%. The scripted 15 s walk from `scripts/bench-gpu-compositing-linux.sh`, 495 walk frames with the pointer away, held Xtigervnc at 54.5%, which is 545 ms per second. That script does not sample the fidget tree. Held-still idle on the same machine held the heavier `WebKitWebProcess` at 5.4% and Xtigervnc at 3.0%. GPU% is unavailable. `glxinfo -B` reports `llvmpipe` and acceleration off, and there is no DRM device. A Mac with a GPU measured 0.6% GPU and 0.06 W for the perched case, in the macOS GPU section.
 
-2. **Click-through mask rebuild while the pointer is on a moving sprite.** On the Grok Bot X11 desktop, a BMO walk under the cursor rebuilt at 26.7/s and 15.0 ms per call. Computed from those two published figures, that is 400 ms of one core per second of that walk. On the Windows workstation the walk-attributed subset was 44.4/s at 14.54 ms, which is 646 ms of one core per second. Both machines recorded 0.0/s with the pointer away from the sprite. Sources are [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) from [#968](https://github.com/omesser/fidget/pull/968) and [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md) from [#983](https://github.com/omesser/fidget/pull/983). This VM's release build, same opaque counts of 6290 to 7888, logged 11 rebuilds at 2.187 ms to 2.904 ms, mean 2.55 ms. The 5 s pointer-on-sprite window counted 8 of them, 1.60/s, and the walk aborted after 12 walk frames. Per-call time depends on the machine. The desktop rates are the ones that spend a large fraction of a core. Idle with the pointer away stays at 0.
+2. **Click-through mask rebuild while the pointer is on a moving sprite:** On the Grok Bot X11 desktop, a BMO walk under the cursor rebuilt at 26.7/s and 15.0 ms per call. Computed from those two published figures, that is 400 ms of one core per second of that walk. On the Windows workstation the walk-attributed subset was 44.4/s at 14.54 ms, which is 646 ms of one core per second. Both machines recorded 0.0/s with the pointer away from the sprite. Sources are [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) from [#968](https://github.com/omesser/fidget/pull/968) and [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md) from [#983](https://github.com/omesser/fidget/pull/983). This VM's release build, same opaque counts of 6290 to 7888, logged 11 rebuilds at 2.187 ms to 2.904 ms, mean 2.55 ms. The 5 s pointer-on-sprite window counted 8 of them, 1.60/s, and the walk aborted after 12 walk frames. Per-call time depends on the machine. The desktop rates are the ones that spend a large fraction of a core. Idle with the pointer away stays at 0.
 
-3. **macOS WindowSource poll while riding, once many windows are open.** Riding at 156 windows polled at 40.2 Hz with a median of 2.79 ms. The WindowSource section computes 112 ms of one core per second from that row, and the p95 was 10.8 ms. Riding at 56 windows was 68 ms per second. The sweep at 351 windows, idle only, had a p95 of 14.6 ms and a max of 39 ms. Idle polls at about 10 Hz, so one of those polls stalls one tick. Sources are the WindowSource section below, from [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). A quiet desk at about 50 windows is about 21 ms per second, which would not make this list.
+3. **macOS WindowSource poll while riding, once many windows are open:** Riding at 156 windows polled at 40.2 Hz with a median of 2.79 ms. The WindowSource section computes 112 ms of one core per second from that row, and the p95 was 10.8 ms. Riding at 56 windows was 68 ms per second. The sweep at 351 windows, idle only, had a p95 of 14.6 ms and a max of 39 ms. Idle polls at about 10 Hz, so one of those polls stalls one tick. Sources are the WindowSource section below, from [#1042](https://github.com/omesser/fidget/pull/1042) and [#1128](https://github.com/omesser/fidget/pull/1128). A quiet desk at about 50 windows is about 21 ms per second, which would not make this list.
 
 macOS idle host CPU ranks under those three. On a quiet Mac15,7, release build of `ecb92b8d`, four interleaved rounds, a perched fidget used 8.4% of one core, range 8.0 to 8.5. That is 84 ms of one core per second for as long as the fidget is perched, with 179.8 interrupt wakeups/s, range 178.9 to 186.4. Package-idle wakeups were 2.32/s, range 1.77 to 2.44. The per-thread census after the display-link fixes names the frame loop at about 35/s and the host `libpas` scavenger at about 27/s. `powermetrics` counted 187 interrupt wakeups/s for the host pid in that census launch. Source is [macos-idle-wakeups.md](./macos-idle-wakeups.md), quiet-machine table and the census under #761, from [#960](https://github.com/omesser/fidget/pull/960) and [#843](https://github.com/omesser/fidget/pull/843). Cluster idle residency stayed below what the instrument resolved. The same research file records that.
 
@@ -272,13 +272,13 @@ Baseline X server (60s sample, PID 1594):
 
 **Findings:**
 
-1. **High idle wakeup rate.** fidget idle shows ~271 wakeups/sec vs baseline 3.6/sec (75x increase). Hypothesis: unconditional frame loop sleep (~16ms = ~60Hz) plus additional subsystem polling.
+1. **High idle wakeup rate:** fidget idle shows ~271 wakeups/sec vs baseline 3.6/sec (75x increase). Hypothesis: unconditional frame loop sleep (~16ms = ~60Hz) plus additional subsystem polling.
 
-2. **VM measurement constraints.** C-state residency and system-wide wakeup counting unavailable. Context switches are a coarse proxy. Bare-metal measurements would provide more accurate power impact data.
+2. **VM measurement constraints:** C-state residency and system-wide wakeup counting unavailable. Context switches are a coarse proxy. Bare-metal measurements would provide more accurate power impact data.
 
-3. **Comparison to macOS target.** macOS issue [#431](https://github.com/omesser/fidget/issues/431) targets ~60 wakeups/sec idle. Linux VM shows 4.5x higher rate. Unknown how much is VM overhead vs real difference.
+3. **Comparison to macOS target:** macOS issue [#431](https://github.com/omesser/fidget/issues/431) targets ~60 wakeups/sec idle. Linux VM shows 4.5x higher rate. Unknown how much is VM overhead vs real difference.
 
-4. **Untested scenarios.** Walking, chat open, and window state changes require GUI automation not feasible in headless VM. Multi-monitor testing requires different environment.
+4. **Untested scenarios:** Walking, chat open, and window state changes require GUI automation not feasible in headless VM. Multi-monitor testing requires different environment.
 
 **Evidence:**
 
@@ -436,15 +436,15 @@ Re-run with `scripts/bench-gpu-compositing-linux.sh matrix --seconds 15`. Add `-
 
 **Findings:**
 
-1. **GPU% is unread.** The vendor tools exit because the VM has no DRM node. Publishing a 0 here would be a guess. The renderer string is llvmpipe with acceleration off, and the app log repeats the DRI3 failure from the [#432](https://github.com/omesser/fidget/issues/432) run.
+1. **GPU% is unread:** The vendor tools exit because the VM has no DRM node. Publishing a 0 here would be a guess. The renderer string is llvmpipe with acceleration off, and the app log repeats the DRI3 failure from the [#432](https://github.com/omesser/fidget/issues/432) run.
 
-2. **X server CPU is the number that moves.** Baseline 0.0%, idle perched 35.0%, walking with the pointer away 46.7%, hidden 0.8%. `xfwm4` stays near 1% or below. Inference from the renderer string: with llvmpipe and no DRM device, that CPU is the software paint of the overlay inside `Xtigervnc`. A bare-metal run with `radeontop`, `intel_gpu_top`, or `nvidia-smi` replaces the N/A column.
+2. **X server CPU is the number that moves:** Baseline 0.0%, idle perched 35.0%, walking with the pointer away 46.7%, hidden 0.8%. `xfwm4` stays near 1% or below. Inference from the renderer string: with llvmpipe and no DRM device, that CPU is the software paint of the overlay inside `Xtigervnc`. A bare-metal run with `radeontop`, `intel_gpu_top`, or `nvidia-smi` replaces the N/A column.
 
-3. **XShapeCombineMask stays at 0/s while the pointer is off the sprite.** Idle is 0 calls in 15s. Walking is 0 calls in 15s across 457 walk frames. The walking rate in this run is that 0.00/s. A later 5s window put the pointer on the sprite and the walk aborted. It logged 22 mask calls (4.40/s) and 8 walk frames, then react and talk. 4.40/s is that aborted window, not a sustained walk under the cursor. [#428](https://github.com/omesser/fidget/issues/428) measured 26.7 rebuilds/s when a walk stayed under the cursor. This issue leaves per-call time to that study.
+3. **XShapeCombineMask stays at 0/s while the pointer is off the sprite:** Idle is 0 calls in 15s. Walking is 0 calls in 15s across 457 walk frames. The walking rate in this run is that 0.00/s. A later 5s window put the pointer on the sprite and the walk aborted. It logged 22 mask calls (4.40/s) and 8 walk frames, then react and talk. 4.40/s is that aborted window, not a sustained walk under the cursor. [#428](https://github.com/omesser/fidget/issues/428) measured 26.7 rebuilds/s when a walk stayed under the cursor. This issue leaves per-call time to that study.
 
-4. **Chat open is a real Summon, with the pointer still on the sprite.** 17 mask calls in 15s (1.13/s). X server CPU in that window is 3.4%. The pointer was not parked away, so the mask rate is the cursor-over rate during chat, and the CPU drop against idle is under that same condition.
+4. **Chat open is a real Summon, with the pointer still on the sprite:** 17 mask calls in 15s (1.13/s). X server CPU in that window is 3.4%. The pointer was not parked away, so the mask rate is the cursor-over rate during chat, and the CPU drop against idle is under that same condition.
 
-5. **Hiding for a fullscreen window returns X server CPU near the baseline.** 0.8% against 0.0% with no client and 35.0% while perched. The compositor flag on xfwm4 stayed on. There is no uncomposited X11 row.
+5. **Hiding for a fullscreen window returns X server CPU near the baseline:** 0.8% against 0.0% with no client and 35.0% while perched. The compositor flag on xfwm4 stayed on. There is no uncomposited X11 row.
 
 **Evidence:**
 
@@ -595,9 +595,9 @@ Frame deltas count only consecutive frames where the first asked for the second.
 
 **Against the design claim.**
 
-- **60 fps while moving: confirmed.** Walking holds 59.9 fps, with one delta of 25 to 34 ms. Under full CPU load 5 of 287 deltas miss a vsync, and every one lands under 25 ms.
-- **Lag is one sample: confirmed.** The sprite is drawn one Engine tick behind, about 19 ms. Under load, p95 reaches 1.18 samples, because a late tick leaves the sprite held at the latest placement for a frame.
-- **"About 44 Hz, 16 to 38 ms" is out of date.** The Engine now ticks at 53 Hz. Idle and walking put 97% of tick gaps between 14 and 25 ms; load puts 87% there. The comment in `src/interpolate.js` now says so.
+- **60 fps while moving: confirmed:** Walking holds 59.9 fps, with one delta of 25 to 34 ms. Under full CPU load 5 of 287 deltas miss a vsync, and every one lands under 25 ms.
+- **Lag is one sample: confirmed:** The sprite is drawn one Engine tick behind, about 19 ms. Under load, p95 reaches 1.18 samples, because a late tick leaves the sprite held at the latest placement for a frame.
+- **"About 44 Hz, 16 to 38 ms" is out of date:** The Engine now ticks at 53 Hz. Idle and walking put 97% of tick gaps between 14 and 25 ms; load puts 87% there. The comment in `src/interpolate.js` now says so.
 
 **Why the Engine ticks at 53 Hz and not 60.** A 16 ms `sleep` on this machine returns after 20 ms. Measured in a separate process with `Time::HiRes::sleep`, 150 sleeps at each length:
 

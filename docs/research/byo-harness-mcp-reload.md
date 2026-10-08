@@ -49,7 +49,7 @@ Config lives in:
 - `--scope project`: `.mcp.json` in project root
 
 **Reload mechanism**: (**Fact**)
-- **No native reload without restart**. Must exit session and start new one.
+- **No native reload without restart:** Must exit session and start new one.
 - Config files are read at session startup only.
 - `/mcp reconnect` only re-establishes connections for already-configured servers; does **not** pick up new servers or changed URLs/tokens.
 - Feature requests exist (#34893, #46426) but not implemented as of 2026-09.
@@ -377,7 +377,7 @@ line instead.
 
 Two exceptions are worth knowing, and neither changes the recommendation.
 
-- **Hermes needs no restart, and not because anyone told it anything.** It stats
+- **Hermes needs no restart, and not because anyone told it anything:** It stats
   `config.yaml` every 5 seconds, and when the `mcp_servers` section specifically
   differs it disconnects, re-reads, reconnects, and refreshes the agent's tool
   list (read, in `cli.py`). So for Hermes the whole procedure is "save the file",

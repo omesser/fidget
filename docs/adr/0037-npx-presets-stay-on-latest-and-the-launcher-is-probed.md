@@ -51,15 +51,15 @@ owners.
 
 ## Rejected
 
-- **Pinned, integrity-checked adapter fetch.** It removes the cold `npx`
+- **Pinned, integrity-checked adapter fetch:** It removes the cold `npx`
   resolve and the silent upstream update. It is rejected for the version burden
   above: Fidget would own an adapter release train, and a compatibility matrix
   against whichever CLI version each user has installed. #1147 also checked the
   pinned adapters only as far as `initialize`, never a full session.
-- **Bundling Node.js as a sidecar.** It fails ADR-0035's size test.
-- **Compiled adapters (Bun or Deno).** They are larger still. Bun also links
+- **Bundling Node.js as a sidecar:** It fails ADR-0035's size test.
+- **Compiled adapters (Bun or Deno):** They are larger still. Bun also links
   LGPL-2 code statically.
-- **`bunx` or `pnpm dlx`.** They swap one runtime the user must install for
+- **`bunx` or `pnpm dlx`:** They swap one runtime the user must install for
   another, and change nothing else.
 
 ## Consequences

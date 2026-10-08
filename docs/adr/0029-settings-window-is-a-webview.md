@@ -49,13 +49,13 @@ The three native renderers and their verify scripts are deleted.
 
 ## Considered Options
 
-- **Keep three native renderers and fix them.** The bugs are fixable one at a
+- **Keep three native renderers and fix them:** The bugs are fixable one at a
   time. Rejected: fixes and verification are per renderer, and each new row
   type lands three times. The cost is not one bug, it is the multiplier.
-- **Native on macOS, webview elsewhere.** Keeps Aqua where the owner lives and
+- **Native on macOS, webview elsewhere:** Keeps Aqua where the owner lives and
   fixes Windows where it is worst. Rejected: it keeps the multiplier at two and
   makes one product look like two across machines.
-- **A webview in a native shell (native tab bar, web panes).** Rejected: the
+- **A webview in a native shell (native tab bar, web panes):** Rejected: the
   tab bar is the cheapest part to draw, and the join is another platform seam.
 
 ## Consequences

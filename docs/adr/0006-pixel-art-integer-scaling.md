@@ -14,11 +14,11 @@ wonder why it was not drawn at native resolution. This is the reason.
 
 ## Considered Options
 
-- **High-resolution sprites in a retro style.** Smooth at any DPI, and it looks
+- **High-resolution sprites in a retro style:** Smooth at any DPI, and it looks
   like a modern app cosplaying as Windows 95. Larger assets, more expensive to
   author, and the pixel grid — which is what made these characters readable at
   32px in the first place — is gone.
-- **Per-Character render mode.** Each package declares whether it wants pixelated
+- **Per-Character render mode:** Each package declares whether it wants pixelated
   or smooth rendering. Kept possible via a `render_mode` field in the Character
   Manifest, but not implemented now.
 

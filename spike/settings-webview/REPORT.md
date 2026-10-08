@@ -140,22 +140,22 @@ WebKit for everything used here.
 
 What it taught that reading did not:
 
-1. **It looks like the chat surface at first try.** `chat-ui.css` linked
+1. **It looks like the chat surface at first try:** `chat-ui.css` linked
    unchanged, `settings.css` reads only `var(--chat-*)` tokens (it would pass
    `tests/chat-ui-tokens.test.js`'s rule as written). No literal colour, radius
    or font. Theme consistency is free, and a second `.chat-ui-*` design
    recolours Settings too.
-2. **The class namespace is shared, and it bit.** `.frozen` in `chat-ui.css`
+2. **The class namespace is shared, and it bit:** `.frozen` in `chat-ui.css`
    is the Prompt tab's read-only prose box; my `.row.frozen` picked up its
    border and padding. Renamed to `.is-frozen`. A real `settings.css` should
    either import only the token block or prefix its classes.
-3. **Frozen and status are one attribute each.** `readonly`, `disabled` and a
+3. **Frozen and status are one attribute each:** `readonly`, `disabled` and a
    `<p class="status">` — the #625 class of bug cannot exist because a redraw
    is `render()` again from a fresh description; there is no separate
    `apply_enabled_states` pass to forget.
-4. **`<details>` is the disclosure #642/#660 were hand-building.** Closed
+4. **`<details>` is the disclosure #642/#660 were hand-building:** Closed
    reserves no space, the browser owns the toggle, a reader announces it.
-5. **`<select>` is the #674 answer.** One dropdown look on three OSes from CSS;
+5. **`<select>` is the #674 answer:** One dropdown look on three OSes from CSS;
    on macOS WKWebView the opened menu is still AppKit's.
 6. **Two "null" bugs in 15 minutes** — `append(null)` prints "null", and the
    snapshot's view keys did not match row ids. Both were visible in a
@@ -233,7 +233,7 @@ lands twice. Keep the window short and freeze native to bug fixes only.
 
 ## Conditions and risks I would not accept
 
-1. **Do not start until the controller is pulled into Rust.** Triplicated
+1. **Do not start until the controller is pulled into Rust:** Triplicated
    commit logic (`director_draft`, `fill_shortcut`, apply/cancel) becomes one
    `settings_event`; otherwise the webview becomes a fourth copy.
 2. **Do not delete the scripts before** `node --test` covers the flat control
@@ -244,7 +244,7 @@ lands twice. Keep the window short and freeze native to bug fixes only.
    Escape closes, Enter applies, focus visible on every control.
 4. **Raise-above-overlay** is verified live on all three platforms; the macOS
    `raise` stays.
-5. **Semantic HTML only.** No div-buttons, no custom dropdown widgets; the
+5. **Semantic HTML only:** No div-buttons, no custom dropdown widgets; the
    `<select>` stays a `<select>`. This is the accessibility guarantee.
 6. **No build step, no bundler, no dependency** (ADR-0010's stance; TypeScript
    is #692 and separate).

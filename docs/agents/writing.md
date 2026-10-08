@@ -56,11 +56,11 @@ released, so no version is derived from it; the value is legibility.
 
 Two rules the type table cannot settle:
 
-- **Classify by what the change is for, not by which files it touches.** A fix
+- **Classify by what the change is for, not by which files it touches:** A fix
   that ships with the documentation correcting it is a `fix`. Tests written for
   behavior landing in the same pull request are part of that `feat`; `test` is
   for a pull request whose product *is* the test.
-- **A scope is optional and only earns its place when it narrows something.**
+- **A scope is optional and only earns its place when it narrows something:**
   `engine`, `shell`, `character`, `harness`. Skip it when the description
   already says where the change lives.
 
@@ -105,6 +105,11 @@ desktop. Open the image at full size before uploading it. The
 Check an image in only when it documents an asset that lives here.
 `branding/app-icon-preview.png` is the worked example, and it earns its place
 next to the icon it previews, not by being in a pull request description.
+
+## A bold bullet title ends in a colon
+
+A bullet that opens with a bold title separates it from the detail with a colon
+inside the bold, `- **Title:** detail`, never a full stop.
 
 ## An agent signs what it writes on GitHub
 

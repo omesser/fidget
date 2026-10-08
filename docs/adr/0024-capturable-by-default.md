@@ -11,13 +11,13 @@ from captures should be a choice the user makes, not the default.
 
 ## Decision
 
-1. **Default is capturable.** With no setting, the character appears in
+1. **Default is capturable:** With no setting, the character appears in
    screenshots and screen shares.
-2. **Opt-out lives in Presence.** One checkbox, "Appear in screenshots and screen
+2. **Opt-out lives in Presence:** One checkbox, "Appear in screenshots and screen
    shares", checked by default. It is a user choice, not a Development row.
-3. **Platforms that can exclude honour it.** macOS and Windows read the setting.
+3. **Platforms that can exclude honour it:** macOS and Windows read the setting.
    Linux has no exclusion API and stays capturable.
-4. **The environment override stays.** It forces either state for verification
+4. **The environment override stays:** It forces either state for verification
    and wins over the stored setting.
 
 ## Consequences
@@ -28,9 +28,9 @@ from captures should be a choice the user makes, not the default.
 
 ## Alternatives Considered
 
-- **Stay excluded by default, add an opt-in.** Keeps the WYSIWYG mismatch and
+- **Stay excluded by default, add an opt-in:** Keeps the WYSIWYG mismatch and
   makes the common case need action.
-- **Three states: default, always visible, always hidden.** A binary choice does
+- **Three states: default, always visible, always hidden:** A binary choice does
   not need a third state.
-- **Keep it Development-only.** Hides a privacy choice in a tab most users never
+- **Keep it Development-only:** Hides a privacy choice in a tab most users never
   open.

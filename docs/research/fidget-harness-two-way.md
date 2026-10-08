@@ -397,11 +397,11 @@ only reachable by a client that implements it, and none of the five harnesses
 does. Their config schemas offer `command`/`args` or a URL. So there are exactly
 two ways for a long-lived app to serve MCP:
 
-1. **Streamable HTTP bound to `127.0.0.1`.** Works with Claude Code
+1. **Streamable HTTP bound to `127.0.0.1`:** Works with Claude Code
    (`type: "http"`), Grok (`--transport http`), opencode, and any ACP agent
    advertising `mcpCapabilities.http`. No child process, no invented framing,
    no lifetime inversion. This is the answer to #166.
-2. **A stdio shim that dials the app.** The published binary stays `fidget-mcp`
+2. **A stdio shim that dials the app:** The published binary stays `fidget-mcp`
    with `rmcp::transport::stdio()`, but it holds no state: it forwards to the
    running Tauri app over a Unix socket, named pipe, or loopback TCP. Being a
    child of one agent session is then harmless, because the child is disposable.
@@ -451,15 +451,15 @@ advertises an A2A server endpoint. Don't stretch it.
 
 ## Recommendation
 
-1. **Implement fidget as an ACP client in Rust.** Add
+1. **Implement fidget as an ACP client in Rust:** Add
    `agent-client-protocol` and implement the `Client` trait. `initialize`,
    then one `session/new` per app lifetime; hold the `sessionId`.
-2. **Fill the `Completer` seam with one `session/prompt` per wake.** The adapter
+2. **Fill the `Completer` seam with one `session/prompt` per wake:** The adapter
    sends the Character Prompt, accumulates `agent_message_chunk` content, and
    returns when the `session/prompt` response arrives; `stopReason != "end_turn"`
    maps to `Wake::Failed` so Static Director takes over, per ADR-0008. Reactive
    and backed-off proactive wakes are the same call with different triggers.
-3. **Hand the harness fidget's tools in `session/new`.** Prefer
+3. **Hand the harness fidget's tools in `session/new`:** Prefer
    `{"type": "http", "name": "fidget", "url": "http://127.0.0.1:<port>/mcp"}`
    when `initialize` reports `mcpCapabilities.http`; fall back to the stdio shim
    otherwise, since stdio support is mandatory for every agent. This is the
@@ -479,7 +479,7 @@ advertises an A2A server endpoint. Don't stretch it.
    a transcript. Forward `session/request_permission` to the harness's own
    surface; never answer it automatically (decision 11, and the Hermes/Buzz
    warning above).
-7. **Pi gets a second adapter, not a compromise.** Fidget → Pi is
+7. **Pi gets a second adapter, not a compromise:** Fidget → Pi is
    `pi --mode rpc` with `{"type":"prompt",...}` and `streamingBehavior`; Pi →
    Fidget is a Pi extension wrapping the same tool set, because Pi has no MCP.
    The shipped path is now the registry adapter; Fidget→Pi is `npx -y pi-acp@latest`; Pi→Fidget tools are still a Pi extension, not MCP. Point at #607.
@@ -491,21 +491,21 @@ advertises an A2A server endpoint. Don't stretch it.
 
 ## Non-goals / rejected
 
-- **MCP sampling as the `Completer`.** Deprecated in `2026-07-28` with the
+- **MCP sampling as the `Completer`:** Deprecated in `2026-07-28` with the
   migration path "integrate directly with LLM provider APIs", and structurally
   wrong regardless: the server supplies the tools, the server runs the loop, and
   "The list of messages in a sampling request **SHOULD NOT** be retained between
   separate requests." That is ADR-0008's split brain with extra steps.
-- **MCP as the Fidget → Harness direction, in any form.** "No other message
+- **MCP as the Fidget → Harness direction, in any form:** "No other message
   direction exists." A fidget tool call cannot start a turn.
-- **A custom TCP MCP transport as the #166 answer.** Allowed by the spec, dialled
+- **A custom TCP MCP transport as the #166 answer:** Allowed by the spec, dialled
   by no harness. Loopback Streamable HTTP plus a stdio shim covers all five.
-- **Spawning the Claude Agent SDK behind a private JSON protocol.** Same
+- **Spawning the Claude Agent SDK behind a private JSON protocol:** Same
   subprocess cost as ACP with none of the specification; DESIGN.md decision 17
   already rejected the stdout-scraping version of this.
-- **A2A.** Cross-organisation, opaque-execution, Agent-Card-discovered remote
+- **A2A:** Cross-organisation, opaque-execution, Agent-Card-discovered remote
   peers. Wrong unit, wrong visibility, and unimplemented by the five harnesses.
-- **MCP elicitation as a chat surface.** It is client-input-to-server inside a
+- **MCP elicitation as a chat surface:** It is client-input-to-server inside a
   tool call (Claude Code renders form and URL modes), not a way for fidget to
   ask the model anything.
 

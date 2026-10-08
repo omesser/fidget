@@ -8,11 +8,11 @@ decides individual animation frames. Who that model is, and how rare
 
 ## Considered Options
 
-- **Prompt-at-authoring only.** The Personality Prompt produces a behavior config
+- **Prompt-at-authoring only:** The Personality Prompt produces a behavior config
   once; runtime is a pure local state machine. Zero cost, fully offline,
   deterministic — but the Character never surprises you. Retained as the
   configurable fallback when no model is reachable.
-- **Model-in-the-loop.** The model continuously decides what the sprite does.
+- **Model-in-the-loop:** The model continuously decides what the sprite does.
   Charming for exactly one demo video, then a battery, latency, and cost
   disaster: paying tokens for a cartoon to decide to scratch itself.
 

@@ -25,9 +25,9 @@ Accessibility dump of a window that is already open are fine.
 
 ## Three steps
 
-1. **Set everything up first.** Build, write the fixture, compile helpers,
+1. **Set everything up first:** Build, write the fixture, compile helpers,
    pick the evidence directory. Nothing on the GUI yet.
-2. **Post a short prompt.** Say what will happen on screen, whether input will
+2. **Post a short prompt:** Say what will happen on screen, whether input will
    be sent, and the expected and maximum duration. For a scenario, read these
    from its header.
 
@@ -35,7 +35,7 @@ Accessibility dump of a window that is already open are fine.
    > focus, two window screenshots. No input sent. About 45 s, 2 min at most.
    > Go?
 
-3. **Wait for an explicit go-ahead for that run.** An earlier yes does not
+3. **Wait for an explicit go-ahead for that run:** An earlier yes does not
    carry over to the next run, a retry, or a different scenario.
 
 ## No go-ahead

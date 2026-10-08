@@ -170,15 +170,15 @@ Landing stays visible (#831 already shipped). Issue #949 (Harness Apply/Connect 
 
 Based on Done-when checklist, decisions (Oded, 2026-09-23), and this research:
 
-1. **#929: Settings/landing copy: Distinguish first-party ACP vs npx-adapter presets.** When presenting harness options, clarify which need Node (Claude/Codex/Pi) vs which are standalone CLIs (hermes/opencode/grok/cursor-agent). Helps user choose zero-dep option when possible. Includes install URLs per preset in missing-launcher messages.
+1. **#929: Settings/landing copy: Distinguish first-party ACP vs npx-adapter presets:** When presenting harness options, clarify which need Node (Claude/Codex/Pi) vs which are standalone CLIs (hermes/opencode/grok/cursor-agent). Helps user choose zero-dep option when possible. Includes install URLs per preset in missing-launcher messages.
 
-2. **#930: Named preset for Goose.** Add `launch()` row + landing button for goose (zero-npx, open-source local agent). Includes smoke test via probe-harness.sh. LOCKED decision: proceed.
+2. **#930: Named preset for Goose:** Add `launch()` row + landing button for goose (zero-npx, open-source local agent). Includes smoke test via probe-harness.sh. LOCKED decision: proceed.
 
-3. **#948: ADR: Runtime dependency philosophy.** Document "self-contain vs declare" framework for future deps. Criteria: size, licenses, update cadence, user install base, required vs optional. Filed; not written in this PR.
+3. **#948: ADR: Runtime dependency philosophy:** Document "self-contain vs declare" framework for future deps. Criteria: size, licenses, update cadence, user install base, required vs optional. Filed; not written in this PR.
 
-4. **#949: Harness Apply/Connect + chat "initializing…".** Chat surface UX when harness is starting. Filed.
+4. **#949: Harness Apply/Connect + chat "initializing…":** Chat surface UX when harness is starting. Filed.
 
-5. **#950: Sticky inline missing-dep message.** Sticky inline error (copy-pasteable), not toast. Keep visible until fixed or intentional user action (Retry, change harness, explicit dismiss). Filed.
+5. **#950: Sticky inline missing-dep message:** Sticky inline error (copy-pasteable), not toast. Keep visible until fixed or intentional user action (Retry, change harness, explicit dismiss). Filed.
 
 **Issue #928 closed not planned.** Node bundling spike not needed. Decision: declare Node, not bundle.
 

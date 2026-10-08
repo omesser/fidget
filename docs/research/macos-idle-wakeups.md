@@ -677,34 +677,34 @@ section is the wrong one. See "Does fidget keep the machine awake?" above.
 
 ## Gotchas
 
-- **Filter by PID, never by process name alone.** `powermetrics` is
+- **Filter by PID, never by process name alone:** `powermetrics` is
   system-wide. During this task a second, unrelated `fidget` process
   (another agent's own build) appeared in a real capture under a different
   PID. `parse-powermetrics.py --process fidget` without `--pid` will warn
   and silently pick whichever line comes first in that sample — always pass
   `--pid`, which `bench-wakeups-macos.sh` prints on every run.
-- **A single capture per branch is not a measurement, it is a sample.** The
+- **A single capture per branch is not a measurement, it is a sample:** The
   first draft of this document reported one 60-second run per branch as a
   65–75% reduction. Interleaved repetition (three runs per branch, A/B
   alternating) showed the true per-branch spread is wider than that gap.
   Do not trust a single A-vs-B comparison on this machine; interleave and
   report medians and ranges, or say explicitly that a pair is a single
   sample and derive no percentage from it (see Chat-open).
-- **`osascript ... click at` does not work on this overlay.** See Tools;
+- **`osascript ... click at` does not work on this overlay:** See Tools;
   use `click-cursor.swift`, and use the shared one (#728's), not a fork of
   it — two scripts at the same path is a silent collision, not a merge
   conflict git will catch.
-- **The sprite falls before it lands.** Compute the click point only after a
+- **The sprite falls before it lands:** Compute the click point only after a
   `Grounded`/`Perched` frame line, not the first `frame:` line seen.
-- **`sudo powermetrics` needs non-interactive sudo.** This environment had
+- **`sudo powermetrics` needs non-interactive sudo:** This environment had
   it (`sudo -n true` succeeded with no prompt). Where it does not, these
   captures cannot run unattended; there is no non-root substitute for
   per-process wakeup counts on macOS that this task found.
-- **This machine is not quiet, and the numbers say so.** See Headline. Do
+- **This machine is not quiet, and the numbers say so:** See Headline. Do
   not read a single capture as a stable constant; a rerun on a quiet
   machine is expected to disagree. One has since run, and it did disagree
   on the spreads and agree on the verdict — see "The quiet-machine result".
-- **A build immediately before a capture is a build during it.** `cargo build`
+- **A build immediately before a capture is a build during it:** `cargo build`
   is not reliably a no-op on a second invocation in this tree, and the load
   average it leaves behind outlives the process by minutes. Put the build in
   its own step and gate the first capture on `sysctl -n vm.loadavg` coming
