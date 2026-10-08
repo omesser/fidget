@@ -183,6 +183,16 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
+    fn codex_mcp_config(&self) -> Option<(String, String)> {
+        if self.name != "codex" {
+            return None;
+        }
+        let endpoint = crate::mcp_http::endpoint()?;
+        let config = codex_fidget_config(std::env::var("CODEX_CONFIG").ok().as_deref(), &endpoint)?;
+        let (_, token) = endpoint.registration();
+        Some((config, token))
+    }
+
     /// The version flag for this launcher. npx presets probe npx itself; first-party
     /// CLIs probe their own binary.
     fn version_flag(&self) -> &str {
@@ -242,6 +252,10 @@ impl Launch {
                 command.env("OPENCODE_CONFIG_CONTENT", config);
             }
         }
+        if let Some((config, token)) = self.codex_mcp_config() {
+            command.env("CODEX_CONFIG", config);
+            command.env(fidget_mcp_server::TOKEN_VAR, token);
+        }
         isolate_from_interrupt(&mut command);
         command
     }
@@ -249,6 +263,32 @@ impl Launch {
     fn line(&self) -> String {
         self.argv.join(" ")
     }
+}
+
+fn codex_fidget_config(
+    existing: Option<&str>,
+    endpoint: &crate::mcp_http::Endpoint,
+) -> Option<String> {
+    let server = format!("fidget_attached_{}", std::process::id());
+    let mut config: Value =
+        existing.map_or_else(|| Some(json!({})), |text| serde_json::from_str(text).ok())?;
+    let servers = config
+        .as_object_mut()?
+        .entry("mcp_servers")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()?;
+    if servers.contains_key(&server) {
+        return None;
+    }
+    servers.insert(
+        server,
+        json!({
+            "url": endpoint.url,
+            "bearer_token_env_var": fidget_mcp_server::TOKEN_VAR,
+            "default_tools_approval_mode": "approve"
+        }),
+    );
+    Some(config.to_string())
 }
 
 fn opencode_fidget_permissions(existing: Option<&str>) -> Option<String> {
@@ -1814,10 +1854,17 @@ impl Session {
             .as_path();
         let model = self.completer_model();
         let effort = crate::dev_flags::director_reasoning_effort();
+        // codex-acp replaces its session `mcp_servers` config when ACP also
+        // supplies servers, which would discard Fidget's scoped approval.
+        let mcp_for_wire = if self.launch.codex_mcp_config().is_some() {
+            None
+        } else {
+            mcp.clone()
+        };
         let opened = match wire.open(
             saved.clone(),
             cwd,
-            mcp.clone(),
+            mcp_for_wire,
             self.launch.name == "claude",
             self.attach_timeout(),
             &model,
@@ -4108,6 +4155,55 @@ mod tests {
     }
 
     #[test]
+    fn codex_inline_config_approves_only_the_fidget_server() {
+        let (calls, _rx) = mpsc::channel();
+        let endpoint = crate::mcp_http::serve(calls).unwrap();
+        let config = codex_fidget_config(
+            Some(r#"{"model":"example","mcp_servers":{"other":{"command":"other"}}}"#),
+            &endpoint,
+        )
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&config).unwrap();
+        assert_eq!(parsed["model"], "example");
+        assert_eq!(parsed["mcp_servers"]["other"]["command"], "other");
+        let server = format!("fidget_attached_{}", std::process::id());
+        assert_eq!(parsed["mcp_servers"][server.as_str()]["url"], endpoint.url);
+        assert_eq!(
+            parsed["mcp_servers"][server.as_str()]["bearer_token_env_var"],
+            fidget_mcp_server::TOKEN_VAR
+        );
+        assert_eq!(
+            parsed["mcp_servers"][server.as_str()]["default_tools_approval_mode"],
+            "approve"
+        );
+        assert!(!config.contains(&endpoint.registration().1));
+        assert!(codex_fidget_config(Some("invalid json"), &endpoint).is_none());
+        let existing_fidget = codex_fidget_config(
+            Some(r#"{"mcp_servers":{"fidget":{"command":"own","default_tools_approval_mode":"prompt"}}}"#),
+            &endpoint,
+        )
+        .unwrap();
+        let existing_fidget: Value = serde_json::from_str(&existing_fidget).unwrap();
+        assert_eq!(existing_fidget["mcp_servers"]["fidget"]["command"], "own");
+        assert_eq!(
+            existing_fidget["mcp_servers"]["fidget"]["default_tools_approval_mode"],
+            "prompt"
+        );
+        let conflicting = format!(r#"{{"mcp_servers":{{"{server}":{{"command":"own"}}}}}}"#);
+        assert!(codex_fidget_config(Some(&conflicting), &endpoint).is_none());
+
+        let (fx, mut session) = Fixture::new("hello");
+        session.launch.name = "codex".into();
+        let expected_acp_server = usize::from(session.launch.codex_mcp_config().is_none());
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("mcp=http"), expected_acp_server);
+        session.shutdown();
+    }
+
+    #[test]
     fn opencode_inline_policy_preserves_other_permissions() {
         let config = opencode_fidget_permissions(Some(
             r#"{"model":"example/model","permission":{"bash":"ask","other_*":"deny"}}"#,
@@ -4551,6 +4647,7 @@ mod tests {
             let launch = launch(Some(name)).unwrap();
             let endpoint_was_served = crate::mcp_http::endpoint().is_some();
             let inline_config = std::env::var("OPENCODE_CONFIG_CONTENT").ok();
+            let codex_config = launch.codex_mcp_config();
             let command = launch.command(&tmp_attach(), true);
             let mut env: Vec<_> = command
                 .get_envs()
@@ -4566,6 +4663,20 @@ mod tests {
                     assert_eq!(env, expected);
                 } else {
                     assert!(env.is_empty() || env == expected);
+                }
+            } else if name == "codex" {
+                if let Some((config, _)) = codex_config {
+                    assert_eq!(env, ["CODEX_CONFIG", fidget_mcp_server::TOKEN_VAR]);
+                    assert_eq!(
+                        command
+                            .get_envs()
+                            .find(|(key, _)| *key == "CODEX_CONFIG")
+                            .and_then(|(_, value)| value)
+                            .and_then(|value| value.to_str()),
+                        Some(config.as_str())
+                    );
+                } else {
+                    assert!(env.is_empty());
                 }
             } else if name == "opencode" {
                 let expected = endpoint_was_served
