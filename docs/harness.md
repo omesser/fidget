@@ -273,7 +273,7 @@ Inbound wakes are still the one Director session per Character Instance. A Harne
 
 #### Visibility
 
-- **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives. Currently labeled "inbound wake" (interim; #1394 tracks clearer product copy).
+- **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled `unprompted (AI)`: the row reads `Name · unprompted (AI)`, in the same row form as `unprompted` and `when poked`.
 - **Bubble and Behaviors.** The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
 - **Director wake and Pace participation.** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
 
@@ -293,7 +293,6 @@ Multiple Harness fires before Fidget's next prompt previously piled into one und
 - **Attribution gaps.** Between-turn asks are attributed to whichever Instance is mid-turn, not the Instance whose session asked. A Fidget turn treats an update for another session as its own. Both require per-session tracking.
 - **Live Harness scheduled-fire prove.** Unit and fake-ACP proof shipped (#1370, #1383); proving with a real Harness cron is optional follow-on.
 - **Memory scheduling.** Harness cron is session-scoped, jittery, and not portable across Directors. A systematic parse-and-act path for reminders committed to Memory (due-at / remind facts) is future work and does not block this contract.
-- **Chat label wording.** The "inbound wake" label is interim technical wording. #1394 tracks clearer product copy for the Chat row.
 
 ### Setting up `pi`
 

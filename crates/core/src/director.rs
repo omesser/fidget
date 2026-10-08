@@ -76,6 +76,14 @@ pub fn reacting_to(happened: &Happened) -> String {
     }
 }
 
+/// Chat row label when the character's agent spoke on its own between Fidget
+/// turns. Sibling of the `"unprompted"` arm in `reacting_to`: the row reads
+/// `Name · unprompted (AI)`. Not derived from `Happened`. Inbound wake still
+/// uses `Happened::Proactive` for Pace and the status bar.
+pub fn unprompted_ai() -> String {
+    "unprompted (AI)".to_string()
+}
+
 /// The same fact as `happened_word`, in the Chat surface's status bar.
 /// A second vocabulary because the bar must not wrap on a 420-point window.
 /// Nine characters is the longest word here; `chat-status.js` measures against it.
