@@ -2009,9 +2009,9 @@ impl Completer for Session {
             .and_then(|serving| serving.clone());
         let owners = self.owners.lock().ok();
         self.asked.lock().is_ok_and(|asked| {
-            asked.values().any(|asker| {
-                asker.owed_by(instance, owners.as_deref(), serving.as_deref())
-            })
+            asked
+                .values()
+                .any(|asker| asker.owed_by(instance, owners.as_deref(), serving.as_deref()))
         })
     }
 }
@@ -3594,7 +3594,10 @@ mod tests {
                         .unwrap_or("?")
                         .to_string();
                     record(count, &format!("perm:{outcome}"));
-                    if outcome == "selected" && script != "permission-stall" && script != "crosstalk" {
+                    if outcome == "selected"
+                        && script != "permission-stall"
+                        && script != "crosstalk"
+                    {
                         if script == "permission-after-work" {
                             thread::sleep(ASK_WORK);
                         }
@@ -5695,13 +5698,20 @@ mod tests {
         );
         // A's turn already ended with B's ask still open.
         assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
-        assert!(session.awaiting_user("buddy-b"), "ending A's turn cancelled B");
+        assert!(
+            session.awaiting_user("buddy-b"),
+            "ending A's turn cancelled B"
+        );
         session.answer_permission(&ask.request, "allow");
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while fx.count("perm:selected") == 0 && std::time::Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
         }
-        assert_eq!(fx.count("perm:selected"), 1, "B's later answer was cancelled");
+        assert_eq!(
+            fx.count("perm:selected"),
+            1,
+            "B's later answer was cancelled"
+        );
         assert!(!session.awaiting_user("buddy-b"), "the answer left B owing");
         session.shutdown();
     }
