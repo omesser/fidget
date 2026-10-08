@@ -21,6 +21,11 @@ pub(crate) const CHAT_OPENING_EVENT: &str = "chat-opening";
 /// does with it, and why.
 pub(crate) const CHAT_SESSION_EVENT: &str = "chat-session";
 
+/// What a loaded session said before this run, as the lines the window
+/// draws above its log. Not `CHAT_EVENT`: these answer no question the window
+/// is waiting on, and are not a wake (#1393).
+pub(crate) const CHAT_RESTORED_EVENT: &str = "chat-restored";
+
 /// Forwarded `session/request_permission` to every open Chat surface. The
 /// session is shared and the Shell does not know which window the user is
 /// looking at. The first answer wins. fidget never answers it.

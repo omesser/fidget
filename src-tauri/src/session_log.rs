@@ -9,6 +9,8 @@ use std::time::SystemTime;
 
 use tauri::{Emitter, Manager};
 
+use crate::harness::Replayed;
+
 /// Whose row a remembered turn is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Who {
@@ -38,6 +40,8 @@ struct Thinking {
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
     thinking: BTreeMap<String, Thinking>,
+    /// What a loaded session replayed (#1393), drawn above `turns`.
+    restored: BTreeMap<String, Vec<Replayed>>,
 }
 
 impl Log {
@@ -121,6 +125,15 @@ impl Log {
             });
     }
 
+    /// A loaded session's replay, in place of any this Instance held.
+    pub fn restore(&mut self, instance: &str, history: Vec<Replayed>) {
+        self.restored.insert(instance.to_string(), history);
+    }
+
+    pub fn restored(&self, instance: &str) -> Vec<Replayed> {
+        self.restored.get(instance).cloned().unwrap_or_default()
+    }
+
     pub fn replay(&self, instance: &str) -> Vec<Turn> {
         self.turns.get(instance).cloned().unwrap_or_default()
     }
@@ -131,6 +144,7 @@ impl Log {
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
         self.thinking.remove(instance);
+        self.restored.remove(instance);
     }
 }
 
@@ -169,6 +183,16 @@ pub fn remember_them(
     with_log(app, |log| {
         log.remember_them(instance, said, reacting_to, at)
     });
+}
+
+pub fn restore(app: &tauri::AppHandle, instance: &str, history: Vec<Replayed>) {
+    with_log(app, |log| log.restore(instance, history));
+}
+
+pub fn restored(app: &tauri::AppHandle, instance: &str) -> Vec<Replayed> {
+    app.try_state::<Mutex<Log>>()
+        .and_then(|held| held.lock().ok().map(|log| log.restored(instance)))
+        .unwrap_or_default()
 }
 
 pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
@@ -284,6 +308,36 @@ mod tests {
         assert_eq!(turns[1].said.as_deref(), Some("what are you standing on?"));
         assert_eq!(turns[2].who, Who::Them);
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
+    }
+
+    /// Production change that would fail this: splicing a loaded session's
+    /// history into this run's turns, stacking a second restore on the first,
+    /// or keeping it after the session is replaced (#1393).
+    #[test]
+    fn restored_history_stands_apart_once_until_the_session_goes() {
+        let mut log = Log::new();
+        log.remember_you("buddy-1", "are you back?", UNIX_EPOCH);
+        let reply = |text: &str| Replayed::Reply {
+            text: text.to_string(),
+        };
+
+        log.restore("buddy-1", vec![reply("Hello from before")]);
+        log.restore("buddy-1", vec![reply("Hello from before"), reply("Done.")]);
+        log.restore("buddy-2", vec![reply("Other window")]);
+
+        assert_eq!(
+            log.restored("buddy-1"),
+            [reply("Hello from before"), reply("Done.")]
+        );
+        let turns: Vec<_> = log
+            .replay("buddy-1")
+            .iter()
+            .map(|turn| (turn.who, turn.said.clone()))
+            .collect();
+        assert_eq!(turns, [(Who::You, Some("are you back?".to_string()))]);
+        log.forget("buddy-1");
+        assert_eq!(log.restored("buddy-1"), []);
+        assert_eq!(log.restored("buddy-2"), [reply("Other window")]);
     }
 
     /// Production change that would fail this: forgetting every Instance's
