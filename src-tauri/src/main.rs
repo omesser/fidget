@@ -2310,8 +2310,8 @@ fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
 
 /// A loaded session's history, into its Instance's log and open window. Not
 /// sent to the frame loop: nothing is addressed and Pace is untouched (#1393).
-/// Under the lock `chat_ready` replays under, so a window opening now draws it
-/// once.
+/// A window that listens before `chat_ready` reads the log hears it here and
+/// again in that replay. `restored()` in chat.js replaces, so it draws once.
 fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;

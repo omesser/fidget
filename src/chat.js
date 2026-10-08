@@ -780,7 +780,14 @@ function newSession(why) {
 // in the log. No stamp: the replay carries no time. Not a turn, so a typed
 // question waiting below never takes one of these as its answer. The label is
 // an `.i-name`, which `showWho` fills if the opening has not landed yet.
+// Replaces any block already drawn: a window that listens before the load lands
+// hears it live and again from `chat_ready`.
+let restoredBlock = [];
 function restored(lines) {
+  for (const node of restoredBlock) {
+    node.remove();
+  }
+  restoredBlock = [];
   if (!lines.length) {
     return;
   }
@@ -797,7 +804,8 @@ function restored(lines) {
     row.append(cluster, body);
     return row;
   });
-  empty.after(heading, ...rows);
+  restoredBlock = [heading, ...rows];
+  empty.after(...restoredBlock);
   log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
 }
 

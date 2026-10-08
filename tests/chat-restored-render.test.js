@@ -1,6 +1,7 @@
 // The Chat surface itself, driven headless the way chat-thinking-render.test.js
 // drives it: a line typed after a restart, the loaded session's history
-// arriving while it waits, and the answer landing on the line (#1393).
+// arriving while it waits, and the answer landing on the line (#1393). And a
+// window that opens as the load lands, which hears the history twice.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -45,7 +46,7 @@ const OPENING = {
   prompt_limit: 2000,
 };
 
-function drive() {
+function drive(steps) {
   const stub = `
 <script>
   const heard = {};
@@ -77,11 +78,7 @@ function drive() {
   async function run() {
     while (!heard["chat-opening"] || !heard["chat-restored"]) await tick();
     while (document.getElementById("line").disabled) await tick();
-    document.getElementById("line").value = "are you back?";
-    document.getElementById("composer").requestSubmit();
-    while (!document.querySelector("#log > .row.them")) await tick();
-    emit("chat-restored", ["Hello from before", "Still **here**"]);
-    emit("chat", { said: "Back now.", busy: false, reacting_to: null, you: false, at: null, error: null });
+${steps}
     const out = document.createElement("pre");
     out.id = "probe";
     out.textContent = JSON.stringify({ rows: rows() });
@@ -128,7 +125,12 @@ test(
   "a loaded session's history sits above the waiting line, and the answer still lands on it",
   { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
-    const report = drive();
+    const report = drive(`
+    document.getElementById("line").value = "are you back?";
+    document.getElementById("composer").requestSubmit();
+    while (!document.querySelector("#log > .row.them")) await tick();
+    emit("chat-restored", ["Hello from before", "Still **here**"]);
+    emit("chat", { said: "Back now.", busy: false, reacting_to: null, you: false, at: null, error: null });`);
     assert.equal(report.error, undefined, report.error);
     assert.deepEqual(report.rows, [
       { kind: "note", label: null, stamped: false, text: "Earlier in this session." },
@@ -136,6 +138,24 @@ test(
       { kind: "restored", label: "Buddy Bot", stamped: false, text: "Still here" },
       { kind: "you", label: "You", stamped: true, text: "are you back?" },
       { kind: "them", label: "Buddy Bot", stamped: true, text: "Back now." },
+    ]);
+  },
+);
+
+// The load lands after this window listens but before `chat_ready` reads the
+// log, so the Shell sends the history live and again on the replay.
+test(
+  "a window that hears the history twice draws it once",
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
+  () => {
+    const report = drive(`
+    emit("chat-restored", ["Hello from before", "Still **here**"]);
+    emit("chat-restored", ["Hello from before", "Still **here**"]);`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.rows, [
+      { kind: "note", label: null, stamped: false, text: "Earlier in this session." },
+      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Hello from before" },
+      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Still here" },
     ]);
   },
 );
