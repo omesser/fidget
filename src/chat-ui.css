@@ -1848,6 +1848,12 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* A replayed plan sits in the log with the rows around it (#1393). */
+.row.plan-steps .plan {
+  max-height: none;
+  padding: 0;
+}
+
 .composer {
   flex: 0 0 auto;
   display: flex;

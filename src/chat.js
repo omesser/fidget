@@ -186,27 +186,39 @@ function settled(row) {
 // sends the whole thought so far, so a row is redrawn rather than appended to.
 const thinkingRows = new Map();
 
+// A row whose title opens and closes the text under it: Thinking, and the
+// prompts and tool calls a loaded session replays. `stamp` is a `when` node,
+// or nothing for a row the replay gave no time.
+function foldRow(cls, title, stamp) {
+  const row = el(`row thinking ${cls}`);
+  const toggle = el("who thinking-toggle", "button");
+  toggle.type = "button";
+  const label = el("who-label");
+  label.textContent = title;
+  toggle.append(label);
+  if (stamp) toggle.append(stamp);
+  row.append(toggle, el("said"));
+  return row;
+}
+
+function fold(row, open) {
+  row.querySelector(".said").hidden = !open;
+  row.querySelector(".thinking-toggle").setAttribute("aria-expanded", String(open));
+}
+
 function drawThinking(view) {
   let row = thinkingRows.get(view.id);
   if (!row) {
-    row = el("row thinking");
-    const toggle = el("who thinking-toggle", "button");
-    toggle.type = "button";
-    const label = el("who-label");
-    label.textContent = "Thinking";
-    toggle.append(label, when(view.at));
-    toggle.addEventListener("click", () => thinking.toggle(view.id));
-    row.append(toggle, el("said"));
+    row = foldRow("", "Thinking", when(view.at));
+    row.querySelector(".thinking-toggle").addEventListener("click", () => thinking.toggle(view.id));
     thinkingRows.set(view.id, row);
     add(row);
     // Under the question it belongs to, above the answer still on its way.
     lowerCaret();
   }
-  const body = row.querySelector(".said");
-  body.textContent = view.text;
-  body.hidden = view.state === "collapsed";
+  row.querySelector(".said").textContent = view.text;
+  fold(row, view.state !== "collapsed");
   row.dataset.state = view.state;
-  row.querySelector(".thinking-toggle").setAttribute("aria-expanded", String(!body.hidden));
   if (view.state === "streaming") log.scrollTop = log.scrollHeight;
 }
 
@@ -215,16 +227,18 @@ const thinking = createThinking(drawThinking);
 // The agent's steps, replaced whole on every update because that is how ACP
 // sends them (#697). The current step is scrolled to, or a plan longer than
 // the cap would leave the reader looking at step one.
+function stepRows(steps) {
+  return steps.map((step) => {
+    const row = el("step");
+    row.dataset.status = step.status;
+    row.dataset.priority = step.priority;
+    row.textContent = step.text;
+    return row;
+  });
+}
+
 function showPlan(steps) {
-  plan.replaceChildren(
-    ...steps.map((step) => {
-      const row = el("step");
-      row.dataset.status = step.status;
-      row.dataset.priority = step.priority;
-      row.textContent = step.text;
-      return row;
-    }),
-  );
+  plan.replaceChildren(...stepRows(steps));
   plan.hidden = !steps.length;
   plan.querySelector('[data-status="in_progress"]')?.scrollIntoView({ block: "nearest" });
 }
@@ -776,34 +790,68 @@ function newSession(why) {
   note(`New session — ${why}. Nothing said earlier is in it.`);
 }
 
-// What a loaded session said before this run (#1393), above everything else
-// in the log. No stamp: the replay carries no time. Not a turn, so a typed
-// question waiting below never takes one of these as its answer. The label is
-// an `.i-name`, which `showWho` fills if the opening has not landed yet.
-// Replaces any block already drawn: a window that listens before the load lands
-// hears it live and again from `chat_ready`.
+// A loaded session's replay (#1393), above everything else in the log, in the
+// order the session holds it. No stamps: the replay carries no time. Replies
+// are not turns, so a typed question waiting below never takes one as its
+// answer. Prompts, thinking, and tool calls fold shut, as live thinking does
+// once its turn lands. A plan is drawn as steps in the log, never into the
+// live plan above the composer. The reply label is an `.i-name`, which
+// `showWho` fills if the opening has not landed yet. Replaces any block
+// already drawn: a window that listens before the load lands hears it live and
+// again from `chat_ready`.
 let restoredBlock = [];
-function restored(lines) {
-  for (const node of restoredBlock) {
-    node.remove();
-  }
-  restoredBlock = [];
-  if (!lines.length) {
-    return;
-  }
-  const heading = el("note");
-  heading.textContent = "Earlier in this session.";
-  const rows = lines.map((text) => {
+
+function restoredFold(cls, title, text) {
+  const row = foldRow(`restored ${cls}`, title);
+  row.querySelector(".said").textContent = text;
+  fold(row, false);
+  const toggle = row.querySelector(".thinking-toggle");
+  toggle.addEventListener("click", () => fold(row, toggle.getAttribute("aria-expanded") !== "true"));
+  return row;
+}
+
+const RESTORED_ROWS = {
+  prompt: (entry) => restoredFold("prompt", "Prompt", entry.text),
+  thought: (entry) => restoredFold("thought", "Thinking", entry.text),
+  tool_call: (entry) =>
+    restoredFold(
+      "tool",
+      [entry.title || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · "),
+      entry.content.join("\n\n"),
+    ),
+  plan: (entry) => {
+    const row = el("row restored plan-steps");
+    const label = el("who-label");
+    label.textContent = "Plan";
+    const body = el("said plan");
+    row.append(label, body);
+    body.append(...stepRows(planSteps(entry.steps)));
+    return row;
+  },
+  reply: (entry) => {
     const row = el("row them restored");
     const cluster = el("who");
     const label = el("who-label i-name");
     label.textContent = them;
     cluster.append(label);
     const body = el("said md");
-    drawReply(body, text);
+    drawReply(body, entry.text);
     row.append(cluster, body);
     return row;
-  });
+  },
+};
+
+function restored(history) {
+  for (const node of restoredBlock) {
+    node.remove();
+  }
+  const rows = history.flatMap((entry) => RESTORED_ROWS[entry.type]?.(entry) ?? []);
+  if (!rows.length) {
+    restoredBlock = [];
+    return;
+  }
+  const heading = el("note");
+  heading.textContent = "Earlier in this session.";
   restoredBlock = [heading, ...rows];
   empty.after(...restoredBlock);
   log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;

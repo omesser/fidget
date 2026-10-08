@@ -24,7 +24,9 @@ use crate::acp_wire::{
 };
 use crate::action_log;
 
-pub use crate::acp_wire::{ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep, SignIn};
+pub use crate::acp_wire::{
+    ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep, Replayed, SignIn,
+};
 
 /// `pub(crate)` so the settings window can name the variable that owns a row.
 pub(crate) const VAR: &str = "FIDGET_HARNESS";
@@ -775,13 +777,12 @@ pub struct InboundWake {
     pub speech: String,
 }
 
-/// What a loaded session said before this run, for its Instance's Chat.
-/// Raw agent text, oldest first. Not a wake: nothing here addresses the
-/// Instance or touches Pace.
+/// A loaded session's replay, for its Instance's Chat. Not a wake: nothing
+/// here addresses the Instance or touches Pace.
 #[derive(Clone, Debug)]
 pub struct Restored {
     pub instance: String,
-    pub said: Vec<String>,
+    pub history: Vec<Replayed>,
 }
 
 /// What the session on the wire tells the Chat surface, live or on replay.
@@ -1832,7 +1833,7 @@ impl Session {
         if first_open && !opened.history.is_empty() {
             (self.forward)(Forwarded::Restored(Restored {
                 instance: key.instance.clone(),
-                said: opened.history,
+                history: opened.history,
             }));
         }
         // An open Chat surface drew its header from an opening asked for
@@ -3325,13 +3326,42 @@ mod tests {
                         tool_call(loaded, "replayed");
                     }
                     if script == "load-history" {
-                        user_chunk(loaded, "the first wake's prompt");
+                        let update = |update: Value| {
+                            say(
+                                json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                                    "sessionId": loaded, "update": update,
+                                }}),
+                            )
+                        };
+                        let plan = |status: &str| {
+                            update(json!({"sessionUpdate": "plan", "entries": [
+                                {"content": "Read the roster", "priority": "medium", "status": status},
+                            ]}))
+                        };
+                        let message = |id: &str, text: &str| {
+                            update(
+                                json!({"sessionUpdate": "agent_message_chunk", "messageId": id,
+                                "content": {"type": "text", "text": text}}),
+                            )
+                        };
+                        user_chunk(loaded, "the first wake's ");
+                        user_chunk(loaded, "prompt");
+                        thought(loaded, "Weighing it");
                         chunk(loaded, "wave\n");
                         chunk(loaded, "Hello from before");
                         tool_call(loaded, "replayed");
-                        thought(loaded, "Weighing it");
+                        plan("pending");
+                        update(
+                            json!({"sessionUpdate": "tool_call_update", "toolCallId": "replayed",
+                            "status": "failed",
+                            "content": [{"type": "content", "content": {"type": "text", "text": "no such file"}}]}),
+                        );
+                        plan("completed");
                         user_chunk(loaded, "the second wake's prompt");
                         chunk(loaded, "<think>hmm</think>nod | Still here");
+                        message("m1", "Done.");
+                        message("m2", "Stretch ");
+                        message("m2", "break!");
                     }
                     if loaded == "stale" {
                         say(
@@ -5847,8 +5877,10 @@ mod tests {
     }
 
     /// The conversation a loaded session replays reaches that Instance's Chat
-    /// as what it said, once. The respawn loads the same id and replays it
-    /// again, and Chat already holds it. Neither replay is a wake (#1393).
+    /// whole and in order, once: prompts, thinking, replies, tool calls, and
+    /// the plan. The respawn loads the same id and replays it again, and Chat
+    /// already holds it. Neither replay is a wake, a live plan, or live
+    /// thinking (#1393).
     #[test]
     fn a_loaded_sessions_replay_is_restored_once_and_wakes_nobody() {
         let (fx, session) = Fixture::new("load-history");
@@ -5870,20 +5902,63 @@ mod tests {
         let mut restored = Vec::new();
         for forwarded in fx.forwarded.try_iter() {
             match forwarded {
-                Forwarded::Restored(Restored { instance, said }) => restored.push((instance, said)),
+                Forwarded::Restored(Restored { instance, history }) => {
+                    restored.push((instance, history))
+                }
                 Forwarded::InboundWake(wake) => {
                     panic!("replay woke {}: {}", wake.instance, wake.speech)
+                }
+                Forwarded::Plan(steps) if !steps.is_empty() => {
+                    panic!("replay drew a live plan: {steps:?}")
+                }
+                Forwarded::Thought { line, .. } if !line.is_empty() => {
+                    panic!("replay drew live thinking: {line}")
                 }
                 _ => {}
             }
         }
+        let text = |text: &str| text.to_string();
         assert_eq!(
             restored,
             vec![(
-                "buddy-1".to_string(),
+                text("buddy-1"),
                 vec![
-                    "wave\nHello from before".to_string(),
-                    "nod | Still here".to_string()
+                    Replayed::Prompt {
+                        text: text("the first wake's prompt")
+                    },
+                    Replayed::Thought {
+                        text: text("Weighing it")
+                    },
+                    Replayed::Reply {
+                        text: text("wave\nHello from before")
+                    },
+                    Replayed::ToolCall {
+                        id: text("replayed"),
+                        title: text("replayed"),
+                        kind: Some(text("other")),
+                        status: Some(text("failed")),
+                        content: vec![text("no such file")],
+                    },
+                    Replayed::Plan {
+                        steps: vec![PlanStep {
+                            content: text("Read the roster"),
+                            priority: text("medium"),
+                            status: text("completed"),
+                        }]
+                    },
+                    Replayed::Prompt {
+                        text: text("the second wake's prompt")
+                    },
+                    Replayed::Thought { text: text("hmm") },
+                    Replayed::Reply {
+                        text: text("nod | Still here")
+                    },
+                    Replayed::Reply {
+                        text: text("Done.")
+                    },
+                    Replayed::Reply {
+                        text: text("Stretch break!")
+                    },
                 ]
             )]
         );

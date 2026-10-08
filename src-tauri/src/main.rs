@@ -2310,6 +2310,8 @@ fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
 
 /// A loaded session's history, into its Instance's log and open window. Not
 /// sent to the frame loop: nothing is addressed and Pace is untouched (#1393).
+/// Only to that window, and never as `CHAT_PLAN_EVENT`: a replayed plan is
+/// history, not the plan on the wire now.
 /// A window that listens before `chat_ready` reads the log hears it here and
 /// again in that replay. `restored()` in chat.js replaces, so it draws once.
 fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
@@ -2319,10 +2321,12 @@ fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
     let Ok(_replaying) = state.0.lock() else {
         return;
     };
-    let said = session_log::restore(app, &restored.instance, &restored.said, SystemTime::now());
-    if !said.is_empty() {
-        let _ = app.emit_to(chat_label(&restored.instance), CHAT_RESTORED_EVENT, &said);
-    }
+    let _ = app.emit_to(
+        chat_label(&restored.instance),
+        CHAT_RESTORED_EVENT,
+        &restored.history,
+    );
+    session_log::restore(app, &restored.instance, restored.history);
 }
 
 /// Show the agent's plan in every open Chat surface: the session is shared and
@@ -2996,14 +3000,11 @@ fn chat_ready(
     pending: tauri::State<'_, PendingAsks>,
 ) {
     if let Ok(pending) = pending.0.lock() {
-        let (restored, turns): (Vec<_>, Vec<_>) = session_log::replay(&app, &instance)
-            .into_iter()
-            .partition(|turn| turn.who == session_log::Who::Restored);
+        let restored = session_log::restored(&app, &instance);
         if !restored.is_empty() {
-            let said: Vec<_> = restored.into_iter().filter_map(|turn| turn.said).collect();
-            let _ = app.emit_to(chat_label(&instance), CHAT_RESTORED_EVENT, &said);
+            let _ = app.emit_to(chat_label(&instance), CHAT_RESTORED_EVENT, &restored);
         }
-        for turn in turns {
+        for turn in session_log::replay(&app, &instance) {
             let _ = app.emit_to(
                 chat_label(&instance),
                 CHAT_EVENT,

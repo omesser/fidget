@@ -19,8 +19,8 @@ use agent_client_protocol::schema::v1::{
     ElicitationContentValue, ElicitationFormCapabilities, ElicitationId, ElicitationMode,
     ElicitationPropertySchema, ElicitationScope, ElicitationSessionScope,
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio, MessageId,
+    NewSessionRequest, Plan, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
     SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
     SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
@@ -274,7 +274,7 @@ pub enum ElicitationAnswer {
 /// One step of the agent's plan, as the Chat surface draws it.
 /// `priority` and `status` are the crate's serde spellings through `name_of`.
 /// `_meta` is out. ACP says not to assume anything of it.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PlanStep {
     pub content: String,
     pub priority: String,
@@ -362,10 +362,43 @@ pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
 #[derive(Debug)]
 pub struct Opened {
     pub id: String,
-    /// The agent's messages from before this connection, oldest first, as
-    /// raw text. Empty for `session/new`, and for a load that failed: the
-    /// session that answers never said what that replay holds.
-    pub history: Vec<String>,
+    /// The session from before this connection, oldest first. Empty for
+    /// `session/new`, and for a load that failed: the session that answers
+    /// never said what that replay holds.
+    pub history: Vec<Replayed>,
+}
+
+/// One entry of a `session/load` replay, in the order the session sent it.
+/// `type` names the variant for the Chat surface.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Replayed {
+    /// A `session/prompt` Fidget sent: the Director's frame, with a typed
+    /// line in it when the user typed one.
+    Prompt {
+        text: String,
+    },
+    /// One agent message as the session holds it, `<think>` blocks peeled
+    /// into the `Thought` before it. A Director reply keeps its Behavior line.
+    Reply {
+        text: String,
+    },
+    Thought {
+        text: String,
+    },
+    /// A tool call with every update to it folded in. `content` is its text
+    /// output, and the paths of the files it rewrote.
+    ToolCall {
+        id: String,
+        title: String,
+        kind: Option<String>,
+        status: Option<String>,
+        content: Vec<String>,
+    },
+    /// The agent's plan as it last stood before the next prompt.
+    Plan {
+        steps: Vec<PlanStep>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1315,39 +1348,182 @@ async fn serve(
     cancel_forms(&mut forms, on_event);
 }
 
-/// A `session/load` replay, as the agent's messages. A user message ends the
-/// agent message before it. Thought, tool calls, and the prompts Fidget sent
-/// are not kept: the Director's prompt is not something the user said.
+/// A `session/load` replay, as entries. Chunks of one kind join until another
+/// kind arrives or the agent's `messageId` changes.
 #[derive(Default)]
 struct Replay {
-    said: Vec<String>,
-    message: Answer,
+    entries: Vec<Replayed>,
+    /// The agent message still arriving, its id, and its peeled `<think>`.
+    message: Option<(Option<MessageId>, Answer, String)>,
 }
 
 impl Replay {
     fn note(&mut self, update: SessionUpdate) {
+        let continues = match &update {
+            SessionUpdate::AgentMessageChunk(chunk) => self
+                .message
+                .as_ref()
+                .is_some_and(|(id, ..)| chunk.message_id.is_none() || *id == chunk.message_id),
+            _ => false,
+        };
+        if !continues {
+            self.end_message();
+        }
         match update {
             SessionUpdate::AgentMessageChunk(chunk) => {
+                let (_, answer, thought) = self.message.get_or_insert_with(|| {
+                    (chunk.message_id.clone(), Answer::default(), String::new())
+                });
                 if let ContentBlock::Text(text) = chunk.content {
-                    self.message.push(&text.text);
+                    thought.push_str(&answer.push(&text.text));
                 }
             }
-            SessionUpdate::UserMessageChunk(_) => self.end_message(),
+            SessionUpdate::UserMessageChunk(chunk) => {
+                if let ContentBlock::Text(text) = chunk.content {
+                    match self.entries.last_mut() {
+                        Some(Replayed::Prompt { text: prompt }) => prompt.push_str(&text.text),
+                        _ => self.entries.push(Replayed::Prompt { text: text.text }),
+                    }
+                }
+            }
+            SessionUpdate::AgentThoughtChunk(chunk) => {
+                if let ContentBlock::Text(text) = chunk.content {
+                    self.think(&text.text);
+                }
+            }
+            SessionUpdate::ToolCall(call) => self.entries.push(Replayed::ToolCall {
+                id: call.tool_call_id.0.to_string(),
+                title: call.title,
+                kind: Some(name_of(&call.kind)),
+                status: Some(name_of(&call.status)),
+                content: tool_output(&call.content),
+            }),
+            SessionUpdate::ToolCallUpdate(update) => {
+                let id = update.tool_call_id.0.to_string();
+                let fields = update.fields;
+                let known = self.entries.iter_mut().rev().find_map(|entry| match entry {
+                    Replayed::ToolCall {
+                        id: known,
+                        title,
+                        kind,
+                        status,
+                        content,
+                    } if *known == id => Some((title, kind, status, content)),
+                    _ => None,
+                });
+                let Some((title, kind, status, content)) = known else {
+                    self.entries.push(Replayed::ToolCall {
+                        title: fields.title.unwrap_or_default(),
+                        kind: fields.kind.as_ref().map(name_of),
+                        status: fields.status.as_ref().map(name_of),
+                        content: fields
+                            .content
+                            .as_deref()
+                            .map(tool_output)
+                            .unwrap_or_default(),
+                        id,
+                    });
+                    return;
+                };
+                if let Some(changed) = fields.title {
+                    *title = changed;
+                }
+                if let Some(changed) = fields.kind {
+                    *kind = Some(name_of(&changed));
+                }
+                if let Some(changed) = fields.status {
+                    *status = Some(name_of(&changed));
+                }
+                if let Some(changed) = fields.content {
+                    *content = tool_output(&changed);
+                }
+            }
+            SessionUpdate::Plan(plan) => {
+                let steps = plan_steps(plan);
+                // ACP replaces a plan whole. One per prompt: the last word.
+                let turn = self
+                    .entries
+                    .iter()
+                    .rposition(|entry| matches!(entry, Replayed::Prompt { .. }))
+                    .map_or(0, |at| at + 1);
+                match self.entries[turn..]
+                    .iter_mut()
+                    .find(|entry| matches!(entry, Replayed::Plan { .. }))
+                {
+                    Some(Replayed::Plan { steps: held }) => *held = steps,
+                    _ => self.entries.push(Replayed::Plan { steps }),
+                }
+            }
             _ => {}
         }
     }
 
-    fn end_message(&mut self) {
-        let message = std::mem::take(&mut self.message).finish();
-        if !message.trim().is_empty() {
-            self.said.push(message);
+    fn think(&mut self, text: &str) {
+        match self.entries.last_mut() {
+            Some(Replayed::Thought { text: thought }) => thought.push_str(text),
+            _ => self.entries.push(Replayed::Thought {
+                text: text.to_string(),
+            }),
         }
     }
 
-    fn finish(mut self) -> Vec<String> {
-        self.end_message();
-        self.said
+    fn end_message(&mut self) {
+        let Some((_, answer, thought)) = self.message.take() else {
+            return;
+        };
+        if !thought.is_empty() {
+            self.think(&thought);
+        }
+        self.entries.push(Replayed::Reply {
+            text: answer.finish(),
+        });
     }
+
+    /// Text entries that hold only whitespace are dropped, and the rest
+    /// trimmed: a replayed chunk boundary is not something anyone wrote.
+    fn finish(mut self) -> Vec<Replayed> {
+        self.end_message();
+        self.entries
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Replayed::Prompt { text } => trimmed(text).map(|text| Replayed::Prompt { text }),
+                Replayed::Reply { text } => trimmed(text).map(|text| Replayed::Reply { text }),
+                Replayed::Thought { text } => trimmed(text).map(|text| Replayed::Thought { text }),
+                other => Some(other),
+            })
+            .collect()
+    }
+}
+
+fn plan_steps(plan: Plan) -> Vec<PlanStep> {
+    plan.entries
+        .into_iter()
+        .map(|entry| PlanStep {
+            content: entry.content,
+            priority: name_of(&entry.priority),
+            status: name_of(&entry.status),
+        })
+        .collect()
+}
+
+fn trimmed(text: String) -> Option<String> {
+    Some(text.trim().to_string()).filter(|text| !text.is_empty())
+}
+
+/// What a tool call put out, as text: its text blocks, and the path of each
+/// file it rewrote. An image or a terminal has no text to keep.
+fn tool_output(content: &[ToolCallContent]) -> Vec<String> {
+    content
+        .iter()
+        .filter_map(|piece| match piece {
+            ToolCallContent::Content(block) => match &block.content {
+                ContentBlock::Text(text) => Some(text.text.clone()),
+                _ => None,
+            },
+            ToolCallContent::Diff(diff) => Some(diff.path.display().to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// ACP v1 says nothing when a turn the Harness started is over. Flush any
@@ -1912,16 +2088,7 @@ fn note_update(
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
         }),
-        SessionUpdate::Plan(plan) => on_event(Event::Plan(
-            plan.entries
-                .into_iter()
-                .map(|entry| PlanStep {
-                    content: entry.content,
-                    priority: name_of(&entry.priority),
-                    status: name_of(&entry.status),
-                })
-                .collect(),
-        )),
+        SessionUpdate::Plan(plan) => on_event(Event::Plan(plan_steps(plan))),
         SessionUpdate::UsageUpdate(usage) => on_event(Event::Usage {
             used: usage.used,
             size: usage.size,

@@ -1,5 +1,5 @@
 // The Chat surface itself, driven headless the way chat-thinking-render.test.js
-// drives it: a line typed after a restart, the loaded session's history
+// drives it: a line typed after a restart, the loaded session's whole replay
 // arriving while it waits, and the answer landing on the line (#1393). And a
 // window that opens as the load lands, which hears the history twice.
 
@@ -67,10 +67,12 @@ function drive(steps) {
   };
   const tick = () => new Promise((r) => setTimeout(r, 0));
   const emit = (name, payload) => heard[name]({ payload });
+  const KINDS = ["prompt", "thought", "tool", "plan-steps", "restored", "you", "them"];
   function rows() {
     return [...document.querySelectorAll("#log > .row, #log > .note")].map((row) => ({
-      kind: row.classList.contains("restored") ? "restored" : row.classList.contains("you") ? "you" : row.classList.contains("them") ? "them" : "note",
+      kind: KINDS.find((kind) => row.classList.contains(kind)) ?? "note",
       label: row.querySelector(".who-label")?.textContent ?? null,
+      open: row.querySelector(".thinking-toggle")?.getAttribute("aria-expanded") ?? null,
       stamped: Boolean(row.querySelector("time.when")?.dateTime),
       text: (row.querySelector(".said") ?? row).textContent,
     }));
@@ -81,7 +83,7 @@ function drive(steps) {
 ${steps}
     const out = document.createElement("pre");
     out.id = "probe";
-    out.textContent = JSON.stringify({ rows: rows() });
+    out.textContent = JSON.stringify({ rows: rows(), livePlan: !document.getElementById("plan").hidden });
     document.body.append(out);
   }
   window.addEventListener("load", () => run().catch((why) => {
@@ -121,24 +123,60 @@ ${steps}
   return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
 }
 
+const HISTORY = [
+  { type: "prompt", text: "what just happened: they typed\nthey said: hi" },
+  { type: "thought", text: "Weighing it" },
+  { type: "reply", text: "wave\nHello from **before**" },
+  { type: "tool_call", id: "t1", title: "Read roster.json", kind: "read", status: "failed", content: ["no such file"] },
+  { type: "plan", steps: [{ content: "Read the roster", priority: "medium", status: "completed" }] },
+  { type: "reply", text: "Done." },
+];
+
+const DRAWN = [
+  { kind: "note", label: null, open: null, stamped: false, text: "Earlier in this session." },
+  { kind: "prompt", label: "Prompt", open: "false", stamped: false, text: "what just happened: they typed\nthey said: hi" },
+  { kind: "thought", label: "Thinking", open: "false", stamped: false, text: "Weighing it" },
+  { kind: "restored", label: "Buddy Bot", open: null, stamped: false, text: "wave\nHello from before" },
+  { kind: "tool", label: "Read roster.json · failed", open: "false", stamped: false, text: "no such file" },
+  { kind: "plan-steps", label: "Plan", open: null, stamped: false, text: "Read the roster" },
+  { kind: "restored", label: "Buddy Bot", open: null, stamped: false, text: "Done." },
+];
+
 test(
-  "a loaded session's history sits above the waiting line, and the answer still lands on it",
+  "a loaded session's whole replay sits above the waiting line, and the answer still lands on it",
   { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
     const report = drive(`
     document.getElementById("line").value = "are you back?";
     document.getElementById("composer").requestSubmit();
     while (!document.querySelector("#log > .row.them")) await tick();
-    emit("chat-restored", ["Hello from before", "Still **here**"]);
+    emit("chat-restored", ${JSON.stringify(HISTORY)});
     emit("chat", { said: "Back now.", busy: false, reacting_to: null, you: false, at: null, error: null });`);
     assert.equal(report.error, undefined, report.error);
     assert.deepEqual(report.rows, [
-      { kind: "note", label: null, stamped: false, text: "Earlier in this session." },
-      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Hello from before" },
-      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Still here" },
-      { kind: "you", label: "You", stamped: true, text: "are you back?" },
-      { kind: "them", label: "Buddy Bot", stamped: true, text: "Back now." },
+      ...DRAWN,
+      { kind: "you", label: "You", open: null, stamped: true, text: "are you back?" },
+      { kind: "them", label: "Buddy Bot", open: null, stamped: true, text: "Back now." },
     ]);
+    assert.equal(report.livePlan, false, "a replayed plan is history, not the plan on the wire");
+  },
+);
+
+test(
+  "a replayed thought opens on a click, like a landed live one",
+  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
+  () => {
+    const report = drive(`
+    emit("chat-restored", ${JSON.stringify(HISTORY)});
+    document.querySelector("#log > .row.thought .thinking-toggle").click();`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.rows[2], {
+      kind: "thought",
+      label: "Thinking",
+      open: "true",
+      stamped: false,
+      text: "Weighing it",
+    });
   },
 );
 
@@ -149,13 +187,9 @@ test(
   { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {
     const report = drive(`
-    emit("chat-restored", ["Hello from before", "Still **here**"]);
-    emit("chat-restored", ["Hello from before", "Still **here**"]);`);
+    emit("chat-restored", ${JSON.stringify(HISTORY)});
+    emit("chat-restored", ${JSON.stringify(HISTORY)});`);
     assert.equal(report.error, undefined, report.error);
-    assert.deepEqual(report.rows, [
-      { kind: "note", label: null, stamped: false, text: "Earlier in this session." },
-      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Hello from before" },
-      { kind: "restored", label: "Buddy Bot", stamped: false, text: "Still here" },
-    ]);
+    assert.deepEqual(report.rows, DRAWN);
   },
 );

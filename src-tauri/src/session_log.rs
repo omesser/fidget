@@ -9,15 +9,14 @@ use std::time::SystemTime;
 
 use tauri::{Emitter, Manager};
 
+use crate::harness::Replayed;
+
 /// Whose row a remembered turn is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Who {
     You,
     Them,
     Thinking,
-    /// What a loaded session said before this run (#1393). `session/load`
-    /// gives no time, so the row is drawn with none.
-    Restored,
 }
 
 #[derive(Clone)]
@@ -41,6 +40,8 @@ struct Thinking {
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
     thinking: BTreeMap<String, Thinking>,
+    /// What a loaded session replayed (#1393), drawn above `turns`.
+    restored: BTreeMap<String, Vec<Replayed>>,
 }
 
 impl Log {
@@ -124,21 +125,13 @@ impl Log {
             });
     }
 
-    /// A loaded session's replayed replies, as the lines Chat draws, above
-    /// everything this run has said. Returns those lines.
-    pub fn restore(&mut self, instance: &str, replies: &[String], at: SystemTime) -> Vec<String> {
-        let said: Vec<String> = replies.iter().filter_map(|reply| spoken(reply)).collect();
-        let restored = said.iter().map(|line| Turn {
-            who: Who::Restored,
-            said: Some(line.clone()),
-            reacting_to: None,
-            at,
-        });
-        self.turns
-            .entry(instance.to_string())
-            .or_default()
-            .splice(0..0, restored);
-        said
+    /// A loaded session's replay, in place of any this Instance held.
+    pub fn restore(&mut self, instance: &str, history: Vec<Replayed>) {
+        self.restored.insert(instance.to_string(), history);
+    }
+
+    pub fn restored(&self, instance: &str) -> Vec<Replayed> {
+        self.restored.get(instance).cloned().unwrap_or_default()
     }
 
     pub fn replay(&self, instance: &str) -> Vec<Turn> {
@@ -151,16 +144,7 @@ impl Log {
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
         self.thinking.remove(instance);
-    }
-}
-
-/// What the character said in one replayed reply. A Director reply loses its
-/// Behavior line, as it does live. A reply with no Behavior line is the
-/// Harness talking on its own, and every word of it is speech.
-fn spoken(reply: &str) -> Option<String> {
-    match fidget_core::director::parse_proposal(reply) {
-        Ok(proposal) => proposal.dialogue,
-        Err(_) => Some(reply.trim().to_string()).filter(|line| !line.is_empty()),
+        self.restored.remove(instance);
     }
 }
 
@@ -201,15 +185,14 @@ pub fn remember_them(
     });
 }
 
-pub fn restore(
-    app: &tauri::AppHandle,
-    instance: &str,
-    replies: &[String],
-    at: SystemTime,
-) -> Vec<String> {
-    let mut said = Vec::new();
-    with_log(app, |log| said = log.restore(instance, replies, at));
-    said
+pub fn restore(app: &tauri::AppHandle, instance: &str, history: Vec<Replayed>) {
+    with_log(app, |log| log.restore(instance, history));
+}
+
+pub fn restored(app: &tauri::AppHandle, instance: &str) -> Vec<Replayed> {
+    app.try_state::<Mutex<Log>>()
+        .and_then(|held| held.lock().ok().map(|log| log.restored(instance)))
+        .unwrap_or_default()
 }
 
 pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
@@ -327,41 +310,34 @@ mod tests {
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
     }
 
-    /// Production change that would fail this: drawing a loaded session's
-    /// history under a line typed before the load answered, or showing the
-    /// Behavior name a Director reply opens with (#1393).
+    /// Production change that would fail this: splicing a loaded session's
+    /// history into this run's turns, stacking a second restore on the first,
+    /// or keeping it after the session is replaced (#1393).
     #[test]
-    fn restored_history_sits_above_this_runs_turns_as_speech() {
+    fn restored_history_stands_apart_once_until_the_session_goes() {
         let mut log = Log::new();
         log.remember_you("buddy-1", "are you back?", UNIX_EPOCH);
+        let reply = |text: &str| Replayed::Reply {
+            text: text.to_string(),
+        };
 
-        let said = log.restore(
-            "buddy-1",
-            &[
-                "wave\nHello from before".to_string(),
-                "nod | Still here".to_string(),
-                "idle".to_string(),
-                "Reminder: stand up.".to_string(),
-            ],
-            UNIX_EPOCH,
-        );
+        log.restore("buddy-1", vec![reply("Hello from before")]);
+        log.restore("buddy-1", vec![reply("Hello from before"), reply("Done.")]);
+        log.restore("buddy-2", vec![reply("Other window")]);
 
-        let lines = ["Hello from before", "Still here", "Reminder: stand up."];
-        assert_eq!(said, lines);
-        let turns = log.replay("buddy-1");
-        let drawn: Vec<_> = turns
-            .iter()
-            .map(|turn| (turn.who, turn.said.as_deref().unwrap_or("")))
-            .collect();
         assert_eq!(
-            drawn,
-            [
-                (Who::Restored, "Hello from before"),
-                (Who::Restored, "Still here"),
-                (Who::Restored, "Reminder: stand up."),
-                (Who::You, "are you back?"),
-            ]
+            log.restored("buddy-1"),
+            [reply("Hello from before"), reply("Done.")]
         );
+        let turns: Vec<_> = log
+            .replay("buddy-1")
+            .iter()
+            .map(|turn| (turn.who, turn.said.clone()))
+            .collect();
+        assert_eq!(turns, [(Who::You, Some("are you back?".to_string()))]);
+        log.forget("buddy-1");
+        assert_eq!(log.restored("buddy-1"), []);
+        assert_eq!(log.restored("buddy-2"), [reply("Other window")]);
     }
 
     /// Production change that would fail this: forgetting every Instance's
