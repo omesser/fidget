@@ -49,23 +49,67 @@ test("AI tab section order is AI, AI source, Model / API, Last user turn", () =>
   }
 });
 
-const HTTP_ROWS = ["Base URL", "Model", "API key", "Clear key"];
+// By id: the Harness section has a Model row of its own (#1427).
+const HTTP_ROWS = ["director_base_url", "director_model", "director_api_key", "clear_key"];
 
 test("the HTTP rows are the user's when Model API drives", () => {
   const list = tab(MODEL_API, "AI");
-  for (const label of HTTP_ROWS) {
-    assert.equal(byLabel(list, label).frozen, false, label);
+  for (const id of HTTP_ROWS) {
+    assert.equal(byId(list, id).frozen, false, id);
   }
   assert.equal(byId(list, "harness").value, "Model API");
 });
 
 test("the HTTP rows freeze when a Harness drives", () => {
   const list = tab(HARNESS, "AI");
-  for (const label of HTTP_ROWS) {
-    assert.equal(byLabel(list, label).frozen, true, `${label} must be frozen (#452)`);
+  for (const id of HTTP_ROWS) {
+    assert.equal(byId(list, id).frozen, true, `${id} must be frozen (#452)`);
   }
   assert.equal(byId(list, "harness").value, "Harness · claude");
   assert.equal(byId(list, "director_apply").frozen, false, "Apply stays live, or the source cannot be changed back");
+});
+
+// #1427: the AI source picker decides which source section is the user's,
+// and it decides as soon as it changes, before Apply saves the pick.
+const HARNESS_ROWS = ["harness_model", "pi_project_mcp", "harness_command"];
+const MODEL_API_ROWS = [
+  "director_base_url_pick",
+  "director_base_url",
+  "director_model",
+  "director_api_key",
+  "clear_key",
+];
+
+test("the Harness rows are off while the picker says Model API", () => {
+  const list = tab(MODEL_API, "AI");
+  for (const id of HARNESS_ROWS) {
+    assert.equal(byId(list, id).frozen, true, id);
+  }
+  assert.equal(byId(list, "harness").frozen, false, "the picker is the way to a Harness");
+});
+
+test("a picked Harness takes the whole Model / API section off before Apply", () => {
+  const picked = { ...MODEL_API, values: { ...MODEL_API.values, harness: "Harness · grok" } };
+  const list = tab(picked, "AI");
+  for (const id of MODEL_API_ROWS) {
+    assert.equal(byId(list, id).frozen, true, id);
+  }
+  for (const id of HARNESS_ROWS) {
+    assert.equal(byId(list, id).frozen, false, id);
+  }
+  assert.equal(byId(list, "director_apply").frozen, false, "Apply saves the pick");
+  assert.equal(byId(list, "director_cancel").frozen, false, "Cancel takes it back");
+});
+
+test("the Harness Model row is the user's while that Harness drives", () => {
+  const model = byId(tab(HARNESS, "AI"), "harness_model");
+  assert.deepEqual(model, {
+    role: "textfield",
+    id: "harness_model",
+    label: "Model",
+    value: "gpt-4o-mini",
+    frozen: false,
+  });
 });
 
 // The picker carries no label of its own, so it is addressed the way the
@@ -100,7 +144,7 @@ test('"the Director\'s mind" stays out of the state line', () => {
 const HEADINGS = {
   Presence: ["Do Not Disturb", "Hide", "Launch"],
   Character: ["Character", "Instances"],
-  AI: ["AI", "AI source", "Point a Harness you run yourself at Fidget", "Model / API", "Last user turn"],
+  AI: ["AI", "AI source", "Harness", "Model / API", "BYO - Point existing Harness at Fidget", "Last user turn"],
   Privacy: ["What the fidget can see", "Excluded applications", "Memory File"],
   Development: ["Traces", "Blank AI", "HTTP limits", "Harness attachment"],
   Chat: ["Appearance"],
@@ -137,16 +181,11 @@ const AI_ROWS = [
   ["button", "new_session", "Start new session"],
   ["heading", null, "AI source"],
   ["popup", "harness", "AI source"],
+  ["statictext", "harness_state", null],
+  ["heading", null, "Harness"],
+  ["textfield", "harness_model", "Model"],
   ["checkbox", "pi_project_mcp", "Write .mcp.json in the working directory"],
   ["textfield", "harness_command", "Custom command line"],
-  ["statictext", "harness_state", null],
-  ["heading", null, "Point a Harness you run yourself at Fidget"],
-  ["popup", "byo_harness", "Harness"],
-  ["statictext", "byo_snippet", null],
-  ["button", "byo_copy", "Copy"],
-  ["statictext", "byo_token", null],
-  ["button", "byo_copy_token", "Copy"],
-  ["statictext", "byo_steps", null],
   ["heading", null, "Model / API"],
   ["popup", "director_base_url_pick", null],
   ["textfield", "director_base_url", "Base URL"],
@@ -155,6 +194,13 @@ const AI_ROWS = [
   ["button", "clear_key", "Clear key"],
   ["button", "director_apply", "Apply"],
   ["button", "director_cancel", "Cancel"],
+  ["heading", null, "BYO - Point existing Harness at Fidget"],
+  ["popup", "byo_harness", "Harness"],
+  ["statictext", "byo_snippet", null],
+  ["button", "byo_copy", "Copy"],
+  ["statictext", "byo_token", null],
+  ["button", "byo_copy_token", "Copy"],
+  ["statictext", "byo_steps", null],
   ["heading", null, "Last user turn"],
   ["statictext", "payload", null],
 ];

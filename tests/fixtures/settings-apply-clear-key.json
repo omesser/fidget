@@ -12,6 +12,7 @@
     "director_api_key": "",
     "harness": "Model API",
     "harness_command": "",
+    "harness_model": "gpt-4o-mini",
     "clear_key": true
   }
 }

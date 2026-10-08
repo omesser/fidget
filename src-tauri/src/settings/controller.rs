@@ -250,6 +250,24 @@ mod tests {
         });
     }
 
+    /// #1427: the Harness section's Model row is the Model / API row's field
+    /// under a second id, so a model typed there is the model Apply saves.
+    #[test]
+    fn the_harness_model_row_applies_the_model() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view();
+            let description = form::describe();
+            let typed = AiDraft::drawn(
+                &description,
+                serde_json::json!({ "harness_model": "grok-4.6" }),
+            );
+            let Outcome::Commit(Some(patch)) = handle(&press(form::APPLY_ID), &typed, &view) else {
+                panic!("a typed model is a patch");
+            };
+            assert_eq!(patch.completer.director_model.as_deref(), Some("grok-4.6"));
+        });
+    }
+
     #[test]
     fn cancel_writes_nothing() {
         model::tests::with_env(None, None, None, || {

@@ -2134,8 +2134,9 @@ pub(crate) mod tests {
             "HTTP limits",
             "AI source",
             "AI",
-            "Point a Harness you run yourself at Fidget",
+            "BYO - Point existing Harness at Fidget",
             "Do Not Disturb",
+            "Harness",
             "Excluded applications",
             "Harness attachment",
             "Hide",
@@ -2292,9 +2293,10 @@ pub(crate) mod tests {
             .expect("the endpoint row exists")
     }
 
-    const ENDPOINT_ROWS: [(&str, &str); 3] = [
+    const ENDPOINT_ROWS: [(&str, &str); 4] = [
         (DIRECTOR_BASE_URL_ID, crate::model::BASE_URL),
         (DIRECTOR_MODEL_ID, crate::model::MODEL),
+        (HARNESS_MODEL_ID, crate::model::MODEL),
         (DIRECTOR_API_KEY_ID, crate::model::API_KEY),
     ];
 
@@ -2420,6 +2422,76 @@ pub(crate) mod tests {
         ));
     }
 
+    /// #1427: a Harness runs on the model too, so the model has a row under
+    /// the source picker as well, writing the field the Model / API row writes.
+    #[test]
+    fn the_harness_section_puts_a_model_row_over_the_command_line() {
+        let description = describe();
+        let section = description
+            .sections()
+            .find(|s| s.heading == HARNESS_HEADING)
+            .expect("Harness section");
+        let ids: Vec<Option<&str>> = section.rows.iter().map(row_id).collect();
+        assert_eq!(
+            ids,
+            [
+                Some(HARNESS_MODEL_ID),
+                Some(PI_PROJECT_MCP_ID),
+                Some(HARNESS_COMMAND_ID)
+            ]
+        );
+        assert_eq!(
+            description.text_write(HARNESS_MODEL_ID),
+            Some(TextField::DirectorModel)
+        );
+        assert_eq!(
+            described_row(&description, HARNESS_MODEL_ID).0,
+            described_row(&description, DIRECTOR_MODEL_ID).0,
+            "one setting, one label"
+        );
+    }
+
+    /// A driving Harness takes Base URL and API key out of use, and the model
+    /// row beside them, but the Harness reads the model, so its own row stays
+    /// the user's.
+    #[test]
+    fn a_driving_harness_leaves_its_model_row_editable() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe_with(&fixture_live(true, true));
+            assert!(description.frozen(DIRECTOR_MODEL_ID));
+            assert!(!description.frozen(HARNESS_MODEL_ID));
+        });
+    }
+
+    /// #1427: the page disables the section whose source the AI source picker
+    /// does not name, so a source section says which source it serves. BYO
+    /// serves neither and sits below both.
+    #[test]
+    fn the_ai_tab_names_the_source_each_section_serves() {
+        let description = describe();
+        let ai = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("the AI tab exists");
+        let serves: Vec<(&str, Option<AiSource>)> = ai
+            .sections
+            .iter()
+            .map(|section| (section.heading.as_str(), section.serves))
+            .collect();
+        assert_eq!(
+            serves,
+            [
+                ("AI", None),
+                ("AI source", None),
+                (HARNESS_HEADING, Some(AiSource::Harness)),
+                ("Model / API", Some(AiSource::ModelApi)),
+                (BYO_HEADING, None),
+                ("Last user turn", None),
+            ]
+        );
+    }
+
     /// The AI switches and wake interval join the endpoint and source batch.
     /// The other Completer limits remain live; Clear key stages through an
     /// operation.
@@ -2453,6 +2525,7 @@ pub(crate) mod tests {
             DIRECTOR_ID,
             HARNESS_COMMAND_ID,
             HARNESS_ID,
+            HARNESS_MODEL_ID,
             PI_PROJECT_MCP_ID,
             PROACTIVE_ID,
         ];
