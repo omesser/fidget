@@ -308,6 +308,7 @@ Each session belongs to the Instance it was opened for, from the moment it opens
 
 - **Asks:** An ask or form stores the session that asked. `awaiting_user` resolves that session through the owners map, so an ask that arrives during open still belongs to its Instance once the open finishes. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
 - **Updates:** During a Fidget turn, an update, ask, or session-scoped form for another session is held as that session's between-turn work. It never joins the running turn's reply.
+- **Chat:** An ask, form, or plan is drawn only in the Chat of the Instance that owns it (#1422). An ask or form is named when it arrives, by the same rule as above. One that arrives during open, before the owners map has the session, goes to the turn holder's Chat, and a wake's open runs inside that wake's own turn. A Chat that opens later replays only its own open asks and forms. A form nobody owes, such as a sign-in link before any turn, is drawn in every Chat so whichever is open can answer it.
 
 #### Out of scope
 

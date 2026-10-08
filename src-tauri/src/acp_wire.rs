@@ -294,8 +294,12 @@ pub enum Event {
     },
     /// The agent's steps and which one is current. ACP has the agent send a
     /// complete list and the client replace the plan entirely, so this is never
-    /// a delta; an empty list is the turn's plan going away.
-    Plan(Vec<PlanStep>),
+    /// a delta; an empty list is the turn's plan going away. `session` is the
+    /// one that planned, for the same reason as `Thought`'s.
+    Plan {
+        session: String,
+        steps: Vec<PlanStep>,
+    },
     Usage {
         used: u64,
         size: u64,
@@ -326,8 +330,8 @@ pub enum Event {
         session: String,
         speech: String,
     },
-    /// A forwarded ask that can no longer be answered. Every open Chat
-    /// surface was given the ask, so every one of them has to hear this.
+    /// A forwarded ask that can no longer be answered. Every Chat surface
+    /// that drew the ask has to hear this.
     PermissionSettled {
         request: String,
         /// The option that won, or `None` when nothing was picked.
@@ -2125,7 +2129,10 @@ fn note_update(
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
         }),
-        SessionUpdate::Plan(plan) => on_event(Event::Plan(plan_steps(plan))),
+        SessionUpdate::Plan(plan) => on_event(Event::Plan {
+            session: session.0.to_string(),
+            steps: plan_steps(plan),
+        }),
         SessionUpdate::UsageUpdate(usage) => on_event(Event::Usage {
             used: usage.used,
             size: usage.size,
@@ -2417,7 +2424,10 @@ fn end_turn(
     // Unconditional. Nothing here remembers whether the turn planned, and
     // threading a flag through every exit path in the turn loop would buy
     // one idempotent event.
-    on_event(Event::Plan(Vec::new()));
+    on_event(Event::Plan {
+        session: session.0.to_string(),
+        steps: Vec::new(),
+    });
 }
 
 /// What a finished turn is worth, from the reason it stopped and the words
@@ -2776,7 +2786,7 @@ mod tests {
         );
         assert!(matches!(
             seen.lock().unwrap().as_slice(),
-            [Event::Thought { text, .. }, Event::Plan(steps)]
+            [Event::Thought { text, .. }, Event::Plan { steps, .. }]
                 if text.is_empty() && steps.is_empty()
         ));
 
@@ -2792,7 +2802,7 @@ mod tests {
         );
         assert!(matches!(
             seen.lock().unwrap().as_slice(),
-            [Event::Plan(steps)] if steps.is_empty()
+            [Event::Plan { steps, .. }] if steps.is_empty()
         ));
     }
 
@@ -2820,9 +2830,10 @@ mod tests {
 
         let (_, events) = drive(vec![update]);
 
-        let [Event::Plan(steps)] = events.as_slice() else {
+        let [Event::Plan { session, steps }] = events.as_slice() else {
             panic!("a plan update raised {events:?}");
         };
+        assert_eq!(session, "s");
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].content, "write the patch");
         assert_eq!(steps[1].status, "in_progress");

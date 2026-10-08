@@ -47,7 +47,8 @@ tools — not across Character Instances. The Decision's "one session per
 app lifetime" is the ACP connection; session ids are per Instance (and
 Character identity on retarget). #558.
 
-A permission request is forwarded to every open Chat surface and answered only
+A permission request is forwarded to the Chat surface of the Instance whose
+session asked, or to every open one when no Instance owes it, and answered only
 by a click there. A turn that times out sends `cancelled`, which is a
 withdrawal, not an answer.
 
