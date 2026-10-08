@@ -3453,26 +3453,40 @@ mod tests {
                         // after the reopen is served.
                         "load-dead" if prompts == 1 => stop(&id, "refusal"),
                         "load-refusal" => stop(&id, "refusal"),
-                        "permission" | "permission-after-work" | "permission-stall" => {
+                        "permission"
+                        | "permission-after-work"
+                        | "permission-stall"
+                        | "permission-fidget"
+                        | "permission-other-fidget-title" => {
                             if script == "permission-after-work" {
                                 thread::sleep(ASK_WORK);
                             }
+                            let fidget_call = script == "permission-fidget" && prompts == 1;
                             pending_prompt = Some(id);
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
                                     "sessionId": &session,
                                     "toolCall": {
                                         "toolCallId": "t1",
-                                        "title": "rm -rf /",
-                                        "kind": "execute",
-                                        "content": [{"type": "content", "content": {"type": "text", "text": "Delete everything?"}}],
-                                        "rawInput": {"command": "rm -rf /"},
-                                        "locations": [{"path": "/"}],
+                                        "title": if fidget_call { "Describe screen" } else if script == "permission-other-fidget-title" { "mcp__fidget__describe_screen" } else { "rm -rf /" },
+                                        "name": if fidget_call { "mcp__fidget__describe_screen" } else { "shell" },
+                                        "kind": if fidget_call { "read" } else { "execute" },
+                                        "content": [{"type": "content", "content": {"type": "text", "text": if fidget_call { "Read visible window metadata" } else { "Delete everything?" }}}],
+                                        "rawInput": if fidget_call { json!({}) } else { json!({"command": "rm -rf /"}) },
+                                        "locations": if fidget_call { json!([]) } else { json!([{"path": "/"}]) },
                                     },
-                                    "options": [
-                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
-                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
-                                    ],
+                                    "options": if script == "permission-fidget" {
+                                        json!([
+                                            {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                            {"optionId": "always", "name": "Always allow", "kind": "allow_always"},
+                                            {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                        ])
+                                    } else {
+                                        json!([
+                                            {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                            {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                        ])
+                                    },
                                 }}),
                             );
                         }
@@ -4428,9 +4442,6 @@ mod tests {
         });
     }
 
-    /// No provider key in the child environment, and no `CLAUDE_CONFIG_DIR`
-    /// or `--bare`. A key overrides a subscription login with no prompt, and
-    /// those two cut the child off from the login the user already has.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
         for name in [
@@ -4446,8 +4457,23 @@ mod tests {
             "antigravity",
         ] {
             let launch = launch(Some(name)).unwrap();
+            let endpoint_was_served = crate::mcp_http::endpoint().is_some();
             let command = launch.command(&tmp_attach());
-            assert_eq!(command.get_envs().count(), 0, "{name} sets env");
+            let mut env: Vec<_> = command
+                .get_envs()
+                .map(|(key, _)| key.to_string_lossy().into_owned())
+                .collect();
+            env.sort();
+            let pi_vars = vec![
+                fidget_mcp_server::TOKEN_VAR.to_string(),
+                fidget_mcp_server::URL_VAR.to_string(),
+            ];
+            if name == "pi" && !endpoint_was_served {
+                assert!(env.is_empty() || env == pi_vars, "{name} sets {env:?}");
+            } else {
+                let expected = if name == "pi" { pi_vars } else { Vec::new() };
+                assert_eq!(env, expected, "{name} sets env");
+            }
             assert_eq!(command.get_current_dir(), Some(Path::new("/tmp")));
             assert!(
                 !launch.argv.iter().any(|arg| arg == "--bare"),
@@ -5640,6 +5666,50 @@ mod tests {
         // Every other open window has to retire the row this one answered,
         // and draw the option that actually won rather than its own click.
         assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
+        session.shutdown();
+    }
+
+    #[test]
+    fn fidget_mcp_permission_finishes_without_a_chat_ask() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+        let (fx, session) = Fixture::new("permission-fidget");
+
+        assert_eq!(
+            session.complete(&asking("describe screen")),
+            Ok(Reply::whole("ok:allow"))
+        );
+        assert!(fx.wait_for("perm:selected", 1));
+        assert!(fx.events("permission_request").is_empty());
+
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("run shell")))
+        };
+        let ask = fx.ask();
+        assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
+        session.answer_permission(&ask.request, "reject");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:reject")));
+        assert_eq!(fx.events("permission_request").len(), 1);
+        session.shutdown();
+    }
+
+    #[test]
+    fn another_tool_with_a_fidget_title_still_asks() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+        let (fx, session) = Fixture::new("permission-other-fidget-title");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("describe screen")))
+        };
+
+        let ask = fx.ask();
+        assert_eq!(ask.title.as_deref(), Some("mcp__fidget__describe_screen"));
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
         session.shutdown();
     }
 

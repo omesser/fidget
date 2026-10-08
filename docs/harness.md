@@ -327,6 +327,8 @@ The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the ro
 - **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
 - **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
 
+Fidget automatically allows permission requests for tools of the Fidget MCP server registered with the ACP session, so its sensing, expression, and Memory tools do not interrupt Chat. Other MCP servers and Harness tools keep their normal permission flow. A request without a server-qualified Fidget tool name still asks the user.
+
 ### Elicitation
 
 `initialize` declares both elicitation modes, `form` and `url`, to every Harness. With `url` declared, a Harness can hand Chat a link rather than open a browser itself. codex-acp offers its device-code sign-in only then. codex-acp and claude-agent-acp send an MCP server's OAuth link the same way; without `url` that server stays signed out.
