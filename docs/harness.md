@@ -257,6 +257,17 @@ Session handling:
 - † What `initialize` advertised: `claude`, `codex`, `opencode`, `grok`, `goose`, `copilot` and `antigravity` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `cursor-agent` omits it and ignores `mcpServers`, so Fidget writes the endpoint into `<cwd>/.cursor/mcp.json` instead ([details](#how-cursor-agent-is-reached)). `opencode`, `grok`, `copilot` and `antigravity` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
+### Finding programs on `PATH`
+
+launchd starts a Finder or Dock launch of Fidget.app with `/usr/bin:/bin:/usr/sbin:/sbin`, and a Linux desktop file often skips `~/.bashrc`. Neither has Homebrew, nvm, volta, or `~/.local/bin` (#1436). So at startup, before anything spawns, Fidget runs your `$SHELL -l -i` once and puts the `PATH` it prints in front of its own. Then it stops that shell and anything its rc files left running. Every Harness, `npx`, and version probe inherits the result.
+
+- **Started from a terminal:** Fidget keeps the terminal's `PATH` and runs no shell.
+- **Shell slow or broken:** after 5 seconds Fidget kills the shell. It then adds whichever of `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.cargo/bin`, `~/.volta/bin`, `~/.bun/bin`, `~/.local/share/mise/shims`, and `~/.asdf/shims` exist.
+- **Only `PATH`:** other variables in your rc files do not reach Fidget. A provider key exported there would switch a signed-in Harness to API billing, and a `FIDGET_DIRECTOR_*` export would take over its Settings row.
+- **Windows:** not affected, because a Windows app reads `PATH` from the registry.
+
+The process log beside Memory has one `path:` line that names which case ran and the `PATH` in force.
+
 ### Inbound Wake Contract
 
 A Harness can work between Fidget's `session/prompt` calls: Claude Code `/loop` and `CronCreate` fires, Hermes scheduled reminders, and any background agent output arrive as ACP `session/update` notifications while no Fidget turn is open. This is an **inbound wake** — the Harness starting a turn on the one session rather than answering one Fidget asked for (ADR-0008).
@@ -302,7 +313,7 @@ Each session belongs to the Instance it was opened for, from the moment it opens
 
 ### Setting up `pi`
 
-Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; Finder-launched builds inherit launchd's `PATH`, as with every `npx` row. An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`.
+Needs a global `pi` on `PATH`: `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`, `node`, and `pi` must resolve in the app's environment; a Finder-launched build finds them on your login shell's `PATH` (see [Finding programs on `PATH`](#finding-programs-on-path)). An unconfigured Pi may pick up an ambient provider key from the environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins. An npm-global `pi` can shadow the keg: `npm uninstall -g @earendil-works/pi-coding-agent`, then `brew link pi-coding-agent`.
 
 ### Setting up `antigravity`
 

@@ -2,24 +2,173 @@
 //! started Fidget with the system's short one (#1436).
 
 use std::ffi::{OsStr, OsString};
+use std::fmt;
+use std::io::{IsTerminal, Read};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+const TIMEOUT: Duration = Duration::from_secs(5);
 
 const MARK: &str = "__FIDGET_LOGIN_PATH__";
 
+/// Homebrew, version-manager shims and per-user installers, for when the login
+/// shell does not answer.
+const USUAL_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+const USUAL_HOME_DIRS: &[&str] = &[
+    ".local/bin",
+    ".cargo/bin",
+    ".volta/bin",
+    ".bun/bin",
+    ".local/share/mise/shims",
+    ".asdf/shims",
+];
+
+#[derive(Debug)]
+enum Failure {
+    Spawn(std::io::Error),
+    TimedOut(Duration),
+    Unmarked,
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Failure::Spawn(error) => write!(f, "could not run: {error}"),
+            Failure::TimedOut(after) => write!(f, "timed out after {}s", after.as_secs()),
+            Failure::Unmarked => write!(f, "printed no PATH"),
+        }
+    }
+}
+
 /// Puts the login shell's `PATH` in front of ours, so every child Fidget
 /// spawns finds what a new terminal finds. A terminal launch already has it.
-pub fn adopt() {}
+pub fn adopt() {
+    if std::io::stdin().is_terminal() {
+        fidget::eprintln_and_log!("path: started from a terminal, kept its PATH");
+        return;
+    }
+    let shell = login_shell();
+    let home = fidget_core::memory::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let started = Instant::now();
+    let (path, how) = match login_shell_path(&shell, &home, &current, TIMEOUT) {
+        Ok(found) => (
+            merged(&found, &current),
+            format!(
+                "{} answered in {} ms",
+                shell.display(),
+                started.elapsed().as_millis()
+            ),
+        ),
+        Err(why) => (
+            merged(&current, &usual_dirs(&home)),
+            format!("{} {why}, added the usual install folders", shell.display()),
+        ),
+    };
+    std::env::set_var("PATH", &path);
+    fidget::eprintln_and_log!("path: {how}: {}", path.to_string_lossy());
+}
+
+fn login_shell() -> PathBuf {
+    match std::env::var_os("SHELL") {
+        Some(shell) if !shell.is_empty() => PathBuf::from(shell),
+        _ if cfg!(target_os = "macos") => PathBuf::from("/bin/zsh"),
+        _ => PathBuf::from("/bin/sh"),
+    }
+}
+
+/// `-l` reads `.zprofile` or `.bash_profile`, and `-i` reads `.zshrc` or
+/// `.bashrc`. A session of its own, so an interactive shell never takes a
+/// terminal. Done at the second mark rather than at end of output, because a
+/// job the rc files leave running keeps the pipe open.
+fn login_shell_path(
+    shell: &Path,
+    home: &Path,
+    start: &OsStr,
+    timeout: Duration,
+) -> Result<OsString, Failure> {
+    let mut command = Command::new(shell);
+    command
+        .args(["-l", "-i", "-c"])
+        .arg(format!("echo {MARK}; printenv PATH; echo {MARK}"))
+        .env("HOME", home)
+        .env("PATH", start)
+        .current_dir(home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    // SAFETY: `setsid` is async-signal-safe and touches no memory of ours.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    let mut child = command.spawn().map_err(Failure::Spawn)?;
+    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        let mut chunk = [0; 4096];
+        while let Ok(read @ 1..) = stdout.read(&mut chunk) {
+            seen.extend_from_slice(&chunk[..read]);
+            if let Some(path) = marked_path(&seen) {
+                let _ = tx.send(path);
+                return;
+            }
+        }
+    });
+    let found = rx.recv_timeout(timeout);
+    // SAFETY: the child is not reaped yet, so its pid is still the group
+    // `setsid` made, and no other process can hold it.
+    unsafe { libc::killpg(child.id() as libc::pid_t, libc::SIGKILL) };
+    let _ = child.wait();
+    match found {
+        Ok(path) => Ok(path),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(Failure::TimedOut(timeout)),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(Failure::Unmarked),
+    }
+}
 
 /// The text between the first two marks, so whatever the rc files print
 /// around it does not count.
 fn marked_path(stdout: &[u8]) -> Option<OsString> {
-    let _ = stdout;
-    None
+    let rest = &stdout[mark_at(stdout)? + MARK.len()..];
+    let path = rest[..mark_at(rest)?].trim_ascii();
+    (!path.is_empty()).then(|| OsStr::from_bytes(path).to_os_string())
+}
+
+fn mark_at(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(MARK.len())
+        .position(|window| window == MARK.as_bytes())
 }
 
 /// `first`'s folders in order, then `then`'s that `first` lacks.
 fn merged(first: &OsStr, then: &OsStr) -> OsString {
-    let _ = first;
-    then.to_os_string()
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for dir in std::env::split_paths(first).chain(std::env::split_paths(then)) {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    std::env::join_paths(dirs).expect("folders split from a PATH join back")
+}
+
+fn usual_dirs(home: &Path) -> OsString {
+    let dirs = USUAL_DIRS
+        .iter()
+        .map(PathBuf::from)
+        .chain(USUAL_HOME_DIRS.iter().map(|dir| home.join(dir)))
+        .filter(|dir| dir.is_dir());
+    std::env::join_paths(dirs).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -27,10 +176,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
-    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::{Duration, Instant};
 
     const LAUNCHD_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
     const FAKE: &str = "fidget-fake-harness";
