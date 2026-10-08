@@ -52,7 +52,6 @@ const ENABLE_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct Installed {
     file: PathBuf,
-    created_dir: bool,
     created_file: bool,
 }
 
@@ -62,7 +61,6 @@ pub struct Installed {
 pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, String> {
     let dir = cwd.join(DIR);
     let file = dir.join(FILE);
-    let created_dir = !dir.exists();
     let (mut root, created_file) = match fs::read_to_string(&file) {
         Ok(text) => (parse(&file, &text)?, false),
         Err(error) if error.kind() == ErrorKind::NotFound => (json!({}), true),
@@ -86,11 +84,7 @@ pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, 
         write(&file, &root)?;
     }
     restrict(&file)?;
-    Ok(Installed {
-        file,
-        created_dir,
-        created_file,
-    })
+    Ok(Installed { file, created_file })
 }
 
 fn parse(file: &Path, text: &str) -> Result<Value, String> {
@@ -205,12 +199,6 @@ impl Installed {
     pub fn remove(self) {
         if let Err(why) = self.remove_entry() {
             eprintln!("harness: cursor mcp: {why}");
-        }
-        if self.created_dir {
-            if let Some(dir) = self.file.parent() {
-                // Refuses a directory that is not empty, which is the point.
-                let _ = fs::remove_dir(dir);
-            }
         }
     }
 
@@ -403,17 +391,6 @@ mod tests {
             fs::metadata(&file).unwrap().permissions().mode() & 0o777,
             0o600
         );
-    }
-
-    #[test]
-    fn install_then_remove_on_a_fresh_dir_leaves_no_cursor_dir() {
-        let cwd = dir("fresh");
-        let installed = install(&cwd, URL, AUTH).expect("installed");
-        assert!(cwd.join(DIR).join(FILE).is_file());
-
-        installed.remove();
-
-        assert!(!cwd.join(DIR).exists(), ".cursor was left behind");
     }
 
     #[test]

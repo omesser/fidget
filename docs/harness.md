@@ -354,7 +354,7 @@ URL and token are new every app run, so each attach rewrites and re-approves. Wi
 
 Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
 
-Detach removes the MCP entry, and `mcp.json` and `.cursor/` if attach created them and nothing else is left in them. The `Mcp(fidget:*)` allow in `cli.json` stays, because it holds no credential and the next attach would add it again. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
+Detach removes the `fidget` entry from `mcp.json`, and the file too if attach created it and nothing else is left in it. The `Mcp(fidget:*)` allow in `cli.json` stays, because it holds no credential and the next attach would add it again, so `.cursor/` stays as well. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
 
 ### Pointing a Harness you run yourself at Fidget
 
