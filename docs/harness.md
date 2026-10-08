@@ -265,7 +265,7 @@ A Harness can work between Fidget's `session/prompt` calls: Claude Code `/loop` 
 
 Between-turn `session/update` carrying agent text that is flushed to the user. Only agent speech triggers an inbound wake and resets Pace; between-turn thought and tool activity are visible (#1370) but do not count as a wake. Not attribution metadata: usage and latency stay internal.
 
-**Known gap.** A loaded session's replay before `session/load` answers is currently discarded (#1370). This is not the desired contract. #1393 tracks preserving Harness load replay rather than throwing it away.
+**Load replay is not a wake.** `session/load` replays the conversation as updates before it answers. Fidget keeps the agent's replayed messages and hands them to that Instance's Chat, above everything else in its log, under "Earlier in this session." (#1393). The rows carry the Instance's name, no label, and no time, because the replay has none. A Director reply loses its Behavior line, as it does live. Restoring never marks the Instance `addressed` and never touches Pace. Each session id restores once per run, so a respawn that loads the same id again draws nothing new. A load that fails and falls back to `session/new` drops its replay, because the session that answers never said it. Thought, tool calls, and the prompts Fidget sent are not restored.
 
 #### Interaction with ADR-0008 (one session)
 

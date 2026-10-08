@@ -776,6 +776,31 @@ function newSession(why) {
   note(`New session — ${why}. Nothing said earlier is in it.`);
 }
 
+// What a loaded session said before this run (#1393), above everything else
+// in the log. No stamp: the replay carries no time. Not a turn, so a typed
+// question waiting below never takes one of these as its answer. The label is
+// an `.i-name`, which `showWho` fills if the opening has not landed yet.
+function restored(lines) {
+  if (!lines.length) {
+    return;
+  }
+  const heading = el("note");
+  heading.textContent = "Earlier in this session.";
+  const rows = lines.map((text) => {
+    const row = el("row them restored");
+    const cluster = el("who");
+    const label = el("who-label i-name");
+    label.textContent = them;
+    cluster.append(label);
+    const body = el("said md");
+    drawReply(body, text);
+    row.append(cluster, body);
+    return row;
+  });
+  empty.after(heading, ...rows);
+  log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
+}
+
 async function start() {
   // Addressed to this window's label. Not optional: a listener registered with
   // no target is an `Any` listener that hears every emit, so two Chat surfaces
@@ -907,6 +932,14 @@ async function start() {
       const ms = payload.wake_ms ?? null;
       wakeAt = ms === null ? null : performance.now() + ms;
       paint();
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-restored",
+    ({ payload }) => {
+      restored(payload);
     },
     { target: chat.label },
   );

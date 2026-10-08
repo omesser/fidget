@@ -52,7 +52,7 @@ mod tray;
 
 use chat_surface::{
     Settled, CHAT_ELICITATION_EVENT, CHAT_EVENT, CHAT_OPENING_EVENT, CHAT_PERMISSION_EVENT,
-    CHAT_PERMISSION_SETTLED_EVENT, CHAT_PLAN_EVENT, CHAT_THOUGHT_EVENT,
+    CHAT_PERMISSION_SETTLED_EVENT, CHAT_PLAN_EVENT, CHAT_RESTORED_EVENT, CHAT_THOUGHT_EVENT,
 };
 use frame_loop::run_frame_loop;
 
@@ -2308,6 +2308,23 @@ fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
     }
 }
 
+/// A loaded session's history, into its Instance's log and open window. Not
+/// sent to the frame loop: nothing is addressed and Pace is untouched (#1393).
+/// Under the lock `chat_ready` replays under, so a window opening now draws it
+/// once.
+fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
+    let Some(state) = app.try_state::<PendingAsks>() else {
+        return;
+    };
+    let Ok(_replaying) = state.0.lock() else {
+        return;
+    };
+    let said = session_log::restore(app, &restored.instance, &restored.said, SystemTime::now());
+    if !said.is_empty() {
+        let _ = app.emit_to(chat_label(&restored.instance), CHAT_RESTORED_EVENT, &said);
+    }
+}
+
 /// Show the agent's plan in every open Chat surface: the session is shared and
 /// the wire does not say whose turn is on it.
 fn show_plan(app: &tauri::AppHandle, steps: &[harness::PlanStep]) {
@@ -2979,7 +2996,14 @@ fn chat_ready(
     pending: tauri::State<'_, PendingAsks>,
 ) {
     if let Ok(pending) = pending.0.lock() {
-        for turn in session_log::replay(&app, &instance) {
+        let (restored, turns): (Vec<_>, Vec<_>) = session_log::replay(&app, &instance)
+            .into_iter()
+            .partition(|turn| turn.who == session_log::Who::Restored);
+        if !restored.is_empty() {
+            let said: Vec<_> = restored.into_iter().filter_map(|turn| turn.said).collect();
+            let _ = app.emit_to(chat_label(&instance), CHAT_RESTORED_EVENT, &said);
+        }
+        for turn in turns {
             let _ = app.emit_to(
                 chat_label(&instance),
                 CHAT_EVENT,
@@ -4554,6 +4578,9 @@ fn main() {
                         settle_ask(&forward_to, Settled { request, option })
                     }
                     harness::Forwarded::InboundWake(wake) => handle_inbound_wake(&forward_to, wake),
+                    harness::Forwarded::Restored(restored) => {
+                        restore_history(&forward_to, restored)
+                    }
                     harness::Forwarded::Thought { instance, line } => {
                         show_thought(&forward_to, &instance, line)
                     }

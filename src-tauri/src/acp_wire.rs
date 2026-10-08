@@ -358,6 +358,16 @@ impl McpLaunch {
 
 pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
 
+/// The session `open` handed back, and what `session/load` replayed of it.
+#[derive(Debug)]
+pub struct Opened {
+    pub id: String,
+    /// The agent's messages from before this connection, oldest first, as
+    /// raw text. Empty for `session/new`, and for a load that failed: the
+    /// session that answers never said what that replay holds.
+    pub history: Vec<String>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OpenError {
     /// `-32000`. The Harness wants a login it does not have.
@@ -446,7 +456,7 @@ enum Msg {
         model: String,
         /// `None` sends no effort option.
         effort: Option<String>,
-        reply: sync_mpsc::Sender<Result<String, OpenError>>,
+        reply: sync_mpsc::Sender<Result<Opened, OpenError>>,
     },
     Prompt {
         session_id: String,
@@ -578,7 +588,7 @@ impl Wire {
         timeout: Duration,
         model: &str,
         effort: Option<&str>,
-    ) -> Result<String, OpenError> {
+    ) -> Result<Opened, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
             .send(Msg::Open {
@@ -1194,13 +1204,22 @@ async fn serve(
                 let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
-                // `session/new`. Every update queued for either id is history.
-                let history =
+                // `session/new`. Every update queued for either id is history,
+                // never work between turns. Only a load that answered keeps it.
+                let loaded = matches!(&opened, Ok(id) if loading.as_ref() == Some(id));
+                let replayed =
                     |id: &SessionId| loading.as_ref() == Some(id) || opened.as_ref() == Ok(id);
+                let mut history = Replay::default();
                 while let Ok(message) = incoming.try_recv() {
-                    if matches!(&message, Incoming::Update(update) if history(&update.session_id)) {
-                        continue;
-                    }
+                    let message = match message {
+                        Incoming::Update(update) if replayed(&update.session_id) => {
+                            if loaded {
+                                history.note(update.update);
+                            }
+                            continue;
+                        }
+                        other => other,
+                    };
                     let signing_in = auth.is_some();
                     between_turns(
                         message,
@@ -1211,7 +1230,11 @@ async fn serve(
                         on_event,
                     );
                 }
-                let _ = reply.send(opened.map(|id| id.0.to_string()));
+                let history = history.finish();
+                let _ = reply.send(opened.map(|id| Opened {
+                    id: id.0.to_string(),
+                    history,
+                }));
             }
             Step::Command(Msg::Prompt {
                 session_id,
@@ -1290,6 +1313,41 @@ async fn serve(
     }
     cancel_asks(&mut asks, on_event);
     cancel_forms(&mut forms, on_event);
+}
+
+/// A `session/load` replay, as the agent's messages. A user message ends the
+/// agent message before it. Thought, tool calls, and the prompts Fidget sent
+/// are not kept: the Director's prompt is not something the user said.
+#[derive(Default)]
+struct Replay {
+    said: Vec<String>,
+    message: Answer,
+}
+
+impl Replay {
+    fn note(&mut self, update: SessionUpdate) {
+        match update {
+            SessionUpdate::AgentMessageChunk(chunk) => {
+                if let ContentBlock::Text(text) = chunk.content {
+                    self.message.push(&text.text);
+                }
+            }
+            SessionUpdate::UserMessageChunk(_) => self.end_message(),
+            _ => {}
+        }
+    }
+
+    fn end_message(&mut self) {
+        let message = std::mem::take(&mut self.message).finish();
+        if !message.trim().is_empty() {
+            self.said.push(message);
+        }
+    }
+
+    fn finish(mut self) -> Vec<String> {
+        self.end_message();
+        self.said
+    }
 }
 
 /// ACP v1 says nothing when a turn the Harness started is over. Flush any

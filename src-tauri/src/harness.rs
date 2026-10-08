@@ -2,7 +2,7 @@
 //! Spawns the Harness in ACP mode; every wake is one `session/prompt`
 //! (ADR-0008, ADR-0018). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -775,6 +775,15 @@ pub struct InboundWake {
     pub speech: String,
 }
 
+/// What a loaded session said before this run, for its Instance's Chat.
+/// Raw agent text, oldest first. Not a wake: nothing here addresses the
+/// Instance or touches Pace.
+#[derive(Clone, Debug)]
+pub struct Restored {
+    pub instance: String,
+    pub said: Vec<String>,
+}
+
 /// What the session on the wire tells the Chat surface, live or on replay.
 /// `Settled` exists because an ask goes to every open surface and only one
 /// takes the click. Without it the others keep offering live buttons.
@@ -798,6 +807,7 @@ pub enum Forwarded {
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
     InboundWake(InboundWake),
+    Restored(Restored),
     /// The attachment moved: preflight finished, a session opened, or a login
     /// went missing or came back mid-session (#991). Chat's first ReloadChat
     /// races preflight and `session/new`, so a missing launcher would never
@@ -890,6 +900,9 @@ struct State {
     /// Per Instance, bumped when its conversation is dropped. An open that
     /// started earlier must not store its id afterwards.
     conversation_gen: HashMap<String, u64>,
+    /// Every session id opened in this run. Kept across respawns: a respawn
+    /// loads the same id, and its replay is what Chat already holds.
+    opened_ids: HashSet<String>,
 }
 
 impl State {
@@ -1755,7 +1768,7 @@ impl Session {
             .as_path();
         let model = self.completer_model();
         let effort = crate::dev_flags::director_reasoning_effort();
-        let id = match wire.open(
+        let opened = match wire.open(
             saved.clone(),
             cwd,
             mcp.clone(),
@@ -1763,7 +1776,7 @@ impl Session {
             &model,
             effort.as_deref(),
         ) {
-            Ok(id) => id,
+            Ok(opened) => opened,
             Err(OpenError::Lost) => {
                 let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
                 self.lost(wire, &mut state);
@@ -1782,14 +1795,15 @@ impl Session {
                 return Err(format!("session/new: {why}"));
             }
         };
-        let replaced = {
+        let id = opened.id;
+        let (replaced, first_open) = {
             let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
             // `drop_conversation` does not wait on this open. Storing the id
             // puts back the conversation it throws away. Its cancel has no
             // prompt, so the withdrawal note is not a turn.
             if state.conversation_generation(&key.instance) != generation {
                 self.note_withdrawal(None);
-                true
+                (true, false)
             } else {
                 state.sessions.insert(
                     key.clone(),
@@ -1804,7 +1818,7 @@ impl Session {
                 if let Ok(mut owners) = self.owners.lock() {
                     owners.insert(id.clone(), key.instance.clone());
                 }
-                false
+                (false, state.opened_ids.insert(id.clone()))
             }
         };
         if replaced {
@@ -1814,6 +1828,12 @@ impl Session {
                 eprintln!("harness: session/close {id}: {why}");
             }
             return Err("session replaced".to_string());
+        }
+        if first_open && !opened.history.is_empty() {
+            (self.forward)(Forwarded::Restored(Restored {
+                instance: key.instance.clone(),
+                said: opened.history,
+            }));
         }
         // An open Chat surface drew its header from an opening asked for
         // before this session existed, and asks again only on its next send.
@@ -3035,6 +3055,15 @@ mod tests {
         );
     }
 
+    fn user_chunk(session: &str, text: &str) {
+        say(
+            json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                "sessionId": session,
+                "update": {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}},
+            }}),
+        );
+    }
+
     fn thought(session: &str, text: &str) {
         say(
             json!({"jsonrpc": "2.0", "method": "session/update", "params": {
@@ -3294,6 +3323,15 @@ mod tests {
                     // answers `session/load`, even one that then fails.
                     if script == "load-replay" {
                         tool_call(loaded, "replayed");
+                    }
+                    if script == "load-history" {
+                        user_chunk(loaded, "the first wake's prompt");
+                        chunk(loaded, "wave\n");
+                        chunk(loaded, "Hello from before");
+                        tool_call(loaded, "replayed");
+                        thought(loaded, "Weighing it");
+                        user_chunk(loaded, "the second wake's prompt");
+                        chunk(loaded, "<think>hmm</think>nod | Still here");
                     }
                     if loaded == "stale" {
                         say(
@@ -3578,7 +3616,7 @@ mod tests {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
-                        "exit" if spawns == 1 => std::process::exit(3),
+                        "exit" | "load-history" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
                             chunk(&session, "Hell");
@@ -3795,6 +3833,7 @@ mod tests {
                         Forwarded::Plan(_)
                         | Forwarded::Thought { .. }
                         | Forwarded::InboundWake(_)
+                        | Forwarded::Restored(_)
                         | Forwarded::AttachSettled,
                     ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
@@ -3806,7 +3845,7 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Form(form)) => return form,
-                    Ok(Forwarded::AttachSettled) => {}
+                    Ok(Forwarded::Restored(_) | Forwarded::AttachSettled) => {}
                     other => panic!("expected a form, got {:?}", other.map(|_| "other")),
                 }
             }
@@ -3829,7 +3868,7 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Settled { request, option }) => return (request, option),
-                    Ok(Forwarded::AttachSettled) => {}
+                    Ok(Forwarded::Restored(_) | Forwarded::AttachSettled) => {}
                     other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
                 }
             }
@@ -3842,7 +3881,8 @@ mod tests {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::AttachSettled) => return,
-                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. }) => {}
+                    Ok(Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::Restored(_)) => {
+                    }
                     other => panic!("expected AttachSettled, got {other:?}"),
                 }
             }
@@ -5804,6 +5844,74 @@ mod tests {
             assert_eq!(fx.events("tool_call"), Vec::<Value>::new(), "{saved}");
             session.shutdown();
         }
+    }
+
+    /// The conversation a loaded session replays reaches that Instance's Chat
+    /// as what it said, once. The respawn loads the same id and replays it
+    /// again, and Chat already holds it. Neither replay is a wake (#1393).
+    #[test]
+    fn a_loaded_sessions_replay_is_restored_once_and_wakes_nobody() {
+        let (fx, session) = Fixture::new("load-history");
+        let session = session.with_backoff(Duration::ZERO);
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Err("harness exited".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking("again"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("load"), 2);
+        let mut restored = Vec::new();
+        for forwarded in fx.forwarded.try_iter() {
+            match forwarded {
+                Forwarded::Restored(Restored { instance, said }) => restored.push((instance, said)),
+                Forwarded::InboundWake(wake) => {
+                    panic!("replay woke {}: {}", wake.instance, wake.speech)
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(
+            restored,
+            vec![(
+                "buddy-1".to_string(),
+                vec![
+                    "wave\nHello from before".to_string(),
+                    "nod | Still here".to_string()
+                ]
+            )]
+        );
+        assert_eq!(fx.events("tool_call"), Vec::<Value>::new());
+        session.shutdown();
+    }
+
+    /// A load that fails after replaying falls back to `session/new`. The new
+    /// session never said what that replay holds, so Chat is not handed it.
+    #[test]
+    fn a_failed_loads_replay_is_not_restored() {
+        let (fx, session) = Fixture::new("load-history");
+        let session = session.with_backoff(Duration::ZERO);
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"stale"}]}"#,
+        )
+        .unwrap();
+        let _ = session.complete(&asking("hi"), &|_| {});
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 1);
+        let restored = fx
+            .forwarded
+            .try_iter()
+            .filter(|forwarded| matches!(forwarded, Forwarded::Restored(_)))
+            .count();
+        assert_eq!(restored, 0);
+        session.shutdown();
     }
 
     /// The budget guards a Harness that went quiet, not a user who is busy
