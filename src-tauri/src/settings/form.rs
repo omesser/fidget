@@ -565,7 +565,7 @@ pub const HARNESS_PRESETS: [&str; 10] = [
 /// Two local servers `docs/harness.md` lists are deliberately absent: vLLM
 /// answers on oMLX's 8000 and `mlx_lm.server` on llama.cpp's 8080, so a row for
 /// either would offer a second name for a URL already on the list. The field
-/// below takes both.
+/// beside the picker takes both.
 const ENDPOINTS: &[(&str, &str, &str)] = &[
     ("Local", "Ollama", "http://localhost:11434"),
     ("Local", "LM Studio", "http://localhost:1234"),
@@ -634,8 +634,8 @@ pub fn endpoint_title(base_url: &str) -> String {
 const EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
 /// The reasoning-effort picker's choices, Custom first, exactly as the Base
-/// URL picker is shaped: the field below is the setting, and the picker only
-/// fills it in.
+/// URL picker is shaped: the field beside it is the setting, and the picker
+/// only fills it in.
 pub fn effort_options() -> Vec<String> {
     let mut options = vec![PICKER_CUSTOM.to_string()];
     options.extend(EFFORT_LEVELS.iter().map(|level| level.to_string()));
