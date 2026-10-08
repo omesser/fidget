@@ -292,7 +292,7 @@ Multiple Harness fires before Fidget's next prompt previously piled into one und
 
 Each session belongs to the Instance it was opened for, from the moment it opens, so work between turns has an owner before that session's first prompt (#1395).
 
-- **Asks.** An ask or form is owed by the Instance whose session asked it, mid-turn or between turns. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
+- **Asks.** An ask or form stores the session that asked. `awaiting_user` resolves that session through the owners map, so an ask that arrives during open still belongs to its Instance once the open finishes. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
 - **Updates.** During a Fidget turn, an update, ask, or session-scoped form for another session is held as that session's between-turn work. It never joins the running turn's reply.
 
 #### Out of scope
