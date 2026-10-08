@@ -798,9 +798,10 @@ pub enum Forwarded {
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
     InboundWake(InboundWake),
-    /// The attachment moved: preflight finished, or a login went missing or
-    /// came back mid-session (#991). Chat's first ReloadChat races preflight,
-    /// so a missing launcher would otherwise never reach the landing (#726).
+    /// The attachment moved: preflight finished, a session opened, or a login
+    /// went missing or came back mid-session (#991). Chat's first ReloadChat
+    /// races preflight and `session/new`, so a missing launcher would never
+    /// reach the landing (#726) and the header would keep "no session yet".
     AttachSettled,
 }
 
@@ -1394,11 +1395,17 @@ impl Session {
     /// An answer is the proof the login happened, in a terminal fidget never
     /// sees. The composer it disabled comes back the same way it went.
     fn signed_in(&self, state: &mut State) {
+        if self.clear_login(state) {
+            (self.forward)(Forwarded::AttachSettled);
+        }
+    }
+
+    fn clear_login(&self, state: &mut State) -> bool {
         if state.login.take().is_none() {
-            return;
+            return false;
         }
         self.update_inspect(|inspect| inspect.login = None);
-        (self.forward)(Forwarded::AttachSettled);
+        true
     }
 
     /// Drop a loaded session so the next `attach` opens a fresh one. A refused
@@ -1791,7 +1798,8 @@ impl Session {
                         loaded: saved.as_deref() == Some(id.as_str()),
                     },
                 );
-                self.signed_in(&mut state);
+                // The AttachSettled below carries a cleared login too.
+                self.clear_login(&mut state);
                 self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
                 if let Ok(mut owners) = self.owners.lock() {
                     owners.insert(id.clone(), key.instance.clone());
