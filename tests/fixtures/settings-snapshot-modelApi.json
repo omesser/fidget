@@ -416,7 +416,7 @@
                   }
                 }
               ],
-              "help": "Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.",
+              "help": "Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there.",
               "disclosure": null
             },
             {
@@ -777,7 +777,7 @@
                   }
                 }
               ],
-              "help": "Fills in the field below. Any value the server takes can be typed there.",
+              "help": "Fills in the field beside it. Any value the server takes can be typed there.",
               "disclosure": null
             },
             {

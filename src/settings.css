@@ -220,6 +220,22 @@
   min-width: 220px;
 }
 
+/* A shortcut picker sits under its field's title, ahead of the field. */
+.set-shortcut {
+  display: flex;
+  gap: 8px;
+}
+
+.set-row .set-shortcut select {
+  width: auto;
+  flex: none;
+}
+
+.set-row .set-shortcut input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
 .set-controls button,
 .set-list button {
   padding: 6px 14px;

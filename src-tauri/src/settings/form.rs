@@ -927,8 +927,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
-                        true => "Off, for the same reason the Base URL below is.".to_string(),
-                        false => "Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
+                        true => "Off, for the same reason the field beside it is.".to_string(),
+                        false => "Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {
@@ -1611,8 +1611,8 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "reasoning_effort_pick".to_string(),
                     help: Some(match effort_frozen {
-                        true => "Off, for the same reason the field below is.".to_string(),
-                        false => "Fills in the field below. Any value the server takes can be typed there.".to_string(),
+                        true => "Off, for the same reason the field beside it is.".to_string(),
+                        false => "Fills in the field beside it. Any value the server takes can be typed there.".to_string(),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {

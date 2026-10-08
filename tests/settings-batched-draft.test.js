@@ -17,10 +17,12 @@ const MODEL_API = snapshot("modelApi");
 const AI = MODEL_API.form.tabs.find((tab) => tab.title === "AI");
 
 // Apply reads the drawn controls back through querySelector, so the stub
-// answers the two shapes the page asks: a row by data-row, with an optional
-// descendant tag, and a list of tags.
+// answers the shapes the page asks: a control by id, a row by data-row with an
+// optional descendant tag, and a list of tags.
 function query(node, selector) {
   const below = (n) => (n.children ?? []).flatMap((child) => [child, ...below(child)]);
+  const id = selector.match(/^#(\S+)$/);
+  if (id) return below(node).find((n) => n.id === id[1]) ?? null;
   const row = selector.match(/^\[data-row="([^"]+)"\](?: (\w+))?$/);
   if (row) {
     const found = below(node).find((n) => n.attributes?.["data-row"] === row[1]);
@@ -356,4 +358,53 @@ test("Apply sends every row the form marks batched, and only those", () => {
   };
   assert.deepEqual(apply(withTimeout(false)), drawn, "an unbatched row saves on blur instead");
   assert.deepEqual(apply(withTimeout(true)), { ...drawn, director_timeout_secs: "90" });
+});
+
+const DEVELOPMENT = MODEL_API.form.tabs.find((tab) => tab.title === "Development");
+
+// What the page sends when Reasoning effort's picker lands on high. The Rust
+// side parses the same file, so the two cannot drift apart unseen (#1426).
+const PICK_HIGH_EFFORT = JSON.parse(
+  readFileSync(new URL("./fixtures/settings-pick-reasoning-effort.json", import.meta.url), "utf8"),
+);
+
+function pick(tab, id, value) {
+  const emitted = [];
+  const picker = draw(MODEL_API.values, (payload) => emitted.push(payload), () => {}, tab)(id);
+  picker.value = value;
+  picker.handlers.change();
+  return emitted;
+}
+
+test("a shortcut pick names the row it fills the way settings_event reads it", () => {
+  assert.deepEqual(pick(DEVELOPMENT, "director_reasoning_effort_pick", "high"), [PICK_HIGH_EFFORT]);
+  assert.deepEqual(pick(AI, "director_base_url_pick", "xAI (https://api.x.ai)"), [
+    { pick: "director_base_url_pick", value: "xAI (https://api.x.ai)", fills: { row: "director_base_url" } },
+  ]);
+});
+
+// The title, the picker, and the field, in the order a reader meets them.
+function rowReading(row) {
+  const walk = (node) => (node.children ?? []).flatMap((child) => [child, ...walk(child)]);
+  return walk(row)
+    .filter((node) => ["span", "select", "input"].includes(node.tagName))
+    .map((node) => (node.tagName === "span" ? node.textContent : `${node.tagName}#${node.dataset.id ?? node.id}`));
+}
+
+test("a shortcut picker draws under the title of the row it fills", () => {
+  const effort = draw(MODEL_API.values, () => {}, () => {}, DEVELOPMENT);
+  assert.deepEqual(rowReading(effort.row("director_reasoning_effort")), [
+    "Reasoning effort",
+    "select#director_reasoning_effort_pick",
+    "input#set-f-director_reasoning_effort",
+  ]);
+  assert.equal(effort.row("reasoning_effort_pick"), undefined, "no picker row of its own above the title");
+
+  const endpoint = draw(MODEL_API.values);
+  assert.deepEqual(rowReading(endpoint.row("director_base_url")), [
+    "Base URL",
+    "select#director_base_url_pick",
+    "input#set-f-director_base_url",
+  ]);
+  assert.equal(endpoint.row("base_url_pick"), undefined);
 });

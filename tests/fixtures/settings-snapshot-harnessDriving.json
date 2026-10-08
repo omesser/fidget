@@ -416,7 +416,7 @@
                   }
                 }
               ],
-              "help": "Off, for the same reason the Base URL below is.",
+              "help": "Off, for the same reason the field beside it is.",
               "disclosure": null
             },
             {
@@ -777,7 +777,7 @@
                   }
                 }
               ],
-              "help": "Fills in the field below. Any value the server takes can be typed there.",
+              "help": "Fills in the field beside it. Any value the server takes can be typed there.",
               "disclosure": null
             },
             {
