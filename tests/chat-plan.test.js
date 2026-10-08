@@ -26,10 +26,18 @@ test("the in-progress step is the one marked current", () => {
   );
 });
 
-test("an empty plan draws nothing and untrusted text is flattened", () => {
+test("an empty plan draws nothing", () => {
   assert.deepEqual(planSteps([]), []);
   assert.deepEqual(planSteps(undefined), []);
+});
 
-  const [step] = planSteps([{ content: "write the\n‮patch", status: "pending" }]);
-  assert.equal(step.text, "write the patch");
+// A step as the Harness wrote it, the rule the ask card follows: its lines and
+// length stay, and only the characters that could hide or reverse text go.
+test("a step keeps its lines and length and loses only unsafe characters", () => {
+  const long = "Move the roster parser behind the settings boundary. ".repeat(4).trim();
+  assert.equal(long.length, 211);
+  const [step] = planSteps([
+    { content: `write the\n\u202epatch\u2066\n  - then ${long}`, status: "pending" },
+  ]);
+  assert.equal(step.text, `write the\npatch\n  - then ${long}`);
 });

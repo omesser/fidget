@@ -1820,11 +1820,13 @@ body {
 /* The agent's steps, between the log and the composer. Capped and scrolled
    because `.log` is the only child that flexes, so in a 560-point window an
    uncapped plan of a dozen steps eats the transcript. Five rows, then it
-   scrolls itself. */
+   scrolls itself. A step keeps the Harness's lines, and a long one scrolls. */
 .plan {
   flex: 0 0 auto;
   max-height: calc(1.45em * 5);
   overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   display: grid;
   gap: 2px;
   padding: 0 18px 4px;

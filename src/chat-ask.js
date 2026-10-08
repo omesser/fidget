@@ -8,28 +8,10 @@ import { emptyJsonBlock, onlyEmptyJson, stripUnsafe } from "./markdown.js";
 // `locations` come from the Harness, and an MCP server can steer all four.
 // This file produces no markup. The row draws content through `drawReply`.
 
-// How long an elicitation question may be, in characters. A longer one spends
-// the row and pushes Decline off the window.
-const DETAIL_LIMIT = 600;
-
 // An ask that carried nothing to describe itself. Said as a sentence, so it
 // reads as an absence the Harness is responsible for rather than as detail
 // this window dropped.
 const SILENT = "The Harness asked for permission without saying what for.";
-
-// One untrusted string on one line. A newline or bidi mark could forge a line
-// the Harness never sent. `\p{C}` is every control and format character; `\s`
-// finishes the whitespace.
-export function flat(text) {
-  return String(text)
-    .replace(/\p{C}+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function clamp(text, limit) {
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
 
 // What the row draws, in order: `{ kind, text }`. `markdown` is Harness
 // content, or `input` as a JSON fence when there is no content. `metadata`
@@ -78,11 +60,12 @@ function inputMarkdown(input) {
   return [{ kind: "markdown", text: "```json\n" + body + "\n```" }];
 }
 
-// An elicitation form's question. The Harness wrote `message`, and a newline
-// inside it must not forge a line.
+// An elicitation form's question, as the Harness wrote it. Its lines and
+// length stay, as an ask's content does. `stripUnsafe` drops what could hide
+// or reverse text.
 export function elicitSays(form) {
-  const message = clamp(flat(form?.message ?? ""), DETAIL_LIMIT);
-  return message || "The Harness asked a question without saying what for.";
+  const message = stripUnsafe(form?.message ?? "");
+  return message.trim() ? message : "The Harness asked a question without saying what for.";
 }
 
 // A form's answers, in order, with Decline last because the protocol treats
