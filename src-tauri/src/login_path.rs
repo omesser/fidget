@@ -57,7 +57,7 @@ pub fn adopt() {
     let started = Instant::now();
     let (path, how) = match login_shell_path(&shell, &home, &current, TIMEOUT) {
         Ok(found) => (
-            merged(&found, &current),
+            merged(&current, &found),
             format!(
                 "{} answered in {} ms",
                 shell.display(),
@@ -151,10 +151,10 @@ fn mark_at(bytes: &[u8]) -> Option<usize> {
         .position(|window| window == MARK.as_bytes())
 }
 
-/// `first`'s folders in order, then `then`'s that `first` lacks.
-fn merged(first: &OsStr, then: &OsStr) -> OsString {
+/// The shell's folders in order, then the inherited ones it lacks.
+fn merged(inherited: &OsStr, shell: &OsStr) -> OsString {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    for dir in std::env::split_paths(first).chain(std::env::split_paths(then)) {
+    for dir in std::env::split_paths(shell).chain(std::env::split_paths(inherited)) {
         if !dirs.contains(&dir) {
             dirs.push(dir);
         }
@@ -175,12 +175,14 @@ fn usual_dirs(home: &Path) -> OsString {
 mod tests {
     use super::*;
     use std::fs;
+    use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     const LAUNCHD_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
     const FAKE: &str = "fidget-fake-harness";
     const RERUN: &str = "FIDGET_LOGIN_PATH_RERUN";
+    const PROGRAM: &str = "FIDGET_LOGIN_PATH_PROGRAM";
 
     struct TempHome(PathBuf);
 
@@ -201,10 +203,15 @@ mod tests {
         }
 
         fn fake_harness_in(&self, dir: &str) -> PathBuf {
+            self.fake_in(dir, FAKE)
+        }
+
+        fn fake_in(&self, dir: &str, name: &str) -> PathBuf {
             let bin = self.0.join(dir);
             fs::create_dir_all(&bin).expect("bin dir is creatable");
-            let program = bin.join(FAKE);
-            fs::write(&program, "#!/bin/sh\necho fake harness ran\n").expect("fake is writable");
+            let program = bin.join(name);
+            fs::write(&program, format!("#!/bin/sh\necho fake {name} ran\n"))
+                .expect("fake is writable");
             fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
                 .expect("fake is executable");
             bin
@@ -228,43 +235,79 @@ mod tests {
         ]
     }
 
-    /// Runs only when re-executed: Fidget's startup step, then the Harness
-    /// spawn by bare name.
+    /// Runs only when re-executed: Fidget's startup step, then a spawn by bare
+    /// name, the Harness unless the test names another program.
     #[test]
     fn startup_child() {
         if std::env::var_os(RERUN).is_none() {
             return;
         }
         adopt();
-        match Command::new(FAKE).output() {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        println!("path={}", path.to_string_lossy());
+        let program = std::env::var_os(PROGRAM).unwrap_or_else(|| FAKE.into());
+        match Command::new(&program).output() {
             Ok(output) => {
                 print!("{}", String::from_utf8_lossy(&output.stdout));
                 std::process::exit(0);
             }
             Err(error) => {
-                print!("spawn {FAKE}: {error}");
+                print!("spawn {}: {error}", program.to_string_lossy());
                 std::process::exit(3);
             }
         }
     }
 
-    /// The test binary, started the way launchd starts Fidget.app: no
-    /// terminal, the short `PATH`, and only `HOME` and `SHELL` besides.
-    fn launched_from_finder(shell: &str, home: &TempHome) -> (Option<i32>, String) {
+    /// The test binary, started with a cleared environment besides `HOME`,
+    /// `SHELL` and `PATH`, then spawning `program` by bare name.
+    fn launched(
+        shell: &str,
+        home: &TempHome,
+        path: &OsStr,
+        stdin: Stdio,
+        program: &str,
+    ) -> (Option<i32>, String) {
         let output = Command::new(std::env::current_exe().expect("test binary"))
             .args(rerun("startup_child"))
             .env_clear()
             .env(RERUN, "1")
+            .env(PROGRAM, program)
             .env("HOME", &home.0)
             .env("SHELL", shell)
-            .env("PATH", LAUNCHD_PATH)
-            .stdin(Stdio::null())
+            .env("PATH", path)
+            .stdin(stdin)
             .output()
             .expect("rerun starts");
         (
             output.status.code(),
             String::from_utf8_lossy(&output.stdout).into_owned(),
         )
+    }
+
+    /// Started the way launchd starts Fidget.app: no terminal and the short
+    /// `PATH`.
+    fn launched_from_finder(shell: &str, home: &TempHome) -> (Option<i32>, String) {
+        launched(shell, home, OsStr::new(LAUNCHD_PATH), Stdio::null(), FAKE)
+    }
+
+    /// A pseudo-terminal's follower end, as a terminal hands its stdin to a
+    /// program, and the leader that keeps it open.
+    fn terminal() -> (OwnedFd, OwnedFd) {
+        let (mut leader, mut follower) = (-1, -1);
+        // SAFETY: both fds are written on success only; null name, termios
+        // and window size are allowed.
+        let opened = unsafe {
+            libc::openpty(
+                &mut leader,
+                &mut follower,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
+        // SAFETY: openpty just opened both, and nothing else owns them.
+        unsafe { (OwnedFd::from_raw_fd(leader), OwnedFd::from_raw_fd(follower)) }
     }
 
     fn launchd_finds_fake() -> bool {
@@ -290,14 +333,55 @@ mod tests {
     #[test]
     fn the_shell_path_leads_and_launchd_folders_appear_once() {
         let once = merged(
-            OsStr::new("/opt/homebrew/bin:/usr/bin:/bin"),
             OsStr::new(LAUNCHD_PATH),
+            OsStr::new("/opt/homebrew/bin:/usr/bin:/bin"),
         );
         assert_eq!(
             once,
             OsString::from("/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         );
-        assert_eq!(merged(&once, OsStr::new(LAUNCHD_PATH)), once);
+        assert_eq!(
+            merged(&once, OsStr::new("/opt/homebrew/bin:/usr/bin:/bin")),
+            once
+        );
+    }
+
+    #[test]
+    fn a_launchers_folders_before_the_system_ones_stay_ahead_of_the_shells() {
+        let debian = OsStr::new("/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games");
+        let once = merged(
+            OsStr::new("/tmp/out/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
+            debian,
+        );
+        assert_eq!(
+            once,
+            OsString::from(
+                "/tmp/out/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/usr/sbin:/sbin"
+            )
+        );
+        assert_eq!(merged(&once, debian), once);
+
+        let path_helper = OsStr::new(
+            "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/me/bin:/opt/homebrew/bin",
+        );
+        assert_eq!(
+            merged(OsStr::new("/Users/me/bin:/usr/bin:/bin"), path_helper),
+            OsString::from(
+                "/Users/me/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+            )
+        );
+    }
+
+    #[test]
+    fn an_empty_or_system_free_launcher_path_merges_without_a_working_directory_entry() {
+        assert_eq!(
+            merged(OsStr::new(""), OsStr::new("/opt/homebrew/bin:/usr/bin")),
+            OsString::from("/opt/homebrew/bin:/usr/bin")
+        );
+        assert_eq!(
+            merged(OsStr::new("/a::/b"), OsStr::new("/usr/bin:/a")),
+            OsString::from("/a:/b:/usr/bin")
+        );
     }
 
     #[test]
@@ -314,7 +398,66 @@ mod tests {
         assert!(!launchd_finds_fake(), "launchd's PATH has no {FAKE}");
         let (code, stdout) = launched_from_finder("/bin/bash", &home);
         assert_eq!(code, Some(0), "stdout: {stdout}");
-        assert!(stdout.contains("fake harness ran"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("fake fidget-fake-harness ran"),
+            "stdout: {stdout}"
+        );
+    }
+
+    #[test]
+    fn a_launchers_leading_folder_still_wins_when_the_shell_rebuilds_path_system_first() {
+        assert!(
+            Path::new("/usr/bin/true").exists(),
+            "a real true in /usr/bin is what the fake must beat"
+        );
+        let home = TempHome::new("leading");
+        let lead = home.fake_in("out/bin", "true");
+        home.write(
+            ".bash_profile",
+            "export PATH=\"/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\"\n",
+        );
+        let path = format!("{}:{LAUNCHD_PATH}", lead.display());
+        let (code, stdout) = launched("/bin/bash", &home, OsStr::new(&path), Stdio::null(), "true");
+        assert_eq!(code, Some(0), "stdout: {stdout}");
+        assert!(stdout.contains("fake true ran"), "stdout: {stdout}");
+    }
+
+    #[test]
+    fn a_terminal_launch_keeps_its_path_and_reads_no_rc_file() {
+        let home = TempHome::new("terminal");
+        let bin = home.fake_harness_in("tools/bin");
+        let read = home.0.join("bash_profile-was-read");
+        home.write(
+            ".bash_profile",
+            &format!(
+                "touch \"{}\"\nexport PATH=\"{}:$PATH\"\n",
+                read.display(),
+                bin.display()
+            ),
+        );
+
+        let (_leader, follower) = terminal();
+        let (code, stdout) = launched(
+            "/bin/bash",
+            &home,
+            OsStr::new(LAUNCHD_PATH),
+            Stdio::from(follower),
+            FAKE,
+        );
+        assert_eq!(code, Some(3), "stdout: {stdout}");
+        assert!(
+            stdout.contains(&format!("path={LAUNCHD_PATH}\n")),
+            "stdout: {stdout}"
+        );
+        assert!(!read.exists(), "a terminal launch ran .bash_profile");
+
+        let (code, stdout) = launched_from_finder("/bin/bash", &home);
+        assert_eq!(code, Some(0), "stdout: {stdout}");
+        assert!(
+            stdout.contains("fake fidget-fake-harness ran"),
+            "stdout: {stdout}"
+        );
+        assert!(read.exists(), "a null-stdin launch skipped .bash_profile");
     }
 
     #[test]
@@ -329,7 +472,10 @@ mod tests {
         let (code, stdout) = launched_from_finder("/bin/bash", &home);
         let took = started.elapsed();
         assert_eq!(code, Some(0), "stdout: {stdout}");
-        assert!(stdout.contains("fake harness ran"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("fake fidget-fake-harness ran"),
+            "stdout: {stdout}"
+        );
         assert!(took < Duration::from_secs(3), "startup took {took:?}");
     }
 
@@ -351,7 +497,10 @@ mod tests {
         assert!(!launchd_finds_fake(), "launchd's PATH has no {FAKE}");
         let (code, stdout) = launched_from_finder("/bin/zsh", &home);
         assert_eq!(code, Some(0), "stdout: {stdout}");
-        assert!(stdout.contains("fake harness ran"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("fake fidget-fake-harness ran"),
+            "stdout: {stdout}"
+        );
     }
 
     #[test]
@@ -364,7 +513,10 @@ mod tests {
         let (code, stdout) = launched_from_finder("/bin/bash", &home);
         let took = started.elapsed();
         assert_eq!(code, Some(0), "stdout: {stdout}");
-        assert!(stdout.contains("fake harness ran"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("fake fidget-fake-harness ran"),
+            "stdout: {stdout}"
+        );
         assert!(took < Duration::from_secs(15), "startup took {took:?}");
     }
 }
