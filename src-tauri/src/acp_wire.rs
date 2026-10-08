@@ -299,10 +299,19 @@ pub enum Event {
         used: u64,
         size: u64,
     },
-    Permission(PermissionAsk),
+    /// `session` is the one that asked, so the ask is owed by that session's
+    /// Instance and not by whoever holds the turn.
+    Permission {
+        session: String,
+        ask: PermissionAsk,
+    },
     /// One `elicitation/create` form. Separate from `Permission` because the
     /// answer is accept-content or decline, not a permission `optionId`.
-    Elicitation(ElicitationForm),
+    /// `session` is `None` for a form no session scopes, as a sign-in link.
+    Elicitation {
+        session: Option<String>,
+        form: ElicitationForm,
+    },
     /// The whole thinking so far, for the Chat surface's Thinking row
     /// (ADR-0034). Each one replaces the last; the Action Log gets none.
     /// `session` is the turn's, because one child serves every Instance.
@@ -1074,6 +1083,9 @@ struct Serving<'a> {
     incoming: &'a mut mpsc::UnboundedReceiver<Incoming>,
     held: &'a mut Vec<PendingElicit>,
     held_asks: &'a mut Vec<PendingAsk>,
+    /// Other sessions' work while this turn runs. One child serves every
+    /// Instance, so their traffic is between turns for them.
+    inbound: &'a mut HashMap<SessionId, Inbound>,
 }
 
 type InflightAuth<'a> = (
@@ -1227,6 +1239,7 @@ async fn serve(
                     incoming: &mut incoming,
                     held: &mut forms,
                     held_asks: &mut asks,
+                    inbound: &mut inbound,
                 };
                 let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
@@ -1345,6 +1358,16 @@ fn flush_inbound(
                 text: String::new(),
             });
         }
+    }
+}
+
+/// The session a message from the Harness names, if it names one.
+fn incoming_session(message: &Incoming) -> Option<SessionId> {
+    match message {
+        Incoming::Update(update) => Some(update.session_id.clone()),
+        Incoming::Ask(request, _) => Some(request.session_id.clone()),
+        Incoming::Elicit(request, _) => elicitation_session(request),
+        Incoming::Complete(_) => None,
     }
 }
 
@@ -1527,6 +1550,7 @@ async fn turn(
         incoming,
         held,
         held_asks,
+        inbound,
     } = serving;
     let sent = cx.send_request(PromptRequest::new(
         session.clone(),
@@ -1561,6 +1585,11 @@ async fn turn(
         tokio::select! {
             biased;
             message = incoming.recv() => match message {
+                // Another session's update or question is not this turn's.
+                // It is held the way it would be with no prompt open.
+                Some(message) if incoming_session(&message).is_some_and(|other| &other != session) => {
+                    between_turns(message, held, held_asks, inbound, false, on_event)
+                }
                 Some(Incoming::Update(update)) => {
                     let answered = matches!(update.update, SessionUpdate::AgentMessageChunk(_));
                     note_update(update.update, session, &mut said, &mut thought, on_event);
@@ -1997,7 +2026,10 @@ fn hold_form(
         responder,
         link,
     });
-    on_event(Event::Elicitation(form));
+    on_event(Event::Elicitation {
+        session: elicitation_session(request).map(|session| session.0.to_string()),
+        form,
+    });
 }
 
 /// A permission request the Harness asked, held open and handed on to Chat.
@@ -2009,7 +2041,10 @@ fn hold_ask(
 ) {
     let ask = permission_ask(request, responder.id().to_string());
     asks.push((ask.request.clone(), responder));
-    on_event(Event::Permission(ask));
+    on_event(Event::Permission {
+        session: request.session_id.0.to_string(),
+        ask,
+    });
 }
 
 /// The user's pick on the open ask it names, if that ask is still open.

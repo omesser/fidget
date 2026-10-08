@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -828,13 +828,15 @@ pub struct Session {
     /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
     /// name lands on whichever character is mid-reply.
     serving_instance: Mutex<Option<String>>,
-    /// Questions the Harness has put to the user that nothing has settled.
-    /// Raised and lowered by the wire's own events, which `end_turn` balances
-    /// by settling everything it still holds, so a turn that dies with an ask
-    /// out still leaves this at zero. Shared with the wire's reader thread.
-    asked: Arc<AtomicUsize>,
-    /// Instance behind each session id a prompt went out on, so the wire's
-    /// reader thread can name whose turn a thought is without taking `state`.
+    /// Questions the Harness has put to the user that nothing has settled,
+    /// by request id. Raised and lowered by the wire's own events, which
+    /// `end_turn` balances by settling everything it still holds, so a turn
+    /// that dies with an ask out still leaves none. Shared with the wire's
+    /// reader thread.
+    asked: Arc<Mutex<HashMap<String, Asker>>>,
+    /// Instance behind each session id this child opened, so the wire's
+    /// reader thread can name whose a thought or an ask is without taking
+    /// `state`. Filled at open, so work between turns has an owner too.
     owners: Arc<Mutex<HashMap<String, String>>>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
@@ -957,7 +959,7 @@ impl Session {
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
             serving_instance: Mutex::new(None),
-            asked: Arc::new(AtomicUsize::new(0)),
+            asked: Arc::default(),
             owners: Arc::default(),
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
@@ -1285,9 +1287,6 @@ impl Session {
                 "chars": request.prompt.len(),
             }),
         );
-        if let Ok(mut owners) = self.owners.lock() {
-            owners.insert(session_id.clone(), request.instance.clone());
-        }
         let outcome = wire.prompt(&session_id, &request.prompt, self.timeout, said);
         // Charge the loss before the outcome is dressed for the caller. A
         // death under every turn must pay the same backoff a failed spawn
@@ -1785,6 +1784,9 @@ impl Session {
                 );
                 self.signed_in(&mut state);
                 self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
+                if let Ok(mut owners) = self.owners.lock() {
+                    owners.insert(id.clone(), key.instance.clone());
+                }
                 false
             }
         };
@@ -1987,15 +1989,39 @@ impl Completer for Session {
         reply
     }
 
-    /// One child serves every Instance (ADR-0008) and one turn holds the wire
-    /// at a time, so an outstanding ask belongs to whichever Instance that
-    /// turn is for. Another character's wake is not held by this one's question.
+    /// One child serves every Instance (ADR-0008), so an outstanding ask
+    /// belongs to the Instance whose session asked it, mid-turn or between
+    /// turns. Another character's wake is not held by this one's question.
     fn awaiting_user(&self, instance: &str) -> bool {
-        self.asked.load(Ordering::SeqCst) > 0
-            && self
-                .serving_instance
-                .lock()
-                .is_ok_and(|serving| serving.as_deref() == Some(instance))
+        let serving = self
+            .serving_instance
+            .lock()
+            .ok()
+            .and_then(|serving| serving.clone());
+        self.asked.lock().is_ok_and(|asked| {
+            asked.values().any(|asker| match asker {
+                Asker::Instance(owner) => owner == instance,
+                Asker::Turn => serving.as_deref() == Some(instance),
+            })
+        })
+    }
+}
+
+/// Who owes the user an answer to one open ask.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Asker {
+    /// The Instance that owns the session the ask came on.
+    Instance(String),
+    /// Whoever holds the turn. A form no session scopes, as a sign-in link,
+    /// or an ask on a session this child never opened.
+    Turn,
+}
+
+impl Asker {
+    fn of(session: Option<&str>, owners: &Mutex<HashMap<String, String>>) -> Self {
+        session
+            .and_then(|session| owners.lock().ok()?.get(session).cloned())
+            .map_or(Self::Turn, Self::Instance)
     }
 }
 
@@ -2223,7 +2249,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
 fn note_event(
     dir: &Path,
     forward: &Forward,
-    asked: &AtomicUsize,
+    asked: &Mutex<HashMap<String, Asker>>,
     owners: &Mutex<HashMap<String, String>>,
     event: Event,
 ) {
@@ -2252,28 +2278,32 @@ fn note_event(
         Event::Usage { used, size } => {
             action_log::append(dir, "usage_update", json!({"used": used, "size": size}))
         }
-        Event::Permission(ask) => {
+        Event::Permission { session, ask } => {
             action_log::append(
                 dir,
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            asked.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut asked) = asked.lock() {
+                asked.insert(ask.request.clone(), Asker::of(Some(&session), owners));
+            }
             forward(Forwarded::Ask(ask));
         }
-        Event::Elicitation(form) => {
+        Event::Elicitation { session, form } => {
             action_log::append(
                 dir,
                 "elicitation_create",
                 json!({"request": form.request, "field": form.field}),
             );
-            asked.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut asked) = asked.lock() {
+                asked.insert(form.request.clone(), Asker::of(session.as_deref(), owners));
+            }
             forward(Forwarded::Form(form));
         }
         Event::PermissionSettled { request, option } => {
-            let _ = asked.try_update(Ordering::SeqCst, Ordering::SeqCst, |out| {
-                Some(out.saturating_sub(1))
-            });
+            if let Ok(mut asked) = asked.lock() {
+                asked.remove(&request);
+            }
             forward(Forwarded::Settled { request, option })
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
@@ -3481,6 +3511,24 @@ mod tests {
                         }
                         // The next turn waits on the ask held from between turns.
                         "between-turn-held" => pending_prompt = Some(id),
+                        // Another Instance's session, the first one opened,
+                        // speaks and asks while this turn runs. The turn ends
+                        // when that ask is answered.
+                        "crosstalk" => {
+                            pending_prompt = Some(id);
+                            chunk("fresh-id", "Not yours");
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": "fresh-id",
+                                    "toolCall": {"toolCallId": "t3", "title": "Remind the other user", "kind": "other"},
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
+                            chunk(&session, "Hello");
+                        }
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -3508,7 +3556,11 @@ mod tests {
                         .unwrap_or("?")
                         .to_string();
                     record(count, &format!("perm:{outcome}"));
-                    if outcome == "selected" && script != "permission-stall" {
+                    if script == "crosstalk" {
+                        if let Some(id) = pending_prompt.take() {
+                            stop(&id, "end_turn");
+                        }
+                    } else if outcome == "selected" && script != "permission-stall" {
                         if script == "permission-after-work" {
                             thread::sleep(ASK_WORK);
                         }
@@ -3887,7 +3939,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
-            &AtomicUsize::new(0),
+            &Mutex::default(),
             &owners,
             Event::Thought {
                 session: "session-b".to_string(),
@@ -3919,7 +3971,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
-            &AtomicUsize::new(0),
+            &Mutex::default(),
             &Mutex::default(),
             Event::Plan(vec![PlanStep {
                 content: "read the roster".to_string(),
@@ -3953,7 +4005,7 @@ mod tests {
         note_event(
             &dir,
             &forward,
-            &AtomicUsize::new(0),
+            &Mutex::default(),
             &Mutex::default(),
             Event::Plan(Vec::new()),
         );
@@ -5544,6 +5596,96 @@ mod tests {
             "between-turn speech was dropped when prompting again"
         );
         drop(worker);
+    }
+
+    /// Instance B's session is open and has never had a turn. While Instance
+    /// A's turn runs, B's session speaks and asks. Returns the ask once it
+    /// reached Chat, every inbound wake forwarded before it, and A's turn.
+    fn crosstalk() -> Crosstalk {
+        let (fx, session) = Fixture::new("crosstalk");
+        let session = Arc::new(session);
+        let b = SessionKey {
+            instance: "buddy-b".to_string(),
+            character: "bmo".to_string(),
+            blank: false,
+        };
+        let (_, opened) = session.attach(Some(&b)).expect("B's session opens");
+        assert_eq!(opened, "fresh-id");
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking_as("buddy-a", "bmo", "hi"), &|_| {}))
+        };
+        let mut wakes = Vec::new();
+        let ask = loop {
+            match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Forwarded::Ask(ask)) => break ask,
+                Ok(Forwarded::InboundWake(wake)) => wakes.push((wake.instance, wake.speech)),
+                Ok(_) => {}
+                Err(_) => panic!("B's ask never reached Chat"),
+            }
+        };
+        Crosstalk {
+            fx,
+            session,
+            ask,
+            wakes,
+            worker,
+        }
+    }
+
+    struct Crosstalk {
+        fx: Fixture,
+        session: Arc<Session>,
+        ask: PermissionAsk,
+        /// Instance and speech of each inbound wake before the ask.
+        wakes: Vec<(String, String)>,
+        worker: thread::JoinHandle<Result<Reply, String>>,
+    }
+
+    /// An ask on B's session while A is mid-turn is owed by B. A's wake is
+    /// not held for it, and B's is until the user answers (#1395).
+    #[test]
+    fn an_ask_on_another_session_mid_turn_is_owed_by_that_sessions_instance() {
+        let Crosstalk {
+            fx,
+            session,
+            ask,
+            worker,
+            wakes: _,
+        } = crosstalk();
+        assert_eq!(ask.title.as_deref(), Some("Remind the other user"));
+        assert!(session.awaiting_user("buddy-b"), "B's ask is not B's");
+        assert!(
+            !session.awaiting_user("buddy-a"),
+            "B's ask was counted against A's turn"
+        );
+        session.answer_permission(&ask.request, "allow");
+        assert!(worker.join().unwrap().is_ok());
+        assert_eq!(fx.count("perm:selected"), 1);
+        assert!(!session.awaiting_user("buddy-b"), "the answer left B owing");
+        session.shutdown();
+    }
+
+    /// B's speech during A's turn is not A's reply. It reaches B's Chat as
+    /// work between turns (#1395).
+    #[test]
+    fn another_sessions_update_mid_turn_is_not_folded_into_the_turn() {
+        // Bound so the Fixture's directory outlives the turn.
+        let Crosstalk {
+            fx: _fx,
+            session,
+            ask,
+            wakes,
+            worker,
+        } = crosstalk();
+        assert_eq!(
+            wakes,
+            [("buddy-b".to_string(), "Not yours".to_string())],
+            "B's speech did not reach B"
+        );
+        session.answer_permission(&ask.request, "allow");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
+        session.shutdown();
     }
 
     /// `session/load` replays the conversation as updates before it answers,

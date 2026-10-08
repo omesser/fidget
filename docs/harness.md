@@ -288,9 +288,15 @@ ACP v1 has no end-of-turn notification from the Harness, so accumulated between-
 
 Multiple Harness fires before Fidget's next prompt previously piled into one undifferentiated accumulator; flushing on each ask or form boundary fixes that (ponytail fix, #1383).
 
+#### Attribution
+
+Each session belongs to the Instance it was opened for, from the moment it opens, so work between turns has an owner before that session's first prompt (#1395).
+
+- **Asks.** An ask or form is owed by the Instance whose session asked it, mid-turn or between turns. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
+- **Updates.** During a Fidget turn, an update, ask, or session-scoped form for another session is held as that session's between-turn work. It never joins the running turn's reply.
+
 #### Out of scope
 
-- **Attribution gaps.** Between-turn asks are attributed to whichever Instance is mid-turn, not the Instance whose session asked. A Fidget turn treats an update for another session as its own. Both require per-session tracking.
 - **Live Harness scheduled-fire prove.** Unit and fake-ACP proof shipped (#1370, #1383); proving with a real Harness cron is optional follow-on.
 - **Memory scheduling.** Harness cron is session-scoped, jittery, and not portable across Directors. A systematic parse-and-act path for reminders committed to Memory (due-at / remind facts) is future work and does not block this contract.
 - **Chat label wording.** The "inbound wake" label is interim technical wording. #1394 tracks clearer product copy for the Chat row.
