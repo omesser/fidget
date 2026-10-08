@@ -134,11 +134,11 @@ def read_readme(text):
 
     features = []
     for line in section(found, "What It Does"):
-        bullet = re.match(r"- \*\*(.+?)\*\* (.+)", line)
+        bullet = re.match(r"- \*\*(.+?)\*\*: (.+)", line)
         if bullet:
-            features.append((bullet.group(1).rstrip("."), bullet.group(2)))
+            features.append((bullet.group(1), bullet.group(2)))
     if not features:
-        raise Malformed("README.md What It Does lists no `- **Feature.** text` bullets")
+        raise Malformed("README.md What It Does lists no `- **Feature**: text` bullets")
 
     harnesses = re.findall(
         r"<tr>\s*<td[^>]*>(?:(?!</td>).)*?<code>([^<]+)</code>\s*</td>",

@@ -65,7 +65,7 @@ Neither issue is a reason to reopen ADR-0001. The webview is not the thing forci
 
 ## Recommendation
 
-1. **Stay two-witness.** The OR is correct for the constraints chosen. #236 fixed sub-tick drop; #183 addresses idle poll separately.
+1. **Stay two-witness**: The OR is correct for the constraints chosen. #236 fixed sub-tick drop; #183 addresses idle poll separately.
 2. **Do not reopen ADR-0001** unless a prototype shows the webview is the thing forcing two witnesses. Current reading: it is not.
 3. **If a paint change is prototyped for another reason** (e.g., memory footprint on GPU, renderer maintenance cost), measure battery and resident set size, not input witnesses. Input will stay two-witnessed under the current window model.
 4. **If a single witness is required later**, choose which constraint to relax and accept its cost:

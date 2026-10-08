@@ -47,19 +47,19 @@ cache it built, and the adapter bundles the Claude Code it was built against"
 
 The three packages are not one shape. The shape decides what each option costs.
 
-- **claude-agent-acp is JS over a 217 MB native `claude`.** Source: its
+- **claude-agent-acp is JS over a 217 MB native `claude`**: Source: its
   `dist/acp-agent.js` `claudeCliPath` resolves
   `@anthropic-ai/claude-agent-sdk-<platform>-<arch>/claude`, an
   `optionalDependencies` entry of the SDK. The SDK's `manifest.json` lists that
   binary at 217,254,576 bytes on darwin-arm64 and pins it to `claude` 2.1.280.
   `CLAUDE_CODE_EXECUTABLE` overrides the lookup (acp-agent.js:626-629, 6592).
-- **codex-acp is one bundled JS file over a 331 MB native `codex`.** Source:
+- **codex-acp is one bundled JS file over a 331 MB native `codex`**: Source:
   its tarball holds a single `dist/index.js` (1,506,033 bytes). It spawns
   `node @openai/codex/bin/codex.js app-server`, or `$CODEX_PATH app-server`
   when that is set (`startCodexConnection`, dist/index.js:27303-27311).
   `@openai/codex` pulls `@openai/codex-darwin-arm64` at 331,047,086 bytes
   unpacked. The README documents `CODEX_PATH`.
-- **pi-acp is JS over the user's `pi`.** Source: `getPiCommand` spawns `pi`
+- **pi-acp is JS over the user's `pi`**: Source: `getPiCommand` spawns `pi`
   (or `pi.cmd`) from `PATH` (pi-acp dist/index.js:61-66). Nothing native ships
   with it. `pi` itself ships as Bun-compiled binaries, 30 to 45 MB per platform,
   on its GitHub release (`scripts/build-binaries.sh:131-133` runs
@@ -81,25 +81,25 @@ pi-acp cannot work without `pi` on `PATH`. So the 217 MB and 331 MB copies that
 | codex-acp 2.0.0 | 14.3 to 17.6 s | 0.6 s | 152 MB | 346 MB |
 | pi-acp 0.34 | 1.3 s | 0.6 s | 5.4 MB | 7.1 MB |
 
-- **Cold start beats the attach timeout only on a fast link.** The claude and
+- **Cold start beats the attach timeout only on a fast link**: The claude and
   codex cold runs sit above `attach_timeout`'s ten seconds on this machine's
   connection. **Inferred**: a slower link makes the first attach time out. An
   npx cache hit is fast; the ten seconds was sized for the cold case.
-- **Offline works once cached.** `npm_config_offline=true` served both the
+- **Offline works once cached**: `npm_config_offline=true` served both the
   pinned spec and `@latest` from cache in 0.76 s. **Measured.** npm documents
   `offline` as "Any packages not locally cached will result in an error"
   (npm/cli v11.16.0 `docs/lib/content/commands/npm-exec.md`, "A note on caching").
-- **The cache is npm's, and it only grows.** npx installs "to a folder in the
+- **The cache is npm's, and it only grows**: npx installs "to a folder in the
   npm cache" (npm-exec.md, line 23). Each spec resolution gets its own
   `_npx/<hash>` directory. This Mac's `~/.npm/_npx` holds 30 of them, 1.1 GB.
   **Measured.** Every `@latest` bump of claude-agent-acp is another 135 MB
   download and a new directory. **Inferred.**
-- **`@latest` means the registry picks the code.** claude-agent-acp published 15
+- **`@latest` means the registry picks the code**: claude-agent-acp published 15
   stable versions in the 30 days to 2026-09-28, codex-acp 8, pi-acp 1.
   **Measured** from `npm view <pkg> time`. Transitive ranges float too:
   codex-acp asks for `@openai/codex` `^0.158.0`, and npx has no lockfile to hold
   it. **Source**, npm registry metadata.
-- **`engines` does not stop an old Node.** claude-agent-acp declares
+- **`engines` does not stop an old Node**: claude-agent-acp declares
   `node >=22`. On Node 20.19.2 npm printed `EBADENGINE` and the adapter still
   answered `initialize`. **Measured.** Whether a full session works on 20 is
   untested.
@@ -112,19 +112,19 @@ unreachable before the first cache.
 
 **None of the three does today.**
 
-- **codex-acp did, and stopped.** `zed-industries/codex-acp` was a Rust
+- **codex-acp did, and stopped**: `zed-industries/codex-acp` was a Rust
   adapter. Its last release, v0.16.0 on 2026-06-08, carried eight per-platform
   archives (darwin, linux gnu and musl, windows, on x86_64 and aarch64). The
   repository is archived. **Source**, GitHub releases API. Its successor,
   `agentclientprotocol/codex-acp`, is TypeScript, and its releases v1.13.1 and
   v2.0.0 carry no assets. **Source**, GitHub releases API.
-- **claude-agent-acp and pi-acp publish npm packages only.** Their latest
+- **claude-agent-acp and pi-acp publish npm packages only**: Their latest
   GitHub releases (v0.82.0, v0.0.34) carry no assets. **Source.**
-- **The ACP registry lists all three as `npx` only.** `claude-acp` 0.82.0,
+- **The ACP registry lists all three as `npx` only**: `claude-acp` 0.82.0,
   `codex-acp` 1.13.1 and `pi-acp` 0.0.34, each with a single `distribution.npx`.
   **Source**, https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json,
   `version` 1.0.0, fetched 2026-09-28.
-- **No first-party ACP mode exists yet.** `claude --help` (2.1.283),
+- **No first-party ACP mode exists yet**: `claude --help` (2.1.283),
   `codex --help` (0.157.1) and `pi --help` (0.87.1) name no ACP mode. Codex has
   `app-server`, which codex-acp wraps, and pi has `--mode rpc`, which pi-acp
   wraps. **Measured.** Requests are open upstream:
@@ -142,14 +142,14 @@ user has to install.
 
 What it looks like per adapter:
 
-- **codex: one file, no npm.** **Measured**: codex-acp 2.0.0's `dist/index.js`,
+- **codex: one file, no npm**: **Measured**: codex-acp 2.0.0's `dist/index.js`,
   copied alone into an empty directory and run as
   `CODEX_PATH=$(command -v codex) node codex-acp.mjs`, answered `initialize`
   with `agentInfo` and the `api-key` and `chat-gpt` auth methods. Without
   `CODEX_PATH`, and without the optional native package, it answered with error
   1001, "Codex process has exited with code 1". So Fidget would fetch one
   270 KB tarball, check it, extract one file, and run it with the user's `node`.
-- **claude and pi: a pinned lockfile and `npm ci`.** Their `dist/` is not
+- **claude and pi: a pinned lockfile and `npm ci`**: Their `dist/` is not
   bundled, so they need a dependency tree. **Measured**: a cold
   `npm install --omit=optional` of claude-agent-acp 0.82.0 took 5.7 s, fetched
   37 MB and installed 56 MB, against npx's 14.5 s, 135 MB and 263 MB. The
@@ -160,18 +160,18 @@ What it looks like per adapter:
 
 What it costs Fidget:
 
-- **Fidget owns the version bumps.** 15 claude-agent-acp releases in 30 days is
+- **Fidget owns the version bumps**: 15 claude-agent-acp releases in 30 days is
   a bump every two days. A pin that nobody bumps goes stale the same way
   `harness.rs:105-107` warns about. **Inferred.** A Renovate or Dependabot rule
   on a committed lockfile is the usual answer.
-- **Version skew moves.** Pointing `CLAUDE_CODE_EXECUTABLE` at the user's
+- **Version skew moves**: Pointing `CLAUDE_CODE_EXECUTABLE` at the user's
   `claude` removes the drift the harness.rs comment is about, because
   `claude update` then updates what the adapter runs. It adds a new one: the
   SDK is built against `claude` 2.1.280 (its `manifest.json`) and this Mac runs
   2.1.283. The same holds for codex-acp's `^0.158.0` against a local `codex`
   0.157.1. Whether a newer or older CLI speaks the adapter's protocol is
   untested here. **Inferred.** It needs a full session probe before it ships.
-- **A cache directory and its cleanup.** Fidget's own cache replaces
+- **A cache directory and its cleanup**: Fidget's own cache replaces
   `~/.npm/_npx`, so Fidget can delete old versions. That is code Fidget writes.
 - **The registry is still a network dependency on first use,** the same as
   `npx`.
@@ -182,20 +182,20 @@ install page and the `node --version` hint stay. **Inferred** from the ADR text.
 
 ## Option 3: bundling a Node runtime as a Tauri sidecar
 
-- **Size.** Node v24.21.0 downloads at 27.4 MB (darwin-arm64 `.tar.xz`),
+- **Size**: Node v24.21.0 downloads at 27.4 MB (darwin-arm64 `.tar.xz`),
   29.2 MB (darwin-x64), 31.9 MB (linux-x64 `.tar.xz`) and 37.6 MB (win-x64
   `.zip`). **Source**, `Content-Length` on nodejs.org/dist. The darwin-arm64
   `node` binary is 122,129,232 bytes on disk. **Measured.** Fidget's own
   v0.0.1-dev DMG is 11.1 MB, the NSIS installer 8.3 MB, the `.deb` 12.3 MB.
   **Source**, the `v0.0.1-dev` release assets. A sidecar Node roughly triples
   the download and multiplies the installed app about ten times on macOS.
-- **The census understated the tree and overstated the runtime.** ADR-0035
+- **The census understated the tree and overstated the runtime**: ADR-0035
   and the census put "a Node runtime with three adapter trees" at 50 to 100 MB.
   **Disagree, in both directions.** Done the way `npx` does it, the trees alone
   are 616 MB installed, because of the bundled `claude` and `codex` binaries.
   Done with the override variables above, they are about 65 MB, and Node is the
   largest piece. **Measured**, the tables above.
-- **Signing and notarization.** Tauri bundles a sidecar through `externalBin`,
+- **Signing and notarization**: Tauri bundles a sidecar through `externalBin`,
   one file per target triple, `-aarch64-apple-darwin` and so on (tauri-docs v2,
   `develop/sidecar.mdx`, lines 10-35). Node's official macOS binary is signed
   by the Node.js team (TeamIdentifier `HX7739G8FX`) with, among others,
@@ -206,10 +206,10 @@ install page and the `node --version` hint stay. **Inferred** from the ADR text.
   trimmed entitlement set. Fidget is ad-hoc signed today (`signingIdentity: "-"`,
   `src-tauri/tauri.conf.json`), and notarization is a follow-up per the comment
   in `.github/workflows/release.yml`. The sidecar makes that follow-up harder.
-- **Update cadence.** Node 24 is Active LTS to 2026-10-20 and Maintenance to
+- **Update cadence**: Node 24 is Active LTS to 2026-10-20 and Maintenance to
   2028-04-30 (nodejs/Release `README.md`). Node security releases become
   Fidget releases. **Inferred.**
-- **License.** Node's `LICENSE` is 2,946 lines of bundled third-party notices
+- **License**: Node's `LICENSE` is 2,946 lines of bundled third-party notices
   that Fidget would ship. **Measured**, line count. Bundling the adapters'
   native `claude` would also mean redistributing a binary under "All rights
   reserved" terms (`@anthropic-ai/claude-agent-sdk` `LICENSE.md`). With
@@ -217,13 +217,13 @@ install page and the `node --version` hint stay. **Inferred** from the ADR text.
 
 ### Node's Single Executable Applications
 
-- **Node 24's SEA runs CommonJS only.** "The single executable application
+- **Node 24's SEA runs CommonJS only**: "The single executable application
   feature currently only supports running a single embedded script using the
   CommonJS module system" (nodejs/node v24.21.0
   `doc/api/single-executable-applications.md`, lines 31-32). All three adapters
   ship ESM (`import` statements after the shebang in each `dist/index.js`), so each needs a
   bundler pass to CommonJS first. **Source.**
-- **Node 26 adds ESM and `--build-sea`.** v26.10.0's copy of the same doc names
+- **Node 26 adds ESM and `--build-sea`**: v26.10.0's copy of the same doc names
   both. It is "Current", not LTS, until 2026-10-28. **Source.**
 - **The feature is "Stability: 1.1 - Active development"** in both versions.
 - **Each SEA is a full `node` binary**, so about 120 MB per adapter, or one
@@ -244,10 +244,10 @@ install page and the `node --version` hint stay. **Inferred** from the ADR text.
 | codex-acp 2.0.0 | 63.7 MB | OK with `CODEX_PATH`, 0.28 s; without it, "Cannot find module '@openai/codex/bin/codex.js' from '/$bunfs/root/…'" | 82.2 MB | OK with `CODEX_PATH`, 1.00 s |
 | pi-acp 0.0.34 | 62.5 MB | OK, 0.03 s, but `agentInfo.version` reads `0.0.0` | 73.3 MB | OK, 0.90 s |
 
-- **The ACP SDK and `child_process` load under both.** Every row answered
+- **The ACP SDK and `child_process` load under both**: Every row answered
   `initialize`. That does not prove a session: `session/new` is where each
   adapter spawns `claude`, `codex app-server` or `pi`. **Inferred** risk.
-- **Native binary lookup breaks inside a compiled binary.** codex-acp resolves
+- **Native binary lookup breaks inside a compiled binary**: codex-acp resolves
   `@openai/codex` through `createRequire` and spawns `process.execPath` on it
   (dist/index.js:27309-27310). Inside a Bun binary `process.execPath` is the
   adapter itself. **Measured** failure above. claude-agent-acp's
@@ -256,27 +256,27 @@ install page and the `node --version` hint stay. **Inferred** from the ADR text.
 - **Each binary carries its own runtime,** so three adapters are about 190 MB
   under Bun and 260 MB under Deno. **Measured**, the sum of the table. One
   Bun binary that dispatches on `argv` would be about 65 MB. **Inferred.**
-- **Signing.** Bun documents re-signing its executables with an
+- **Signing**: Bun documents re-signing its executables with an
   `allow-jit` entitlements plist (oven-sh/bun `bun-v1.4.2`
   `docs/bundler/executables.mdx`, "Code signing on macOS", lines 1048-1084).
   That is the same work as Node's.
-- **License.** Bun is MIT but "statically links JavaScriptCore (and WebKit)
+- **License**: Bun is MIT but "statically links JavaScriptCore (and WebKit)
   which is LGPL-2 licensed", with the relinking obligation that brings
   (oven-sh/bun `bun-v1.4.2` `LICENSE.md`). Deno is MIT (GitHub license API).
-- **Precedent.** `pi` itself ships as `bun build --compile` binaries, and so,
+- **Precedent**: `pi` itself ships as `bun build --compile` binaries, and so,
   going by the SDK's `extractFromBunfs.js`, does the `claude` binary. So Bun
   compile works for these authors' own CLIs. **Source** for pi, **Inferred**
   for claude.
 
 ### `bunx` and `pnpm dlx`
 
-- **They swap one declared runtime for another.** `bunx` needs Bun and
+- **They swap one declared runtime for another**: `bunx` needs Bun and
   `pnpm dlx` needs pnpm, which runs on Node. **Source.**
-- **`bunx` still runs these adapters on Node.** "If an executable is marked with
+- **`bunx` still runs these adapters on Node**: "If an executable is marked with
   `#!/usr/bin/env node`, Bun spins up a `node` process to execute the file"
   unless `--bun` is passed (oven-sh/bun `bun-v1.4.2` `docs/pm/bunx.mdx`,
   line 61). All three `dist/index.js` files start with that shebang. **Source.**
-- **`bunx` installs every optional dependency.** claude-agent-acp's own comment
+- **`bunx` installs every optional dependency**: claude-agent-acp's own comment
   says "bunx hydrates every optional dep" (acp-agent.js:637-638), which is both
   libc variants of the 225 MB binary on Linux.
 
@@ -291,11 +291,11 @@ Neither changes anything for the user except which runtime they install.
 | Sidecar Node or SEA (option 3) | Fidget, at release | Fidget's code signature over the bundle | Node's own release signatures, then Fidget's |
 | Bun or Deno binary (option 4) | Fidget, at release | Fidget's code signature | The Bun or Deno release, plus the adapter's |
 
-- **`pi-acp` is the weakest link today.** It is a single maintainer's package
+- **`pi-acp` is the weakest link today**: It is a single maintainer's package
   (`svkozak/pi-acp`) with no provenance, and `@latest` runs whatever that
   account publishes next. **Source.** A pin removes that exposure. Every pin
   also removes silent upstream fixes, which is the cost.
-- **Auto-update.** Only `npx @latest` updates without a Fidget release. Every
+- **Auto-update**: Only `npx @latest` updates without a Fidget release. Every
   other option ties adapter updates to Fidget releases, or to a Fidget-run
   download of a new pin.
 
@@ -305,10 +305,10 @@ Neither changes anything for the user except which runtime they install.
   runtime. None of options 3 and 4 is small by ADR-0035's first question, and
   all of them make Fidget follow a release cadence it does not follow today.
 - **Agree:** the reopening trigger is a first-party ACP mode. None exists yet.
-- **Disagree on size.** The 50 to 100 MB estimate in ADR-0035 and the census
+- **Disagree on size**: The 50 to 100 MB estimate in ADR-0035 and the census
   (both labelled it Inferred) is low for the trees `npx` installs (616 MB) and
   high for trees without the bundled CLIs (about 65 MB).
-- **Disagree on `@latest` being load-bearing.** The harness.rs comment is right
+- **Disagree on `@latest` being load-bearing**: The harness.rs comment is right
   about the cause: the adapter's bundled `claude` drifts. But the adapter
   exposes `CLAUDE_CODE_EXECUTABLE`, and codex-acp exposes `CODEX_PATH`. Pointing
   them at the user's own CLI fixes that drift at the root and makes a pin safe.

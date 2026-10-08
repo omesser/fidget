@@ -139,32 +139,32 @@ FIDGET_BENCH_GREEN_LIGHT=1 scripts/bench-frame-cadence-macos.sh idle --bin /tmp/
 
 Only the window server can answer these. Run the app, then confirm:
 
-1. **Clicks pass through empty space.** Click anywhere the sprite is not. The click lands underneath.
-2. **Clicks on the sprite do not pass through.** Click the sprite's body. The window underneath gets nothing.
-3. **Typing is never interrupted.** Type in another application and click the sprite mid-sentence. Every keystroke reaches that application and focus never moves.
-4. **Follows you across Spaces.** Switch Spaces. The sprite is on the new one, in the same place.
-5. **Motion is continuous.** Watch it fall. It slides rather than jumps, and does not judder at a window's edge.
-6. **The art is crisp.** On a Retina display the pixels are hard squares, all the same size. Blur means the integer scale or nearest-neighbour filtering was lost.
-7. **It rests on the Dock, not behind it.** Its feet stand on the Dock's top edge. Turn on Dock auto-hiding: within a poll it falls to the bottom of the screen. Turn it off and it is lifted again.
-8. **Declared cadence is honoured.** Give a copy of Black Mage a faster idle `fps`. The idle is visibly faster than at the declared 1.
-9. **A click makes it react.** Click once without moving. It plays `react` for about half a second, then resumes.
-10. **Press and drag picks it up.** It follows the cursor. Release over a window and it lands on that window's top edge.
-11. **A flick throws it.** Release while moving and it leaves on an arc. Hold still before releasing and it drops straight down.
-12. **It can be put down over the Dock, and does not stay there.** Drop it over the Dock. It settles back onto the Dock's top edge, fully visible.
-13. **A window you drag slowly carries it.** With the sprite on a window's top edge, drag the window slowly. The sprite rides the edge and keeps its place.
-14. **A window you fling leaves it behind.** Throw the same window by its title bar. The sprite stays where it stood, in the air, and falls.
-15. **Two Characters are two companions.** Run BMO, then Nim. BMO hums through a four-frame singing loop; Nim eases through six, blinks, and carries a translucent shadow.
-16. **Fullscreen takes the screen and the fidget leaves it.** Enter fullscreen in any app. Within about a tenth of a second the sprite fades out, and fades back when you leave.
-17. **Ordinary window switching changes nothing.** Command-Tab, open, close, and drag windows, switch Spaces. The sprite never blinks.
-18. **The hotkey puts it away and brings it back at once.** Control-Option-Command-B hides it with no fade. Press again and it is back.
-19. **The hotkey outranks the rules.** Hide it with the hotkey, then enter and leave fullscreen. It stays away.
-20. **It can leave a real screen share.** Turn off Settings → Presence → "Appear in screenshots and screen shares", then share your whole screen in Zoom, Meet, or Teams. The sprite is on your screen and not in theirs.
+1. **Clicks pass through empty space**: Click anywhere the sprite is not. The click lands underneath.
+2. **Clicks on the sprite do not pass through**: Click the sprite's body. The window underneath gets nothing.
+3. **Typing is never interrupted**: Type in another application and click the sprite mid-sentence. Every keystroke reaches that application and focus never moves.
+4. **Follows you across Spaces**: Switch Spaces. The sprite is on the new one, in the same place.
+5. **Motion is continuous**: Watch it fall. It slides rather than jumps, and does not judder at a window's edge.
+6. **The art is crisp**: On a Retina display the pixels are hard squares, all the same size. Blur means the integer scale or nearest-neighbour filtering was lost.
+7. **It rests on the Dock, not behind it**: Its feet stand on the Dock's top edge. Turn on Dock auto-hiding: within a poll it falls to the bottom of the screen. Turn it off and it is lifted again.
+8. **Declared cadence is honoured**: Give a copy of Black Mage a faster idle `fps`. The idle is visibly faster than at the declared 1.
+9. **A click makes it react**: Click once without moving. It plays `react` for about half a second, then resumes.
+10. **Press and drag picks it up**: It follows the cursor. Release over a window and it lands on that window's top edge.
+11. **A flick throws it**: Release while moving and it leaves on an arc. Hold still before releasing and it drops straight down.
+12. **It can be put down over the Dock, and does not stay there**: Drop it over the Dock. It settles back onto the Dock's top edge, fully visible.
+13. **A window you drag slowly carries it**: With the sprite on a window's top edge, drag the window slowly. The sprite rides the edge and keeps its place.
+14. **A window you fling leaves it behind**: Throw the same window by its title bar. The sprite stays where it stood, in the air, and falls.
+15. **Two Characters are two companions**: Run BMO, then Nim. BMO hums through a four-frame singing loop; Nim eases through six, blinks, and carries a translucent shadow.
+16. **Fullscreen takes the screen and the fidget leaves it**: Enter fullscreen in any app. Within about a tenth of a second the sprite fades out, and fades back when you leave.
+17. **Ordinary window switching changes nothing**: Command-Tab, open, close, and drag windows, switch Spaces. The sprite never blinks.
+18. **The hotkey puts it away and brings it back at once**: Control-Option-Command-B hides it with no fade. Press again and it is back.
+19. **The hotkey outranks the rules**: Hide it with the hotkey, then enter and leave fullscreen. It stays away.
+20. **It can leave a real screen share**: Turn off Settings → Presence → "Appear in screenshots and screen shares", then share your whole screen in Zoom, Meet, or Teams. The sprite is on your screen and not in theirs.
 
 With a second display:
 
-21. **A fidget on a seam is whole.** Hold the sprite across the boundary, half on each display. Both halves are drawn and meet.
-22. **Either half can be clicked.** Click the half on each display in turn. Both pick it up.
-23. **A display can come and go.** Unplug a display while running. The sprite carries on. Plug it back in and it can be dragged onto it within a second or so.
+21. **A fidget on a seam is whole**: Hold the sprite across the boundary, half on each display. Both halves are drawn and meet.
+22. **Either half can be clicked**: Click the half on each display in turn. Both pick it up.
+23. **A display can come and go**: Unplug a display while running. The sprite carries on. Plug it back in and it can be dragged onto it within a second or so.
 
 For multiple instances, start with `FIDGET_INSTANCES="bmo:One,bmo:Two,nim:Nim"` and confirm each fidget acts independently.
 
@@ -387,7 +387,7 @@ A Character shipped from `characters/` in this repository is expected to declare
 
 `personality.txt` is plain prose the loader never interprets, up to 2000 characters. Temperament alone is not enough: a model given only that converges on the same few assistant-flavored lines. Include three things, unlabeled (#156):
 
-1. **Who the character is and how it carries itself.** Skip what the sprite already shows; spend the words on how it speaks and what it notices.
+1. **Who the character is and how it carries itself**: Skip what the sprite already shows; spend the words on how it speaks and what it notices.
 2. **Fixations:** three to five strong, specific opinions - things it loves, resents, takes personally, or takes credit for.
 3. **Sample lines**, verbatim, introduced in prose ("It has been heard to say: …"). They carry the character's recurring bits and catchphrases. Be generous; `characters/black-mage/` shows how far that goes.
 

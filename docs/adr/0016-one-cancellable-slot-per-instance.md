@@ -45,27 +45,27 @@ reply instead of the answer to their Poke.
 
 ## Considered Options
 
-- **Keep the convention and check it at the call site.** One `ready()` term in a
+- **Keep the convention and check it at the call site**: One `ready()` term in a
   five-term condition, which is what shipped until #312. Correct by inspection
   of one caller, and correct only for as long as there is one caller: #16's
   Harness and #17's chat are the second and the third.
-- **Queue the events instead of superseding them.** The character then works through
+- **Queue the events instead of superseding them**: The character then works through
   a backlog of Pokes the user has forgotten making. Coalescing into a one-slot
   latch is the right shape for a mascot; a queue is the right shape for a job
   runner. The same holds for a dropped wake.
-- **Compare the reply's `Context` against the present at the apply site.** The
+- **Compare the reply's `Context` against the present at the apply site**: The
   defensive shape this codebase avoids. A check the caller must remember is the
   thing being removed, not a smaller version of it.
-- **Enforce it at the `Completer` seam.** `complete` is already inside the
+- **Enforce it at the `Completer` seam**: `complete` is already inside the
   worker thread, so a refusal there arrives after the thread exists and the
   prompt is built. And `crates/core` does no I/O: admission control and
   cancellation are properties of a socket only the Shell holds.
-- **Exempt only a call waiting on the user.** That fixes #1038 but not #1037,
+- **Exempt only a call waiting on the user**: That fixes #1038 but not #1037,
   because an ambient tick would still replace a slow reactive turn.
-- **Let a Summon replace a reply still generating.** The operator rejected
+- **Let a Summon replace a reply still generating**: The operator rejected
   this. A Summon opens Chat to read that reply, so cancelling it defeats the
   Summon.
-- **Put a time limit on the wait.** A setting this decision avoids.
+- **Put a time limit on the wait**: A setting this decision avoids.
   `PendingAsks` shows an open question in any Chat window, and opens one if
   none is showing.
 

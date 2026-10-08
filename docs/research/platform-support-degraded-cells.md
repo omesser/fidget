@@ -34,9 +34,9 @@ The function only handles `strut[3] > 0` (bottom panels), ignoring strut[0], str
 
 **Options to complete:**
 
-1. **Extend `strut_panel_bounds` to handle all four edges.** Check `strut[0-3]` and construct the appropriate `Rect` for each case. The coordinates in `strut[4-11]` provide the span for each edge.
+1. **Extend `strut_panel_bounds` to handle all four edges**: Check `strut[0-3]` and construct the appropriate `Rect` for each case. The coordinates in `strut[4-11]` provide the span for each edge.
 
-2. **Test with real panels.** GNOME, KDE, XFCE, and standalone panels (tint2, polybar) all publish `_NET_WM_STRUT_PARTIAL` for their reserved strips. A complete implementation should handle all four edges.
+2. **Test with real panels**: GNOME, KDE, XFCE, and standalone panels (tint2, polybar) all publish `_NET_WM_STRUT_PARTIAL` for their reserved strips. A complete implementation should handle all four edges.
 
 **V1 call:**  
 **Pursue to `yes`.** This is fixable code that does not require new platform APIs or consent gates. The X11 protocol provides the needed information; the implementation just needs to consume it.
@@ -67,7 +67,7 @@ Tauri's `work_area()` gives the space outside the taskbar, not the taskbar's own
 
 **Options to complete:**
 
-1. **Windows UI Automation API.** `consent.rs:104` mentions reading taskbar bounds via UI Automation:
+1. **Windows UI Automation API**: `consent.rs:104` mentions reading taskbar bounds via UI Automation:
    > Windows UI Automation. The fidget reads the taskbar's bounds; it does not control your computer.
 
    This could provide exact taskbar bounds, but:
@@ -75,7 +75,7 @@ Tauri's `work_area()` gives the space outside the taskbar, not the taskbar's own
    - Adds complexity for a visual refinement
    - Still gives a strip, not an island (the taskbar spans the edge)
 
-2. **Accept the strip.** The work-area strip is accurate; the taskbar does reserve that full span. macOS's island is special because the Dock floats; Windows' taskbar stretches to the edge.
+2. **Accept the strip**: The work-area strip is accurate; the taskbar does reserve that full span. macOS's island is special because the Dock floats; Windows' taskbar stretches to the edge.
 
 **V1 call:**  
 **Document as accepted degrade.** The work-area inference is correct for Windows' taskbar design. The "degraded" label is comparative to macOS's island, but Windows' taskbar is architecturally different (it spans the edge by design). The Character can perch on normal windows above the taskbar, which is the main use case.
@@ -107,11 +107,11 @@ From the bench script's approach (lines 890-896 in `bench-gpu-compositing-window
 
 **Options to complete:**
 
-1. **Accept the current behavior.** True fullscreen works; borderless windowed should work via geometry. Apps that don't properly cover the display won't trigger fade, which might be correct (they're not really fullscreen).
+1. **Accept the current behavior**: True fullscreen works; borderless windowed should work via geometry. Apps that don't properly cover the display won't trigger fade, which might be correct (they're not really fullscreen).
 
-2. **Loosen the fullscreen detection threshold.** Reduce `EDGE_TOLERANCE` or allow windows that are "almost" display-sized to count as fullscreen. Risks false positives (zoomed windows being treated as fullscreen).
+2. **Loosen the fullscreen detection threshold**: Reduce `EDGE_TOLERANCE` or allow windows that are "almost" display-sized to count as fullscreen. Risks false positives (zoomed windows being treated as fullscreen).
 
-3. **Check for taskbar visibility.** If the taskbar is hidden (work area == full display), treat large windows as fullscreen. This might improve detection but adds complexity.
+3. **Check for taskbar visibility**: If the taskbar is hidden (work area == full display), treat large windows as fullscreen. This might improve detection but adds complexity.
 
 **V1 call:**  
 **Document as accepted degrade.** The core fullscreen detection works (exclusive fullscreen + properly-sized borderless windowed). The "degraded" label acknowledges that Windows' mixed fullscreen modes mean detection is less reliable than macOS (where fullscreen has clearer platform support). Apps that don't properly cover the display won't trigger fade, which is defensible behavior.
@@ -129,7 +129,7 @@ The Character always appears in screenshots and screen recordings. The Settings 
 **Root constraint:**  
 Platform limitation, already documented. From ADR-0024:
 
-> 3. **Platforms that can exclude honour it.** macOS and Windows read the setting. Linux has no exclusion API and stays capturable.
+> 3. **Platforms that can exclude honour it**: macOS and Windows read the setting. Linux has no exclusion API and stays capturable.
 
 Linux has no standard API to exclude a window from screen capture tools. Wayland compositors and X11 capture tools (OBS, `scrot`, `gnome-screenshot`, etc.) have no per-window capture exclusion flag.
 
@@ -160,16 +160,16 @@ The fullscreen detection function `fullscreen_displays` (in `crates/core/src/vis
 
 **Options to complete:**
 
-1. **Compositor-specific protocols.** Each major compositor has its own mechanism:
+1. **Compositor-specific protocols**: Each major compositor has its own mechanism:
    - `wlr-foreign-toplevel-management` on wlroots compositors (Sway, Hyprland, river, niri)
    - GNOME Shell extension or `org.gnome.Shell.Introspect` D-Bus (allowlisted senders only)
    - KWin scripting
 
    This would require compositor-specific code paths and ongoing maintenance across multiple compositor implementations. Each compositor's API is different and not guaranteed stable.
 
-2. **xdg-desktop-portal inhibit/idle as proxy.** Apps can request inhibit (don't sleep/lock) via the portal, which correlates with fullscreen but is not the same signal. Unreliable as a fullscreen indicator (media players, presentations, and games all inhibit idle without being fullscreen).
+2. **xdg-desktop-portal inhibit/idle as proxy**: Apps can request inhibit (don't sleep/lock) via the portal, which correlates with fullscreen but is not the same signal. Unreliable as a fullscreen indicator (media players, presentations, and games all inhibit idle without being fullscreen).
 
-3. **Accept the degraded mode.** XWayland is the canonical Linux path. Pure Wayland without XWayland is explicitly a supported degraded mode (DESIGN.md decision 3, docs/research/wayland-protocols.md). The README already documents: "Rare pure Wayland sessions without an X server fall back to screen edges only."
+3. **Accept the degraded mode**: XWayland is the canonical Linux path. Pure Wayland without XWayland is explicitly a supported degraded mode (DESIGN.md decision 3, docs/research/wayland-protocols.md). The README already documents: "Rare pure Wayland sessions without an X server fall back to screen edges only."
 
 **V1 call:**  
 **Document as accepted degrade.** This is consistent with the project's existing Wayland stance. XWayland serves the fullscreen rule correctly: it lists X clients, and Fidget's fullscreen detection works there. Pure Wayland is the rare degraded path. The gap applies only to native Wayland fullscreen apps (Firefox Wayland, GNOME apps, etc.); X clients under XWayland still trigger fullscreen fade correctly.

@@ -18,14 +18,14 @@ beside the claim.
 The seams a reminder feature would plug into are already built. None of them
 knows about time yet.
 
-- **Tools.** `list_tools` in `crates/core/src/dispatch.rs` declares eight
+- **Tools**: `list_tools` in `crates/core/src/dispatch.rs` declares eight
   tools: `speak`, `play_behavior`, `list_windows`, `describe_screen`,
   `recall`, `remember`, `list_instances` and `whereabouts`. `README.md`
   ("Harness ↔ MCP") is the only catalog, and the Character Prompt tells the
   model to use the tools it has without naming them (#917). A new tool is a
   new `ToolInfo` entry and a handler, and the test
   `list_tools_returns_exactly_eight_tools` moves to nine.
-- **Transport.** `src-tauri/src/mcp_http.rs` serves those tools on loopback
+- **Transport**: `src-tauri/src/mcp_http.rs` serves those tools on loopback
   HTTP behind a per-run bearer token. It is request and response only: the
   module comment says "no sampling, no progress", and `docs/harness.md` ("How
   it works") adds "no notifications, progress, sampling, SSE push, or
@@ -35,7 +35,7 @@ knows about time yet.
   revision `2026-07-28`, where a server initiates nothing
   ([`docs/research/fidget-harness-two-way.md`](./fidget-harness-two-way.md),
   "MCP as a reverse channel").
-- **Wakes.** `crates/core/src/director.rs` is where time already enters.
+- **Wakes**: `crates/core/src/director.rs` is where time already enters.
   `Happened` has seven variants, and the only clock-driven one is
   `Proactive`, which `claim` classes as `Claim::Ambient`. `Pace` spaces
   proactive calls: `Pace::FIRST` is two minutes, and the wait "Grows by
@@ -45,17 +45,17 @@ knows about time yet.
   through `format_clock`. A reminder firing is a new `Happened` variant, and
   `claim` will not compile until it is classed, which is the guard the enum
   exists for.
-- **Storage.** Settings are one `settings.json` in the data folder
+- **Storage**: Settings are one `settings.json` in the data folder
   (`src-tauri/src/settings.rs`). Memory is one `memory.md` in the same folder
   (`crates/core/src/memory.rs`), read from disk on every `recall`. Both are
   `serde_json` or plain text, with no database and no Tauri store plugin:
   `src-tauri/tauri.conf.json` lists `updater` as the only plugin.
-- **Packaging.** `bundle.targets` is `dmg`, `appimage`, `deb` and `nsis`,
+- **Packaging**: `bundle.targets` is `dmg`, `appimage`, `deb` and `nsis`,
   and `bundle.macOS.signingIdentity` is `"-"`, an ad-hoc signature
   ([`docs/research/homebrew-release-shape.md`](./homebrew-release-shape.md)).
   There is no `src-tauri/Info.plist` and no entitlements file, so no usage
   description key is declared today.
-- **The Harness side is already leaking.** #1356 (open, p1, bug) reports that
+- **The Harness side is already leaking**: #1356 (open, p1, bug) reports that
   `src-tauri/src/acp_wire.rs` drops between-turn `session/update` traffic,
   and names the product hole directly: "NL reminders ('remind me at 15:00')
   can be scheduled inside Claude's session, but when they fire under fidget
@@ -160,7 +160,7 @@ daemon and a second port for a feature a desktop companion needs in-process.
 
 ### Windows
 
-- **Scheduled toasts.** `ScheduledToastNotification` plus
+- **Scheduled toasts**: `ScheduledToastNotification` plus
   `ToastNotifier.AddToSchedule` shows a notification "at a later time,
   regardless of whether your app is running at that time". Delivery has "a
   window of 5 minutes"; a machine off longer than that drops it, and "a
@@ -174,7 +174,7 @@ daemon and a second port for a feature a desktop companion needs in-process.
   ([plugin `Cargo.toml`](https://github.com/tauri-apps/plugins-workspace/blob/v2/plugins/notification/Cargo.toml)),
   which is the app-identity requirement in practice. Fidget ships NSIS, an
   installed app, so this works for a release build and not for `cargo run`.
-- **Task Scheduler.** `schtasks /create /tn MyApp /tr c:\apps\myapp.exe /sc
+- **Task Scheduler**: `schtasks /create /tn MyApp /tr c:\apps\myapp.exe /sc
   once /sd 01/01/2003 /st 00:00` schedules one run; `/sc hourly /mo 5`
   repeats ([schtasks create](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks-create)).
   It runs a command, not a notification, so Fidget would be its own target.
@@ -186,14 +186,14 @@ daemon and a second port for a feature a desktop companion needs in-process.
   ([Desktop Notifications Specification](https://specifications.freedesktop.org/notification-spec/latest/)).
   `notify-send` takes `-u` urgency, `-t` expiry in milliseconds, and `-A`
   actions ([notify-send(1)](https://manpages.debian.org/testing/libnotify-bin/notify-send.1.en.html)).
-- **systemd timers.** `systemd-run` "may also be used to create and start a
+- **systemd timers**: `systemd-run` "may also be used to create and start a
   transient `.path`, `.socket`, or `.timer` unit"; with `--on-calendar=` "a
   transient path, socket, or timer unit is created alongside the service
   unit" ([systemd-run(1)](https://man7.org/linux/man-pages/man1/systemd-run.1.html)).
   Calendar shorthands include `hourly → *-*-* *:00:00` and `daily → *-*-*
   00:00:00` ([systemd.time(7)](https://man7.org/linux/man-pages/man7/systemd.time.7.html)).
   No systemd on the host means no timer.
-- **cron and at.** `crontab(5)` fields are minute, hour, day of month, month,
+- **cron and at**: `crontab(5)` fields are minute, hour, day of month, month,
   day of week, with `@daily` and `@reboot` nicknames
   ([crontab(5)](https://man7.org/linux/man-pages/man5/crontab.5.html)).
   `at` is POSIX, "execute commands at a later time"
@@ -242,7 +242,7 @@ timers in the frame loop, and the `tokio` runtime features `rt`, `sync` and
   queries it with the `calendar-query` REPORT (7.8)
   ([RFC 4791](https://www.rfc-editor.org/rfc/rfc4791.txt)). Apple's iCloud
   and Fastmail speak it, which is why the CalDAV MCP servers below exist.
-- **Google Calendar API.** Scopes range from `calendar` ("See, edit, share,
+- **Google Calendar API**: Scopes range from `calendar` ("See, edit, share,
   and permanently delete all the calendars") to `calendar.events`,
   `calendar.events.readonly`, `calendar.freebusy`, and `calendar.app.created`
   ("Make secondary Google calendars, and see, create, change, and delete
@@ -263,7 +263,7 @@ timers in the frame loop, and the `tokio` runtime features `rt`, `sync` and
   ([nspady/google-calendar-mcp README](https://github.com/nspady/google-calendar-mcp/blob/main/README.md)).
   Fidget shipping this means Fidget owning a Google Cloud project and the
   verification review.
-- **Microsoft Graph.** `Calendars.ReadWrite` delegated "Allows the app to
+- **Microsoft Graph**: `Calendars.ReadWrite` delegated "Allows the app to
   create, read, update, and delete events in user calendars", needs no admin
   consent, and "is available for consent in personal Microsoft accounts"
   ([Permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)).
@@ -272,7 +272,7 @@ timers in the frame loop, and the `tokio` runtime features `rt`, `sync` and
   ([Throttling limits](https://learn.microsoft.com/en-us/graph/throttling-limits)).
   Same shape as Google: an app registration Fidget owns, a token store, and a
   consent flow.
-- **Local `.ics` subscriptions.** A URL to a feed is the lowest-auth calendar
+- **Local `.ics` subscriptions**: A URL to a feed is the lowest-auth calendar
   source. `icalendar` parses it; nothing else is needed. No primary source
   beyond RFC 5545 applies, and I did not evaluate feed refresh semantics.
 
@@ -311,7 +311,7 @@ of embedding it (`README.md`, "Computer Use").
 
 ## Scheduling that already lives in the Harness
 
-- **Claude Code, in-session.** `/loop` and the cron tools "run prompts
+- **Claude Code, in-session**: `/loop` and the cron tools "run prompts
   repeatedly, poll for status, or set one-time reminders within a Claude Code
   session". "Tasks only fire while Claude Code is running and idle", they
   expire after seven days, and the minimum interval is one minute
@@ -319,24 +319,24 @@ of embedding it (`README.md`, "Computer Use").
   Under Fidget's attach the adapter is headless and the session is Fidget's,
   so a fire arrives as a between-turn `session/update`, which is the traffic
   #1356 says `acp_wire.rs` drops today.
-- **Claude Code Desktop.** Local scheduled tasks "only fire while the app is
+- **Claude Code Desktop**: Local scheduled tasks "only fire while the app is
   open and your computer is awake"; Desktop "checks the schedule every
   minute" and on wake "starts exactly one catch-up run for the most recently
   missed time"; prompts live in `~/.claude/scheduled-tasks/<task-name>/SKILL.md`
   ([Schedule recurring tasks in Claude Code Desktop](https://code.claude.com/docs/en/desktop-scheduled-tasks)).
   A separate app, separate sessions; it cannot reach Fidget's session.
-- **Claude Code Routines.** "Routines are in research preview." They run on
+- **Claude Code Routines**: "Routines are in research preview." They run on
   "Cloud, Anthropic-managed by default", have no local files ("fresh clone"),
   a minimum interval of one hour, and 100 scheduled runs per hour per account
   ([Automate work with routines](https://code.claude.com/docs/en/routines)).
   Wrong layer for a desktop reminder.
-- **ACP.** The protocol index lists session updates, prompt lifecycle,
+- **ACP**: The protocol index lists session updates, prompt lifecycle,
   slash commands and extensibility; nothing named timer or schedule appears
   ([agentclientprotocol.com/llms.txt](https://agentclientprotocol.com/llms.txt)).
   The agent to client direction is `session/update` notifications. A Harness
   that fires a timer can only tell the client; the client decides whether
   that is a wake. That is exactly the gap in #1356.
-- **MCP.** No server-initiated direction in revision `2026-07-28`, and Claude
+- **MCP**: No server-initiated direction in revision `2026-07-28`, and Claude
   Code `channels` is a Claude-only research preview
   ([`docs/research/fidget-harness-two-way.md`](./fidget-harness-two-way.md)).
   Fidget cannot push "it is 15:00" to the Harness over MCP.
@@ -368,7 +368,7 @@ else.
    what it does for every other tool, so no English-date crate ships.
    Persist to one `reminders.json` beside `settings.json` with the
    `serde_json` already in the tree. Nine tools, one file, no plugin.
-2. **Fire as a Director wake.** A new `Happened::Reminder(String)` in
+2. **Fire as a Director wake**: A new `Happened::Reminder(String)` in
    `crates/core/src/director.rs`, classed by `claim` as `Claim::Interaction`
    so it may take an idle call and resets `Pace`, with the reminder text in
    the follow-up. The Static Director fallback speaks the text verbatim in a
@@ -382,7 +382,7 @@ else.
 4. **Fix #1356** so Harness-side schedulers (Claude `/loop`, cron tools)
    become inbound wakes. That is the second half of "remind me": a user who
    says it to Claude directly should get the same bubble.
-5. **Document, do not bundle, calendars.** A README row beside the cua-driver
+5. **Document, do not bundle, calendars**: A README row beside the cua-driver
    paragraph: for Apple Reminders attach an EventKit server, for Google attach
    `nspady/google-calendar-mcp`, for iCloud or Fastmail attach a CalDAV
    server. Same "User MCP" class, same disclaimer.

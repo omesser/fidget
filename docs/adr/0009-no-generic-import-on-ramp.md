@@ -33,7 +33,7 @@ A source gets a real adapter, or it gets nothing.
 
 ## Considered Options
 
-- **The contact-sheet worksheet as built (#147).** Rejected on its own
+- **The contact-sheet worksheet as built (#147)**: Rejected on its own
   evidence. Beyond the mis-mapping: the sheet renders 96px thumbnails of 128px
   art, too small to tell poses apart — the agent driving it wrote a throwaway
   script to re-render frames at 3x before it could categorize anything. The
@@ -41,11 +41,11 @@ A source gets a real adapter, or it gets nothing.
   no flag, so left-facing art cannot pass without mirroring every PNG by hand
   first. Pointing `-o` at the worksheet directory reports success while
   deleting the contact sheet and the frame index.
-- **A higher-resolution contact sheet.** Fixes legibility and nothing else. The
+- **A higher-resolution contact sheet**: Fixes legibility and nothing else. The
   three wrong Animations were wrong about pose *meaning*, not about pixels — a
   bigger thumbnail of a ceiling-cling frame is still a frame whose purpose is
   unrecoverable without the pack's convention.
-- **Hand-categorization with no tool.** Already possible: write the Character
+- **Hand-categorization with no tool**: Already possible: write the Character
   Manifest, point `character::load` at it. It needs no mode in the importer,
   and it does not dress a guess up as an import.
 

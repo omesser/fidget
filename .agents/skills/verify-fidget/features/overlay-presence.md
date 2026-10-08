@@ -25,11 +25,11 @@ Preconditions:
 - Linux: `DISPLAY` set; `xdotool` `xprop` `xwininfo` `xterm` present; supporting WM (`openbox` if Xvfb).
 - Evidence dir `$FIDGET_VERIFY_EVIDENCE` exists.
 
-- **Linux X11 full check.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. Exit code `0` confirms presence, perch, ride, drop and poke. When `xprop _NET_WM_STATE` is empty but the app log has `^overlay:`, `EWMH configured`, and `frame:` lines, the script WARNs and continues; WARN is not failure (see Gotchas). Prefer `frame:.*Perched` when a Perch window existed before launch; Falling/Grounded frames still count as presence.
-- **macOS full check.** Run `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. Exit code `0`. Evidence contains `.verify/<stamp>/` with frame-loop and overlay PASS lines.
-- **Windows full check.** Run `.agents/skills/verify-fidget/helpers/drive-overlay-win.ps1` on a dual-display Windows host. Exit code `0`. Evidence contains `.verify/win-*/`.
-- **Linux X11 presence by hand.** Under Xvfb, start `openbox --replace &`, then `.agents/skills/verify-fidget/helpers/launch.sh`. Pick the `Fidget` class window that is at least 200×200 and run `xprop -id $ID _NET_WM_STATE`. Expect `_NET_WM_STATE_ABOVE, _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER`, plus `frame:` lines in `$FIDGET_VERIFY_SCRATCH/app.log`.
-- **Proof.** Keep the helper-copied stamp tree and a `PROOF.md` line naming `overlay-presence` and the helper invoked.
+- **Linux X11 full check**: Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. Exit code `0` confirms presence, perch, ride, drop and poke. When `xprop _NET_WM_STATE` is empty but the app log has `^overlay:`, `EWMH configured`, and `frame:` lines, the script WARNs and continues; WARN is not failure (see Gotchas). Prefer `frame:.*Perched` when a Perch window existed before launch; Falling/Grounded frames still count as presence.
+- **macOS full check**: Run `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. Exit code `0`. Evidence contains `.verify/<stamp>/` with frame-loop and overlay PASS lines.
+- **Windows full check**: Run `.agents/skills/verify-fidget/helpers/drive-overlay-win.ps1` on a dual-display Windows host. Exit code `0`. Evidence contains `.verify/win-*/`.
+- **Linux X11 presence by hand**: Under Xvfb, start `openbox --replace &`, then `.agents/skills/verify-fidget/helpers/launch.sh`. Pick the `Fidget` class window that is at least 200×200 and run `xprop -id $ID _NET_WM_STATE`. Expect `_NET_WM_STATE_ABOVE, _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER`, plus `frame:` lines in `$FIDGET_VERIFY_SCRATCH/app.log`.
+- **Proof**: Keep the helper-copied stamp tree and a `PROOF.md` line naming `overlay-presence` and the helper invoked.
 
 ## Gotchas
 

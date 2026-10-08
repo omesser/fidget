@@ -23,11 +23,11 @@ decision — integer scaling of true pixel art — stands as written.
 
 ## Considered Options
 
-- **YAML.** Rejected: its flagship Rust crate is archived, and implicit typing
+- **YAML**: Rejected: its flagship Rust crate is archived, and implicit typing
   is wrong for untrusted hobbyist input.
-- **JSON.** Rejected: no comments, and every shipped manifest opens with a doc
+- **JSON**: Rejected: no comments, and every shipped manifest opens with a doc
   header.
-- **Keep the invented format.** Zero dependencies, and the parser was small
+- **Keep the invented format**: Zero dependencies, and the parser was small
   enough to trust. But a format only one program can read is a tax on every
   author, and v2 makes the manifest public.
 

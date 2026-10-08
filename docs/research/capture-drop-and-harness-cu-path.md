@@ -188,41 +188,41 @@ layer, execution).
 
 This note documents a decision and the options above. It **does not** claim:
 
-1. **Fidget ships/embeds/owns screenshots.** It does not. Dropping Capture means
+1. **Fidget ships/embeds/owns screenshots**: It does not. Dropping Capture means
    fidget never takes screenshots, never analyzes pixels, and never bundles
    vision/OCR for desktop content.
 
-2. **Dropping Capture means agents never see pixels.** Agents the user attaches
+2. **Dropping Capture means agents never see pixels**: Agents the user attaches
    can still see pixels if the user runs a CU-capable harness or attaches a
    CU MCP server. The decision is about fidget's own code, not about agent
    capabilities in general.
 
-3. **Security parity across drivers.** This note lists drivers and their
+3. **Security parity across drivers**: This note lists drivers and their
    documented features. It does not audit security models, sandboxing, or
    permission enforcement. Each driver's security is its own concern.
 
-4. **Community MCPs are Hermes-integrated like cua-driver.** Only cua-driver is
+4. **Community MCPs are Hermes-integrated like cua-driver**: Only cua-driver is
    documented as a first-party Hermes integration. The others (domdomegg,
    minghin) are community MCPs that work via standard MCP attachment.
 
-5. **minghin is multi-OS.** It is macOS 14+ only. The note calls it runner-up
+5. **minghin is multi-OS**: It is macOS 14+ only. The note calls it runner-up
    for macOS users specifically.
 
-6. **domdomegg OS matrix is formally documented.** The README does not state
+6. **domdomegg OS matrix is formally documented**: The README does not state
    supported OSes explicitly. The nut.js dependency suggests cross-platform
    intent, but this is inference, not vendor claim.
 
-7. **fidget recommends one driver for all users.** The note recommends
+7. **fidget recommends one driver for all users**: The note recommends
    cua-driver as docs-primary for breadth and first-party integrations. Users
    choose their own MCP servers. The note informs; it does not enforce.
 
-8. **ACP will gain a standard computer-use capability.** ACP v1 has none. Future
+8. **ACP will gain a standard computer-use capability**: ACP v1 has none. Future
    versions may add one, but this note makes no prediction.
 
-9. **Cursor local agents will gain native CU.** They rely on MCP attachment as
+9. **Cursor local agents will gain native CU**: They rely on MCP attachment as
    of this writing. The note does not predict product roadmap changes.
 
-10. **This decision is reversible.** Architecturally it is, but the decision
+10. **This decision is reversible**: Architecturally it is, but the decision
     to drop Capture is Oded's (Architect) and is recorded here as context for
     future work, not as a proposal open for re-litigation in this PR.
 
@@ -230,18 +230,18 @@ This note documents a decision and the options above. It **does not** claim:
 
 The following are **next steps** this note identifies, but does not implement:
 
-1. **Supersede or amend ADR-0005 Capture tiers.** ADR-0005 deferred Capture; this
+1. **Supersede or amend ADR-0005 Capture tiers**: ADR-0005 deferred Capture; this
    decision drops it. An ADR update should make that explicit.
 
 2. **Scrub consent copy that says "Capture when it ships."** If any UI strings,
    comments, or docs say "Capture coming soon," remove or rephrase them to
    reflect the drop.
 
-3. **Separate issue if user-facing CU guidance is wanted.** If fidget's README
+3. **Separate issue if user-facing CU guidance is wanted**: If fidget's README
    or docs should point users to cua-driver or explain how to attach a CU MCP,
    file that as a separate docs issue. This PR is research only.
 
-4. **Evaluate zavora-ai and any other late-emerging MCPs.** Community MCP
+4. **Evaluate zavora-ai and any other late-emerging MCPs**: Community MCP
    options change. The comparison here is 2026-09-22; future notes can
    revisit if new cross-platform or better-integrated options emerge.
 

@@ -158,13 +158,13 @@ Authorization = "Bearer <TOKEN>" }` under `[mcp_servers.fidget]`. Do not emit
 
 Three cases, and they are all instructions rather than second snippets:
 
-1. **The file-fragment harnesses.** hermes and opencode paste into a file that
+1. **The file-fragment harnesses**: hermes and opencode paste into a file that
    may already exist, so the box's content is a fragment to merge and the copy
    needs to say so. The command harnesses (Claude Code, grok, codex) do not.
-2. **The restart line.** Claude Code, opencode and codex read config at process
+2. **The restart line**: Claude Code, opencode and codex read config at process
    start, so the snippet is inert until the harness restarts. hermes reloads
    within five seconds; grok needs `/mcps` then `r` in a live session.
-3. **The verify line.** Each has a cheap non-interactive check that connects and
+3. **The verify line**: Each has a cheap non-interactive check that connects and
    reports, which is the best thing to put under the box: `claude mcp list`,
    `hermes mcp test fidget`, `opencode mcp list`, `grok mcp doctor fidget`,
    `codex mcp get fidget`. The first four were run here; they print a
@@ -197,7 +197,7 @@ than any option below. The reveal has to come from the running app's own UI.
 
 The options, and what each costs:
 
-1. **Reveal it in the generated snippet, in Settings.** Cheapest, and it is what
+1. **Reveal it in the generated snippet, in Settings**: Cheapest, and it is what
    the Advanced section already assumes. The token then lives in the clipboard,
    and for four of five harnesses in a config file the user owns. ADR-0010's
    rule 7 — do not log, print, or fingerprint a credential — governs a *Harness's*
@@ -206,21 +206,21 @@ The options, and what each costs:
    does retire is ADR-0026's consequence "The token remains absent from disk",
    for the BYO path only. Say it in the UI in one line: fidget keeps the token
    out of its own files, and this procedure puts it in yours.
-2. **Reveal it, and steer away from the shared-file scopes.** The same as 1 plus
+2. **Reveal it, and steer away from the shared-file scopes**: The same as 1 plus
    refusing to generate `claude mcp add -s project` or grok's `--scope project`,
    both of which write a committable file. Costs nothing and removes the only
    failure mode here that leaves the token somewhere the user did not expect.
-3. **A stable token on disk, so the snippet survives restarts.** The largest UX
+3. **A stable token on disk, so the snippet survives restarts**: The largest UX
    win — no re-paste, no harness restart — and it reverses ADR-0026's rejection of
    a descriptor file on its own terms: permissions, staleness after a crash, and
    cleanup on exit, none of which the environment needed. It also only pays off
    fully alongside a fixed port. Not a settings change; a new ADR.
-4. **A fixed port with a per-run token.** Halves the churn, since only one half
+4. **A fixed port with a per-run token**: Halves the churn, since only one half
    of the snippet moves, and leaves the "dies with the app run" property intact.
    The cost is a well-known loopback port to collide with and to squat on, which
    is a worse listener than an ephemeral one for something whose only defence
    past the bind is the token.
-5. **Do not reveal it, and decline story 66.** Free, honest, and available: the
+5. **Do not reveal it, and decline story 66**: Free, honest, and available: the
    attached-Harness path already reaches every tool, and this only closes the door
    for a user who wants their own agent.
 
@@ -245,15 +245,15 @@ above, then `/mcp verbose`.
 
 Beyond codex:
 
-- **Nothing was tested against the running app.** Every probe here drove a
+- **Nothing was tested against the running app**: Every probe here drove a
   faithful replica of `answer()` in `mcp_http.rs` — Origin to 403, wrong or
   absent bearer to 401, non-POST to 405, 202 on notifications — because the
   research worktree is unbuilt. A single smoke test against the real binary is
   cheap and should precede shipping the Settings copy.
-- **No harness was observed calling a tool.** Handshake and `tools/list` were
+- **No harness was observed calling a tool**: Handshake and `tools/list` were
   verified end to end on four harnesses; an actual `speak` reaching an Instance
   was not, in any of them.
-- **The mid-session claims are the softest part of the table.** hermes's 5-second
+- **The mid-session claims are the softest part of the table**: hermes's 5-second
   watcher and `/reload-mcp`, grok's `/mcps` refresh, and Claude Code's `/mcp`
   argument list are all read — from source, shipped docs, and embedded strings
   respectively — and no interactive session was started for any harness. Whether

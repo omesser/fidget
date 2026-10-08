@@ -442,7 +442,7 @@ has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
 strengthening multi-instance personality differentiation; personality.txt remains
 package-authored.
 
-1. **Personality-driven AI behavior (shipped).** Authored `personality.txt` (who
+1. **Personality-driven AI behavior (shipped)**: Authored `personality.txt` (who
    they are, fixations, sample lines; loader never interprets it) drives Director
    that picks idle Behaviors + spoken lines non-deterministically, in-character.
    Completer contract: Behavior name on one line, optional spoken line on the
@@ -460,11 +460,11 @@ package-authored.
    #556 2026-09-08; pi verified ACP #628 2026-09-11; grok verified #587 2026-09-09; codex verified #623 2026-09-14; cursor-agent verified #762 2026-09-16; goose verified #971 2026-09-24; copilot verified #1017 2026-09-26; antigravity named+verified #1143 2026-09-28). No other desktop pet ships authored personality
    + Director-driven non-deterministic idle speech.
 
-2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
+2. **Spatial differentiators (shipped)**: Ballistic physics (gravity arcs, throw,
    Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
    fade + hotkey hide. Window app name tracking. Local idle life without model.
 
-3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
+3. **Agent integrations (shipped)**: Harness ACP Completer (#433 2026-09-07)
    speaks to a spawned Harness as the session Completer. Named rows match the
    README preset table: claude, codex, copilot, cursor-agent, grok, goose,
    opencode, hermes, pi, and antigravity, plus a custom ACP command (#556
@@ -493,7 +493,7 @@ package-authored.
 
 **What other projects have that fidget doesn't (yet):**
 
-1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
+1. **Character ecosystems (who controls the pack)**: Desktop Mate: official SKUs
    vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
    Workshop-open is the actual ecosystem strength (98% of 51,874 reviews).
    MateEngine: VRM + Workshop-open, free, the switching target after Desktop
@@ -502,13 +502,13 @@ package-authored.
    Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
    authoring-time import, not a live gallery or first-party store.
 
-2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
+2. **Agent integrations shipped**: Desktop Pet has OpenAI chat (vendor-only
    evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,246 stars,
    verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
    attach. fidget's Harness ACP Completer (#433 2026-09-07) + MCP server
    (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are shipped; #17 tracks polish/bugs.
 
-3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
+3. **Distribution reach**: Desktop Mate, VPet, and MateEngine are on Steam;
    OpenPets has signed Windows builds and catalog. fidget ships via GitHub
    Releases plus a Homebrew cask (macOS Apple Silicon, `omesser/homebrew-fidget`);
    still no Steam/store presence.
