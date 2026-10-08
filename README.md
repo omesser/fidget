@@ -59,7 +59,7 @@ Right-click the fidget, or click the tray icon, and choose Settings….
 
 Settings → Character picks which character it wears. Buddy Bot is the default. The others are under [Characters](#characters).
 
-Settings → AI chooses who answers. Under AI source, pick `Harness · claude` or another name from [Harness Support](#harness-support). The Harness signs in on its own. For a Model API, pick Model API in AI source, then set Base URL, Model, and API key under Model / API. Presets fill the Base URL for OpenAI, Anthropic, xAI, and Ollama. Type any other OpenAI-compatible endpoint into Base URL. Apply saves the choice.
+Settings → AI chooses who answers. Under AI source, pick `Harness · claude` or another name from [Harness Support](#harness-support). The Harness signs in on its own. Model under Harness names the model it runs on, and blank keeps the Harness's own default. For a Model API, pick Model API in AI source, then set Base URL, Model, and API key under Model / API. Presets fill the Base URL for OpenAI, Anthropic, xAI, and Ollama. Type any other OpenAI-compatible endpoint into Base URL. Apply saves the choice.
 
 Developers and CI can override Settings with optional environment variables:
 

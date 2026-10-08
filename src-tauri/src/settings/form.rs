@@ -60,6 +60,9 @@ impl RowOperation {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormSection {
     pub heading: String,
+    /// The AI source these rows only matter under, or `None` for a section
+    /// that matters under both.
+    pub serves: Option<AiSource>,
     pub rows: Vec<FormRow>,
     /// Short introductory text, always visible.
     pub comment: Option<String>,
@@ -67,6 +70,18 @@ pub struct FormSection {
     pub disclosure: Option<String>,
     /// Status information shown in a muted strip (env overrides, session state).
     pub status: Option<String>,
+}
+
+/// Which mind answers a wake, as the AI source picker names it.
+///
+/// The page disables a section that serves the source the picker does not
+/// name, and follows the picker before Apply, so the two halves of the AI
+/// tab cannot both look live (#1427).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiSource {
+    Harness,
+    ModelApi,
 }
 
 /// One row of the settings form, as data.
@@ -485,6 +500,11 @@ pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
+/// The Harness section's Model row. It writes `TextField::DirectorModel`,
+/// the field the Model / API row writes, because a Harness runs on the same
+/// model setting (#1427).
+pub const HARNESS_MODEL_ID: &str = "harness_model";
+pub const HARNESS_HEADING: &str = "Harness";
 pub const PI_PROJECT_MCP_ID: &str = "pi_project_mcp";
 /// The registration box's rows. #577.
 pub const BYO_HARNESS_ID: &str = "byo_harness";
@@ -495,7 +515,7 @@ pub const BYO_TOKEN_ID: &str = "byo_token";
 pub const BYO_COPY_TOKEN_ID: &str = "byo_copy_token";
 /// The heading the three sit under, spelled once so the tests and the section
 /// cannot disagree about it.
-pub const BYO_HEADING: &str = "Point a Harness you run yourself at Fidget";
+pub const BYO_HEADING: &str = "BYO - Point existing Harness at Fidget";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
@@ -774,54 +794,6 @@ fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
     owned_row_parts(label, var, owned)
 }
 
-/// One of the three HTTP rows, which answer to an attachment as well as to a
-/// variable. Returns (label, frozen, status).
-///
-/// A Harness that *answers* is the Completer (ADR-0008), so these three drive
-/// nothing while one is up. #272: an edit the Director would discard is not
-/// an edit to offer. The source row is never frozen by an attachment, so Off
-/// stays one pick away.
-///
-/// Driving rather than merely configured (`harness::driving`): a missing
-/// Harness leaves a handle that never answers, and freezing these three on
-/// that would leave no reachable Completer (#452). #469's third state: the
-/// handle stays the configured Completer whether or not its child is up, so
-/// an edit here is saved and not used. Live, because it is the way back;
-/// labelled, because a row that takes a key and changes nothing is worse
-/// than a frozen one. Handing the Director to HTTP the moment a session dies
-/// is the second mind ADR-0008 refuses.
-///
-/// #500 narrowed the label rather than removing it. The wait is no longer a
-/// relaunch: the Session retries the child, and Model API in the source row
-/// hands these three back at once, so the label names the pick that ends it.
-fn http_row_parts(
-    label: &str,
-    var: &str,
-    driving: bool,
-    configured: bool,
-) -> (String, bool, Option<String>) {
-    if driving {
-        return (
-            label.to_string(),
-            true,
-            Some("Not in use: a Harness is the Model API".to_string()),
-        );
-    }
-    let (label, frozen, mut status) = env_row_parts(label, var);
-    if configured {
-        let status_text = match status {
-            Some(s) => format!(
-                "{}; not in use until source is Model API: a Harness is still the AI brain",
-                s
-            ),
-            None => "Not in use until source above is Model API: a Harness is still the AI brain"
-                .to_string(),
-        };
-        status = Some(status_text);
-    }
-    (label, frozen, status)
-}
-
 /// A checkbox for one development switch.
 ///
 /// Frozen when the exported value is one `model::env_switch` reads: that
@@ -848,17 +820,10 @@ fn flag_row(
 }
 
 fn director_sections(live: &Live) -> Vec<FormSection> {
-    let Live {
-        driving,
-        configured,
-        ..
-    } = *live;
     let (base_url_label, base_url_frozen, base_url_status) =
-        http_row_parts("Base URL", model::BASE_URL, driving, configured);
-    let (model_label, model_frozen, model_status) =
-        http_row_parts("Model", model::MODEL, driving, configured);
-    let (api_key_label, api_key_frozen, api_key_status) =
-        http_row_parts("API key", model::API_KEY, driving, configured);
+        env_row_parts("Base URL", model::BASE_URL);
+    let (model_label, model_frozen, model_status) = env_row_parts("Model", model::MODEL);
+    let (api_key_label, api_key_frozen, api_key_status) = env_row_parts("API key", model::API_KEY);
     let (director_label, director_frozen, director_status) =
         switch_row_parts("AI on", model::ENABLED);
     let (wake_label, wake_frozen, wake_status) =
@@ -867,6 +832,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "AI".to_string(),
+            serves: None,
             comment: Some("Control whether the fidget improvises, and how often it starts a conversation on its own.".to_string()),
             disclosure: Some("The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
             status: None,
@@ -916,10 +882,11 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
             ],
         },
-        completer_source_section(&live.pi_mcp_dir),
-        byo_section(),
+        completer_source_section(),
+        harness_section(&live.pi_mcp_dir),
         FormSection {
             heading: "Model / API".to_string(),
+            serves: Some(AiSource::ModelApi),
             comment: None,
             disclosure: None,
             status: None,
@@ -1000,8 +967,10 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
             ],
         },
+        byo_section(),
         FormSection {
             heading: "Last user turn".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1034,10 +1003,11 @@ fn pi_mcp_status(dir: &str) -> String {
     )
 }
 
-fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
+fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
+        serves: None,
         comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
         // The preset list is read from `HARNESS_PRESETS` rather than spelled
         // again: the hand-kept copy this replaces had been missing `pi` since
@@ -1055,6 +1025,43 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 batched: true,
                 disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (copilot, cursor-agent, goose, grok, hermes, opencode) require only their binary on PATH. antigravity requires Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
                 status: source_status,
+            },
+            FormRow::InspectBlock {
+                id: HARNESS_STATE_ID.to_string(),
+                label: None,
+                help: Some("Harness signs itself in - Fidget never asks for credentials.".to_string()),
+                disclosure: Some("Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                status: None,
+            },
+        ],
+    }
+}
+
+/// The rows only a Harness reads, under the picker that attaches one.
+///
+/// The Model row is the Model / API row's field under its own id. A Harness
+/// runs on the same model setting, and the Model / API section is off while
+/// a Harness is picked, so without this row the model is out of reach (#1427).
+fn harness_section(pi_mcp_dir: &str) -> FormSection {
+    let (_, frozen, _) = harness_env_row_parts("AI source");
+    let (model_label, model_frozen, model_status) = env_row_parts("Model", model::MODEL);
+    FormSection {
+        heading: HARNESS_HEADING.to_string(),
+        serves: Some(AiSource::Harness),
+        comment: None,
+        disclosure: None,
+        status: None,
+        rows: vec![
+            FormRow::TextField {
+                id: HARNESS_MODEL_ID.to_string(),
+                label: Some(model_label),
+                placeholder: String::new(),
+                writes: TextField::DirectorModel,
+                frozen: model_frozen,
+                batched: true,
+                help: Some("Leave blank for the Harness's own default. The same setting as Model under Model / API.".to_string()),
+                disclosure: None,
+                status: model_status,
             },
             FormRow::Checkbox {
                 id: PI_PROJECT_MCP_ID.to_string(),
@@ -1076,13 +1083,6 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
                 batched: true,
                 help: None,
                 disclosure: Some("The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
-                status: None,
-            },
-            FormRow::InspectBlock {
-                id: HARNESS_STATE_ID.to_string(),
-                label: None,
-                help: Some("Harness signs itself in - Fidget never asks for credentials.".to_string()),
-                disclosure: Some("Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
                 status: None,
             },
         ],
@@ -1107,6 +1107,7 @@ fn completer_source_section(pi_mcp_dir: &str) -> FormSection {
 fn byo_section() -> FormSection {
     FormSection {
         heading: BYO_HEADING.to_string(),
+        serves: None,
         comment: Some("For a Harness you start in your own terminal.".to_string()),
         disclosure: Some(
             "Registering Fidget as an MCP server there lets it speak, move and \
@@ -1191,6 +1192,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Character".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1211,6 +1213,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Instances".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1252,6 +1255,7 @@ fn presence_sections() -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Do Not Disturb".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1282,6 +1286,7 @@ fn presence_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "Hide".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1334,6 +1339,7 @@ fn presence_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "Launch".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1355,6 +1361,7 @@ fn presence_sections() -> Vec<FormSection> {
 fn chat_sections() -> Vec<FormSection> {
     vec![FormSection {
         heading: "Appearance".to_string(),
+        serves: None,
         comment: None,
         disclosure: None,
         status: None,
@@ -1457,6 +1464,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "What the fidget can see".to_string(),
+            serves: None,
             comment: consent_comment,
             disclosure: None,
             status: None,
@@ -1464,6 +1472,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Excluded applications".to_string(),
+            serves: None,
             comment: None,
             disclosure: None,
             status: None,
@@ -1478,6 +1487,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Memory File".to_string(),
+            serves: None,
             comment: Some("What your fidget remembers between runs.".to_string()),
             disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
             status: None,
@@ -1559,6 +1569,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Traces".to_string(),
+            serves: None,
             comment: Some("Switches for development and testing.".to_string()),
             disclosure: Some("Development switches print to stderr. Trace frames prints each frame the Engine produces. Trace hit-test prints where each click went (the sprite or click-through). Trace AI prints each model call with its context. Trace Engine prints each change of Behavior or Animation.".to_string()),
             status: None,
@@ -1566,6 +1577,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Blank AI".to_string(),
+            serves: None,
             comment: Some("Also for development and testing. Off is the fidget as shipped.".to_string()),
             disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
@@ -1579,6 +1591,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "HTTP limits".to_string(),
+            serves: None,
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
                 "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to leave effort unset: HTTP omits the field, and a Harness does not call session/set_config_option. The picker lists low, medium, and high. Other typed values are sent as written. On a Harness the value is set on thought_level, or on model_config if that is what the Harness lists.",
@@ -1640,6 +1653,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
         },
         FormSection {
             heading: "Harness attachment".to_string(),
+            serves: None,
             comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
                 "Turn timeout: how long a session/prompt may run before session/cancel, not counting the time it waits on you to answer an ask, and started over once you answer. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
@@ -1699,18 +1713,13 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
 /// Describe the settings form. The AppKit and Linux GTK windows build from this.
 /// What the description reads from the running process rather than the file.
 ///
-/// A value rather than four calls inside the builders, because none of the
-/// four can be pinned otherwise: `harness::driving` is a process global no
-/// test can set for the whole binary, the consent intro names the process
-/// Privacy will list, which is the responsible parent and so differs per
-/// machine, and the attach directory differs per machine again. A fixture
-/// compared byte for byte needs all four chosen (#706).
+/// A value rather than calls inside the builders, because none of these can
+/// be pinned otherwise: the consent intro names the process Privacy will
+/// list, which is the responsible parent and so differs per machine, and the
+/// attach directory differs per machine again. A fixture compared byte for
+/// byte needs them chosen (#706).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Live {
-    /// A Harness is answering, so the three HTTP rows drive nothing (ADR-0008).
-    pub driving: bool,
-    /// Configured but not answering: the handle still shadows them (#469).
-    pub configured: bool,
     /// The whole intro rather than the process name, because Linux has no
     /// consent system and says something else entirely (#250).
     pub consent_intro: String,
@@ -1740,8 +1749,6 @@ impl Live {
         #[cfg(target_os = "linux")]
         let consent_intro = consent::linux_pane_intro();
         Self {
-            driving: crate::harness::driving(),
-            configured: crate::harness::attached().is_some(),
             consent_intro,
             attach_cwd: crate::harness::attach_cwd_placeholder(),
             pi_mcp_dir: crate::harness::project_dir_label(""),
@@ -1835,10 +1842,8 @@ pub(crate) mod tests {
     #[cfg(target_os = "macos")]
     const UNPINNED_TABS: &[&str] = &[];
 
-    fn fixture_live(driving: bool, configured: bool) -> Live {
+    fn fixture_live(driving: bool) -> Live {
         Live {
-            driving,
-            configured,
             consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
             attach_cwd: FIXTURE_ATTACH_CWD.to_string(),
             pi_mcp_dir: FIXTURE_ATTACH_CWD.to_string(),
@@ -1867,29 +1872,27 @@ pub(crate) mod tests {
     /// CI as a fixture diff rather than as a quietly refreshed file.
     #[test]
     fn both_ai_sources_serialize_to_the_committed_fixtures() {
-        const FIXTURES: [(&str, &str, bool, bool); 2] = [
+        const FIXTURES: [(&str, &str, bool); 2] = [
             (
                 "settings-snapshot-modelApi.json",
                 include_str!("../../../tests/fixtures/settings-snapshot-modelApi.json"),
-                false,
                 false,
             ),
             (
                 "settings-snapshot-harnessDriving.json",
                 include_str!("../../../tests/fixtures/settings-snapshot-harnessDriving.json"),
                 true,
-                true,
             ),
         ];
         // The Director and Development variables decide half these rows, and a
         // developer's exported one would otherwise rewrite the fixture.
         crate::model::tests::with_env(None, None, None, || {
-            for (name, committed, driving, configured) in FIXTURES {
+            for (name, committed, driving) in FIXTURES {
                 let expected = pinned_tabs(
                     serde_json::from_str(committed).expect("the fixture has to be JSON"),
                 );
                 let actual = pinned_tabs(
-                    serde_json::to_value(describe_with(&fixture_live(driving, configured)))
+                    serde_json::to_value(describe_with(&fixture_live(driving)))
                         .expect("the description has to serialize"),
                 );
                 if actual != expected {
@@ -2451,18 +2454,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// A driving Harness takes Base URL and API key out of use, and the model
-    /// row beside them, but the Harness reads the model, so its own row stays
-    /// the user's.
-    #[test]
-    fn a_driving_harness_leaves_its_model_row_editable() {
-        crate::model::tests::with_env(None, None, None, || {
-            let description = describe_with(&fixture_live(true, true));
-            assert!(description.frozen(DIRECTOR_MODEL_ID));
-            assert!(!description.frozen(HARNESS_MODEL_ID));
-        });
-    }
-
     /// #1427: the page disables the section whose source the AI source picker
     /// does not name, so a source section says which source it serves. BYO
     /// serves neither and sits below both.
@@ -2574,7 +2565,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_character_picker_shows_the_user_directory_it_reads() {
-        let description = describe_with(&fixture_live(false, false));
+        let description = describe_with(&fixture_live(false));
         let help = description
             .sections()
             .find_map(|section| {
@@ -3636,80 +3627,6 @@ pub(crate) mod tests {
         });
     }
 
-    /// A Harness that answers is the Completer (ADR-0008), so the three HTTP
-    /// rows drive nothing and say so — and a Harness that never started is
-    /// not one, because freezing them on it would leave no reachable
-    /// Completer at all (#452).
-    ///
-    /// Asserted through `http_row` rather than a live attachment:
-    /// `harness::driving` reads a process global one test may not set for the
-    /// whole binary.
-    #[test]
-    fn only_a_harness_that_answers_takes_the_http_rows_out_of_use() {
-        const ROWS: [(&str, &str); 3] = [
-            ("Base URL", crate::model::BASE_URL),
-            ("Model", crate::model::MODEL),
-            ("API key", crate::model::API_KEY),
-        ];
-        for (label, var) in ROWS {
-            let (_label, frozen, status) = http_row_parts(label, var, true, true);
-            assert!(frozen, "a driving Harness discards an edit here");
-            let status = status.expect("frozen row must have status");
-            assert!(
-                status.to_lowercase().contains("not in use"),
-                "the status has to say why it is dead, not {status:?}"
-            );
-        }
-        crate::model::tests::with_env(None, None, None, || {
-            for (label, var) in ROWS {
-                let (label, frozen, status) = http_row_parts(label, var, false, false);
-                assert!(
-                    !frozen,
-                    "with nothing driving, {label:?} is the only Model API left"
-                );
-                if let Some(status) = status {
-                    assert!(!status.contains("not in use"));
-                    assert!(!status.contains("next launch"));
-                }
-            }
-        });
-    }
-
-    /// #469: the rows a dead Harness leaves live take an edit the Director
-    /// does not read while the handle is set, because that handle stays the
-    /// configured Completer (ADR-0008). Editable so there is a way back, and
-    /// the status says so rather than the label.
-    ///
-    /// #500: the wait ends with a pick rather than a relaunch, so the status
-    /// names the pick. With progressive disclosure (#548), this detail lives
-    /// in status, not the label.
-    #[test]
-    fn a_dead_harness_leaves_the_http_rows_editable_and_names_the_way_back() {
-        crate::model::tests::with_env(None, None, None, || {
-            for (label, var) in [
-                ("Base URL", crate::model::BASE_URL),
-                ("Model", crate::model::MODEL),
-                ("API key", crate::model::API_KEY),
-            ] {
-                let (label, frozen, status) = http_row_parts(label, var, false, true);
-                assert!(!frozen, "the way back has to stay typeable, got {label:?}");
-                let status = status.expect("configured row must have status");
-                assert!(
-                    !status.contains("next launch"),
-                    "no edit here waits for one any more, got {status:?}"
-                );
-                assert!(
-                    status.contains("source above"),
-                    "the status has to say where the source is, not {status:?}"
-                );
-                assert!(
-                    status.contains("Model API"),
-                    "the status has to name the pick that ends the wait, not {status:?}"
-                );
-            }
-        });
-    }
-
     /// Production change that would fail this: source copy still promising a
     /// relaunch after `harness::retarget` made every pick live. A row that
     /// tells the user to restart is how #452's limit was survivable and is now
@@ -3717,7 +3634,7 @@ pub(crate) mod tests {
     #[test]
     fn no_completer_source_copy_promises_a_relaunch() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section("/tmp");
+            let section = completer_source_section();
             let mut copy = section.comment.clone().unwrap_or_default();
             for row in &section.rows {
                 if let FormRow::Popup { help, .. } | FormRow::InspectBlock { help, .. } = row {
@@ -3738,7 +3655,7 @@ pub(crate) mod tests {
     #[test]
     fn the_source_rows_say_apply_commits() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section("/tmp");
+            let section = completer_source_section();
             let mut copy = section.disclosure.clone().unwrap_or_default();
             for row in &section.rows {
                 if let FormRow::Popup { disclosure, .. } | FormRow::TextField { disclosure, .. } =
@@ -3765,7 +3682,7 @@ pub(crate) mod tests {
     #[test]
     fn completer_source_does_not_equate_model_api_with_static_weights() {
         crate::model::tests::with_harness(None, || {
-            let section = completer_source_section("/tmp");
+            let section = completer_source_section();
             let mut copy = section.comment.clone().unwrap_or_default();
             copy.push(' ');
             copy.push_str(&section.disclosure.clone().unwrap_or_default());
@@ -3849,7 +3766,7 @@ pub(crate) mod tests {
     /// the webview only sees the description (#921).
     #[test]
     fn both_character_popups_offer_the_installed_packages() {
-        let description = describe_with(&fixture_live(false, false));
+        let description = describe_with(&fixture_live(false));
         let rows: Vec<&FormRow> = description
             .sections()
             .flat_map(|section| section.rows.iter())
@@ -3883,7 +3800,7 @@ pub(crate) mod tests {
         let path = crate::settings::settings_path(&fidget_core::memory::data_dir());
         let before = std::fs::read(&path).ok();
 
-        let description = describe_with(&fixture_live(false, false));
+        let description = describe_with(&fixture_live(false));
         let section = description
             .sections()
             .find(|s| s.heading == BYO_HEADING)

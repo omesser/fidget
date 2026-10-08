@@ -2843,13 +2843,6 @@ pub(crate) fn with_sign_in_gate(
     body();
 }
 
-/// Whether an attached Harness is actually answering, not merely configured.
-/// `attach` holds the handle even when the child never spawned. Settings asks
-/// this rather than `attached`, or a missing CLI freezes every Completer.
-pub fn driving() -> bool {
-    attached().is_some_and(|session| session.inspect().alive)
-}
-
 /// The error the attached Harness answered the last turn with, if it did.
 /// The Completer seam hands core a bare `Err`, so a version refusal and an
 /// unparsable reply both reach the Shell as `Wake::Failed`. Read only on failure.
