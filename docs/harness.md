@@ -327,7 +327,7 @@ The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the ro
 - **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
 - **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
 
-On ACP attach, Fidget pre-approves only its own MCP tools where the Harness supports a scoped startup policy: Claude through session options, Copilot and Grok through launch flags, and OpenCode through inline config. Other tools keep the Harness's normal approval policy, and Fidget forwards any permission request it receives to Chat unchanged. Harnesses without a verified scoped startup policy still ask.
+On ACP attach, Fidget pre-approves only its own MCP tools where the Harness supports a scoped startup policy: Claude through session options, Copilot and Grok through launch flags, OpenCode through inline config, and Cursor through its project CLI permissions. Other tools keep the Harness's normal approval policy, and Fidget forwards any permission request it receives to Chat unchanged. Harnesses without a verified scoped startup policy still ask.
 
 ### Elicitation
 
@@ -345,13 +345,14 @@ Two kinds of link open Chat: one that arrives during Fidget's own `authenticate`
 
 1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
 2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
-3. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
+3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`, preserving other project permissions. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
+4. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
 
 URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.
 
 Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
 
-Detach removes our entry, and the file and directory if attach created them. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
+Detach removes the MCP entry and the CLI permission only if Fidget added it, and removes files and the directory it created when empty. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
 
 ### Pointing a Harness you run yourself at Fidget
 

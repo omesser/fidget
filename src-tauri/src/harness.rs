@@ -213,11 +213,11 @@ impl Launch {
     /// `pi-acp` forwards `process.env` to `pi` and the project file names those
     /// variables instead of the values. Own process group once `own_interrupt`
     /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
-    fn command(&self, cwd: &AttachCwd) -> Command {
+    fn command(&self, cwd: &AttachCwd, mcp_available: bool) -> Command {
         let mut command = Command::new(resolved_program(&self.argv[0], None));
         let endpoint = crate::mcp_http::endpoint();
         let mut args = self.argv[1..].to_vec();
-        if endpoint.is_some() {
+        if endpoint.is_some() && mcp_available {
             match self.name.as_str() {
                 "copilot" => args.push("--allow-tool=fidget".into()),
                 "grok" => {
@@ -235,7 +235,7 @@ impl Launch {
                 command.env(fidget_mcp_server::TOKEN_VAR, token);
             }
         }
-        if self.name == "opencode" && endpoint.is_some() {
+        if self.name == "opencode" && endpoint.is_some() && mcp_available {
             if let Some(config) = opencode_fidget_permissions(
                 std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref(),
             ) {
@@ -258,10 +258,19 @@ fn opencode_fidget_permissions(existing: Option<&str>) -> Option<String> {
         .as_object_mut()?
         .entry("permission")
         .or_insert_with(|| json!({}));
-    permissions
-        .as_object_mut()?
-        .entry("fidget_*")
-        .or_insert_with(|| json!("allow"));
+    if permissions.is_string() {
+        let default = permissions.take();
+        *permissions = json!({"*": default});
+    }
+    let permissions = permissions.as_object_mut()?;
+    if permissions.contains_key("fidget_*") {
+        return Some(config.to_string());
+    }
+    for tool in fidget_core::dispatch::list_tools() {
+        permissions
+            .entry(format!("fidget_{}", tool.name))
+            .or_insert_with(|| json!("allow"));
+    }
     Some(config.to_string())
 }
 
@@ -1595,7 +1604,10 @@ impl Session {
         match crate::cursor_mcp::install(cwd, &endpoint.url, &endpoint.authorization()) {
             Ok(installed) => {
                 if let Ok(mut slot) = self.cursor.lock() {
-                    slot.get_or_insert(installed);
+                    let tracked = slot.get_or_insert(installed);
+                    if let Err(why) = tracked.approve_fidget_tools() {
+                        eprintln!("harness: cursor permissions: {why}");
+                    }
                 }
             }
             Err(why) => {
@@ -1714,7 +1726,7 @@ impl Session {
         let asked = Arc::clone(&self.asked);
         let owners = Arc::clone(&self.owners);
         let spawned = Wire::spawn(
-            self.launch.command(cwd),
+            self.launch.command(cwd, mcp_stdio().is_some()),
             self.attach_timeout(),
             Box::new(move |event| note_event(&data, &forward, &asked, &owners, event)),
         );
@@ -4105,7 +4117,19 @@ mod tests {
         assert_eq!(config["model"], "example/model");
         assert_eq!(config["permission"]["bash"], "ask");
         assert_eq!(config["permission"]["other_*"], "deny");
-        assert_eq!(config["permission"]["fidget_*"], "allow");
+        for tool in fidget_core::dispatch::list_tools() {
+            assert_eq!(
+                config["permission"][format!("fidget_{}", tool.name)],
+                "allow"
+            );
+        }
+        assert!(config["permission"].get("fidget_*").is_none());
+        assert!(config["permission"].get("fidget_extra_speak").is_none());
+
+        let global = opencode_fidget_permissions(Some(r#"{"permission":"ask"}"#)).unwrap();
+        let global: Value = serde_json::from_str(&global).unwrap();
+        assert_eq!(global["permission"]["*"], "ask");
+        assert_eq!(global["permission"]["fidget_speak"], "allow");
 
         let explicit =
             opencode_fidget_permissions(Some(r#"{"permission":{"fidget_*":"ask"}}"#)).unwrap();
@@ -4118,20 +4142,22 @@ mod tests {
     fn mcp_launch_permissions_are_scoped_to_fidget() {
         let (calls, _rx) = mpsc::channel();
         assert!(crate::mcp_http::serve(calls).is_some());
-        let args = |name| {
+        let args = |name, mcp_available| {
             launch(Some(name))
                 .unwrap()
-                .command(&tmp_attach())
+                .command(&tmp_attach(), mcp_available)
                 .get_args()
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(args("copilot"), ["--acp", "--allow-tool=fidget"]);
+        assert_eq!(args("copilot", true), ["--acp", "--allow-tool=fidget"]);
         assert_eq!(
-            args("grok"),
+            args("grok", true),
             ["--allow", "MCPTool(fidget__*)", "agent", "stdio"]
         );
-        assert_eq!(args("goose"), ["acp"]);
+        assert_eq!(args("goose", true), ["acp"]);
+        assert_eq!(args("copilot", false), ["--acp"]);
+        assert_eq!(args("grok", false), ["agent", "stdio"]);
     }
 
     /// A thought is forwarded to the Chat surface of the Instance whose session
@@ -4525,7 +4551,7 @@ mod tests {
             let launch = launch(Some(name)).unwrap();
             let endpoint_was_served = crate::mcp_http::endpoint().is_some();
             let inline_config = std::env::var("OPENCODE_CONFIG_CONTENT").ok();
-            let command = launch.command(&tmp_attach());
+            let command = launch.command(&tmp_attach(), true);
             let mut env: Vec<_> = command
                 .get_envs()
                 .map(|(key, _)| key.to_string_lossy().into_owned())
@@ -4586,7 +4612,7 @@ mod tests {
             name: "sleep".into(),
             argv: vec!["/bin/sleep".into(), "8".into()],
         };
-        let mut command = launch.command(&tmp_attach());
+        let mut command = launch.command(&tmp_attach(), false);
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sleep");
@@ -4670,7 +4696,7 @@ mod tests {
                 r#"trap "" HUP; sleep 30 & wait"#.into(),
             ],
         };
-        let mut command = launch.command(&tmp_attach());
+        let mut command = launch.command(&tmp_attach(), false);
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sh");
