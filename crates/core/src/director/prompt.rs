@@ -1,4 +1,4 @@
-use super::{Context, Happened, State, CHAT_LIMIT};
+use super::{Context, Doing, Happened, Lately, State, Step, CHAT_LIMIT};
 
 /// The opening turn: who this is, what it may propose, and this moment. Who
 /// this is comes in two authored layers, the package's Personality Prompt then
@@ -115,16 +115,10 @@ pub(crate) fn follow_up(context: &Context) -> String {
     };
     let clock = format_clock(context.activity.hour, context.activity.minute);
     let happened = happened_word(&context.happened);
-    let state = match context.state {
-        State::Grounded => "idle",
-        State::Falling => "falling",
-        State::Dragged => "held",
-        State::Perched => "perched",
-        State::Climbing => "climbing",
-        State::Asleep => "asleep",
-    };
+    let state = state_word(context.state);
     let weekday = WEEKDAYS[usize::from(context.activity.weekday % 7)];
     let desktop = desktop_lines(context);
+    let (streak, was, lately) = lately_lines(context);
 
     // Last, after every labelled fact, because it is the only line the user
     // writes: a paste imitating `state:` or `front:` then reads as part of what
@@ -135,10 +129,12 @@ pub(crate) fn follow_up(context: &Context) -> String {
     };
 
     format!(
-        "what just happened: {happened}\n\
+        "what just happened: {happened}{streak}\n\
+         {was}\
          recent: {recent}\n\
          time: {weekday} {clock}\n\
          state: {state}\n\
+         {lately}\
          standing on: {standing}\n\
          {desktop}\
          {said}",
@@ -148,6 +144,63 @@ pub(crate) fn follow_up(context: &Context) -> String {
             context.standing.as_str()
         },
     )
+}
+
+fn state_word(state: State) -> &'static str {
+    match state {
+        State::Grounded => "idle",
+        State::Falling => "falling",
+        State::Dragged => "held",
+        State::Perched => "perched",
+        State::Climbing => "climbing",
+        State::Asleep => "asleep",
+    }
+}
+
+/// The streak suffix, the `was:` line, and the `doing:` and `lately:` lines.
+/// `was:` equal to now is left out, and so is a window of one step: the line
+/// beside it already says that much.
+fn lately_lines(context: &Context) -> (String, String, String) {
+    let Lately {
+        was,
+        doing,
+        streak,
+        steps,
+    } = &context.lately;
+    let streak = match streak {
+        0 | 1 => String::new(),
+        times => format!(" ({times} in a row)"),
+    };
+    let now = Doing {
+        state: context.state,
+        behavior: doing.clone(),
+    };
+    let was = match was {
+        Some(found) if *found != now => format!("was: {}\n", doing_words(found)),
+        _ => String::new(),
+    };
+    let mut lines = String::new();
+    if let Some(name) = doing {
+        lines.push_str(&format!("doing: {name}\n"));
+    }
+    if steps.len() > 1 {
+        let words: Vec<&str> = steps
+            .iter()
+            .map(|step| match step {
+                Step::State(state) => state_word(*state),
+                Step::Behavior(name) => name.as_str(),
+            })
+            .collect();
+        lines.push_str(&format!("lately: {}\n", words.join(" → ")));
+    }
+    (streak, was, lines)
+}
+
+fn doing_words(doing: &Doing) -> String {
+    match &doing.behavior {
+        Some(name) => format!("{}, doing {name}", state_word(doing.state)),
+        None => state_word(doing.state).to_string(),
+    }
 }
 
 const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
