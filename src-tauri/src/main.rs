@@ -35,6 +35,8 @@ mod debug;
 mod dev_flags;
 mod frame_loop;
 mod harness;
+#[cfg(unix)]
+mod login_path;
 mod mcp_http;
 mod mcp_resources;
 mod menu;
@@ -4429,6 +4431,11 @@ fn main() {
     // Before the builder, because the builder is where GTK initializes and GDK
     // reads GDK_BACKEND once, when it opens the display. A no-op off Linux.
     platform::prefer_x11_backend();
+
+    // Before the builder, so the first Harness probe and spawn see it. Windows
+    // reads PATH from the registry and needs none of this.
+    #[cfg(unix)]
+    login_path::adopt();
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
