@@ -183,6 +183,16 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
 }
 
 impl Launch {
+    fn codex_mcp_config(&self) -> Option<(String, String)> {
+        if self.name != "codex" {
+            return None;
+        }
+        let endpoint = crate::mcp_http::endpoint()?;
+        let config = codex_fidget_config(std::env::var("CODEX_CONFIG").ok().as_deref(), &endpoint)?;
+        let (_, token) = endpoint.registration();
+        Some((config, token))
+    }
+
     /// The version flag for this launcher. npx presets probe npx itself; first-party
     /// CLIs probe their own binary.
     fn version_flag(&self) -> &str {
@@ -213,15 +223,38 @@ impl Launch {
     /// `pi-acp` forwards `process.env` to `pi` and the project file names those
     /// variables instead of the values. Own process group once `own_interrupt`
     /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
-    fn command(&self, cwd: &AttachCwd) -> Command {
+    fn command(&self, cwd: &AttachCwd, mcp_available: bool) -> Command {
         let mut command = Command::new(resolved_program(&self.argv[0], None));
-        command.args(&self.argv[1..]).current_dir(cwd.as_path());
+        let endpoint = crate::mcp_http::endpoint();
+        let mut args = self.argv[1..].to_vec();
+        if endpoint.is_some() && mcp_available {
+            match self.name.as_str() {
+                "copilot" => args.push("--allow-tool=fidget".into()),
+                "grok" => {
+                    args.insert(0, "MCPTool(fidget__*)".into());
+                    args.insert(0, "--allow".into());
+                }
+                _ => {}
+            }
+        }
+        command.args(args).current_dir(cwd.as_path());
         if self.name == "pi" {
-            if let Some(endpoint) = crate::mcp_http::endpoint() {
+            if let Some(endpoint) = &endpoint {
                 let (url, token) = endpoint.registration();
                 command.env(fidget_mcp_server::URL_VAR, url);
                 command.env(fidget_mcp_server::TOKEN_VAR, token);
             }
+        }
+        if self.name == "opencode" && endpoint.is_some() && mcp_available {
+            if let Some(config) = opencode_fidget_permissions(
+                std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref(),
+            ) {
+                command.env("OPENCODE_CONFIG_CONTENT", config);
+            }
+        }
+        if let Some((config, token)) = self.codex_mcp_config() {
+            command.env("CODEX_CONFIG", config);
+            command.env(fidget_mcp_server::TOKEN_VAR, token);
         }
         isolate_from_interrupt(&mut command);
         command
@@ -230,6 +263,55 @@ impl Launch {
     fn line(&self) -> String {
         self.argv.join(" ")
     }
+}
+
+fn codex_fidget_config(
+    existing: Option<&str>,
+    endpoint: &crate::mcp_http::Endpoint,
+) -> Option<String> {
+    let server = format!("fidget_attached_{}", std::process::id());
+    let mut config: Value =
+        existing.map_or_else(|| Some(json!({})), |text| serde_json::from_str(text).ok())?;
+    let servers = config
+        .as_object_mut()?
+        .entry("mcp_servers")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()?;
+    if servers.contains_key(&server) {
+        return None;
+    }
+    servers.insert(
+        server,
+        json!({
+            "url": endpoint.url,
+            "bearer_token_env_var": fidget_mcp_server::TOKEN_VAR,
+            "default_tools_approval_mode": "approve"
+        }),
+    );
+    Some(config.to_string())
+}
+
+fn opencode_fidget_permissions(existing: Option<&str>) -> Option<String> {
+    let mut config: Value =
+        existing.map_or_else(|| Some(json!({})), |text| serde_json::from_str(text).ok())?;
+    let permissions = config
+        .as_object_mut()?
+        .entry("permission")
+        .or_insert_with(|| json!({}));
+    if permissions.is_string() {
+        let default = permissions.take();
+        *permissions = json!({"*": default});
+    }
+    let permissions = permissions.as_object_mut()?;
+    if permissions.contains_key("fidget_*") {
+        return Some(config.to_string());
+    }
+    for tool in fidget_core::dispatch::list_tools() {
+        permissions
+            .entry(format!("fidget_{}", tool.name))
+            .or_insert_with(|| json!("allow"));
+    }
+    Some(config.to_string())
 }
 
 /// Spawn `current_dir` and ACP session cwd. User-owned. Never `create_dir_all`.
@@ -1570,6 +1652,9 @@ impl Session {
                 return;
             }
         }
+        if let Err(why) = crate::cursor_mcp::allow_tools(cwd) {
+            eprintln!("harness: cursor permissions: {why}");
+        }
         if let Err(why) = crate::cursor_mcp::enable(Path::new(&self.launch.argv[0]), cwd) {
             eprintln!("harness: cursor mcp: {why}");
         }
@@ -1681,7 +1766,7 @@ impl Session {
         let asked = Arc::clone(&self.asked);
         let owners = Arc::clone(&self.owners);
         let spawned = Wire::spawn(
-            self.launch.command(cwd),
+            self.launch.command(cwd, mcp_stdio().is_some()),
             self.attach_timeout(),
             Box::new(move |event| note_event(&data, &forward, &asked, &owners, event)),
         );
@@ -1769,10 +1854,18 @@ impl Session {
             .as_path();
         let model = self.completer_model();
         let effort = crate::dev_flags::director_reasoning_effort();
+        // codex-acp replaces its session `mcp_servers` config when ACP also
+        // supplies servers, which would discard Fidget's scoped approval.
+        let mcp_for_wire = if self.launch.codex_mcp_config().is_some() {
+            None
+        } else {
+            mcp.clone()
+        };
         let opened = match wire.open(
             saved.clone(),
             cwd,
-            mcp.clone(),
+            mcp_for_wire,
+            self.launch.name == "claude",
             self.attach_timeout(),
             &model,
             effort.as_deref(),
@@ -3029,6 +3122,11 @@ mod tests {
         if let Some(cwd) = message.pointer("/params/cwd").and_then(Value::as_str) {
             record(count, &format!("cwd={cwd}"));
         }
+        if message.pointer("/params/_meta/claudeCode/options/allowedTools")
+            == Some(&json!(["mcp__fidget__*"]))
+        {
+            record(count, "fidget-approval");
+        }
         // The transport of the first server handed over. An http entry says
         // so; a stdio one names a command and no type.
         if let Some(server) = message
@@ -4056,6 +4154,137 @@ mod tests {
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
     }
 
+    #[test]
+    fn codex_inline_config_approves_only_the_fidget_server() {
+        let (calls, _rx) = mpsc::channel();
+        let endpoint = crate::mcp_http::serve(calls).unwrap();
+        let config = codex_fidget_config(
+            Some(r#"{"model":"example","mcp_servers":{"other":{"command":"other"}}}"#),
+            &endpoint,
+        )
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&config).unwrap();
+        assert_eq!(parsed["model"], "example");
+        assert_eq!(parsed["mcp_servers"]["other"]["command"], "other");
+        let server = format!("fidget_attached_{}", std::process::id());
+        assert_eq!(parsed["mcp_servers"][server.as_str()]["url"], endpoint.url);
+        assert_eq!(
+            parsed["mcp_servers"][server.as_str()]["bearer_token_env_var"],
+            fidget_mcp_server::TOKEN_VAR
+        );
+        assert_eq!(
+            parsed["mcp_servers"][server.as_str()]["default_tools_approval_mode"],
+            "approve"
+        );
+        assert!(!config.contains(&endpoint.registration().1));
+        assert!(codex_fidget_config(Some("invalid json"), &endpoint).is_none());
+        let existing_fidget = codex_fidget_config(
+            Some(r#"{"mcp_servers":{"fidget":{"command":"own","default_tools_approval_mode":"prompt"}}}"#),
+            &endpoint,
+        )
+        .unwrap();
+        let existing_fidget: Value = serde_json::from_str(&existing_fidget).unwrap();
+        assert_eq!(existing_fidget["mcp_servers"]["fidget"]["command"], "own");
+        assert_eq!(
+            existing_fidget["mcp_servers"]["fidget"]["default_tools_approval_mode"],
+            "prompt"
+        );
+        let conflicting = format!(r#"{{"mcp_servers":{{"{server}":{{"command":"own"}}}}}}"#);
+        assert!(codex_fidget_config(Some(&conflicting), &endpoint).is_none());
+
+        let (fx, mut session) = Fixture::new("hello");
+        session.launch.name = "codex".into();
+        let expected_acp_server = usize::from(session.launch.codex_mcp_config().is_none());
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("mcp=http"), expected_acp_server);
+        session.shutdown();
+    }
+
+    /// Detach takes the token back out of `.cursor/mcp.json` and leaves the
+    /// `Mcp(fidget:*)` allow in `.cursor/cli.json` for the next attach.
+    #[test]
+    fn a_cursor_attach_leaves_its_tool_allow_after_detach() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+        let (fx, mut session) = Fixture::new("hello");
+        session.launch.name = "cursor-agent".into();
+        let cursor = fx.cwd.join(".cursor");
+        let read = |name: &str| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(cursor.join(name)).unwrap()).unwrap()
+        };
+        let allowed = json!({"permissions": {"allow": ["Mcp(fidget:*)"]}});
+
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(read("cli.json"), allowed);
+        assert!(read("mcp.json")["mcpServers"]["fidget"]["url"].is_string());
+
+        session.shutdown();
+        assert_eq!(read("cli.json"), allowed);
+        assert!(
+            !cursor.join("mcp.json").exists(),
+            "the token outlived detach"
+        );
+    }
+
+    #[test]
+    fn opencode_inline_policy_preserves_other_permissions() {
+        let config = opencode_fidget_permissions(Some(
+            r#"{"model":"example/model","permission":{"bash":"ask","other_*":"deny"}}"#,
+        ))
+        .unwrap();
+        let config: Value = serde_json::from_str(&config).unwrap();
+        assert_eq!(config["model"], "example/model");
+        assert_eq!(config["permission"]["bash"], "ask");
+        assert_eq!(config["permission"]["other_*"], "deny");
+        for tool in fidget_core::dispatch::list_tools() {
+            assert_eq!(
+                config["permission"][format!("fidget_{}", tool.name)],
+                "allow"
+            );
+        }
+        assert!(config["permission"].get("fidget_*").is_none());
+        assert!(config["permission"].get("fidget_extra_speak").is_none());
+
+        let global = opencode_fidget_permissions(Some(r#"{"permission":"ask"}"#)).unwrap();
+        let global: Value = serde_json::from_str(&global).unwrap();
+        assert_eq!(global["permission"]["*"], "ask");
+        assert_eq!(global["permission"]["fidget_speak"], "allow");
+
+        let explicit =
+            opencode_fidget_permissions(Some(r#"{"permission":{"fidget_*":"ask"}}"#)).unwrap();
+        let explicit: Value = serde_json::from_str(&explicit).unwrap();
+        assert_eq!(explicit["permission"]["fidget_*"], "ask");
+        assert!(opencode_fidget_permissions(Some("invalid json")).is_none());
+    }
+
+    #[test]
+    fn mcp_launch_permissions_are_scoped_to_fidget() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+        let args = |name, mcp_available| {
+            launch(Some(name))
+                .unwrap()
+                .command(&tmp_attach(), mcp_available)
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(args("copilot", true), ["--acp", "--allow-tool=fidget"]);
+        assert_eq!(
+            args("grok", true),
+            ["--allow", "MCPTool(fidget__*)", "agent", "stdio"]
+        );
+        assert_eq!(args("goose", true), ["acp"]);
+        assert_eq!(args("copilot", false), ["--acp"]);
+        assert_eq!(args("grok", false), ["agent", "stdio"]);
+    }
+
     /// A thought is forwarded to the Chat surface of the Instance whose session
     /// thought it, and written nowhere. The Action Log points at the Harness's
     /// own session dump rather than copying it (CONTEXT.md). Replies are not in
@@ -4428,11 +4657,10 @@ mod tests {
         });
     }
 
-    /// No provider key in the child environment, and no `CLAUDE_CONFIG_DIR`
-    /// or `--bare`. A key overrides a subscription login with no prompt, and
-    /// those two cut the child off from the login the user already has.
+    /// Provider login stays inherited; only scoped MCP transport or approval
+    /// configuration is added to child environments.
     #[test]
-    fn child_command_sets_no_env_and_passes_no_bare() {
+    fn child_command_passes_only_scoped_env_and_no_bare() {
         for name in [
             "claude",
             "codex",
@@ -4446,8 +4674,62 @@ mod tests {
             "antigravity",
         ] {
             let launch = launch(Some(name)).unwrap();
-            let command = launch.command(&tmp_attach());
-            assert_eq!(command.get_envs().count(), 0, "{name} sets env");
+            let endpoint_was_served = crate::mcp_http::endpoint().is_some();
+            let inline_config = std::env::var("OPENCODE_CONFIG_CONTENT").ok();
+            let codex_config = launch.codex_mcp_config();
+            let command = launch.command(&tmp_attach(), true);
+            let mut env: Vec<_> = command
+                .get_envs()
+                .map(|(key, _)| key.to_string_lossy().into_owned())
+                .collect();
+            env.sort();
+            if name == "pi" {
+                let expected = vec![
+                    fidget_mcp_server::TOKEN_VAR.to_string(),
+                    fidget_mcp_server::URL_VAR.to_string(),
+                ];
+                if endpoint_was_served {
+                    assert_eq!(env, expected);
+                } else {
+                    assert!(env.is_empty() || env == expected);
+                }
+            } else if name == "codex" {
+                if let Some((config, _)) = codex_config {
+                    assert_eq!(env, ["CODEX_CONFIG", fidget_mcp_server::TOKEN_VAR]);
+                    assert_eq!(
+                        command
+                            .get_envs()
+                            .find(|(key, _)| *key == "CODEX_CONFIG")
+                            .and_then(|(_, value)| value)
+                            .and_then(|value| value.to_str()),
+                        Some(config.as_str())
+                    );
+                } else {
+                    assert!(env.is_empty());
+                }
+            } else if name == "opencode" {
+                let expected = endpoint_was_served
+                    .then(|| opencode_fidget_permissions(inline_config.as_deref()))
+                    .flatten();
+                let expected_env: Vec<String> = if expected.is_some() {
+                    vec!["OPENCODE_CONFIG_CONTENT".into()]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(env, expected_env);
+                if let Some(expected) = expected {
+                    assert_eq!(
+                        command
+                            .get_envs()
+                            .next()
+                            .and_then(|(_, value)| value)
+                            .and_then(|value| value.to_str()),
+                        Some(expected.as_str())
+                    );
+                }
+            } else {
+                assert!(env.is_empty(), "{name} sets {env:?}");
+            }
             assert_eq!(command.get_current_dir(), Some(Path::new("/tmp")));
             assert!(
                 !launch.argv.iter().any(|arg| arg == "--bare"),
@@ -4470,7 +4752,7 @@ mod tests {
             name: "sleep".into(),
             argv: vec!["/bin/sleep".into(), "8".into()],
         };
-        let mut command = launch.command(&tmp_attach());
+        let mut command = launch.command(&tmp_attach(), false);
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sleep");
@@ -4554,7 +4836,7 @@ mod tests {
                 r#"trap "" HUP; sleep 30 & wait"#.into(),
             ],
         };
-        let mut command = launch.command(&tmp_attach());
+        let mut command = launch.command(&tmp_attach(), false);
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sh");
@@ -5614,6 +5896,58 @@ mod tests {
         assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:declined")));
         assert!(fx.wait_for("elicit:decline", 1));
         assert_eq!(fx.settled(), (form.request, Some("decline".to_string())));
+        session.shutdown();
+    }
+
+    #[test]
+    fn claude_sessions_start_with_fidget_mcp_approved() {
+        let (calls, _rx) = mpsc::channel();
+        assert!(crate::mcp_http::serve(calls).is_some());
+
+        let (fx, mut session) = Fixture::new("hello");
+        session.launch.name = "claude".into();
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("fidget-approval"), 1);
+        session.shutdown();
+
+        let (fx, mut session) = Fixture::new("load-replay");
+        session.launch.name = "claude".into();
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"claude","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("fidget-approval"), 1);
+        session.shutdown();
+
+        let (fx, session) = Fixture::new("hello");
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("fidget-approval"), 0);
+        session.shutdown();
+
+        let (fx, mut session) = Fixture::new("permission");
+        session.launch.name = "claude".into();
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("run shell"), &|_| {}))
+        };
+        let ask = fx.ask();
+        assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
+        session.answer_permission(&ask.request, "reject");
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:reject")));
+        assert_eq!(fx.count("fidget-approval"), 1);
         session.shutdown();
     }
 

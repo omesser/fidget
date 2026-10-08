@@ -327,6 +327,10 @@ The ACP `initialize` bit `agentCapabilities.mcpCapabilities.http` decides the ro
 - **Absent or false** → the Harness gets a stdio MCP server entry to spawn (ADR-0026). That binary is a stateless relay: it posts every JSON-RPC message to the app's endpoint, using `FIDGET_MCP_URL` and `FIDGET_MCP_TOKEN` from its environment. It is found as `FIDGET_MCP_BIN`, else a `fidget-mcp` sidecar beside the app, else the app binary itself (`fidget --mcp-stdio`).
 - **`cursor-agent`** ignores `mcpServers` entirely and loads servers only from an approved `.cursor/mcp.json` (#1020). It gets the loopback URL and token through that file.
 
+On ACP attach, Fidget pre-approves only its own MCP tools where the Harness supports a scoped startup policy: Claude through session options, Codex and OpenCode through inline config, Copilot and Grok through launch flags, and Cursor through its project CLI permissions. Other tools keep the Harness's normal approval policy, and Fidget forwards any permission request it receives to Chat unchanged. Hermes permits ordinary MCP tool calls without a per-call prompt in the installed build. For Goose, Pi, and Antigravity, Fidget has not verified a scoped startup rule and leaves their permission flow to the Harness.
+
+Codex gets the Fidget HTTP endpoint in its `CODEX_CONFIG` session override under a process-specific `fidget_attached_<pid>` server name, with `default_tools_approval_mode: "approve"`. This keeps an existing `mcp_servers.fidget` entry separate. The bearer token is passed through `FIDGET_MCP_TOKEN`, not embedded in the JSON. Fidget leaves `mcpServers` empty for Codex sessions using this override: codex-acp replaces the entire `mcp_servers` override when ACP also supplies a server, which would discard the approval rule. If the inherited override already uses the process-specific name, Fidget falls back to normal ACP registration and permission flow.
+
 ### Elicitation
 
 `initialize` declares both elicitation modes, `form` and `url`, to every Harness. With `url` declared, a Harness can hand Chat a link rather than open a browser itself. codex-acp offers its device-code sign-in only then. codex-acp and claude-agent-acp send an MCP server's OAuth link the same way; without `url` that server stays signed out.
@@ -343,13 +347,14 @@ Two kinds of link open Chat: one that arrives during Fidget's own `authenticate`
 
 1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
 2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
-3. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
+3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json` unless it is already there, preserving other project permissions. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
+4. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
 
 URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.
 
 Cursor appends each approval to `~/.cursor/projects/<slug>/mcp-approvals.json` and never prunes: about 31 bytes per app run. Detach does not call `cursor-agent mcp disable`, because that blocks the server from ever loading again.
 
-Detach removes our entry, and the file and directory if attach created them. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
+Detach removes the `fidget` entry from `mcp.json`, and the file too if attach created it and nothing else is left in it. The `Mcp(fidget:*)` allow in `cli.json` stays, because it holds no credential and the next attach would add it again, so `.cursor/` stays as well. While attached, the token sits in the working directory's `.cursor/mcp.json`, owner-only, dead after the app run. What the project's VCS does with an untracked `.cursor/` is the project's business.
 
 ### Pointing a Harness you run yourself at Fidget
 

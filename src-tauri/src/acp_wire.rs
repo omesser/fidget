@@ -20,10 +20,11 @@ use agent_client_protocol::schema::v1::{
     ElicitationPropertySchema, ElicitationScope, ElicitationSessionScope,
     ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
     InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio, MessageId,
-    NewSessionRequest, Plan, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
-    SessionConfigOption, SessionConfigOptionCategory, SessionId, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent,
+    Meta, NewSessionRequest, Plan, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+    SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, StopReason,
+    TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -485,6 +486,7 @@ enum Msg {
         load: Option<String>,
         cwd: PathBuf,
         mcp: Option<McpChoice>,
+        claude_mcp_approval: bool,
         /// Empty sends no model option.
         model: String,
         /// `None` sends no effort option.
@@ -613,11 +615,16 @@ impl Wire {
 
     /// `session/load` when `load` names one, falling back to `session/new`.
     /// An empty `model` or effort is not sent.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keep ACP session fields explicit at the wire boundary"
+    )]
     pub fn open(
         &self,
         load: Option<String>,
         cwd: &Path,
         mcp: Option<McpChoice>,
+        claude_mcp_approval: bool,
         timeout: Duration,
         model: &str,
         effort: Option<&str>,
@@ -628,6 +635,7 @@ impl Wire {
                 load,
                 cwd: cwd.to_path_buf(),
                 mcp,
+                claude_mcp_approval,
                 model: model.to_string(),
                 effort: effort.map(str::to_string),
                 reply,
@@ -1229,12 +1237,22 @@ async fn serve(
                 load,
                 cwd,
                 mcp,
+                claude_mcp_approval,
                 model,
                 effort,
                 reply,
             }) => {
                 let loading = load.clone().map(SessionId::new);
-                let opened = open(cx, load, &cwd, mcp, &model, effort.as_deref()).await;
+                let opened = open(
+                    cx,
+                    load,
+                    &cwd,
+                    mcp,
+                    claude_mcp_approval,
+                    &model,
+                    effort.as_deref(),
+                )
+                .await;
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
                 // `session/new`. Every update queued for either id is history,
@@ -1644,6 +1662,15 @@ fn mcp_server(choice: &McpChoice) -> McpServer {
     }
 }
 
+fn claude_mcp_meta(approve: bool) -> Option<Meta> {
+    approve.then(|| {
+        Meta::from_iter([(
+            "claudeCode".to_string(),
+            serde_json::json!({"options": {"allowedTools": ["mcp__fidget__*"]}}),
+        )])
+    })
+}
+
 /// `session/load` when asked and answered, else `session/new`. Raw requests
 /// rather than the SDK's session builders. Those tear the connection down
 /// when the Harness refuses, and `auth_required` is a refusal we recover from.
@@ -1652,13 +1679,19 @@ async fn open(
     load: Option<String>,
     cwd: &Path,
     mcp: Option<McpChoice>,
+    claude_mcp_approval: bool,
     model: &str,
     effort: Option<&str>,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
+    let approval = || claude_mcp_meta(claude_mcp_approval && mcp.is_some());
     let loaded = if let Some(id) = load {
         match cx
-            .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
+            .send_request(
+                LoadSessionRequest::new(id.clone(), cwd)
+                    .mcp_servers(servers())
+                    .meta(approval()),
+            )
             .block_task()
             .await
         {
@@ -1674,7 +1707,11 @@ async fn open(
     let (session_id, options) = match loaded {
         Some(opened) => opened,
         None => cx
-            .send_request(NewSessionRequest::new(cwd).mcp_servers(servers()))
+            .send_request(
+                NewSessionRequest::new(cwd)
+                    .mcp_servers(servers())
+                    .meta(approval()),
+            )
             .block_task()
             .await
             .map(|response| (response.session_id, response.config_options))

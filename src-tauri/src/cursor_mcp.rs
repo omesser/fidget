@@ -39,6 +39,8 @@ use serde_json::{json, Value};
 
 const SERVER: &str = "fidget";
 const FILE: &str = "mcp.json";
+const CLI_FILE: &str = "cli.json";
+const TOOL_PERMISSION: &str = "Mcp(fidget:*)";
 const DIR: &str = ".cursor";
 
 /// `cursor-agent mcp enable` takes 380ms measured; ten seconds is the point
@@ -50,7 +52,6 @@ const ENABLE_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct Installed {
     file: PathBuf,
-    created_dir: bool,
     created_file: bool,
 }
 
@@ -60,7 +61,6 @@ pub struct Installed {
 pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, String> {
     let dir = cwd.join(DIR);
     let file = dir.join(FILE);
-    let created_dir = !dir.exists();
     let (mut root, created_file) = match fs::read_to_string(&file) {
         Ok(text) => (parse(&file, &text)?, false),
         Err(error) if error.kind() == ErrorKind::NotFound => (json!({}), true),
@@ -84,11 +84,7 @@ pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, 
         write(&file, &root)?;
     }
     restrict(&file)?;
-    Ok(Installed {
-        file,
-        created_dir,
-        created_file,
-    })
+    Ok(Installed { file, created_file })
 }
 
 fn parse(file: &Path, text: &str) -> Result<Value, String> {
@@ -160,6 +156,39 @@ pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
     }
 }
 
+/// Add `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`,
+/// beside the project's other rules. It stays after detach, because it holds
+/// no credential and the next attach would add it again.
+pub fn allow_tools(cwd: &Path) -> Result<(), String> {
+    let file = cwd.join(DIR).join(CLI_FILE);
+    let mut root = match fs::read_to_string(&file) {
+        Ok(text) => parse(&file, &text)?,
+        Err(error) if error.kind() == ErrorKind::NotFound => json!({}),
+        Err(error) => return Err(format!("{}: {error}", file.display())),
+    };
+    let allow = root
+        .as_object_mut()
+        .expect("parse checked the root is an object")
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| format!("{}: permissions is not an object", file.display()))?
+        .entry("allow")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or_else(|| format!("{}: permissions.allow is not an array", file.display()))?;
+    if allow
+        .iter()
+        .any(|item| item.as_str() == Some(TOOL_PERMISSION))
+    {
+        return Ok(());
+    }
+    allow.push(json!(TOOL_PERMISSION));
+    let dir = cwd.join(DIR);
+    fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    write(&file, &root)
+}
+
 impl Installed {
     /// Undo `install`. Nothing here fails loudly: a quit is not the moment
     /// to refuse, so each step logs and the next still runs.
@@ -170,12 +199,6 @@ impl Installed {
     pub fn remove(self) {
         if let Err(why) = self.remove_entry() {
             eprintln!("harness: cursor mcp: {why}");
-        }
-        if self.created_dir {
-            if let Some(dir) = self.file.parent() {
-                // Refuses a directory that is not empty, which is the point.
-                let _ = fs::remove_dir(dir);
-            }
         }
     }
 
@@ -222,6 +245,82 @@ mod tests {
 
     fn read(path: &Path) -> Value {
         serde_json::from_str(&fs::read_to_string(path).expect("the file")).expect("JSON")
+    }
+
+    #[test]
+    fn the_fidget_allow_outlives_detach_after_a_fresh_attach() {
+        let cwd = dir("allow-fresh");
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("allowed");
+
+        installed.remove();
+        assert_eq!(
+            read(&cwd.join(DIR).join(CLI_FILE)),
+            json!({"permissions": {"allow": ["Mcp(fidget:*)"]}})
+        );
+        assert!(
+            !cwd.join(DIR).join(FILE).exists(),
+            "the token outlived detach"
+        );
+    }
+
+    #[test]
+    fn allowing_again_keeps_one_rule_beside_the_projects_own() {
+        let cwd = dir("allow-existing");
+        let file = cwd.join(DIR).join(CLI_FILE);
+        fs::create_dir_all(cwd.join(DIR)).unwrap();
+        fs::write(
+            &file,
+            r#"{"version":1,"permissions":{"allow":["Shell(git)"],"deny":["Mcp(other:*)"]}}"#,
+        )
+        .unwrap();
+        let expected = json!({
+            "version": 1,
+            "permissions": {
+                "allow": ["Shell(git)", "Mcp(fidget:*)"],
+                "deny": ["Mcp(other:*)"]
+            }
+        });
+
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("allowed");
+        allow_tools(&cwd).expect("allowed again");
+        assert_eq!(read(&file), expected);
+
+        installed.remove();
+        let installed = install(&cwd, URL, AUTH).expect("installed again");
+        allow_tools(&cwd).expect("allowed on the next attach");
+        installed.remove();
+        assert_eq!(read(&file), expected);
+    }
+
+    #[test]
+    fn a_rule_already_there_leaves_the_file_byte_for_byte() {
+        let cwd = dir("allow-user-owned");
+        let file = cwd.join(DIR).join(CLI_FILE);
+        fs::create_dir_all(cwd.join(DIR)).unwrap();
+        let text = r#"{"permissions":{"allow":["Mcp(fidget:*)"]}}"#;
+        fs::write(&file, text).unwrap();
+
+        let installed = install(&cwd, URL, AUTH).expect("installed");
+        allow_tools(&cwd).expect("already allowed");
+        installed.remove();
+        assert_eq!(fs::read_to_string(&file).unwrap(), text);
+    }
+
+    #[test]
+    fn malformed_cli_permissions_are_left_untouched() {
+        let cwd = dir("allow-invalid");
+        let file = cwd.join(DIR).join(CLI_FILE);
+        fs::create_dir_all(cwd.join(DIR)).unwrap();
+        fs::write(&file, r#"{"permissions":{"allow":"all"}}"#).unwrap();
+
+        let err = allow_tools(&cwd).expect_err("accepted invalid allow");
+        assert!(err.contains("permissions.allow"), "{err}");
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            r#"{"permissions":{"allow":"all"}}"#
+        );
     }
 
     #[test]
@@ -292,17 +391,6 @@ mod tests {
             fs::metadata(&file).unwrap().permissions().mode() & 0o777,
             0o600
         );
-    }
-
-    #[test]
-    fn install_then_remove_on_a_fresh_dir_leaves_no_cursor_dir() {
-        let cwd = dir("fresh");
-        let installed = install(&cwd, URL, AUTH).expect("installed");
-        assert!(cwd.join(DIR).join(FILE).is_file());
-
-        installed.remove();
-
-        assert!(!cwd.join(DIR).exists(), ".cursor was left behind");
     }
 
     #[test]
