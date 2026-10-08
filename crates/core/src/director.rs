@@ -25,8 +25,10 @@ use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
 mod prompt;
+mod recency;
 pub use prompt::{app_instructions, happened_word};
 pub(crate) use prompt::{character_prompt, follow_up};
+pub use recency::{Doing, Lately, Recency, Step};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
 /// Long enough that the sprite is not constantly interrupting itself, short
@@ -122,6 +124,10 @@ pub struct Context {
     /// The frontmost application's window title, from the same window walk
     /// as `standing`. None without the window-names consent or a title.
     pub front_title: Option<String>,
+    /// The last few seconds: what the verb found, a streak, the steps since.
+    /// `state` is read after the tick, so this is the only place the moment
+    /// before the verb survives.
+    pub lately: Lately,
 }
 
 impl Context {
@@ -137,6 +143,7 @@ impl Context {
             happened: Happened::Proactive,
             standing: String::new(),
             front_title: None,
+            lately: Lately::default(),
         }
     }
 }
@@ -916,6 +923,7 @@ mod tests {
             happened: Happened::Poke,
             standing: String::new(),
             front_title: None,
+            lately: Default::default(),
         }
     }
 
@@ -1857,6 +1865,7 @@ mod tests {
             happened: Happened::Poke,
             standing: "the display floor, above the Dock".to_string(),
             front_title: None,
+            lately: Default::default(),
         };
 
         let payload = character_prompt(&moment, ["greet", "stroll", "wave"], false);

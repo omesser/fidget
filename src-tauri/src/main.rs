@@ -68,7 +68,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use fidget_core::character::{Character, Primitive};
 use fidget_core::director::{
-    app_instructions, happened_cell, Happened, ModelDirector, Pace, Seeded, StaticDirector,
+    app_instructions, happened_cell, Happened, ModelDirector, Pace, Recency, Seeded, StaticDirector,
 };
 use fidget_core::engine::{Cue, Point, State, Verb};
 use fidget_core::input::Pointer;
@@ -291,6 +291,8 @@ struct InstanceState {
     director: StaticDirector,
     model: Option<Arc<ModelDirector<completer::AnyCompleter>>>,
     recent: Vec<String>,
+    /// The last few seconds, for the wake that answers a verb.
+    recency: Recency,
     pace: Pace,
     since_wake: Duration,
     since_proactive: Duration,
@@ -3614,6 +3616,7 @@ fn spawn_live(
             ))
         }),
         recent: Vec::new(),
+        recency: Recency::default(),
         pace: paced(config, &character),
         since_wake: Duration::ZERO,
         since_state: Duration::ZERO,
@@ -3891,6 +3894,7 @@ fn spawn_instances(
                 ))
             }),
             recent: Vec::new(),
+            recency: Recency::default(),
             pace: paced(config, character),
             // Started somewhere inside the interval rather than at nothing, so
             // N characters do not all decide on the same tick. Deciding together

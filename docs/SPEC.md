@@ -405,6 +405,19 @@ window (ADR-0032). No screen capture, no clipboard, no input contents.
 The opening payload is the Character Prompt. Later session turns are a short
 follow-up. Both are inspectable in settings as the last user turn.
 
+The Engine answers a verb at once (a Poke plays `react` and wakes a sleeping
+sprite), so the State a wake reads is already the one after the verb. Each wake
+also carries the last few seconds, with no timestamps or ages, from
+`director::Recency`:
+
+- `was:` what the verb found, its State and any Behavior playing, when that
+  differs from now. Poked awake reads `was: asleep`.
+- A streak on `what just happened`, `poked (3 in a row)`, when the same verb
+  came again within 12 seconds of the last.
+- `doing:` the Behavior playing as the wake is built.
+- `lately:` the States and Behaviors entered in the last 12 seconds, oldest
+  first, at most five, when there are at least two.
+
 Two implementations ship:
 
 - **Static** — weighted selection over the Character's declared Behaviors using their

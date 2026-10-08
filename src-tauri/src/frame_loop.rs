@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fidget_core::director::{self, Context, Happened, Wake};
+use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
@@ -1327,6 +1327,7 @@ pub(crate) fn run_frame_loop(
                     && live.last_state != Some(State::Dragged);
                 if let Some(what) = touched(&live.verbs, grab_started, live.pointer.poke_settled())
                 {
+                    live.recency.heard(&what);
                     note_happened(&mut live.happened, what);
                 }
 
@@ -1653,6 +1654,7 @@ pub(crate) fn run_frame_loop(
                                 happened: live.happened.clone(),
                                 standing: String::new(),
                                 front_title: None,
+                                lately: Lately::default(),
                             });
                         }
                     }
@@ -1673,6 +1675,7 @@ pub(crate) fn run_frame_loop(
 
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
+                live.recency.tick(elapsed, &world.verbs, &frame);
 
                 // The Engine decides whether the user addressed the character;
                 // `touched` above only names what the wake says happened.
@@ -1806,6 +1809,7 @@ pub(crate) fn run_frame_loop(
                             instance_prompt: instance.prompt().to_string(),
                             state: frame.state,
                             happened: live.happened.clone(),
+                            lately: live.recency.take(&live.happened),
                             standing: assembler.standing_on(frame.position),
                             front_title: activity
                                 .frontmost_application
