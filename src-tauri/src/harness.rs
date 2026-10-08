@@ -867,21 +867,29 @@ pub struct Restored {
     pub history: Vec<Replayed>,
 }
 
+/// Whose Chat draws a forwarded ask or form.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Owner {
+    /// The Instance that owes the answer. Only its Chat draws the row.
+    Instance(String),
+    /// Nobody can be named, so every Chat draws the row and any can answer.
+    EveryChat,
+}
+
 /// What the session on the wire tells the Chat surface, live or on replay.
 /// `Settled` exists because an ask can be drawn on more than one surface and
 /// only one takes the click. Without it the others keep offering live buttons.
 #[derive(Debug)]
 pub enum Forwarded {
-    /// `instance` owes the answer and only its Chat draws the row: the asking
-    /// session's Instance, or the turn holder for a form no session scopes.
-    /// `None` when neither is known, so every Chat draws it and any can answer.
+    /// `owner` is the asking session's Instance, or the turn holder for a
+    /// form no session scopes. `EveryChat` when neither is known.
     Ask {
-        instance: Option<String>,
+        owner: Owner,
         ask: PermissionAsk,
     },
     /// Addressed as `Ask` is.
     Form {
-        instance: Option<String>,
+        owner: Owner,
         form: ElicitationForm,
     },
     /// A request that is no longer answerable, and the option that won it.
@@ -2448,9 +2456,11 @@ fn note_event(
     serving: &Mutex<Option<String>>,
     event: Event,
 ) {
-    let owner = |session: &str| owners.lock().ok()?.get(session).cloned();
-    // Held in `asked` and named for Chat at once, so the Chat that draws the
-    // ask is the Instance `awaiting_user` holds for it.
+    let instance_of = |session: &str| owners.lock().ok()?.get(session).cloned();
+    // Chat is named once, on arrival. `awaiting_user` resolves the same
+    // `Asker` each time it reads, so an ask on a session still opening outside
+    // a wake is drawn in the turn holder's Chat but owed by its own Instance
+    // once the open records it (docs/harness.md).
     let owe = |request: &str, asker: Asker| {
         let serving = serving.lock().ok().and_then(|serving| serving.clone());
         let instance = owners.lock().ok().and_then(|owners| {
@@ -2461,7 +2471,7 @@ fn note_event(
         if let Ok(mut asked) = asked.lock() {
             asked.insert(request.to_string(), asker);
         }
-        instance
+        instance.map_or(Owner::EveryChat, Owner::Instance)
     };
     match event {
         // A tool call and a usage tick are logged and never forwarded, so a
@@ -2483,7 +2493,7 @@ fn note_event(
             if !steps.is_empty() {
                 action_log::append(dir, "plan", json!({"entries": steps.len()}));
             }
-            if let Some(instance) = owner(&session) {
+            if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::Plan { instance, steps });
             }
         }
@@ -2496,8 +2506,8 @@ fn note_event(
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            let instance = owe(&ask.request, Asker::of(Some(&session)));
-            forward(Forwarded::Ask { instance, ask });
+            let owner = owe(&ask.request, Asker::of(Some(&session)));
+            forward(Forwarded::Ask { owner, ask });
         }
         Event::Elicitation { session, form } => {
             action_log::append(
@@ -2505,8 +2515,8 @@ fn note_event(
                 "elicitation_create",
                 json!({"request": form.request, "field": form.field}),
             );
-            let instance = owe(&form.request, Asker::of(session.as_deref()));
-            forward(Forwarded::Form { instance, form });
+            let owner = owe(&form.request, Asker::of(session.as_deref()));
+            forward(Forwarded::Form { owner, form });
         }
         Event::PermissionSettled { request, option } => {
             if let Ok(mut asked) = asked.lock() {
@@ -2518,12 +2528,12 @@ fn note_event(
         // session dump rather than copying it (CONTEXT.md), and a reply is not
         // copied there either (ADR-0034).
         Event::InboundWake { session, speech } => {
-            if let Some(instance) = owner(&session) {
+            if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::InboundWake(InboundWake { instance, speech }));
             }
         }
         Event::Thought { session, text } => {
-            if let Some(instance) = owner(&session) {
+            if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::Thought {
                     instance,
                     line: text,
@@ -4475,15 +4485,15 @@ mod tests {
         let owed: Vec<_> = forwarded
             .try_iter()
             .map(|row| match row {
-                Forwarded::Form { instance, form } => (form.request, instance),
+                Forwarded::Form { owner, form } => (form.request, owner),
                 other => panic!("expected a form, got {other:?}"),
             })
             .collect();
         assert_eq!(
             owed,
             [
-                ("1".to_string(), Some("buddy-a".to_string())),
-                ("2".to_string(), None),
+                ("1".to_string(), Owner::Instance("buddy-a".to_string())),
+                ("2".to_string(), Owner::EveryChat),
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -6399,26 +6409,24 @@ mod tests {
     /// Each ask, form and plan row, and the Chats out of A's and B's that
     /// `main.rs` draws it in.
     fn chat_rows(row: &Forwarded) -> Option<(String, Vec<&'static str>)> {
-        let (row, instance) = match row {
-            Forwarded::Ask { instance, ask } => (
+        let (row, owner) = match row {
+            Forwarded::Ask { owner, ask } => (
                 format!("ask: {}", ask.title.as_deref().unwrap_or("")),
-                instance.as_deref(),
+                owner.clone(),
             ),
-            Forwarded::Form { instance, form } => {
-                (format!("form: {}", form.message), instance.as_deref())
-            }
+            Forwarded::Form { owner, form } => (format!("form: {}", form.message), owner.clone()),
             Forwarded::Plan { instance, steps } => (
                 format!(
                     "plan: {}",
                     steps.first().map_or("", |step| step.content.as_str())
                 ),
-                Some(instance.as_str()),
+                Owner::Instance(instance.clone()),
             ),
             _ => return None,
         };
         let chats = ["chat-buddy-a", "chat-buddy-b"]
             .into_iter()
-            .filter(|label| crate::draws_in(instance, label))
+            .filter(|label| crate::draws_in(&owner, label))
             .collect();
         Some((row, chats))
     }

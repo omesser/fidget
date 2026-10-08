@@ -81,6 +81,7 @@ use fidget_core::snapshot::starting_position;
 use fidget_core::speech::SpeechBubble;
 use fidget_core::visibility::HideRules;
 use fidget_core::window_source::{Rect, WindowSource};
+use harness::Owner;
 use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
 use settings::{ChatAppearance, InstanceRow, Settings, SettingsOp, SettingsSession};
@@ -115,13 +116,13 @@ fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
 
-/// Whether the window labelled `label` is a Chat that draws a row `instance`
+/// Whether the window labelled `label` is a Chat that draws a row `owner`
 /// owns. A row no Instance owns, as a sign-in link before any turn, goes to
 /// every Chat so whichever one is open can answer it (#1422).
-fn draws_in(instance: Option<&str>, label: &str) -> bool {
-    match instance {
-        Some(instance) => label == chat_label(instance),
-        None => label.starts_with("chat-"),
+fn draws_in(owner: &Owner, label: &str) -> bool {
+    match owner {
+        Owner::Instance(instance) => label == chat_label(instance),
+        Owner::EveryChat => label.starts_with("chat-"),
     }
 }
 
@@ -195,30 +196,55 @@ const FRAME_EVENT: &str = "frame";
 /// Unsettled forwarded asks, held so `chat_ready` can replay them to a
 /// surface that opens later. One lock over both fields and the emits that
 /// read them: a settlement between replay and emit would draw a live row that is never retired.
-/// Each beside the Instance whose Chat draws it, as `draws_in` reads it.
+/// Each beside the owner whose Chat draws it, as `draws_in` reads it.
 #[derive(Default)]
 struct Pending {
-    asks: Vec<(Option<String>, harness::PermissionAsk)>,
-    forms: Vec<(Option<String>, harness::ElicitationForm)>,
-    /// Whether a surface has already been asked for. Opening posts to the
-    /// main thread, so a second ask before that lands would queue a second
-    /// focus grab. Cleared when the last ask settles.
-    opened: bool,
+    asks: Vec<(Owner, harness::PermissionAsk)>,
+    forms: Vec<(Owner, harness::ElicitationForm)>,
+    /// Owners whose Chat has already been asked for. Opening posts to the
+    /// main thread, so a second row before that lands would queue a second
+    /// focus grab. Keyed by owner because no other Chat draws that owner's
+    /// rows. An owner leaves when its last ask or form settles.
+    opened: HashSet<Owner>,
 }
 
 impl Pending {
+    /// Keep `ask` for the next Chat to open, and say whether to open one for
+    /// it now. Do Not Disturb opens nothing, even for a question with a
+    /// deadline: the turn times out, never an answer of ours (ADR-0018).
+    fn hold_ask(
+        &mut self,
+        owner: &Owner,
+        ask: &harness::PermissionAsk,
+        shut: bool,
+        dnd: bool,
+    ) -> bool {
+        self.asks.push((owner.clone(), ask.clone()));
+        shut && !dnd && self.opened.insert(owner.clone())
+    }
+
+    /// Retire `request` from the replay.
+    fn settle(&mut self, request: &str) {
+        self.asks.retain(|(_, ask)| ask.request != request);
+        self.forms.retain(|(_, form)| form.request != request);
+        let (asks, forms) = (&self.asks, &self.forms);
+        self.opened.retain(|owner| {
+            asks.iter().any(|(held, _)| held == owner)
+                || forms.iter().any(|(held, _)| held == owner)
+        });
+    }
+
     /// Keep `form` for the next Chat to open, and say whether to open one for
     /// it now. A link that waits opens nothing, as Do Not Disturb does.
     fn hold_form(
         &mut self,
-        instance: Option<&str>,
+        owner: &Owner,
         form: &harness::ElicitationForm,
         shut: bool,
         dnd: bool,
     ) -> bool {
-        self.forms
-            .push((instance.map(str::to_string), form.clone()));
-        shut && !form.waits && !dnd && !std::mem::replace(&mut self.opened, true)
+        self.forms.push((owner.clone(), form.clone()));
+        shut && !form.waits && !dnd && self.opened.insert(owner.clone())
     }
 
     /// The open asks and forms the Chat labelled `label` draws when it opens.
@@ -232,11 +258,11 @@ impl Pending {
         (
             self.asks
                 .iter()
-                .filter(move |(instance, _)| draws_in(instance.as_deref(), label))
+                .filter(move |(owner, _)| draws_in(owner, label))
                 .map(|(_, ask)| ask),
             self.forms
                 .iter()
-                .filter(move |(instance, _)| draws_in(instance.as_deref(), label))
+                .filter(move |(owner, _)| draws_in(owner, label))
                 .map(|(_, form)| form),
         )
     }
@@ -2310,23 +2336,20 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     }
 }
 
-/// Draw one forwarded permission request on the Chat surface of the Instance
-/// that owes it, or on every one when none is named (`draws_in`). fidget never
-/// answers it (ADR-0018). Only a Chat surface draws the options. A bubble can
-/// only point at a window that is not open.
-fn forward_ask(app: &tauri::AppHandle, instance: Option<String>, ask: harness::PermissionAsk) {
+/// Draw one forwarded permission request on the Chats its owner names
+/// (`draws_in`). fidget never answers it (ADR-0018). Only a Chat surface draws
+/// the options. A bubble can only point at a window that is not open.
+fn forward_ask(app: &tauri::AppHandle, owner: Owner, ask: harness::PermissionAsk) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;
     };
     let Ok(mut pending) = state.0.lock() else {
         return;
     };
-    pending.asks.push((instance.clone(), ask.clone()));
-
     let mut on_screen = false;
     let mut shut = None;
     for (label, window) in app.webview_windows() {
-        if !draws_in(instance.as_deref(), &label) {
+        if !draws_in(&owner, &label) {
             continue;
         }
         let _ = app.emit_to(&label, CHAT_PERMISSION_EVENT, &ask);
@@ -2336,30 +2359,23 @@ fn forward_ask(app: &tauri::AppHandle, instance: Option<String>, ask: harness::P
             shut = Some(label);
         }
     }
-    if on_screen {
-        eprintln!(
-            "harness: permission asked for `{}`; answer it in the Chat window",
-            ask.title.as_deref().unwrap_or("—")
-        );
-        return;
+    let dnd = !on_screen && do_not_disturb(app);
+    if pending.hold_ask(&owner, &ask, !on_screen, dnd) {
+        show_chat_for_ask(app, owner, shut);
     }
+    let next = if on_screen {
+        "answer it in the Chat window"
+    } else {
+        "no Chat surface is on screen"
+    };
     eprintln!(
-        "harness: permission asked for `{}`; no Chat surface is on screen",
+        "harness: permission asked for `{}`; {next}",
         ask.title.as_deref().unwrap_or("—")
     );
-    // Do Not Disturb wins even over a question with a deadline: opening this
-    // window activates fidget. The turn then times out, and never an
-    // answer of ours (ADR-0018).
-    if do_not_disturb(app) {
-        return;
-    }
-    if !std::mem::replace(&mut pending.opened, true) {
-        show_chat_for_ask(app, instance, shut);
-    }
 }
 
 /// A form, delivered as `forward_ask` delivers an ask.
-fn forward_form(app: &tauri::AppHandle, instance: Option<String>, form: harness::ElicitationForm) {
+fn forward_form(app: &tauri::AppHandle, owner: Owner, form: harness::ElicitationForm) {
     let Some(state) = app.try_state::<PendingAsks>() else {
         return;
     };
@@ -2370,7 +2386,7 @@ fn forward_form(app: &tauri::AppHandle, instance: Option<String>, form: harness:
     let mut on_screen = false;
     let mut shut = None;
     for (label, window) in app.webview_windows() {
-        if !draws_in(instance.as_deref(), &label) {
+        if !draws_in(&owner, &label) {
             continue;
         }
         let _ = app.emit_to(&label, CHAT_ELICITATION_EVENT, &form);
@@ -2381,8 +2397,8 @@ fn forward_form(app: &tauri::AppHandle, instance: Option<String>, form: harness:
         }
     }
     let dnd = !on_screen && do_not_disturb(app);
-    if pending.hold_form(instance.as_deref(), &form, !on_screen, dnd) {
-        show_chat_for_ask(app, instance, shut);
+    if pending.hold_form(&owner, &form, !on_screen, dnd) {
+        show_chat_for_ask(app, owner, shut);
     }
     let next = if on_screen {
         "answer it in the Chat window"
@@ -2444,13 +2460,7 @@ fn settle_ask(app: &tauri::AppHandle, settled: Settled) {
     let Ok(mut pending) = state.0.lock() else {
         return;
     };
-    pending
-        .asks
-        .retain(|(_, ask)| ask.request != settled.request);
-    pending
-        .forms
-        .retain(|(_, form)| form.request != settled.request);
-    pending.opened &= !pending.asks.is_empty() || !pending.forms.is_empty();
+    pending.settle(&settled.request);
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
             let _ = app.emit_to(label, CHAT_PERMISSION_SETTLED_EVENT, &settled);
@@ -2468,18 +2478,19 @@ fn do_not_disturb(app: &tauri::AppHandle) -> bool {
 /// Put a Chat surface in front of the user for a request with nowhere to be
 /// drawn: the owing Instance's, else a shut one that would draw it, else the
 /// roster's first.
-fn show_chat_for_ask(app: &tauri::AppHandle, instance: Option<String>, shut: Option<String>) {
+fn show_chat_for_ask(app: &tauri::AppHandle, owner: Owner, shut: Option<String>) {
     let rows = app
         .try_state::<SettingsState>()
         .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
         .unwrap_or_default();
-    let id = instance
-        .or_else(|| {
-            shut.as_deref()
-                .and_then(|label| label.strip_prefix("chat-"))
-                .map(str::to_string)
-        })
-        .or_else(|| rows.first().map(|row| row.id.clone()));
+    let id = match owner {
+        Owner::Instance(instance) => Some(instance),
+        Owner::EveryChat => shut
+            .as_deref()
+            .and_then(|label| label.strip_prefix("chat-"))
+            .map(str::to_string)
+            .or_else(|| rows.first().map(|row| row.id.clone())),
+    };
     let Some(id) = id else {
         eprintln!("harness: no Instance to ask on; the request will time out");
         return;
@@ -4682,11 +4693,9 @@ fn main() {
                     &settings.harness_cwd,
                 ),
                 Box::new(move |forwarded| match forwarded {
-                    harness::Forwarded::Ask { instance, ask } => {
-                        forward_ask(&forward_to, instance, ask)
-                    }
-                    harness::Forwarded::Form { instance, form } => {
-                        forward_form(&forward_to, instance, form)
+                    harness::Forwarded::Ask { owner, ask } => forward_ask(&forward_to, owner, ask),
+                    harness::Forwarded::Form { owner, form } => {
+                        forward_form(&forward_to, owner, form)
                     }
                     harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
@@ -4976,11 +4985,15 @@ mod tests {
         assert!(!chats.hides("chat-a"), "deminiaturized");
     }
 
-    /// A Chat that opens after the rows arrived replays only its own Instance's
-    /// ask and form, plus a sign-in link no Instance owns (#1422).
-    #[test]
-    fn a_chat_that_opens_later_replays_only_its_own_asks_and_forms() {
-        let ask = |request: &str| harness::PermissionAsk {
+    fn owners() -> (Owner, Owner) {
+        (
+            Owner::Instance("buddy-a".to_string()),
+            Owner::Instance("buddy-b".to_string()),
+        )
+    }
+
+    fn ask(request: &str) -> harness::PermissionAsk {
+        harness::PermissionAsk {
             request: request.to_string(),
             title: None,
             kind: None,
@@ -4988,11 +5001,50 @@ mod tests {
             input: None,
             locations: Vec::new(),
             options: Vec::new(),
-        };
+        }
+    }
+
+    /// Each owner's Chat opens once for its rows, however many arrive. B's
+    /// row while A's is still pending opens B's Chat, because A's Chat does
+    /// not draw it, and A's Chat opens again once its own rows settle.
+    #[test]
+    fn each_owners_chat_opens_once_while_its_asks_and_forms_are_pending() {
+        let (a, b) = owners();
         let mut pending = Pending::default();
-        pending.asks.push((Some("buddy-a".to_string()), ask("1")));
-        pending.hold_form(Some("buddy-a"), &link("2", false), false, false);
-        pending.hold_form(None, &link("3", false), false, false);
+        assert!(pending.hold_ask(&a, &ask("1"), true, false));
+        assert!(
+            pending.hold_ask(&b, &ask("2"), true, false),
+            "B's ask during A's opened no Chat"
+        );
+        assert!(
+            !pending.hold_ask(&a, &ask("3"), true, false),
+            "A's second ask opened A's Chat again"
+        );
+        assert!(
+            !pending.hold_form(&b, &link("4", false), true, false),
+            "B's form opened B's Chat again"
+        );
+        pending.settle("1");
+        pending.settle("3");
+        assert!(
+            pending.hold_form(&a, &link("5", false), true, false),
+            "A's Chat stayed opened after its last row settled"
+        );
+        assert!(
+            !pending.hold_ask(&b, &ask("6"), true, false),
+            "settling A's rows reopened B's"
+        );
+    }
+
+    /// A Chat that opens after the rows arrived replays only its own Instance's
+    /// ask and form, plus a sign-in link no Instance owns (#1422).
+    #[test]
+    fn a_chat_that_opens_later_replays_only_its_own_asks_and_forms() {
+        let (a, _) = owners();
+        let mut pending = Pending::default();
+        pending.asks.push((a.clone(), ask("1")));
+        pending.hold_form(&a, &link("2", false), false, false);
+        pending.hold_form(&Owner::EveryChat, &link("3", false), false, false);
         let replay = |label: &str| {
             let (asks, forms) = pending.drawn_in(label);
             (
@@ -5017,20 +5069,20 @@ mod tests {
     #[test]
     fn an_unsolicited_link_waits_for_the_next_chat_and_a_sign_in_link_opens_it() {
         let mut pending = Pending::default();
-        assert!(!pending.hold_form(None, &link("7", true), true, false));
-        assert!(!pending.opened);
+        assert!(!pending.hold_form(&Owner::EveryChat, &link("7", true), true, false));
+        assert!(pending.opened.is_empty());
         assert_eq!(pending.forms.len(), 1);
         assert_eq!(pending.forms[0].1.request, "7");
 
-        assert!(pending.hold_form(None, &link("8", false), true, false));
-        assert!(!pending.hold_form(None, &link("9", false), true, false));
+        assert!(pending.hold_form(&Owner::EveryChat, &link("8", false), true, false));
+        assert!(!pending.hold_form(&Owner::EveryChat, &link("9", false), true, false));
         assert_eq!(pending.forms.len(), 3);
 
         let mut quiet = Pending::default();
-        assert!(!quiet.hold_form(None, &link("10", false), true, true));
-        assert!(!quiet.opened);
+        assert!(!quiet.hold_form(&Owner::EveryChat, &link("10", false), true, true));
+        assert!(quiet.opened.is_empty());
         assert_eq!(quiet.forms.len(), 1);
-        assert!(!quiet.hold_form(None, &link("11", false), false, false));
+        assert!(!quiet.hold_form(&Owner::EveryChat, &link("11", false), false, false));
     }
 
     /// Sync commands run on the main thread. These two must stay async so a
