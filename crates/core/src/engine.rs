@@ -5847,6 +5847,225 @@ mod tests {
         assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
+    /// A desktop panel (a taskbar-style bar, not a window top) reaches the
+    /// Engine only through the usable area each display reports, as the Windows
+    /// taskbar does: a bottom desktop panel is the floor, a side one a wall, a
+    /// top one the ceiling. Several sizes and arrangements, including displays
+    /// left of and above the primary, so no edge is assumed to sit at 0.
+    #[test]
+    fn a_desktop_panel_is_floor_wall_or_ceiling_wherever_its_display_sits() {
+        use crate::window_source::{in_points, usable_frame};
+
+        #[derive(Clone, Copy, Debug)]
+        enum Edge {
+            Top,
+            Left,
+            Right,
+            Bottom,
+        }
+
+        let rect = |x: f64, y: f64, width: f64, height: f64| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        // The work area a window manager reports for a display with a desktop
+        // panel `thickness` deep along one edge.
+        let reserve = |frame: Rect, edge: Edge, thickness: f64| match edge {
+            Edge::Top => rect(
+                frame.x,
+                frame.y + thickness,
+                frame.width,
+                frame.height - thickness,
+            ),
+            Edge::Left => rect(
+                frame.x + thickness,
+                frame.y,
+                frame.width - thickness,
+                frame.height,
+            ),
+            Edge::Right => rect(frame.x, frame.y, frame.width - thickness, frame.height),
+            Edge::Bottom => rect(frame.x, frame.y, frame.width, frame.height - thickness),
+        };
+
+        // (name, every display's frame, which one has the panel, edge, thickness, scale)
+        type Case = (&'static str, Vec<Rect>, usize, Edge, f64, f64);
+        let cases: Vec<Case> = vec![
+            (
+                "one display",
+                vec![rect(0.0, 0.0, 2560.0, 1440.0)],
+                0,
+                Edge::Bottom,
+                48.0,
+                1.0,
+            ),
+            (
+                "secondary left of and below the primary",
+                vec![
+                    rect(0.0, 0.0, 1920.0, 1080.0),
+                    rect(-1366.0, 312.0, 1366.0, 768.0),
+                ],
+                1,
+                Edge::Top,
+                28.0,
+                1.0,
+            ),
+            (
+                "secondary right of and above the primary",
+                vec![
+                    rect(0.0, 0.0, 1280.0, 1024.0),
+                    rect(1280.0, -300.0, 1920.0, 1200.0),
+                ],
+                1,
+                Edge::Left,
+                64.0,
+                1.0,
+            ),
+            (
+                "primary listed second, secondary above it",
+                vec![
+                    rect(-200.0, -1050.0, 1680.0, 1050.0),
+                    rect(0.0, 0.0, 1440.0, 900.0),
+                ],
+                0,
+                Edge::Right,
+                40.0,
+                1.0,
+            ),
+            (
+                "a 2x display wholly at negative coordinates",
+                vec![
+                    rect(-3840.0, -2160.0, 3840.0, 2160.0),
+                    rect(0.0, 0.0, 1920.0, 1080.0),
+                ],
+                0,
+                Edge::Bottom,
+                96.0,
+                2.0,
+            ),
+            (
+                "a portrait display beside the primary",
+                vec![
+                    rect(0.0, 0.0, 1920.0, 1080.0),
+                    rect(1920.0, -420.0, 1080.0, 1920.0),
+                ],
+                1,
+                Edge::Right,
+                36.0,
+                1.0,
+            ),
+        ];
+
+        for (name, frames, panelled, edge, thickness, scale) in cases {
+            // Every display goes through the same conversion; only one has a
+            // desktop panel.
+            let displays: Vec<Rect> = frames
+                .iter()
+                .enumerate()
+                .map(|(i, frame)| {
+                    let work = if i == panelled {
+                        reserve(*frame, edge, thickness)
+                    } else {
+                        *frame
+                    };
+                    usable_frame(*frame, work, if i == panelled { scale } else { 1.0 })
+                })
+                .collect();
+            let frame = in_points(frames[panelled], scale);
+            let usable = displays[panelled];
+            let world = WorldSnapshot {
+                displays: displays.clone(),
+                elapsed_ms: 100,
+                ..WorldSnapshot::default()
+            };
+            // Art short enough that its ceiling clearance is thinner than any
+            // desktop panel here, so the panel alone sets the ceiling.
+            let rest = |start: Point, world: &WorldSnapshot| {
+                let mut engine = Engine::new(start).with_sprite_height(2.0);
+                (0..200).map(|_| engine.tick(world)).last().unwrap()
+            };
+            let middle = Point {
+                x: usable.x + usable.width / 2.0,
+                y: usable.y + usable.height / 2.0,
+            };
+
+            match edge {
+                Edge::Bottom => {
+                    let landed = rest(middle, &world);
+                    assert_eq!(landed.state, State::Grounded, "{name}: {landed:?}");
+                    assert_eq!(
+                        landed.position.y,
+                        usable.bottom(),
+                        "{name}: the bottom desktop panel's top edge is the floor"
+                    );
+                    assert!(usable.bottom() < frame.bottom(), "{name}: raised");
+                }
+                Edge::Left | Edge::Right => {
+                    // Dropped over the desktop panel itself.
+                    let over_panel = Point {
+                        x: match edge {
+                            Edge::Left => frame.x + thickness / scale / 2.0,
+                            _ => (frame.x + frame.width) - thickness / scale / 2.0,
+                        },
+                        y: middle.y,
+                    };
+                    let landed = rest(over_panel, &world);
+                    assert_eq!(landed.state, State::Grounded, "{name}: {landed:?}");
+                    let strip = match edge {
+                        Edge::Left => (frame.x, usable.x),
+                        _ => (usable.x + usable.width, frame.x + frame.width),
+                    };
+                    assert!(
+                        landed.position.x <= strip.0 || landed.position.x >= strip.1,
+                        "{name}: the side desktop panel is a wall, not floor: {landed:?}"
+                    );
+                    assert!(
+                        displays
+                            .iter()
+                            .any(|display| display.spans_x(landed.position.x)
+                                && landed.position.y == display.bottom()),
+                        "{name}: on some display's floor: {landed:?}"
+                    );
+                }
+                Edge::Top => {
+                    // A window top hidden under the top desktop panel, with the
+                    // sprite dropped from above it.
+                    let hidden = WorldSnapshot {
+                        windows: vec![window(
+                            1,
+                            rect(
+                                usable.x,
+                                frame.y + thickness / scale / 2.0,
+                                usable.width,
+                                usable.height / 2.0,
+                            ),
+                        )],
+                        ..world.clone()
+                    };
+                    let start = Point {
+                        x: middle.x,
+                        y: frame.y + 1.0,
+                    };
+                    let landed = rest(start, &hidden);
+                    assert_eq!(landed.state, State::Grounded, "{name}: {landed:?}");
+                    assert_eq!(
+                        landed.position.y,
+                        usable.bottom(),
+                        "{name}: the top desktop panel is the ceiling, so nothing under it is a Perch"
+                    );
+
+                    // Control: count the strip as usable and the same window
+                    // top does catch the sprite, so the ceiling is what decided.
+                    let mut whole = hidden.clone();
+                    whole.displays[panelled] = frame;
+                    let caught = rest(start, &whole);
+                    assert_eq!(caught.state, State::Perched, "{name}: control {caught:?}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_sprite_in_mid_air_falls_and_comes_to_rest_on_the_floor() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });

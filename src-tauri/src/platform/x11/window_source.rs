@@ -14,15 +14,17 @@ use crate::mcp_resources::WindowTitle;
 
 /// The X11 window manager's view of the desktop.
 pub struct X11WindowSource {
-    /// Where the usable part of each display comes from, and the Dock's true
-    /// bounds when a panel announces itself via _NET_WM_STRUT_PARTIAL.
-    read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
+    /// Where the usable part of each display comes from: the work area the
+    /// window manager reports per display. A desktop panel reaches the Engine
+    /// only through it, as the Windows taskbar does: a bottom one raises the
+    /// floor, a side one is a wall, a top one lowers the ceiling.
+    read_displays: Box<dyn Fn() -> Vec<Rect> + Send + Sync>,
     can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl X11WindowSource {
     pub fn new(
-        read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
+        read_displays: impl Fn() -> Vec<Rect> + Send + Sync + 'static,
         can_read_titles: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
@@ -44,12 +46,12 @@ impl WindowSource for X11WindowSource {
     }
 
     fn read(&self) -> WorldGeometry {
-        let (usable_frames, dock) = (self.read_displays)();
         let can_read_titles = (self.can_read_titles)();
         WorldGeometry {
-            usable_frames,
+            usable_frames: (self.read_displays)(),
             windows: visible_windows(can_read_titles),
-            dock: dock.or_else(strut_panel_bounds),
+            // No Dock: a desktop panel is only the work area it reserves.
+            dock: None,
         }
     }
 }
@@ -376,129 +378,4 @@ fn frame_geometry(
 
 fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
     super::atoms::window_class(conn, window)
-}
-
-/// Read `_NET_WM_STRUT_PARTIAL` from dock/panel windows for panel bounds.
-/// 12 CARDINALs per EWMH: left, right, top, bottom, then start/end coords.
-/// Checks all four edges; returns the first panel found in priority order.
-fn strut_panel_bounds() -> Option<Rect> {
-    let conn = super::connection::connection()?;
-    let screen = &conn.setup().roots[0];
-    let root = screen.root;
-
-    let windows = window_list_stacking(conn, root)?;
-
-    for window in windows {
-        if !is_dock_window(conn, window) {
-            continue;
-        }
-
-        let strut = read_strut_partial(conn, window)?;
-        let screen_width = f64::from(screen.width_in_pixels);
-        let screen_height = f64::from(screen.height_in_pixels);
-
-        if strut[3] > 0 {
-            let bottom_height = strut[3] as f64;
-            let start_x = strut[10] as f64;
-            let end_x = strut[11] as f64;
-            return Some(Rect {
-                x: start_x,
-                y: screen_height - bottom_height,
-                width: end_x - start_x,
-                height: bottom_height,
-            });
-        }
-
-        if strut[2] > 0 {
-            let top_height = strut[2] as f64;
-            let start_x = strut[8] as f64;
-            let end_x = strut[9] as f64;
-            return Some(Rect {
-                x: start_x,
-                y: 0.0,
-                width: end_x - start_x,
-                height: top_height,
-            });
-        }
-
-        if strut[0] > 0 {
-            let left_width = strut[0] as f64;
-            let start_y = strut[4] as f64;
-            let end_y = strut[5] as f64;
-            return Some(Rect {
-                x: 0.0,
-                y: start_y,
-                width: left_width,
-                height: end_y - start_y,
-            });
-        }
-
-        if strut[1] > 0 {
-            let right_width = strut[1] as f64;
-            let start_y = strut[6] as f64;
-            let end_y = strut[7] as f64;
-            return Some(Rect {
-                x: screen_width - right_width,
-                y: start_y,
-                width: right_width,
-                height: end_y - start_y,
-            });
-        }
-    }
-
-    None
-}
-
-/// Only `_NET_WM_WINDOW_TYPE_DOCK` publishes a strut we can treat as the Dock.
-fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
-    let Some(atoms) = super::atoms::atoms() else {
-        return false;
-    };
-
-    let reply = match xproto::get_property(
-        conn,
-        false,
-        window,
-        atoms.net_wm_window_type,
-        AtomEnum::ATOM,
-        0,
-        32,
-    )
-    .ok()
-    .and_then(|cookie| cookie.reply().ok())
-    {
-        Some(r) => r,
-        None => return false,
-    };
-
-    if reply.format != 32 {
-        return false;
-    }
-
-    reply
-        .value
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .any(|chunk| u32::from_ne_bytes(*chunk) == atoms.net_wm_window_type_dock)
-}
-
-fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]> {
-    let strut_atom = super::atoms::atoms()?.net_wm_strut_partial;
-
-    let reply = xproto::get_property(conn, false, window, strut_atom, AtomEnum::CARDINAL, 0, 12)
-        .ok()?
-        .reply()
-        .ok()?;
-
-    if reply.format != 32 || reply.value.len() != 48 {
-        return None;
-    }
-
-    let mut result = [0u32; 12];
-    for (i, chunk) in reply.value.as_chunks::<4>().0.iter().enumerate() {
-        result[i] = u32::from_ne_bytes(*chunk);
-    }
-
-    Some(result)
 }

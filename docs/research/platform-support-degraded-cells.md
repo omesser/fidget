@@ -16,6 +16,8 @@ sha: `ab6bd57b`
 
 ## Linux: Dock or panel as a Perch
 
+> **Update (#1300):** superseded. The target became parity with Windows rather than four-edge Perches: X11 no longer reads `_NET_WM_STRUT_PARTIAL` at all, and a desktop panel reaches the Engine only through the work area: a bottom one is the floor, a side one a wall, a top one the ceiling.
+
 **Current behavior:**  
 Bottom panels (like a bottom GNOME panel or bottom-configured taskbar) are detected and used as Perches. Side panels (left/right) and top panels are not detected; they stay as full-width reserved strips, and the Character cannot perch on them.
 
