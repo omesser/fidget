@@ -5703,13 +5703,8 @@ mod tests {
             "ending A's turn cancelled B"
         );
         session.answer_permission(&ask.request, "allow");
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while fx.count("perm:selected") == 0 && std::time::Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert_eq!(
-            fx.count("perm:selected"),
-            1,
+        assert!(
+            fx.wait_for("perm:selected", 1),
             "B's later answer was cancelled"
         );
         assert!(!session.awaiting_user("buddy-b"), "the answer left B owing");
@@ -5739,7 +5734,7 @@ mod tests {
     }
 
     /// An ask queued on the new session before `session/new` answers is owed
-    /// by that session's Instance once `attach` returns (#1395 Soft Open).
+    /// by that session's Instance once `attach` returns.
     #[test]
     fn an_ask_during_open_is_owed_once_attach_returns() {
         let (fx, session) = Fixture::new("ask-on-open");
@@ -5761,11 +5756,7 @@ mod tests {
             "ask during open was counted against a turn nobody held"
         );
         session.answer_permission(&ask.request, "allow");
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while fx.count("perm:selected") == 0 && std::time::Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert_eq!(fx.count("perm:selected"), 1);
+        assert!(fx.wait_for("perm:selected", 1));
         assert!(!session.awaiting_user("buddy-b"));
         session.shutdown();
     }
