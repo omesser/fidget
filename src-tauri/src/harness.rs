@@ -6724,6 +6724,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
 
+    /// A Chat surface asks for its opening once, before the first wake has
+    /// opened a session, and draws `no session yet`. The session that wake
+    /// opens has to reach the open window, or the header keeps saying so.
+    #[test]
+    fn a_session_the_first_wake_opens_reaches_an_open_chat_surface() {
+        let (fx, session) = Fixture::new("happy");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        fx.attach_settled();
+        assert_eq!(session.inspect().session_id, None);
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        fx.attach_settled();
+        assert_eq!(session.inspect().session_id.as_deref(), Some("fresh-id"));
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
     /// A re-pick never restarts a Harness that is answering.
     #[test]
     fn a_repick_of_a_live_harness_stands() {
