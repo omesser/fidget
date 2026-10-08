@@ -233,7 +233,7 @@ pub enum CompositeControl {
 /// cannot serve it and the reading travels with the row it fills.
 ///
 /// Whether a pick stages or saves is not declared here — it is the target
-/// row's `batched`, so the shortcut and the field below it cannot disagree
+/// row's `batched`, so the shortcut and the field it fills cannot disagree
 /// about when the file is reached (#279).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Shortcut {

@@ -1373,8 +1373,8 @@ fn settings_event_blocking(
     )
 }
 
-/// A pick from a list that fills in the row below it. `current` is what that
-/// row holds now, so a pick of the value already there writes nothing.
+/// A pick from the list inside a row that fills that row's field. `current` is
+/// what the field holds now, so a pick of the value already there writes nothing.
 fn shortcut_event(
     pick: String,
     value: String,
