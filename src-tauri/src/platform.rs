@@ -125,6 +125,33 @@ pub fn set_overlay_primary(down: bool) {
 /// because `Vec::new` is const.
 static OVERLAY_RECTS: Mutex<Vec<(String, OverlayRect)>> = Mutex::new(Vec::new());
 
+/// Where the window manager really put each overlay: `(label, (x, y))`, in
+/// points. Filled on X11 only, from the overlay's move events, because only
+/// there may the window manager refuse the position asked for: xfwm4 keeps an
+/// ordinary window out of a desktop panel's reserved strip. Empty elsewhere, so
+/// every overlay is drawn from the frame it was asked to cover.
+static OVERLAY_ORIGINS: Mutex<Vec<(String, (f64, f64))>> = Mutex::new(Vec::new());
+
+/// The window manager reported where `label`'s overlay now is.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn set_overlay_origin(label: &str, origin: (f64, f64)) {
+    let Ok(mut origins) = OVERLAY_ORIGINS.lock() else {
+        return;
+    };
+    origins.retain(|(owner, _)| owner != label);
+    origins.push((label.to_string(), origin));
+}
+
+/// Where `label`'s overlay really is, if the window manager has said.
+pub fn overlay_origin(label: &str) -> Option<(f64, f64)> {
+    OVERLAY_ORIGINS.lock().ok().and_then(|origins| {
+        origins
+            .iter()
+            .find(|(owner, _)| owner == label)
+            .map(|(_, origin)| *origin)
+    })
+}
+
 /// Replace everything `label` reported. An empty list is how an overlay says
 /// it draws nothing but the art again.
 pub fn set_overlay_rects(label: &str, rects: Vec<OverlayRect>) {
