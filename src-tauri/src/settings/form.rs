@@ -1251,7 +1251,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
     ]
 }
 
-fn presence_sections() -> Vec<FormSection> {
+fn presence_sections(bundled: bool) -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Do Not Disturb".to_string(),
@@ -1345,11 +1345,19 @@ fn presence_sections() -> Vec<FormSection> {
             status: None,
             rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
-                label: "Launch at login (unimplemented)".to_string(),
+                label: if bundled {
+                    "Launch at login".to_string()
+                } else {
+                    "Launch at login (unimplemented)".to_string()
+                },
                 writes: BoolField::LaunchAtLogin,
                 batched: false,
-                frozen: true,
-                help: Some("Not available yet.".to_string()),
+                frozen: !bundled,
+                help: Some(if bundled {
+                    "Starts Fidget when you log in.".to_string()
+                } else {
+                    "Not available yet.".to_string()
+                }),
                 comment: None,
                 disclosure: None,
                 status: None,
@@ -1740,6 +1748,9 @@ pub struct Live {
     pub installed: Vec<String>,
     /// The user directory the Character picker reads.
     pub characters_dir: String,
+    /// This process is an installed app a login item can start. A checkout
+    /// binary is not: there is no bundle to launch.
+    pub bundled: bool,
 }
 
 impl Live {
@@ -1755,6 +1766,7 @@ impl Live {
             api_key_placeholder: String::new(),
             installed: Vec::new(),
             characters_dir: crate::package::user_characters_dir().display().to_string(),
+            bundled: crate::login_item::bundled_exe(),
         }
     }
 }
@@ -1767,7 +1779,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
     let tabs = vec![
         FormTab {
             title: "Presence".to_string(),
-            sections: presence_sections(),
+            sections: presence_sections(live.bundled),
         },
         FormTab {
             title: "Character".to_string(),
@@ -1852,6 +1864,7 @@ pub(crate) mod tests {
             api_key_placeholder: fixture_view(driving).api_key_placeholder(),
             installed: fixture_view(driving).installed,
             characters_dir: FIXTURE_CHARACTERS_DIR.to_string(),
+            bundled: false,
         }
     }
 
@@ -2202,6 +2215,29 @@ pub(crate) mod tests {
                     label.contains("unimplemented"),
                     "Launch checkbox must be labeled unimplemented"
                 );
+            }
+            _ => panic!("Launch row must be a checkbox"),
+        }
+    }
+
+    #[test]
+    fn launch_row_is_editable_on_a_bundled_app() {
+        let mut live = fixture_live(false);
+        live.bundled = true;
+        let description = describe_with(&live);
+        let launch_row = description
+            .sections()
+            .find(|s| s.heading == "Launch")
+            .expect("Launch section exists")
+            .rows
+            .iter()
+            .find(|r| matches!(r, FormRow::Checkbox { id, .. } if id == LAUNCH_ID))
+            .expect("Launch checkbox exists");
+
+        match launch_row {
+            FormRow::Checkbox { frozen, label, .. } => {
+                assert!(!*frozen, "a bundle can turn launch at login on");
+                assert_eq!(label, "Launch at login");
             }
             _ => panic!("Launch row must be a checkbox"),
         }

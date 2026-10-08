@@ -1359,6 +1359,7 @@ impl SettingsSession {
         let switching = patch.roster.character.clone();
         let rebind = patch.presence.hide_hotkey.clone();
         let new_session = patch.new_session;
+        let launch_at_login = patch.launch_at_login;
         write_key_off_the_settings_lock(&self.settings, self.secrets.as_ref(), &patch)?;
         if let Some(raw) = patch.completer.director_api_key.as_deref() {
             self.remember_written_key(raw);
@@ -1472,6 +1473,9 @@ impl SettingsSession {
         #[cfg(target_os = "macos")]
         if prompt_im {
             self.enable_consent(CapabilityId::InputMonitoring);
+        }
+        if let Some(wanted) = launch_at_login {
+            crate::login_item::sync(&self.app, wanted);
         }
         Ok(())
     }
