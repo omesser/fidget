@@ -288,15 +288,20 @@ test("an elicitation with no message says so as a sentence", () => {
   );
 });
 
-test("untrusted elicitation text cannot forge a line of its own", () => {
+// The question as the Harness wrote it, the rule the ask card follows: its
+// lines and length stay, and only the characters that could hide or reverse
+// text go.
+test("an elicitation question keeps its lines and length and loses only unsafe characters", () => {
+  const long = "Pick the branch the release goes out from. ".repeat(20).trim();
+  assert.equal(long.length, 859);
   assert.equal(
     elicitSays({
       request: "43",
-      message: "Which branch?\nedit · /safe/path",
+      message: `Which branch?\n\n- main\n-\u202e release\u200b\n\n${long}`,
       field: "branch",
       options: [],
     }),
-    "Which branch? edit · /safe/path",
+    `Which branch?\n\n- main\n- release\n\n${long}`,
   );
 });
 
