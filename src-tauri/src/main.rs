@@ -1995,6 +1995,24 @@ fn build_overlay(
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     platform::set_overlay_click_through(&window, true)?;
 
+    // X11: the window manager may put the overlay somewhere other than asked
+    // (xfwm4 pushes it out of a desktop panel's reserved strip). Heard before
+    // the first show, so the move that maps it is not missed.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let watched = window.clone();
+        let owner = label.to_string();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Moved(at) = event {
+                let at = at.to_logical::<f64>(watched.scale_factor().unwrap_or(1.0));
+                if platform::overlay_origin(&owner) != Some((at.x, at.y)) {
+                    eprintln!("overlay: {owner} is at ({:.0},{:.0})", at.x, at.y);
+                }
+                platform::set_overlay_origin(&owner, (at.x, at.y));
+            }
+        });
+    }
+
     cover_display(&window, display)?;
 
     // Windows: configure before show to prevent white flash.

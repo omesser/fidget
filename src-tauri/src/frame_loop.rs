@@ -12,7 +12,7 @@ use fidget_core::engine::{bring_off_fullscreen, BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(unix))]
 use fidget_core::overlay::DrawTrail;
-use fidget_core::overlay::{bubble_owner, display_index_for, place_sprite};
+use fidget_core::overlay::{bubble_owner, display_index_for, drawn_frame, place_sprite};
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
@@ -1306,6 +1306,7 @@ pub(crate) fn run_frame_loop(
                             .map(|frame| (overlay_label(index), *frame))
                     }) {
                         Some((label, frame)) => {
+                            let frame = drawn_frame(frame, platform::overlay_origin(&label));
                             let at = tauri::LogicalPosition::new(
                                 cursor_points.x - frame.x,
                                 cursor_points.y - frame.y,
@@ -2145,10 +2146,12 @@ pub(crate) fn run_frame_loop(
             // the renderer reports overlay coordinates (plus the display origin).
             let over_control = on_overlay.is_some_and(|index| {
                 displays.frames.get(index).is_some_and(|display| {
+                    let drawn =
+                        drawn_frame(*display, platform::overlay_origin(&overlay_label(index)));
                     platform::over_overlay_hotspot(
                         &overlay_label(index),
-                        cursor_at.0 - display.x.round() as i32,
-                        cursor_at.1 - display.y.round() as i32,
+                        cursor_at.0 - drawn.x.round() as i32,
+                        cursor_at.1 - drawn.y.round() as i32,
                     )
                 })
             });
@@ -2171,11 +2174,14 @@ pub(crate) fn run_frame_loop(
                 }
             }
 
-            for (index, display) in displays.frames.iter().enumerate() {
+            for (index, frame) in displays.frames.iter().enumerate() {
                 let label = overlay_label(index);
                 let Some(window) = app.get_webview_window(&label) else {
                     continue;
                 };
+                // Everything below speaks this overlay's own coordinates, so it
+                // measures from where the overlay really is, not where it was asked to go.
+                let display = &drawn_frame(*frame, platform::overlay_origin(&label));
 
                 // Retried until it succeeds: GTK has no window handle until the
                 // widget is realized (shown and ticked), and `window_handle`

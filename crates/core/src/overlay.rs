@@ -110,6 +110,18 @@ impl SpriteRect {
     }
 }
 
+/// Where an overlay is drawn: the frame it was asked to cover, moved to the
+/// origin the window manager reports for it, once it has reported one. A
+/// window manager may refuse the position asked for (xfwm4 keeps an ordinary
+/// window out of a desktop panel's reserved strip) but it does not resize the
+/// overlay, so the size stays.
+pub fn drawn_frame(asked: Rect, reported_origin: Option<(f64, f64)>) -> Rect {
+    match reported_origin {
+        Some((x, y)) => Rect { x, y, ..asked },
+        None => asked,
+    }
+}
+
 /// Which pixels of an Animation frame are drawn, at the art's own resolution.
 /// `PartialEq` and `Clone` because `character::Character` derives both.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -302,6 +314,83 @@ impl DrawTrail {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A window manager may not put the overlay where it was asked: xfwm4
+    /// keeps an ordinary window out of a desktop panel's reserved strip. The
+    /// art has to land at the same place on screen either way, so it is drawn
+    /// from the origin the window manager reports, once there is one.
+    #[test]
+    fn the_sprite_is_drawn_from_where_the_overlay_really_is() {
+        let rect = |x: f64, y: f64, width: f64, height: f64| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        // (name, frame asked for, origin reported, sprite in shared space, expected in the overlay)
+        let cases = [
+            (
+                "placed where asked",
+                rect(0.0, 0.0, 1920.0, 1200.0),
+                Some((0.0, 0.0)),
+                (500, 700),
+                (500, 700),
+            ),
+            (
+                "nothing reported yet",
+                rect(-1366.0, 312.0, 1366.0, 768.0),
+                None,
+                (-1000, 900),
+                (366, 588),
+            ),
+            (
+                "pushed right off a strip on the left",
+                rect(0.0, 0.0, 2560.0, 1440.0),
+                Some((64.0, 0.0)),
+                (500, 700),
+                (436, 700),
+            ),
+            (
+                "pushed down off a strip on top, display at negative coordinates",
+                rect(-1920.0, -1080.0, 1920.0, 1080.0),
+                Some((-1920.0, -1052.0)),
+                (-1000, -500),
+                (920, 552),
+            ),
+            (
+                "second display right of and above the primary",
+                rect(2560.0, -300.0, 1920.0, 1200.0),
+                Some((2624.0, -300.0)),
+                (3000, 400),
+                (376, 700),
+            ),
+            (
+                "pushed left off a strip on the right",
+                rect(1920.0, -420.0, 1080.0, 1920.0),
+                Some((1884.0, -420.0)),
+                (2500, 0),
+                (616, 420),
+            ),
+            (
+                "a fractional origin, as a 1.5x display reports it",
+                rect(0.0, 0.0, 1280.0, 720.0),
+                Some((42.666_666, 0.0)),
+                (500, 300),
+                (457, 300),
+            ),
+        ];
+
+        for (name, asked, reported, (x, y), expected) in cases {
+            let drawn = drawn_frame(asked, reported);
+            assert_eq!(
+                (drawn.width, drawn.height),
+                (asked.width, asked.height),
+                "{name}: the window manager moved it, it did not resize it"
+            );
+            let local = SpriteRect { x, y, scale: 1 }.in_overlay(drawn);
+            assert_eq!((local.x, local.y), expected, "{name}");
+        }
+    }
 
     /// `#` is an opaque pixel, `.` is fully transparent.
     #[test]
