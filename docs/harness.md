@@ -259,14 +259,17 @@ Session handling:
 
 ### Finding programs on `PATH`
 
-launchd starts a Finder or Dock launch of Fidget.app with `/usr/bin:/bin:/usr/sbin:/sbin`, and a Linux desktop file often skips `~/.bashrc`. Neither has Homebrew, nvm, volta, or `~/.local/bin` (#1436). So at startup, before anything spawns, Fidget runs your `$SHELL -l -i` once and puts the `PATH` it prints in front of its own. Then it stops that shell and anything its rc files left running. Every Harness, `npx`, and version probe inherits the result.
+launchd starts a Finder or Dock launch of Fidget.app with `/usr/bin:/bin:/usr/sbin:/sbin`, and a Linux desktop file often skips `~/.bashrc`. Neither has Homebrew, nvm, volta, or `~/.local/bin` (#1436). So at startup, before it starts any Harness, Fidget runs your `$SHELL -l -i` once and merges the `PATH` it prints into its own. Then it stops that shell and anything its rc files left running. Every Harness, `npx`, and version probe inherits the result.
 
+- **Order:** folders the launcher lists before its first system folder (`/usr/local/bin`, `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`) stay first. The shell's folders come next, then the rest of the launcher's, each once. A login shell rebuilds `PATH` system first (Debian's `/etc/profile`, macOS `path_helper`), so without this a script's own folder would lose to `/usr/bin`. launchd's `PATH` starts with `/usr/bin`, so a Finder launch gets the shell's `PATH` first.
 - **Started from a terminal:** Fidget keeps the terminal's `PATH` and runs no shell.
 - **Shell slow or broken:** after 5 seconds Fidget kills the shell. It then adds whichever of `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.cargo/bin`, `~/.volta/bin`, `~/.bun/bin`, `~/.local/share/mise/shims`, and `~/.asdf/shims` exist.
 - **Only `PATH`:** other variables in your rc files do not reach Fidget. A provider key exported there would switch a signed-in Harness to API billing, and a `FIDGET_DIRECTOR_*` export would take over its Settings row.
 - **Windows:** not affected, because a Windows app reads `PATH` from the registry.
 
 The process log beside Memory has one `path:` line that names which case ran and the `PATH` in force.
+
+`fidget --probe-harness` (`scripts/probe-harness.sh`) returns before this step and keeps the caller's `PATH`, so it does not show what a Finder launch finds.
 
 ### Inbound Wake Contract
 
