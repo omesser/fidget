@@ -84,12 +84,10 @@
   .lede { font-size: 1.15rem; color: var(--ink-2); margin: 0 0 1.75rem; max-width: 34rem; }
   .get { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-bottom: 1rem; }
   .btn { display: inline-flex; flex-direction: column; padding: .7rem 1.1rem;
-    border-radius: 10px; text-decoration: none; border: 1px solid var(--line);
-    color: var(--ink); background: var(--win); }
+    border-radius: 10px; text-decoration: none; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-ink); }
   .btn b { font-size: 1rem; }
-  .btn span { font-size: .8rem; color: var(--ink-3); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .btn.primary span { color: inherit; opacity: .8; }
+  .btn span { font-size: .8rem; opacity: .8; }
   .btn:hover { filter: brightness(1.05); }
   a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .brew { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
@@ -176,9 +174,9 @@
       <h1>{{headline}}</h1>
       <p class="lede">{{lede}}</p>
       <div class="get" id="get">
-        <a class="btn primary" href="{{download_macos}}"><b>Download for macOS</b><span>Apple Silicon · .dmg</span></a>
-        <a class="btn" href="{{download_windows}}"><b>Windows</b><span>x86_64 · installer</span></a>
-        <a class="btn" href="{{download_linux}}"><b>Linux</b><span>x86_64 · AppImage</span></a>
+        <a class="btn" href="{{download_macos}}"><b>Download for macOS</b><span>Apple Silicon · .dmg</span>{{version_macos}}</a>
+        <a class="btn" href="{{download_windows}}"><b>Windows</b><span>x86_64 · installer</span>{{version_windows}}</a>
+        <a class="btn" href="{{download_linux}}"><b>Linux</b><span>x86_64 · AppImage</span>{{version_linux}}</a>
       </div>
       <p class="note">{{notes}} <a href="https://github.com/omesser/fidget#get-it">Install steps</a></p>
     </div>

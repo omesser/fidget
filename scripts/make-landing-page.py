@@ -12,8 +12,9 @@ this script fills. A source it cannot find fails the build.
 
 Two sources are optional. Without the hero video the desk scene stands in.
 Each download button links its asset in the release file that
-`gh release view --json tagName,assets` wrote, or the Latest release page when
-there is no such file or no such asset.
+`gh release view --json tagName,assets` wrote, and names that release's tag
+under its format. Without such a file or such an asset, the button links the
+Latest release page and names no version.
 
 The page names frames by the paths make-character-gallery.py publishes under
 `<out>/characters/`, and copies nothing itself, so the gallery's checks are the
@@ -44,8 +45,7 @@ HERO = "buddy-bot"
 ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
 LATEST = f"{REPO}/releases/latest"
 # The asset names carry the version, so a button matches its asset by suffix.
-DOWNLOADS = (("download_macos", "_aarch64.dmg"), ("download_windows", "-setup.exe"),
-             ("download_linux", ".AppImage"))
+DOWNLOADS = (("macos", "_aarch64.dmg"), ("windows", "-setup.exe"), ("linux", ".AppImage"))
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
          "Nine", "Ten", "Eleven", "Twelve")
 
@@ -222,10 +222,21 @@ def sprite(loop_, alt, extra=""):
 
 
 def downloads(release):
-    """Each button's slot and URL, the Latest release page where the release lacks its asset."""
+    """Each button's URL and version: its asset and the release tag, or the Latest page and None."""
     assets = release.get("assets", []) if release else []
-    return {slot: next((a["url"] for a in assets if a["name"].endswith(suffix)), LATEST)
-            for slot, suffix in DOWNLOADS}
+    found = {}
+    for button, suffix in DOWNLOADS:
+        url = next((a["url"] for a in assets if a["name"].endswith(suffix)), None)
+        found[button] = (url, release.get("tagName")) if url else (LATEST, None)
+    return found
+
+
+def download_slots(release):
+    slots = {}
+    for button, (url, version) in downloads(release).items():
+        slots[f"download_{button}"] = html.escape(url)
+        slots[f"version_{button}"] = f"<span>{html.escape(version)}</span>" if version else ""
+    return slots
 
 
 def render(readme_text, characters_root, rust_source, shell, release=None):
@@ -249,7 +260,7 @@ def render(readme_text, characters_root, rust_source, shell, release=None):
         "count": (COUNT[len(cast)] if len(cast) < len(COUNT) else str(len(cast)))
         + (" character ships" if len(cast) == 1 else " characters ship"),
         "cast": figures,
-        **{slot: html.escape(url) for slot, url in downloads(release).items()},
+        **download_slots(release),
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
@@ -325,13 +336,13 @@ def self_check():
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
         assert "<figcaption>Solo</figcaption>" in page
 
-    release = {"assets": [{"name": n, "url": f"{REPO}/releases/download/v9/{n}"}
-                          for n in ("F_9_amd64.deb", "F_9_amd64.AppImage", "F_9_aarch64.dmg")]}
+    release = {"tagName": "v9", "assets": [{"name": n, "url": f"{REPO}/releases/download/v9/{n}"}
+                                           for n in ("F_9_amd64.deb", "F_9_amd64.AppImage", "F_9_aarch64.dmg")]}
     assert downloads(release) == {
-        "download_macos": f"{REPO}/releases/download/v9/F_9_aarch64.dmg",
-        "download_windows": LATEST,
-        "download_linux": f"{REPO}/releases/download/v9/F_9_amd64.AppImage",
-    }, "a button linked an asset that is not its own"
+        "macos": (f"{REPO}/releases/download/v9/F_9_aarch64.dmg", "v9"),
+        "windows": (LATEST, None),
+        "linux": (f"{REPO}/releases/download/v9/F_9_amd64.AppImage", "v9"),
+    }, "a button linked an asset that is not its own, or named a version it does not link"
 
     print(f"self-check: {len(words['features'])} features, {len(words['harnesses'])} Harnesses, checks passed")
 

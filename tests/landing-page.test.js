@@ -40,6 +40,11 @@ function releaseFile(name, assets) {
 
 const buttons = (page) =>
   [...page.match(/<div class="get" id="get">([\s\S]*?)<\/div>/)[1].matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+// The lines under each button's OS name: its format, then the release tag when
+// the button links that release's asset.
+const lines = (page) =>
+  [...page.match(/<div class="get" id="get">([\s\S]*?)<\/div>/)[1].matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)]
+    .map((m) => [...m[1].matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((s) => s[1]));
 
 let scratch;
 let site;
@@ -180,12 +185,25 @@ function pageWith(release) {
   return readFileSync(join(out, PAGE), "utf8");
 }
 
+test("each download button names the release tag under its format", () => {
+  assert.deepEqual(lines(published(PAGE)), [
+    ["Apple Silicon · .dmg", "v0.1.0"],
+    ["x86_64 · installer", "v0.1.0"],
+    ["x86_64 · AppImage", "v0.1.0"],
+  ]);
+});
+
 test("a release without an asset sends only that button to the Latest release page", () => {
-  const release = releaseFile("no-windows.json", ASSETS.filter((asset) => !asset.endsWith(".exe")));
-  assert.deepEqual(buttons(pageWith(release)), [`${DOWNLOAD}/Fidget_0.1.0_aarch64.dmg`, LATEST,
+  const page = pageWith(releaseFile("no-windows.json", ASSETS.filter((asset) => !asset.endsWith(".exe"))));
+  assert.deepEqual(buttons(page), [`${DOWNLOAD}/Fidget_0.1.0_aarch64.dmg`, LATEST,
     `${DOWNLOAD}/Fidget_0.1.0_amd64.AppImage`]);
+  assert.deepEqual(lines(page), [["Apple Silicon · .dmg", "v0.1.0"], ["x86_64 · installer"],
+    ["x86_64 · AppImage", "v0.1.0"]], "a button that links no asset names no version");
 });
 
 test("no release file sends every button to the Latest release page", () => {
-  assert.deepEqual(buttons(pageWith(join(scratch, "absent.json"))), [LATEST, LATEST, LATEST]);
+  const page = pageWith(join(scratch, "absent.json"));
+  assert.deepEqual(buttons(page), [LATEST, LATEST, LATEST]);
+  assert.deepEqual(lines(page), [["Apple Silicon · .dmg"], ["x86_64 · installer"], ["x86_64 · AppImage"]],
+    "no release, no version");
 });
