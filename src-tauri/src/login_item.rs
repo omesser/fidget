@@ -5,15 +5,18 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
-use tauri_plugin_autostart::ManagerExt;
+use tauri::{AppHandle, Manager};
 
-/// Register or remove the OS login item. No-op for a checkout binary.
+/// Register or remove the OS login item. No-op for a checkout binary, and
+/// when the plugin did not register.
 pub fn sync(app: &AppHandle, wanted: bool) {
     if !bundled_exe() {
         return;
     }
-    let manager = app.autolaunch();
+    let Some(manager) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() else {
+        fidget::eprintln_and_log!("launch at login: plugin is not registered");
+        return;
+    };
     let result = if wanted {
         manager.enable()
     } else {
