@@ -742,6 +742,10 @@ impl SettingsView {
                 text(&self.director_model),
             ),
             (
+                form::HARNESS_MODEL_ID.to_string(),
+                text(&self.director_model),
+            ),
+            (
                 form::PAYLOAD_ID.to_string(),
                 text(self.last_payload.as_deref().unwrap_or_default()),
             ),

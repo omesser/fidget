@@ -17,6 +17,7 @@
   "director_blank": false,
   "director_max_tokens": "1024",
   "director_model": "gpt-4o-mini",
+  "harness_model": "gpt-4o-mini",
   "director_reasoning_effort": "medium",
   "director_reasoning_effort_pick": "medium",
   "director_timeout_secs": "30",

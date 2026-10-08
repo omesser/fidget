@@ -17,6 +17,35 @@ function listItems(value) {
   return items.map((item) => ({ label: `${item.name} (${item.character})`, id: item.id }));
 }
 
+// The AI source picker's Model API title, as `form::HARNESS_OFF` spells it.
+const MODEL_API = "Model API";
+// Apply and Cancel sit in the Model / API section but commit the whole tab.
+const FOOTER_ROW = "director_actions";
+const OFF_NOTE = Object.freeze({
+  harness: "Not in use: the AI source is Model API.",
+  model_api: "Not in use: the AI source is a Harness.",
+});
+
+// A section serving the source the picker does not name is off, and its rows
+// draw frozen (#1427). The picker's value is the staged one, so the tab follows
+// a pick before Apply saves it.
+function offSource(section, values) {
+  if (!section.serves) return null;
+  const picked = values.harness === MODEL_API ? "model_api" : "harness";
+  return section.serves === picked ? null : section.serves;
+}
+
+function rowsOf(section, values) {
+  if (!offSource(section, values)) return section.rows;
+  return section.rows.map((row) => {
+    if (row.id === FOOTER_ROW) return row;
+    if (row.type === "Composite") {
+      return { ...row, controls: row.controls.map((control) => ({ ...control, frozen: true })) };
+    }
+    return { ...row, frozen: true, editable: false };
+  });
+}
+
 export function controls(tab, values) {
   const out = [];
   const push = (role, id, label, value, frozen) => out.push({ role, id, label, value, frozen });
@@ -24,7 +53,7 @@ export function controls(tab, values) {
   for (const section of tab.sections) {
     push("heading", null, section.heading, null, false);
 
-    for (const row of section.rows) {
+    for (const row of rowsOf(section, values)) {
       switch (row.type) {
         case "Checkbox":
           push("checkbox", row.id, row.label, Boolean(values[row.id]), row.frozen);
@@ -113,12 +142,6 @@ function status(text) {
 
 const PI_HARNESS = "Harness · pi";
 
-function revealPiMcp(select) {
-  const panel = select.closest?.("[data-row]")?.parentElement?.parentElement;
-  const row = panel?.querySelector?.('[data-row="pi_project_mcp"]');
-  if (row) row.hidden = select.value !== PI_HARNESS;
-}
-
 function notes(row) {
   return [help(row.help), status(row.status), disclosure(row.disclosure)];
 }
@@ -193,8 +216,17 @@ function drawRow(row, values, emit, stage, tab, shortcut = null) {
       // A batched row is a draft until Apply. A blur write would retarget
       // before Cancel could restore the row (#663), and a draft left in the
       // widget alone is gone on the next tab switch, which redraws the panel.
+      // A field drawn twice, the Model under Harness and under Model / API,
+      // stages and shows one value in both rows (#1427).
       if (row.batched) {
-        input.addEventListener("input", () => stage(row.id, input.value));
+        input.addEventListener("input", () => {
+          const root = input.closest?.('[role="tabpanel"]') ?? input.getRootNode();
+          for (const twin of twins(tab, row)) {
+            stage(twin.id, input.value);
+            const other = twin.id === row.id ? null : root.querySelector?.(`[data-row="${twin.id}"] input`);
+            if (other) other.value = input.value;
+          }
+        });
       } else {
         input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       }
@@ -220,7 +252,6 @@ function drawRow(row, values, emit, stage, tab, shortcut = null) {
       if (row.batched) {
         select.addEventListener("change", () => {
           stage(row.id, select.value);
-          if (row.id === "harness") revealPiMcp(select);
           if (row.id === "byo_harness") emit({ pick: row.id, value: select.value });
         });
       } else {
@@ -324,6 +355,12 @@ function drawRow(row, values, emit, stage, tab, shortcut = null) {
 }
 
 // By the control's own id: a row's first control can be its shortcut picker.
+function twins(tab, row) {
+  return tab.sections
+    .flatMap((section) => section.rows)
+    .filter((other) => other.type === "TextField" && other.writes === row.writes);
+}
+
 function rowValue(root, id) {
   const control = root.querySelector?.(`#set-f-${id}`);
   return control ? control.value : "";
@@ -387,12 +424,14 @@ export function render(root, tab, values, emit = () => {}, stage = () => {}) {
     if (section.comment) node.append(el("p", { class: "set-comment", text: section.comment }));
     if (section.status) node.append(status(section.status));
     if (section.disclosure) node.append(disclosure(section.disclosure));
+    const off = offSource(section, values);
+    if (off) node.append(status(OFF_NOTE[off]));
     const shortcuts = new Map(
-      section.rows.filter(shortcutOf).map((row) => [shortcutOf(row).fills.row, row]),
+      rowsOf(section, values).filter(shortcutOf).map((row) => [shortcutOf(row).fills.row, row]),
     );
-    for (const row of section.rows) {
+    for (const row of rowsOf(section, values)) {
       if (shortcutOf(row)) continue;
-      if (row.type === "Composite" && row.id === "director_actions") {
+      if (row.type === "Composite" && row.id === FOOTER_ROW) {
         if (footer) {
           footer.append(drawRow(row, values, emit, stage, tab));
         } else {
@@ -593,10 +632,13 @@ if (typeof document !== "undefined") {
   let draft = {};
   let feedback = null;
 
+  // The AI source pick decides which rows are live and whether the Pi row
+  // shows, so it redraws the tab from the draft it just joined.
   function stage(id, value) {
     draft = stageDraft(draft, id, value);
     feedback = null;
     document.querySelector(".set-feedback")?.remove();
+    if (id === "harness") renderCurrentTab();
   }
 
   async function loadSnapshot() {

@@ -356,7 +356,7 @@ Detach removes our entry, and the file and directory if attach created them. Whi
 An attached Harness needs no setup. A Harness you launch yourself gets nothing forwarded, so register the endpoint by hand, once per app launch:
 
 1. Start Fidget and open Settings.
-2. Under **Point a Harness you run yourself at Fidget**, pick the Harness.
+2. Under **BYO - Point existing Harness at Fidget**, pick the Harness.
 3. Copy the generated command (or JSON fragment, for Harnesses with no `mcp add`) and run or paste it as the instructions say. Hermes prompts for the token, so its row has a separate Copy for it.
 4. Reload or restart the Harness session. Claude Code and OpenCode read MCP config only at session start.
 

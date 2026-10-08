@@ -91,6 +91,7 @@ function draw(values, emit, stage, tab = AI) {
   const find = (id) =>
     all.find((node) => node.id === `set-f-${id}` || node.dataset.id === id || node.attributes?.["data-id"] === id);
   find.row = (id) => all.find((node) => node.attributes?.["data-row"] === id);
+  find.notes = () => all.filter((node) => node.attributes?.class === "set-status").map((node) => node.textContent);
   return find;
 }
 
@@ -118,6 +119,7 @@ test("a batched row reports each edit through stage and writes nothing on blur",
   harness.handlers.change?.();
 
   assert.deepEqual(staged, [
+    ["harness_model", "gpt-5"],
     ["director_model", "gpt-5"],
     ["director_api_key", "sk-draft"],
     ["harness", "Claude Code"],
@@ -265,9 +267,36 @@ test("a staged Model survives the redraw a tab switch performs", () => {
 
   const again = draw({ ...MODEL_API.values, ...draft });
 
-  assert.deepEqual(draft, { director_model: "gpt-5" });
+  assert.deepEqual(draft, { harness_model: "gpt-5", director_model: "gpt-5" });
   assert.equal(again("director_model").value, "gpt-5");
   assert.equal(again("director_base_url").value, "https://api.openai.com", "an untouched row still draws the snapshot");
+});
+
+// #1427: one setting drawn twice. Only the section the picker names is live,
+// so the other row has to show what the live one holds.
+test("a Model typed under Harness stages and draws the Model / API row too", () => {
+  let draft = {};
+  const control = draw(
+    { ...MODEL_API.values, harness: "Harness · grok" },
+    () => {},
+    (id, value) => (draft = { ...draft, [id]: value }),
+  );
+  const model = control("harness_model");
+  model.value = "grok-4.6";
+  model.handlers.input();
+
+  assert.deepEqual(draft, { harness_model: "grok-4.6", director_model: "grok-4.6" });
+  assert.equal(control("director_model").value, "grok-4.6");
+});
+
+test("the section the picker does not name says why it is off", () => {
+  assert.deepEqual(draw(MODEL_API.values).notes().filter((note) => note.startsWith("Not in use")), [
+    "Not in use: the AI source is Model API.",
+  ]);
+  assert.deepEqual(
+    draw({ ...MODEL_API.values, harness: "Harness · grok" }).notes().filter((note) => note.startsWith("Not in use")),
+    ["Not in use: the AI source is a Harness."],
+  );
 });
 
 test("a Base URL shortcut fill is drawn after the redraw, and Cancel drops it", () => {
@@ -350,6 +379,7 @@ test("Apply sends every row the form marks batched, and only those", () => {
     harness: "Model API",
     pi_project_mcp: true,
     harness_command: "",
+    harness_model: "gpt-4o-mini",
     byo_harness: "claude",
     director_base_url: "https://api.openai.com",
     director_model: "gpt-4o-mini",

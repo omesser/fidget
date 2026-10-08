@@ -5,6 +5,7 @@
       "sections": [
         {
           "heading": "Do Not Disturb",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -37,6 +38,7 @@
         },
         {
           "heading": "Hide",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -89,6 +91,7 @@
         },
         {
           "heading": "Launch",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -114,6 +117,7 @@
       "sections": [
         {
           "heading": "Character",
+          "serves": null,
           "rows": [
             {
               "type": "Popup",
@@ -137,6 +141,7 @@
         },
         {
           "heading": "Instances",
+          "serves": null,
           "rows": [
             {
               "type": "List",
@@ -186,6 +191,7 @@
       "sections": [
         {
           "heading": "AI",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -244,6 +250,7 @@
         },
         {
           "heading": "AI source",
+          "serves": null,
           "rows": [
             {
               "type": "Popup",
@@ -271,6 +278,35 @@
               "status": null
             },
             {
+              "type": "InspectBlock",
+              "id": "harness_state",
+              "label": null,
+              "help": "Harness signs itself in - Fidget never asks for credentials.",
+              "disclosure": "Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).",
+              "status": null
+            }
+          ],
+          "comment": "Choose which \"AI brain\" answers: Model API or an attached Harness.",
+          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, copilot, cursor-agent, goose, grok, hermes, opencode, pi, antigravity, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (copilot, cursor-agent, goose, grok, hermes, opencode) need only their CLI on PATH. antigravity needs Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.",
+          "status": null
+        },
+        {
+          "heading": "Harness",
+          "serves": "harness",
+          "rows": [
+            {
+              "type": "TextField",
+              "id": "harness_model",
+              "label": "Model",
+              "placeholder": "",
+              "writes": "DirectorModel",
+              "help": "Leave blank for the Harness's own default. The same setting as Model under Model / API.",
+              "frozen": false,
+              "batched": true,
+              "disclosure": null,
+              "status": null
+            },
+            {
               "type": "Checkbox",
               "id": "pi_project_mcp",
               "label": "Write .mcp.json in the working directory",
@@ -293,22 +329,117 @@
               "batched": true,
               "disclosure": "The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.",
               "status": null
-            },
-            {
-              "type": "InspectBlock",
-              "id": "harness_state",
-              "label": null,
-              "help": "Harness signs itself in - Fidget never asks for credentials.",
-              "disclosure": "Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).",
-              "status": null
             }
           ],
-          "comment": "Choose which \"AI brain\" answers: Model API or an attached Harness.",
-          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, copilot, cursor-agent, goose, grok, hermes, opencode, pi, antigravity, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (copilot, cursor-agent, goose, grok, hermes, opencode) need only their CLI on PATH. antigravity needs Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.",
+          "comment": null,
+          "disclosure": null,
           "status": null
         },
         {
-          "heading": "Point a Harness you run yourself at Fidget",
+          "heading": "Model / API",
+          "serves": "model_api",
+          "rows": [
+            {
+              "type": "Composite",
+              "id": "base_url_pick",
+              "controls": [
+                {
+                  "type": "Popup",
+                  "id": "director_base_url_pick",
+                  "options": [
+                    "Custom",
+                    "Ollama (http://localhost:11434)",
+                    "LM Studio (http://localhost:1234)",
+                    "oMLX (http://localhost:8000)",
+                    "llama.cpp (http://localhost:8080)",
+                    "OpenAI (https://api.openai.com)",
+                    "Anthropic (https://api.anthropic.com)",
+                    "xAI (https://api.x.ai)"
+                  ],
+                  "frozen": false,
+                  "fills": {
+                    "row": "director_base_url"
+                  }
+                }
+              ],
+              "help": "Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there.",
+              "disclosure": null
+            },
+            {
+              "type": "TextField",
+              "id": "director_base_url",
+              "label": "Base URL",
+              "placeholder": "https://api.openai.com",
+              "writes": "DirectorBaseUrl",
+              "help": null,
+              "frozen": false,
+              "batched": true,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "TextField",
+              "id": "director_model",
+              "label": "Model",
+              "placeholder": "",
+              "writes": "DirectorModel",
+              "help": "Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.",
+              "frozen": false,
+              "batched": true,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "SecureField",
+              "id": "director_api_key",
+              "label": "API key",
+              "placeholder": "Set: …4f2a",
+              "writes": "DirectorApiKey",
+              "frozen": false,
+              "status": null
+            },
+            {
+              "type": "Composite",
+              "id": "api_key_actions",
+              "controls": [
+                {
+                  "type": "Button",
+                  "id": "clear_key",
+                  "label": "Clear key",
+                  "frozen": false
+                }
+              ],
+              "help": null,
+              "disclosure": null
+            },
+            {
+              "type": "Composite",
+              "id": "director_actions",
+              "controls": [
+                {
+                  "type": "Button",
+                  "id": "director_apply",
+                  "label": "Apply",
+                  "frozen": false
+                },
+                {
+                  "type": "Button",
+                  "id": "director_cancel",
+                  "label": "Cancel",
+                  "frozen": false
+                }
+              ],
+              "help": "Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.",
+              "disclosure": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
+          "heading": "BYO - Point existing Harness at Fidget",
+          "serves": null,
           "rows": [
             {
               "type": "Popup",
@@ -391,108 +522,8 @@
           "status": null
         },
         {
-          "heading": "Model / API",
-          "rows": [
-            {
-              "type": "Composite",
-              "id": "base_url_pick",
-              "controls": [
-                {
-                  "type": "Popup",
-                  "id": "director_base_url_pick",
-                  "options": [
-                    "Custom",
-                    "Ollama (http://localhost:11434)",
-                    "LM Studio (http://localhost:1234)",
-                    "oMLX (http://localhost:8000)",
-                    "llama.cpp (http://localhost:8080)",
-                    "OpenAI (https://api.openai.com)",
-                    "Anthropic (https://api.anthropic.com)",
-                    "xAI (https://api.x.ai)"
-                  ],
-                  "frozen": true,
-                  "fills": {
-                    "row": "director_base_url"
-                  }
-                }
-              ],
-              "help": "Off, for the same reason the field beside it is.",
-              "disclosure": null
-            },
-            {
-              "type": "TextField",
-              "id": "director_base_url",
-              "label": "Base URL",
-              "placeholder": "https://api.openai.com",
-              "writes": "DirectorBaseUrl",
-              "help": null,
-              "frozen": true,
-              "batched": true,
-              "disclosure": null,
-              "status": "Not in use: a Harness is the Model API"
-            },
-            {
-              "type": "TextField",
-              "id": "director_model",
-              "label": "Model",
-              "placeholder": "",
-              "writes": "DirectorModel",
-              "help": "Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.",
-              "frozen": true,
-              "batched": true,
-              "disclosure": null,
-              "status": "Not in use: a Harness is the Model API"
-            },
-            {
-              "type": "SecureField",
-              "id": "director_api_key",
-              "label": "API key",
-              "placeholder": "Set: …4f2a",
-              "writes": "DirectorApiKey",
-              "frozen": true,
-              "status": "Not in use: a Harness is the Model API"
-            },
-            {
-              "type": "Composite",
-              "id": "api_key_actions",
-              "controls": [
-                {
-                  "type": "Button",
-                  "id": "clear_key",
-                  "label": "Clear key",
-                  "frozen": true
-                }
-              ],
-              "help": null,
-              "disclosure": null
-            },
-            {
-              "type": "Composite",
-              "id": "director_actions",
-              "controls": [
-                {
-                  "type": "Button",
-                  "id": "director_apply",
-                  "label": "Apply",
-                  "frozen": false
-                },
-                {
-                  "type": "Button",
-                  "id": "director_cancel",
-                  "label": "Cancel",
-                  "frozen": false
-                }
-              ],
-              "help": "Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.",
-              "disclosure": null
-            }
-          ],
-          "comment": null,
-          "disclosure": null,
-          "status": null
-        },
-        {
           "heading": "Last user turn",
+          "serves": null,
           "rows": [
             {
               "type": "InspectBlock",
@@ -514,6 +545,7 @@
       "sections": [
         {
           "heading": "Appearance",
+          "serves": null,
           "rows": [
             {
               "type": "Popup",
@@ -559,6 +591,7 @@
       "sections": [
         {
           "heading": "What the fidget can see",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -603,6 +636,7 @@
         },
         {
           "heading": "Excluded applications",
+          "serves": null,
           "rows": [
             {
               "type": "Multiline",
@@ -620,6 +654,7 @@
         },
         {
           "heading": "Memory File",
+          "serves": null,
           "rows": [
             {
               "type": "InspectPath",
@@ -657,6 +692,7 @@
       "sections": [
         {
           "heading": "Traces",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -713,6 +749,7 @@
         },
         {
           "heading": "Blank AI",
+          "serves": null,
           "rows": [
             {
               "type": "Checkbox",
@@ -733,6 +770,7 @@
         },
         {
           "heading": "HTTP limits",
+          "serves": null,
           "rows": [
             {
               "type": "TextField",
@@ -799,6 +837,7 @@
         },
         {
           "heading": "Harness attachment",
+          "serves": null,
           "rows": [
             {
               "type": "TextField",
