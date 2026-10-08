@@ -4,6 +4,8 @@ Investigation of the four "degraded" cells in the README Platform Support table,
 
 sha: `ab6bd57b`
 
+Shipped since (#1300): the Linux Dock/panel finding was superseded; X11 no longer reads `_NET_WM_STRUT_PARTIAL`, and desktop panels come only from the work area, as on Windows.
+
 ## Summary
 
 | Cell | Current Behavior | Root Constraint | V1 Disposition |
@@ -15,8 +17,6 @@ sha: `ab6bd57b`
 | Linux: Capturable opt-out | Always capturable; setting has no effect | Linux has no platform API to exclude windows from screen capture | **Already documented** in ADR-0024 |
 
 ## Linux: Dock or panel as a Perch
-
-> **Update (#1300):** superseded. The target became parity with Windows rather than four-edge Perches: X11 no longer reads `_NET_WM_STRUT_PARTIAL` at all, and a desktop panel reaches the Engine only through the work area: a bottom one is the floor, a side one a wall, a top one the ceiling.
 
 **Current behavior:**  
 Bottom panels (like a bottom GNOME panel or bottom-configured taskbar) are detected and used as Perches. Side panels (left/right) and top panels are not detected; they stay as full-width reserved strips, and the Character cannot perch on them.

@@ -5847,11 +5847,9 @@ mod tests {
         assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
-    /// A desktop panel (a taskbar-style bar, not a window top) reaches the
-    /// Engine only through the usable area each display reports, as the Windows
-    /// taskbar does: a bottom desktop panel is the floor, a side one a wall, a
-    /// top one the ceiling. Several sizes and arrangements, including displays
-    /// left of and above the primary, so no edge is assumed to sit at 0.
+    /// A desktop panel reaches the Engine only through each display's usable
+    /// area: bottom is the floor, a side a wall, top the ceiling. Displays sit
+    /// at offset and negative origins so no edge is assumed to be at 0.
     #[test]
     fn a_desktop_panel_is_floor_wall_or_ceiling_wherever_its_display_sits() {
         use crate::window_source::{in_points, usable_frame};

@@ -14,10 +14,8 @@ use crate::mcp_resources::WindowTitle;
 
 /// The X11 window manager's view of the desktop.
 pub struct X11WindowSource {
-    /// Where the usable part of each display comes from: the work area the
-    /// window manager reports per display. A desktop panel reaches the Engine
-    /// only through it, as the Windows taskbar does: a bottom one raises the
-    /// floor, a side one is a wall, a top one lowers the ceiling.
+    /// Each display's work area as the window manager reports it: the only way
+    /// a desktop panel reaches the Engine, as the taskbar does on Windows.
     read_displays: Box<dyn Fn() -> Vec<Rect> + Send + Sync>,
     can_read_titles: Box<dyn Fn() -> bool + Send + Sync>,
 }
