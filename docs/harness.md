@@ -273,7 +273,7 @@ Inbound wakes are still the one Director session per Character Instance. A Harne
 
 #### Visibility
 
-- **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled "harness spoke" (same past-tense style as poked, summoned, spoken to).
+- **Chat surface.** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled `after a task` (same row form as `unprompted` and `when poked`: `Name · after a task`).
 - **Bubble and Behaviors.** The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
 - **Director wake and Pace participation.** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
 
