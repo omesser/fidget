@@ -952,7 +952,11 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
                     });
                 }
 
-                cache.read().usable_frames
+                let displays = cache.read();
+                (
+                    displays.usable_frames,
+                    displays.dock.map(|(bounds, _)| bounds),
+                )
             }
         },
         can_read_titles,
