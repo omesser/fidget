@@ -3369,13 +3369,14 @@ mod tests {
         }
         let started = Instant::now();
         let guard = settings.lock().expect("settings");
+        let elapsed = started.elapsed();
+        drop(guard);
         assert!(
-            started.elapsed() < Duration::from_millis(500),
+            elapsed < Duration::from_millis(500),
             "the frame loop waited {:?} on the settings file",
-            started.elapsed()
+            elapsed
         );
         assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
-        drop(guard);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -3429,13 +3430,14 @@ mod tests {
         }
         let started = Instant::now();
         let guard = settings.lock().expect("settings");
+        let elapsed = started.elapsed();
+        drop(guard);
         assert!(
-            started.elapsed() < Duration::from_millis(500),
+            elapsed < Duration::from_millis(500),
             "the frame loop waited {:?} on the keychain write",
-            started.elapsed()
+            elapsed
         );
         assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
-        drop(guard);
     }
 
     #[test]
@@ -3457,13 +3459,14 @@ mod tests {
         }
         let started = Instant::now();
         let guard = settings.lock().expect("settings");
+        let elapsed = started.elapsed();
+        drop(guard);
         assert!(
-            started.elapsed() < Duration::from_millis(500),
+            elapsed < Duration::from_millis(500),
             "the frame loop waited {:?} on the retarget keychain read",
-            started.elapsed()
+            elapsed
         );
         assert!(rx.recv_timeout(Duration::from_secs(4)).unwrap().is_ok());
-        drop(guard);
     }
 
     /// The AI tab's live state, with or without a stored key.
