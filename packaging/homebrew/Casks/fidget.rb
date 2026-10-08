@@ -2,8 +2,8 @@
 # bundle in one Release disk image; scripts/bump-homebrew-cask.sh rewrites
 # them from that tag. livecheck follows GitHub's latest Release.
 cask "fidget" do
-  version "0.2.0"
-  sha256 "1572c97ef496e88a1cb3ccd89f81ef92b01d912c1f1ed00d5c16b6dee285a29c"
+  version "0.4.0"
+  sha256 "3febf91291616ed21c5b6c70a7ba456e3b87095b40104e14bcc49d196347e310"
 
   url "https://github.com/omesser/fidget/releases/download/v#{version}/Fidget_#{version}_aarch64.dmg"
   name "Fidget"
