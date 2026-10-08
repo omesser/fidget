@@ -798,9 +798,10 @@ pub enum Forwarded {
     /// The agent's plan, replacing whatever the surface holds. Empty ends it.
     Plan(Vec<PlanStep>),
     InboundWake(InboundWake),
-    /// The attachment moved: preflight finished, or a login went missing or
-    /// came back mid-session (#991). Chat's first ReloadChat races preflight,
-    /// so a missing launcher would otherwise never reach the landing (#726).
+    /// The attachment moved: preflight finished, a session opened, or a login
+    /// went missing or came back mid-session (#991). Chat's first ReloadChat
+    /// races preflight and `session/new`, so a missing launcher would never
+    /// reach the landing (#726) and the header would keep "no session yet".
     AttachSettled,
 }
 
@@ -1394,11 +1395,17 @@ impl Session {
     /// An answer is the proof the login happened, in a terminal fidget never
     /// sees. The composer it disabled comes back the same way it went.
     fn signed_in(&self, state: &mut State) {
+        if self.clear_login(state) {
+            (self.forward)(Forwarded::AttachSettled);
+        }
+    }
+
+    fn clear_login(&self, state: &mut State) -> bool {
         if state.login.take().is_none() {
-            return;
+            return false;
         }
         self.update_inspect(|inspect| inspect.login = None);
-        (self.forward)(Forwarded::AttachSettled);
+        true
     }
 
     /// Drop a loaded session so the next `attach` opens a fresh one. A refused
@@ -1791,7 +1798,8 @@ impl Session {
                         loaded: saved.as_deref() == Some(id.as_str()),
                     },
                 );
-                self.signed_in(&mut state);
+                // The AttachSettled below carries a cleared login too.
+                self.clear_login(&mut state);
                 self.update_inspect(|inspect| inspect.session_id = Some(id.clone()));
                 if let Ok(mut owners) = self.owners.lock() {
                     owners.insert(id.clone(), key.instance.clone());
@@ -1807,6 +1815,9 @@ impl Session {
             }
             return Err("session replaced".to_string());
         }
+        // An open Chat surface drew its header from an opening asked for
+        // before this session existed, and asks again only on its next send.
+        (self.forward)(Forwarded::AttachSettled);
         self.save_session(key, &id);
         action_log::append(
             self.data.as_path(),
@@ -3774,13 +3785,17 @@ mod tests {
         }
 
         /// The next forwarded ask, past the plan and thought a turn's end
-        /// forwards on the way, or a panic naming what came instead.
+        /// forwards on the way and the reload a session open forwards, or a
+        /// panic naming what came instead.
         fn ask(&self) -> PermissionAsk {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
                     Ok(
-                        Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::InboundWake(_),
+                        Forwarded::Plan(_)
+                        | Forwarded::Thought { .. }
+                        | Forwarded::InboundWake(_)
+                        | Forwarded::AttachSettled,
                     ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
@@ -3788,9 +3803,12 @@ mod tests {
         }
 
         fn form(&self) -> ElicitationForm {
-            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Form(form)) => form,
-                other => panic!("expected a form, got {:?}", other.map(|_| "other")),
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::Form(form)) => return form,
+                    Ok(Forwarded::AttachSettled) => {}
+                    other => panic!("expected a form, got {:?}", other.map(|_| "other")),
+                }
             }
         }
 
@@ -3808,9 +3826,12 @@ mod tests {
 
         /// The next forwarded settlement, the request and what won it.
         fn settled(&self) -> (String, Option<String>) {
-            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Settled { request, option }) => (request, option),
-                other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::Settled { request, option }) => return (request, option),
+                    Ok(Forwarded::AttachSettled) => {}
+                    other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+                }
             }
         }
 
@@ -6386,11 +6407,12 @@ mod tests {
         let form = fx.form();
         assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
         assert_eq!(fx.settled(), (form.request, None));
+        let stray =
+            std::iter::from_fn(|| fx.forwarded.recv_timeout(Duration::from_millis(300)).ok())
+                .find(|forwarded| !matches!(forwarded, Forwarded::AttachSettled));
         assert!(
-            fx.forwarded
-                .recv_timeout(Duration::from_millis(300))
-                .is_err(),
-            "the unknown id retired something"
+            stray.is_none(),
+            "the unknown id retired something: {stray:?}"
         );
         assert!(fx.wait_for("elicit-mcp:cancel", 1));
         assert_eq!(fx.count("elicit-mcp:cancel"), 1);
@@ -6720,6 +6742,26 @@ mod tests {
         let inspect = session.inspect();
         assert!(inspect.alive, "the re-pick stood behind the backoff");
         assert_eq!(inspect.failed, None);
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// A Chat surface asks for its opening once, before the first wake has
+    /// opened a session, and draws `no session yet`. The session that wake
+    /// opens has to reach the open window, or the header keeps saying so.
+    #[test]
+    fn a_session_the_first_wake_opens_reaches_an_open_chat_surface() {
+        let (fx, session) = Fixture::new("happy");
+        let session = Arc::new(session);
+        session.spawn_preflight();
+        fx.attach_settled();
+        assert_eq!(session.inspect().session_id, None);
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        fx.attach_settled();
+        assert_eq!(session.inspect().session_id.as_deref(), Some("fresh-id"));
         session.shutdown();
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
