@@ -1912,6 +1912,23 @@ impl Session {
         });
     }
 
+    /// Apply moved the model from `before` to `after`. The Harness takes the
+    /// model only when it opens a conversation, so each Instance's open one
+    /// goes and its next wake opens on `after`. The same model keeps them.
+    pub fn model_applied<'a>(
+        &self,
+        before: &str,
+        after: &str,
+        instances: impl IntoIterator<Item = &'a str>,
+    ) {
+        if before == after {
+            return;
+        }
+        for instance in instances {
+            self.drop_conversation(instance);
+        }
+    }
+
     fn forget_saved(&self, instance: &str) {
         let _file = self
             .session_file
@@ -5392,6 +5409,54 @@ mod tests {
             assert_eq!(session.inspect().last_error, None);
             assert_eq!(session.inspect().turn_failure, None);
             session.shutdown();
+        });
+    }
+
+    /// #1430: Apply saved a new model while a conversation was open. The
+    /// Harness sets the model at `session/new` only, so the old conversation
+    /// kept answering on the model the user just left.
+    #[test]
+    fn an_applied_model_reaches_the_next_wake_and_the_same_model_keeps_the_conversation() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "default-model");
+            assert_eq!(
+                session.complete(&asking("hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
+
+            session.model_applied("default-model", "default-model", ["buddy-1"]);
+            assert_eq!(
+                session.complete(&asking("same model"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
+
+            write_completer_model(&fx.dir, "some-model");
+            session.model_applied("default-model", "some-model", ["buddy-1"]);
+            assert_eq!(
+                session.complete(&asking("new model"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
+            session.shutdown();
+
+            assert_eq!(
+                config_lines(&fx),
+                vec![
+                    "config=llm=default-model".to_string(),
+                    "config=llm=some-model".to_string(),
+                ]
+            );
+            let prompts = fx.events("prompt");
+            assert_eq!(prompts.len(), 3, "{prompts:?}");
+            assert_eq!(
+                prompts[0]["session_id"], prompts[1]["session_id"],
+                "an unchanged model reopened the conversation: {prompts:?}"
+            );
+            assert_ne!(
+                prompts[1]["session_id"], prompts[2]["session_id"],
+                "the new model was asked on the old conversation: {prompts:?}"
+            );
         });
     }
 
