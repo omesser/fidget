@@ -1807,6 +1807,9 @@ impl Session {
             }
             return Err("session replaced".to_string());
         }
+        // An open Chat surface drew its header from an opening asked for
+        // before this session existed, and asks again only on its next send.
+        (self.forward)(Forwarded::AttachSettled);
         self.save_session(key, &id);
         action_log::append(
             self.data.as_path(),
@@ -3774,13 +3777,17 @@ mod tests {
         }
 
         /// The next forwarded ask, past the plan and thought a turn's end
-        /// forwards on the way, or a panic naming what came instead.
+        /// forwards on the way and the reload a session open forwards, or a
+        /// panic naming what came instead.
         fn ask(&self) -> PermissionAsk {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::Ask(ask)) => return ask,
                     Ok(
-                        Forwarded::Plan(_) | Forwarded::Thought { .. } | Forwarded::InboundWake(_),
+                        Forwarded::Plan(_)
+                        | Forwarded::Thought { .. }
+                        | Forwarded::InboundWake(_)
+                        | Forwarded::AttachSettled,
                     ) => {}
                     other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
                 }
@@ -3788,9 +3795,12 @@ mod tests {
         }
 
         fn form(&self) -> ElicitationForm {
-            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Form(form)) => form,
-                other => panic!("expected a form, got {:?}", other.map(|_| "other")),
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::Form(form)) => return form,
+                    Ok(Forwarded::AttachSettled) => {}
+                    other => panic!("expected a form, got {:?}", other.map(|_| "other")),
+                }
             }
         }
 
@@ -3808,9 +3818,12 @@ mod tests {
 
         /// The next forwarded settlement, the request and what won it.
         fn settled(&self) -> (String, Option<String>) {
-            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Forwarded::Settled { request, option }) => (request, option),
-                other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+            loop {
+                match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                    Ok(Forwarded::Settled { request, option }) => return (request, option),
+                    Ok(Forwarded::AttachSettled) => {}
+                    other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+                }
             }
         }
 
@@ -6386,11 +6399,12 @@ mod tests {
         let form = fx.form();
         assert_eq!(form.url.as_deref(), Some("https://example.test/oauth"));
         assert_eq!(fx.settled(), (form.request, None));
+        let stray =
+            std::iter::from_fn(|| fx.forwarded.recv_timeout(Duration::from_millis(300)).ok())
+                .find(|forwarded| !matches!(forwarded, Forwarded::AttachSettled));
         assert!(
-            fx.forwarded
-                .recv_timeout(Duration::from_millis(300))
-                .is_err(),
-            "the unknown id retired something"
+            stray.is_none(),
+            "the unknown id retired something: {stray:?}"
         );
         assert!(fx.wait_for("elicit-mcp:cancel", 1));
         assert_eq!(fx.count("elicit-mcp:cancel"), 1);
