@@ -13,7 +13,7 @@ this script fills. A source it cannot find fails the build.
 Two sources are optional. Without the hero video the desk scene stands in.
 Each download button links its asset in the release file that
 `gh release view --json tagName,assets` wrote, and names that release's tag
-under its format. Without such a file or such an asset, the button links the
+above its format. Without such a file or such an asset, the button links the
 Latest release page and names no version.
 
 The page names frames by the paths make-character-gallery.py publishes under
@@ -320,6 +320,9 @@ def self_check():
         f'<a href="{REPO}/blob/main/docs/x.md#y">a</a> <code>b</code> <b>c</b>')
     assert inline("[a](#harness-support) <i>") == f'<a href="{REPO}#harness-support">a</a> &lt;i&gt;'
 
+    release = {"tagName": "v9", "assets": [{"name": n, "url": f"{REPO}/releases/download/v9/{n}"}
+                                           for n in ("F_9_amd64.deb", "F_9_amd64.AppImage", "F_9_aarch64.dmg")]}
+
     with tempfile.TemporaryDirectory() as scratch:
         scratch = pathlib.Path(scratch)
         art = (CHARACTERS / HERO / "frames" / "idle-0.png").read_bytes()
@@ -335,9 +338,11 @@ def self_check():
         page = render(readme, scratch, rust, shell)
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
         assert "<figcaption>Solo</figcaption>" in page
+        page = render(readme, scratch, rust, shell, release)
+        assert "<b>Download for macOS</b><span>v9</span><span>Apple Silicon · .dmg</span>" in page, \
+            "the release tag is not above the format"
+        assert "<b>Windows</b><span>x86_64 · installer</span>" in page, "a button without its asset named a version"
 
-    release = {"tagName": "v9", "assets": [{"name": n, "url": f"{REPO}/releases/download/v9/{n}"}
-                                           for n in ("F_9_amd64.deb", "F_9_amd64.AppImage", "F_9_aarch64.dmg")]}
     assert downloads(release) == {
         "macos": (f"{REPO}/releases/download/v9/F_9_aarch64.dmg", "v9"),
         "windows": (LATEST, None),
