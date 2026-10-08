@@ -76,12 +76,12 @@ pub fn reacting_to(happened: &Happened) -> String {
     }
 }
 
-/// Chat row label when the character spoke because its agent's task fired
-/// between Fidget turns. Sibling of the `"unprompted"` arm in `reacting_to`:
-/// the row reads `Name · after a task`. Not derived from `Happened`. Inbound
-/// wake still uses `Happened::Proactive` for Pace and the status bar.
-pub fn after_a_task() -> String {
-    "after a task".to_string()
+/// Chat row label when the character's agent spoke on its own between Fidget
+/// turns. Sibling of the `"unprompted"` arm in `reacting_to`: the row reads
+/// `Name · unprompted (AI)`. Not derived from `Happened`. Inbound wake still
+/// uses `Happened::Proactive` for Pace and the status bar.
+pub fn unprompted_ai() -> String {
+    "unprompted (AI)".to_string()
 }
 
 /// The same fact as `happened_word`, in the Chat surface's status bar.

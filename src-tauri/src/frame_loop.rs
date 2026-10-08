@@ -949,7 +949,7 @@ pub(crate) fn run_frame_loop(
                                 super::ChatReply {
                                     said: Some(wake.speech),
                                     busy: false,
-                                    reacting_to: Some(director::after_a_task()),
+                                    reacting_to: Some(director::unprompted_ai()),
                                     you: false,
                                     thought: false,
                                     at: Some(
