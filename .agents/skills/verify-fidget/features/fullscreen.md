@@ -22,10 +22,10 @@ Preconditions:
 - Two or more displays for `fullscreen-move`.
 - `FIDGET_TRACE_FRAMES=1` (`launch.sh` sets it). `FIDGET_DEBUG_IPC=1` if you want `fidget-verify snapshot` positions.
 
-- **Fade on one display (X11)**: Under Xvfb with `openbox --replace &`, run `FIDGET_DEBUG_IPC=1 .agents/skills/verify-fidget/helpers/launch.sh`. Then `xterm -fullscreen -title fs-prop -e sleep 120 &`. Expect `xprop -id "$(xdotool search --name '^fs-prop$')" _NET_WM_STATE` to show `_NET_WM_STATE_FULLSCREEN`, and `presence: hidden over 500ms` in `$FIDGET_VERIFY_SCRATCH/app.log`. Kill the xterm. Expect `presence: shown over 500ms`.
-- **Move to a free display**: Needs a session with two real displays (Windows, macOS, or a multi-monitor X11 desktop). Put the fidget on one display and make an app fullscreen there. `fidget-verify snapshot` (with `FIDGET_DEBUG_IPC=1`) shows the position on the other display, with no `presence: hidden`.
-- **Setting row (X11)**: The Settings dump in [Capturable](./capturable.md) lists `check-box|Hide in fullscreen apps`, checked and enabled by default.
-- **Proof**: Keep the `presence:` lines and the fullscreen window's `xprop`/`xwininfo` under `$FIDGET_VERIFY_EVIDENCE/fullscreen/`.
+- **Fade on one display (X11):** Under Xvfb with `openbox --replace &`, run `FIDGET_DEBUG_IPC=1 .agents/skills/verify-fidget/helpers/launch.sh`. Then `xterm -fullscreen -title fs-prop -e sleep 120 &`. Expect `xprop -id "$(xdotool search --name '^fs-prop$')" _NET_WM_STATE` to show `_NET_WM_STATE_FULLSCREEN`, and `presence: hidden over 500ms` in `$FIDGET_VERIFY_SCRATCH/app.log`. Kill the xterm. Expect `presence: shown over 500ms`.
+- **Move to a free display:** Needs a session with two real displays (Windows, macOS, or a multi-monitor X11 desktop). Put the fidget on one display and make an app fullscreen there. `fidget-verify snapshot` (with `FIDGET_DEBUG_IPC=1`) shows the position on the other display, with no `presence: hidden`.
+- **Setting row (X11):** The Settings dump in [Capturable](./capturable.md) lists `check-box|Hide in fullscreen apps`, checked and enabled by default.
+- **Proof:** Keep the `presence:` lines and the fullscreen window's `xprop`/`xwininfo` under `$FIDGET_VERIFY_EVIDENCE/fullscreen/`.
 
 ## Gotchas
 

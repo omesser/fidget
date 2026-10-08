@@ -273,18 +273,18 @@ Inbound wakes are still the one Director session per Character Instance. A Harne
 
 #### Visibility
 
-- **Chat surface**: Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled `unprompted (AI)`: the row reads `Name · unprompted (AI)`, in the same row form as `unprompted` and `when poked`.
-- **Bubble and Behaviors**: The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
-- **Director wake and Pace participation**: An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
+- **Chat surface:** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled `unprompted (AI)`: the row reads `Name · unprompted (AI)`, in the same row form as `unprompted` and `when poked`.
+- **Bubble and Behaviors:** The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
+- **Director wake and Pace participation:** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
 
 #### Flush boundaries
 
 ACP v1 has no end-of-turn notification from the Harness, so accumulated between-turn agent text and thought are flushed when a session transition arrives. The flush boundaries are (#1383):
 
-- **Ask**: A between-turn `session/request_permission` flushes the session's accumulated `Inbound` before the ask is held, giving each Harness fire a coherent wake. The Thinking row is closed (empty thought event) if one was open.
-- **Form**: A between-turn `elicitation/create` with session scope flushes the same way.
-- **Prompt**: A Fidget `session/prompt` flushes and drops the session's `Inbound`, ending its Thinking row if open. The Harness's own turn is over; Fidget's turn begins.
-- **Close**: A Fidget `session/close` flushes and drops the `Inbound` the same way Prompt does.
+- **Ask:** A between-turn `session/request_permission` flushes the session's accumulated `Inbound` before the ask is held, giving each Harness fire a coherent wake. The Thinking row is closed (empty thought event) if one was open.
+- **Form:** A between-turn `elicitation/create` with session scope flushes the same way.
+- **Prompt:** A Fidget `session/prompt` flushes and drops the session's `Inbound`, ending its Thinking row if open. The Harness's own turn is over; Fidget's turn begins.
+- **Close:** A Fidget `session/close` flushes and drops the `Inbound` the same way Prompt does.
 
 Multiple Harness fires before Fidget's next prompt previously piled into one undifferentiated accumulator; flushing on each ask or form boundary fixes that (ponytail fix, #1383).
 
@@ -292,13 +292,13 @@ Multiple Harness fires before Fidget's next prompt previously piled into one und
 
 Each session belongs to the Instance it was opened for, from the moment it opens, so work between turns has an owner before that session's first prompt (#1395).
 
-- **Asks**: An ask or form stores the session that asked. `awaiting_user` resolves that session through the owners map, so an ask that arrives during open still belongs to its Instance once the open finishes. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
-- **Updates**: During a Fidget turn, an update, ask, or session-scoped form for another session is held as that session's between-turn work. It never joins the running turn's reply.
+- **Asks:** An ask or form stores the session that asked. `awaiting_user` resolves that session through the owners map, so an ask that arrives during open still belongs to its Instance once the open finishes. It holds that Instance's wakes, not those of the Instance whose turn is running. A form no session scopes, such as a sign-in link, and an ask on a session this child never opened, are owed by whichever Instance holds the turn.
+- **Updates:** During a Fidget turn, an update, ask, or session-scoped form for another session is held as that session's between-turn work. It never joins the running turn's reply.
 
 #### Out of scope
 
-- **Live Harness scheduled-fire prove**: Unit and fake-ACP proof shipped (#1370, #1383); proving with a real Harness cron is optional follow-on.
-- **Memory scheduling**: Harness cron is session-scoped, jittery, and not portable across Directors. A systematic parse-and-act path for reminders committed to Memory (due-at / remind facts) is future work and does not block this contract.
+- **Live Harness scheduled-fire prove:** Unit and fake-ACP proof shipped (#1370, #1383); proving with a real Harness cron is optional follow-on.
+- **Memory scheduling:** Harness cron is session-scoped, jittery, and not portable across Directors. A systematic parse-and-act path for reminders committed to Memory (due-at / remind facts) is future work and does not block this contract.
 
 ### Setting up `pi`
 
@@ -387,8 +387,8 @@ The port is OS-assigned and the token is minted in memory at every launch (ADR-0
 
 ### Not served
 
-- **Pixels**: `describe_screen` is window metadata only; Fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like cua-driver.
-- **Input events**: No click, type, or mouse tools (ADR-0003). The Harness owns desktop control.
+- **Pixels:** `describe_screen` is window metadata only; Fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like cua-driver.
+- **Input events:** No click, type, or mouse tools (ADR-0003). The Harness owns desktop control.
 - **Non-loopback MCP** (ADR-0023).
 
 Whether a Harness sets `mcpCapabilities.http` is the Harness's decision. Hermes speaks HTTP MCP as a client through its own `mcp_servers` config, a different axis from the ACP bit; a Hermes that set the bit would take the loopback path with no change here.

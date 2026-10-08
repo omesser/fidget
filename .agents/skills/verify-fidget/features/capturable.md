@@ -22,12 +22,12 @@ Preconditions:
 - Doctor green; binary built.
 - macOS or Windows for real capture-exclusion APIs. Linux shows the row disabled (frozen) with no config write (#1338).
 
-- **Force visible for screenshot proofs**: `export FIDGET_CAPTURABLE=1` then run the platform `drive-overlay-*` helper. Screenshots in the stamp dir should include the sprite when the capture tool honors capturable windows.
-- **Force hidden (macOS)**: Run `FIDGET_CAPTURABLE=0 .agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. The script expects every overlay at `sharing=0` when `FIDGET_CAPTURABLE` is an off word (`0`, `off`, `false`, `no`) and `sharing=1` otherwise.
-- **Windows**: `scripts/verify-overlay-win.ps1` asserts `WDA_EXCLUDEFROMCAPTURE` behavior per its checks; copy `$Out` into evidence.
-- **Settings smoke (Windows)**: `scripts/verify-settings-webview-phase2-win.ps1` for the Settings window chrome (not capturable-specific alone).
-- **Linux Settings row present (#1338)**: Launch with `FIDGET_OPEN_SETTINGS=1 .agents/skills/verify-fidget/helpers/launch.sh` inside `dbus-run-session`, then `python3 scripts/ax-window-linux.py dump "$(cat "$FIDGET_VERIFY_SCRATCH/pids/app.pid")" Settings`. The Presence page lists `check-box|Go away`, `check-box|Hide in fullscreen apps`, and `check-box|Appear in screenshots and screen shares`. **The row is disabled (frozen)** with help text explaining no API. No config write on Linux (ADR-0024). Dismiss Settings with alt+F4 under openbox, which leaves the app running, not `xdotool windowclose` (see Summon / chat Gotchas).
-- **Proof**: Record env value, platform, and either a screenshot with/without sprite or the platform property the script already asserts. Put artifacts under `$FIDGET_VERIFY_EVIDENCE/capturable/`.
+- **Force visible for screenshot proofs:** `export FIDGET_CAPTURABLE=1` then run the platform `drive-overlay-*` helper. Screenshots in the stamp dir should include the sprite when the capture tool honors capturable windows.
+- **Force hidden (macOS):** Run `FIDGET_CAPTURABLE=0 .agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. The script expects every overlay at `sharing=0` when `FIDGET_CAPTURABLE` is an off word (`0`, `off`, `false`, `no`) and `sharing=1` otherwise.
+- **Windows:** `scripts/verify-overlay-win.ps1` asserts `WDA_EXCLUDEFROMCAPTURE` behavior per its checks; copy `$Out` into evidence.
+- **Settings smoke (Windows):** `scripts/verify-settings-webview-phase2-win.ps1` for the Settings window chrome (not capturable-specific alone).
+- **Linux Settings row present (#1338):** Launch with `FIDGET_OPEN_SETTINGS=1 .agents/skills/verify-fidget/helpers/launch.sh` inside `dbus-run-session`, then `python3 scripts/ax-window-linux.py dump "$(cat "$FIDGET_VERIFY_SCRATCH/pids/app.pid")" Settings`. The Presence page lists `check-box|Go away`, `check-box|Hide in fullscreen apps`, and `check-box|Appear in screenshots and screen shares`. **The row is disabled (frozen)** with help text explaining no API. No config write on Linux (ADR-0024). Dismiss Settings with alt+F4 under openbox, which leaves the app running, not `xdotool windowclose` (see Summon / chat Gotchas).
+- **Proof:** Record env value, platform, and either a screenshot with/without sprite or the platform property the script already asserts. Put artifacts under `$FIDGET_VERIFY_EVIDENCE/capturable/`.
 
 ## Gotchas
 

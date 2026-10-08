@@ -244,7 +244,7 @@ llama.cpp, Ollama and oMLX (§2.4), so it is reliably distinguishable from
 
 Empty content beside it narrows the cause to two:
 
-1. **The model spent the cap thinking**: Structurally marked on the servers
+1. **The model spent the cap thinking:** Structurally marked on the servers
    that separate reasoning: `reasoning_content` or `reasoning` is non-empty
    and `content` is empty or absent. **[measured]** oMLX with gpt-oss-20b at a
    48-token cap: the message has `role` and `reasoning_content` and no
@@ -252,7 +252,7 @@ Empty content beside it narrows the cause to two:
    48`. On Responses the same request returns `status: "incomplete"`,
    `incomplete_details.reason: "max_output_tokens"`, and
    `output_tokens_details.reasoning_tokens: 45` of 48.
-2. **The model wrote nothing**: Rare, and indistinguishable from case 1 on a
+2. **The model wrote nothing:** Rare, and indistinguishable from case 1 on a
    server that does not separate reasoning. On such a server the thought is
    in `content` instead, so `content` is not empty and the case does not
    arise; the failure is different and worse (§4).

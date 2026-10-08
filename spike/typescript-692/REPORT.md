@@ -126,14 +126,14 @@ strongest argument against the full port.
 
 Three smaller losses, in descending order of how much they should matter:
 
-- **Tests**: `tests/` is 25 files run by `node --test`. As `.ts` they need Node 22.18+
+- **Tests:** `tests/` is 25 files run by `node --test`. As `.ts` they need Node 22.18+
   for type stripping. CI's `lts/*` is fine; the Node 20 on this machine fails with
   `ERR_UNKNOWN_FILE_EXTENSION`.
-- **The vendored renderer**: `src/vendor/marked.esm.js` is byte-for-byte what npm
+- **The vendored renderer:** `src/vendor/marked.esm.js` is byte-for-byte what npm
   published, and `tests/chat-markdown.test.js:500` pins its sha256 against that. The test
   would still pass after bundling — it reads the source file — but it would no longer
   describe what ships. The guarantee quietly stops meaning what it says.
-- **Debugging**: What runs in the webview today is what is on disk. After a build it is
+- **Debugging:** What runs in the webview today is what is on disk. After a build it is
   `dist/`, and reading a stack trace needs source maps to be right.
 
 None of these is fatal. Together with the compile-time coupling they are the "high price
@@ -143,14 +143,14 @@ in tooling" the issue asks about, and it is real.
 
 Stated fairly, because sections 1 to 4 lean one way:
 
-- **The mechanical class**: A misread field name, wrong case, a renamed field, wrong
+- **The mechanical class:** A misread field name, wrong case, a renamed field, wrong
   nullability. `probe/misread.js` makes six such mistakes deliberately and `tsc` reports
   all six. This class has not bitten yet, but it is the class that gets more likely as
   the webview grows.
-- **Editor help on payloads**: Autocomplete on `opening.`, `payload.`, `placement.` is a
+- **Editor help on payloads:** Autocomplete on `opening.`, `payload.`, `placement.` is a
   genuine daily improvement, and it does not require the full port — a generated `.d.ts`
   plus JSDoc gives it.
-- **#706**: This is the real argument. Settings moves from a native window into the
+- **#706:** This is the real argument. Settings moves from a native window into the
   webview, `settings.js` is already 323 of the 2,850 lines here, and it reads the largest
   payload this app has (`FormDescription` with a nine-variant tagged `FormRow`, plus a
   28-field `SettingsView`). A much larger webview changes the arithmetic above.
@@ -169,7 +169,7 @@ be.
 
 ## 6. Recommendation
 
-1. **Do not port to TypeScript, and do not add a build**: Zero of nineteen shipped bugs
+1. **Do not port to TypeScript, and do not add a build:** Zero of nineteen shipped bugs
    needed types; the compile-time coupling in section 4 is a standing tax on every Rust
    change.
 2. **If we add a checker, make it `tsc --noEmit` with `checkJs`** — one zero-dependency
@@ -177,9 +177,9 @@ be.
    the payloads later. Expect to spend the 26 DOM casts to buy the 3 real findings, and
    decide whether that trade is worth it with eyes open. Running it non-blocking for a
    while is a cheap way to find out.
-3. **Take option 2 when something needs it**: `ts-rs-proto/` proves generation works
+3. **Take option 2 when something needs it:** `ts-rs-proto/` proves generation works
    (section 7). The first real customer is #706's settings payload, not `chat.js`.
-4. **Revisit after #706 lands**: That is the change that could move this answer, and it
+4. **Revisit after #706 lands:** That is the change that could move this answer, and it
    is the only one that should.
 
 The status quo is not "no safety". It is 203 tests, and a habit visible in #691 and #694

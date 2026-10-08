@@ -97,18 +97,18 @@ platform table — overlay and sensing depth, not the package.
 **Linux is not one platform.** X11 supports everything the spatial layer wants.
 Under the native Wayland protocol each limit belongs to a different layer:
 
-- **Other windows' geometry is permanent**: No compositor offers it.
+- **Other windows' geometry is permanent:** No compositor offers it.
   `ext-foreign-toplevel-list-v1` carries an identifier, a title and an app id
   and no rectangle. `wlr-foreign-toplevel-management`'s `set_rectangle` is a
   hint the client sends the compositor for its minimize animation, not a query.
   GNOME's private `org.gnome.Shell.Introspect.GetWindows` returns width and
   height off `get_frame_rect()` but no x or y, and its sender allowlist holds
   the two portal backends and nothing else.
-- **Placement over the desktop is GNOME's**: `zwlr_layer_shell_v1` anchors a
+- **Placement over the desktop is GNOME's:** `zwlr_layer_shell_v1` anchors a
   surface to screen edges with margins and keeps it above the desktop, which
   is absolute positioning and pinning in one protocol. KWin, Sway, Hyprland,
   niri, river, COSMIC and Mir implement it. Mutter does not.
-- **Per-pixel click-through is ours**: `wl_surface.set_input_region` with a
+- **Per-pixel click-through is ours:** `wl_surface.set_input_region` with a
   `wl_region` is core Wayland, and `wl_region.add` takes the same rectangles
   `x11/overlay.rs` hands `XShapeCombineMask`. tao hands us the `wl_surface`
   through `raw_window_handle` (`gdk_wayland_window_get_wl_surface` in tao's
@@ -581,7 +581,7 @@ poses; window-edge physics, which neither project has.
 - **Wayland** degrades the spatial layer to nearly nothing.
 - **Prompt injection** reaches a model with Harness access through three paths:
   Character Packages, the Memory file, and window titles.
-- **Asset generation is the top risk to the character library**: Pixel art is
+- **Asset generation is the top risk to the character library:** Pixel art is
   the cheapest format to store and the hardest to generate: image models produce
   pixel-art-*styled* images at high resolution, with anti-aliased edges and
   drifting palettes, rather than grid-aligned sprites. Consistency of one

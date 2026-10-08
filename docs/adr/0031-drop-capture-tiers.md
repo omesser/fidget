@@ -47,9 +47,9 @@ never touch pixels.
 
 ## Alternatives Considered
 
-- **Defer Capture to v2**: "Coming soon" implies a commitment this retracts.
+- **Defer Capture to v2:** "Coming soon" implies a commitment this retracts.
   Harness-native computer use already fills the role.
-- **Capture in Fidget, proxied to the Harness**: Makes Fidget a screenshot relay
+- **Capture in Fidget, proxied to the Harness:** Makes Fidget a screenshot relay
   with vision capability it does not need.
-- **Keep the Local Gate without Capture**: It filters Capture frames. Without
+- **Keep the Local Gate without Capture:** It filters Capture frames. Without
   Capture it has no input.

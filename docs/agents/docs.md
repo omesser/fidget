@@ -23,11 +23,11 @@ track `main`. The number that looks stale is the record.
 - **Declare the anchor once, in the preamble, and let it govern the whole
   document.** A note scoped to one section is what sends the next reader to
   `main` with a diff and a rot report (#620).
-- **Cite a symbol wherever the prose allows**: A name survives the refactor
+- **Cite a symbol wherever the prose allows:** A name survives the refactor
   the anchor exists to record; a line number survives nothing. Keep a number
   for a verbatim quote's provenance, and for a spot inside a function too long
   to name.
-- **Verify a citation against the anchor, not against your checkout**: A
+- **Verify a citation against the anchor, not against your checkout:** A
   refreshed-but-wrong number is the same bug with newer digits.
 
 A finding that has since shipped earns a preamble line saying so. Rewriting

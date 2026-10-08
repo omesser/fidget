@@ -68,13 +68,13 @@ project configuration that no longer follows its working directory.
 
 ## Considered Options
 
-- **Keep the application data folder as the permanent scope**: This keeps
+- **Keep the application data folder as the permanent scope:** This keeps
   the character from being flavoured by an arbitrary repository. It also makes
   local and project MCP servers and per-project opt-ins unavailable, so it
   is not a neutral default worth making permanent.
-- **Fold the rule into ADR-0018 or ADR-0022**: Those records own the Chat
+- **Fold the rule into ADR-0018 or ADR-0022:** Those records own the Chat
   surface and the ACP client. Project scope has its own reversal and
   persistence invariant.
-- **Treat the working directory as launch mechanism**: That description
+- **Treat the working directory as launch mechanism:** That description
   hides the behavior Harnesses assign to it and invites future changes to
   move project scope or app persistence without review.

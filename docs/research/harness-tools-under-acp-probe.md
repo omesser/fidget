@@ -62,7 +62,7 @@ causes are Assumptions.
    `EnterWorktree`, plan mode, cron and scheduling tools, MCP resource
    tools. The list also carries every tool of every MCP server the SDK
    connected. Two things are absent: `AskUserQuestion`, and anything named `computer-use`.
-2. **Computer use under ACP**: Fact, from Anthropic's page: "Computer use is a
+2. **Computer use under ACP:** Fact, from Anthropic's page: "Computer use is a
    research preview on macOS that requires a Pro or Max plan. It is not
    available on Team or Enterprise plans. It requires an interactive session,
    so it is not available in non-interactive mode with the `-p` flag."
@@ -75,7 +75,7 @@ causes are Assumptions.
    interactive-session requirement, so a Pro or Max plan would not make this
    ACP path eligible. The blocker is Anthropic's documented session mode,
    not fidget's client capabilities.
-3. **Web search and fetch**: Fact, measured: `WebSearch` and `WebFetch` are in
+3. **Web search and fetch:** Fact, measured: `WebSearch` and `WebFetch` are in
    the tool list in every Claude probe. Fact, measured: Grok's session lists
    `web_search`, `web_fetch`, `open_page` and the `x_*` search tools. Fact,
    measured in round two: hermes lists `web_search` and `web_extract`;
@@ -83,7 +83,7 @@ causes are Assumptions.
    opencode lists `webfetch` and **no** web-search tool, which matches the
    vendor's "websearch is conditional". Every Harness measured here reaches the
    web except pi.
-4. **User's existing MCP servers**: Fact, measured: with `cwd` set to
+4. **User's existing MCP servers:** Fact, measured: with `cwd` set to
    fidget's data folder the session connected the user-scope plugin server
    (`plugin:context-mode:context-mode`, `connected`) and listed five claude.ai
    connectors (`needs-auth`). With `cwd` set to `$HOME`, where the user once
@@ -96,7 +96,7 @@ causes are Assumptions.
    the `cwd` fidget chooses (`fidget_core::memory::data_dir()`, passed
    at `harness.rs:1714`). ACP, the adapter, and the one MCP entry fidget
    hands over on `session/new` play no part in it.
-5. **Permissions**: Fact, measured: the tools are in the list. A native tool
+5. **Permissions:** Fact, measured: the tools are in the list. A native tool
    call that does nothing under attach is therefore a permission problem or
    a turn-budget problem, not a missing tool. Fact, at anchor:
    `harness::TURN_TIMEOUT` defaults to 120 seconds
@@ -105,7 +105,7 @@ causes are Assumptions.
    `model::TIMEOUT` at its anchor `e070216` and no longer applies to a
    Harness turn. Not measured: whether Chat answers a
    `session/request_permission` inside that budget in practice.
-6. **Client capabilities**: Fact, from the ACP initialization page: the
+6. **Client capabilities:** Fact, from the ACP initialization page: the
    client capabilities are `fs.readTextFile`, `fs.writeTextFile`,
    `terminal`, `elicitation`, and session config options. `fs/*` and
    `terminal/*` are methods the agent calls on the client. No client
@@ -124,7 +124,7 @@ causes are Assumptions.
    ACP form elicitation."* The capability changes how a question that already
    arrived is **rendered**, from a plain permission request into a form. It adds
    nothing to the advertised tool list. Option 2 below is re-ranked on that.
-7. **Other Harnesses**: See the matrix. Round one measured Grok by
+7. **Other Harnesses:** See the matrix. Round one measured Grok by
    self-report and could not reach opencode or hermes, because both default to
    a local model server that was not running (`http://127.0.0.1:8000/v1`).
    **Round two reached both**, and added the two named rows the matrix never
@@ -136,7 +136,7 @@ causes are Assumptions.
    local model server was the thing that was down; once it was up, pi answered.
    The `pi v0.85.1` that two earlier probes recorded is a session banner pi
    prints before the turn, not its answer.
-8. **Escape hatches**: Ranked below. The evidence rules out two of the issue's
+8. **Escape hatches:** Ranked below. The evidence rules out two of the issue's
    five. There is no `claude-agent-acp --cli` mode (the adapter's `cli`
    handling is argument parsing for `--version`), and passing user MCP
    config through `session/new` is unnecessary because the SDK already
@@ -371,19 +371,19 @@ process.exit(0);
 
 ## Where this contradicts what the repository already says
 
-- **ADR-0003, Consequences**: "The capability is a research preview gated
+- **ADR-0003, Consequences:** "The capability is a research preview gated
   behind a Pro or Max subscription" names one of four gates. Anthropic's
   page adds Team and Enterprise as excluded, claude.ai auth as required, and
   an interactive session as required. The fourth is the one no subscription
   clears and the one that bears on fidget's attach path. The decision
   still holds on its other grounds. The consequence is incomplete.
-- **`README.md:159`**: "Chat-only (no MCP)" on the `pi` row. See option 3.
-- **`harness-native-tools-under-acp.md`, claim 14**: The 20-second turn
+- **`README.md:159`:** "Chat-only (no MCP)" on the `pi` row. See option 3.
+- **`harness-native-tools-under-acp.md`, claim 14:** The 20-second turn
   budget was true at its anchor `e070216` and is 120 seconds at this one
   (`harness::TURN_TIMEOUT`, #695 for #690). That note now carries a
   "since shipped" preamble line saying so, added in the same PR as this
   note per `docs/agents/docs.md`.
-- **`docs/research/fidget-harness-two-way.md:14`**: "a local agent that keeps
+- **`docs/research/fidget-harness-two-way.md:14`:** "a local agent that keeps
   its own tools, permissions, and memory" holds for the tool preset and for
   user-scope configuration. It does not hold for computer use, and it holds
   for local-scope configuration only with a `cwd` change.

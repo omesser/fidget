@@ -23,11 +23,11 @@ Preconditions:
 - `FIDGET_TRACE_FRAMES=1` and `FIDGET_TRACE_HITTEST=1` (the verify scripts set these).
 - Sprite has a known `pos()` in the log (feet); click slightly above the feet so the body is hit.
 
-- **Linux X11**: Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof. Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
-- **macOS hit-test (HIT/miss)**: Run `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. The hit-test section warps the cursor onto drawn pixels (`HIT`) and the transparent corner (`miss`). Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
-- **macOS poke-hit (gesture verb)**: Run `cargo run -p fidget-verify -- poke`. Real click, asserts `verbs:.*Poke`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/poke/`.
-- **Poke mid-climb (X11, Windows, macOS)**: Run `cargo run -p fidget-verify -- scenario poke-mid-climb --go` (X11 needs a WM, so use an openbox Xvfb session on a box). It throws the sprite at a display edge, clicks until one Poke lands mid-climb, and checks the pause and the climb on. Exit `0` prints `ok: paused at (x, y) for N ms in one climb pose, then climbed on`. To keep its evidence dir, `mkdir -p "$FIDGET_VERIFY_EVIDENCE/poke"` and run it with `TMPDIR="$FIDGET_VERIFY_EVIDENCE/poke"`.
-- **Proof**: Require the `verbs:` line containing `Poke` from the app/trace log.
+- **Linux X11:** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-fidget/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof. Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
+- **macOS hit-test (HIT/miss):** Run `.agents/skills/verify-fidget/helpers/drive-overlay-macos.sh`. The hit-test section warps the cursor onto drawn pixels (`HIT`) and the transparent corner (`miss`). Evidence copied to `$FIDGET_VERIFY_EVIDENCE/overlay-presence/`.
+- **macOS poke-hit (gesture verb):** Run `cargo run -p fidget-verify -- poke`. Real click, asserts `verbs:.*Poke`, writes evidence to `$FIDGET_VERIFY_EVIDENCE/poke/`.
+- **Poke mid-climb (X11, Windows, macOS):** Run `cargo run -p fidget-verify -- scenario poke-mid-climb --go` (X11 needs a WM, so use an openbox Xvfb session on a box). It throws the sprite at a display edge, clicks until one Poke lands mid-climb, and checks the pause and the climb on. Exit `0` prints `ok: paused at (x, y) for N ms in one climb pose, then climbed on`. To keep its evidence dir, `mkdir -p "$FIDGET_VERIFY_EVIDENCE/poke"` and run it with `TMPDIR="$FIDGET_VERIFY_EVIDENCE/poke"`.
+- **Proof:** Require the `verbs:` line containing `Poke` from the app/trace log.
 
 ## Gotchas
 
