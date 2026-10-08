@@ -956,8 +956,11 @@ fn apply_and_seed(settings: &mut Settings, patch: SettingsPatch) {
     dev_flags::seed(settings);
 }
 
+/// The one settings file whose next save stalls. Every test that writes
+/// settings goes through `save`, so a bare flag let a parallel test's save take
+/// the stall and leave the waiting test deadlocked on the settings lock.
 #[cfg(test)]
-static SAVE_STALL: AtomicBool = AtomicBool::new(false);
+static SAVE_STALL: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(test)]
 static SAVE_STALLING: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
@@ -2182,7 +2185,12 @@ impl Settings {
     /// First launch may write under an app-data dir that does not exist yet.
     pub fn save(&self, path: &Path) -> io::Result<()> {
         #[cfg(test)]
-        if SAVE_STALL.swap(false, Ordering::SeqCst) {
+        if SAVE_STALL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take_if(|stalled| stalled == path)
+            .is_some()
+        {
             SAVE_STALLING.store(true, Ordering::SeqCst);
             thread::sleep(Duration::from_secs(2));
             SAVE_STALLING.store(false, Ordering::SeqCst);
@@ -3341,8 +3349,14 @@ mod tests {
         }
     }
 
-    /// The two save stalls share one flag. Running them together would let one
-    /// consume the stall the other is waiting on.
+    fn stall_the_save_of(path: &Path) {
+        *SAVE_STALL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path.to_path_buf());
+    }
+
+    /// The two save stalls share one slot and one stalling flag. Running them
+    /// together would let one replace the stall the other is waiting on.
     fn settings_save_tests() -> std::sync::MutexGuard<'static, ()> {
         static ORDER: Mutex<()> = Mutex::new(());
         ORDER
@@ -3355,7 +3369,7 @@ mod tests {
         let _order = settings_save_tests();
         let settings = Arc::new(Mutex::new(Settings::default()));
         let path = temp_path();
-        SAVE_STALL.store(true, Ordering::SeqCst);
+        stall_the_save_of(&path);
         let (tx, rx) = mpsc::channel();
         let shared = Arc::clone(&settings);
         let file = path.clone();
@@ -3385,7 +3399,7 @@ mod tests {
         let _order = settings_save_tests();
         let settings = Arc::new(Mutex::new(Settings::default()));
         let path = temp_path();
-        SAVE_STALL.store(true, Ordering::SeqCst);
+        stall_the_save_of(&path);
         let first = {
             let settings = Arc::clone(&settings);
             let path = path.clone();
