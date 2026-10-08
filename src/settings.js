@@ -128,13 +128,14 @@ function notes(row) {
 // that text with its own text run beneath, so the row's name reached the
 // accessibility tree twice and a dump read the copy as the row's control. A
 // label holding a control is an AXGroup instead. #706.
-function labelled(row, control, extra = []) {
+// `body` is what sits under the title when it is more than the control alone.
+function labelled(row, control, extra = [], body = control) {
   const id = `set-f-${row.id}`;
   control.id = id;
   return el(
     "div",
     { class: `set-row${row.frozen ? " set-is-frozen" : ""}`, "data-row": row.id },
-    row.label ? el("label", { for: id }, el("span", { text: row.label }), control) : control,
+    row.label ? el("label", { for: id }, el("span", { text: row.label }), body) : body,
     ...extra,
   );
 }
@@ -149,7 +150,21 @@ function popup(row, values, frozen) {
   return select;
 }
 
-function drawRow(row, values, emit, stage, tab) {
+// A popup that only fills in a text row, which is how `form.rs` describes the
+// Base URL and Reasoning effort pickers. Drawn as a row of its own it sat
+// above its field's title with no title of its own (#1426).
+function shortcutOf(row) {
+  const [control, ...rest] = row.type === "Composite" ? row.controls : [];
+  return control?.type === "Popup" && control.fills && rest.length === 0 ? control : null;
+}
+
+function picker(control, values, emit) {
+  const select = popup(control, values, control.frozen);
+  select.addEventListener("change", () => emit({ pick: control.id, value: select.value, fills: control.fills }));
+  return select;
+}
+
+function drawRow(row, values, emit, stage, tab, shortcut = null) {
   switch (row.type) {
     case "Checkbox": {
       const input = el("input", { type: "checkbox", disabled: row.frozen });
@@ -183,7 +198,9 @@ function drawRow(row, values, emit, stage, tab) {
       } else {
         input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       }
-      return labelled(row, input, notes(row));
+      if (!shortcut) return labelled(row, input, notes(row));
+      const line = el("div", { class: "set-shortcut" }, picker(shortcut.controls[0], values, emit), input);
+      return labelled(row, input, [help(shortcut.help), ...notes(row)], line);
     }
     case "SecureField": {
       const input = el("input", {
@@ -281,10 +298,7 @@ function drawRow(row, values, emit, stage, tab) {
           });
           line.append(button);
         } else if (control.type === "Popup") {
-          const select = popup(control, values, control.frozen);
-          select.addEventListener("change", () =>
-            emit({ pick: control.id, value: select.value, fills: control.fills?.row ?? null }),
-          );
+          const select = picker(control, values, emit);
           fields.push(select);
           line.append(select);
         } else {
@@ -309,9 +323,9 @@ function drawRow(row, values, emit, stage, tab) {
   }
 }
 
+// By the control's own id: a row's first control can be its shortcut picker.
 function rowValue(root, id) {
-  const row = root.querySelector?.(`[data-row="${id}"]`);
-  const control = row?.querySelector("input, select, textarea");
+  const control = root.querySelector?.(`#set-f-${id}`);
   return control ? control.value : "";
 }
 
@@ -373,7 +387,11 @@ export function render(root, tab, values, emit = () => {}, stage = () => {}) {
     if (section.comment) node.append(el("p", { class: "set-comment", text: section.comment }));
     if (section.status) node.append(status(section.status));
     if (section.disclosure) node.append(disclosure(section.disclosure));
+    const shortcuts = new Map(
+      section.rows.filter(shortcutOf).map((row) => [shortcutOf(row).fills.row, row]),
+    );
     for (const row of section.rows) {
+      if (shortcutOf(row)) continue;
       if (row.type === "Composite" && row.id === "director_actions") {
         if (footer) {
           footer.append(drawRow(row, values, emit, stage, tab));
@@ -381,7 +399,7 @@ export function render(root, tab, values, emit = () => {}, stage = () => {}) {
           node.append(drawRow(row, values, emit, stage, tab));
         }
       } else {
-        node.append(drawRow(row, values, emit, stage, tab));
+        node.append(drawRow(row, values, emit, stage, tab, shortcuts.get(row.id)));
       }
     }
     root.append(node);

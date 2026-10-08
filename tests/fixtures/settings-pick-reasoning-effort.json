@@ -1,0 +1,5 @@
+{
+  "pick": "director_reasoning_effort_pick",
+  "value": "high",
+  "fills": { "row": "director_reasoning_effort" }
+}

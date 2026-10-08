@@ -1110,6 +1110,55 @@ mod settings_event_tests {
         assert_eq!(applied(payload), vec![replace]);
     }
 
+    /// tests/settings-batched-draft.test.js asserts the page sends exactly
+    /// this when Reasoning effort's picker lands on high. Sent as a bare row
+    /// string, it matched no payload variant and the page showed "Could not
+    /// save changes" for every pick (#1426).
+    #[test]
+    fn a_reasoning_effort_pick_saves_the_level_and_fills_the_field() {
+        let payload = serde_json::from_str(include_str!(
+            "../../tests/fixtures/settings-pick-reasoning-effort.json"
+        ))
+        .expect("the page's pick has to deserialize");
+        let SettingsEventPayload::Pick {
+            pick,
+            value,
+            fills: Some(fills),
+        } = payload
+        else {
+            panic!("the payload is a shortcut pick");
+        };
+        let mut applied = Vec::new();
+        let mut response = None;
+        model::tests::with_env(None, None, None, || {
+            let view = settings::form::tests::fixture_view(false);
+            let description = settings::form::describe();
+            let outcome = settings::controller::handle(
+                &shortcut_event(pick, value, &fills, &view),
+                &settings::AiDraft::live(&description),
+                &view,
+            );
+            response = Some(respond(
+                outcome,
+                |patch| {
+                    applied.push(patch);
+                    Ok(())
+                },
+                |_| panic!("a pick runs no operation"),
+            ));
+        });
+        let mut high = settings::SettingsPatch::default();
+        high.completer.director_reasoning_effort = Some("high".into());
+        assert_eq!(applied, vec![high]);
+        assert_eq!(
+            response,
+            Some(Ok(SettingsEventResponse::Fill {
+                id: "director_reasoning_effort".into(),
+                value: "high".into(),
+            }))
+        );
+    }
+
     #[test]
     fn cancel_after_clear_key_writes_nothing() {
         let cancel = serde_json::json!({ "press": "director_cancel", "fields": {} });
@@ -1309,29 +1358,10 @@ fn settings_event_blocking(
             pick,
             value,
             fills: Some(fills),
-        } => {
-            let current = view
-                .development_texts
-                .get(&fills.row)
-                .map(|s| s.as_str())
-                .or_else(|| {
-                    if fills.row == settings::form::DIRECTOR_BASE_URL_ID {
-                        Some(view.director_base_url.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default()
-                .to_string();
-            (
-                controller::Event::Shortcut {
-                    id: pick,
-                    value,
-                    current,
-                },
-                settings::AiDraft::live(&description),
-            )
-        }
+        } => (
+            shortcut_event(pick, value, &fills, &view),
+            settings::AiDraft::live(&description),
+        ),
         SettingsEventPayload::Dismiss { dismiss, value } => {
             return Ok(dismiss_press(&session, &view, &dismiss, &value));
         }
@@ -1343,6 +1373,34 @@ fn settings_event_blocking(
         |patch| session.apply(patch).map_err(|e| e.to_string()),
         |op| run_operation(&session, &op, &pressed),
     )
+}
+
+/// A pick from the list inside a row that fills that row's field. `current` is
+/// what the field holds now, so a pick of the value already there writes nothing.
+fn shortcut_event(
+    pick: String,
+    value: String,
+    fills: &PickFills,
+    view: &settings::SettingsView,
+) -> settings::controller::Event {
+    let current = view
+        .development_texts
+        .get(&fills.row)
+        .map(|s| s.as_str())
+        .or_else(|| {
+            if fills.row == settings::form::DIRECTOR_BASE_URL_ID {
+                Some(view.director_base_url.as_str())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+        .to_string();
+    settings::controller::Event::Shortcut {
+        id: pick,
+        value,
+        current,
+    }
 }
 
 /// The wire answer for each `Outcome`, with the two things that need a live

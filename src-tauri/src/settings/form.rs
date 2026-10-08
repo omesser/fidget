@@ -233,7 +233,7 @@ pub enum CompositeControl {
 /// cannot serve it and the reading travels with the row it fills.
 ///
 /// Whether a pick stages or saves is not declared here — it is the target
-/// row's `batched`, so the shortcut and the field below it cannot disagree
+/// row's `batched`, so the shortcut and the field it fills cannot disagree
 /// about when the file is reached (#279).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Shortcut {
@@ -565,7 +565,7 @@ pub const HARNESS_PRESETS: [&str; 10] = [
 /// Two local servers `docs/harness.md` lists are deliberately absent: vLLM
 /// answers on oMLX's 8000 and `mlx_lm.server` on llama.cpp's 8080, so a row for
 /// either would offer a second name for a URL already on the list. The field
-/// below takes both.
+/// beside the picker takes both.
 const ENDPOINTS: &[(&str, &str, &str)] = &[
     ("Local", "Ollama", "http://localhost:11434"),
     ("Local", "LM Studio", "http://localhost:1234"),
@@ -634,8 +634,8 @@ pub fn endpoint_title(base_url: &str) -> String {
 const EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
 /// The reasoning-effort picker's choices, Custom first, exactly as the Base
-/// URL picker is shaped: the field below is the setting, and the picker only
-/// fills it in.
+/// URL picker is shaped: the field beside it is the setting, and the picker
+/// only fills it in.
 pub fn effort_options() -> Vec<String> {
     let mut options = vec![PICKER_CUSTOM.to_string()];
     options.extend(EFFORT_LEVELS.iter().map(|level| level.to_string()));
@@ -927,8 +927,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
-                        true => "Off, for the same reason the Base URL below is.".to_string(),
-                        false => "Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
+                        true => "Off, for the same reason the field beside it is.".to_string(),
+                        false => "Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {
@@ -1611,8 +1611,8 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "reasoning_effort_pick".to_string(),
                     help: Some(match effort_frozen {
-                        true => "Off, for the same reason the field below is.".to_string(),
-                        false => "Fills in the field below. Any value the server takes can be typed there.".to_string(),
+                        true => "Off, for the same reason the field beside it is.".to_string(),
+                        false => "Fills in the field beside it. Any value the server takes can be typed there.".to_string(),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {

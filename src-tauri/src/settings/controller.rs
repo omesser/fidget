@@ -22,9 +22,9 @@ pub enum Event {
         id: String,
         value: String,
     },
-    /// A shortcut list, which writes the row below it rather than one of its
-    /// own. `current` is what that row holds now, which only the surface can
-    /// read (#670).
+    /// A shortcut list, which writes the field of the row it sits in rather
+    /// than one of its own. `current` is what that field holds now, which only
+    /// the surface can read (#670).
     Shortcut {
         id: String,
         value: String,
@@ -128,8 +128,8 @@ fn shortcut(description: &FormDescription, id: &str, value: &str, current: &str)
     let Some(shortcut) = description.shortcut(id) else {
         return Outcome::Nothing;
     };
-    // Custom, and any title off the list, name nothing to write: the row below
-    // is what a value this list cannot spell is.
+    // Custom, and any title off the list, name nothing to write: the field
+    // beside the list is what a value this list cannot spell is.
     let Some(value) = (shortcut.value)(value) else {
         return Outcome::Nothing;
     };
@@ -352,7 +352,7 @@ mod tests {
             let Outcome::Fill { id, patch, .. } =
                 handle(&event, &AiDraft::live(&description), &view)
             else {
-                panic!("a shortcut fills the row below it");
+                panic!("a shortcut fills the field of its row");
             };
             assert_eq!(id, shortcut.row);
             assert!(patch.is_none(), "a batched row waits for Apply");
@@ -360,7 +360,7 @@ mod tests {
     }
 
     /// A title the list cannot spell — Custom — names nothing to write, so the
-    /// row below keeps whatever it holds.
+    /// field keeps whatever it holds.
     #[test]
     fn a_shortcut_title_that_names_no_value_writes_nothing() {
         model::tests::with_env(None, None, None, || {

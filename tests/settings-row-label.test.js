@@ -72,10 +72,15 @@ test("every label holds the control it names", () => {
   for (const [when, name] of STATES) {
     for (const title of ["Presence", "Character", "AI", "Chat", "Privacy", "Development"]) {
       for (const label of page(name, title).filter((node) => node.tagName === "label")) {
-        const control = descendants(label).find((node) => CONTROLS.includes(node.tagName));
-        assert.ok(control, `a label in ${title} holds no control when ${when}`);
+        // A field's shortcut picker sits in its label too, ahead of the field
+        // the label names (#1426).
+        const held = descendants(label).filter((node) => CONTROLS.includes(node.tagName));
+        assert.ok(held.length > 0, `a label in ${title} holds no control when ${when}`);
         if (label.getAttribute("for")) {
-          assert.equal(control.id, label.getAttribute("for"), `${title} when ${when}`);
+          assert.ok(
+            held.some((control) => control.id === label.getAttribute("for")),
+            `${title} when ${when}`,
+          );
         }
       }
     }
