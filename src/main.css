@@ -91,7 +91,7 @@ body {
   text-decoration: underline;
   cursor: pointer;
   /* The one place the overlay takes a click that is not the art. The frame loop
-     is told this rectangle (`overlay_hotspots`) so the window stops passing
+     is told this rectangle (`overlay_rects`) so the window stops passing
      clicks through while the cursor is over it. */
   pointer-events: auto;
 }

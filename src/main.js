@@ -7,6 +7,7 @@ import {
   createBubbleMachine,
   wrapText,
   placeBubble,
+  readableBubbleRect,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import {
@@ -18,7 +19,6 @@ import {
   placeQuickMessage,
   quickMessageMirror,
 } from "./quick-message.js";
-import { computeBubblePaintedRect, createPaintedReporter } from "./painted-rects.js";
 
 const stage = document.getElementById("stage");
 
@@ -105,14 +105,11 @@ function createView(id) {
     bubbleContent,
     more,
     cueLayer,
-    // Where "Open chat" is, in this overlay's coordinates, or null when it is
-    // not drawn. `reportHotspots` sends the set across; see there for why the
-    // renderer is the one who has to.
+    // Where "Open chat" and the bubble are, in this overlay's coordinates, or
+    // null when not drawn. `reportOverlayRects` sends them across; see there
+    // for why the renderer is the one who has to.
     hotspot: null,
-    // Where the bubble is, in overlay coordinates: [x, y, width, height] as integers,
-    // or null when not visible. Windows unions this into the input region so the
-    // bubble body isn't clipped away by SetWindowRgn.
-    paintedRect: null,
+    bubbleRect: null,
     // The two most recent placements and when each arrived. Drawing one sample
     // behind, interpolated, buys continuous motion (see interpolate.js); the
     // hit-test uses the unlagged position, so it leads the screen by one sample.
@@ -165,8 +162,8 @@ function createView(id) {
     bubble.classList.remove("visible");
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
-    view.paintedRect = null;
-    reportAllPaintedRects();
+    view.bubbleRect = null;
+    reportOverlayRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
   }
@@ -243,10 +240,8 @@ function positionBubble(view, spriteRect, displayBounds) {
         view.more.offsetHeight,
       ]
     : null;
-
-  // Painted rect for Windows input region: the bubble body, not the hotspot control.
-  view.paintedRect = computeBubblePaintedRect(view.bubble, pos);
-  reportAllPaintedRects();
+  view.bubbleRect = readableBubbleRect(view.bubble, pos);
+  reportOverlayRects();
 }
 
 function speechRect(view) {
@@ -364,7 +359,7 @@ function syncQuick(view) {
   reportDraft(view);
   if (!visible || !view.latest) {
     view.quickHotspot = null;
-    reportHotspots();
+    reportOverlayRects();
     arm();
     return;
   }
@@ -374,7 +369,7 @@ function syncQuick(view) {
     width: view.latest.width,
     height: view.latest.height,
   });
-  reportHotspots();
+  reportOverlayRects();
   arm();
 }
 
@@ -521,28 +516,30 @@ function attachQuickMessage(view, id) {
   });
 }
 
-// Tell the Rust side where this overlay wants a click. Clicks pass through
-// wherever the art is not, and "Open chat" sits outside the art; only the
-// renderer knows where, because the bubble is sized by text measured here.
+// Tell the Rust side what this overlay draws outside the art. Clicks pass
+// through wherever the art is not, so "Open chat" and the pill are clickable;
+// Windows' region clips drawing too, so the bubble is reported as well. Only
+// the renderer knows where, because the bubble is sized by text measured here.
 //
-// ponytail: sent whenever the rectangle changes, which while a truncated line
-// is up and the Character is walking is once a frame. Under a hundred bytes an
-// invoke and only while such a bubble is on screen; if that ever shows up in a
-// profile, the upgrade is to send the control's offset from the sprite once per
-// line and let the frame loop follow the sprite itself.
-let reportedHotspots = "";
+// ponytail: sent whenever a rectangle changes, which while a bubble is up and
+// the Character is walking is once a frame. A few hundred bytes an invoke and
+// only while a bubble or pill is on screen; if that ever shows up in a profile,
+// the upgrade is to send offsets from the sprite once per line and let the
+// frame loop follow the sprite itself.
+let reportedRects = "";
 
-function reportHotspots() {
+function reportOverlayRects() {
   const rects = [];
   for (const view of views.values()) {
-    if (view.hotspot) rects.push(view.hotspot);
-    if (view.quickHotspot) rects.push(view.quickHotspot);
+    if (view.hotspot) rects.push({ rect: view.hotspot, clickable: true });
+    if (view.quickHotspot) rects.push({ rect: view.quickHotspot, clickable: true });
+    if (view.bubbleRect) rects.push({ rect: view.bubbleRect, clickable: false });
   }
   const serialized = JSON.stringify(rects);
-  if (serialized === reportedHotspots) return;
-  reportedHotspots = serialized;
-  window.__TAURI__.core.invoke("overlay_hotspots", { rects }).catch((err) => {
-    console.error("overlay_hotspots", err);
+  if (serialized === reportedRects) return;
+  reportedRects = serialized;
+  window.__TAURI__.core.invoke("overlay_rects", { rects }).catch((err) => {
+    console.error("overlay_rects", err);
   });
 }
 
@@ -590,8 +587,8 @@ function drawView(view, now) {
     // A control nobody can see is not one to click, and a fading bubble is
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
-    view.paintedRect = null;
-    reportAllPaintedRects();
+    view.bubbleRect = null;
+    reportOverlayRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
@@ -658,12 +655,6 @@ let armed = false;
 // and arms both overlays anyway.
 const SEAM_MARGIN = 8;
 
-const reportPainted = createPaintedReporter(window.__TAURI__.core.invoke);
-
-function reportAllPaintedRects() {
-  reportPainted(views);
-}
-
 function needsFrame(view) {
   return onDisplay(view.previous, view.latest, currentDisplayBounds(), SEAM_MARGIN);
 }
@@ -683,7 +674,7 @@ function draw(now) {
       arm();
     }
   }
-  reportHotspots();
+  reportOverlayRects();
   if (cadence) noteCadence(now);
 }
 

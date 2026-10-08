@@ -65,11 +65,11 @@ fn cursor_near_sprite(cursor: Option<(f64, f64)>, sprites: &[(i32, i32, i32, i32
 #[cfg(any(test, all(unix, not(target_os = "macos"))))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
-/// One Windows overlay's last applied region: the sprite's swept ink, the
-/// hotspots, and the painted bubble/thinking rects. The region is what gets
-/// compared, so a trail that settles after a walk still rebuilds it.
+/// One Windows overlay's last applied region: the sprite's swept ink and the
+/// rects the renderer draws outside it. The region is what gets compared, so a
+/// trail that settles after a walk still rebuilds it.
 #[cfg(not(unix))]
-type RegionParams = (Vec<[i32; 4]>, Vec<[i32; 4]>, Vec<[i32; 4]>);
+type RegionParams = (Vec<[i32; 4]>, Vec<fidget_core::overlay_region::OverlayRect>);
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg(any(test, not(unix)))]
@@ -92,13 +92,12 @@ enum RegionAction {
 #[cfg(any(test, not(unix)))]
 fn decide_region_action(
     sprite: &[[i32; 4]],
-    hotspots: &[[i32; 4]],
-    painted: &[[i32; 4]],
+    rects: &[fidget_core::overlay_region::OverlayRect],
     ignore: bool,
 ) -> RegionAction {
     use fidget_core::overlay_region::{region_plan, RegionPlan};
 
-    if region_plan(sprite, hotspots, painted) != RegionPlan::Clear {
+    if region_plan(sprite, rects) != RegionPlan::Clear {
         RegionAction::ApplyMask
     } else if ignore {
         RegionAction::Nothing
@@ -264,10 +263,7 @@ pub(crate) fn run_frame_loop(
             ]));
         #[cfg(not(unix))]
         let last_mask: Arc<Mutex<Vec<RegionParams>>> =
-            Arc::new(Mutex::new(vec![
-                (Vec::new(), Vec::new(), Vec::new());
-                covered.len()
-            ]));
+            Arc::new(Mutex::new(vec![(Vec::new(), Vec::new()); covered.len()]));
         // Each Instance's draw trail, for a Windows region that clips drawing.
         #[cfg(not(unix))]
         let mut trails: std::collections::HashMap<InstanceId, DrawTrail> =
@@ -2291,7 +2287,10 @@ pub(crate) fn run_frame_loop(
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
                             let (_width, _height, opaque) = instance.mask.raw();
-                            let hotspots = platform::overlay_hotspots_for(&label);
+                            // X11's shape clips clicks, not drawing, so drawn-only rects stay out.
+                            let hotspots = fidget_core::overlay_region::clickable_rects(
+                                &platform::overlay_rects_for(&label),
+                            );
                             let mask_params = (
                                 Some(opaque.to_vec()),
                                 local.x,
@@ -2468,32 +2467,22 @@ pub(crate) fn run_frame_loop(
                                 && local.y < display.height as i32
                         });
 
-                        let mask_params = if let Some(instance) = sprite_on_overlay {
-                            let local = instance.sprite.in_overlay(*display);
-                            let offset = (local.x - instance.sprite.x, local.y - instance.sprite.y);
-                            (
+                        // No sprite here can still leave a bubble straddling the seam.
+                        let art = sprite_on_overlay
+                            .map(|instance| {
+                                let local = instance.sprite.in_overlay(*display);
+                                let offset =
+                                    (local.x - instance.sprite.x, local.y - instance.sprite.y);
                                 trails
                                     .get(&instance.id)
                                     .map(|trail| trail.clip_rects(offset))
-                                    .unwrap_or_default(),
-                                platform::overlay_hotspots_for(&label),
-                                platform::overlay_painted_for(&label),
-                            )
-                        } else {
-                            // No sprite, but check for painted rects (bubble straddling seam).
-                            (
-                                Vec::new(),
-                                platform::overlay_hotspots_for(&label),
-                                platform::overlay_painted_for(&label),
-                            )
-                        };
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default();
+                        let mask_params = (art, platform::overlay_rects_for(&label));
 
-                        let region_action = decide_region_action(
-                            &mask_params.0,
-                            &mask_params.1,
-                            &mask_params.2,
-                            ignore,
-                        );
+                        let region_action =
+                            decide_region_action(&mask_params.0, &mask_params.1, ignore);
 
                         if region_action == RegionAction::ApplyMask {
                             let action = decide_overlay_action(
@@ -2536,12 +2525,11 @@ pub(crate) fn run_frame_loop(
                                 let _ = app.run_on_main_thread(move || {
                                     mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        let (art, hotspots, painted) = &mask_params_clone;
+                                        let (art, rects) = &mask_params_clone;
                                         match platform::update_input_region(
                                             &window,
                                             Some(art.as_slice()),
-                                            hotspots,
-                                            painted,
+                                            rects,
                                             click_through,
                                         ) {
                                             Ok(passes_clicks) => {
@@ -2646,7 +2634,7 @@ pub(crate) fn run_frame_loop(
                                             applied_ignoring_clone.lock().unwrap()[overlay_index] =
                                                 Some(true);
                                             last_mask_clone.lock().unwrap()[overlay_index] =
-                                                (Vec::new(), Vec::new(), Vec::new());
+                                                (Vec::new(), Vec::new());
                                         }
                                     }
                                 });
@@ -3233,18 +3221,21 @@ mod tests {
     /// this only adds what an empty overlay still has to do about clicks.
     #[test]
     fn an_empty_overlay_passes_clicks_once() {
-        let bubble = [[50, 60, 200, 80]];
+        let bubble = [fidget_core::overlay_region::OverlayRect {
+            rect: [50, 60, 200, 80],
+            clickable: false,
+        }];
         assert_eq!(
-            decide_region_action(&[], &[], &bubble, true),
+            decide_region_action(&[], &bubble, true),
             RegionAction::ApplyMask,
             "a bubble alone keeps a region, even on a click-through overlay"
         );
         assert_eq!(
-            decide_region_action(&[], &[], &[], false),
+            decide_region_action(&[], &[], false),
             RegionAction::ToggleClickThrough
         );
         assert_eq!(
-            decide_region_action(&[], &[], &[], true),
+            decide_region_action(&[], &[], true),
             RegionAction::Nothing,
             "already passing clicks"
         );

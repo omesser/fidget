@@ -3,9 +3,10 @@
 //! Extended window styles (WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
 //! WS_EX_TRANSPARENT) float the overlay above other windows without stealing
 //! focus. SetWindowRgn carves the input region from the sprite's alpha mask
-//! and unions any hotspot rectangles the renderer reported so a control drawn
-//! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE applies only
-//! when the capturable setting, on by default (ADR-0024), is turned off.
+//! and unions the rectangles the renderer reported, so a control drawn outside
+//! the art still receives clicks and a bubble outside it is not clipped.
+//! WDA_EXCLUDEFROMCAPTURE applies only when the capturable setting, on by
+//! default (ADR-0024), is turned off.
 //!
 //! DwmExtendFrameIntoClientArea extends the window frame into the entire client
 //! area, compositing the frame with the client area's glass sheet so the overlay
@@ -14,7 +15,7 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
-use fidget_core::overlay_region::{region_plan, RegionPlan};
+use fidget_core::overlay_region::{region_plan, OverlayRect, RegionPlan};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
@@ -116,26 +117,18 @@ fn note_overlay(hwnd: u64) {
     }
 }
 
-/// SetWindowRgn from `art` plus hotspots plus painted rects; `None` clears the region.
+/// SetWindowRgn from `art` plus the renderer's rects; `None` clears the region.
 /// `click_through` sets WS_EX_TRANSPARENT; the region stays either way. Returns
 /// whether the window now passes clicks, which a cleared region forces.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     art: Option<&[[i32; 4]]>,
-    hotspot_rects: &[[i32; 4]],
-    painted_rects: &[[i32; 4]],
+    rects: &[OverlayRect],
     click_through: bool,
 ) -> Result<bool, String> {
     let hwnd = overlay_hwnd(window)?;
     match art {
-        Some(art) => apply_input_mask(
-            window,
-            hwnd,
-            art,
-            hotspot_rects,
-            painted_rects,
-            click_through,
-        ),
+        Some(art) => apply_input_mask(window, hwnd, art, rects, click_through),
         None => clear_input_region(hwnd).map(|()| true),
     }
 }
@@ -298,10 +291,9 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`; hotspots
-/// and painted are `[x, y, width, height]`. The region also clips drawing, which
-/// is why `art` is swept over every position the renderer may draw the sprite at,
-/// and painted rects (bubble, thinking) must be included so Windows doesn't clip them.
+/// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`. The
+/// region also clips drawing, which is why `art` is swept over every position
+/// the renderer may draw the sprite at, and why drawn-only rects are in it too.
 ///
 /// bRedraw=1: With bRedraw=0, the region update could race sprite placement
 /// from an earlier SetWindowPos, leaving the wrong region visible until the
@@ -310,12 +302,11 @@ fn apply_input_mask(
     window: &tauri::WebviewWindow,
     hwnd: HWND,
     art: &[[i32; 4]],
-    hotspot_rects: &[[i32; 4]],
-    painted_rects: &[[i32; 4]],
+    overlay_rects: &[OverlayRect],
     click_through: bool,
 ) -> Result<bool, String> {
     let rebuild_start = Instant::now();
-    let rects = match region_plan(art, hotspot_rects, painted_rects) {
+    let rects = match region_plan(art, overlay_rects) {
         RegionPlan::Clear => return clear_input_region(hwnd).map(|()| true),
         RegionPlan::Apply(rects) => rects,
     };
@@ -364,13 +355,14 @@ fn apply_input_mask(
     let trace_mask = std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok();
 
     if trace_bubble || trace_mask {
+        let clickable = overlay_rects.iter().filter(|rect| rect.clickable).count();
         eprintln!(
             "overlay {}: region rebuild {} rects (art {} + hotspots {} + painted {}), {:.2} ms",
             window.label(),
             rects.len(),
             art.len(),
-            hotspot_rects.len(),
-            painted_rects.len(),
+            clickable,
+            overlay_rects.len() - clickable,
             rebuild_start.elapsed().as_secs_f64() * 1000.0
         );
     }
