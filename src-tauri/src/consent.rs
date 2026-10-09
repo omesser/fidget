@@ -239,6 +239,7 @@ impl Probe for WindowsProbe {
 #[cfg(target_os = "windows")]
 mod windows {
     use std::collections::HashMap;
+    use std::path::Path;
 
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
@@ -254,13 +255,15 @@ mod windows {
     }
 
     fn packaged() -> bool {
+        std::env::current_exe().is_ok_and(|exe| packaged_exe(&exe))
+    }
+
+    fn packaged_exe(exe: &Path) -> bool {
         // Packaged: not under target/debug or target/release build directories.
         // An installed NSIS build lives in Program Files or AppData; a dev
         // build is always under the Cargo target directory.
-        std::env::current_exe().is_ok_and(|exe| {
-            !exe.to_string_lossy().contains(r"\target\debug")
-                && !exe.to_string_lossy().contains(r"\target\release")
-        })
+        let path = exe.to_string_lossy();
+        !path.contains(r"\target\debug") && !path.contains(r"\target\release")
     }
 
     /// One snapshot of the process list, closed once by `Drop`.
@@ -347,6 +350,27 @@ mod windows {
             .next_back()
             .unwrap_or(&name)
             .to_string()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::path::Path;
+
+        #[test]
+        fn a_windows_triple_target_checkout_is_not_packaged() {
+            assert!(!super::packaged_exe(Path::new(
+                r"C:\work\fidget\target\x86_64-pc-windows-msvc\debug\fidget.exe"
+            )));
+            assert!(!super::packaged_exe(Path::new(
+                r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe"
+            )));
+            assert!(!super::packaged_exe(Path::new(
+                r"C:\work\fidget\target\debug\fidget.exe"
+            )));
+            assert!(super::packaged_exe(Path::new(
+                r"C:\Program Files\Fidget\fidget.exe"
+            )));
+        }
     }
 }
 
