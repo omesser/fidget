@@ -236,6 +236,21 @@ impl Probe for WindowsProbe {
     }
 }
 
+/// The name the Windows process list shows for the exe at `exe`. An installed
+/// app (NSIS puts it in Program Files or AppData) is "Fidget". A checkout,
+/// including a `target/<triple>/debug` cross build, shows the parent that
+/// launched it, so the user sees the terminal they ran it from.
+#[cfg(any(test, target_os = "windows"))]
+fn process_list_name_for(
+    exe: &std::path::Path,
+    parent_chain: impl FnOnce() -> Option<String>,
+) -> String {
+    if crate::login_item::exe_is_bundled(exe) {
+        return "Fidget".into();
+    }
+    parent_chain().unwrap_or_else(|| "Fidget".into())
+}
+
 #[cfg(target_os = "windows")]
 mod windows {
     use std::collections::HashMap;
@@ -247,10 +262,8 @@ mod windows {
     };
 
     pub fn process_list_name() -> String {
-        if crate::login_item::process_is_bundled() {
-            return "Fidget".into();
-        }
-        parent_chain_name().unwrap_or_else(|| "Fidget".into())
+        let exe = std::env::current_exe().unwrap_or_default();
+        super::process_list_name_for(&exe, parent_chain_name)
     }
 
     /// One snapshot of the process list, closed once by `Drop`.
@@ -691,7 +704,31 @@ pub fn live() -> &'static dyn Probe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::Mutex;
+
+    #[test]
+    fn a_checkout_is_named_for_its_parent_and_an_installed_app_for_itself() {
+        let parent = || Some("WindowsTerminal".to_string());
+        for exe in [
+            "/work/fidget/target/debug/fidget.exe",
+            "/work/fidget/target/x86_64-pc-windows-msvc/debug/fidget.exe",
+            "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe",
+        ] {
+            assert_eq!(
+                process_list_name_for(Path::new(exe), parent),
+                "WindowsTerminal",
+                "{exe}"
+            );
+        }
+        assert_eq!(
+            process_list_name_for(
+                Path::new("/Applications/Fidget.app/Contents/MacOS/fidget"),
+                parent
+            ),
+            "Fidget"
+        );
+    }
 
     struct Fake {
         granted: Vec<CapabilityId>,
