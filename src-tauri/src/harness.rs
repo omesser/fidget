@@ -747,6 +747,9 @@ pub struct HarnessInspect {
     /// Why preflight refused a launcher that is there: its version check
     /// exited nonzero, timed out, or printed nothing. Chat boxes it as `failed`.
     pub unhealthy: Option<LaunchFailure>,
+    /// A model or effort the Harness did not take, for the field's row in
+    /// Settings. Cleared when the field is changed again or a set confirms.
+    pub not_applied: Vec<NotAppliedNotice>,
 }
 
 /// Why a launcher that was there gave no wire. Chat draws the parts apart:
@@ -918,6 +921,9 @@ pub enum Forwarded {
     /// races preflight and `session/new`, so a missing launcher would never
     /// reach the landing (#726) and the header would keep "no session yet".
     AttachSettled,
+    /// A model or effort did not take. Settings goes back to `restored`
+    /// before the wake that found it returns.
+    NotApplied(Vec<ConfigFailure>),
 }
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
@@ -991,7 +997,7 @@ pub struct Session {
 
 /// The model and effort set on a conversation through `session/set_config_option`,
 /// at open and whenever Apply changes them.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct OpenInputs {
     /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
     /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
@@ -1000,12 +1006,123 @@ struct OpenInputs {
 }
 
 impl OpenInputs {
+    /// This field's value as Settings holds it: blank is the Harness default.
+    fn value(&self, field: crate::acp_wire::Field) -> String {
+        match field {
+            crate::acp_wire::Field::Model => self.model.clone(),
+            crate::acp_wire::Field::Effort => self.effort.clone().unwrap_or_default(),
+        }
+    }
+
+    /// Take `field` from `other`, and nothing else.
+    fn take(&mut self, field: crate::acp_wire::Field, other: &OpenInputs) {
+        match field {
+            crate::acp_wire::Field::Model => self.model = other.model.clone(),
+            crate::acp_wire::Field::Effort => self.effort = other.effort.clone(),
+        }
+    }
+
     /// A set cannot take a value back to the Harness default, so a value
     /// blanked since `before` is not reachable on the open conversation.
     fn settable_from(&self, before: &OpenInputs) -> bool {
         (self.model == before.model || !self.model.trim().is_empty())
             && (self.effort == before.effort || self.effort.is_some())
     }
+}
+
+/// Why a value Settings asked for is not what the Harness runs on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NotApplied {
+    /// `session/set_config_option` failed, in the Harness's words.
+    Refused(String),
+    /// It answered success, and its options still list the old value.
+    Unconfirmed,
+    /// The session lists no option for it, so nothing was sent.
+    Unadvertised,
+}
+
+/// A model or effort the Harness did not take, and what Settings goes back to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigFailure {
+    pub field: crate::acp_wire::Field,
+    pub why: NotApplied,
+    /// The value in force before the change, blank for the Harness default.
+    pub restored: String,
+}
+
+impl ConfigFailure {
+    /// What Settings says under the field. Plain words, then what Fidget did.
+    pub fn notice(&self) -> String {
+        use crate::acp_wire::Field;
+        let (label, noun) = match self.field {
+            Field::Model => ("Model", "model"),
+            Field::Effort => ("Reasoning effort", "reasoning effort"),
+        };
+        let reason = match &self.why {
+            NotApplied::Refused(text) => {
+                format!(
+                    "The Harness refused it: {}.",
+                    text.trim().trim_end_matches('.')
+                )
+            }
+            NotApplied::Unconfirmed => {
+                format!("The Harness answered, but its {noun} still reads the old value.")
+            }
+            NotApplied::Unadvertised => {
+                format!("This Harness doesn't offer a {noun} setting, so Fidget can't change it.")
+            }
+        };
+        let back = if self.restored.is_empty() {
+            "the Harness default".to_string()
+        } else {
+            format!("\"{}\"", self.restored)
+        };
+        format!("{label} did not apply. {reason} Fidget put back {back}.")
+    }
+}
+
+/// One line for a field's row in Settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct NotAppliedNotice {
+    pub field: &'static str,
+    pub text: String,
+}
+
+/// What an open recorded: the inputs the conversation is opened on, the
+/// last that worked, and what did not take. A value the Harness answered
+/// without confirming is not what the conversation runs on, so it falls back
+/// to the last that worked. A value with no option to set is only logged:
+/// Settings holds one model and effort for every Harness, so going back there
+/// would undo a value meant for another one.
+fn after_open(
+    last_good: &OpenInputs,
+    inputs: &OpenInputs,
+    applied: &crate::acp_wire::Applied,
+) -> (OpenInputs, OpenInputs, Vec<ConfigFailure>) {
+    use crate::acp_wire::{Field, Outcome};
+    let mut opened_on = inputs.clone();
+    let mut good = inputs.clone();
+    let mut failed = Vec::new();
+    for field in [Field::Model, Field::Effort] {
+        let outcome = applied
+            .outcomes
+            .iter()
+            .find_map(|(asked, outcome)| (*asked == field).then_some(*outcome));
+        match outcome {
+            Some(Outcome::Unconfirmed) => {
+                opened_on.take(field, last_good);
+                good.take(field, last_good);
+                failed.push(ConfigFailure {
+                    field,
+                    why: NotApplied::Unconfirmed,
+                    restored: last_good.value(field),
+                });
+            }
+            Some(Outcome::Unadvertised) => good.take(field, last_good),
+            Some(Outcome::Confirmed) | None => {}
+        }
+    }
+    (opened_on, good, failed)
 }
 
 /// How `attach` reaches a conversation whose inputs are `now`.
@@ -1040,6 +1157,11 @@ struct State {
     opened_ids: HashSet<String>,
     /// What the last live set did on the wire, until the probe reads it.
     last_applied: Option<crate::acp_wire::Applied>,
+    /// The model and effort that last worked on this Harness, blank until one
+    /// did. A value the Harness refuses goes back to this.
+    last_good: OpenInputs,
+    /// What the Harness did not take and Settings still shows, one per field.
+    failures: Vec<ConfigFailure>,
 }
 
 impl State {
@@ -1823,7 +1945,10 @@ impl Session {
         Ok((wire, id))
     }
 
-    /// Set `inputs` on the open conversation for `key`, keeping its id.
+    /// Set `inputs` on the open conversation for `key`, keeping its id. The
+    /// conversation is recorded as opened on a value only once the Harness
+    /// confirmed it, so a refusal or an answer that kept the old value leaves
+    /// the next wake to try again, or Settings to go back (#1434).
     fn set_inputs(
         &self,
         wire: &Arc<Wire>,
@@ -1831,20 +1956,106 @@ impl Session {
         id: String,
         inputs: OpenInputs,
     ) -> Result<String, String> {
+        use crate::acp_wire::Outcome;
+        let before = {
+            let state = self.state.lock().map_err(|_| LOST.to_string())?;
+            match state.sessions.get(key) {
+                Some(opened) if opened.id == id => opened.opened_on.clone(),
+                _ => return Err("session replaced".to_string()),
+            }
+        };
         let effort = inputs.effort.as_deref();
         let applied = match wire.configure(&id, &inputs.model, effort, self.attach_timeout()) {
             Ok(applied) => applied,
-            Err(error) => return Err(self.open_failed(wire, error, "session/set_config_option")),
-        };
-        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-        state.last_applied = Some(applied);
-        match state.sessions.get_mut(key) {
-            Some(opened) if opened.id == id => {
-                opened.opened_on = inputs;
-                Ok(id)
+            Err(error) => {
+                if let OpenError::Refused(field, why) = &error {
+                    self.note_not_applied(vec![ConfigFailure {
+                        field: *field,
+                        why: NotApplied::Refused(why.clone()),
+                        restored: before.value(*field),
+                    }]);
+                }
+                return Err(self.open_failed(wire, error, "session/set_config_option"));
             }
-            _ => Err("session replaced".to_string()),
+        };
+        let mut next = before.clone();
+        let mut failed = Vec::new();
+        for (field, outcome) in &applied.outcomes {
+            match outcome {
+                Outcome::Confirmed => next.take(*field, &inputs),
+                Outcome::Unconfirmed | Outcome::Unadvertised => failed.push(ConfigFailure {
+                    field: *field,
+                    why: if *outcome == Outcome::Unconfirmed {
+                        NotApplied::Unconfirmed
+                    } else {
+                        NotApplied::Unadvertised
+                    },
+                    restored: before.value(*field),
+                }),
+            }
         }
+        {
+            let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+            match state.sessions.get_mut(key) {
+                Some(opened) if opened.id == id => opened.opened_on = next.clone(),
+                _ => return Err("session replaced".to_string()),
+            }
+            for (field, outcome) in &applied.outcomes {
+                if *outcome == Outcome::Confirmed {
+                    state.last_good.take(*field, &inputs);
+                }
+            }
+            state.last_applied = Some(applied.clone());
+        }
+        self.settle_notices(&applied, failed);
+        Ok(id)
+    }
+
+    /// A confirmed value ends its field's old notice. A failure is noted and
+    /// forwarded, and Settings has gone back before this returns.
+    fn settle_notices(&self, applied: &crate::acp_wire::Applied, failed: Vec<ConfigFailure>) {
+        let confirmed = applied.fields(crate::acp_wire::Outcome::Confirmed);
+        if !confirmed.is_empty() {
+            if let Ok(mut state) = self.state.lock() {
+                state.failures.retain(|old| !confirmed.contains(&old.field));
+            }
+            self.publish_notices();
+        }
+        if !failed.is_empty() {
+            self.note_not_applied(failed);
+        }
+    }
+
+    /// Record `failed`, one per field, show it in Settings' inspect, and tell
+    /// the app so it puts the saved value back. The app does that on this
+    /// thread, before the wake that found the failure returns.
+    fn note_not_applied(&self, failed: Vec<ConfigFailure>) {
+        if let Ok(mut state) = self.state.lock() {
+            for new in &failed {
+                state.failures.retain(|old| old.field != new.field);
+                state.failures.push(new.clone());
+            }
+        }
+        self.publish_notices();
+        (self.forward)(Forwarded::NotApplied(failed));
+    }
+
+    fn publish_notices(&self) {
+        let notices: Vec<NotAppliedNotice> = self
+            .state
+            .lock()
+            .map(|state| {
+                state
+                    .failures
+                    .iter()
+                    .map(|failure| NotAppliedNotice {
+                        field: failure.field.name(),
+                        text: failure.notice(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.update_inspect(|inspect| inspect.not_applied = notices);
     }
 
     /// The error a wake reports for an open or a set the Harness refused.
@@ -1860,8 +2071,10 @@ impl Session {
                 Ok(mut state) => self.refuse_login(&mut state),
                 Err(_) => LOST.to_string(),
             },
-            OpenError::EffortRejected(why) => format!("{EFFORT_REJECTED}{why}"),
-            OpenError::Failed(why) => {
+            OpenError::Refused(crate::acp_wire::Field::Effort, why) => {
+                format!("{EFFORT_REJECTED}{why}")
+            }
+            OpenError::Refused(crate::acp_wire::Field::Model, why) | OpenError::Failed(why) => {
                 self.update_inspect(|inspect| {
                     inspect.last_error = Some(why.clone());
                     inspect.turn_failure = Some(why.clone());
@@ -2003,9 +2216,24 @@ impl Session {
             inputs.effort.as_deref(),
         ) {
             Ok(opened) => opened,
-            Err(error) => return Err(self.open_failed(wire, error, "session/new")),
+            Err(error) => {
+                if let OpenError::Refused(field, why) = &error {
+                    let restored = self
+                        .state
+                        .lock()
+                        .map(|state| state.last_good.value(*field))
+                        .unwrap_or_default();
+                    self.note_not_applied(vec![ConfigFailure {
+                        field: *field,
+                        why: NotApplied::Refused(why.clone()),
+                        restored,
+                    }]);
+                }
+                return Err(self.open_failed(wire, error, "session/new"));
+            }
         };
         let id = opened.id;
+        let mut failures = Vec::new();
         let (replaced, first_open) = {
             let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
             // `drop_conversation` does not wait on this open. Storing the id
@@ -2015,11 +2243,15 @@ impl Session {
                 self.note_withdrawal(None);
                 (true, false)
             } else {
+                let (opened_on, last_good, failed) =
+                    after_open(&state.last_good, &inputs, &opened.applied);
+                state.last_good = last_good;
+                failures = failed;
                 state.sessions.insert(
                     key.clone(),
                     OpenedSession {
                         id: id.clone(),
-                        opened_on: inputs,
+                        opened_on,
                         loaded: saved.as_deref() == Some(id.as_str()),
                     },
                 );
@@ -2040,6 +2272,7 @@ impl Session {
             }
             return Err("session replaced".to_string());
         }
+        self.settle_notices(&opened.applied, failures);
         if first_open && !opened.history.is_empty() {
             (self.forward)(Forwarded::Restored(Restored {
                 instance: key.instance.clone(),
@@ -2147,10 +2380,21 @@ impl Session {
     /// whose model or effort changed is cancelled, as a newer wake would. Its
     /// saved slot stays, and the next wake sets the new values on it.
     pub fn inputs_applied(&self) {
+        // A field changed again is no longer the one that failed.
+        let now = self.open_inputs();
+        let cleared = self.state.lock().is_ok_and(|mut state| {
+            let before = state.failures.len();
+            state
+                .failures
+                .retain(|failure| now.value(failure.field) == failure.restored);
+            state.failures.len() != before
+        });
+        if cleared {
+            self.publish_notices();
+        }
         let Some(instance) = self.serving_instance.lock().ok().and_then(|s| s.clone()) else {
             return;
         };
-        let now = self.open_inputs();
         let changed = self.state.lock().is_ok_and(|state| {
             state
                 .sessions
@@ -8983,6 +9227,263 @@ mod tests {
         });
     }
 
+    fn failures(fx: &Fixture) -> Vec<ConfigFailure> {
+        fx.forwarded
+            .try_iter()
+            .filter_map(|forwarded| match forwarded {
+                Forwarded::NotApplied(failures) => Some(failures),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn failure(field: crate::acp_wire::Field, why: NotApplied, restored: &str) -> ConfigFailure {
+        ConfigFailure {
+            field,
+            why,
+            restored: restored.to_string(),
+        }
+    }
+
+    fn opened_on(session: &Session) -> Option<(String, String, Option<String>)> {
+        session
+            .state
+            .lock()
+            .unwrap()
+            .sessions
+            .get(&probe_key())
+            .map(|opened| {
+                (
+                    opened.id.clone(),
+                    opened.opened_on.model.clone(),
+                    opened.opened_on.effort.clone(),
+                )
+            })
+    }
+
+    /// Open on the blank defaults, then change `field` the way Apply does.
+    fn open_then_change(script: &str, set: impl Fn(&std::path::Path)) -> (Fixture, Session) {
+        let (fx, session) = Fixture::new(script);
+        session.attach(Some(&probe_key())).unwrap();
+        set(&fx.dir);
+        session.inputs_applied();
+        (fx, session)
+    }
+
+    #[test]
+    fn a_notice_says_what_did_not_apply_and_what_fidget_put_back() {
+        use crate::acp_wire::Field::*;
+        let said = |field, why, restored: &str| failure(field, why, restored).notice();
+        assert_eq!(
+            said(Effort, NotApplied::Refused("not a level this agent takes".into()), "low"),
+            "Reasoning effort did not apply. The Harness refused it: not a level this agent takes. Fidget put back \"low\"."
+        );
+        assert_eq!(
+            said(Model, NotApplied::Refused("unknown model".into()), ""),
+            "Model did not apply. The Harness refused it: unknown model. Fidget put back the Harness default."
+        );
+        assert_eq!(
+            said(Model, NotApplied::Unconfirmed, "some-model"),
+            "Model did not apply. The Harness answered, but its model still reads the old value. Fidget put back \"some-model\"."
+        );
+        assert_eq!(
+            said(Effort, NotApplied::Unadvertised, ""),
+            "Reasoning effort did not apply. This Harness doesn't offer a reasoning effort setting, so Fidget can't change it. Fidget put back the Harness default."
+        );
+        assert_eq!(
+            said(Model, NotApplied::Unadvertised, "x"),
+            "Model did not apply. This Harness doesn't offer a model setting, so Fidget can't change it. Fidget put back \"x\"."
+        );
+    }
+
+    /// The refusal reaches Settings as a failure for that field, with the
+    /// Harness's words, and the conversation is still recorded as opened on
+    /// what it was.
+    #[test]
+    fn a_refused_live_set_is_reported_for_its_field_and_the_notice_stays_one_line() {
+        use crate::acp_wire::Field::*;
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = open_then_change("completer-effort-refuse-live", |dir| {
+                write_effort(dir, "high")
+            });
+            let before = opened_on(&session);
+            let why = session.attach(Some(&probe_key())).err().expect("refused");
+            assert!(why.contains("not a level this agent takes"), "{why}");
+            let want = failure(
+                Effort,
+                NotApplied::Refused("not a level this agent takes".into()),
+                "",
+            );
+            assert_eq!(failures(&fx), vec![want.clone()]);
+            assert_eq!(
+                session.inspect().not_applied,
+                vec![NotAppliedNotice {
+                    field: "effort",
+                    text: want.notice()
+                }]
+            );
+            assert_eq!(opened_on(&session), before, "opened_on moved");
+
+            // Asked again and refused again: still one notice for the field.
+            session.attach(Some(&probe_key())).err().expect("refused");
+            assert_eq!(session.inspect().not_applied.len(), 1);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// An answer that keeps the old value is a failure too, and the
+    /// conversation is not recorded as opened on the value that did not take.
+    #[test]
+    fn an_unconfirmed_set_is_reported_and_does_not_advance_opened_on() {
+        use crate::acp_wire::Field::*;
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) =
+                open_then_change("completer-effort-stale", |dir| write_effort(dir, "high"));
+            let before = opened_on(&session);
+            session
+                .attach(Some(&probe_key()))
+                .expect("the wake goes on");
+            assert_eq!(
+                failures(&fx),
+                vec![failure(Effort, NotApplied::Unconfirmed, "")]
+            );
+            assert_eq!(opened_on(&session), before, "opened_on moved");
+            assert_eq!(session.inspect().not_applied.len(), 1);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// A Harness that lists no such option cannot change it, so Settings does
+    /// not keep showing the value as applied.
+    #[test]
+    fn a_value_the_harness_has_no_option_for_is_reported_and_not_recorded() {
+        use crate::acp_wire::Field::*;
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = open_then_change("happy", |dir| write_effort(dir, "high"));
+            let before = opened_on(&session);
+            session
+                .attach(Some(&probe_key()))
+                .expect("the wake goes on");
+            assert_eq!(
+                failures(&fx),
+                vec![failure(Effort, NotApplied::Unadvertised, "")]
+            );
+            assert_eq!(opened_on(&session), before, "opened_on moved");
+            assert!(config_lines(&fx).is_empty());
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// After Settings goes back to the saved value, the next wake asks for
+    /// nothing, so a refused value is not retried behind the user's back.
+    #[test]
+    fn once_settings_is_put_back_the_next_wake_sends_no_set() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = open_then_change("completer-effort-refuse-live", |dir| {
+                write_effort(dir, "high")
+            });
+            session.attach(Some(&probe_key())).err().expect("refused");
+            let path = crate::settings::settings_path(session.data.as_path());
+            let live = Arc::new(Mutex::new(crate::settings::Settings::load(&path)));
+            crate::settings::restore_failed(&live, &path, &failures(&fx)).unwrap();
+
+            session.inputs_applied();
+            session.attach(Some(&probe_key())).expect("nothing to set");
+            assert_eq!(config_lines(&fx).len(), 1, "a second set was sent");
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// Changing the field again clears its notice. The old failure is not
+    /// what the new value did.
+    #[test]
+    fn changing_the_field_again_clears_its_notice() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (_fx, session) = open_then_change("happy", |dir| write_effort(dir, "high"));
+            session
+                .attach(Some(&probe_key()))
+                .expect("the wake goes on");
+            assert_eq!(session.inspect().not_applied.len(), 1);
+            write_effort(session.data.as_path(), "low");
+            session.inputs_applied();
+            assert!(session.inspect().not_applied.is_empty());
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// The first wake after Apply opens the conversation, and the Harness can
+    /// refuse there too. There is no earlier value that worked, so Settings
+    /// goes back to the Harness default.
+    #[test]
+    fn a_value_refused_at_open_is_reported_and_goes_back_to_the_default() {
+        use crate::acp_wire::Field::*;
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "nope");
+            session.attach(Some(&probe_key())).err().expect("refused");
+            assert_eq!(
+                failures(&fx),
+                vec![failure(
+                    Model,
+                    NotApplied::Refused("unknown model".into()),
+                    ""
+                )]
+            );
+            session.shutdown();
+
+            let (fx, session) = Fixture::new("completer-effort-reject");
+            write_effort(&fx.dir, "high");
+            session.attach(Some(&probe_key())).err().expect("refused");
+            assert_eq!(
+                failures(&fx),
+                vec![failure(
+                    Effort,
+                    NotApplied::Refused("not a level this agent takes".into()),
+                    ""
+                )]
+            );
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
+    /// Back to the value that last worked on this Harness, not to blank.
+    #[test]
+    fn a_refused_model_goes_back_to_the_one_that_worked() {
+        use crate::acp_wire::Field::*;
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            write_completer_model(&fx.dir, "some-model");
+            session.attach(Some(&probe_key())).unwrap();
+            write_completer_model(&fx.dir, "nope");
+            session.inputs_applied();
+            session.attach(Some(&probe_key())).err().expect("refused");
+            assert_eq!(
+                failures(&fx),
+                vec![failure(
+                    Model,
+                    NotApplied::Refused("unknown model".into()),
+                    "some-model"
+                )]
+            );
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
+    }
+
     /// The probe on a Harness that lists no option does not pass, and says why.
     #[test]
     fn the_probe_fails_when_the_harness_lists_no_option_to_set() {
@@ -9009,7 +9510,12 @@ mod tests {
             assert_eq!(probe(&session, Some(&then)), 1);
             session.shutdown();
             crate::dev_flags::seed(&crate::settings::Settings::default());
-            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+            // The probe has no Settings to put the value back, and the conversation
+            // is not recorded as opened on it, so the second turn asks again.
+            assert_eq!(
+                config_lines(&fx),
+                vec!["config=reasoning=high".to_string(); 2]
+            );
         });
     }
 

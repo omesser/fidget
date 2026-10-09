@@ -427,6 +427,8 @@ pub struct Opened {
     /// `session/new`, and for a load that failed: the session that answers
     /// never said what that replay holds.
     pub history: Vec<Replayed>,
+    /// What the model and effort set at open did on the wire.
+    pub applied: Applied,
 }
 
 /// One entry of a `session/load` replay, in the order the session sent it.
@@ -469,8 +471,8 @@ pub enum OpenError {
     /// The child is gone.
     Lost,
     Failed(String),
-    /// The session exists. The harness refused the reasoning effort.
-    EffortRejected(String),
+    /// The session exists. The Harness refused this value, in its own words.
+    Refused(Field, String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1344,17 +1346,19 @@ async fn serve(
                     effort.as_deref(),
                 )
                 .await
-                .map(|(id, listed)| {
+                .map(|(id, listed, applied)| {
                     options.insert(id.clone(), listed);
-                    id
+                    (id, applied)
                 });
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
                 // `session/new`. Every update queued for either id is history,
                 // never work between turns. Only a load that answered keeps it.
-                let loaded = matches!(&opened, Ok(id) if loading.as_ref() == Some(id));
-                let replayed =
-                    |id: &SessionId| loading.as_ref() == Some(id) || opened.as_ref() == Ok(id);
+                let loaded = matches!(&opened, Ok((id, _)) if loading.as_ref() == Some(id));
+                let replayed = |id: &SessionId| {
+                    loading.as_ref() == Some(id)
+                        || matches!(&opened, Ok((opened, _)) if opened == id)
+                };
                 let mut history = Replay::default();
                 while let Ok(message) = incoming.try_recv() {
                     let message = match message {
@@ -1377,9 +1381,10 @@ async fn serve(
                     );
                 }
                 let history = history.finish();
-                let _ = reply.send(opened.map(|id| Opened {
+                let _ = reply.send(opened.map(|(id, applied)| Opened {
                     id: id.0.to_string(),
                     history,
+                    applied,
                 }));
             }
             Step::Command(Msg::Prompt {
@@ -1794,7 +1799,7 @@ async fn open(
     claude_mcp_approval: bool,
     model: &str,
     effort: Option<&str>,
-) -> Result<(SessionId, Vec<SessionConfigOption>), OpenError> {
+) -> Result<(SessionId, Vec<SessionConfigOption>, Applied), OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
     let approval = || claude_mcp_meta(claude_mcp_approval && mcp.is_some());
     let loaded = if let Some(id) = load {
@@ -1838,7 +1843,7 @@ async fn open(
             })?,
     };
     match apply_completer(cx, &session_id, model, effort, options.unwrap_or_default()).await {
-        Ok((listed, _)) => Ok((session_id, listed)),
+        Ok((listed, applied)) => Ok((session_id, listed, applied)),
         Err(error) => {
             if created && !matches!(error, OpenError::Lost) {
                 let _ = cx
@@ -1868,7 +1873,8 @@ async fn apply_completer(
     if !model.is_empty() {
         let outcome = match model_config_id(&options) {
             Some(config_id) => {
-                options = set_config(cx, session_id, config_id.clone(), model, false).await?;
+                options =
+                    set_config(cx, session_id, config_id.clone(), model, Field::Model).await?;
                 confirm(&options, &config_id, model)
             }
             None => Outcome::Unadvertised,
@@ -1878,7 +1884,8 @@ async fn apply_completer(
     if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
         let outcome = match effort_config_id(&options) {
             Some(config_id) => {
-                options = set_config(cx, session_id, config_id.clone(), effort, true).await?;
+                options =
+                    set_config(cx, session_id, config_id.clone(), effort, Field::Effort).await?;
                 confirm(&options, &config_id, effort)
             }
             None => Outcome::Unadvertised,
@@ -1920,7 +1927,7 @@ async fn set_config(
     session_id: &SessionId,
     config_id: SessionConfigId,
     value: &str,
-    effort: bool,
+    field: Field,
 ) -> Result<Vec<SessionConfigOption>, OpenError> {
     match cx
         .send_request(SetSessionConfigOptionRequest::new(
@@ -1933,8 +1940,7 @@ async fn set_config(
     {
         Ok(response) => Ok(response.config_options),
         Err(_) if cx.is_incoming_closed() => Err(OpenError::Lost),
-        Err(error) if effort => Err(OpenError::EffortRejected(error_text(error))),
-        Err(error) => Err(OpenError::Failed(error_text(error))),
+        Err(error) => Err(OpenError::Refused(field, error_text(error))),
     }
 }
 
