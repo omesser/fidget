@@ -35,6 +35,7 @@ mod debug;
 mod dev_flags;
 mod frame_loop;
 mod harness;
+mod login_item;
 #[cfg(unix)]
 mod login_path;
 mod mcp_http;
@@ -4654,6 +4655,15 @@ fn main() {
             hide_rules.set_away(settings.hidden);
             hide_rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
             let rules = Arc::new(Mutex::new(hide_rules));
+
+            if let Err(why) = app
+                .handle()
+                .plugin(tauri_plugin_autostart::Builder::new().build())
+            {
+                fidget::eprintln_and_log!("launch at login: {why}");
+            } else {
+                login_item::sync(app.handle(), settings.launch_at_login);
+            }
 
             if let Err(why) = app
                 .handle()
