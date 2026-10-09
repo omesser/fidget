@@ -7,20 +7,54 @@ use std::path::Path;
 
 use tauri::{AppHandle, Manager};
 
-/// Register or remove the OS login item. No-op for a checkout binary, and
-/// when the plugin did not register.
-pub fn sync(app: &AppHandle, wanted: bool) {
-    if !process_is_bundled() {
+/// Enable and disable, so a test can record the call without writing the OS login item.
+pub(crate) trait LoginItem {
+    fn enable(&self) -> Result<(), String>;
+    fn disable(&self) -> Result<(), String>;
+}
+
+/// The registered autostart plugin.
+pub(crate) struct PluginItem<'a>(tauri::State<'a, tauri_plugin_autostart::AutoLaunchManager>);
+
+impl LoginItem for PluginItem<'_> {
+    fn enable(&self) -> Result<(), String> {
+        self.0.enable().map_err(|err| err.to_string())
+    }
+
+    fn disable(&self) -> Result<(), String> {
+        self.0.disable().map_err(|err| err.to_string())
+    }
+}
+
+/// The autostart plugin, when it registered.
+pub(crate) fn plugin(app: &AppHandle) -> Option<PluginItem<'_>> {
+    app.try_state().map(PluginItem)
+}
+
+/// Startup and a settings save share this call, so the saved choice is what
+/// reaches the login item.
+pub(crate) fn apply(
+    launch_at_login: bool,
+    bundled: bool,
+    item: Option<&(impl LoginItem + ?Sized)>,
+) {
+    sync(launch_at_login, bundled, item);
+}
+
+/// Register or remove the OS login item for the saved choice. No-op for a
+/// checkout binary, and when the plugin did not register.
+fn sync(launch_at_login: bool, bundled: bool, item: Option<&(impl LoginItem + ?Sized)>) {
+    if !bundled {
         return;
     }
-    let Some(manager) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() else {
+    let Some(item) = item else {
         fidget::eprintln_and_log!("launch at login: plugin is not registered");
         return;
     };
-    let result = if wanted {
-        manager.enable()
+    let result = if launch_at_login {
+        item.enable()
     } else {
-        manager.disable()
+        item.disable()
     };
     if let Err(why) = result {
         fidget::eprintln_and_log!("launch at login: {why}");
@@ -72,7 +106,51 @@ fn under_cargo_target_split(exe: &Path, backslash_separates: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    struct Recorded(Mutex<Option<bool>>);
+
+    impl LoginItem for Recorded {
+        fn enable(&self) -> Result<(), String> {
+            *self.0.lock().expect("login item") = Some(true);
+            Ok(())
+        }
+
+        fn disable(&self) -> Result<(), String> {
+            *self.0.lock().expect("login item") = Some(false);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn turning_launch_at_login_on_adds_the_item_and_off_removes_it() {
+        let item = Recorded(Mutex::new(None));
+        apply(true, true, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), Some(true));
+        apply(false, true, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), Some(false));
+    }
+
+    /// The plugin registers on every build, so a checkout still has an item.
+    /// The bundled flag is what keeps the call from writing it.
+    #[test]
+    fn a_checkout_does_not_touch_the_login_item() {
+        let item = Recorded(Mutex::new(None));
+        apply(true, false, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), None);
+        apply(false, false, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), None);
+    }
+
+    /// No plugin means there is nothing to enable. The call returns rather than
+    /// treating the absence as a login item.
+    #[test]
+    fn a_missing_plugin_does_not_register_a_login_item() {
+        apply(true, true, None::<&Recorded>);
+        apply(false, true, None::<&Recorded>);
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
