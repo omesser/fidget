@@ -2461,6 +2461,21 @@ fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
     }
 }
 
+/// The Behaviors the Character of `instance` declares, as Settings lists them.
+fn declared_behaviors(app: &tauri::AppHandle, instance: &str) -> Vec<String> {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        return Vec::new();
+    };
+    let character = state.instances.lock().ok().and_then(|rows| {
+        rows.iter()
+            .find(|row| row.id == instance)
+            .map(|row| row.character.clone())
+    });
+    character
+        .and_then(|character| state.behavior_names.get(&character).cloned())
+        .unwrap_or_default()
+}
+
 /// A loaded session's history, into its Instance's log and open window. Not
 /// sent to the frame loop: nothing is addressed and Pace is untouched (#1393).
 /// Only to that window, and never as `CHAT_PLAN_EVENT`: a replayed plan is
@@ -2474,12 +2489,14 @@ fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
     let Ok(_replaying) = state.0.lock() else {
         return;
     };
+    let behaviors = declared_behaviors(app, &restored.instance);
+    let history = session_log::drawn(restored.history, &behaviors);
     let _ = app.emit_to(
         chat_label(&restored.instance),
         CHAT_RESTORED_EVENT,
-        &restored.history,
+        &history,
     );
-    session_log::restore(app, &restored.instance, restored.history);
+    session_log::restore(app, &restored.instance, history);
 }
 
 /// Show the agent's plan in the Chat surface of the Instance whose session

@@ -442,8 +442,15 @@ pub enum Replayed {
     Prompt {
         text: String,
     },
+    /// The line the user typed inside a `Prompt`'s frame. Added by
+    /// `session_log::drawn`, never by the replay, so Chat draws it as the
+    /// user's row ahead of the folded frame.
+    Typed {
+        text: String,
+    },
     /// One agent message as the session holds it, `<think>` blocks peeled
-    /// into the `Thought` before it. A Director reply keeps its Behavior line.
+    /// into the `Thought` before it. A Director reply keeps its Behavior line here.
+    /// `session_log::drawn` reads it before Chat draws the row.
     Reply {
         text: String,
     },
@@ -1209,6 +1216,9 @@ type PendingAsk = (String, Responder<RequestPermissionResponse>);
 struct Inbound {
     said: Answer,
     thought: String,
+    /// The `messageId` of the message arriving. A different one is the next
+    /// fire, and ends this wake (#1435).
+    message: Option<MessageId>,
 }
 
 struct PendingElicit {
@@ -1746,9 +1756,25 @@ fn between_turns(
     match message {
         Incoming::Update(update) => {
             let session_id = update.session_id.clone();
+            let heard = hear(&update.update);
+            if let Heard::Said {
+                message: Some(new), ..
+            } = &heard
+            {
+                let next_fire = inbound
+                    .get(&session_id)
+                    .and_then(|held| held.message.as_ref())
+                    .is_some_and(|held| held != *new);
+                if next_fire {
+                    flush_inbound(&session_id, inbound, on_event);
+                }
+            }
             let held = inbound.entry(session_id.clone()).or_default();
+            if let Heard::Said { message, .. } = &heard {
+                held.message = held.message.take().or_else(|| message.cloned());
+            }
             show(
-                hear(&update.update),
+                heard,
                 &session_id,
                 &mut held.said,
                 &mut held.thought,
@@ -3283,6 +3309,94 @@ mod tests {
         };
         assert_eq!(steps, live);
         assert_eq!(steps[0].status, "completed");
+    }
+
+    fn inbound(session: &str, message: Option<&str>, text: &str) -> Incoming {
+        let mut update = serde_json::json!({
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": text},
+        });
+        if let Some(id) = message {
+            update["messageId"] = id.into();
+        }
+        Incoming::Update(
+            serde_json::from_value(serde_json::json!({"sessionId": session, "update": update}))
+                .unwrap(),
+        )
+    }
+
+    /// Between turns, every update for a session is read and held. Returns
+    /// the wakes that came out, then what a close of `s` flushes.
+    fn wakes(messages: Vec<Incoming>) -> Vec<(String, String)> {
+        let (seen, on_event) = collector();
+        let mut inbound = HashMap::new();
+        let (mut forms, mut asks) = (Vec::new(), Vec::new());
+        for message in messages {
+            between_turns(
+                message,
+                &mut forms,
+                &mut asks,
+                &mut inbound,
+                false,
+                &on_event,
+            );
+        }
+        end_inbound(&mut inbound, &SessionId::new("s"), &on_event);
+        let events = seen.lock().unwrap().clone();
+        events
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::InboundWake { session, speech } => Some((session, speech)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Two Harness fires in a row are two wakes. The agent's `messageId`
+    /// is what says the second one began (#1435).
+    #[test]
+    fn a_new_message_id_between_turns_starts_a_new_wake() {
+        assert_eq!(
+            wakes(vec![
+                inbound("s", Some("m1"), "Back from lunch."),
+                inbound("s", Some("m1"), " Hello."),
+                inbound("s", Some("m2"), "Build is green."),
+            ]),
+            [
+                ("s".to_string(), "Back from lunch. Hello.".to_string()),
+                ("s".to_string(), "Build is green.".to_string()),
+            ]
+        );
+    }
+
+    /// A Harness that sends no `messageId` keeps one wake until something
+    /// else flushes it, as it did before.
+    #[test]
+    fn a_harness_without_message_ids_keeps_one_wake() {
+        assert_eq!(
+            wakes(vec![
+                inbound("s", None, "One."),
+                inbound("s", None, " Two."),
+            ]),
+            [("s".to_string(), "One. Two.".to_string())]
+        );
+        assert_eq!(
+            wakes(vec![
+                inbound("s", None, "One."),
+                inbound("s", Some("m1"), " Two."),
+            ]),
+            [("s".to_string(), "One. Two.".to_string())]
+        );
+    }
+
+    /// Another session's id change is not this one's.
+    #[test]
+    fn a_message_id_is_a_boundary_within_its_own_session_only() {
+        let both = wakes(vec![
+            inbound("s", Some("m1"), "mine"),
+            inbound("other", Some("m2"), "theirs"),
+        ]);
+        assert_eq!(both, [("s".to_string(), "mine".to_string())]);
     }
 
     /// One `session/request_permission`, deserialized rather than built, so

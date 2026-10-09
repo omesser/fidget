@@ -855,6 +855,19 @@ function drawTool(body, entry) {
 }
 
 const RESTORED_ROWS = {
+  // The line the user typed, drawn as their row is, ahead of the folded frame
+  // it was sent in. It carries no stamp: the replay has no time.
+  typed: (entry) => {
+    const row = el("row you restored");
+    const cluster = el("who");
+    const label = el("who-label");
+    label.textContent = "You";
+    cluster.append(label);
+    const body = el("said");
+    body.textContent = entry.text;
+    row.append(cluster, body);
+    return row;
+  },
   prompt: (entry) => restoredFold("prompt", "Prompt", entry.text, drawThought),
   thought: (entry) => restoredFold("thought", "Thinking", entry.text, drawThought),
   tool_call: (entry) =>
