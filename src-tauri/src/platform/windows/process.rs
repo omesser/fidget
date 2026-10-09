@@ -65,8 +65,7 @@ fn process_name(image_path: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// The Win32 half needs a live desktop; the naming does not, and the naming
-    /// is the half that used to hand back a title.
+    /// The Win32 half needs a live desktop; the naming does not.
     #[test]
     fn process_name_is_the_image_file_stem() {
         assert_eq!(
