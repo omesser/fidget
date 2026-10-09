@@ -4601,8 +4601,6 @@ fn main() {
             hide_rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
             let rules = Arc::new(Mutex::new(hide_rules));
 
-            // Before the first sync: the plugin owns the login item. A checkout
-            // binary never reaches enable or disable.
             if let Err(why) = app
                 .handle()
                 .plugin(tauri_plugin_autostart::Builder::new().build())

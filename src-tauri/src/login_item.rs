@@ -1,7 +1,7 @@
 //! Login item for a packaged build.
 //!
-//! A checkout binary is not an app a login item can start, so nothing here
-//! registers one unless `exe_is_bundled` says this process is.
+//! A checkout binary is not an app a login item can start, so `sync` does
+//! not register one.
 
 use std::path::Path;
 
@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 /// Register or remove the OS login item. No-op for a checkout binary, and
 /// when the plugin did not register.
 pub fn sync(app: &AppHandle, wanted: bool) {
-    if !bundled_exe() {
+    if !process_is_bundled() {
         return;
     }
     let Some(manager) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() else {
@@ -27,14 +27,13 @@ pub fn sync(app: &AppHandle, wanted: bool) {
     }
 }
 
-/// `current_exe` when it can be read. A failure is not a bundle: registering
-/// a login item with no path would point at nothing.
-pub fn bundled_exe() -> bool {
+/// Whether this process is an installed app a login item can start. A failed
+/// `current_exe` is not one: a login item would point at nothing.
+pub fn process_is_bundled() -> bool {
     std::env::current_exe().is_ok_and(|exe| exe_is_bundled(&exe))
 }
 
-/// An installed app. On macOS that is a `.app`. Elsewhere it is any binary
-/// that is not a `cargo` build under `target/debug` or `target/release`.
+/// Whether `exe` is an installed app a login item can start.
 pub fn exe_is_bundled(exe: &Path) -> bool {
     #[cfg(target_os = "macos")]
     {

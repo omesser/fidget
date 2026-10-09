@@ -1748,8 +1748,7 @@ pub struct Live {
     pub installed: Vec<String>,
     /// The user directory the Character picker reads.
     pub characters_dir: String,
-    /// This process is an installed app a login item can start. A checkout
-    /// binary is not: there is no bundle to launch.
+    /// This process is an installed app a login item can start.
     pub bundled: bool,
 }
 
@@ -1766,7 +1765,7 @@ impl Live {
             api_key_placeholder: String::new(),
             installed: Vec::new(),
             characters_dir: crate::package::user_characters_dir().display().to_string(),
-            bundled: crate::login_item::bundled_exe(),
+            bundled: crate::login_item::process_is_bundled(),
         }
     }
 }
