@@ -1050,7 +1050,7 @@ fn retarget_off_the_settings_lock(
 /// The test seam for `SettingsSession::apply`, without the lock, the file and
 /// the ops channel.
 #[cfg(test)]
-fn apply_with_store(
+pub(crate) fn apply_with_store(
     settings: &mut Settings,
     store: &dyn SecretStore,
     patch: SettingsPatch,

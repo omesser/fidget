@@ -5913,6 +5913,64 @@ mod tests {
         });
     }
 
+    /// Apply through the Settings seam: the file a Harness reads at open, and
+    /// the live flags. What the frame loop does with the Retarget is not here.
+    fn applied(dir: &std::path::Path, completer: crate::settings::CompleterPatch) {
+        let path = crate::settings::settings_path(dir);
+        let mut settings = crate::settings::Settings::load(&path);
+        crate::settings::apply_with_store(
+            &mut settings,
+            &crate::secrets::MemoryStore::new(),
+            crate::settings::SettingsPatch {
+                completer,
+                ..crate::settings::SettingsPatch::default()
+            },
+        )
+        .expect("apply");
+        settings.save(&path).expect("settings");
+    }
+
+    fn model_patch(model: &str) -> crate::settings::CompleterPatch {
+        crate::settings::CompleterPatch {
+            director_model: Some(model.to_string()),
+            ..crate::settings::CompleterPatch::default()
+        }
+    }
+
+    fn effort_patch(effort: &str) -> crate::settings::CompleterPatch {
+        crate::settings::CompleterPatch {
+            director_reasoning_effort: Some(effort.to_string()),
+            ..crate::settings::CompleterPatch::default()
+        }
+    }
+
+    /// Three wakes on one Instance with an Apply before the second and the
+    /// third. The prompts' session ids, in order.
+    fn sessions_across_applies(
+        fx: &Fixture,
+        session: &Session,
+        same: crate::settings::CompleterPatch,
+        changed: crate::settings::CompleterPatch,
+    ) -> Vec<Value> {
+        for (apply, prompt) in [
+            (None, "hi"),
+            (Some(same), "same"),
+            (Some(changed), "changed"),
+        ] {
+            if let Some(patch) = apply {
+                applied(&fx.dir, patch);
+            }
+            assert_eq!(
+                session.complete(&asking(prompt), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
+        }
+        fx.events("prompt")
+            .into_iter()
+            .map(|prompt| prompt["session_id"].clone())
+            .collect()
+    }
+
     /// #1430: Apply saved a new model while a conversation was open. The
     /// Harness sets the model at `session/new` only, so the old conversation
     /// kept answering on the model the user just left.
@@ -5920,24 +5978,13 @@ mod tests {
     fn an_applied_model_reaches_the_next_wake_and_the_same_model_keeps_the_conversation() {
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
-            let (fx, session) = Fixture::new("completer-model");
+            let (fx, session) = Fixture::new("load-completer-model");
             write_completer_model(&fx.dir, "default-model");
-            assert_eq!(
-                session.complete(&asking("hi"), &|_| {}),
-                Ok(Reply::whole("Hello"))
-            );
-
-            session.model_applied("default-model", "default-model", ["buddy-1"]);
-            assert_eq!(
-                session.complete(&asking("same model"), &|_| {}),
-                Ok(Reply::whole("Hello"))
-            );
-
-            write_completer_model(&fx.dir, "some-model");
-            session.model_applied("default-model", "some-model", ["buddy-1"]);
-            assert_eq!(
-                session.complete(&asking("new model"), &|_| {}),
-                Ok(Reply::whole("Hello"))
+            let ids = sessions_across_applies(
+                &fx,
+                &session,
+                model_patch("default-model"),
+                model_patch("some-model"),
             );
             session.shutdown();
 
@@ -5948,15 +5995,44 @@ mod tests {
                     "config=llm=some-model".to_string(),
                 ]
             );
-            let prompts = fx.events("prompt");
-            assert_eq!(prompts.len(), 3, "{prompts:?}");
             assert_eq!(
-                prompts[0]["session_id"], prompts[1]["session_id"],
-                "an unchanged model reopened the conversation: {prompts:?}"
+                ids[0], ids[1],
+                "an unchanged model reopened the conversation"
             );
             assert_ne!(
-                prompts[1]["session_id"], prompts[2]["session_id"],
-                "the new model was asked on the old conversation: {prompts:?}"
+                ids[1], ids[2],
+                "the new model was asked on the old conversation"
+            );
+        });
+    }
+
+    /// #1434: effort is the other thing a Harness takes only at open. A new
+    /// effort answered on the old conversation at the old level.
+    #[test]
+    fn an_applied_effort_reaches_the_next_wake_and_the_same_effort_keeps_the_conversation() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("load-completer-effort");
+            applied(&fx.dir, effort_patch("low"));
+            let ids =
+                sessions_across_applies(&fx, &session, effort_patch("low"), effort_patch("high"));
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+
+            assert_eq!(
+                config_lines(&fx),
+                vec![
+                    "config=reasoning=low".to_string(),
+                    "config=reasoning=high".to_string(),
+                ]
+            );
+            assert_eq!(
+                ids[0], ids[1],
+                "an unchanged effort reopened the conversation"
+            );
+            assert_ne!(
+                ids[1], ids[2],
+                "the new effort was asked on the old conversation"
             );
         });
     }
