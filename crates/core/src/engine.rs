@@ -5722,6 +5722,29 @@ mod tests {
         );
     }
 
+    /// Pressed at (210, 440) with the feet at (180, 500). After the cursor
+    /// moves to (460, 180) the feet are at (430, 240): the grabbed point stays
+    /// under the pointer instead of the feet jumping to it.
+    #[test]
+    fn a_drag_keeps_the_grabbed_point_under_the_cursor() {
+        let mut engine = Engine::new(Point { x: 180.0, y: 500.0 });
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 210.0, y: 440.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.position, Point { x: 180.0, y: 500.0 });
+
+        let dragged = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 460.0, y: 180.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(dragged.position, Point { x: 430.0, y: 240.0 });
+    }
+
     #[test]
     fn a_grab_takes_the_sprite_over_and_letting_go_drops_it() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
