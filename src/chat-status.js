@@ -150,9 +150,8 @@ function cleanName(raw) {
 
 // Which mind answers this window, for the header beside who you are talking
 // to. A statement and never a control. The branches follow
-// `settings::harness_state`'s order, including the missing-CLI state #659
-// added there. Chat used to drop `missing` and say `not running` for an
-// install the user could still make (#726).
+// `settings::harness_state`'s order, including the missing-CLI state: an
+// install the user can still make is `missing`, not `not running`.
 export function mindLine(opening) {
   if (!opening) {
     return "";
