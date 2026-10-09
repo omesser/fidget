@@ -27,10 +27,11 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
-export const MODEL_NOTICE =
-  'Model did not apply. The Harness refused it: unknown model. Fidget put back "gpt-4o-mini".';
-export const EFFORT_NOTICE =
-  "Reasoning effort did not apply. This Harness doesn't offer a reasoning effort setting, so Fidget can't change it. Fidget put back the Harness default.";
+// The sentences `ConfigFailure::notice` writes, pinned in one fixture that
+// harness.rs checks too, so the page is tested on what the Shell sends.
+const NOTICES = read("settings-not-applied-notices.json");
+export const MODEL_NOTICE = NOTICES.model_refused;
+export const EFFORT_NOTICE = NOTICES.effort_unadvertised;
 
 // `before` is what the page holds after Apply. `after` is the snapshot the
 // refresh brings once the next wake found the refusal.
@@ -124,6 +125,7 @@ test("a refused model shows its notice and the old value is back in the field", 
   assert.equal(seen.error, undefined, seen.error);
   assert.deepEqual(seen.applied, { value: "nope", notice: null, alert: null });
   assert.deepEqual(seen.refused, { value: "gpt-4o-mini", notice: MODEL_NOTICE, alert: "alert" });
+  assert.match(seen.refused.notice, /You asked for "gpt-5"/, "the tried value is in the notice");
   // The Model / API row is off while a Harness drives, and says nothing of it.
   assert.deepEqual(seen.twin, { value: "gpt-4o-mini", notice: null, alert: null });
 });
@@ -141,6 +143,7 @@ test("a Harness with no effort setting says so under the effort field", { skip, 
   assert.equal(seen.error, undefined, seen.error);
   assert.deepEqual(seen.applied, { value: "high", notice: null, alert: null });
   assert.deepEqual(seen.refused, { value: "", notice: EFFORT_NOTICE, alert: "alert" });
+  assert.match(seen.refused.notice, /You asked for "high"/, "the tried value is in the notice");
 });
 
 test("a notice goes when the next snapshot carries none", { skip, timeout: 60000 }, () => {
@@ -158,4 +161,23 @@ test("a notice goes when the next snapshot carries none", { skip, timeout: 60000
   assert.equal(seen.error, undefined, seen.error);
   assert.equal(seen.shown.notice, MODEL_NOTICE);
   assert.equal(seen.cleared.notice, null);
+});
+
+test("a tried value with markup is shown as text and injects nothing", { skip, timeout: 60000 }, () => {
+  const hostile = 'Model did not apply. You asked for "<img src=x onerror=window.__pwn=1><b>x</b>". The Harness refused it: <script>window.__pwn=1</script>. Fidget put back the Harness default.';
+  const seen = drive({
+    before: { harness_model: "x" },
+    steps: `
+    tab("AI");
+    for (let i = 0; i < 5; i++) await tick();
+    await refresh({ harness_model: "", harness_model_notice: ${JSON.stringify(hostile).replace(/</g, "\\u003c")} });
+    const notice = document.querySelector('[data-row="harness_model"] .set-notice');
+    seen.text = notice.textContent;
+    seen.elements = notice.children.length;
+    seen.pwned = window.__pwn === 1;
+    seen.injected = document.querySelectorAll("img[src='x'], .set-notice b, .set-notice script").length;`,
+  });
+  assert.equal(seen.error, undefined, seen.error);
+  assert.equal(seen.text, hostile);
+  assert.deepEqual([seen.elements, seen.pwned, seen.injected], [0, false, 0]);
 });

@@ -1046,6 +1046,8 @@ pub enum NotApplied {
 pub struct ConfigFailure {
     pub field: crate::acp_wire::Field,
     pub why: NotApplied,
+    /// The value Apply asked for, blank for the Harness default.
+    pub tried: String,
     /// The value in force before the change, blank for the Harness default.
     pub restored: String,
 }
@@ -1077,7 +1079,12 @@ impl ConfigFailure {
         } else {
             format!("\"{}\"", self.restored)
         };
-        format!("{label} did not apply. {reason} Fidget put back {back}.")
+        let asked = if self.tried.is_empty() {
+            "the Harness default".to_string()
+        } else {
+            format!("\"{}\"", self.tried)
+        };
+        format!("{label} did not apply. You asked for {asked}. {reason} Fidget put back {back}.")
     }
 }
 
@@ -1115,6 +1122,7 @@ fn after_open(
                 failed.push(ConfigFailure {
                     field,
                     why: NotApplied::Unconfirmed,
+                    tried: inputs.value(field),
                     restored: last_good.value(field),
                 });
             }
@@ -1972,6 +1980,7 @@ impl Session {
                     self.note_not_applied(vec![ConfigFailure {
                         field: *field,
                         why: NotApplied::Refused(why.clone()),
+                        tried: inputs.value(*field),
                         restored: before.value(*field),
                     }]);
                 }
@@ -1990,6 +1999,7 @@ impl Session {
                     } else {
                         NotApplied::Unadvertised
                     },
+                    tried: inputs.value(*field),
                     restored: before.value(*field),
                 }),
             }
@@ -2226,6 +2236,7 @@ impl Session {
                     self.note_not_applied(vec![ConfigFailure {
                         field: *field,
                         why: NotApplied::Refused(why.clone()),
+                        tried: inputs.value(*field),
                         restored,
                     }]);
                 }
@@ -9238,10 +9249,16 @@ mod tests {
             .collect()
     }
 
-    fn failure(field: crate::acp_wire::Field, why: NotApplied, restored: &str) -> ConfigFailure {
+    fn failure(
+        field: crate::acp_wire::Field,
+        why: NotApplied,
+        tried: &str,
+        restored: &str,
+    ) -> ConfigFailure {
         ConfigFailure {
             field,
             why,
+            tried: tried.to_string(),
             restored: restored.to_string(),
         }
     }
@@ -9274,26 +9291,49 @@ mod tests {
     #[test]
     fn a_notice_says_what_did_not_apply_and_what_fidget_put_back() {
         use crate::acp_wire::Field::*;
-        let said = |field, why, restored: &str| failure(field, why, restored).notice();
+        let said =
+            |field, why, tried: &str, restored: &str| failure(field, why, tried, restored).notice();
         assert_eq!(
-            said(Effort, NotApplied::Refused("not a level this agent takes".into()), "low"),
-            "Reasoning effort did not apply. The Harness refused it: not a level this agent takes. Fidget put back \"low\"."
+            said(Effort, NotApplied::Refused("not a level this agent takes".into()), "turbo", "low"),
+            "Reasoning effort did not apply. You asked for \"turbo\". The Harness refused it: not a level this agent takes. Fidget put back \"low\"."
         );
         assert_eq!(
-            said(Model, NotApplied::Refused("unknown model".into()), ""),
-            "Model did not apply. The Harness refused it: unknown model. Fidget put back the Harness default."
+            said(Model, NotApplied::Refused("unknown model".into()), "gpt-5", ""),
+            "Model did not apply. You asked for \"gpt-5\". The Harness refused it: unknown model. Fidget put back the Harness default."
         );
         assert_eq!(
-            said(Model, NotApplied::Unconfirmed, "some-model"),
-            "Model did not apply. The Harness answered, but its model still reads the old value. Fidget put back \"some-model\"."
+            said(Model, NotApplied::Unconfirmed, "gpt-5", "some-model"),
+            "Model did not apply. You asked for \"gpt-5\". The Harness answered, but its model still reads the old value. Fidget put back \"some-model\"."
         );
         assert_eq!(
-            said(Effort, NotApplied::Unadvertised, ""),
-            "Reasoning effort did not apply. This Harness doesn't offer a reasoning effort setting, so Fidget can't change it. Fidget put back the Harness default."
+            said(Effort, NotApplied::Unadvertised, "high", ""),
+            "Reasoning effort did not apply. You asked for \"high\". This Harness doesn't offer a reasoning effort setting, so Fidget can't change it. Fidget put back the Harness default."
         );
         assert_eq!(
-            said(Model, NotApplied::Unadvertised, "x"),
-            "Model did not apply. This Harness doesn't offer a model setting, so Fidget can't change it. Fidget put back \"x\"."
+            said(Model, NotApplied::Unadvertised, "gpt-5", "x"),
+            "Model did not apply. You asked for \"gpt-5\". This Harness doesn't offer a model setting, so Fidget can't change it. Fidget put back \"x\"."
+        );
+        // The page test draws these two exact sentences.
+        let pinned: std::collections::BTreeMap<String, String> = serde_json::from_str(
+            include_str!("../../tests/fixtures/settings-not-applied-notices.json"),
+        )
+        .unwrap();
+        assert_eq!(
+            said(
+                Model,
+                NotApplied::Refused("unknown model".into()),
+                "gpt-5",
+                "gpt-4o-mini"
+            ),
+            pinned["model_refused"]
+        );
+        assert_eq!(
+            said(Effort, NotApplied::Unadvertised, "high", ""),
+            pinned["effort_unadvertised"]
+        );
+        assert_eq!(
+            said(Model, NotApplied::Unconfirmed, "", "x"),
+            "Model did not apply. You asked for the Harness default. The Harness answered, but its model still reads the old value. Fidget put back \"x\"."
         );
     }
 
@@ -9314,6 +9354,7 @@ mod tests {
             let want = failure(
                 Effort,
                 NotApplied::Refused("not a level this agent takes".into()),
+                "high",
                 "",
             );
             assert_eq!(failures(&fx), vec![want.clone()]);
@@ -9349,7 +9390,7 @@ mod tests {
                 .expect("the wake goes on");
             assert_eq!(
                 failures(&fx),
-                vec![failure(Effort, NotApplied::Unconfirmed, "")]
+                vec![failure(Effort, NotApplied::Unconfirmed, "high", "")]
             );
             assert_eq!(opened_on(&session), before, "opened_on moved");
             assert_eq!(session.inspect().not_applied.len(), 1);
@@ -9372,7 +9413,7 @@ mod tests {
                 .expect("the wake goes on");
             assert_eq!(
                 failures(&fx),
-                vec![failure(Effort, NotApplied::Unadvertised, "")]
+                vec![failure(Effort, NotApplied::Unadvertised, "high", "")]
             );
             assert_eq!(opened_on(&session), before, "opened_on moved");
             assert!(config_lines(&fx).is_empty());
@@ -9438,6 +9479,7 @@ mod tests {
                 vec![failure(
                     Model,
                     NotApplied::Refused("unknown model".into()),
+                    "nope",
                     ""
                 )]
             );
@@ -9451,6 +9493,7 @@ mod tests {
                 vec![failure(
                     Effort,
                     NotApplied::Refused("not a level this agent takes".into()),
+                    "high",
                     ""
                 )]
             );
@@ -9476,6 +9519,7 @@ mod tests {
                 vec![failure(
                     Model,
                     NotApplied::Refused("unknown model".into()),
+                    "nope",
                     "some-model"
                 )]
             );

@@ -4780,6 +4780,7 @@ mod tests {
         crate::harness::ConfigFailure {
             field,
             why: crate::harness::NotApplied::Refused("no".to_string()),
+            tried: "tried".to_string(),
             restored: restored.to_string(),
         }
     }
