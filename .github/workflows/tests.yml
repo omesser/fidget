@@ -306,6 +306,8 @@ jobs:
             src-tauri/src/platform/windows/**
             src-tauri/tests/windows_subsystem.rs
             src-tauri/src/secrets.rs
+            src-tauri/src/consent.rs
+            src-tauri/src/login_item.rs
             crates/core/src/sensing.rs
             src-tauri/Cargo.toml
             crates/core/Cargo.toml
