@@ -2206,10 +2206,7 @@ pub(crate) mod tests {
 
         match launch_row {
             FormRow::Checkbox { frozen, label, .. } => {
-                assert!(
-                    *frozen,
-                    "Launch at login checkbox must be frozen until #132 ships"
-                );
+                assert!(*frozen, "Launch at login stays frozen for a checkout");
                 assert!(
                     label.contains("unimplemented"),
                     "Launch checkbox must be labeled unimplemented"

@@ -46,21 +46,17 @@ pub fn exe_is_bundled(exe: &Path) -> bool {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(test, not(target_os = "macos")))]
 fn under_cargo_target(exe: &Path) -> bool {
-    let mut parts = exe.components();
-    while let Some(component) = parts.next() {
-        if component.as_os_str() != "target" {
-            continue;
-        }
-        if let Some(next) = parts.next() {
-            let name = next.as_os_str();
-            if name == "debug" || name == "release" {
-                return true;
-            }
-        }
-    }
-    false
+    let parts: Vec<_> = exe.components().collect();
+    let profile = |name: &std::ffi::OsStr| name == "debug" || name == "release";
+    // A cross build is `target/<triple>/debug`, not `target/debug`.
+    parts
+        .windows(2)
+        .any(|window| window[0].as_os_str() == "target" && profile(window[1].as_os_str()))
+        || parts
+            .windows(3)
+            .any(|window| window[0].as_os_str() == "target" && profile(window[2].as_os_str()))
 }
 
 #[cfg(test)]
@@ -91,5 +87,16 @@ mod tests {
         assert!(!exe_is_bundled(Path::new(
             "/work/fidget/target/release/fidget"
         )));
+    }
+
+    #[test]
+    fn a_target_triple_build_is_still_a_checkout() {
+        assert!(under_cargo_target(Path::new(
+            "/work/fidget/target/x86_64-unknown-linux-gnu/debug/fidget"
+        )));
+        assert!(under_cargo_target(Path::new(
+            "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe"
+        )));
+        assert!(!under_cargo_target(Path::new("/usr/bin/fidget")));
     }
 }
