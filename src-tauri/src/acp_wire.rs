@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::content_mark::chunk_text;
 use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
@@ -1396,22 +1397,24 @@ impl Replay {
                 let (_, answer, thought) = self.message.get_or_insert_with(|| {
                     (chunk.message_id.clone(), Answer::default(), String::new())
                 });
-                if let ContentBlock::Text(text) = chunk.content {
-                    thought.push_str(&answer.push(&text.text));
-                }
+                let text = chunk_text(&chunk.content, answer.so_far());
+                thought.push_str(&answer.push(&text));
             }
-            SessionUpdate::UserMessageChunk(chunk) => {
-                if let ContentBlock::Text(text) = chunk.content {
-                    match self.entries.last_mut() {
-                        Some(Replayed::Prompt { text: prompt }) => prompt.push_str(&text.text),
-                        _ => self.entries.push(Replayed::Prompt { text: text.text }),
-                    }
+            SessionUpdate::UserMessageChunk(chunk) => match self.entries.last_mut() {
+                Some(Replayed::Prompt { text: prompt }) => {
+                    prompt.push_str(&chunk_text(&chunk.content, prompt));
                 }
-            }
+                _ => self.entries.push(Replayed::Prompt {
+                    text: chunk_text(&chunk.content, ""),
+                }),
+            },
             SessionUpdate::AgentThoughtChunk(chunk) => {
-                if let ContentBlock::Text(text) = chunk.content {
-                    self.think(&text.text);
-                }
+                let so_far = match self.entries.last() {
+                    Some(Replayed::Thought { text }) => text.as_str(),
+                    _ => "",
+                };
+                let text = chunk_text(&chunk.content, so_far);
+                self.think(&text);
             }
             SessionUpdate::ToolCall(call) => self.entries.push(Replayed::ToolCall {
                 id: call.tool_call_id.0.to_string(),
@@ -2087,8 +2090,6 @@ fn elicitation_response(
 }
 
 /// One session update, into the turn's text or an `Event`.
-/// Text-only in both chunk arms, so a resource-only turn comes back empty.
-/// That is a gap (ADR-0028), not a decision to settle into.
 fn note_update(
     update: SessionUpdate,
     session: &SessionId,
@@ -2096,7 +2097,7 @@ fn note_update(
     thought: &mut String,
     on_event: &OnEvent,
 ) {
-    let mut think = |text: &str| {
+    let think = |thought: &mut String, text: &str| {
         if text.is_empty() {
             return;
         }
@@ -2110,9 +2111,8 @@ fn note_update(
     };
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
-            if let ContentBlock::Text(text) = chunk.content {
-                think(&said.push(&text.text));
-            }
+            let text = chunk_text(&chunk.content, said.so_far());
+            think(thought, &said.push(&text));
         }
         // `fields.content` and `fields.locations` are dropped on both arms.
         // A call reaches the Action Log as a title and a status and never
@@ -2141,9 +2141,8 @@ fn note_update(
         // has to parse as a Behavior name and whose rest the character says out
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         SessionUpdate::AgentThoughtChunk(chunk) => {
-            if let ContentBlock::Text(text) = chunk.content {
-                think(&text.text);
-            }
+            let text = chunk_text(&chunk.content, thought);
+            think(thought, &text);
         }
         _ => {}
     }
@@ -2453,7 +2452,9 @@ fn name_of<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{AuthMethodAgent, ContentChunk, ToolKind};
+    use agent_client_protocol::schema::v1::{
+        AuthMethodAgent, ContentChunk, ImageContent, ResourceLink, ToolKind,
+    };
     use std::sync::Arc;
 
     fn thinking(text: &str) -> SessionUpdate {
@@ -2670,6 +2671,73 @@ mod tests {
         SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
             text,
         ))))
+    }
+
+    fn resource_link(name: &str, uri: &str) -> ContentBlock {
+        ContentBlock::ResourceLink(ResourceLink::new(name, uri))
+    }
+
+    fn picture() -> ContentBlock {
+        ContentBlock::Image(ImageContent::new("AAAA", "image/png"))
+    }
+
+    /// A turn that only hands over a resource says so. Dropped, it came back
+    /// empty and the turn read as silence (ADR-0028).
+    #[test]
+    fn a_resource_only_turn_is_its_mark_not_nothing() {
+        let (said, events) = drive(vec![
+            SessionUpdate::AgentThoughtChunk(ContentChunk::new(picture())),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(resource_link(
+                "spec",
+                "https://example.com/spec.md",
+            ))),
+        ]);
+        assert_eq!(said, "[spec](https://example.com/spec.md)\n\n");
+        assert_eq!(thoughts(&events), ["[image image/png]\n\n"]);
+    }
+
+    /// A mark is a paragraph between the text before and after it.
+    #[test]
+    fn a_mark_between_two_chunks_of_text_stays_between_them() {
+        let (said, _) = drive(vec![
+            message("Here is the shot:"),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(picture())),
+            message("Anything else?"),
+        ]);
+        assert_eq!(
+            said,
+            "Here is the shot:\n\n[image image/png]\n\nAnything else?"
+        );
+    }
+
+    /// A load replays the same chunks, and a resource in any of the three
+    /// kinds of chunk reaches the entry its text would have.
+    #[test]
+    fn a_replayed_resource_is_kept_in_its_prompt_thought_and_reply() {
+        let mut replay = Replay::default();
+        replay.note(SessionUpdate::UserMessageChunk(ContentChunk::new(
+            resource_link("brief", "https://example.com/brief"),
+        )));
+        replay.note(SessionUpdate::AgentThoughtChunk(ContentChunk::new(
+            picture(),
+        )));
+        replay.note(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+            resource_link("spec", "file:///spec.md"),
+        )));
+        assert_eq!(
+            replay.finish(),
+            vec![
+                Replayed::Prompt {
+                    text: "[brief](https://example.com/brief)".to_string()
+                },
+                Replayed::Thought {
+                    text: "[image image/png]".to_string()
+                },
+                Replayed::Reply {
+                    text: "[link spec file:///spec.md]".to_string()
+                },
+            ]
+        );
     }
 
     /// A Harness that never opened `agent_thought_chunk` marks its reasoning

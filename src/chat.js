@@ -20,7 +20,7 @@ import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
-import { appendReply, drawReply, replaceReply } from "./markdown.js";
+import { appendReply, drawReply, drawThought, replaceReply } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -216,7 +216,7 @@ function drawThinking(view) {
     // Under the question it belongs to, above the answer still on its way.
     lowerCaret();
   }
-  row.querySelector(".said").textContent = view.text;
+  drawThought(row.querySelector(".said"), view.text);
   fold(row, view.state !== "collapsed");
   row.dataset.state = view.state;
   if (view.state === "streaming") log.scrollTop = log.scrollHeight;
@@ -801,9 +801,13 @@ function newSession(why) {
 // again from `chat_ready`.
 let restoredBlock = [];
 
-function restoredFold(cls, title, text) {
+function drawPlain(body, text) {
+  body.textContent = text;
+}
+
+function restoredFold(cls, title, text, draw) {
   const row = foldRow(`restored ${cls}`, title);
-  row.querySelector(".said").textContent = text;
+  draw(row.querySelector(".said"), text);
   fold(row, false);
   const toggle = row.querySelector(".thinking-toggle");
   toggle.addEventListener("click", () => fold(row, toggle.getAttribute("aria-expanded") !== "true"));
@@ -811,13 +815,14 @@ function restoredFold(cls, title, text) {
 }
 
 const RESTORED_ROWS = {
-  prompt: (entry) => restoredFold("prompt", "Prompt", entry.text),
-  thought: (entry) => restoredFold("thought", "Thinking", entry.text),
+  prompt: (entry) => restoredFold("prompt", "Prompt", entry.text, drawThought),
+  thought: (entry) => restoredFold("thought", "Thinking", entry.text, drawThought),
   tool_call: (entry) =>
     restoredFold(
       "tool",
       [entry.title || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · "),
       entry.content.join("\n\n"),
+      drawPlain,
     ),
   plan: (entry) => {
     const row = el("row restored plan-steps");

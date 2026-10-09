@@ -30,6 +30,7 @@ mod action_log;
 mod chat_surface;
 mod completer;
 mod consent;
+mod content_mark;
 mod cursor_mcp;
 mod debug;
 mod dev_flags;
@@ -4936,6 +4937,43 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    /// `open_link` takes a URL from agent text. Anything but `http`, `https`
+    /// and `mailto` is refused whatever its case, padding or control bytes.
+    #[test]
+    fn open_link_refuses_every_scheme_but_the_three_it_opens() {
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "vbscript:msgbox(1)",
+            "JaVaScRiPt:alert(1)",
+            " javascript:alert(1)",
+            " file:///etc/passwd",
+            "java\tscript:alert(1)",
+            "java\nscript:alert(1)",
+            "file:\n///etc/passwd",
+            "\u{1}javascript:alert(1)",
+        ] {
+            assert!(open_link(url.to_string()).is_err(), "{url:?} opened");
+        }
+    }
+
+    #[test]
+    fn open_link_accepts_https_and_mailto_as_their_parsed_form() {
+        assert_eq!(
+            platform::openable("https://example.com/a b"),
+            Ok("https://example.com/a%20b".to_string())
+        );
+        assert_eq!(
+            platform::openable("mailto:oded@example.com"),
+            Ok("mailto:oded@example.com".to_string())
+        );
+        assert_eq!(
+            platform::openable("HTTPS://Example.com"),
+            Ok("https://example.com/".to_string())
+        );
+    }
+
     use super::*;
 
     fn link(request: &str, waits: bool) -> harness::ElicitationForm {

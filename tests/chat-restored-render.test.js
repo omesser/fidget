@@ -29,6 +29,10 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
+// The renderer job in CI has Chromium, so a missing browser there is a broken
+// gate, not a reason to skip: the test runs, and fails on the missing binary.
+const CHROME_OR_CI = chrome || process.env.CI ? false : "headless Chromium is not installed";
+
 const OPENING = {
   name: "Buddy Bot",
   character: "Buddy Bot",
@@ -50,9 +54,11 @@ function drive(steps) {
   const stub = `
 <script>
   const heard = {};
+  window.__invoked = [];
   window.__TAURI__ = {
     core: {
-      invoke(name) {
+      invoke(name, args) {
+        window.__invoked.push({ name, args });
         if (name === "chat_opening") return Promise.resolve(${JSON.stringify(OPENING)});
         return Promise.resolve();
       },
@@ -83,7 +89,13 @@ function drive(steps) {
 ${steps}
     const out = document.createElement("pre");
     out.id = "probe";
-    out.textContent = JSON.stringify({ rows: rows(), livePlan: !document.getElementById("plan").hidden });
+    out.textContent = JSON.stringify({
+      rows: rows(),
+      livePlan: !document.getElementById("plan").hidden,
+      links: [...document.querySelectorAll("#log .md-link")].map((link) => link.dataset.href),
+      anchors: document.querySelectorAll("#log a").length,
+      opened: window.__invoked.filter((call) => call.name === "open_link").map((call) => call.args.url),
+    });
     document.body.append(out);
   }
   window.addEventListener("load", () => run().catch((why) => {
@@ -191,5 +203,56 @@ test(
     emit("chat-restored", ${JSON.stringify(HISTORY)});`);
     assert.equal(report.error, undefined, report.error);
     assert.deepEqual(report.rows, DRAWN);
+  },
+);
+
+// ADR-0028: a resource link is a link. Clicked in a reply, a replayed thought
+// or a live one, it goes to the one opener the reply links use, and a link
+// Chat will not open is drawn as its words and its uri.
+test(
+  "a resource link opens through open_link wherever it lands, and an unsafe one is text",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      { type: "thought", text: "Saw [spec](https://example.com/spec.md)\n[link passwd file:///etc/passwd]" },
+      { type: "reply", text: "[brief](https://example.com/brief)" },
+    ];
+    const report = drive(`
+    document.getElementById("line").value = "show me";
+    document.getElementById("composer").requestSubmit();
+    while (!document.querySelector("#log > .row.them")) await tick();
+    emit("chat-restored", ${JSON.stringify(history)});
+    emit("chat-thought", "Live [live](https://example.com/live)\\n**kept as written**");
+    for (const link of document.querySelectorAll("#log .md-link")) link.click();`);
+    assert.equal(report.error, undefined, report.error);
+    const text = (kind) => report.rows.find((row) => row.kind === kind).text;
+    assert.equal(text("thought"), "Saw spec\n[link passwd file:///etc/passwd]");
+    assert.equal(text("restored"), "brief");
+    assert.equal(
+      report.rows.find((row) => row.kind === "note" && row.label === "Thinking").text,
+      "Live live\n**kept as written**",
+    );
+    const urls = ["https://example.com/spec.md", "https://example.com/brief", "https://example.com/live"];
+    assert.deepEqual([...report.links].sort(), [...urls].sort());
+    assert.deepEqual([...report.opened].sort(), [...urls].sort());
+    assert.equal(report.anchors, 0, "an <a href> would navigate the Chat webview");
+  },
+);
+
+// A replayed Prompt row draws what another client sent as written, with only
+// its links live: a typed `[x](https://...)` opens, and a file link is words.
+test(
+  "a link in a replayed prompt opens, and a file link in it does not",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [{ type: "prompt", text: "see [x](https://example.com) and [y](file:///a)\n**kept**" }];
+    const report = drive(`
+    emit("chat-restored", ${JSON.stringify(history)});
+    for (const link of document.querySelectorAll("#log .md-link")) link.click();`);
+    assert.equal(report.error, undefined, report.error);
+    assert.equal(report.rows.find((row) => row.kind === "prompt").text, "see x and y\n**kept**");
+    assert.deepEqual(report.links, ["https://example.com"]);
+    assert.deepEqual(report.opened, ["https://example.com"]);
+    assert.equal(report.anchors, 0);
   },
 );

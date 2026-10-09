@@ -1340,6 +1340,7 @@ body {
 /* Styled as a link and not wired as one: a real href would take this webview
    itself to the page. `data-href` carries the target for `open_link`. */
 .said.md .md-link,
+.row.thinking .md-link,
 .landing .md-link {
   color: var(--chat-accent);
   cursor: pointer;
