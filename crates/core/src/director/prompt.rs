@@ -106,6 +106,25 @@ pub fn happened_word(happened: &Happened) -> &'static str {
     }
 }
 
+/// The line the user typed, read back out of a stored wake prompt (the inverse
+/// of `follow_up`'s `they said:`). Reads it only after the moment's own
+/// `what just happened: spoken to` header, since the Personality Prompt may quote
+/// `they said:`. Used by `session_log::drawn` in src-tauri.
+pub fn typed_line(prompt: &str) -> Option<&str> {
+    let header = format!(
+        "what just happened: {}",
+        happened_word(&Happened::Chat(String::new()))
+    );
+    let at = prompt
+        .match_indices(&header)
+        .map(|(at, _)| at)
+        .find(|&at| at == 0 || prompt[..at].ends_with('\n'))?;
+    let moment = &prompt[at..];
+    let label = "\nthey said: ";
+    let line = &moment[moment.find(label)? + label.len()..];
+    Some(line.strip_suffix('\n').unwrap_or(line))
+}
+
 /// A later turn in the same session. No Personality Prompt, no roster.
 pub(crate) fn follow_up(context: &Context) -> String {
     let recent = if context.recent.is_empty() {

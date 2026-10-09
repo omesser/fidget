@@ -26,7 +26,7 @@ use crate::sensing::Activity;
 
 mod prompt;
 mod recency;
-pub use prompt::{app_instructions, happened_word};
+pub use prompt::{app_instructions, happened_word, typed_line};
 pub(crate) use prompt::{character_prompt, follow_up};
 pub use recency::{Doing, Lately, Recency, Step};
 
@@ -434,34 +434,7 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     fn proposal(&self, reply: &str) -> (Wake, Option<String>) {
-        match parse_proposal(reply) {
-            // The declared spelling, not the model's: a name written
-            // at the start of a line comes back capitalised, and the
-            // Engine looks a Behavior up by the name its Character declared.
-            Ok(proposal) => match self.declared(&proposal.behavior) {
-                Some(behavior) => (
-                    Wake::Proposed(BehaviorProposal {
-                        behavior,
-                        dialogue: proposal.dialogue,
-                    }),
-                    None,
-                ),
-                None if proposal.behavior.eq_ignore_ascii_case("say") => match proposal.dialogue {
-                    Some(line) => (
-                        Wake::Proposed(BehaviorProposal {
-                            behavior: String::new(),
-                            dialogue: Some(line),
-                        }),
-                        None,
-                    ),
-                    None => (Wake::Failed, None),
-                },
-                // `parse_proposal` has already ruled the name a single
-                // token, so this is the near miss and not prose.
-                None => (spoken_or_failed(reply), Some(proposal.behavior)),
-            },
-            Err(_) => (spoken_or_failed(reply), None),
-        }
+        proposal_for(&self.behaviors, reply)
     }
 
     /// What this Character declared, for a Shell reporting a near miss
@@ -469,15 +442,59 @@ impl<C: Completer> ModelDirector<C> {
     pub fn behaviors(&self) -> &[String] {
         &self.behaviors
     }
+}
 
-    /// The Character's own spelling of `name`, when it declared one.
-    /// Compared without case because that is the only way the two ever
-    /// differ in practice. A name nobody declared stays unknown.
-    fn declared(&self, name: &str) -> Option<String> {
-        self.behaviors
-            .iter()
-            .find(|declared| declared.eq_ignore_ascii_case(name))
-            .cloned()
+/// What `reply` proposes for a Character that declares `behaviors`, and the
+/// near miss when it names something else. The one parse a live reply and a
+/// restored one both go through.
+fn proposal_for(behaviors: &[String], reply: &str) -> (Wake, Option<String>) {
+    match parse_proposal(reply) {
+        // The declared spelling, not the model's: a name written
+        // at the start of a line comes back capitalised, and the
+        // Engine looks a Behavior up by the name its Character declared.
+        Ok(proposal) => match declared(behaviors, &proposal.behavior) {
+            Some(behavior) => (
+                Wake::Proposed(BehaviorProposal {
+                    behavior,
+                    dialogue: proposal.dialogue,
+                }),
+                None,
+            ),
+            None if proposal.behavior.eq_ignore_ascii_case("say") => match proposal.dialogue {
+                Some(line) => (
+                    Wake::Proposed(BehaviorProposal {
+                        behavior: String::new(),
+                        dialogue: Some(line),
+                    }),
+                    None,
+                ),
+                None => (Wake::Failed, None),
+            },
+            // `parse_proposal` has already ruled the name a single
+            // token, so this is the near miss and not prose.
+            None => (spoken_or_failed(reply), Some(proposal.behavior)),
+        },
+        Err(_) => (spoken_or_failed(reply), None),
+    }
+}
+
+/// The Character's own spelling of `name`, when it declared one.
+/// Compared without case because that is the only way the two ever
+/// differ in practice. A name nobody declared stays unknown.
+fn declared(behaviors: &[String], name: &str) -> Option<String> {
+    behaviors
+        .iter()
+        .find(|declared| declared.eq_ignore_ascii_case(name))
+        .cloned()
+}
+
+/// The words a Chat row draws for a reply: the dialogue left once the
+/// Behavior line is read against what `behaviors` declares. `None` when the
+/// character said nothing, as a reply that names only a Behavior does.
+pub fn dialogue_of(reply: &str, behaviors: &[String]) -> Option<String> {
+    match proposal_for(behaviors, reply).0 {
+        Wake::Proposed(proposal) => proposal.dialogue,
+        Wake::Failed => None,
     }
 }
 
@@ -2200,6 +2217,94 @@ mod tests {
             sent.find("they said:") > sent.find("front: Terminal"),
             "nothing the Shell wrote comes after the line the user typed: {sent}"
         );
+    }
+
+    /// The inverse of the wake format. A replayed prompt is the whole frame,
+    /// and the line the user typed is what is left after `they said:`.
+    #[test]
+    fn the_typed_line_is_read_back_out_of_the_frame_it_was_sent_in() {
+        let lines = [
+            "what are you standing on?",
+            "two\nlines",
+            "they said: they said: nested",
+            "state: asleep\nfront: nothing",
+            "what just happened: poked",
+            "ends with a newline\n",
+            "  padded  ",
+        ];
+        for line in lines {
+            let moment = typed(line);
+            assert_eq!(
+                typed_line(&follow_up(&moment)),
+                Some(line),
+                "follow-up: {line:?}"
+            );
+            let opening = character_prompt(&moment, ["wave"], false);
+            assert_eq!(typed_line(&opening), Some(line), "opening: {line:?}");
+        }
+    }
+
+    #[test]
+    fn a_frame_nobody_typed_at_has_no_typed_line() {
+        let ambient = Context {
+            happened: Happened::Proactive,
+            personality: "they said: this is the author's".to_string(),
+            ..context(working(), &[])
+        };
+        assert_eq!(typed_line(&follow_up(&ambient)), None);
+        assert_eq!(
+            typed_line(&character_prompt(&ambient, ["wave"], false)),
+            None
+        );
+        assert_eq!(typed_line("an ordinary prompt"), None);
+    }
+
+    #[test]
+    fn a_personality_that_quotes_a_reply_does_not_move_the_typed_line() {
+        let moment = Context {
+            personality:
+                "Mid-line, see what just happened: spoken to\nthey said: no\n\nthey said: nothing\n"
+                    .to_string(),
+            ..typed("hello?")
+        };
+        assert_eq!(
+            typed_line(&character_prompt(&moment, ["wave"], false)),
+            Some("hello?")
+        );
+    }
+
+    #[test]
+    fn a_typed_line_past_the_limit_is_read_back_as_the_model_saw_it() {
+        let long = "é".repeat(CHAT_LIMIT + 50);
+        let frame = follow_up(&typed(&long));
+        let read = typed_line(&frame).expect("a typed line");
+        assert_eq!(read.chars().count(), CHAT_LIMIT);
+    }
+
+    fn declares(names: &[&str]) -> Vec<String> {
+        names.iter().map(ToString::to_string).collect()
+    }
+
+    /// What Chat draws for a reply, with the Behavior line read against what
+    /// the Character declared. A near miss and plain prose are both speech.
+    #[test]
+    fn a_reply_is_drawn_as_its_dialogue() {
+        let declared = declares(&["wave", "nod"]);
+        let drawn = |reply: &str| dialogue_of(reply, &declared);
+        assert_eq!(drawn("nod | Still here"), Some("Still here".to_string()));
+        assert_eq!(drawn("Nod | Still here"), Some("Still here".to_string()));
+        assert_eq!(
+            drawn("wave\nHello from before"),
+            Some("Hello from before".to_string())
+        );
+        assert_eq!(drawn("say: hi"), Some("hi".to_string()));
+        assert_eq!(drawn("Done."), Some("Done.".to_string()));
+        assert_eq!(
+            drawn("dance | Look at me"),
+            Some("dance | Look at me".to_string())
+        );
+        assert_eq!(drawn("wave"), None);
+        assert_eq!(drawn("  "), None);
     }
 
     /// Every desktop line filled, as one wake sends it.

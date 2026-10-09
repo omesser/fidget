@@ -2461,6 +2461,20 @@ fn handle_inbound_wake(app: &tauri::AppHandle, wake: harness::InboundWake) {
     }
 }
 
+/// The Behaviors the Character of `instance` declares, as Settings lists
+/// them. Empty for an Instance no row lists and a Character that declares none.
+fn declared_behaviors(
+    rows: &[InstanceRow],
+    names: &BTreeMap<String, Vec<String>>,
+    instance: &str,
+) -> Vec<String> {
+    rows.iter()
+        .find(|row| row.id == instance)
+        .and_then(|row| names.get(&row.character))
+        .cloned()
+        .unwrap_or_default()
+}
+
 /// A loaded session's history, into its Instance's log and open window. Not
 /// sent to the frame loop: nothing is addressed and Pace is untouched (#1393).
 /// Only to that window, and never as `CHAT_PLAN_EVENT`: a replayed plan is
@@ -2474,12 +2488,24 @@ fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
     let Ok(_replaying) = state.0.lock() else {
         return;
     };
+    let behaviors = app
+        .try_state::<SettingsState>()
+        .map(|state| {
+            let rows = state.instances.lock().map(|rows| rows.clone());
+            declared_behaviors(
+                &rows.unwrap_or_default(),
+                &state.behavior_names,
+                &restored.instance,
+            )
+        })
+        .unwrap_or_default();
+    let history = session_log::drawn(restored.history, &behaviors);
     let _ = app.emit_to(
         chat_label(&restored.instance),
         CHAT_RESTORED_EVENT,
-        &restored.history,
+        &history,
     );
-    session_log::restore(app, &restored.instance, restored.history);
+    session_log::restore(app, &restored.instance, history);
 }
 
 /// Show the agent's plan in the Chat surface of the Instance whose session
@@ -2736,9 +2762,9 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
     ChatOpening {
         instructions: app_instructions(
             state
-                .behavior_names
-                .get(&character)
-                .cloned()
+                .instances
+                .lock()
+                .map(|rows| declared_behaviors(&rows, &state.behavior_names, &instance))
                 .unwrap_or_default(),
             blank,
         ),
@@ -4977,6 +5003,46 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    fn row(id: &str, character: &str) -> InstanceRow {
+        InstanceRow {
+            id: id.into(),
+            name: id.into(),
+            character: character.into(),
+            prompt: String::new(),
+        }
+    }
+
+    fn names() -> BTreeMap<String, Vec<String>> {
+        BTreeMap::from([
+            (
+                "cat".to_string(),
+                vec!["nod".to_string(), "wave".to_string()],
+            ),
+            ("mute".to_string(), Vec::new()),
+        ])
+    }
+
+    #[test]
+    fn a_listed_instance_declares_its_characters_behaviors() {
+        let rows = [row("a", "mute"), row("b", "cat")];
+        assert_eq!(declared_behaviors(&rows, &names(), "b"), ["nod", "wave"]);
+    }
+
+    #[test]
+    fn an_unlisted_instance_declares_no_behaviors() {
+        let rows = [row("a", "cat")];
+        assert_eq!(declared_behaviors(&rows, &names(), "a"), ["nod", "wave"]);
+        assert!(declared_behaviors(&rows, &names(), "zzz").is_empty());
+    }
+
+    #[test]
+    fn a_character_without_behaviors_declares_none() {
+        let rows = [row("a", "mute"), row("b", "unknown"), row("c", "cat")];
+        assert_eq!(declared_behaviors(&rows, &names(), "c"), ["nod", "wave"]);
+        assert!(declared_behaviors(&rows, &names(), "a").is_empty());
+        assert!(declared_behaviors(&rows, &names(), "b").is_empty());
+    }
+
     /// `open_link` takes a URL from agent text. Anything but `http`, `https`
     /// and `mailto` is refused whatever its case, padding or control bytes.
     #[test]

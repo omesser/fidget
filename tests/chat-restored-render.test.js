@@ -179,6 +179,26 @@ test(
 );
 
 test(
+  "a typed line in a replayed prompt is the user's row above the folded frame",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      { type: "typed", text: "are you <b>there</b>?" },
+      { type: "prompt", text: "what just happened: spoken to\nthey said: are you <b>there</b>?" },
+      { type: "reply", text: "Still here" },
+    ];
+    const report = drive(`emit("chat-restored", ${JSON.stringify(history)});`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.rows, [
+      { kind: "note", label: null, open: null, stamped: false, text: "Earlier in this session." },
+      { kind: "restored", label: "You", open: null, stamped: false, text: "are you <b>there</b>?" },
+      { kind: "prompt", label: "Prompt", open: "false", stamped: false, text: "what just happened: spoken to\nthey said: are you <b>there</b>?" },
+      { kind: "restored", label: "Buddy Bot", open: null, stamped: false, text: "Still here" },
+    ]);
+  },
+);
+
+test(
   "a replayed thought opens on a click, like a landed live one",
   { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
   () => {

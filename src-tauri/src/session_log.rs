@@ -9,6 +9,8 @@ use std::time::SystemTime;
 
 use tauri::{Emitter, Manager};
 
+use fidget_core::director::{dialogue_of, typed_line};
+
 use crate::harness::Replayed;
 
 /// Whose row a remembered turn is.
@@ -146,6 +148,34 @@ impl Log {
         self.thinking.remove(instance);
         self.restored.remove(instance);
     }
+}
+
+/// A loaded session's replay as Chat draws it: a prompt's typed line as its own
+/// row ahead of the frame, and a reply as its dialogue. A reply that names only
+/// a Behavior said nothing and draws no row (#1435).
+pub fn drawn(history: Vec<Replayed>, behaviors: &[String]) -> Vec<Replayed> {
+    history
+        .into_iter()
+        .flat_map(|entry| match entry {
+            Replayed::Prompt { text } => {
+                let typed = typed_line(&text)
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(|line| Replayed::Typed {
+                        text: line.to_string(),
+                    });
+                typed
+                    .into_iter()
+                    .chain([Replayed::Prompt { text }])
+                    .collect()
+            }
+            Replayed::Reply { text } => dialogue_of(&text, behaviors)
+                .map(|text| Replayed::Reply { text })
+                .into_iter()
+                .collect(),
+            other => vec![other],
+        })
+        .collect()
 }
 
 fn with_log(app: &tauri::AppHandle, f: impl FnOnce(&mut Log)) {
@@ -575,5 +605,82 @@ mod tests {
 
         let who: Vec<_> = log.replay("buddy-b").iter().map(|t| t.who).collect();
         assert_eq!(who, [Who::Thinking, Who::Them]);
+    }
+
+    fn declares(names: &[&str]) -> Vec<String> {
+        names.iter().map(ToString::to_string).collect()
+    }
+
+    fn reply(text: &str) -> Replayed {
+        Replayed::Reply {
+            text: text.to_string(),
+        }
+    }
+
+    /// Production change that would fail this: Chat drawing a restored reply
+    /// with its Behavior line, where the live row draws only the dialogue.
+    #[test]
+    fn a_restored_reply_is_its_dialogue_and_not_its_behavior_line() {
+        let history = vec![
+            reply("nod | Still here"),
+            reply("wave\nHello from before"),
+            reply("wave"),
+            reply("Done."),
+        ];
+        assert_eq!(
+            drawn(history, &declares(&["wave", "nod"])),
+            vec![
+                reply("Still here"),
+                reply("Hello from before"),
+                reply("Done.")
+            ]
+        );
+    }
+
+    /// Production change that would fail this: a restored prompt drawn as the
+    /// whole frame and nothing the user typed.
+    #[test]
+    fn a_restored_prompt_gains_the_line_the_user_typed() {
+        use fidget_core::director::{Context, Happened};
+        let frame = |happened| {
+            fidget_core::director::ModelDirector::new(
+                NoCompleter,
+                ["wave"],
+                "buddy-1",
+                "bmo",
+                false,
+            )
+            .prompt(&Context {
+                happened,
+                ..Context::quiet()
+            })
+        };
+        let typed = frame(Happened::Chat("what are you standing on?".to_string()));
+        let ambient = frame(Happened::Proactive);
+        let prompt = |text: &str| Replayed::Prompt {
+            text: text.to_string(),
+        };
+        assert_eq!(
+            drawn(vec![prompt(&typed), prompt(&ambient)], &[]),
+            vec![
+                Replayed::Typed {
+                    text: "what are you standing on?".to_string()
+                },
+                prompt(&typed),
+                prompt(&ambient),
+            ]
+        );
+    }
+
+    struct NoCompleter;
+
+    impl fidget_core::director::Completer for NoCompleter {
+        fn complete(
+            &self,
+            _: &fidget_core::director::WakeRequest,
+            _: &dyn Fn(&str),
+        ) -> Result<fidget_core::director::Reply, String> {
+            Err("no model".to_string())
+        }
     }
 }
