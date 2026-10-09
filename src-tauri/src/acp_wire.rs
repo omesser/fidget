@@ -3227,7 +3227,7 @@ mod tests {
             ),
             wire(
                 serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
-                "title": "Read main.rs", "status": "completed"}),
+                "title": "Edit main.rs", "kind": "edit", "status": "completed"}),
             ),
         ];
         let (_, events) = drive(updates.clone());
@@ -3250,8 +3250,8 @@ mod tests {
         assert_eq!(
             folded,
             (
-                Some("Read main.rs".to_string()),
-                Some("read".to_string()),
+                Some("Edit main.rs".to_string()),
+                Some("edit".to_string()),
                 Some("completed".to_string())
             )
         );
@@ -3259,8 +3259,8 @@ mod tests {
             restored_rows(&updates),
             vec![Replayed::ToolCall {
                 id: "t1".to_string(),
-                title: "Read main.rs".to_string(),
-                kind: Some("read".to_string()),
+                title: "Edit main.rs".to_string(),
+                kind: Some("edit".to_string()),
                 status: Some("completed".to_string()),
                 locations: vec![],
                 content: vec![],
