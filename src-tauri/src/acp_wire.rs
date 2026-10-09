@@ -379,14 +379,44 @@ impl Field {
     }
 }
 
-/// What a Completer config did on the wire, not what was asked. `set` holds
-/// a field only once the Harness answered its `session/set_config_option`
-/// successfully. `unadvertised` holds a field that was asked for and not sent
-/// because the session lists no option for it.
+/// What became of one value the Completer config asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// `session/set_config_option` was answered, and the returned options
+    /// list that option at the requested value.
+    Confirmed,
+    /// It was answered with success, but the returned options do not show the
+    /// option at the requested value. Nothing says it took.
+    Unconfirmed,
+    /// The session lists no option for it, so nothing was sent.
+    Unadvertised,
+}
+
+/// What a Completer config did on the wire, not what was asked: one outcome
+/// per field that had a value, model before effort. A field with no value to
+/// set is absent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Applied {
-    pub set: Vec<Field>,
-    pub unadvertised: Vec<Field>,
+    pub outcomes: Vec<(Field, Outcome)>,
+}
+
+impl Applied {
+    /// At least one value was sent and every one of them is confirmed.
+    pub fn proved(&self) -> bool {
+        !self.outcomes.is_empty()
+            && self
+                .outcomes
+                .iter()
+                .all(|(_, outcome)| *outcome == Outcome::Confirmed)
+    }
+
+    pub fn fields(&self, wanted: Outcome) -> Vec<Field> {
+        self.outcomes
+            .iter()
+            .filter(|(_, outcome)| *outcome == wanted)
+            .map(|(field, _)| *field)
+            .collect()
+    }
 }
 
 /// The session `open` handed back, and what `session/load` replayed of it.
@@ -1823,8 +1853,9 @@ async fn open(
 
 /// Model first, then effort. A model change can replace the effort options,
 /// so effort is read from the options the model call returned. A value the
-/// session lists no option for is not sent, and is reported as `unadvertised`
-/// so no caller reads it as set.
+/// session lists no option for is not sent. A value counts as set only when
+/// the answer lists the option at that value, so no caller reads a request as
+/// a change.
 async fn apply_completer(
     cx: &ConnectionTo<Agent>,
     session_id: &SessionId,
@@ -1835,28 +1866,53 @@ async fn apply_completer(
     let mut applied = Applied::default();
     let model = model.trim();
     if !model.is_empty() {
-        if let Some(config_id) = model_config_id(&options) {
-            options = set_config(cx, session_id, config_id, model, false).await?;
-            applied.set.push(Field::Model);
-        } else {
-            applied.unadvertised.push(Field::Model);
-        }
+        let outcome = match model_config_id(&options) {
+            Some(config_id) => {
+                options = set_config(cx, session_id, config_id.clone(), model, false).await?;
+                confirm(&options, &config_id, model)
+            }
+            None => Outcome::Unadvertised,
+        };
+        applied.outcomes.push((Field::Model, outcome));
     }
     if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
-        if let Some(config_id) = effort_config_id(&options) {
-            options = set_config(cx, session_id, config_id, effort, true).await?;
-            applied.set.push(Field::Effort);
-        } else {
-            applied.unadvertised.push(Field::Effort);
+        let outcome = match effort_config_id(&options) {
+            Some(config_id) => {
+                options = set_config(cx, session_id, config_id.clone(), effort, true).await?;
+                confirm(&options, &config_id, effort)
+            }
+            None => Outcome::Unadvertised,
+        };
+        applied.outcomes.push((Field::Effort, outcome));
+    }
+    for (field, outcome) in &applied.outcomes {
+        match outcome {
+            Outcome::Confirmed => {}
+            Outcome::Unconfirmed => eprintln!(
+                "harness: the {} set was answered, but the session does not list it at the new value",
+                field.name()
+            ),
+            Outcome::Unadvertised => eprintln!(
+                "harness: the session lists no {} option, so it was not set",
+                field.name()
+            ),
         }
     }
-    for field in &applied.unadvertised {
-        eprintln!(
-            "harness: the session lists no {} option, so it was not set",
-            field.name()
-        );
-    }
     Ok((options, applied))
+}
+
+/// Whether the options a set answered with list `config_id` at `value`.
+fn confirm(options: &[SessionConfigOption], config_id: &SessionConfigId, value: &str) -> Outcome {
+    let shows_value = options.iter().any(|option| {
+        &option.id == config_id
+            && matches!(&option.kind,
+                SessionConfigKind::Select(select) if select.current_value.0.as_ref() == value)
+    });
+    if shows_value {
+        Outcome::Confirmed
+    } else {
+        Outcome::Unconfirmed
+    }
 }
 
 async fn set_config(

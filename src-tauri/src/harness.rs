@@ -2608,11 +2608,11 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
         "  effort       {}",
         or_unset(now.effort.as_deref().unwrap_or(""))
     );
-    let unset = match session.attach(Some(&probe_key())) {
+    let unproved = match session.attach(Some(&probe_key())) {
         Ok((_, id)) => {
             let applied = session.take_applied();
             println!("  session      {}", session_verdict(first, &id, &applied));
-            !applied.unadvertised.is_empty()
+            !applied.proved()
         }
         Err(why) => {
             println!("  {why}");
@@ -2621,8 +2621,8 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
     };
     println!();
     let code = probe_turn(session);
-    // A run that set nothing proved nothing, so it does not pass.
-    if unset {
+    // A run with no confirmed set proved nothing, so it does not pass.
+    if unproved {
         1
     } else {
         code
@@ -2633,29 +2633,41 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
 /// and what reached the wire. "Set" is a successful `session/set_config_option`
 /// response, never the request to Apply.
 fn session_verdict(first: &str, now: &str, applied: &crate::acp_wire::Applied) -> String {
+    use crate::acp_wire::Outcome;
     if now != first {
         return format!("{now} (NEW, the conversation was not kept)");
     }
-    let names = |fields: &[crate::acp_wire::Field]| {
-        fields
+    if applied.outcomes.is_empty() {
+        return format!("{now} (kept, NO SET SENT: nothing changed on this conversation)");
+    }
+    if applied.proved() {
+        return format!("{now} (kept, values set on it)");
+    }
+    let names = |outcome| {
+        applied
+            .fields(outcome)
             .iter()
             .map(|field| field.name())
             .collect::<Vec<_>>()
             .join(" or ")
     };
-    match (applied.set.is_empty(), applied.unadvertised.is_empty()) {
-        (true, true) => format!("{now} (kept, nothing to set)"),
-        (_, true) => format!("{now} (kept, values set on it)"),
-        (true, false) => format!(
-            "{now} (kept, NOT SET: the Harness advertises no {} option)",
-            names(&applied.unadvertised)
-        ),
-        (false, false) => format!(
-            "{now} (kept, {} set; NOT SET: the Harness advertises no {} option)",
-            names(&applied.set),
-            names(&applied.unadvertised)
-        ),
+    let mut parts = Vec::new();
+    if !applied.fields(Outcome::Confirmed).is_empty() {
+        parts.push(format!("{} set", names(Outcome::Confirmed)));
     }
+    if !applied.fields(Outcome::Unconfirmed).is_empty() {
+        parts.push(format!(
+            "NOT CONFIRMED: {} was answered without the new value",
+            names(Outcome::Unconfirmed)
+        ));
+    }
+    if !applied.fields(Outcome::Unadvertised).is_empty() {
+        parts.push(format!(
+            "NOT SET: the Harness advertises no {} option",
+            names(Outcome::Unadvertised)
+        ));
+    }
+    format!("{now} (kept, {})", parts.join("; "))
 }
 
 fn or_unset(value: &str) -> &str {
@@ -3537,6 +3549,8 @@ mod tests {
         match script {
             "completer-effort"
             | "completer-effort-reject"
+            | "completer-effort-stale"
+            | "completer-effort-refuse-live"
             | "load-completer-effort"
             | "permission" => Some(json!([
                 effort_option("model_config", "knob"),
@@ -3551,7 +3565,7 @@ mod tests {
                 model_option(),
             ])),
             "completer-thought" => Some(json!([effort_option("thought_level", "thought")])),
-            "completer-both" => Some(json!([
+            "completer-both" | "completer-both-plain" => Some(json!([
                 model_option(),
                 effort_option("thought_level", "reasoning"),
             ])),
@@ -3789,7 +3803,9 @@ mod tests {
                             "id": id,
                             "error": {"code": -32602, "message": "unknown model"}
                         }));
-                    } else if script == "completer-effort-reject" {
+                    } else if script == "completer-effort-reject"
+                        || script == "completer-effort-refuse-live"
+                    {
                         say(json!({
                             "jsonrpc": "2.0",
                             "id": id,
@@ -3802,7 +3818,17 @@ mod tests {
                             "result": {"configOptions": [effort_option("thought_level", "after-model")]}
                         }));
                     } else {
-                        let options = completer_config_options(script).unwrap_or_else(|| json!([]));
+                        let mut options =
+                            completer_config_options(script).unwrap_or_else(|| json!([]));
+                        // ACP answers with the whole list at its new value. The
+                        // stale script answers Ok and keeps the old one.
+                        if script != "completer-effort-stale" {
+                            for option in options.as_array_mut().into_iter().flatten() {
+                                if option["id"] == json!(config_id) {
+                                    option["currentValue"] = json!(value);
+                                }
+                            }
+                        }
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": options}}),
                         );
@@ -8846,30 +8872,39 @@ mod tests {
         (fx, applied)
     }
 
-    /// A set is a successful `session/set_config_option` response. The model
-    /// goes first, then the effort.
+    fn outcomes_of(
+        outcomes: &[(crate::acp_wire::Field, crate::acp_wire::Outcome)],
+    ) -> crate::acp_wire::Applied {
+        crate::acp_wire::Applied {
+            outcomes: outcomes.to_vec(),
+        }
+    }
+
+    /// A set counts once the answer lists the option at the value asked for.
+    /// The model goes first, then the effort.
     #[test]
-    fn a_live_set_reports_each_value_the_harness_accepted() {
-        use crate::acp_wire::{Applied, Field};
-        let (fx, applied) = apply_on("completer-effort", "effort=high");
-        assert_eq!(
-            applied,
-            Applied {
-                set: vec![Field::Effort],
-                unadvertised: vec![]
-            }
-        );
+    fn a_live_set_reports_each_value_the_harness_confirmed() {
+        use crate::acp_wire::{Field::*, Outcome::*};
+        let (fx, got) = apply_on("completer-effort", "effort=high");
+        assert_eq!(got, outcomes_of(&[(Effort, Confirmed)]));
         assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
 
-        let (fx, applied) = apply_on("completer-model", "model=some-model");
-        assert_eq!(
-            applied,
-            Applied {
-                set: vec![Field::Model],
-                unadvertised: vec![]
-            }
-        );
+        let (fx, got) = apply_on("completer-model", "model=some-model");
+        assert_eq!(got, outcomes_of(&[(Model, Confirmed)]));
         assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+
+        let (_fx, got) = apply_on("completer-both-plain", "model=some-model effort=high");
+        assert_eq!(got, outcomes_of(&[(Model, Confirmed), (Effort, Confirmed)]));
+    }
+
+    /// An answer that lists the option at its old value is not a change. The
+    /// set was sent, and nothing says it took.
+    #[test]
+    fn an_answer_that_keeps_the_old_value_is_not_reported_as_set() {
+        use crate::acp_wire::{Field::*, Outcome::*};
+        let (fx, got) = apply_on("completer-effort-stale", "effort=high");
+        assert_eq!(got, outcomes_of(&[(Effort, Unconfirmed)]));
+        assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
     }
 
     /// A Harness that lists no option is not sent a set, and the set is not
@@ -8878,36 +8913,74 @@ mod tests {
     /// its defaults.
     #[test]
     fn a_harness_that_lists_no_option_is_sent_no_set_and_reports_none() {
-        use crate::acp_wire::{Applied, Field};
-        let (fx, applied) = apply_on("happy", "effort=high");
-        assert_eq!(
-            applied,
-            Applied {
-                set: vec![],
-                unadvertised: vec![Field::Effort]
-            }
-        );
+        use crate::acp_wire::{Field::*, Outcome::*};
+        let (fx, got) = apply_on("happy", "effort=high");
+        assert_eq!(got, outcomes_of(&[(Effort, Unadvertised)]));
         assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
 
-        let (fx, applied) = apply_on("happy", "model=some-model effort=high");
+        let (fx, got) = apply_on("happy", "model=some-model effort=high");
         assert_eq!(
-            applied,
-            Applied {
-                set: vec![],
-                unadvertised: vec![Field::Model, Field::Effort]
-            }
+            got,
+            outcomes_of(&[(Model, Unadvertised), (Effort, Unadvertised)])
         );
         assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
 
         // One option listed and one not: only the listed one is set.
-        let (_fx, applied) = apply_on("completer-effort", "model=some-model effort=high");
+        let (_fx, got) = apply_on("completer-effort", "model=some-model effort=high");
         assert_eq!(
-            applied,
-            Applied {
-                set: vec![Field::Effort],
-                unadvertised: vec![Field::Model]
-            }
+            got,
+            outcomes_of(&[(Model, Unadvertised), (Effort, Confirmed)])
         );
+    }
+
+    /// The conversation is open, Settings change the effort, and the Harness
+    /// refuses the next set. The wake fails with the Harness's words, the
+    /// child stays, and the conversation is still recorded as opened on what
+    /// it was opened on, so the next wake tries again.
+    #[test]
+    fn a_refused_live_set_fails_the_wake_and_leaves_the_open_conversation_as_it_was() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-effort-refuse-live");
+            let (_, first) = session.attach(Some(&probe_key())).unwrap();
+            let opened_on = |session: &Session| {
+                session
+                    .state
+                    .lock()
+                    .unwrap()
+                    .sessions
+                    .get(&probe_key())
+                    .map(|opened| {
+                        (
+                            opened.id.clone(),
+                            opened.opened_on.model.clone(),
+                            opened.opened_on.effort.clone(),
+                        )
+                    })
+            };
+            let before = opened_on(&session);
+            assert_eq!(
+                before.as_ref().map(|(id, _, _)| id.as_str()),
+                Some(first.as_str())
+            );
+            write_effort(&fx.dir, "high");
+            session.inputs_applied();
+
+            let why = session.attach(Some(&probe_key())).err().expect("refused");
+            assert!(why.contains("not a level this agent takes"), "{why}");
+            assert!(session.inspect().alive, "the child is still attached");
+            assert_eq!(opened_on(&session), before, "opened_on moved");
+            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+            assert_eq!(fx.count("new"), 1, "a refusal is not a new conversation");
+            assert!(session.take_applied().outcomes.is_empty());
+
+            // The next wake asks again, and is refused again.
+            let again = session.attach(Some(&probe_key())).err().expect("refused");
+            assert!(again.contains("not a level this agent takes"), "{again}");
+            assert_eq!(config_lines(&fx).len(), 2);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
     }
 
     /// The probe on a Harness that lists no option does not pass, and says why.
@@ -8926,41 +8999,75 @@ mod tests {
         });
     }
 
+    /// A set the answer does not confirm is a probe that proved nothing.
+    #[test]
+    fn the_probe_fails_when_the_answer_does_not_show_the_new_value() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-effort-stale");
+            let then = ProbeThen::parse("effort=high").unwrap();
+            assert_eq!(probe(&session, Some(&then)), 1);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+        });
+    }
+
+    /// An exported `FIDGET_DIRECTOR_MODEL` wins over the Apply, so the Apply
+    /// changes nothing and no set goes out. The probe was asked to prove a
+    /// set, so it does not pass.
+    #[test]
+    fn the_probe_fails_when_an_exported_override_leaves_nothing_to_send() {
+        crate::model::tests::with_env(None, None, Some("some-model"), || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            let then = ProbeThen::parse("model=some-model").unwrap();
+            assert_eq!(probe(&session, Some(&then)), 1);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            // The one set is the open's own, from the exported value.
+            assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+            assert_eq!(fx.count("new"), 1);
+        });
+    }
+
     #[test]
     fn the_apply_block_says_what_reached_the_wire() {
-        use crate::acp_wire::{Applied, Field};
-        let verdict = |now: &str, set: &[Field], unadvertised: &[Field]| {
-            session_verdict(
-                "fresh-id",
-                now,
-                &Applied {
-                    set: set.to_vec(),
-                    unadvertised: unadvertised.to_vec(),
-                },
-            )
-        };
+        use crate::acp_wire::{Field::*, Outcome::*};
+        let verdict =
+            |now: &str, outcomes: &[(crate::acp_wire::Field, crate::acp_wire::Outcome)]| {
+                session_verdict("fresh-id", now, &outcomes_of(outcomes))
+            };
         assert_eq!(
-            verdict("fresh-id", &[Field::Effort], &[]),
+            verdict("fresh-id", &[(Effort, Confirmed)]),
             "fresh-id (kept, values set on it)"
         );
         assert_eq!(
-            verdict("fresh-id", &[], &[]),
-            "fresh-id (kept, nothing to set)"
+            verdict("fresh-id", &[(Model, Confirmed), (Effort, Confirmed)]),
+            "fresh-id (kept, values set on it)"
         );
         assert_eq!(
-            verdict("fresh-id", &[], &[Field::Effort]),
+            verdict("fresh-id", &[]),
+            "fresh-id (kept, NO SET SENT: nothing changed on this conversation)"
+        );
+        assert_eq!(
+            verdict("fresh-id", &[(Effort, Unadvertised)]),
             "fresh-id (kept, NOT SET: the Harness advertises no effort option)"
         );
         assert_eq!(
-            verdict("fresh-id", &[], &[Field::Model, Field::Effort]),
+            verdict("fresh-id", &[(Model, Unadvertised), (Effort, Unadvertised)]),
             "fresh-id (kept, NOT SET: the Harness advertises no model or effort option)"
         );
         assert_eq!(
-            verdict("fresh-id", &[Field::Effort], &[Field::Model]),
+            verdict("fresh-id", &[(Effort, Unconfirmed)]),
+            "fresh-id (kept, NOT CONFIRMED: effort was answered without the new value)"
+        );
+        assert_eq!(
+            verdict("fresh-id", &[(Model, Unadvertised), (Effort, Confirmed)]),
             "fresh-id (kept, effort set; NOT SET: the Harness advertises no model option)"
         );
         assert_eq!(
-            verdict("fresh-id-2", &[Field::Effort], &[]),
+            verdict("fresh-id-2", &[(Effort, Confirmed)]),
             "fresh-id-2 (NEW, the conversation was not kept)"
         );
     }
