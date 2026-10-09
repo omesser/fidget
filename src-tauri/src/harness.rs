@@ -3790,6 +3790,24 @@ mod tests {
             "locations": [{"path": "/tmp/page.html"}],
         }));
         update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-clear", "title": "Cleared",
+            "kind": "read", "status": "in_progress",
+            "locations": [{"path": "/a"}],
+            "content": [{"type": "content", "content": {"type": "text", "text": "gone"}}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-clear", "content": [],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-swap", "title": "Swapped",
+            "kind": "read", "status": "in_progress",
+            "locations": [{"path": "/old", "line": 1}, {"path": "/older"}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-swap",
+            "locations": [{"path": "/new", "line": 5}],
+        }));
+        update(json!({
             "sessionUpdate": "tool_call_update", "toolCallId": "t-late", "title": "Late call",
             "locations": [{"path": "/etc/hosts", "line": 3}],
             "content": [{"type": "content", "content": {"type": "text", "text": "no start"}}],
@@ -7404,7 +7422,7 @@ mod tests {
                  "kind": "edit", "status": "completed",
                  "locations": [{"path": "/Users/oded/src/main.rs", "line": 12}],
                  "content": [
-                    {"type": "diff", "path": "/Users/oded/src/main.rs", "added": 3, "removed": 1},
+                    {"type": "diff", "path": "/Users/oded/src/main.rs", "added": 3, "removed": 1, "approximate": false},
                     {"type": "text", "text": "wrote 2 hunks"},
                  ]},
                 {"type": "tool_call", "id": "t-run", "title": "cargo test",
@@ -7422,6 +7440,12 @@ mod tests {
                     {"type": "mark", "markdown": "[image image/png]"},
                     {"type": "mark", "markdown": "[link passwd file:///etc/passwd]"},
                  ]},
+                {"type": "tool_call", "id": "t-clear", "title": "Cleared",
+                 "kind": "read", "status": "in_progress",
+                 "locations": [{"path": "/a", "line": null}], "content": []},
+                {"type": "tool_call", "id": "t-swap", "title": "Swapped",
+                 "kind": "read", "status": "in_progress",
+                 "locations": [{"path": "/new", "line": 5}], "content": []},
                 {"type": "tool_call", "id": "t-late", "title": "Late call",
                  "kind": null, "status": null,
                  "locations": [{"path": "/etc/hosts", "line": 3}],

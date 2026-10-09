@@ -277,7 +277,7 @@ const TOOL_HISTORY = [
       { path: "/tmp/page.html", line: null },
     ],
     content: [
-      { type: "diff", path: "/Users/oded/src/main.rs", added: 3, removed: 1 },
+      { type: "diff", path: "/Users/oded/src/main.rs", added: 3, removed: 1, approximate: false },
       { type: "terminal", id: "term-7" },
       { type: "text", text: "wrote [x](https://evil.example) and **2** hunks" },
       { type: "mark", markdown: "[spec](https://example.com/spec.md)" },
@@ -313,5 +313,58 @@ test(
     assert.deepEqual(report.links, ["https://example.com/spec.md"]);
     assert.deepEqual(report.opened, ["https://example.com/spec.md"]);
     assert.equal(report.anchors, 0, "an <a href> would navigate the Chat webview");
+  },
+);
+
+// A path or an id is the Harness's, and a line break or a right-to-left
+// override in it must not make a second line or reorder the text around it.
+test(
+  "a replayed tool row keeps a hostile path or terminal id on one line, with no override",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      {
+        type: "tool_call",
+        id: "t-hostile",
+        title: "Edit",
+        kind: "edit",
+        status: "completed",
+        locations: [{ path: "/tmp/a\nb\u202ec.rs", line: 2 }],
+        content: [
+          { type: "diff", path: "/tmp/x\r\ny\u202ez.rs", added: 1, removed: 0, approximate: false },
+          { type: "terminal", id: "t\n1\u202e2" },
+          { type: "text", text: "kept\nlines\u202e" },
+        ],
+      },
+    ];
+    const report = drive(`emit("chat-restored", ${JSON.stringify(history)});`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.tools[0].pieces, [
+      "/tmp/a bc.rs:2",
+      "/tmp/x yz.rs (+1/-0) · full diff not drawn",
+      "Terminal t 12",
+      "kept\nlines",
+    ]);
+  },
+);
+
+test(
+  "a diff too big to count exactly says its counts are approximate",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      {
+        type: "tool_call",
+        id: "t-big",
+        title: "Rewrite",
+        kind: "edit",
+        status: "completed",
+        locations: [],
+        content: [{ type: "diff", path: "/big.rs", added: 100000, removed: 90000, approximate: true }],
+      },
+    ];
+    const report = drive(`emit("chat-restored", ${JSON.stringify(history)});`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.tools[0].pieces, ["/big.rs (+100000/-90000, approximate) · full diff not drawn"]);
   },
 );
