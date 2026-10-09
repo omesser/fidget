@@ -139,6 +139,21 @@ mod tests {
     }
 
     #[test]
+    fn the_autostart_plugin_is_registered_on_every_build() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(
+            manifest.contains(
+                "OS login item. Registered on every build; only sync skips a checkout, which"
+            ),
+            "the plugin is registered on every build; only sync skips a checkout"
+        );
+        assert!(
+            !manifest.contains("Registered only for a packaged build"),
+            "a checkout still registers the plugin; only sync skips it"
+        );
+    }
+
+    #[test]
     fn a_target_triple_build_is_still_a_checkout() {
         assert!(under_cargo_target(Path::new(
             "/work/fidget/target/x86_64-unknown-linux-gnu/debug/fidget"
