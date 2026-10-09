@@ -3749,6 +3749,71 @@ mod tests {
         );
     }
 
+    /// Replayed tool calls that carry every kind of content and locations.
+    fn tool_calls_with_content(session: &str) {
+        let update = |update: Value| {
+            say(
+                json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                    "sessionId": session, "update": update,
+                }}),
+            )
+        };
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-edit", "title": "Edit main.rs",
+            "kind": "edit", "status": "completed",
+            "locations": [{"path": "/Users/oded/src/main.rs", "line": 12}],
+            "content": [
+                {"type": "diff", "path": "/Users/oded/src/main.rs",
+                 "oldText": "a\nb\nc\nd\n", "newText": "a\nB\nc\nd\ne\nf\n"},
+                {"type": "content", "content": {"type": "text", "text": "wrote 2 hunks"}},
+            ],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-run", "title": "cargo test",
+            "kind": "execute", "status": "completed",
+            "content": [
+                {"type": "terminal", "terminalId": "term-7"},
+                {"type": "content", "content": {"type": "text", "text": "running 3 tests"}},
+            ],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-media", "title": "Fetch page",
+            "kind": "fetch", "status": "in_progress",
+            "content": [
+                {"type": "content", "content": spec_link()},
+                {"type": "content", "content": screenshot()},
+                {"type": "content", "content": {"type": "resource_link", "name": "passwd", "uri": "file:///etc/passwd"}},
+            ],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-media", "status": "completed",
+            "locations": [{"path": "/tmp/page.html"}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-clear", "title": "Cleared",
+            "kind": "read", "status": "in_progress",
+            "locations": [{"path": "/a"}],
+            "content": [{"type": "content", "content": {"type": "text", "text": "gone"}}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-clear", "content": [],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t-swap", "title": "Swapped",
+            "kind": "read", "status": "in_progress",
+            "locations": [{"path": "/old", "line": 1}, {"path": "/older"}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-swap",
+            "locations": [{"path": "/new", "line": 5}],
+        }));
+        update(json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t-late", "title": "Late call",
+            "locations": [{"path": "/etc/hosts", "line": 3}],
+            "content": [{"type": "content", "content": {"type": "text", "text": "no start"}}],
+        }));
+    }
+
     fn tool_call(session: &str, title: &str) {
         say(
             json!({"jsonrpc": "2.0", "method": "session/update", "params": {
@@ -4002,6 +4067,9 @@ mod tests {
                     // answers `session/load`, even one that then fails.
                     if script == "load-replay" {
                         tool_call(loaded, "replayed");
+                    }
+                    if script == "load-tools" {
+                        tool_calls_with_content(loaded);
                     }
                     if script == "load-resources" {
                         block_chunk(loaded, "user_message_chunk", spec_link());
@@ -7235,7 +7303,10 @@ mod tests {
                         title: text("replayed"),
                         kind: Some(text("other")),
                         status: Some(text("failed")),
-                        content: vec![text("no such file")],
+                        locations: vec![],
+                        content: vec![crate::tool_content::ToolPiece::Text {
+                            text: text("no such file")
+                        }],
                     },
                     Replayed::Plan {
                         steps: vec![PlanStep {
@@ -7318,6 +7389,68 @@ mod tests {
                     text: text("[spec](https://example.com/spec.md)")
                 },
             ]]
+        );
+        session.shutdown();
+    }
+
+    /// A replayed tool call keeps what it carried: a diff as its path and line
+    /// counts, a terminal as its id, a mark for non-text content, text as
+    /// sent, and every location. A `tool_call_update` replaces the locations.
+    #[test]
+    fn a_replayed_tool_call_keeps_its_content_and_locations() {
+        let (fx, session) = Fixture::new("load-tools");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        let _ = session.complete(&asking("hi"), &|_| {});
+        let restored: Vec<Value> = fx
+            .forwarded
+            .try_iter()
+            .filter_map(|forwarded| match forwarded {
+                Forwarded::Restored(Restored { history, .. }) => {
+                    Some(serde_json::to_value(history).unwrap())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            restored,
+            vec![json!([
+                {"type": "tool_call", "id": "t-edit", "title": "Edit main.rs",
+                 "kind": "edit", "status": "completed",
+                 "locations": [{"path": "/Users/oded/src/main.rs", "line": 12}],
+                 "content": [
+                    {"type": "diff", "path": "/Users/oded/src/main.rs", "added": 3, "removed": 1, "approximate": false},
+                    {"type": "text", "text": "wrote 2 hunks"},
+                 ]},
+                {"type": "tool_call", "id": "t-run", "title": "cargo test",
+                 "kind": "execute", "status": "completed",
+                 "locations": [],
+                 "content": [
+                    {"type": "terminal", "id": "term-7"},
+                    {"type": "text", "text": "running 3 tests"},
+                 ]},
+                {"type": "tool_call", "id": "t-media", "title": "Fetch page",
+                 "kind": "fetch", "status": "completed",
+                 "locations": [{"path": "/tmp/page.html", "line": null}],
+                 "content": [
+                    {"type": "mark", "markdown": "[spec](https://example.com/spec.md)"},
+                    {"type": "mark", "markdown": "[image image/png]"},
+                    {"type": "mark", "markdown": "[link passwd file:///etc/passwd]"},
+                 ]},
+                {"type": "tool_call", "id": "t-clear", "title": "Cleared",
+                 "kind": "read", "status": "in_progress",
+                 "locations": [{"path": "/a", "line": null}], "content": []},
+                {"type": "tool_call", "id": "t-swap", "title": "Swapped",
+                 "kind": "read", "status": "in_progress",
+                 "locations": [{"path": "/new", "line": 5}], "content": []},
+                {"type": "tool_call", "id": "t-late", "title": "Late call",
+                 "kind": null, "status": null,
+                 "locations": [{"path": "/etc/hosts", "line": 3}],
+                 "content": [{"type": "text", "text": "no start"}]},
+            ])]
         );
         session.shutdown();
     }

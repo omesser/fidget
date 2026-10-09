@@ -52,6 +52,7 @@ mod secrets;
 mod session_log;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
+mod tool_content;
 mod tray;
 
 use chat_surface::{

@@ -82,6 +82,9 @@ image = {version = "0.25", default-features = false, features = ["png"]}
 # nothing else: already in the tree under keyring and tokio, and a token minted
 # from a clock is a token an attacker can guess.
 getrandom = "0.4"
+# Counting the lines a tool call's diff added and removed, as git does. A line
+# diff is not worth hand-rolling, and `text` is the only feature used.
+similar = {version = "3.2", default-features = false, features = ["text"]}
 
 [target.'cfg(unix)'.dependencies]
 # Process-group teardown for an `npx` Harness: `getpgid` / `killpg`.

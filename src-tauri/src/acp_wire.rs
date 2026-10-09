@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::content_mark::chunk_text;
+use crate::tool_content::{pieces, places, Place, ToolPiece};
 use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
@@ -449,14 +450,15 @@ pub enum Replayed {
     Thought {
         text: String,
     },
-    /// A tool call with every update to it folded in. `content` is its text
-    /// output, and the paths of the files it rewrote.
+    /// A tool call with every update to it folded in. An update replaces
+    /// `content` and `locations` whole, as ACP does.
     ToolCall {
         id: String,
         title: String,
         kind: Option<String>,
         status: Option<String>,
-        content: Vec<String>,
+        locations: Vec<Place>,
+        content: Vec<ToolPiece>,
     },
     /// The agent's plan as it last stood before the next prompt.
     Plan {
@@ -1533,7 +1535,8 @@ impl Replay {
                 title: call.title,
                 kind: Some(name_of(&call.kind)),
                 status: Some(name_of(&call.status)),
-                content: tool_output(&call.content),
+                locations: places(&call.locations),
+                content: pieces(&call.content),
             }),
             SessionUpdate::ToolCallUpdate(update) => {
                 let id = update.tool_call_id.0.to_string();
@@ -1544,20 +1547,18 @@ impl Replay {
                         title,
                         kind,
                         status,
+                        locations,
                         content,
-                    } if *known == id => Some((title, kind, status, content)),
+                    } if *known == id => Some((title, kind, status, locations, content)),
                     _ => None,
                 });
-                let Some((title, kind, status, content)) = known else {
+                let Some((title, kind, status, locations, content)) = known else {
                     self.entries.push(Replayed::ToolCall {
                         title: fields.title.unwrap_or_default(),
                         kind: fields.kind.as_ref().map(name_of),
                         status: fields.status.as_ref().map(name_of),
-                        content: fields
-                            .content
-                            .as_deref()
-                            .map(tool_output)
-                            .unwrap_or_default(),
+                        locations: fields.locations.as_deref().map(places).unwrap_or_default(),
+                        content: fields.content.as_deref().map(pieces).unwrap_or_default(),
                         id,
                     });
                     return;
@@ -1571,8 +1572,11 @@ impl Replay {
                 if let Some(changed) = fields.status {
                     *status = Some(name_of(&changed));
                 }
+                if let Some(changed) = fields.locations {
+                    *locations = places(&changed);
+                }
                 if let Some(changed) = fields.content {
-                    *content = tool_output(&changed);
+                    *content = pieces(&changed);
                 }
             }
             SessionUpdate::Plan(plan) => {
@@ -1645,22 +1649,6 @@ fn plan_steps(plan: Plan) -> Vec<PlanStep> {
 
 fn trimmed(text: String) -> Option<String> {
     Some(text.trim().to_string()).filter(|text| !text.is_empty())
-}
-
-/// What a tool call put out, as text: its text blocks, and the path of each
-/// file it rewrote. An image or a terminal has no text to keep.
-fn tool_output(content: &[ToolCallContent]) -> Vec<String> {
-    content
-        .iter()
-        .filter_map(|piece| match piece {
-            ToolCallContent::Content(block) => match &block.content {
-                ContentBlock::Text(text) => Some(text.text.clone()),
-                _ => None,
-            },
-            ToolCallContent::Diff(diff) => Some(diff.path.display().to_string()),
-            _ => None,
-        })
-        .collect()
 }
 
 /// ACP v1 says nothing when a turn the Harness started is over. Flush any

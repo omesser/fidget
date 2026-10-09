@@ -93,6 +93,10 @@ ${steps}
       rows: rows(),
       livePlan: !document.getElementById("plan").hidden,
       links: [...document.querySelectorAll("#log .md-link")].map((link) => link.dataset.href),
+      tools: [...document.querySelectorAll("#log .row.tool")].map((row) => ({
+        label: row.querySelector(".who-label").textContent,
+        pieces: [...row.querySelectorAll(".said > *")].map((piece) => piece.textContent),
+      })),
       anchors: document.querySelectorAll("#log a").length,
       opened: window.__invoked.filter((call) => call.name === "open_link").map((call) => call.args.url),
     });
@@ -139,7 +143,7 @@ const HISTORY = [
   { type: "prompt", text: "what just happened: they typed\nthey said: hi" },
   { type: "thought", text: "Weighing it" },
   { type: "reply", text: "wave\nHello from **before**" },
-  { type: "tool_call", id: "t1", title: "Read roster.json", kind: "read", status: "failed", content: ["no such file"] },
+  { type: "tool_call", id: "t1", title: "Read roster.json", kind: "read", status: "failed", locations: [], content: [{ type: "text", text: "no such file" }] },
   { type: "plan", steps: [{ content: "Read the roster", priority: "medium", status: "completed" }] },
   { type: "reply", text: "Done." },
 ];
@@ -254,5 +258,113 @@ test(
     assert.deepEqual(report.links, ["https://example.com"]);
     assert.deepEqual(report.opened, ["https://example.com"]);
     assert.equal(report.anchors, 0);
+  },
+);
+
+// ADR-0028: a replayed tool call draws every field the wire sent. Locations
+// come first, as the path and line ACP gave. A diff is its path, its counts
+// and a note that the full diff is not drawn. A terminal is its id. Text is
+// as sent, never Markdown. Any other block is a mark, whose links open.
+const TOOL_HISTORY = [
+  {
+    type: "tool_call",
+    id: "t-edit",
+    title: "Edit main.rs",
+    kind: "edit",
+    status: "completed",
+    locations: [
+      { path: "/Users/oded/src/main.rs", line: 12 },
+      { path: "/tmp/page.html", line: null },
+    ],
+    content: [
+      { type: "diff", path: "/Users/oded/src/main.rs", added: 3, removed: 1, approximate: false },
+      { type: "terminal", id: "term-7" },
+      { type: "text", text: "wrote [x](https://evil.example) and **2** hunks" },
+      { type: "mark", markdown: "[spec](https://example.com/spec.md)" },
+      { type: "mark", markdown: "[image image/png]" },
+      { type: "mark", markdown: "[link passwd file:///etc/passwd]" },
+    ],
+  },
+];
+
+test(
+  "a replayed tool call draws its locations, diff note and counts, terminal id, text and marks",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const report = drive(`
+    emit("chat-restored", ${JSON.stringify(TOOL_HISTORY)});
+    for (const link of document.querySelectorAll("#log .md-link")) link.click();`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.tools, [
+      {
+        label: "Edit main.rs · completed",
+        pieces: [
+          "/Users/oded/src/main.rs:12",
+          "/tmp/page.html",
+          "/Users/oded/src/main.rs (+3/-1) · full diff not drawn",
+          "Terminal term-7",
+          "wrote [x](https://evil.example) and **2** hunks",
+          "spec",
+          "[image image/png]",
+          "[link passwd file:///etc/passwd]",
+        ],
+      },
+    ]);
+    assert.deepEqual(report.links, ["https://example.com/spec.md"]);
+    assert.deepEqual(report.opened, ["https://example.com/spec.md"]);
+    assert.equal(report.anchors, 0, "an <a href> would navigate the Chat webview");
+  },
+);
+
+// A path or an id is the Harness's, and a line break or a right-to-left
+// override in it must not make a second line or reorder the text around it.
+test(
+  "a replayed tool row keeps a hostile path or terminal id on one line, with no override",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      {
+        type: "tool_call",
+        id: "t-hostile",
+        title: "Edit",
+        kind: "edit",
+        status: "completed",
+        locations: [{ path: "/tmp/a\nb\u202ec.rs", line: 2 }],
+        content: [
+          { type: "diff", path: "/tmp/x\r\ny\u202ez.rs", added: 1, removed: 0, approximate: false },
+          { type: "terminal", id: "t\n1\u202e2" },
+          { type: "text", text: "kept\nlines\u202e" },
+        ],
+      },
+    ];
+    const report = drive(`emit("chat-restored", ${JSON.stringify(history)});`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.tools[0].pieces, [
+      "/tmp/a bc.rs:2",
+      "/tmp/x yz.rs (+1/-0) · full diff not drawn",
+      "Terminal t 12",
+      "kept\nlines",
+    ]);
+  },
+);
+
+test(
+  "a diff too big to count exactly says its counts are approximate",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [
+      {
+        type: "tool_call",
+        id: "t-big",
+        title: "Rewrite",
+        kind: "edit",
+        status: "completed",
+        locations: [],
+        content: [{ type: "diff", path: "/big.rs", added: 100000, removed: 90000, approximate: true }],
+      },
+    ];
+    const report = drive(`emit("chat-restored", ${JSON.stringify(history)});`);
+    assert.equal(report.error, undefined, report.error);
+    assert.deepEqual(report.tools[0].pieces, ["/big.rs (+100000/-90000, approximate) · full diff not drawn"]);
   },
 );

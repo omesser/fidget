@@ -20,7 +20,7 @@ import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
-import { appendReply, drawReply, drawThought, replaceReply } from "./markdown.js";
+import { appendReply, drawReply, drawThought, replaceReply, stripUnsafe } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -801,10 +801,6 @@ function newSession(why) {
 // again from `chat_ready`.
 let restoredBlock = [];
 
-function drawPlain(body, text) {
-  body.textContent = text;
-}
-
 function restoredFold(cls, title, text, draw) {
   const row = foldRow(`restored ${cls}`, title);
   draw(row.querySelector(".said"), text);
@@ -814,6 +810,43 @@ function restoredFold(cls, title, text, draw) {
   return row;
 }
 
+// A path or an id the Harness chose, on one line with nothing that reorders it.
+function oneLine(text) {
+  return stripUnsafe(text).replace(/[\r\n\t]+/g, " ");
+}
+
+// One line per thing a replayed tool call carried (ADR-0028). Text is drawn
+// as written. A mark is Markdown, so its links open.
+function toolPiece(piece) {
+  const line = el("tool-piece");
+  switch (piece.type) {
+    case "diff":
+      line.textContent = `${oneLine(piece.path)} (+${piece.added}/-${piece.removed}${
+        piece.approximate ? ", approximate" : ""
+      }) · full diff not drawn`;
+      break;
+    case "terminal":
+      line.textContent = `Terminal ${oneLine(piece.id)}`;
+      break;
+    case "mark":
+      drawThought(line, piece.markdown);
+      break;
+    default:
+      line.textContent = stripUnsafe(piece.text);
+  }
+  return line;
+}
+
+function drawTool(body, entry) {
+  const places = entry.locations.map((at) => {
+    const line = el("tool-piece tool-location");
+    const path = oneLine(at.path);
+    line.textContent = at.line == null ? path : `${path}:${at.line}`;
+    return line;
+  });
+  body.replaceChildren(...places, ...entry.content.map(toolPiece));
+}
+
 const RESTORED_ROWS = {
   prompt: (entry) => restoredFold("prompt", "Prompt", entry.text, drawThought),
   thought: (entry) => restoredFold("thought", "Thinking", entry.text, drawThought),
@@ -821,8 +854,8 @@ const RESTORED_ROWS = {
     restoredFold(
       "tool",
       [entry.title || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · "),
-      entry.content.join("\n\n"),
-      drawPlain,
+      entry,
+      drawTool,
     ),
   plan: (entry) => {
     const row = el("row restored plan-steps");

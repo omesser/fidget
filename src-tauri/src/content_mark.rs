@@ -9,25 +9,35 @@ use agent_client_protocol::schema::v1::{ContentBlock, EmbeddedResourceResource, 
 
 use crate::platform;
 
-/// What one chunk adds to the text so far. Text is itself. Any other block is
-/// its mark as a paragraph of its own: Markdown joins single lines, and two
-/// marks, or a mark and the words around it, must not run together.
-pub(crate) fn chunk_text(block: &ContentBlock, so_far: &str) -> String {
-    let mark = match block {
-        ContentBlock::Text(text) => return text.text.clone(),
+/// The mark for a block a reader has no other way to see, as the mark's own
+/// line. Text is itself.
+pub(crate) const UNKNOWN: &str = "[content]";
+
+pub(crate) fn mark(block: &ContentBlock) -> String {
+    match block {
+        ContentBlock::Text(text) => text.text.clone(),
         ContentBlock::Image(image) => format!("[image {}]", escaped(&image.mime_type)),
         ContentBlock::Audio(audio) => format!("[audio {}]", escaped(&audio.mime_type)),
         ContentBlock::ResourceLink(link) => link_mark(link),
         ContentBlock::Resource(embedded) => resource_mark(&embedded.resource),
-        _ => "[content]".to_string(),
-    };
+        _ => UNKNOWN.to_string(),
+    }
+}
+
+/// What one chunk adds to the text so far. Text is itself. Any other block is
+/// its mark as a paragraph of its own: Markdown joins single lines, and two
+/// marks, or a mark and the words around it, must not run together.
+pub(crate) fn chunk_text(block: &ContentBlock, so_far: &str) -> String {
+    if let ContentBlock::Text(text) = block {
+        return text.text.clone();
+    }
     let lead = match so_far {
         "" => "",
         so_far if so_far.ends_with("\n\n") => "",
         so_far if so_far.ends_with('\n') => "\n",
         _ => "\n\n",
     };
-    format!("{lead}{mark}\n\n")
+    format!("{lead}{}\n\n", mark(block))
 }
 
 /// A link Chat opens is a Markdown link, so it draws clickable. The target is
@@ -122,6 +132,14 @@ mod tests {
 
     fn link(name: &str, uri: &str) -> ContentBlock {
         ContentBlock::ResourceLink(ResourceLink::new(name, uri))
+    }
+
+    #[test]
+    fn a_marks_own_line_has_no_paragraph_around_it() {
+        let image = ContentBlock::Image(ImageContent::new("AAAA", "image/png"));
+        assert_eq!(super::mark(&image), "[image image/png]");
+        let text = ContentBlock::Text(TextContent::new("words"));
+        assert_eq!(super::mark(&text), "words");
     }
 
     #[test]
