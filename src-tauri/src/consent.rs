@@ -727,12 +727,18 @@ mod tests {
                 "{exe}"
             );
         }
-        for exe in [
-            "/Applications/Fidget.app/Contents/MacOS/fidget",
+        // macOS decides by the `.app` bundle, so an installed Windows path is
+        // a checkout there and the two layouts cannot share one list.
+        #[cfg(target_os = "macos")]
+        let installed = ["/Applications/Fidget.app/Contents/MacOS/fidget"];
+        #[cfg(not(target_os = "macos"))]
+        let installed = [
+            "/usr/bin/fidget",
             r"C:\Program Files\Fidget\fidget.exe",
             r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
             r"D:\Portable\Fidget\fidget.exe",
-        ] {
+        ];
+        for exe in installed {
             assert_eq!(
                 process_list_name_for(Some(Path::new(exe)), parent),
                 "Fidget",
