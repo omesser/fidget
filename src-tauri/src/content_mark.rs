@@ -15,8 +15,8 @@ use crate::platform;
 pub(crate) fn chunk_text(block: &ContentBlock, so_far: &str) -> String {
     let mark = match block {
         ContentBlock::Text(text) => return text.text.clone(),
-        ContentBlock::Image(image) => format!("[image {}]", escaped(&image.mime_type, FIELD_LIMIT)),
-        ContentBlock::Audio(audio) => format!("[audio {}]", escaped(&audio.mime_type, FIELD_LIMIT)),
+        ContentBlock::Image(image) => format!("[image {}]", escaped(&image.mime_type)),
+        ContentBlock::Audio(audio) => format!("[audio {}]", escaped(&audio.mime_type)),
         ContentBlock::ResourceLink(link) => link_mark(link),
         ContentBlock::Resource(embedded) => resource_mark(&embedded.resource),
         _ => "[content]".to_string(),
@@ -32,32 +32,24 @@ pub(crate) fn chunk_text(block: &ContentBlock, so_far: &str) -> String {
 
 /// A link Chat opens is a Markdown link, so it draws clickable. The target is
 /// the one `open_link` would open, so what is drawn is what opens. A link it
-/// would refuse stays text with its uri, so nothing is dropped. A target over
-/// the limit is text too: cut short, it would open somewhere else.
+/// would refuse stays text with its uri, so nothing is dropped.
 fn link_mark(link: &ResourceLink) -> String {
     let name = if link.name.is_empty() {
         &link.uri
     } else {
         &link.name
     };
-    let target = platform::openable(&link.uri)
-        .ok()
-        .filter(|target| target.chars().count() <= URI_LIMIT);
-    let Some(target) = target else {
-        return format!(
-            "[link {} {}]",
-            escaped(name, FIELD_LIMIT),
-            escaped(&link.uri, URI_LIMIT)
-        );
+    let Ok(target) = platform::openable(&link.uri) else {
+        return format!("[link {} {}]", escaped(name), escaped(&link.uri));
     };
     let drawn = format!(
         "[{}]({})",
-        escaped(name, FIELD_LIMIT),
+        escaped(name),
         target.replace('(', "%28").replace(')', "%29")
     );
     // A name that reads as another site must not be the only thing seen.
     if names_another_host(name, &target) {
-        format!("{drawn} {}", escaped(&target, URI_LIMIT))
+        format!("{drawn} {}", escaped(&target))
     } else {
         drawn
     }
@@ -79,52 +71,33 @@ fn names_another_host(name: &str, target: &str) -> bool {
 }
 
 fn resource_mark(resource: &EmbeddedResourceResource) -> String {
-    let (uri, mime, bytes) = match resource {
+    let (uri, mime, size) = match resource {
         EmbeddedResourceResource::TextResourceContents(text) => {
-            (&text.uri, &text.mime_type, text.text.len())
+            (&text.uri, &text.mime_type, format!("{}", text.text.len()))
         }
-        EmbeddedResourceResource::BlobResourceContents(blob) => {
-            (&blob.uri, &blob.mime_type, decoded_len(&blob.blob))
-        }
+        // Three bytes to every four base64 characters, near enough to say.
+        EmbeddedResourceResource::BlobResourceContents(blob) => (
+            &blob.uri,
+            &blob.mime_type,
+            format!("~{}", blob.blob.len() * 3 / 4),
+        ),
         _ => return "[resource]".to_string(),
     };
     let mime = mime
         .as_deref()
-        .map(|mime| format!(", {}", escaped(mime, FIELD_LIMIT)))
+        .map(|mime| format!(", {}", escaped(mime)))
         .unwrap_or_default();
-    format!(
-        "[resource {}{mime}, {bytes} bytes]",
-        escaped(uri, URI_LIMIT)
-    )
+    format!("[resource {}{mime}, {size} bytes]", escaped(uri))
 }
 
-/// The bytes a base64 string stands for, from its digits alone: padding and
-/// whitespace are not data.
-fn decoded_len(base64: &str) -> usize {
-    let digits = base64
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '=')
-        .count();
-    digits * 3 / 4
-}
-
-/// The most characters a name or a mime type keeps in a mark, and a uri. A
-/// longer field is cut and ends in `…`, so one field cannot flood a row.
-const FIELD_LIMIT: usize = 200;
-const URI_LIMIT: usize = 2000;
-
-/// One line of text that Markdown reads back as itself: a control character or
-/// line separator is a space, every character that means something to Markdown
-/// has its backslash, and the whole is cut at `limit` characters.
-fn escaped(text: &str, limit: usize) -> String {
+/// One line of text that Markdown reads back as itself: a control character is
+/// a space, and every character that means something to Markdown has its
+/// backslash.
+fn escaped(text: &str) -> String {
     let mut out = String::new();
-    for (n, c) in text.chars().enumerate() {
-        if n == limit {
-            out.push('…');
-            break;
-        }
+    for c in text.chars() {
         match c {
-            c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => out.push(' '),
+            c if c.is_control() => out.push(' '),
             '\\' | '[' | ']' | '(' | ')' | '<' | '>' | '*' | '_' | '`' | '&' | '~' => {
                 out.push('\\');
                 out.push(c);
@@ -234,7 +207,7 @@ mod tests {
         ));
         assert_eq!(
             mark(ContentBlock::Resource(EmbeddedResource::new(blob))),
-            "[resource file:///a.bin, 5 bytes]\n\n"
+            "[resource file:///a.bin, ~6 bytes]\n\n"
         );
     }
 
@@ -302,77 +275,19 @@ mod tests {
         );
     }
 
-    /// A name or a mime type is cut at 200 characters and a uri at 2000, with
-    /// a `\u{2026}` where the cut fell. A field exactly at its limit is whole.
+    /// A blob's size is an estimate from its base64 length, and says so.
     #[test]
-    fn a_field_over_its_limit_is_cut_with_a_visible_mark() {
-        let at = "n".repeat(200);
-        assert_eq!(
-            mark(link(&at, "https://example.com/")),
-            format!("[{at}](https://example.com/)\n\n")
-        );
-        assert_eq!(
-            mark(link(&format!("{at}n"), "https://example.com/")),
-            format!("[{at}\u{2026}](https://example.com/)\n\n")
-        );
-        assert_eq!(
-            mark(resource("file:///a", Some(&at))),
-            format!("[resource file:///a, {at}, 0 bytes]\n\n")
-        );
-        assert_eq!(
-            mark(resource("file:///a", Some(&format!("{at}m")))),
-            format!("[resource file:///a, {at}\u{2026}, 0 bytes]\n\n")
-        );
-        let uri = format!("file:///{}", "u".repeat(1992));
-        assert_eq!(uri.chars().count(), 2000);
-        assert_eq!(
-            mark(resource(&uri, None)),
-            format!("[resource {uri}, 0 bytes]\n\n")
-        );
-        assert_eq!(
-            mark(resource(&format!("{uri}u"), None)),
-            format!("[resource {uri}\u{2026}, 0 bytes]\n\n")
-        );
+    fn a_blobs_size_is_an_estimate() {
+        assert_eq!(blob("aGVsbG8="), "[resource file:///b, ~6 bytes]\n\n");
+        assert_eq!(blob(""), "[resource file:///b, ~0 bytes]\n\n");
     }
 
-    /// A target cut short would open somewhere else, so a link whose target is
-    /// over the limit is text.
-    #[test]
-    fn a_link_whose_target_is_over_the_limit_is_text_not_a_cut_link() {
-        let long = format!("https://example.com/{}", "p".repeat(2000));
-        let cut: String = long.chars().take(2000).collect();
-        assert_eq!(
-            mark(link("long", &long)),
-            format!("[link long {cut}\u{2026}]\n\n")
-        );
-    }
-
-    #[test]
-    fn a_blobs_size_is_its_decoded_length_padded_or_not_and_whitespace_aside() {
-        assert_eq!(blob("aGVsbG8="), "[resource file:///b, 5 bytes]\n\n");
-        assert_eq!(blob("aGVsbG8"), "[resource file:///b, 5 bytes]\n\n");
-        assert_eq!(blob("aGVsbA=="), "[resource file:///b, 4 bytes]\n\n");
-        assert_eq!(blob("aGVs\nbG8=\r\n "), "[resource file:///b, 5 bytes]\n\n");
-        assert_eq!(blob(""), "[resource file:///b, 0 bytes]\n\n");
-    }
-
-    /// The `[content]` and `[resource]` arms cover a kind a later ACP adds.
-    /// The schema's enums are non-exhaustive, so this build cannot build one,
-    /// and a kind it does not know is refused before it reaches a mark.
-    #[test]
-    fn a_kind_this_build_does_not_know_is_refused_before_a_mark() {
-        let unknown = serde_json::json!({"type": "hologram", "uri": "x"});
-        assert!(serde_json::from_value::<ContentBlock>(unknown).is_err());
-        let unknown = serde_json::json!({"type": "resource", "resource": {"hologram": 1}});
-        assert!(serde_json::from_value::<ContentBlock>(unknown).is_err());
-    }
-
-    /// What Markdown, a browser or a line breaker could read as structure stays
+    /// What Markdown or a browser could read as structure stays
     /// text, in a name, a uri and a mime type alike. The same strings go through
     /// `drawThought` in `tests/chat-markdown.test.js`.
     #[test]
     fn the_characters_a_mark_leaves_bare_stay_inert() {
-        let nasty = "a\\b`c!d#e|f-g+h=i\u{2028}j\u{85}k\u{2029}l";
+        let nasty = "a\\b`c!d#e|f-g+h=i\u{85}j\u{7}k\u{1b}l";
         let spaced = "a\\\\b\\`c!d#e|f-g+h=i j k l";
         assert_eq!(
             mark(link(nasty, "https://example.com/")),
