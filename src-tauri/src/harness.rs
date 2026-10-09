@@ -989,8 +989,19 @@ pub struct Session {
     cursor: Mutex<Option<crate::cursor_mcp::Installed>>,
 }
 
+/// What a Harness takes only when it opens a conversation. A conversation
+/// opened on other inputs is not asked again: its next wake opens a new one.
+#[derive(Clone, PartialEq, Eq)]
+struct OpenInputs {
+    /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
+    /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
+    model: String,
+    effort: Option<String>,
+}
+
 struct OpenedSession {
     id: String,
+    opened_on: OpenInputs,
     /// Whether this id came from `session/load` and has not served a turn
     /// yet. That is the one condition `reopen_loaded` answers to.
     loaded: bool,
@@ -1755,18 +1766,28 @@ impl Session {
         let Some(key) = key else {
             return Ok((wire, String::new()));
         };
-        {
-            let state = self.state.lock().map_err(|_| "harness state poisoned")?;
-            if let Some(opened) = state.sessions.get(key) {
-                return Ok((wire, opened.id.clone()));
-            }
+        let inputs = self.open_inputs();
+        let outdated = {
+            let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
+            let outdated = match state.sessions.get(key) {
+                Some(opened) if opened.opened_on == inputs => {
+                    return Ok((wire, opened.id.clone()));
+                }
+                // Its saved slot is the same conversation, so not loaded either.
+                Some(_) => {
+                    state.sessions.remove(key);
+                    true
+                }
+                None => false,
+            };
             if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
                 if tried.elapsed() < self.auth_retry {
                     return Err(not_authenticated(command));
                 }
             }
-        }
-        let id = self.open_session(&wire, key, false)?;
+            outdated
+        };
+        let id = self.open_session(&wire, key, outdated)?;
         Ok((wire, id))
     }
 
@@ -1841,12 +1862,13 @@ impl Session {
         Ok(wire)
     }
 
-    /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
-    /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
-    fn completer_model(&self) -> String {
+    fn open_inputs(&self) -> OpenInputs {
         let settings =
             crate::settings::Settings::load(&crate::settings::settings_path(self.data.as_path()));
-        crate::model::env_or_file(crate::model::MODEL, &settings.director_model)
+        OpenInputs {
+            model: crate::model::env_or_file(crate::model::MODEL, &settings.director_model),
+            effort: crate::dev_flags::director_reasoning_effort(),
+        }
     }
 
     /// `session/load` when the Harness can and the file names this Harness,
@@ -1877,8 +1899,7 @@ impl Session {
             .as_ref()
             .map_err(|error| error.to_string())?
             .as_path();
-        let model = self.completer_model();
-        let effort = crate::dev_flags::director_reasoning_effort();
+        let inputs = self.open_inputs();
         // codex-acp replaces its session `mcp_servers` config when ACP also
         // supplies servers, which would discard Fidget's scoped approval.
         let mcp_for_wire = if self.launch.codex_mcp_config().is_some() {
@@ -1892,8 +1913,8 @@ impl Session {
             mcp_for_wire,
             self.launch.name == "claude",
             self.attach_timeout(),
-            &model,
-            effort.as_deref(),
+            &inputs.model,
+            inputs.effort.as_deref(),
         ) {
             Ok(opened) => opened,
             Err(OpenError::Lost) => {
@@ -1928,6 +1949,7 @@ impl Session {
                     key.clone(),
                     OpenedSession {
                         id: id.clone(),
+                        opened_on: inputs,
                         loaded: saved.as_deref() == Some(id.as_str()),
                     },
                 );
@@ -2049,23 +2071,6 @@ impl Session {
                 inspect.session_id = None;
             }
         });
-    }
-
-    /// Apply moved the model from `before` to `after`. The Harness takes the
-    /// model only when it opens a conversation, so each Instance's open one
-    /// goes and its next wake opens on `after`. The same model keeps them.
-    pub fn model_applied<'a>(
-        &self,
-        before: &str,
-        after: &str,
-        instances: impl IntoIterator<Item = &'a str>,
-    ) {
-        if before == after {
-            return;
-        }
-        for instance in instances {
-            self.drop_conversation(instance);
-        }
     }
 
     fn forget_saved(&self, instance: &str) {

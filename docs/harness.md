@@ -63,7 +63,7 @@ Switches read the same words as the trace variables. Any other value is a typo: 
 
 ### Settings and Keyring
 
-Settings → AI saves base URL, model, and first wake interval, and stores the API key in the OS secret store. Leave model blank to leave it unset: HTTP omits `model`, and a Harness does not set one. Settings → Development saves the Model API timeout and turn ceiling, Blank AI, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Leave effort blank to leave it unset on HTTP and on a Harness.
+Settings → AI saves base URL, model, and first wake interval, and stores the API key in the OS secret store. Leave model blank to leave it unset: HTTP omits `model`, and a Harness does not set one. Settings → Development saves the Model API timeout and turn ceiling, Blank AI, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Leave effort blank to leave it unset on HTTP and on a Harness. A Harness takes the model and the effort only when it opens a conversation. After Apply changes either one, each conversation's next wake opens a new conversation on the new value, and an Apply that leaves both alone keeps it (#1430, #1434).
 
 - A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
 - Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.
