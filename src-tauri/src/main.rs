@@ -30,6 +30,7 @@ mod action_log;
 mod chat_surface;
 mod completer;
 mod consent;
+mod content_mark;
 mod cursor_mcp;
 mod debug;
 mod dev_flags;

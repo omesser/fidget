@@ -3208,6 +3208,24 @@ mod tests {
         );
     }
 
+    /// A chunk of any kind that is not text, as the wire spells it.
+    fn block_chunk(session: &str, kind: &str, block: Value) {
+        say(
+            json!({"jsonrpc": "2.0", "method": "session/update", "params": {
+                "sessionId": session,
+                "update": {"sessionUpdate": kind, "content": block},
+            }}),
+        );
+    }
+
+    fn spec_link() -> Value {
+        json!({"type": "resource_link", "name": "spec", "uri": "https://example.com/spec.md"})
+    }
+
+    fn screenshot() -> Value {
+        json!({"type": "image", "data": "AAAA", "mimeType": "image/png"})
+    }
+
     fn user_chunk(session: &str, text: &str) {
         say(
             json!({"jsonrpc": "2.0", "method": "session/update", "params": {
@@ -3477,6 +3495,11 @@ mod tests {
                     if script == "load-replay" {
                         tool_call(loaded, "replayed");
                     }
+                    if script == "load-resources" {
+                        block_chunk(loaded, "user_message_chunk", spec_link());
+                        block_chunk(loaded, "agent_thought_chunk", screenshot());
+                        block_chunk(loaded, "agent_message_chunk", spec_link());
+                    }
                     if script == "load-history" {
                         let update = |update: Value| {
                             say(
@@ -3674,6 +3697,12 @@ mod tests {
                         }
                         // Thinks before it answers, so each turn's thought
                         // names the session it came from.
+                        // Hands over a picture and a link and says no text.
+                        "resource-only" => {
+                            block_chunk(&session, "agent_thought_chunk", screenshot());
+                            block_chunk(&session, "agent_message_chunk", spec_link());
+                            stop(&id, "end_turn");
+                        }
                         "thinking" => {
                             thought(&session, &format!("thinking in {session}"));
                             chunk(&session, "Hello");
@@ -6570,6 +6599,64 @@ mod tests {
             )]
         );
         assert_eq!(fx.events("tool_call"), Vec::<Value>::new());
+        session.shutdown();
+    }
+
+    /// A turn that hands over only a link and a picture is not an empty
+    /// turn: the link is the reply and the picture is the thought (ADR-0028).
+    #[test]
+    fn a_resource_only_turn_reaches_the_reply_and_the_thinking_row() {
+        let (fx, session) = Fixture::new("resource-only");
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("[spec](https://example.com/spec.md)\n\n"))
+        );
+        session.shutdown();
+        let thoughts: Vec<String> = fx
+            .forwarded
+            .try_iter()
+            .filter_map(|forwarded| match forwarded {
+                Forwarded::Thought { line, .. } if !line.is_empty() => Some(line),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thoughts, ["[image image/png]\n\n"]);
+    }
+
+    /// A replay made only of resources restores rows, not an empty log.
+    #[test]
+    fn a_resource_only_replay_is_restored_as_rows() {
+        let (fx, session) = Fixture::new("load-resources");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        let _ = session.complete(&asking("hi"), &|_| {});
+        assert_eq!(fx.count("load"), 1);
+        let restored: Vec<Vec<Replayed>> = fx
+            .forwarded
+            .try_iter()
+            .filter_map(|forwarded| match forwarded {
+                Forwarded::Restored(Restored { history, .. }) => Some(history),
+                _ => None,
+            })
+            .collect();
+        let text = |text: &str| text.to_string();
+        assert_eq!(
+            restored,
+            vec![vec![
+                Replayed::Prompt {
+                    text: text("[spec](https://example.com/spec.md)")
+                },
+                Replayed::Thought {
+                    text: text("[image image/png]")
+                },
+                Replayed::Reply {
+                    text: text("[spec](https://example.com/spec.md)")
+                },
+            ]]
+        );
         session.shutdown();
     }
 

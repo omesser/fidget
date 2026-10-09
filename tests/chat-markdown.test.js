@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { appendReply, drawReply, stripUnsafe } from "../src/markdown.js";
+import { appendReply, drawReply, drawThought, stripUnsafe } from "../src/markdown.js";
 
 class Node {
   constructor() {
@@ -527,5 +527,47 @@ test("the vendored parser is the file src/vendor/README.md documents", () => {
     createHash("sha256").update(marked).digest("hex"),
     "2e70fea3ee49f98ab67ee395e5af51cc6bee4fafed15910da9ccb7f650df8014",
     "marked@18.0.13 lib/marked.esm.js; see src/vendor/README.md to re-vendor",
+  );
+});
+
+// A thought is not a document: its line breaks and punctuation stay as the
+// harness wrote them. The one thing drawn is a link, because a resource link
+// can arrive there (ADR-0028), and it goes through the same target check.
+function think(source) {
+  const body = saidBody();
+  drawThought(body, source, doc);
+  return body;
+}
+
+test("a link in a thought is clickable and the rest is left as written", () => {
+  const body = think("See [the spec](https://example.com/spec.md)\n\n**not bold** and `not code`");
+  const links = elements(body).filter((node) => node.className === "md-link");
+
+  assert.deepEqual(
+    links.map((link) => [link.textContent, link.dataset.href]),
+    [["the spec", "https://example.com/spec.md"]],
+  );
+  assert.equal(body.textContent, "See the spec\n\n**not bold** and `not code`");
+  assert.deepEqual(tags(body), ["SPAN"]);
+});
+
+test("a link a thought may not open keeps its words and nothing is clickable", () => {
+  const body = think("[click me](javascript:alert(1)) [link x file:///etc/passwd]");
+
+  assert.equal(body.textContent, "click me [link x file:///etc/passwd]");
+  assert.equal(elements(body).some((node) => node.dataset.href !== undefined), false);
+});
+
+test("a mark's escapes read back as the characters they stand for", () => {
+  assert.equal(think("[link a file:///a\\_b\\(1\\)]").textContent, "[link a file:///a_b(1)]");
+});
+
+test("a thought redrawn from the whole text replaces the last drawing", () => {
+  const body = think("a [one](https://example.com/1)");
+  drawThought(body, "a [one](https://example.com/1) b [two](https://example.com/2)", doc);
+
+  assert.deepEqual(
+    elements(body).map((node) => node.dataset.href),
+    ["https://example.com/1", "https://example.com/2"],
   );
 });
