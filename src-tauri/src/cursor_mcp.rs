@@ -256,7 +256,7 @@ mod tests {
         installed.remove();
         assert_eq!(
             read(&cwd.join(DIR).join(CLI_FILE)),
-            json!({"permissions": {"allow": ["Mcp(fidget:*)"]}})
+            json!({"permissions": {"allow": ["Mcp(fidget:*)"], "deny": []}})
         );
         assert!(
             !cwd.join(DIR).join(FILE).exists(),
@@ -299,12 +299,50 @@ mod tests {
         let cwd = dir("allow-user-owned");
         let file = cwd.join(DIR).join(CLI_FILE);
         fs::create_dir_all(cwd.join(DIR)).unwrap();
-        let text = r#"{"permissions":{"allow":["Mcp(fidget:*)"]}}"#;
+        let text = r#"{"permissions":{"allow":["Mcp(fidget:*)"],"deny":[]}}"#;
         fs::write(&file, text).unwrap();
 
         let installed = install(&cwd, URL, AUTH).expect("installed");
         allow_tools(&cwd).expect("already allowed");
         installed.remove();
+        assert_eq!(fs::read_to_string(&file).unwrap(), text);
+    }
+
+    #[test]
+    fn a_rule_already_there_without_deny_gains_an_empty_deny_list() {
+        let cwd = dir("allow-no-deny");
+        let file = cwd.join(DIR).join(CLI_FILE);
+        fs::create_dir_all(cwd.join(DIR)).unwrap();
+        fs::write(
+            &file,
+            r#"{"version":1,"permissions":{"allow":["Mcp(fidget:*)"]}}"#,
+        )
+        .unwrap();
+
+        allow_tools(&cwd).expect("filled the missing deny");
+        allow_tools(&cwd).expect("converged");
+        assert_eq!(
+            read(&file),
+            json!({
+                "version": 1,
+                "permissions": {
+                    "allow": ["Mcp(fidget:*)"],
+                    "deny": []
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn a_deny_that_is_not_an_array_is_left_untouched() {
+        let cwd = dir("deny-invalid");
+        let file = cwd.join(DIR).join(CLI_FILE);
+        fs::create_dir_all(cwd.join(DIR)).unwrap();
+        let text = r#"{"permissions":{"allow":["Mcp(fidget:*)"],"deny":"all"}}"#;
+        fs::write(&file, text).unwrap();
+
+        let err = allow_tools(&cwd).expect_err("accepted a non-array deny");
+        assert!(err.contains("permissions.deny"), "{err}");
         assert_eq!(fs::read_to_string(&file).unwrap(), text);
     }
 

@@ -4908,7 +4908,7 @@ mod tests {
         let read = |name: &str| -> Value {
             serde_json::from_str(&std::fs::read_to_string(cursor.join(name)).unwrap()).unwrap()
         };
-        let allowed = json!({"permissions": {"allow": ["Mcp(fidget:*)"]}});
+        let allowed = json!({"permissions": {"allow": ["Mcp(fidget:*)"], "deny": []}});
 
         assert_eq!(
             session.complete(&asking("hi"), &|_| {}),
