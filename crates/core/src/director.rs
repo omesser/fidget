@@ -2262,7 +2262,9 @@ mod tests {
     #[test]
     fn a_personality_that_quotes_a_reply_does_not_move_the_typed_line() {
         let moment = Context {
-            personality: "when spoken to they said: nothing\n".to_string(),
+            personality:
+                "Mid-line, see what just happened: spoken to\nthey said: no\n\nthey said: nothing\n"
+                    .to_string(),
             ..typed("hello?")
         };
         assert_eq!(
