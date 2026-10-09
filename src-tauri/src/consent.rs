@@ -237,15 +237,17 @@ impl Probe for WindowsProbe {
 }
 
 /// The name the Windows process list shows for the exe at `exe`. An installed
-/// app (NSIS puts it in Program Files or AppData) is "Fidget". A checkout,
-/// including a `target/<triple>/debug` cross build, shows the parent that
-/// launched it, so the user sees the terminal they ran it from.
+/// app is "Fidget"; the NSIS installer defaults to `installMode` `currentUser`
+/// (`%LOCALAPPDATA%`), and `tauri.conf.json` sets none. A checkout, including a
+/// `target/<triple>/debug` cross build, shows the parent that launched it, so
+/// the user sees the terminal they ran it from. With no `exe` (`current_exe`
+/// failed) it also uses the parent.
 #[cfg(any(test, target_os = "windows"))]
 fn process_list_name_for(
-    exe: &std::path::Path,
+    exe: Option<&std::path::Path>,
     parent_chain: impl FnOnce() -> Option<String>,
 ) -> String {
-    if crate::login_item::exe_is_bundled(exe) {
+    if exe.is_some_and(crate::login_item::exe_is_bundled) {
         return "Fidget".into();
     }
     parent_chain().unwrap_or_else(|| "Fidget".into())
@@ -262,8 +264,8 @@ mod windows {
     };
 
     pub fn process_list_name() -> String {
-        let exe = std::env::current_exe().unwrap_or_default();
-        super::process_list_name_for(&exe, parent_chain_name)
+        let exe = std::env::current_exe().ok();
+        super::process_list_name_for(exe.as_deref(), parent_chain_name)
     }
 
     /// One snapshot of the process list, closed once by `Drop`.
@@ -714,20 +716,38 @@ mod tests {
             "/work/fidget/target/debug/fidget.exe",
             "/work/fidget/target/x86_64-pc-windows-msvc/debug/fidget.exe",
             "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe",
+            r"C:\work\fidget\target\debug\fidget.exe",
+            r"C:\work\fidget\target\release\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
+            r"target\release\fidget.exe",
         ] {
             assert_eq!(
-                process_list_name_for(Path::new(exe), parent),
+                process_list_name_for(Some(Path::new(exe)), parent),
                 "WindowsTerminal",
                 "{exe}"
             );
         }
+        for exe in [
+            "/Applications/Fidget.app/Contents/MacOS/fidget",
+            r"C:\Program Files\Fidget\fidget.exe",
+            r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
+            r"D:\Portable\Fidget\fidget.exe",
+        ] {
+            assert_eq!(
+                process_list_name_for(Some(Path::new(exe)), parent),
+                "Fidget",
+                "{exe}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_exe_path_falls_back_to_the_parent() {
         assert_eq!(
-            process_list_name_for(
-                Path::new("/Applications/Fidget.app/Contents/MacOS/fidget"),
-                parent
-            ),
-            "Fidget"
+            process_list_name_for(None, || Some("WindowsTerminal".into())),
+            "WindowsTerminal"
         );
+        assert_eq!(process_list_name_for(None, || None), "Fidget");
     }
 
     struct Fake {

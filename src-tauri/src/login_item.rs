@@ -46,17 +46,20 @@ pub fn exe_is_bundled(exe: &Path) -> bool {
     }
 }
 
+/// Whether `exe` sits in a Cargo `target` directory. Splits on `/` and `\`
+/// itself, so a Windows path reads the same wherever it is checked.
 #[cfg(any(test, not(target_os = "macos")))]
 fn under_cargo_target(exe: &Path) -> bool {
-    let parts: Vec<_> = exe.components().collect();
-    let profile = |name: &std::ffi::OsStr| name == "debug" || name == "release";
+    let path = exe.to_string_lossy();
+    let parts: Vec<_> = path.split(['/', '\\']).collect();
+    let profile = |name: &str| name == "debug" || name == "release";
     // A cross build is `target/<triple>/debug`, not `target/debug`.
     parts
         .windows(2)
-        .any(|window| window[0].as_os_str() == "target" && profile(window[1].as_os_str()))
+        .any(|window| window[0] == "target" && profile(window[1]))
         || parts
             .windows(3)
-            .any(|window| window[0].as_os_str() == "target" && profile(window[2].as_os_str()))
+            .any(|window| window[0] == "target" && profile(window[2]))
 }
 
 #[cfg(test)]
@@ -98,5 +101,26 @@ mod tests {
             "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe"
         )));
         assert!(!under_cargo_target(Path::new("/usr/bin/fidget")));
+    }
+
+    #[test]
+    fn windows_paths_split_on_backslashes() {
+        for checkout in [
+            r"C:\work\fidget\target\debug\fidget.exe",
+            r"C:\work\fidget\target\release\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\debug\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
+            r"target\release\fidget.exe",
+        ] {
+            assert!(under_cargo_target(Path::new(checkout)), "{checkout}");
+        }
+        for installed in [
+            r"C:\Program Files\Fidget\fidget.exe",
+            r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
+            r"D:\Portable\Fidget\fidget.exe",
+            r"C:\Users\me\Downloads\release\fidget.exe",
+        ] {
+            assert!(!under_cargo_target(Path::new(installed)), "{installed}");
+        }
     }
 }
