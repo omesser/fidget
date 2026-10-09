@@ -247,20 +247,10 @@ mod windows {
     };
 
     pub fn process_list_name() -> String {
-        if packaged() {
+        if crate::login_item::process_is_bundled() {
             return "Fidget".into();
         }
         parent_chain_name().unwrap_or_else(|| "Fidget".into())
-    }
-
-    fn packaged() -> bool {
-        // Packaged: not under target/debug or target/release build directories.
-        // An installed NSIS build lives in Program Files or AppData; a dev
-        // build is always under the Cargo target directory.
-        std::env::current_exe().is_ok_and(|exe| {
-            !exe.to_string_lossy().contains(r"\target\debug")
-                && !exe.to_string_lossy().contains(r"\target\release")
-        })
     }
 
     /// One snapshot of the process list, closed once by `Drop`.
@@ -470,7 +460,7 @@ mod macos {
     }
 
     pub fn tcc_list_name() -> String {
-        if packaged() {
+        if crate::login_item::process_is_bundled() {
             return localized_name(std::process::id() as i32).unwrap_or_else(|| "Fidget".into());
         }
         let self_pid = std::process::id() as i32;
@@ -483,13 +473,6 @@ mod macos {
             .or_else(bundled_ancestor_name)
             .or_else(|| localized_name(self_pid))
             .unwrap_or_else(|| "Fidget".into())
-    }
-
-    fn packaged() -> bool {
-        std::env::current_exe().is_ok_and(|exe| {
-            exe.ancestors()
-                .any(|p| p.extension().is_some_and(|e| e == "app"))
-        })
     }
 
     fn localized_name(pid: i32) -> Option<String> {

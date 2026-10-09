@@ -1,12 +1,12 @@
 // The window-names notice. Its own module because chat.js reaches
 // window.__TAURI__ as it loads and cannot be imported under node --test.
 
-export const HEADING = "Window names are off";
+const HEADING = "Window names are off";
 
 export const BODY =
   "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
 
-export const BUTTONS = [
+const BUTTONS = [
   { action: "open-settings", label: "Open Settings" },
   { action: "dismiss", label: "Don't show this again" },
 ];

@@ -89,6 +89,21 @@ mod tests {
         )));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_target_triple_build_is_a_checkout() {
+        for exe in [
+            r"C:\work\fidget\target\debug\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\debug\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
+        ] {
+            assert!(!exe_is_bundled(Path::new(exe)), "{exe}");
+        }
+        assert!(exe_is_bundled(Path::new(
+            r"C:\Program Files\Fidget\fidget.exe"
+        )));
+    }
+
     #[test]
     fn a_target_triple_build_is_still_a_checkout() {
         assert!(under_cargo_target(Path::new(

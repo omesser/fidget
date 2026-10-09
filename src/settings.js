@@ -588,7 +588,7 @@ async function invokeSettingsEvent(payload) {
 // What keeps a press instead of moving the window. `label` and `textarea` are
 // here because this page renders both: a checkbox row is a <label> wrapping its
 // input, and a Multiline row is a <textarea> whose drag has to select text.
-export const CONTROL_SELECTOR = "input, textarea, select, button, summary, pre, label";
+const CONTROL_SELECTOR = "input, textarea, select, button, summary, pre, label";
 
 // Alt-drag gate predicate: drag begins only when modifier is held AND target is background.
 export function shouldBeginDrag(event) {
