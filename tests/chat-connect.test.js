@@ -225,9 +225,9 @@ test("needs-auth still names the login command", () => {
   assert.equal(copy.hint, "Run this in a terminal:");
 });
 
-// The picker offers what is already picked. Only the login state swaps it
-// for Retry; every other landing keeps the picker as the way out.
-test("only the needs-login landing swaps the picker for Retry", () => {
+// Retry re-asks the Harness already picked, so only the login state offers it.
+// The branded buttons stay on every landing (chat-landing-buttons.test.js).
+test("only the needs-login landing offers Retry", () => {
   const login = {
     name: "bmo",
     configured: true,

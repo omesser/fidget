@@ -488,7 +488,6 @@ function attached(opening) {
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
     paintSignIn(copy.signIn, copy.signInWaiting);
-    document.getElementById("landing-buttons").hidden = Boolean(copy.retry);
     retry.hidden = !copy.retry;
 
     drawInline(title, copy.title);
