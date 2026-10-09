@@ -2702,4 +2702,23 @@ mod tests {
             "proactive wake allowed when not under DND"
         );
     }
+
+    #[test]
+    fn a_quick_message_wakes_the_session_under_dnd() {
+        // Chat and quick-message lines set `addressed`; they are not proactive,
+        // so neither Pace nor the proactive switch gates them.
+        let pace = Pace::new();
+        let line = Happened::Chat("hello".to_string());
+        assert_ne!(line, Happened::Proactive);
+        for (dnd, proactive_allowed) in [(true, true), (true, false), (false, false)] {
+            assert!(
+                session_due(true, Duration::ZERO, &pace, false, dnd, proactive_allowed),
+                "dnd={dnd} proactive_allowed={proactive_allowed}"
+            );
+        }
+        assert!(
+            !session_due(false, Duration::ZERO, &pace, false, true, true),
+            "the same moment without a line stays quiet"
+        );
+    }
 }
