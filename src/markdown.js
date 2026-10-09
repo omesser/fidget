@@ -259,12 +259,15 @@ export function replaceReply(body, text, doc = globalThis.document) {
 
 // The Harness's thinking: the text it is, newlines and punctuation as written,
 // with only its links live. A resource link can arrive in a thought, and it
-// goes through the same `target` check a reply's links do.
+// goes through the same `target` check a reply's links do. Only a link written
+// as `[text](url)` counts: `marked` also makes one of a bare URL, a `www.` host
+// and an email, and in a mark those are an agent's uri, not a link it wrote.
 export function drawThought(body, text, doc = globalThis.document) {
   body.replaceChildren();
   for (const token of Lexer.lexInline(stripUnsafe(text ?? ""), FLAVOUR)) {
     // An escape is how a mark spells a character Markdown would read.
-    if (token.type === "link" || token.type === "escape") {
+    const written = token.type === "link" && token.raw.startsWith("[");
+    if (written || token.type === "escape") {
       inline([token], body, doc);
     } else {
       asSource(token, body, doc);

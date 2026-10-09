@@ -29,6 +29,10 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
+// The renderer job in CI has Chromium, so a missing browser there is a broken
+// gate, not a reason to skip: the test runs, and fails on the missing binary.
+const CHROME_OR_CI = chrome || process.env.CI ? false : "headless Chromium is not installed";
+
 const OPENING = {
   name: "Buddy Bot",
   character: "Buddy Bot",
@@ -207,7 +211,7 @@ test(
 // Chat will not open is drawn as its words and its uri.
 test(
   "a resource link opens through open_link wherever it lands, and an unsafe one is text",
-  { skip: chrome ? false : "headless Chromium is not installed", timeout: 60000 },
+  { skip: CHROME_OR_CI, timeout: 60000 },
   () => {
     const history = [
       { type: "thought", text: "Saw [spec](https://example.com/spec.md)\n[link passwd file:///etc/passwd]" },
@@ -232,5 +236,23 @@ test(
     assert.deepEqual([...report.links].sort(), [...urls].sort());
     assert.deepEqual([...report.opened].sort(), [...urls].sort());
     assert.equal(report.anchors, 0, "an <a href> would navigate the Chat webview");
+  },
+);
+
+// A replayed Prompt row draws what another client sent as written, with only
+// its links live: a typed `[x](https://...)` opens, and a file link is words.
+test(
+  "a link in a replayed prompt opens, and a file link in it does not",
+  { skip: CHROME_OR_CI, timeout: 60000 },
+  () => {
+    const history = [{ type: "prompt", text: "see [x](https://example.com) and [y](file:///a)\n**kept**" }];
+    const report = drive(`
+    emit("chat-restored", ${JSON.stringify(history)});
+    for (const link of document.querySelectorAll("#log .md-link")) link.click();`);
+    assert.equal(report.error, undefined, report.error);
+    assert.equal(report.rows.find((row) => row.kind === "prompt").text, "see x and y\n**kept**");
+    assert.deepEqual(report.links, ["https://example.com"]);
+    assert.deepEqual(report.opened, ["https://example.com"]);
+    assert.equal(report.anchors, 0);
   },
 );
