@@ -353,9 +353,9 @@ when no display is free. A companion that knows when to disappear is the differe
 and malware.
 
 Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character
-stays visible and stops starting things — Director proposals are refused and
-unprompted dialogue is not spoken — while Poke, Grab, and Throw still work. That
-is #84. Screen capture is not a hide rule either: capturable is a window-level
+stays visible and starts no wakes of its own. Behavior proposals are refused.
+Quick messages, Chat replies, the speech bubble, Poke, Grab, and Throw still
+work. That is #84, and #1404 settled the wording. Screen capture is not a hide rule either: capturable is a window-level
 on/off switch, visible by default ([ADR-0024](./docs/adr/0024-capturable-by-default.md)),
 so there is nothing to fade.
 

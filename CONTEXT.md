@@ -322,6 +322,14 @@ Character declares one. Do Not Disturb silences the sound and keeps the visual.
 A machine that cannot start an audio context does the same. #277, #292.
 _Avoid_: Effect, feedback, animation (the Character's art), SFX
 
+**Do Not Disturb**:
+A switch that keeps the fidget visible and stops it starting anything. It makes
+no proactive wakes. Prompted wakes (quick message, Chat) and the Speech bubble
+work as normal. Behavior proposals are refused, so a prompted reply shows its
+Speech but plays no authored Behavior. Permission asks and forms wait until it
+is off instead of opening Chat. It silences the Cue sound and keeps the visual.
+_Avoid_: Quiet mode, mute
+
 **Thinking ellipsis**:
 Three animated dots in a bubble above the sprite, shown while a reactive
 Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,

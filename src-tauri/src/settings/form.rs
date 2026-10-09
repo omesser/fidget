@@ -1289,7 +1289,7 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
-                    disclosure: Some("Do Not Disturb leaves the fidget visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    disclosure: Some("Do Not Disturb leaves the fidget visible but quiet: it starts no wakes on its own and refuses Behavior proposals. Quick messages, Chat replies, and the speech bubble still work, and so do Poke, Grab, and Throw. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
                     status: None,
                 },
                 FormRow::Checkbox {
