@@ -42,9 +42,9 @@ fn sync_with<Item: LoginItem + ?Sized>(bundled: bool, item: Option<&Item>, wante
         return;
     };
     let result = if wanted {
-        item.disable()
-    } else {
         item.enable()
+    } else {
+        item.disable()
     };
     if let Err(why) = result {
         fidget::eprintln_and_log!("launch at login: {why}");
