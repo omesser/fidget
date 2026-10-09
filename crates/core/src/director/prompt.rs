@@ -106,6 +106,27 @@ pub fn happened_word(happened: &Happened) -> &'static str {
     }
 }
 
+/// The line the user typed, read back out of a wake prompt: the inverse of the
+/// `they said:` line `follow_up` writes last. A prompt that is not a chat
+/// wake has none. The moment starts at its `what just happened:` line, so a
+/// Personality Prompt that says `they said:` earlier does not count. Desktop
+/// text is flattened before it is sent, so no line before the typed one can
+/// start with the label.
+pub fn typed_line(prompt: &str) -> Option<&str> {
+    let header = format!(
+        "what just happened: {}",
+        happened_word(&Happened::Chat(String::new()))
+    );
+    let at = prompt
+        .match_indices(&header)
+        .map(|(at, _)| at)
+        .find(|&at| at == 0 || prompt[..at].ends_with('\n'))?;
+    let moment = &prompt[at..];
+    let label = "\nthey said: ";
+    let line = &moment[moment.find(label)? + label.len()..];
+    Some(line.strip_suffix('\n').unwrap_or(line))
+}
+
 /// A later turn in the same session. No Personality Prompt, no roster.
 pub(crate) fn follow_up(context: &Context) -> String {
     let recent = if context.recent.is_empty() {
