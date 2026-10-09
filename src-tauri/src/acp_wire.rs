@@ -385,16 +385,15 @@ pub enum Outcome {
     /// `session/set_config_option` was answered, and the returned options
     /// list that option at the requested value.
     Confirmed,
-    /// It was answered with success, but the returned options do not show the
-    /// option at the requested value. Nothing says it took.
+    /// The set succeeded, but the returned options do not show the option at the
+    /// requested value, so nothing says it took.
     Unconfirmed,
     /// The session lists no option for it, so nothing was sent.
     Unadvertised,
 }
 
-/// What a Completer config did on the wire, not what was asked: one outcome
-/// per field that had a value, model before effort. A field with no value to
-/// set is absent.
+/// What a Completer config did on the wire, not what was asked: one outcome per
+/// field that had a value, model first. A field with no value is absent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Applied {
     pub outcomes: Vec<(Field, Outcome)>,
@@ -713,8 +712,8 @@ impl Wire {
         rx.recv_timeout(timeout).unwrap_or(Err(OpenError::Lost))
     }
 
-    /// Set the model and effort on a session `open` returned, as `open` set
-    /// them, against the options the session last listed. The id stays.
+    /// Set the model and effort on a session `open` returned, as `open` does, against
+    /// the options the session last listed. The id stays.
     pub fn configure(
         &self,
         session_id: &str,
@@ -1250,8 +1249,8 @@ async fn serve(
     let mut forms: Vec<PendingElicit> = Vec::new();
     let mut asks: Vec<PendingAsk> = Vec::new();
     let mut inbound: HashMap<SessionId, Inbound> = HashMap::new();
-    // What each open session last listed. A set answers with the whole list,
-    // and a model set can change which effort option there is.
+    // What each open session last listed. A set answers with the whole list, and a
+    // model set can change which effort option exists.
     let mut options: HashMap<SessionId, Vec<SessionConfigOption>> = HashMap::new();
     loop {
         enum Step {
@@ -1856,11 +1855,10 @@ async fn open(
     }
 }
 
-/// Model first, then effort. A model change can replace the effort options,
-/// so effort is read from the options the model call returned. A value the
-/// session lists no option for is not sent. A value counts as set only when
-/// the answer lists the option at that value, so no caller reads a request as
-/// a change.
+/// Set the model, then the effort. A model change can replace the effort options,
+/// so the effort goes out against the options the model call returned. A value with
+/// no option is not sent. A value counts as set only when the answer lists the
+/// option at that value.
 async fn apply_completer(
     cx: &ConnectionTo<Agent>,
     session_id: &SessionId,

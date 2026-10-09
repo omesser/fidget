@@ -1811,10 +1811,9 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     }
 }
 
-/// The Harness did not take a model or effort Settings applied. Put the
-/// saved value back before the wake that found it returns, so the next wake
-/// does not try it again and a restart does not bring it back, then tell an
-/// open Settings window to read the notice.
+/// The Harness did not take a model or effort Settings applied. Restore the saved
+/// value before the wake that found it returns, so the next wake does not retry it
+/// and a restart does not bring it back. Then tell an open Settings window to redraw.
 fn restore_not_applied(app: &tauri::AppHandle, failures: &[harness::ConfigFailure]) {
     let Some(state) = app.try_state::<SettingsState>() else {
         return;

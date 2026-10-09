@@ -1,7 +1,7 @@
-// A model or effort the Harness did not take reaches the Settings page as a
-// notice under its field, and the field shows the value Fidget went back to
-// (#1434). The page itself, driven headless the way chat-restored-render.test.js
-// drives Chat: the snapshot the Shell would send, and the refresh that follows.
+// A model or effort the Harness did not take shows as a notice under its field,
+// and the field shows the value Fidget restored (#1434). This drives the real
+// Settings page headless, as chat-restored-render.test.js drives Chat: it sends
+// the snapshot the Shell would send, then the refresh that follows.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -27,15 +27,15 @@ function chromeBin() {
 
 const chrome = chromeBin();
 
-// The sentences `ConfigFailure::notice` writes, pinned in one fixture that
-// harness.rs checks too, so the page is tested on what the Shell sends.
+// The sentences `ConfigFailure::notice` writes. harness.rs checks the same
+// fixture, so the page draws what the Shell sends.
 const NOTICES = read("settings-not-applied-notices.json");
 export const MODEL_NOTICE = NOTICES.model_refused;
 export const EFFORT_NOTICE = NOTICES.effort_unadvertised;
 
-// `before` is what the page holds after Apply. `after` is the snapshot the
-// refresh brings once the next wake found the refusal.
-export function drive({ before, after, steps, shot = null, size = "760,640" }) {
+// `before` is what the page holds after Apply. The steps send the refresh that
+// follows once the next wake finds the refusal.
+export function drive({ before, steps, shot = null, size = "760,640" }) {
   const form = read("settings-snapshot-harnessDriving.json");
   const values = read("settings-values-harnessDriving.json");
   const stub = `
@@ -80,7 +80,6 @@ ${steps}
     document.body.append(out);
   }));
 </script>`;
-  void after;
   const dir = mkdtempSync(join(tmpdir(), "settings-not-applied-"));
   const page = join(dir, "harness.html");
   const html = readFileSync(join(SRC, "settings.html"), "utf8").replace(
@@ -126,7 +125,7 @@ test("a refused model shows its notice and the old value is back in the field", 
   assert.deepEqual(seen.applied, { value: "nope", notice: null, alert: null });
   assert.deepEqual(seen.refused, { value: "gpt-4o-mini", notice: MODEL_NOTICE, alert: "alert" });
   assert.match(seen.refused.notice, /You asked for "gpt-5"/, "the tried value is in the notice");
-  // The Model / API row is off while a Harness drives, and says nothing of it.
+  // The Model / API row is off while a Harness drives, so it shows no notice.
   assert.deepEqual(seen.twin, { value: "gpt-4o-mini", notice: null, alert: null });
 });
 

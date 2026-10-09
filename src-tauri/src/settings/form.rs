@@ -504,8 +504,8 @@ pub const HARNESS_STATE_ID: &str = "harness_state";
 /// the field the Model / API row writes, because a Harness runs on the same
 /// model setting (#1427).
 pub const HARNESS_MODEL_ID: &str = "harness_model";
-/// A row's value key plus this is the notice under it, when the Harness did
-/// not take the value. Present only then.
+/// The row's id plus this suffix is the key of the notice under the row. The key
+/// exists only while the Harness has not taken the value.
 pub const NOTICE_SUFFIX: &str = "_notice";
 pub const HARNESS_HEADING: &str = "Harness";
 pub const PI_PROJECT_MCP_ID: &str = "pi_project_mcp";

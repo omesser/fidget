@@ -141,8 +141,8 @@ function status(text) {
 }
 
 // The Harness did not take this row's value. The Shell sends the sentence under
-// `<row id>_notice` only while it holds, and says what Fidget put back. A
-// refusal is something the user must see, so it is an alert, not a muted note.
+// `<row id>_notice` only while that holds. It is an alert because the user must
+// see it.
 function notice(text) {
   return text ? el("p", { class: "set-notice", role: "alert", text }) : null;
 }
@@ -237,7 +237,7 @@ function drawRow(row, values, emit, stage, tab, shortcut = null) {
       } else {
         input.addEventListener("blur", () => emit({ set_text: row.id, value: input.value }));
       }
-      // A frozen row is not the one in use, so a refusal is not its news.
+      // A frozen row is not in use, so it shows no notice.
       const refused = row.frozen ? null : notice(values[`${row.id}_notice`]);
       if (!shortcut) return labelled(row, input, [refused, ...notes(row)]);
       const line = el("div", { class: "set-shortcut" }, picker(shortcut.controls[0], values, emit), input);

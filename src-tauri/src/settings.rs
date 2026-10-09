@@ -192,7 +192,7 @@ pub struct SettingsView {
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
     pub chat_appearance: ChatAppearance,
-    /// A model or effort the attached Harness did not take, for that row.
+    /// A model or effort the attached Harness did not take.
     pub not_applied: Vec<crate::harness::NotAppliedNotice>,
 }
 
@@ -782,8 +782,7 @@ impl SettingsView {
                 .iter()
                 .map(|row| (row.row_id(), RowValue::Bool(row.granted))),
         );
-        // Only a field the Harness did not take has a notice, so a row with
-        // none carries no key at all.
+        // Only a field the Harness did not take has a notice. A row with none has no key.
         for notice in &self.not_applied {
             let rows: &[&str] = match notice.field {
                 "model" => &[form::DIRECTOR_MODEL_ID, form::HARNESS_MODEL_ID],
@@ -1064,12 +1063,9 @@ fn retarget_off_the_settings_lock(
     retarget_payload(snapshot, store)
 }
 
-/// Write the key first so a store error cannot leave a URL in memory that
-/// was never saved or sent as Retarget.
-///
-/// Put back the values a Harness did not take, in memory and in the file, so
-/// a restart does not bring them back. Called from the wake that found the
-/// refusal, before it returns.
+/// Restore the values a Harness did not take, in memory and in the file, so a
+/// restart does not bring them back. The wake that found the failure calls this
+/// before it returns.
 pub(crate) fn restore_failed(
     settings: &Arc<Mutex<Settings>>,
     path: &Path,
@@ -4785,8 +4781,8 @@ mod tests {
         }
     }
 
-    /// A value the Harness did not take goes back in the file as well as in
-    /// memory, so a restart does not bring it back, and nothing else moves.
+    /// A value the Harness did not take is restored in memory and in the file, and
+    /// nothing else changes.
     #[test]
     fn a_value_the_harness_did_not_take_is_put_back_in_memory_and_in_the_file() {
         use crate::acp_wire::Field::*;
@@ -4807,7 +4803,7 @@ mod tests {
             assert_eq!(read.character, "Buddy Bot");
         }
 
-        // Only the field that failed goes back.
+        // Only the failed field is restored.
         let live = Arc::new(Mutex::new(Settings {
             director_model: "new".into(),
             director_reasoning_effort: "high".into(),
@@ -4825,8 +4821,8 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// The Harness's refusal reaches the row it is about, and only that row.
-    /// Both Model rows are the one setting, so both say it.
+    /// A notice reaches the rows of its own field only. Both Model rows hold one
+    /// setting, so both show it.
     #[test]
     fn a_notice_reaches_the_rows_of_its_field() {
         let view = |not_applied: Vec<crate::harness::NotAppliedNotice>| {
