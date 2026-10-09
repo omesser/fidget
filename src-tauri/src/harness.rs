@@ -2374,28 +2374,62 @@ pub fn run_probe() -> i32 {
     }
     // An Apply step leaves its settings here. The next probe starts without them.
     let _ = std::fs::remove_file(crate::settings::settings_path(session.data.as_path()));
-    let then = ProbeThen::from_env();
-    let code = probe(&session, then.as_ref());
+    let code = match ProbeThen::from_env() {
+        Ok(then) => probe(&session, then.as_ref()),
+        Err(why) => {
+            // Nothing was asked, so exit 2 like any other configuration fault.
+            println!("FIDGET_PROBE_THEN_CONFIGURE: {why}");
+            2
+        }
+    };
     session.shutdown();
     code
 }
 
 /// A second turn after an Apply, for proving a live set on a real Harness.
 /// The first turn runs on the Harness defaults unless `FIDGET_DIRECTOR_MODEL`
-/// or `FIDGET_DIRECTOR_REASONING_EFFORT` names a value.
+/// or `FIDGET_DIRECTOR_REASONING_EFFORT` names a value. An empty string is
+/// the field left unset.
+#[derive(Debug, PartialEq)]
 struct ProbeThen {
     model: String,
     effort: String,
 }
 
 impl ProbeThen {
-    fn from_env() -> Option<Self> {
-        let var = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
-        let (model, effort) = (
-            var("FIDGET_PROBE_THEN_MODEL"),
-            var("FIDGET_PROBE_THEN_EFFORT"),
-        );
-        (model.is_some() || effort.is_some()).then(|| Self {
+    /// `FIDGET_PROBE_THEN_CONFIGURE`. Unset or blank is no second turn.
+    fn from_env() -> Result<Option<Self>, String> {
+        match std::env::var("FIDGET_PROBE_THEN_CONFIGURE") {
+            Ok(value) if !value.trim().is_empty() => Self::parse(&value).map(Some),
+            _ => Ok(None),
+        }
+    }
+
+    /// Space-separated `model=<id>` and `effort=<level>`, either or both, in
+    /// any order. Anything else is an error: a typo that was ignored would
+    /// run a probe that proves nothing.
+    fn parse(value: &str) -> Result<Self, String> {
+        let (mut model, mut effort) = (None, None);
+        for word in value.split_whitespace() {
+            let (key, given) = word.split_once('=').ok_or_else(|| {
+                format!("`{word}` has no `=`, expected model=<id> or effort=<level>")
+            })?;
+            let slot = match key {
+                "model" => &mut model,
+                "effort" => &mut effort,
+                _ => return Err(format!("unknown key `{key}`, expected model or effort")),
+            };
+            if given.is_empty() {
+                return Err(format!("`{key}=` has no value"));
+            }
+            if slot.replace(given.to_string()).is_some() {
+                return Err(format!("`{key}` is given twice"));
+            }
+        }
+        if model.is_none() && effort.is_none() {
+            return Err("expected model=<id> and/or effort=<level>".to_string());
+        }
+        Ok(Self {
             model: model.unwrap_or_default(),
             effort: effort.unwrap_or_default(),
         })
@@ -2562,8 +2596,7 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
         or_unset(now.effort.as_deref().unwrap_or(""))
     );
     match session.attach(Some(&probe_key())) {
-        Ok((_, id)) if id == first => println!("  session      {id} (kept, values set on it)"),
-        Ok((_, id)) => println!("  session      {id} (NEW, the conversation was not kept)"),
+        Ok((_, id)) => println!("  session      {}", session_verdict(first, &id)),
         Err(why) => {
             println!("  {why}");
             return 1;
@@ -2571,6 +2604,15 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
     }
     println!();
     probe_turn(session)
+}
+
+/// The apply block's `session` value: whether the conversation kept its id.
+fn session_verdict(first: &str, now: &str) -> String {
+    if now == first {
+        format!("{now} (kept, values set on it)")
+    } else {
+        format!("{now} (NEW, the conversation was not kept)")
+    }
 }
 
 fn or_unset(value: &str) -> &str {
@@ -8698,27 +8740,122 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// The probe's Apply step sets the effort on the conversation its first
-    /// turn opened, and the second turn is asked there.
+    /// The probe's Apply step sets what `FIDGET_PROBE_THEN_CONFIGURE` names on
+    /// the conversation its first turn opened, and the second turn is asked there.
     #[test]
     fn the_probe_sets_an_applied_effort_on_its_open_conversation() {
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             let (fx, session) = Fixture::new("completer-effort");
-            let then = ProbeThen {
-                model: String::new(),
-                effort: "high".to_string(),
-            };
+            let then = ProbeThen::parse("effort=high").unwrap();
             assert_eq!(probe(&session, Some(&then)), 0);
             session.shutdown();
             crate::dev_flags::seed(&crate::settings::Settings::default());
 
             assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
             let ids = prompt_sessions(&fx);
-            assert_eq!(ids.len(), 2, "{ids:?}");
-            assert_eq!(ids[0], ids[1], "the second turn left the conversation");
+            assert_eq!(ids, vec![json!("fresh-id"), json!("fresh-id")]);
+            assert_eq!(fx.count("new"), 1);
+            assert_eq!(
+                session_verdict("fresh-id", ids[1].as_str().unwrap()),
+                "fresh-id (kept, values set on it)"
+            );
+        });
+    }
+
+    #[test]
+    fn the_probe_sets_an_applied_model_on_its_open_conversation() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-model");
+            let then = ProbeThen::parse("model=some-model").unwrap();
+            assert_eq!(probe(&session, Some(&then)), 0);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+
+            assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+            let ids = prompt_sessions(&fx);
+            assert_eq!(ids, vec![json!("fresh-id"), json!("fresh-id")]);
             assert_eq!(fx.count("new"), 1);
         });
+    }
+
+    #[test]
+    fn the_apply_block_says_whether_the_conversation_was_kept() {
+        assert_eq!(
+            session_verdict("fresh-id", "fresh-id"),
+            "fresh-id (kept, values set on it)"
+        );
+        assert_eq!(
+            session_verdict("fresh-id", "fresh-id-2"),
+            "fresh-id-2 (NEW, the conversation was not kept)"
+        );
+    }
+
+    fn then(model: &str, effort: &str) -> ProbeThen {
+        ProbeThen {
+            model: model.to_string(),
+            effort: effort.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_probe_configuration_names_a_model_an_effort_or_both_in_any_order() {
+        assert_eq!(ProbeThen::parse("model=gpt-5"), Ok(then("gpt-5", "")));
+        assert_eq!(ProbeThen::parse("effort=high"), Ok(then("", "high")));
+        assert_eq!(
+            ProbeThen::parse("model=gpt-5 effort=high"),
+            Ok(then("gpt-5", "high"))
+        );
+        assert_eq!(
+            ProbeThen::parse("effort=high model=gpt-5"),
+            Ok(then("gpt-5", "high"))
+        );
+        assert_eq!(
+            ProbeThen::parse("  model=gpt-5   effort=high  "),
+            Ok(then("gpt-5", "high"))
+        );
+    }
+
+    #[test]
+    fn the_probe_configuration_refuses_what_it_cannot_read() {
+        assert_eq!(
+            ProbeThen::parse("mdoel=gpt-5"),
+            Err("unknown key `mdoel`, expected model or effort".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse("effort=high gpt-5"),
+            Err("`gpt-5` has no `=`, expected model=<id> or effort=<level>".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse("effort=low effort=high"),
+            Err("`effort` is given twice".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse("model=a model=a"),
+            Err("`model` is given twice".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse("model="),
+            Err("`model=` has no value".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse("effort=high model="),
+            Err("`model=` has no value".to_string())
+        );
+        assert_eq!(
+            ProbeThen::parse(""),
+            Err("expected model=<id> and/or effort=<level>".to_string())
+        );
+    }
+
+    #[test]
+    fn a_bad_probe_configuration_is_exit_two_and_never_asks() {
+        std::env::set_var("FIDGET_PROBE_THEN_CONFIGURE", "effort=");
+        let parsed = ProbeThen::from_env();
+        std::env::remove_var("FIDGET_PROBE_THEN_CONFIGURE");
+        assert_eq!(parsed, Err("`effort=` has no value".to_string()));
+        assert_eq!(ProbeThen::from_env(), Ok(None));
     }
 
     /// The probe hands a Harness that advertised `mcpCapabilities.http` the
