@@ -7,20 +7,44 @@ use std::path::Path;
 
 use tauri::{AppHandle, Manager};
 
+// A test records enable and disable without writing the OS login item.
+trait LoginItem {
+    fn enable(&self) -> Result<(), String>;
+    fn disable(&self) -> Result<(), String>;
+}
+
+struct PluginItem<'a>(&'a tauri_plugin_autostart::AutoLaunchManager);
+
+impl LoginItem for PluginItem<'_> {
+    fn enable(&self) -> Result<(), String> {
+        self.0.enable().map_err(|err| err.to_string())
+    }
+
+    fn disable(&self) -> Result<(), String> {
+        self.0.disable().map_err(|err| err.to_string())
+    }
+}
+
 /// Register or remove the OS login item. No-op for a checkout binary, and
 /// when the plugin did not register.
 pub fn sync(app: &AppHandle, wanted: bool) {
-    if !process_is_bundled() {
+    let manager = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>();
+    let item = manager.as_deref().map(PluginItem);
+    sync_with(process_is_bundled(), item.as_ref(), wanted);
+}
+
+fn sync_with<Item: LoginItem + ?Sized>(bundled: bool, item: Option<&Item>, wanted: bool) {
+    if !bundled {
         return;
     }
-    let Some(manager) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() else {
+    let Some(item) = item else {
         fidget::eprintln_and_log!("launch at login: plugin is not registered");
         return;
     };
     let result = if wanted {
-        manager.enable()
+        item.disable()
     } else {
-        manager.disable()
+        item.enable()
     };
     if let Err(why) = result {
         fidget::eprintln_and_log!("launch at login: {why}");
@@ -61,7 +85,32 @@ fn under_cargo_target(exe: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    struct Recorded(Mutex<Option<bool>>);
+
+    impl LoginItem for Recorded {
+        fn enable(&self) -> Result<(), String> {
+            *self.0.lock().expect("login item") = Some(true);
+            Ok(())
+        }
+
+        fn disable(&self) -> Result<(), String> {
+            *self.0.lock().expect("login item") = Some(false);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn turning_launch_at_login_on_adds_the_item_and_off_removes_it() {
+        let item = Recorded(Mutex::new(None));
+        sync_with(true, Some(&item), true);
+        assert_eq!(*item.0.lock().expect("login item"), Some(true));
+        sync_with(true, Some(&item), false);
+        assert_eq!(*item.0.lock().expect("login item"), Some(false));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
