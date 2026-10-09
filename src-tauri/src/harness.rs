@@ -1038,6 +1038,8 @@ struct State {
     /// Every session id opened in this run. Kept across respawns: a respawn
     /// loads the same id, and its replay is what Chat already holds.
     opened_ids: HashSet<String>,
+    /// What the last live set did on the wire, until the probe reads it.
+    last_applied: Option<crate::acp_wire::Applied>,
 }
 
 impl State {
@@ -1712,6 +1714,15 @@ impl Session {
         }
     }
 
+    /// What the last live set sent, once. Nothing sent is the default.
+    fn take_applied(&self) -> crate::acp_wire::Applied {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|mut state| state.last_applied.take())
+            .unwrap_or_default()
+    }
+
     fn current_wire(&self) -> Option<Arc<Wire>> {
         self.wire
             .lock()
@@ -1821,10 +1832,12 @@ impl Session {
         inputs: OpenInputs,
     ) -> Result<String, String> {
         let effort = inputs.effort.as_deref();
-        if let Err(error) = wire.configure(&id, &inputs.model, effort, self.attach_timeout()) {
-            return Err(self.open_failed(wire, error, "session/set_config_option"));
-        }
+        let applied = match wire.configure(&id, &inputs.model, effort, self.attach_timeout()) {
+            Ok(applied) => applied,
+            Err(error) => return Err(self.open_failed(wire, error, "session/set_config_option")),
+        };
         let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+        state.last_applied = Some(applied);
         match state.sessions.get_mut(key) {
             Some(opened) if opened.id == id => {
                 opened.opened_on = inputs;
@@ -2595,23 +2608,53 @@ fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
         "  effort       {}",
         or_unset(now.effort.as_deref().unwrap_or(""))
     );
-    match session.attach(Some(&probe_key())) {
-        Ok((_, id)) => println!("  session      {}", session_verdict(first, &id)),
+    let unset = match session.attach(Some(&probe_key())) {
+        Ok((_, id)) => {
+            let applied = session.take_applied();
+            println!("  session      {}", session_verdict(first, &id, &applied));
+            !applied.unadvertised.is_empty()
+        }
         Err(why) => {
             println!("  {why}");
             return 1;
         }
-    }
+    };
     println!();
-    probe_turn(session)
+    let code = probe_turn(session);
+    // A run that set nothing proved nothing, so it does not pass.
+    if unset {
+        1
+    } else {
+        code
+    }
 }
 
-/// The apply block's `session` value: whether the conversation kept its id.
-fn session_verdict(first: &str, now: &str) -> String {
-    if now == first {
-        format!("{now} (kept, values set on it)")
-    } else {
-        format!("{now} (NEW, the conversation was not kept)")
+/// The apply block's `session` value: whether the conversation kept its id,
+/// and what reached the wire. "Set" is a successful `session/set_config_option`
+/// response, never the request to Apply.
+fn session_verdict(first: &str, now: &str, applied: &crate::acp_wire::Applied) -> String {
+    if now != first {
+        return format!("{now} (NEW, the conversation was not kept)");
+    }
+    let names = |fields: &[crate::acp_wire::Field]| {
+        fields
+            .iter()
+            .map(|field| field.name())
+            .collect::<Vec<_>>()
+            .join(" or ")
+    };
+    match (applied.set.is_empty(), applied.unadvertised.is_empty()) {
+        (true, true) => format!("{now} (kept, nothing to set)"),
+        (_, true) => format!("{now} (kept, values set on it)"),
+        (true, false) => format!(
+            "{now} (kept, NOT SET: the Harness advertises no {} option)",
+            names(&applied.unadvertised)
+        ),
+        (false, false) => format!(
+            "{now} (kept, {} set; NOT SET: the Harness advertises no {} option)",
+            names(&applied.set),
+            names(&applied.unadvertised)
+        ),
     }
 }
 
@@ -8756,10 +8799,6 @@ mod tests {
             let ids = prompt_sessions(&fx);
             assert_eq!(ids, vec![json!("fresh-id"), json!("fresh-id")]);
             assert_eq!(fx.count("new"), 1);
-            assert_eq!(
-                session_verdict("fresh-id", ids[1].as_str().unwrap()),
-                "fresh-id (kept, values set on it)"
-            );
         });
     }
 
@@ -8780,14 +8819,148 @@ mod tests {
         });
     }
 
+    /// Open on `script`, Apply `then` as Settings would, and attach again:
+    /// what that second attach did on the wire.
+    fn apply_on(script: &str, then: &str) -> (Fixture, crate::acp_wire::Applied) {
+        use crate::acp_wire::Applied;
+        let (fx, session) = Fixture::new(script);
+        let mut applied = Applied::default();
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let then = ProbeThen::parse(then).unwrap();
+            let (_, first) = session.attach(Some(&probe_key())).unwrap();
+            crate::settings::Settings {
+                director_model: then.model,
+                director_reasoning_effort: then.effort,
+                ..crate::settings::Settings::default()
+            }
+            .save(&crate::settings::settings_path(session.data.as_path()))
+            .unwrap();
+            session.inputs_applied();
+            let (_, now) = session.attach(Some(&probe_key())).unwrap();
+            assert_eq!(first, now, "the conversation was kept");
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            applied = session.take_applied();
+        });
+        session.shutdown();
+        (fx, applied)
+    }
+
+    /// A set is a successful `session/set_config_option` response. The model
+    /// goes first, then the effort.
     #[test]
-    fn the_apply_block_says_whether_the_conversation_was_kept() {
+    fn a_live_set_reports_each_value_the_harness_accepted() {
+        use crate::acp_wire::{Applied, Field};
+        let (fx, applied) = apply_on("completer-effort", "effort=high");
         assert_eq!(
-            session_verdict("fresh-id", "fresh-id"),
+            applied,
+            Applied {
+                set: vec![Field::Effort],
+                unadvertised: vec![]
+            }
+        );
+        assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+
+        let (fx, applied) = apply_on("completer-model", "model=some-model");
+        assert_eq!(
+            applied,
+            Applied {
+                set: vec![Field::Model],
+                unadvertised: vec![]
+            }
+        );
+        assert_eq!(config_lines(&fx), vec!["config=llm=some-model".to_string()]);
+    }
+
+    /// A Harness that lists no option is not sent a set, and the set is not
+    /// reported. Model and effort alike are skipped, as a model with no option
+    /// always was (#1430): the conversation keeps its id and the Harness keeps
+    /// its defaults.
+    #[test]
+    fn a_harness_that_lists_no_option_is_sent_no_set_and_reports_none() {
+        use crate::acp_wire::{Applied, Field};
+        let (fx, applied) = apply_on("happy", "effort=high");
+        assert_eq!(
+            applied,
+            Applied {
+                set: vec![],
+                unadvertised: vec![Field::Effort]
+            }
+        );
+        assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
+
+        let (fx, applied) = apply_on("happy", "model=some-model effort=high");
+        assert_eq!(
+            applied,
+            Applied {
+                set: vec![],
+                unadvertised: vec![Field::Model, Field::Effort]
+            }
+        );
+        assert!(config_lines(&fx).is_empty(), "{:?}", config_lines(&fx));
+
+        // One option listed and one not: only the listed one is set.
+        let (_fx, applied) = apply_on("completer-effort", "model=some-model effort=high");
+        assert_eq!(
+            applied,
+            Applied {
+                set: vec![Field::Effort],
+                unadvertised: vec![Field::Model]
+            }
+        );
+    }
+
+    /// The probe on a Harness that lists no option does not pass, and says why.
+    #[test]
+    fn the_probe_fails_when_the_harness_lists_no_option_to_set() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("happy");
+            let then = ProbeThen::parse("effort=high").unwrap();
+            assert_eq!(probe(&session, Some(&then)), 1);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert!(config_lines(&fx).is_empty());
+            assert_eq!(fx.count("new"), 1);
+            assert_eq!(fx.count("prompt"), 2);
+        });
+    }
+
+    #[test]
+    fn the_apply_block_says_what_reached_the_wire() {
+        use crate::acp_wire::{Applied, Field};
+        let verdict = |now: &str, set: &[Field], unadvertised: &[Field]| {
+            session_verdict(
+                "fresh-id",
+                now,
+                &Applied {
+                    set: set.to_vec(),
+                    unadvertised: unadvertised.to_vec(),
+                },
+            )
+        };
+        assert_eq!(
+            verdict("fresh-id", &[Field::Effort], &[]),
             "fresh-id (kept, values set on it)"
         );
         assert_eq!(
-            session_verdict("fresh-id", "fresh-id-2"),
+            verdict("fresh-id", &[], &[]),
+            "fresh-id (kept, nothing to set)"
+        );
+        assert_eq!(
+            verdict("fresh-id", &[], &[Field::Effort]),
+            "fresh-id (kept, NOT SET: the Harness advertises no effort option)"
+        );
+        assert_eq!(
+            verdict("fresh-id", &[], &[Field::Model, Field::Effort]),
+            "fresh-id (kept, NOT SET: the Harness advertises no model or effort option)"
+        );
+        assert_eq!(
+            verdict("fresh-id", &[Field::Effort], &[Field::Model]),
+            "fresh-id (kept, effort set; NOT SET: the Harness advertises no model option)"
+        );
+        assert_eq!(
+            verdict("fresh-id-2", &[Field::Effort], &[]),
             "fresh-id-2 (NEW, the conversation was not kept)"
         );
     }

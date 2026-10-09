@@ -363,6 +363,32 @@ impl McpLaunch {
 
 pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
 
+/// A value the Completer config can carry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    Model,
+    Effort,
+}
+
+impl Field {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Effort => "effort",
+        }
+    }
+}
+
+/// What a Completer config did on the wire, not what was asked. `set` holds
+/// a field only once the Harness answered its `session/set_config_option`
+/// successfully. `unadvertised` holds a field that was asked for and not sent
+/// because the session lists no option for it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Applied {
+    pub set: Vec<Field>,
+    pub unadvertised: Vec<Field>,
+}
+
 /// The session `open` handed back, and what `session/load` replayed of it.
 #[derive(Debug)]
 pub struct Opened {
@@ -507,7 +533,7 @@ enum Msg {
         session_id: String,
         model: String,
         effort: Option<String>,
-        reply: sync_mpsc::Sender<Result<(), OpenError>>,
+        reply: sync_mpsc::Sender<Result<Applied, OpenError>>,
     },
     Cancel,
     Answer {
@@ -663,7 +689,7 @@ impl Wire {
         model: &str,
         effort: Option<&str>,
         timeout: Duration,
-    ) -> Result<(), OpenError> {
+    ) -> Result<Applied, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
             .send(Msg::Configure {
@@ -1371,8 +1397,9 @@ async fn serve(
                 let listed = options.get(&id).cloned().unwrap_or_default();
                 let set = apply_completer(cx, &id, &model, effort.as_deref(), listed)
                     .await
-                    .map(|listed| {
+                    .map(|(listed, applied)| {
                         options.insert(id, listed);
+                        applied
                     });
                 let _ = reply.send(set);
             }
@@ -1781,7 +1808,7 @@ async fn open(
             })?,
     };
     match apply_completer(cx, &session_id, model, effort, options.unwrap_or_default()).await {
-        Ok(listed) => Ok((session_id, listed)),
+        Ok((listed, _)) => Ok((session_id, listed)),
         Err(error) => {
             if created && !matches!(error, OpenError::Lost) {
                 let _ = cx
@@ -1795,26 +1822,41 @@ async fn open(
 }
 
 /// Model first, then effort. A model change can replace the effort options,
-/// so effort is read from the options the model call returned.
+/// so effort is read from the options the model call returned. A value the
+/// session lists no option for is not sent, and is reported as `unadvertised`
+/// so no caller reads it as set.
 async fn apply_completer(
     cx: &ConnectionTo<Agent>,
     session_id: &SessionId,
     model: &str,
     effort: Option<&str>,
     mut options: Vec<SessionConfigOption>,
-) -> Result<Vec<SessionConfigOption>, OpenError> {
+) -> Result<(Vec<SessionConfigOption>, Applied), OpenError> {
+    let mut applied = Applied::default();
     let model = model.trim();
     if !model.is_empty() {
         if let Some(config_id) = model_config_id(&options) {
             options = set_config(cx, session_id, config_id, model, false).await?;
+            applied.set.push(Field::Model);
+        } else {
+            applied.unadvertised.push(Field::Model);
         }
     }
     if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
         if let Some(config_id) = effort_config_id(&options) {
             options = set_config(cx, session_id, config_id, effort, true).await?;
+            applied.set.push(Field::Effort);
+        } else {
+            applied.unadvertised.push(Field::Effort);
         }
     }
-    Ok(options)
+    for field in &applied.unadvertised {
+        eprintln!(
+            "harness: the session lists no {} option, so it was not set",
+            field.name()
+        );
+    }
+    Ok((options, applied))
 }
 
 async fn set_config(
