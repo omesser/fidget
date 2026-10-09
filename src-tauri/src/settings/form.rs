@@ -3796,8 +3796,8 @@ pub(crate) mod tests {
     }
 
     /// Both Character popups offer every installed package, not only the one
-    /// in force. The native renderers used to read the list off the view;
-    /// the webview only sees the description (#921).
+    /// in force. The webview sees only the description, so the list rides in
+    /// it (#921).
     #[test]
     fn both_character_popups_offer_the_installed_packages() {
         let description = describe_with(&fixture_live(false));

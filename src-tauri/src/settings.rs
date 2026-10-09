@@ -1149,9 +1149,9 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .completer
             .director_blank
             .is_some_and(|blank| blank != settings.director_blank)
-        // Every Completer source change retargets, Off and a
-        // different Harness alike: `harness::retarget` has moved the handle by
-        // the time the payload is built, and `completer_from` reads it.
+        // Every Completer source change retargets, Off and a different Harness
+        // alike: `harness::retarget` has moved the handle by the time the
+        // payload is built, and `completer_from` reads it.
         //
         // The wake interval reaches a running Director the same way: the rebuild
         // is where `model::config_from` reads it (#262).
@@ -1192,15 +1192,14 @@ fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 
 /// Whether an already-open Chat surface must hear a new opening.
 ///
-/// Director on/off never retargets. Every Completer source change does since
-/// #500. All of them still change what `chat_opening` would say, and the
-/// window only asked once. #473.
+/// Director on/off never retargets, but every Completer source change does. All
+/// of them change what `chat_opening` would say, and the window asked only once.
 ///
-/// A Completer retarget joins them: the header names the model and
-/// the host, so an endpoint edit moves what an open window is drawing. The
-/// predicate is `completer_retargets` whole rather than its two endpoint terms,
-/// because a key or a timeout change re-pushes an opening that reads the same,
-/// and one redundant event is cheaper than a second rule to keep in step.
+/// A Completer retarget joins them: the header names the model and the host, so
+/// an endpoint edit moves what an open window is drawing. The predicate is
+/// `completer_retargets` whole rather than its two endpoint terms, because a
+/// key or a timeout change re-pushes an opening that reads the same, and one
+/// redundant event is cheaper than a second rule to keep in step.
 fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
     // A new session empties the transcript the surface is showing, and the
     // opening it draws over that is one the window only asked for once (#679).
@@ -4065,8 +4064,8 @@ mod tests {
         )
     }
 
-    /// #272: the window has to print the endpoint the Director will use. The
-    /// file value it used to print is the one `model::resolve` throws away.
+    /// #272: the window has to print the endpoint the Director will use, not
+    /// the file value, which `model::resolve` throws away.
     #[test]
     fn the_view_shows_the_endpoint_the_env_imposes() {
         let settings = endpoint_settings();
@@ -5186,9 +5185,9 @@ mod tests {
     }
 
     /// #949: Apply attaches on the spot, and the ACP handshake takes a second
-    /// or two after it. The line the user reads in that second used to be the
-    /// one for a Harness that is set and never coming up, which is why Apply
-    /// read as having done nothing.
+    /// or two after it. The line the user reads in that second must not be the
+    /// one for a Harness that is set and never coming up, or Apply reads as
+    /// having done nothing.
     #[test]
     fn a_harness_mid_handshake_says_it_is_starting() {
         let starting = crate::harness::HarnessInspect {

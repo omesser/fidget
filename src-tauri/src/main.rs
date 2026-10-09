@@ -2576,7 +2576,8 @@ struct ChatHarness {
     /// Attached but not signed in. Names the login command for the user's
     /// own terminal.
     login: Option<String>,
-    /// Whether the child is up. Set and dead must not read as attached.
+    /// Whether the child is up. A started session with a dead child must not
+    /// read as attached.
     alive: bool,
     session: Option<String>,
     /// The binary `PATH` has not got, when that is why nothing is running.
