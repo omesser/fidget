@@ -1596,10 +1596,9 @@ impl Restore {
     }
 }
 
-/// One `session/update`, read once. Both sinks take this and never the
-/// schema's own enum: the live sink turns it into `Event`s and `Progress`,
-/// and the restore sink collects `Replayed` entries. What differs between
-/// them is what each does with an update, not how it reads one.
+/// One `session/update`, read once. The live sink (`show`) raises `Event`s
+/// from it and the restore sink (`Restore`) collects `Replayed` entries. They
+/// differ in what they do with an update, not in how it is read.
 enum Heard {
     /// A chunk of an agent message, and the `messageId` it carries.
     Said {
@@ -1623,9 +1622,8 @@ enum Heard {
     Ignored,
 }
 
-/// A tool call's fields. Title, kind, and status are in the wire's own words.
-/// The content and the locations stay as sent: the restore sink draws them
-/// and the live sink does not.
+/// A tool call's fields, with kind and status in the wire's words. Content and
+/// locations stay as sent: only the restore sink draws them.
 struct Tool {
     id: String,
     title: Option<String>,
@@ -1636,7 +1634,7 @@ struct Tool {
 }
 
 impl Tool {
-    /// A new row, for a call whose start the replay never saw too.
+    /// A new row from these fields.
     fn row(self) -> Replayed {
         Replayed::ToolCall {
             title: self.title.unwrap_or_default(),
