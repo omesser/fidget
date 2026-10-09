@@ -6973,12 +6973,34 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        thread::sleep(Duration::from_millis(400));
+        // Wait for between-turn output to arrive before closing. Buffer events
+        // until we see the thought, which signals the reader has collected the
+        // speech that preceded it.
+        let mut buffered = Vec::new();
+        let mut thought_seen = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !thought_seen && std::time::Instant::now() < deadline {
+            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
+                Ok(Forwarded::Thought { instance, line })
+                    if instance == "buddy-1" && !line.is_empty() =>
+                {
+                    thought_seen = true;
+                    buffered.push(Forwarded::Thought { instance, line });
+                }
+                Ok(forwarded) => buffered.push(forwarded),
+                Err(_) => {}
+            }
+        }
+        assert!(
+            thought_seen,
+            "between-turn thought never arrived before timeout"
+        );
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
         let mut speech_seen = false;
         let mut thought_ended = false;
-        for forwarded in fx.forwarded.try_iter() {
+        // Check buffered events first, then drain any remaining.
+        for forwarded in buffered.into_iter().chain(fx.forwarded.try_iter()) {
             match forwarded {
                 Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
                     assert_eq!(wake.speech, "Your reminder: time to stretch!");
@@ -7006,17 +7028,40 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        thread::sleep(Duration::from_millis(400));
+        // Wait for between-turn thought to arrive, which signals the reader has
+        // collected the speech. Prompt again before the ask arrives to test that
+        // the new turn flushes the accumulated speech.
+        let mut thought_seen = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !thought_seen && std::time::Instant::now() < deadline {
+            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
+                Ok(Forwarded::Thought { instance, line })
+                    if instance == "buddy-1" && !line.is_empty() =>
+                {
+                    thought_seen = true;
+                }
+                Ok(Forwarded::Ask { .. }) => {
+                    panic!("the ask arrived before we could prompt again");
+                }
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
+        assert!(
+            thought_seen,
+            "between-turn thought never arrived before timeout"
+        );
         let worker = thread::spawn(move || session.complete(&asking("again"), &|_| {}));
         let mut speech_seen = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !speech_seen && std::time::Instant::now() < deadline {
-            match fx.forwarded.try_recv() {
+            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
                 Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
                     assert_eq!(wake.speech, "Your reminder: time to stretch!");
                     speech_seen = true;
                 }
-                _ => thread::sleep(Duration::from_millis(10)),
+                Ok(_) => {}
+                Err(_) => {}
             }
         }
         assert!(
