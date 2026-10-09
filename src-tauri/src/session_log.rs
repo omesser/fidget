@@ -150,12 +150,9 @@ impl Log {
     }
 }
 
-/// A loaded session's replay as Chat draws it. A replayed prompt is the
-/// Director's whole frame, so the line the user typed in it comes out as its
-/// own row ahead of the folded frame. A replayed reply is read against the
-/// Behaviors its Character declares, so Chat draws the dialogue and not the
-/// Behavior line, as it does for a live reply. A reply that names only a
-/// Behavior said nothing and draws no row (#1435).
+/// A loaded session's replay as Chat draws it: a prompt's typed line as its own
+/// row ahead of the frame, and a reply as its dialogue. A reply that names only
+/// a Behavior said nothing and draws no row (#1435).
 pub fn drawn(history: Vec<Replayed>, behaviors: &[String]) -> Vec<Replayed> {
     history
         .into_iter()

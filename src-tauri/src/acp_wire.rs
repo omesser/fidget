@@ -442,9 +442,8 @@ pub enum Replayed {
     Prompt {
         text: String,
     },
-    /// The line the user typed inside a `Prompt`'s frame. Added by
-    /// `session_log::drawn`, never by the replay, so Chat draws it as the
-    /// user's row ahead of the folded frame.
+    /// The line the user typed inside a `Prompt`'s frame. `session_log::drawn`
+    /// adds it, never the replay.
     Typed {
         text: String,
     },
