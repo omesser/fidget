@@ -970,8 +970,8 @@ mod tests {
         );
     }
 
-    /// The Dock draws above the overlay, so a sprite resting at the display's
-    /// bottom would sit behind it. The window list cannot say where the Dock's top
+    /// The sprite used to rest at the display's bottom, behind the Dock, which
+    /// draws above the overlay. The window list cannot say where the Dock's top
     /// is, so the fix is upstream: the Engine is handed the usable part of each display.
     #[test]
     fn a_sprite_comes_to_rest_on_the_usable_floor_rather_than_behind_the_dock() {
@@ -1032,7 +1032,7 @@ mod tests {
     }
 
     /// The Dock does not stretch to the sides of the display, and a sprite
-    /// beyond its real end must not stand on the full-width strip, walking on air.
+    /// beyond its real end used to stand on the full-width strip, walking on air.
     /// Beside the Dock the floor is the display's own bottom edge.
     #[test]
     fn a_sprite_beside_the_dock_falls_to_the_display_bottom() {

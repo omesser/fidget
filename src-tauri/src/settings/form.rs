@@ -131,7 +131,8 @@ pub enum FormRow {
         frozen: bool,
         /// Committed by Apply rather than on pick, for the same reason as
         /// `TextField::batched`. The Completer source is the case that earned
-        /// it: a pick must not kill a child before Cancel could put it back.
+        /// it: a pick used to kill a child before Cancel could put it back
+        /// (#663).
         batched: bool,
         /// Extended explanation behind progressive disclosure.
         disclosure: Option<String>,
@@ -3684,7 +3685,7 @@ pub(crate) mod tests {
         });
     }
 
-    /// #663: pick and blur do not retarget. The disclosure has to name Apply
+    /// #663: pick and blur used to retarget. The disclosure has to name Apply
     /// so the row and the button cannot disagree about when the child dies.
     #[test]
     fn the_source_rows_say_apply_commits() {

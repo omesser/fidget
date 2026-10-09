@@ -623,8 +623,8 @@ function promptDirty() {
   return promptText.value !== savedPrompt;
 }
 
-// Disabled until the field differs from what the Shell last saved, so a clean
-// Save cannot wipe the session for no change.
+// Clean Save used to open the confirm and wipe the session for no change.
+// Disabled until the field differs from what the Shell last saved.
 function syncPromptActions() {
   const confirming = !promptConfirm.hidden;
   const dirty = promptDirty();
