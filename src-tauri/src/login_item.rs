@@ -46,12 +46,20 @@ pub fn exe_is_bundled(exe: &Path) -> bool {
     }
 }
 
-/// Whether `exe` sits in a Cargo `target` directory. Splits on `/` and `\`
-/// itself, so a Windows path reads the same wherever it is checked.
+/// Whether `exe` sits in a Cargo `target` directory. Empty and `.` segments
+/// are skipped, as `Path::components` does, and `\` separates only on Windows.
 #[cfg(any(test, not(target_os = "macos")))]
 fn under_cargo_target(exe: &Path) -> bool {
+    under_cargo_target_split(exe, cfg!(windows))
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+fn under_cargo_target_split(exe: &Path, backslash_separates: bool) -> bool {
     let path = exe.to_string_lossy();
-    let parts: Vec<_> = path.split(['/', '\\']).collect();
+    let parts: Vec<_> = path
+        .split(|c| c == '/' || (backslash_separates && c == '\\'))
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
     let profile = |name: &str| name == "debug" || name == "release";
     // A cross build is `target/<triple>/debug`, not `target/debug`.
     parts
@@ -104,7 +112,26 @@ mod tests {
     }
 
     #[test]
+    fn empty_and_dot_segments_do_not_hide_a_checkout() {
+        for checkout in [
+            "/work/fidget/target//debug/fidget",
+            "/work/fidget/target/./debug/fidget",
+            "/work/fidget/target/x/./debug/fidget",
+        ] {
+            assert!(under_cargo_target(Path::new(checkout)), "{checkout}");
+        }
+    }
+
+    #[test]
+    fn a_backslash_is_part_of_a_name_except_on_windows() {
+        let path = Path::new(r"/a\target/debug/fidget");
+        assert!(!under_cargo_target_split(path, false));
+        assert!(under_cargo_target_split(path, true));
+    }
+
+    #[test]
     fn windows_paths_split_on_backslashes() {
+        let under_cargo_target = |path: &Path| under_cargo_target_split(path, true);
         for checkout in [
             r"C:\work\fidget\target\debug\fidget.exe",
             r"C:\work\fidget\target\release\fidget.exe",

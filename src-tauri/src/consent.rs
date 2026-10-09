@@ -236,12 +236,9 @@ impl Probe for WindowsProbe {
     }
 }
 
-/// The name the Windows process list shows for the exe at `exe`. An installed
-/// app is "Fidget"; the NSIS installer defaults to `installMode` `currentUser`
-/// (`%LOCALAPPDATA%`), and `tauri.conf.json` sets none. A checkout, including a
-/// `target/<triple>/debug` cross build, shows the parent that launched it, so
-/// the user sees the terminal they ran it from. With no `exe` (`current_exe`
-/// failed) it also uses the parent.
+/// The name the Windows process list shows for the exe at `exe`.
+/// A checkout, or an unreadable `exe`, shows the parent that launched it, so
+/// the user sees their terminal. NSIS installs per user (`%LOCALAPPDATA%`).
 #[cfg(any(test, target_os = "windows"))]
 fn process_list_name_for(
     exe: Option<&std::path::Path>,
@@ -712,32 +709,40 @@ mod tests {
     #[test]
     fn a_checkout_is_named_for_its_parent_and_an_installed_app_for_itself() {
         let parent = || Some("WindowsTerminal".to_string());
-        for exe in [
+        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+        let mut checkouts = vec![
             "/work/fidget/target/debug/fidget.exe",
             "/work/fidget/target/x86_64-pc-windows-msvc/debug/fidget.exe",
             "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe",
+        ];
+        // A backslash separates only on Windows; the Windows job runs these.
+        #[cfg(target_os = "windows")]
+        checkouts.extend([
             r"C:\work\fidget\target\debug\fidget.exe",
             r"C:\work\fidget\target\release\fidget.exe",
             r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
             r"target\release\fidget.exe",
-        ] {
+        ]);
+        for exe in checkouts {
             assert_eq!(
                 process_list_name_for(Some(Path::new(exe)), parent),
                 "WindowsTerminal",
                 "{exe}"
             );
         }
-        // macOS decides by the `.app` bundle, so an installed Windows path is
-        // a checkout there and the two layouts cannot share one list.
+        // macOS decides by the `.app` bundle, so Windows layouts cannot share
+        // one list with it.
         #[cfg(target_os = "macos")]
-        let installed = ["/Applications/Fidget.app/Contents/MacOS/fidget"];
+        let installed = vec!["/Applications/Fidget.app/Contents/MacOS/fidget"];
         #[cfg(not(target_os = "macos"))]
-        let installed = [
-            "/usr/bin/fidget",
+        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+        let mut installed = vec!["/usr/bin/fidget"];
+        #[cfg(target_os = "windows")]
+        installed.extend([
             r"C:\Program Files\Fidget\fidget.exe",
             r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
             r"D:\Portable\Fidget\fidget.exe",
-        ];
+        ]);
         for exe in installed {
             assert_eq!(
                 process_list_name_for(Some(Path::new(exe)), parent),
