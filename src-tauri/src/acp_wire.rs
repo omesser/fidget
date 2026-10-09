@@ -3053,6 +3053,161 @@ mod tests {
         assert_eq!(steps[1].priority, "medium");
     }
 
+    /// One `session/update` as the wire spells it.
+    fn wire(update: serde_json::Value) -> SessionUpdate {
+        serde_json::from_value(update).unwrap()
+    }
+
+    fn wire_text(kind: &str, text: &str) -> SessionUpdate {
+        wire(serde_json::json!({
+            "sessionUpdate": kind,
+            "content": {"type": "text", "text": text},
+        }))
+    }
+
+    /// What a load replay of `updates` hands Chat.
+    fn restored_rows(updates: &[SessionUpdate]) -> Vec<Replayed> {
+        let mut replay = Replay::default();
+        for update in updates {
+            replay.note(update.clone());
+        }
+        replay.finish()
+    }
+
+    /// The same updates, live and replayed, draw the same rows. The reply is
+    /// the turn's answer, the thought is the last thought the live turn
+    /// showed, and a tool call is its deltas folded into one row.
+    #[test]
+    fn one_update_sequence_draws_the_same_rows_live_and_restored() {
+        let sequences: Vec<(&str, Vec<SessionUpdate>)> = vec![
+            (
+                "thought chunks then a reply",
+                vec![
+                    wire_text("agent_thought_chunk", "Reading the "),
+                    wire_text("agent_thought_chunk", "roster"),
+                    wire_text("agent_message_chunk", "wave\nHello"),
+                ],
+            ),
+            (
+                "a think tag split across chunks",
+                vec![
+                    message("<thin"),
+                    message("king>They want the titles."),
+                    message(" I'll look again.</think"),
+                    message("ing>mutter\nFidget's in front."),
+                ],
+            ),
+            (
+                "marks in a thought and a reply",
+                vec![
+                    SessionUpdate::AgentThoughtChunk(ContentChunk::new(picture())),
+                    message("Here is the shot:"),
+                    SessionUpdate::AgentMessageChunk(ContentChunk::new(picture())),
+                    message("Anything else?"),
+                ],
+            ),
+            (
+                "a stray closing tag",
+                vec![message("Looking around.</think>nod | Hi")],
+            ),
+        ];
+        for (name, updates) in sequences {
+            let (reply, events) = drive(updates.clone());
+            let live_thought = events
+                .iter()
+                .rev()
+                .find_map(|event| match event {
+                    Event::Thought { text, .. } if !text.is_empty() => Some(text.trim()),
+                    _ => None,
+                })
+                .unwrap_or("");
+            let rows = restored_rows(&updates);
+            let restored_reply: Vec<&str> = rows
+                .iter()
+                .filter_map(|row| match row {
+                    Replayed::Reply { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let restored_thought: String = rows
+                .iter()
+                .filter_map(|row| match row {
+                    Replayed::Thought { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(restored_reply, [reply.trim()], "{name}: reply");
+            assert_eq!(restored_thought, live_thought, "{name}: thought");
+        }
+    }
+
+    #[test]
+    fn one_tool_call_is_deltas_live_and_one_row_restored() {
+        let updates = vec![
+            wire(serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
+                "title": "Read file", "kind": "read", "status": "pending"})),
+            wire(serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
+                "status": "in_progress"})),
+            wire(serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
+                "title": "Read main.rs", "status": "completed"})),
+        ];
+        let (_, events) = drive(updates.clone());
+        let mut folded = (None, None, None);
+        for event in events {
+            let Event::ToolCall {
+                id,
+                title,
+                kind,
+                status,
+            } = event
+            else {
+                panic!("expected a tool call, got {event:?}");
+            };
+            assert_eq!(id, "t1");
+            folded.0 = title.or(folded.0);
+            folded.1 = kind.or(folded.1);
+            folded.2 = status.or(folded.2);
+        }
+        assert_eq!(
+            folded,
+            (
+                Some("Read main.rs".to_string()),
+                Some("read".to_string()),
+                Some("completed".to_string())
+            )
+        );
+        assert_eq!(
+            restored_rows(&updates),
+            vec![Replayed::ToolCall {
+                id: "t1".to_string(),
+                title: "Read main.rs".to_string(),
+                kind: Some("read".to_string()),
+                status: Some("completed".to_string()),
+                locations: vec![],
+                content: vec![],
+            }]
+        );
+    }
+
+    #[test]
+    fn the_last_plan_is_the_plan_live_and_restored() {
+        let plan = |status: &str| {
+            wire(serde_json::json!({"sessionUpdate": "plan", "entries": [
+                {"content": "Read the roster", "priority": "medium", "status": status}]}))
+        };
+        let updates = vec![plan("pending"), plan("completed")];
+        let (_, events) = drive(updates.clone());
+        let Some(Event::Plan { steps: live, .. }) = events.last() else {
+            panic!("no plan event in {events:?}");
+        };
+        let rows = restored_rows(&updates);
+        let [Replayed::Plan { steps }] = rows.as_slice() else {
+            panic!("restored {rows:?}");
+        };
+        assert_eq!(steps, live);
+        assert_eq!(steps[0].status, "completed");
+    }
+
     /// One `session/request_permission`, deserialized rather than built, so
     /// the test reads the same wire shape the SDK hands this file.
     fn asked_for(tool_call: serde_json::Value) -> PermissionAsk {
