@@ -6541,7 +6541,7 @@ mod tests {
             .find("async fn show_ai_source(")
             .expect("the command exists");
         let body = &source[from..source[from..]
-            .find("\n}\n")
+            .find("\n}")
             .map(|n| from + n)
             .expect("body ends")];
         assert!(body.contains("open_settings_at(&app, settings::form::Reveal::AiSource)"));
