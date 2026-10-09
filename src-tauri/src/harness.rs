@@ -989,14 +989,31 @@ pub struct Session {
     cursor: Mutex<Option<crate::cursor_mcp::Installed>>,
 }
 
-/// What a Harness takes only when it opens a conversation. A conversation
-/// opened on other inputs is not asked again: its next wake opens a new one.
+/// The model and effort set on a conversation through `session/set_config_option`,
+/// at open and whenever Apply changes them.
 #[derive(Clone, PartialEq, Eq)]
 struct OpenInputs {
     /// The AI-tab model, with `FIDGET_DIRECTOR_MODEL` winning. Blank stays
     /// blank. `apply_completer` omits it, the same way HTTP omits `model`.
     model: String,
     effort: Option<String>,
+}
+
+impl OpenInputs {
+    /// A set cannot take a value back to the Harness default, so a value
+    /// blanked since `before` is not reachable on the open conversation.
+    fn settable_from(&self, before: &OpenInputs) -> bool {
+        (self.model == before.model || !self.model.trim().is_empty())
+            && (self.effort == before.effort || self.effort.is_some())
+    }
+}
+
+/// How `attach` reaches a conversation whose inputs are `now`.
+enum Reach {
+    /// The open one, after setting `now` on it.
+    Set(String),
+    /// `open_session`, skipping `session/load` when `fresh`.
+    Open { fresh: bool },
 }
 
 struct OpenedSession {
@@ -1767,28 +1784,78 @@ impl Session {
             return Ok((wire, String::new()));
         };
         let inputs = self.open_inputs();
-        let outdated = {
-            let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
-            let outdated = match state.sessions.get(key) {
+        let reach = {
+            let state = self.state.lock().map_err(|_| "harness state poisoned")?;
+            let reach = match state.sessions.get(key) {
                 Some(opened) if opened.opened_on == inputs => {
                     return Ok((wire, opened.id.clone()));
                 }
-                // Its saved slot is the same conversation, so not loaded either.
-                Some(_) => {
-                    state.sessions.remove(key);
-                    true
+                Some(opened) if inputs.settable_from(&opened.opened_on) => {
+                    Reach::Set(opened.id.clone())
                 }
-                None => false,
+                // A blanked value. The saved slot names this same outdated id,
+                // so `fresh` skips loading it.
+                Some(_) => Reach::Open { fresh: true },
+                None => Reach::Open { fresh: false },
             };
             if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
                 if tried.elapsed() < self.auth_retry {
                     return Err(not_authenticated(command));
                 }
             }
-            outdated
+            reach
         };
-        let id = self.open_session(&wire, key, outdated)?;
+        let id = match reach {
+            Reach::Set(id) => self.set_inputs(&wire, key, id, inputs)?,
+            Reach::Open { fresh } => self.open_session(&wire, key, fresh)?,
+        };
         Ok((wire, id))
+    }
+
+    /// Set `inputs` on the open conversation for `key`, keeping its id.
+    fn set_inputs(
+        &self,
+        wire: &Arc<Wire>,
+        key: &SessionKey,
+        id: String,
+        inputs: OpenInputs,
+    ) -> Result<String, String> {
+        let effort = inputs.effort.as_deref();
+        if let Err(error) = wire.configure(&id, &inputs.model, effort, self.attach_timeout()) {
+            return Err(self.open_failed(wire, error, "session/set_config_option"));
+        }
+        let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
+        match state.sessions.get_mut(key) {
+            Some(opened) if opened.id == id => {
+                opened.opened_on = inputs;
+                Ok(id)
+            }
+            _ => Err("session replaced".to_string()),
+        }
+    }
+
+    /// The error a wake reports for an open or a set the Harness refused.
+    fn open_failed(&self, wire: &Arc<Wire>, error: OpenError, call: &str) -> String {
+        match error {
+            OpenError::Lost => {
+                if let Ok(mut state) = self.state.lock() {
+                    self.lost(wire, &mut state);
+                }
+                LOST.to_string()
+            }
+            OpenError::AuthRequired => match self.state.lock() {
+                Ok(mut state) => self.refuse_login(&mut state),
+                Err(_) => LOST.to_string(),
+            },
+            OpenError::EffortRejected(why) => format!("{EFFORT_REJECTED}{why}"),
+            OpenError::Failed(why) => {
+                self.update_inspect(|inspect| {
+                    inspect.last_error = Some(why.clone());
+                    inspect.turn_failure = Some(why.clone());
+                });
+                format!("{call}: {why}")
+            }
+        }
     }
 
     fn spawn_and_initialize(&self) -> Result<Arc<Wire>, SpawnError> {
@@ -1862,12 +1929,18 @@ impl Session {
         Ok(wire)
     }
 
+    /// Read from this Session's settings file, as `dev_flags::seed` reads
+    /// effort, so a test's seed cannot move another test's Harness.
     fn open_inputs(&self) -> OpenInputs {
         let settings =
             crate::settings::Settings::load(&crate::settings::settings_path(self.data.as_path()));
+        let effort = crate::model::env_or_file(
+            crate::model::REASONING_EFFORT,
+            &settings.director_reasoning_effort,
+        );
         OpenInputs {
             model: crate::model::env_or_file(crate::model::MODEL, &settings.director_model),
-            effort: crate::dev_flags::director_reasoning_effort(),
+            effort: Some(effort.trim().to_string()).filter(|effort| !effort.is_empty()),
         }
     }
 
@@ -1917,23 +1990,7 @@ impl Session {
             inputs.effort.as_deref(),
         ) {
             Ok(opened) => opened,
-            Err(OpenError::Lost) => {
-                let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-                self.lost(wire, &mut state);
-                return Err(LOST.to_string());
-            }
-            Err(OpenError::AuthRequired) => {
-                let mut state = self.state.lock().map_err(|_| LOST.to_string())?;
-                return Err(self.refuse_login(&mut state));
-            }
-            Err(OpenError::EffortRejected(why)) => return Err(format!("{EFFORT_REJECTED}{why}")),
-            Err(OpenError::Failed(why)) => {
-                self.update_inspect(|inspect| {
-                    inspect.last_error = Some(why.clone());
-                    inspect.turn_failure = Some(why.clone());
-                });
-                return Err(format!("session/new: {why}"));
-            }
+            Err(error) => return Err(self.open_failed(wire, error, "session/new")),
         };
         let id = opened.id;
         let (replaced, first_open) = {
@@ -2073,8 +2130,24 @@ impl Session {
         });
     }
 
-    /// Apply saved the Completer settings.
-    pub fn inputs_applied(&self) {}
+    /// Apply saved the Completer settings. A turn running on a conversation
+    /// whose model or effort changed is cancelled, as a newer wake would. Its
+    /// saved slot stays, and the next wake sets the new values on it.
+    pub fn inputs_applied(&self) {
+        let Some(instance) = self.serving_instance.lock().ok().and_then(|s| s.clone()) else {
+            return;
+        };
+        let now = self.open_inputs();
+        let changed = self.state.lock().is_ok_and(|state| {
+            state
+                .sessions
+                .iter()
+                .any(|(key, opened)| key.instance == instance && opened.opened_on != now)
+        });
+        if changed {
+            self.cancel_own_turn(&instance);
+        }
+    }
 
     fn forget_saved(&self, instance: &str) {
         let _file = self
@@ -2299,14 +2372,47 @@ pub fn run_probe() -> i32 {
             "probe-harness: could not catch interrupt: {why}; the Harness stays in this process group"
         ),
     }
-    let code = probe(&session);
+    // An Apply step leaves its settings here. The next probe starts without them.
+    let _ = std::fs::remove_file(crate::settings::settings_path(session.data.as_path()));
+    let then = ProbeThen::from_env();
+    let code = probe(&session, then.as_ref());
     session.shutdown();
     code
 }
 
+/// A second turn after an Apply, for proving a live set on a real Harness.
+/// The first turn runs on the Harness defaults unless `FIDGET_DIRECTOR_MODEL`
+/// or `FIDGET_DIRECTOR_REASONING_EFFORT` names a value.
+struct ProbeThen {
+    model: String,
+    effort: String,
+}
+
+impl ProbeThen {
+    fn from_env() -> Option<Self> {
+        let var = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+        let (model, effort) = (
+            var("FIDGET_PROBE_THEN_MODEL"),
+            var("FIDGET_PROBE_THEN_EFFORT"),
+        );
+        (model.is_some() || effort.is_some()).then(|| Self {
+            model: model.unwrap_or_default(),
+            effort: effort.unwrap_or_default(),
+        })
+    }
+}
+
+fn probe_key() -> SessionKey {
+    SessionKey {
+        instance: "probe".to_string(),
+        character: "probe".to_string(),
+        blank: false,
+    }
+}
+
 /// `run_probe` minus the environment, so the fake agent can run the whole of
 /// it in a test.
-fn probe(session: &Session) -> i32 {
+fn probe(session: &Session, then: Option<&ProbeThen>) -> i32 {
     // Served before attach, so `choose_mcp` takes the branch the app takes.
     // Without it a Harness got the stdio shim with nothing to dial (#984).
     let (calls, answers) = std::sync::mpsc::channel();
@@ -2325,11 +2431,7 @@ fn probe(session: &Session) -> i32 {
     println!();
 
     println!("attach");
-    let session_id = match session.attach(Some(&SessionKey {
-        instance: "probe".to_string(),
-        character: "probe".to_string(),
-        blank: false,
-    })) {
+    let session_id = match session.attach(Some(&probe_key())) {
         Ok((_, id)) => id,
         // Nothing was asked, so this is configuration and not a turn. The
         // message names a missing binary, a login, or a refused `session/new`.
@@ -2375,9 +2477,24 @@ fn probe(session: &Session) -> i32 {
     println!("  session      {session_id}");
     println!();
 
+    let mut code = probe_turn(session);
+    if let (0, Some(then)) = (code, then) {
+        code = probe_live_set(session, &session_id, then);
+    }
+    // Reported after the turn: a Harness may fetch the list lazily. Zero
+    // means the Harness never asked, whatever `initialize` advertised.
+    match crate::mcp_http::tools_listed() {
+        0 => println!("  mcp listed   no, the Harness never asked for the tool list"),
+        n => println!("  mcp listed   yes, {n} tools/list request(s)"),
+    }
+    code
+}
+
+/// One fixed prompt on the probe's conversation. 0 is `end_turn`, 1 is not.
+fn probe_turn(session: &Session) -> i32 {
     println!("turn");
     println!("  prompt       {PROBE_PROMPT}");
-    let code = match session.turn(
+    match session.turn(
         &WakeRequest {
             prompt: PROBE_PROMPT.to_string(),
             // Reactive, because a probe is someone asking on purpose. Named for
@@ -2419,14 +2536,49 @@ fn probe(session: &Session) -> i32 {
             println!("  {why}");
             1
         }
-    };
-    // Reported after the turn: a Harness may fetch the list lazily. Zero
-    // means the Harness never asked, whatever `initialize` advertised.
-    match crate::mcp_http::tools_listed() {
-        0 => println!("  mcp listed   no, the Harness never asked for the tool list"),
-        n => println!("  mcp listed   yes, {n} tools/list request(s)"),
     }
-    code
+}
+
+/// Apply `then` as Settings would, then a second turn. The session line says
+/// whether the conversation kept its id, which is what a live set keeps.
+fn probe_live_set(session: &Session, first: &str, then: &ProbeThen) -> i32 {
+    let settings = crate::settings::Settings {
+        director_model: then.model.clone(),
+        director_reasoning_effort: then.effort.clone(),
+        ..crate::settings::Settings::default()
+    };
+    if let Err(why) = settings.save(&crate::settings::settings_path(session.data.as_path())) {
+        println!("  apply        {why}");
+        return 1;
+    }
+    session.inputs_applied();
+    println!();
+    println!("apply");
+    // What is in force, so an exported variable that wins over the file shows.
+    let now = session.open_inputs();
+    println!("  model        {}", or_unset(&now.model));
+    println!(
+        "  effort       {}",
+        or_unset(now.effort.as_deref().unwrap_or(""))
+    );
+    match session.attach(Some(&probe_key())) {
+        Ok((_, id)) if id == first => println!("  session      {id} (kept, values set on it)"),
+        Ok((_, id)) => println!("  session      {id} (NEW, the conversation was not kept)"),
+        Err(why) => {
+            println!("  {why}");
+            return 1;
+        }
+    }
+    println!();
+    probe_turn(session)
+}
+
+fn or_unset(value: &str) -> &str {
+    if value.is_empty() {
+        "unset"
+    } else {
+        value
+    }
 }
 
 /// Answer the Harness's tool calls through the frame loop's `dispatch`,
@@ -3301,12 +3453,10 @@ mod tests {
             "completer-effort"
             | "completer-effort-reject"
             | "load-completer-effort"
-            | "permission" => {
-                Some(json!([
-                    effort_option("model_config", "knob"),
-                    effort_option("thought_level", "reasoning"),
-                ]))
-            }
+            | "permission" => Some(json!([
+                effort_option("model_config", "knob"),
+                effort_option("thought_level", "reasoning"),
+            ])),
             "completer-effort-mc" => Some(json!([
                 model_option(),
                 effort_option("model_config", "knob"),
@@ -3568,7 +3718,9 @@ mod tests {
                         }));
                     } else {
                         let options = completer_config_options(script).unwrap_or_else(|| json!([]));
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": options}}));
+                        say(
+                            json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": options}}),
+                        );
                     }
                 }
                 Some("session/prompt") => {
@@ -5711,6 +5863,14 @@ mod tests {
             .expect("settings");
     }
 
+    /// The effort as Apply leaves it in the settings file a Harness reads.
+    fn write_effort(dir: &std::path::Path, effort: &str) {
+        let path = crate::settings::settings_path(dir);
+        let mut settings = crate::settings::Settings::load(&path);
+        settings.director_reasoning_effort = effort.to_string();
+        settings.save(&path).expect("settings");
+    }
+
     fn config_lines(fx: &Fixture) -> Vec<String> {
         std::fs::read_to_string(&fx.count)
             .unwrap_or_default()
@@ -5740,10 +5900,7 @@ mod tests {
         for level in ["low", "medium", "high"] {
             let (fx, session) = Fixture::new("completer-effort");
             crate::model::tests::with_env(None, None, None, || {
-                crate::dev_flags::seed(&crate::settings::Settings {
-                    director_reasoning_effort: level.to_string(),
-                    ..crate::settings::Settings::default()
-                });
+                write_effort(&fx.dir, level);
                 assert_eq!(
                     session.complete(&asking("hi"), &|_| {}),
                     Ok(Reply::whole("Hello"))
@@ -5760,10 +5917,7 @@ mod tests {
     fn effort_uses_model_config_when_thought_level_is_absent() {
         let (fx, session) = Fixture::new("completer-effort-mc");
         crate::model::tests::with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "medium".to_string(),
-                ..crate::settings::Settings::default()
-            });
+            write_effort(&fx.dir, "medium");
             assert_eq!(
                 session.complete(&asking("hi"), &|_| {}),
                 Ok(Reply::whole("Hello"))
@@ -5783,10 +5937,7 @@ mod tests {
         )
         .unwrap();
         crate::model::tests::with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "low".to_string(),
-                ..crate::settings::Settings::default()
-            });
+            write_effort(&fx.dir, "low");
             assert_eq!(
                 session.complete(&asking("hi"), &|_| {}),
                 Ok(Reply::whole("Hello"))
@@ -5803,10 +5954,7 @@ mod tests {
     fn a_rejected_effort_shows_on_the_turn_and_attach_is_not_stuck() {
         let (fx, session) = Fixture::new("completer-effort-reject");
         crate::model::tests::with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "high".to_string(),
-                ..crate::settings::Settings::default()
-            });
+            write_effort(&fx.dir, "high");
             let first = session.complete(&asking("hi"), &|_| {});
             assert!(
                 first
@@ -5972,7 +6120,11 @@ mod tests {
         same: crate::settings::CompleterPatch,
         changed: crate::settings::CompleterPatch,
     ) -> Vec<Value> {
-        for (apply, prompt) in [(None, "hi"), (Some(same), "same"), (Some(changed), "changed")] {
+        for (apply, prompt) in [
+            (None, "hi"),
+            (Some(same), "same"),
+            (Some(changed), "changed"),
+        ] {
             if let Some(patch) = apply {
                 applied(fx, session, patch);
             }
@@ -6049,8 +6201,14 @@ mod tests {
             crate::dev_flags::seed(&crate::settings::Settings::default());
 
             assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
-            assert_eq!(ids[0], ids[1], "an unchanged effort reopened the conversation");
-            assert_ne!(ids[1], ids[2], "the blanked effort stayed on the old conversation");
+            assert_eq!(
+                ids[0], ids[1],
+                "an unchanged effort reopened the conversation"
+            );
+            assert_ne!(
+                ids[1], ids[2],
+                "the blanked effort stayed on the old conversation"
+            );
             assert_eq!((fx.count("new"), fx.count("load")), (2, 0));
         });
     }
@@ -6073,7 +6231,11 @@ mod tests {
 
             applied(&fx, &session, effort_patch("low"));
             thread::sleep(Duration::from_millis(300));
-            assert_eq!(fx.count("cancel"), 0, "an unchanged Apply cancelled the turn");
+            assert_eq!(
+                fx.count("cancel"),
+                0,
+                "an unchanged Apply cancelled the turn"
+            );
             assert!(!first.is_finished(), "an unchanged Apply ended the turn");
 
             applied(&fx, &session, effort_patch("high"));
@@ -6111,10 +6273,7 @@ mod tests {
         let (fx, session) = Fixture::new("completer-both");
         write_completer_model(&fx.dir, "some-model");
         crate::model::tests::with_env(None, None, None, || {
-            crate::dev_flags::seed(&crate::settings::Settings {
-                director_reasoning_effort: "high".to_string(),
-                ..crate::settings::Settings::default()
-            });
+            write_effort(&fx.dir, "high");
             assert_eq!(
                 session.complete(&asking("hi"), &|_| {}),
                 Ok(Reply::whole("Hello"))
@@ -8515,15 +8674,15 @@ mod tests {
     #[test]
     fn the_probe_exits_zero_on_a_turn_one_on_a_refusal_and_two_on_no_attach() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(probe(&session), 0);
+        assert_eq!(probe(&session, None), 0);
         session.shutdown();
 
         let (_fx, session) = Fixture::new("refusal");
-        assert_eq!(probe(&session), 1);
+        assert_eq!(probe(&session, None), 1);
         session.shutdown();
 
         let (_fx, session) = Fixture::new("auth");
-        assert_eq!(probe(&session), 2);
+        assert_eq!(probe(&session, None), 2);
         session.shutdown();
 
         let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
@@ -8532,8 +8691,34 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/fidget-no-such-harness".into()],
         };
-        assert_eq!(probe(&isolated_session(launch, dir.clone(), silent())), 2);
+        assert_eq!(
+            probe(&isolated_session(launch, dir.clone(), silent()), None),
+            2
+        );
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The probe's Apply step sets the effort on the conversation its first
+    /// turn opened, and the second turn is asked there.
+    #[test]
+    fn the_probe_sets_an_applied_effort_on_its_open_conversation() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("completer-effort");
+            let then = ProbeThen {
+                model: String::new(),
+                effort: "high".to_string(),
+            };
+            assert_eq!(probe(&session, Some(&then)), 0);
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+
+            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+            let ids = prompt_sessions(&fx);
+            assert_eq!(ids.len(), 2, "{ids:?}");
+            assert_eq!(ids[0], ids[1], "the second turn left the conversation");
+            assert_eq!(fx.count("new"), 1);
+        });
     }
 
     /// The probe hands a Harness that advertised `mcpCapabilities.http` the
@@ -8542,7 +8727,7 @@ mod tests {
     #[test]
     fn the_probe_serves_the_loopback_endpoint_before_it_attaches() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(probe(&session), 0);
+        assert_eq!(probe(&session, None), 0);
         session.shutdown();
         assert_eq!(
             fx.count("mcp=http"),

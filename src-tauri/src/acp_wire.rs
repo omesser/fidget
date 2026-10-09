@@ -502,6 +502,13 @@ enum Msg {
         text: String,
         reply: sync_mpsc::Sender<Progress>,
     },
+    /// `apply_completer` on a session this connection opened.
+    Configure {
+        session_id: String,
+        model: String,
+        effort: Option<String>,
+        reply: sync_mpsc::Sender<Result<(), OpenError>>,
+    },
     Cancel,
     Answer {
         request: String,
@@ -640,6 +647,27 @@ impl Wire {
                 cwd: cwd.to_path_buf(),
                 mcp,
                 claude_mcp_approval,
+                model: model.to_string(),
+                effort: effort.map(str::to_string),
+                reply,
+            })
+            .map_err(|_| OpenError::Lost)?;
+        rx.recv_timeout(timeout).unwrap_or(Err(OpenError::Lost))
+    }
+
+    /// Set the model and effort on a session `open` returned, as `open` set
+    /// them, against the options the session last listed. The id stays.
+    pub fn configure(
+        &self,
+        session_id: &str,
+        model: &str,
+        effort: Option<&str>,
+        timeout: Duration,
+    ) -> Result<(), OpenError> {
+        let (reply, rx) = sync_mpsc::channel();
+        self.tx
+            .send(Msg::Configure {
+                session_id: session_id.to_string(),
                 model: model.to_string(),
                 effort: effort.map(str::to_string),
                 reply,
@@ -1164,6 +1192,9 @@ async fn serve(
     let mut forms: Vec<PendingElicit> = Vec::new();
     let mut asks: Vec<PendingAsk> = Vec::new();
     let mut inbound: HashMap<SessionId, Inbound> = HashMap::new();
+    // What each open session last listed. A set answers with the whole list,
+    // and a model set can change which effort option there is.
+    let mut options: HashMap<SessionId, Vec<SessionConfigOption>> = HashMap::new();
     loop {
         enum Step {
             Auth(Result<(), String>),
@@ -1256,7 +1287,11 @@ async fn serve(
                     &model,
                     effort.as_deref(),
                 )
-                .await;
+                .await
+                .map(|(id, listed)| {
+                    options.insert(id.clone(), listed);
+                    id
+                });
                 // ACP replays a loaded conversation as updates before it
                 // answers, even a load that then fails and falls back to
                 // `session/new`. Every update queued for either id is history,
@@ -1326,8 +1361,24 @@ async fn serve(
                     break;
                 }
             }
+            Step::Command(Msg::Configure {
+                session_id,
+                model,
+                effort,
+                reply,
+            }) => {
+                let id = SessionId::new(session_id);
+                let listed = options.get(&id).cloned().unwrap_or_default();
+                let set = apply_completer(cx, &id, &model, effort.as_deref(), listed)
+                    .await
+                    .map(|listed| {
+                        options.insert(id, listed);
+                    });
+                let _ = reply.send(set);
+            }
             Step::Command(Msg::Close { session_id, reply }) => {
                 let id = SessionId::new(session_id);
+                options.remove(&id);
                 // Drain any pending updates for this session before flushing,
                 // so between-turn speech that has been emitted but not yet
                 // processed doesn't get dropped.
@@ -1686,7 +1737,7 @@ async fn open(
     claude_mcp_approval: bool,
     model: &str,
     effort: Option<&str>,
-) -> Result<SessionId, OpenError> {
+) -> Result<(SessionId, Vec<SessionConfigOption>), OpenError> {
     let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
     let approval = || claude_mcp_meta(claude_mcp_approval && mcp.is_some());
     let loaded = if let Some(id) = load {
@@ -1729,16 +1780,18 @@ async fn open(
                 }
             })?,
     };
-    if let Err(error) = apply_completer(cx, &session_id, model, effort, options).await {
-        if created && !matches!(error, OpenError::Lost) {
-            let _ = cx
-                .send_request(CloseSessionRequest::new(session_id))
-                .block_task()
-                .await;
+    match apply_completer(cx, &session_id, model, effort, options.unwrap_or_default()).await {
+        Ok(listed) => Ok((session_id, listed)),
+        Err(error) => {
+            if created && !matches!(error, OpenError::Lost) {
+                let _ = cx
+                    .send_request(CloseSessionRequest::new(session_id))
+                    .block_task()
+                    .await;
+            }
+            Err(error)
         }
-        return Err(error);
     }
-    Ok(session_id)
 }
 
 /// Model first, then effort. A model change can replace the effort options,
@@ -1748,9 +1801,8 @@ async fn apply_completer(
     session_id: &SessionId,
     model: &str,
     effort: Option<&str>,
-    options: Option<Vec<SessionConfigOption>>,
-) -> Result<(), OpenError> {
-    let mut options = options.unwrap_or_default();
+    mut options: Vec<SessionConfigOption>,
+) -> Result<Vec<SessionConfigOption>, OpenError> {
     let model = model.trim();
     if !model.is_empty() {
         if let Some(config_id) = model_config_id(&options) {
@@ -1759,10 +1811,10 @@ async fn apply_completer(
     }
     if let Some(effort) = effort.map(str::trim).filter(|effort| !effort.is_empty()) {
         if let Some(config_id) = effort_config_id(&options) {
-            let _ = set_config(cx, session_id, config_id, effort, true).await?;
+            options = set_config(cx, session_id, config_id, effort, true).await?;
         }
     }
-    Ok(())
+    Ok(options)
 }
 
 async fn set_config(
@@ -1930,6 +1982,9 @@ async fn turn(
                     let _ = reply.send(Progress::Done(Err(TurnError::Busy)));
                 }
                 Some(Msg::Open { reply, .. }) => {
+                    let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
+                }
+                Some(Msg::Configure { reply, .. }) => {
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
                 }
                 // Not sent under `session/prompt`. The click hears it now,

@@ -1419,6 +1419,9 @@ impl SettingsSession {
             dropped_harness = crate::harness::attached().is_none();
         }
         if retarget {
+            if let Some(attached) = crate::harness::attached() {
+                attached.inputs_applied();
+            }
             match retarget_off_the_settings_lock(&self.settings, &snapshot, self.secrets.as_ref()) {
                 Ok(op) => {
                     let _ = self.ops.send(op);
