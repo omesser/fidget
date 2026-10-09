@@ -528,6 +528,9 @@ pub const HARNESS_CWD_ID: &str = "harness_cwd";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reveal {
     WindowNamesConsent,
+    /// The AI source picker, for the Chat landing's button that offers a
+    /// source other than the branded Harnesses.
+    AiSource,
 }
 
 /// Where to send the page. The tab is its title, which `selectTab` already takes.
@@ -538,7 +541,7 @@ pub struct RevealTarget {
 }
 
 impl Reveal {
-    /// Names the Privacy row for window names. Checking the box stays the user's.
+    /// Names the row to draw attention to. Checking a consent box stays the user's.
     pub fn target(self) -> RevealTarget {
         match self {
             Self::WindowNamesConsent => {
@@ -552,6 +555,10 @@ impl Reveal {
                     row,
                 }
             }
+            Self::AiSource => RevealTarget {
+                tab: "AI".to_string(),
+                row: HARNESS_ID.to_string(),
+            },
         }
     }
 }
@@ -2486,6 +2493,27 @@ pub(crate) mod tests {
             described_row(&description, DIRECTOR_MODEL_ID).0,
             "one setting, one label"
         );
+    }
+
+    /// #1457: the aim the Chat landing sends names a tab and a row the form
+    /// really draws, so the page can neither miss the tab nor find no control.
+    #[test]
+    fn the_ai_source_aim_lands_on_the_picker_the_form_draws() {
+        let target = Reveal::AiSource.target();
+        assert_eq!(target.tab, "AI");
+        assert_eq!(target.row, "harness");
+        let description = describe();
+        let tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == target.tab)
+            .expect("the aim names a tab the form draws");
+        let picker = tab
+            .sections
+            .iter()
+            .flat_map(|section| section.rows.iter())
+            .find(|row| matches!(row, FormRow::Popup { id, .. } if *id == target.row));
+        assert!(picker.is_some(), "the aim names the AI source popup");
     }
 
     /// #1427: the page disables the section whose source the AI source picker

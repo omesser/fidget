@@ -733,6 +733,13 @@ if (typeof document !== "undefined") {
     const row = panel.querySelector(`[data-row="${reveal.row}"]`);
     if (!row) return;
     row.scrollIntoView({ block: "nearest" });
+    // A row with a control puts the focus ring on the control. A row without
+    // one takes the focus itself.
+    const control = row.querySelector("select, input, textarea, button");
+    if (control && !control.disabled) {
+      control.focus();
+      return;
+    }
     if (!row.hasAttribute("tabindex")) row.tabIndex = -1;
     row.focus();
   }

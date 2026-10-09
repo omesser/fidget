@@ -35,6 +35,7 @@ interface Commands {
   open_link: [{ url: string }, void];
   select_harness: [{ harness: string }, string];
   show_settings: [undefined, void];
+  show_ai_source: [undefined, void];
   settings_snapshot: [undefined, unknown];
 }
 

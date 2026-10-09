@@ -571,7 +571,7 @@ retry.addEventListener("click", () => {
 const settingsBtn = document.getElementById("settings-btn");
 if (settingsBtn) {
   settingsBtn.addEventListener("click", () => {
-    invoke("show_settings").catch((err) => {
+    invoke("show_ai_source").catch((err) => {
       console.error("Failed to open Settings:", err);
     });
   });

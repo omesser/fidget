@@ -1780,6 +1780,14 @@ async fn show_settings(app: tauri::AppHandle) {
     present_settings(app);
 }
 
+/// Open Settings on the AI source picker. Chat's first-run landing offers it to
+/// a user who wants a source other than the branded Harnesses. `async` for the
+/// reason `show_settings` is.
+#[tauri::command]
+async fn show_ai_source(app: tauri::AppHandle) {
+    open_settings_at(&app, settings::form::Reveal::AiSource);
+}
+
 /// Raise Settings, or build it. Main-thread callers run the build inline;
 /// a webview command is async, so this queues off WebView2's pump.
 fn present_settings(app: tauri::AppHandle) {
@@ -4530,6 +4538,7 @@ fn main() {
             select_harness,
             sign_in,
             show_settings,
+            show_ai_source,
             settings_snapshot,
             settings_event
         ])
@@ -6502,6 +6511,7 @@ mod tests {
         {
         }
         show(show_settings);
+        show(show_ai_source);
 
         fn hint(action: String, app: tauri::AppHandle, state: tauri::State<'_, SettingsState>) {
             let fut = names_hint_act(action, app, state);
