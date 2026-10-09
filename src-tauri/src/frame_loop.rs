@@ -839,7 +839,7 @@ pub(crate) fn run_frame_loop(
                         // replacement. Read before `config` is rebuilt.
                         let first_connection = !config.configured && configured;
                         let lost_configuration = config.configured && !configured;
-                        let before = std::mem::replace(&mut director, settings);
+                        director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
                         config.proactive_allowed = proactive_allowed;
@@ -892,13 +892,6 @@ pub(crate) fn run_frame_loop(
                                     "settings changed what answers",
                                 );
                             }
-                        }
-                        if let Some(attached) = harness::attached() {
-                            attached.model_applied(
-                                &before.model,
-                                &director.model,
-                                lives.iter().map(|live| live.id.as_str()),
-                            );
                         }
                     }
                     SettingsOp::ReloadChat => reload_chat = true,

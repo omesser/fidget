@@ -1813,6 +1813,20 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     }
 }
 
+/// The Harness did not take a model or effort Settings applied. Restore the saved
+/// value before the wake that found it returns, so the next wake does not retry it
+/// and a restart does not bring it back. Then tell an open Settings window to redraw.
+fn restore_not_applied(app: &tauri::AppHandle, failures: &[harness::ConfigFailure]) {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        return;
+    };
+    if let Err(why) = settings::restore_failed(&state.settings, &state.path, failures) {
+        eprintln!("settings: could not put back a value the Harness refused: {why}");
+    }
+    let window = app.clone();
+    let _ = app.run_on_main_thread(move || platform::refresh_settings(&window));
+}
+
 fn apply_settings_effects(
     handle: &tauri::AppHandle,
     mut window: Option<tauri::WebviewWindow>,
@@ -4725,6 +4739,9 @@ fn main() {
                         if let Some(state) = forward_to.try_state::<SettingsState>() {
                             let _ = state.ops.send(SettingsOp::ReloadChat);
                         }
+                    }
+                    harness::Forwarded::NotApplied(failures) => {
+                        restore_not_applied(&forward_to, &failures)
                     }
                 }),
             );

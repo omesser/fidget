@@ -106,6 +106,16 @@
   color: var(--chat-ink-3);
 }
 
+/* A value the Harness did not take. The same strip as a status, in the error colour. */
+.set-notice {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--chat-error);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--chat-ink);
+}
+
 .set-row {
   display: grid;
   gap: 4px;

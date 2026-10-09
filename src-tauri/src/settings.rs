@@ -192,6 +192,8 @@ pub struct SettingsView {
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
     pub chat_appearance: ChatAppearance,
+    /// A model or effort the attached Harness did not take.
+    pub not_applied: Vec<crate::harness::NotAppliedNotice>,
 }
 
 /// One row's value, in the three shapes the page draws.
@@ -664,6 +666,10 @@ impl SettingsView {
             api_key_error,
             harness: harness_in_force(settings).0,
             harness_state: harness_state(harness.as_ref()),
+            not_applied: harness
+                .as_ref()
+                .map(|inspect| inspect.not_applied.clone())
+                .unwrap_or_default(),
             byo_harness: byo_harness_in_force(settings),
             byo_snippet,
             byo_steps,
@@ -776,6 +782,19 @@ impl SettingsView {
                 .iter()
                 .map(|row| (row.row_id(), RowValue::Bool(row.granted))),
         );
+        // Only a field the Harness did not take has a notice. A row with none has no key.
+        for notice in &self.not_applied {
+            let rows: &[&str] = match notice.field {
+                "model" => &[form::DIRECTOR_MODEL_ID, form::HARNESS_MODEL_ID],
+                _ => &[form::DIRECTOR_REASONING_EFFORT_ID],
+            };
+            values.extend(rows.iter().map(|row| {
+                (
+                    format!("{row}{}", form::NOTICE_SUFFIX),
+                    RowValue::Text(notice.text.clone()),
+                )
+            }));
+        }
         values.insert(
             "chat_ui".to_string(),
             text(&form::chat_ui_title(&self.chat_ui)),
@@ -1044,13 +1063,32 @@ fn retarget_off_the_settings_lock(
     retarget_payload(snapshot, store)
 }
 
-/// Write the key first so a store error cannot leave a URL in memory that
-/// was never saved or sent as Retarget.
-///
+/// Restore the values a Harness did not take, in memory and in the file, so a
+/// restart does not bring them back. The wake that found the failure calls this
+/// before it returns.
+pub(crate) fn restore_failed(
+    settings: &Arc<Mutex<Settings>>,
+    path: &Path,
+    failures: &[crate::harness::ConfigFailure],
+) -> Result<(), String> {
+    let mut live = settings.lock().map_err(|error| error.to_string())?;
+    for failure in failures {
+        match failure.field {
+            crate::acp_wire::Field::Model => live.director_model = failure.restored.clone(),
+            crate::acp_wire::Field::Effort => {
+                live.director_reasoning_effort = failure.restored.clone();
+            }
+        }
+    }
+    dev_flags::seed(&live);
+    drop(live);
+    flush_settings(settings, path).map_err(|error| error.to_string())
+}
+
 /// The test seam for `SettingsSession::apply`, without the lock, the file and
 /// the ops channel.
 #[cfg(test)]
-fn apply_with_store(
+pub(crate) fn apply_with_store(
     settings: &mut Settings,
     store: &dyn SecretStore,
     patch: SettingsPatch,
@@ -1420,6 +1458,9 @@ impl SettingsSession {
             dropped_harness = crate::harness::attached().is_none();
         }
         if retarget {
+            if let Some(attached) = crate::harness::attached() {
+                attached.inputs_applied();
+            }
             match retarget_off_the_settings_lock(&self.settings, &snapshot, self.secrets.as_ref()) {
                 Ok(op) => {
                     let _ = self.ops.send(op);
@@ -4735,6 +4776,107 @@ mod tests {
     }
 
     /// Not attached, attached with a session, or attached but not signed in.
+    fn refused(field: crate::acp_wire::Field, restored: &str) -> crate::harness::ConfigFailure {
+        crate::harness::ConfigFailure {
+            field,
+            why: crate::harness::NotApplied::Refused("no".to_string()),
+            tried: "tried".to_string(),
+            restored: restored.to_string(),
+        }
+    }
+
+    /// A value the Harness did not take is restored in memory and in the file, and
+    /// nothing else changes.
+    #[test]
+    fn a_value_the_harness_did_not_take_is_put_back_in_memory_and_in_the_file() {
+        use crate::acp_wire::Field::*;
+        let path = temp_path();
+        let saved = Settings {
+            director_model: "nope".into(),
+            director_reasoning_effort: "high".into(),
+            character: "Buddy Bot".into(),
+            ..Settings::default()
+        };
+        saved.save(&path).unwrap();
+        let live = Arc::new(Mutex::new(saved));
+
+        restore_failed(&live, &path, &[refused(Model, "good"), refused(Effort, "")]).unwrap();
+        for read in [live.lock().unwrap().clone(), Settings::load(&path)] {
+            assert_eq!(read.director_model, "good");
+            assert_eq!(read.director_reasoning_effort, "");
+            assert_eq!(read.character, "Buddy Bot");
+        }
+
+        // Only the failed field is restored.
+        let live = Arc::new(Mutex::new(Settings {
+            director_model: "new".into(),
+            director_reasoning_effort: "high".into(),
+            ..Settings::default()
+        }));
+        restore_failed(&live, &path, &[refused(Effort, "low")]).unwrap();
+        let after = live.lock().unwrap().clone();
+        assert_eq!(
+            (
+                after.director_model.as_str(),
+                after.director_reasoning_effort.as_str()
+            ),
+            ("new", "low")
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A notice reaches the rows of its own field only. Both Model rows hold one
+    /// setting, so both show it.
+    #[test]
+    fn a_notice_reaches_the_rows_of_its_field() {
+        let view = |not_applied: Vec<crate::harness::NotAppliedNotice>| {
+            SettingsView::from_parts(
+                &Settings::default(),
+                Path::new("/tmp/memory.md"),
+                None,
+                Vec::new(),
+                Vec::new(),
+                (false, String::new(), String::new()),
+                Some(crate::harness::HarnessInspect {
+                    not_applied,
+                    ..Default::default()
+                }),
+            )
+            .row_values()
+        };
+        let text = |values: &BTreeMap<String, RowValue>, id: &str| match values.get(id) {
+            Some(RowValue::Text(text)) => Some(text.clone()),
+            _ => None,
+        };
+        let clean = view(Vec::new());
+        assert!(
+            clean.keys().all(|key| !key.ends_with("_notice")),
+            "{clean:?}"
+        );
+
+        let values = view(vec![
+            crate::harness::NotAppliedNotice {
+                field: "model",
+                text: "Model did not apply.".to_string(),
+            },
+            crate::harness::NotAppliedNotice {
+                field: "effort",
+                text: "Reasoning effort did not apply.".to_string(),
+            },
+        ]);
+        for id in ["director_model_notice", "harness_model_notice"] {
+            assert_eq!(
+                text(&values, id).as_deref(),
+                Some("Model did not apply."),
+                "{id}"
+            );
+        }
+        assert_eq!(
+            text(&values, "director_reasoning_effort_notice").as_deref(),
+            Some("Reasoning effort did not apply.")
+        );
+    }
+
     /// The login command is named for the user's own terminal and nothing
     /// here runs it.
     #[test]

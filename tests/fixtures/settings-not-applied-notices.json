@@ -1,0 +1,4 @@
+{
+  "model_refused": "Model did not apply. You asked for \"gpt-5\". The Harness refused it: unknown model. Fidget put back \"gpt-4o-mini\".",
+  "effort_unadvertised": "Reasoning effort did not apply. You asked for \"high\". This Harness doesn't offer a reasoning effort setting, so Fidget can't change it. Fidget put back the Harness default."
+}

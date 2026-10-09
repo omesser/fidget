@@ -63,7 +63,15 @@ Switches read the same words as the trace variables. Any other value is a typo: 
 
 ### Settings and Keyring
 
-Settings → AI saves base URL, model, and first wake interval, and stores the API key in the OS secret store. Leave model blank to leave it unset: HTTP omits `model`, and a Harness does not set one. Settings → Development saves the Model API timeout and turn ceiling, Blank AI, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Leave effort blank to leave it unset on HTTP and on a Harness.
+Settings → AI saves base URL, model, and first wake interval, and stores the API key in the OS secret store. Leave model blank to leave it unset: HTTP omits `model`, and a Harness does not set one. Settings → Development saves the Model API timeout and turn ceiling, Blank AI, Reasoning effort, and the Harness turn timeout, auth-retry interval, MCP server binary, and working directory. Leave effort blank to leave it unset on HTTP and on a Harness. A Harness gets the model and the effort through `session/set_config_option`, when Fidget opens a conversation and again when Apply changes either one. That Apply cancels the Harness turn still running. A conversation already open in this run gets the new values at its next wake and keeps its id. One not opened yet this run loads its saved id and gets the values the same way. A value blanked in Settings cannot be set back to the Harness default, so the next wake of an open conversation opens a new one instead. An Apply that changes neither value sets nothing and cancels nothing. See #1430 and #1434.
+
+Apply returns before the Harness answers, because the set goes out at the next wake. A value the Harness does not take therefore reaches Settings later. Three cases count. The Harness refused `session/set_config_option` and gave a reason. The Harness answered success, but its returned option still lists the old value. The session lists no option for that field.
+
+The wake that finds one restores the saved value before it returns, in memory and in `settings.json`. The next wake does not ask again, and a restart does not bring the value back. The value goes back to the model or effort that last worked on this Harness, or to blank, the Harness default, when none has. The conversation is not recorded as opened on the value that did not take.
+
+Settings shows one notice under the field. It names the value you asked for, or says "the Harness default" when that was blank. It then gives the Harness's reason and says what Fidget put back, for example `Model did not apply. You asked for "gpt-5". The Harness refused it: unknown model. Fidget put back "gpt-4o-mini".` When the session has no such option, the reason is `This Harness doesn't offer a reasoning effort setting, so Fidget can't change it.` An open Settings window redraws at once. A closed one reads the notice from the attached Harness the next time it opens. The notice goes when you change the field again, when a later set is confirmed, or when you pick another Harness.
+
+Settings reports a field with no option only when Apply changes it on a running Harness. At open Fidget only logs it and leaves the value alone. One model and effort setting serves every Harness, so restoring it there would undo a value meant for another.
 
 - A working-directory edit respawns the Harness, so process cwd and ACP cwd stay equal. Turn timeout and auth retry land on the next attach.
 - Editing the Completer source or HTTP endpoint retargets the running Director with no restart. The session in flight is dropped; a streaming call closes its connection, so the old host stops generating.
@@ -182,6 +190,13 @@ turn
 ```
 
 - `mcp` is what the session was handed. `mcp http` is why: `hermes` advertises no HTTP MCP on ACP `initialize`, so it gets the stdio server, which relays to the app (ADR-0026). A Harness that advertises HTTP MCP shows a `http://127.0.0.1:…/mcp` URL instead, never the token. The probe binds that listener itself before it attaches. A failed bind is reported in capitals under `mcp`, and then nothing it reports about tools holds.
+- `FIDGET_PROBE_THEN_CONFIGURE` adds an Apply and a second turn after the first one succeeds. It takes space-separated `model=<id>` and `effort=<level>`, either or both, for example `FIDGET_PROBE_THEN_CONFIGURE='model=<id> effort=high'`. An unknown key, a word without `=`, a repeated key, or an empty value exits 2 without asking. The `apply` block prints the model and effort in force. Its `session` line says whether the conversation kept its id and what reached the wire. A value counts as set only when the Harness answered `session/set_config_option` with success and the returned options list that option at the requested value. The line reads one of these:
+  - `(kept, values set on it)` means every value was confirmed.
+  - `(kept, NOT CONFIRMED: … was answered without the new value)` means the Harness answered, but the option still reads the old value.
+  - `(kept, NOT SET: the Harness advertises no … option)` means the session listed no option, so nothing was sent. `cursor-agent` lists only `modes`.
+  - `(kept, NO SET SENT: …)` means nothing changed on the conversation, for example because an exported variable won.
+
+  The probe exits 1 on the last three, because none proved a set. An exported `FIDGET_DIRECTOR_MODEL` or `FIDGET_DIRECTOR_REASONING_EFFORT` wins over the Apply, so leave unset the one you change.
 - `mcp listed` is whether the Harness asked for `tools/list`. A tool it calls is answered through the app's `dispatch` against an empty desktop and no Instances, so `speak` fails and `list_windows` is empty. Each call prints as `mcp call`.
 - Exit code: 2 means never asked (nothing configured, no binary, not signed in), 1 means asked and not answered, 0 means `end_turn`, a completed turn.
 - The `probe` folder keeps the session file and the Action Log away from a real install. Memory is not isolated: a `remember` during a probe writes the real `memory.md`.
