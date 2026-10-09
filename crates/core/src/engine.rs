@@ -2833,9 +2833,11 @@ mod tests {
             });
 
             assert_eq!(grabbed.state, State::Dragged, "grabbed while {state:?}");
-            // Already dragged, this tick is a carry: the cursor moved, so the
-            // feet move with it. Entering a grab, the press itself does not.
-            if state != State::Dragged {
+            // The day pressed at the feet. A new grab stays there; the carry
+            // from an existing drag lands on the cursor.
+            if state == State::Dragged {
+                assert_eq!(grabbed.position, Point { x: 640.0, y: 360.0 });
+            } else {
                 assert_eq!(grabbed.position, at);
             }
         }
@@ -5763,6 +5765,97 @@ mod tests {
             ..snapshot(16)
         });
         assert_eq!(dragged.position, Point { x: 430.0, y: 240.0 });
+    }
+
+    /// Grabbed at (210, 440), released, then grabbed at (400, 200). The second
+    /// press stays at (430, 240) and the carry lands at (130, 140). An offset
+    /// kept from the first grab jumps that press to (370, 260).
+    #[test]
+    fn a_second_grab_keeps_its_own_pressed_point() {
+        let mut engine = Engine::new(Point { x: 180.0, y: 500.0 });
+
+        let first = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 210.0, y: 440.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(0)
+        });
+        assert_eq!(first.position, Point { x: 180.0, y: 500.0 });
+
+        let carried = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 460.0, y: 180.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(0)
+        });
+        assert_eq!(carried.position, Point { x: 430.0, y: 240.0 });
+
+        let released = engine.tick(&snapshot(0));
+        assert_eq!(released.state, State::Falling);
+        assert_eq!(released.position, Point { x: 430.0, y: 240.0 });
+
+        let second = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 400.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(0)
+        });
+        assert_eq!(second.state, State::Dragged);
+        assert_eq!(second.position, Point { x: 430.0, y: 240.0 });
+
+        let carried_again = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 100.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(0)
+        });
+        assert_eq!(carried_again.position, Point { x: 130.0, y: 140.0 });
+    }
+
+    /// Pressed at (130, 360) while perched at (100, 400). Carried to
+    /// (400, 200), the feet are at (370, 240).
+    #[test]
+    fn a_press_while_perched_keeps_the_point_off_the_feet() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let perched = settle(&mut engine, &perch(50.0, 400.0));
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position, Point { x: 100.0, y: 400.0 });
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 130.0, y: 360.0 },
+            verbs: vec![Verb::Grab],
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.position, Point { x: 100.0, y: 400.0 });
+
+        let carried = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 400.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(carried.position, Point { x: 370.0, y: 240.0 });
+    }
+
+    /// Pressed at (200, 450) while falling through (180, 500). Carried to
+    /// (300, 300), the feet are at (280, 350).
+    #[test]
+    fn a_press_while_falling_keeps_the_point_off_the_feet() {
+        let mut engine = Engine::new(Point { x: 180.0, y: 500.0 });
+        let falling = engine.tick(&snapshot(0));
+        assert_eq!(falling.state, State::Falling);
+        assert_eq!(falling.position, Point { x: 180.0, y: 500.0 });
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 200.0, y: 450.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.position, Point { x: 180.0, y: 500.0 });
+
+        let carried = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 300.0, y: 300.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(carried.position, Point { x: 280.0, y: 350.0 });
     }
 
     #[test]

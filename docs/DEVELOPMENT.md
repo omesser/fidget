@@ -148,7 +148,7 @@ Only the window server can answer these. Run the app, then confirm:
 7. **It rests on the Dock, not behind it:** Its feet stand on the Dock's top edge. Turn on Dock auto-hiding: within a poll it falls to the bottom of the screen. Turn it off and it is lifted again.
 8. **Declared cadence is honoured:** Give a copy of Black Mage a faster idle `fps`. The idle is visibly faster than at the declared 1.
 9. **A click makes it react:** Click once without moving. It plays `react` for about half a second, then resumes.
-10. **Press and drag picks it up:** It follows the cursor. Release over a window and it lands on that window's top edge.
+10. **Press and drag picks it up:** The pressed point stays under the pointer. Release over a window and it lands on that window's top edge.
 11. **A flick throws it:** Release while moving and it leaves on an arc. Hold still before releasing and it drops straight down.
 12. **It can be put down over the Dock, and does not stay there:** Drop it over the Dock. It settles back onto the Dock's top edge, fully visible.
 13. **A window you drag slowly carries it:** With the sprite on a window's top edge, drag the window slowly. The sprite rides the edge and keeps its place.
