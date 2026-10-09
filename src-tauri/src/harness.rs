@@ -2073,6 +2073,9 @@ impl Session {
         });
     }
 
+    /// Apply saved the Completer settings.
+    pub fn inputs_applied(&self) {}
+
     fn forget_saved(&self, instance: &str) {
         let _file = self
             .session_file
@@ -3295,7 +3298,10 @@ mod tests {
     /// `model_config` so a client that takes the first select picks wrong.
     fn completer_config_options(script: &str) -> Option<Value> {
         match script {
-            "completer-effort" | "completer-effort-reject" | "load-completer-effort" => {
+            "completer-effort"
+            | "completer-effort-reject"
+            | "load-completer-effort"
+            | "permission" => {
                 Some(json!([
                     effort_option("model_config", "knob"),
                     effort_option("thought_level", "reasoning"),
@@ -3561,7 +3567,8 @@ mod tests {
                             "result": {"configOptions": [effort_option("thought_level", "after-model")]}
                         }));
                     } else {
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": []}}));
+                        let options = completer_config_options(script).unwrap_or_else(|| json!([]));
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {"configOptions": options}}));
                     }
                 }
                 Some("session/prompt") => {
@@ -5918,10 +5925,10 @@ mod tests {
         });
     }
 
-    /// Apply through the Settings seam: the file a Harness reads at open, and
-    /// the live flags. What the frame loop does with the Retarget is not here.
-    fn applied(dir: &std::path::Path, completer: crate::settings::CompleterPatch) {
-        let path = crate::settings::settings_path(dir);
+    /// Apply in `SettingsSession::apply`'s order: fold and seed, save the file a
+    /// Harness reads at open, then tell the attached Harness.
+    fn applied(fx: &Fixture, session: &Session, completer: crate::settings::CompleterPatch) {
+        let path = crate::settings::settings_path(&fx.dir);
         let mut settings = crate::settings::Settings::load(&path);
         crate::settings::apply_with_store(
             &mut settings,
@@ -5933,6 +5940,7 @@ mod tests {
         )
         .expect("apply");
         settings.save(&path).expect("settings");
+        session.inputs_applied();
     }
 
     fn model_patch(model: &str) -> crate::settings::CompleterPatch {
@@ -5949,6 +5957,13 @@ mod tests {
         }
     }
 
+    fn prompt_sessions(fx: &Fixture) -> Vec<Value> {
+        fx.events("prompt")
+            .into_iter()
+            .map(|prompt| prompt["session_id"].clone())
+            .collect()
+    }
+
     /// Three wakes on one Instance with an Apply before the second and the
     /// third. The prompts' session ids, in order.
     fn sessions_across_applies(
@@ -5957,30 +5972,22 @@ mod tests {
         same: crate::settings::CompleterPatch,
         changed: crate::settings::CompleterPatch,
     ) -> Vec<Value> {
-        for (apply, prompt) in [
-            (None, "hi"),
-            (Some(same), "same"),
-            (Some(changed), "changed"),
-        ] {
+        for (apply, prompt) in [(None, "hi"), (Some(same), "same"), (Some(changed), "changed")] {
             if let Some(patch) = apply {
-                applied(&fx.dir, patch);
+                applied(fx, session, patch);
             }
             assert_eq!(
                 session.complete(&asking(prompt), &|_| {}),
                 Ok(Reply::whole("Hello"))
             );
         }
-        fx.events("prompt")
-            .into_iter()
-            .map(|prompt| prompt["session_id"].clone())
-            .collect()
+        prompt_sessions(fx)
     }
 
-    /// #1430: Apply saved a new model while a conversation was open. The
-    /// Harness sets the model at `session/new` only, so the old conversation
-    /// kept answering on the model the user just left.
+    /// #1430, #1434: the open conversation takes an applied model through
+    /// `session/set_config_option` and keeps its id. The same model sets nothing.
     #[test]
-    fn an_applied_model_reaches_the_next_wake_and_the_same_model_keeps_the_conversation() {
+    fn an_applied_model_is_set_on_the_open_conversation() {
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             let (fx, session) = Fixture::new("load-completer-model");
@@ -6000,25 +6007,17 @@ mod tests {
                     "config=llm=some-model".to_string(),
                 ]
             );
-            assert_eq!(
-                ids[0], ids[1],
-                "an unchanged model reopened the conversation"
-            );
-            assert_ne!(
-                ids[1], ids[2],
-                "the new model was asked on the old conversation"
-            );
+            assert_eq!(ids, vec![ids[0].clone(); 3], "the conversation changed");
+            assert_eq!((fx.count("new"), fx.count("load")), (1, 0));
         });
     }
 
-    /// #1434: effort is the other thing a Harness takes only at open. A new
-    /// effort answered on the old conversation at the old level.
     #[test]
-    fn an_applied_effort_reaches_the_next_wake_and_the_same_effort_keeps_the_conversation() {
+    fn an_applied_effort_is_set_on_the_open_conversation() {
         crate::model::tests::with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             let (fx, session) = Fixture::new("load-completer-effort");
-            applied(&fx.dir, effort_patch("low"));
+            applied(&fx, &session, effort_patch("low"));
             let ids =
                 sessions_across_applies(&fx, &session, effort_patch("low"), effort_patch("high"));
             session.shutdown();
@@ -6031,14 +6030,78 @@ mod tests {
                     "config=reasoning=high".to_string(),
                 ]
             );
+            assert_eq!(ids, vec![ids[0].clone(); 3], "the conversation changed");
+            assert_eq!((fx.count("new"), fx.count("load")), (1, 0));
+        });
+    }
+
+    /// `session/set_config_option` sets a value and cannot unset one, so a
+    /// blanked effort opens a new conversation that never had it.
+    #[test]
+    fn a_blanked_effort_opens_a_new_conversation_without_it() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("load-completer-effort");
+            applied(&fx, &session, effort_patch("high"));
+            let ids =
+                sessions_across_applies(&fx, &session, effort_patch("high"), effort_patch(""));
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+
+            assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
+            assert_eq!(ids[0], ids[1], "an unchanged effort reopened the conversation");
+            assert_ne!(ids[1], ids[2], "the blanked effort stayed on the old conversation");
+            assert_eq!((fx.count("new"), fx.count("load")), (2, 0));
+        });
+    }
+
+    /// Apply of a new effort cancels the turn still running on the old one, so
+    /// its unanswered ask does not hold the next wake, which goes on in the
+    /// same conversation at the new effort. An unchanged Apply does nothing.
+    #[test]
+    fn an_applied_effort_cancels_the_running_turn_and_the_next_wake_keeps_the_conversation() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            let (fx, session) = Fixture::new("permission");
+            let session = Arc::new(session);
+            applied(&fx, &session, effort_patch("low"));
+            let first = {
+                let session = Arc::clone(&session);
+                thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
+            };
+            let ask = fx.ask();
+
+            applied(&fx, &session, effort_patch("low"));
+            thread::sleep(Duration::from_millis(300));
+            assert_eq!(fx.count("cancel"), 0, "an unchanged Apply cancelled the turn");
+            assert!(!first.is_finished(), "an unchanged Apply ended the turn");
+
+            applied(&fx, &session, effort_patch("high"));
+            assert_eq!(fx.settled(), (ask.request, None));
+            let displaced = first.join().unwrap().unwrap_err();
+            assert!(displaced.contains("cancelled"), "{displaced}");
+
+            let next = {
+                let session = Arc::clone(&session);
+                thread::spawn(move || session.complete(&proactive("tick"), &|_| {}))
+            };
+            let again = fx.ask();
+            session.answer_permission(&again.request, "allow");
+            assert_eq!(next.join().unwrap(), Ok(Reply::whole("ok:allow")));
+            session.shutdown();
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+
             assert_eq!(
-                ids[0], ids[1],
-                "an unchanged effort reopened the conversation"
+                config_lines(&fx),
+                vec![
+                    "config=reasoning=low".to_string(),
+                    "config=reasoning=high".to_string(),
+                ]
             );
-            assert_ne!(
-                ids[1], ids[2],
-                "the new effort was asked on the old conversation"
-            );
+            let ids = prompt_sessions(&fx);
+            assert_eq!(ids.len(), 2, "{ids:?}");
+            assert_eq!(ids[0], ids[1], "the next wake left the conversation");
+            assert_eq!(fx.count("new"), 1);
         });
     }
 
