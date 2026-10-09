@@ -6973,12 +6973,25 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        thread::sleep(Duration::from_millis(400));
+        // The ask is the last thing the Harness sends between turns, so once
+        // it is forwarded the speech before it has been collected. The thought
+        // is not enough: the speech follows it on the wire.
+        let mut buffered = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut asked = false;
+        while !asked && std::time::Instant::now() < deadline {
+            if let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(100)) {
+                asked = matches!(forwarded, Forwarded::Ask { .. });
+                buffered.push(forwarded);
+            }
+        }
+        assert!(asked, "the between-turn ask never arrived before timeout");
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
         let mut speech_seen = false;
         let mut thought_ended = false;
-        for forwarded in fx.forwarded.try_iter() {
+        // Check buffered events first, then drain any remaining.
+        for forwarded in buffered.into_iter().chain(fx.forwarded.try_iter()) {
             match forwarded {
                 Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
                     assert_eq!(wake.speech, "Your reminder: time to stretch!");
@@ -6997,7 +7010,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// Prompting again before between-turn ask arrives still emits the
+    /// Prompting again while a between-turn ask is unanswered still emits the
     /// accumulated speech as an inbound wake, not drops it.
     #[test]
     fn prompting_before_between_turn_ask_flushes_speech() {
@@ -7006,21 +7019,37 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        thread::sleep(Duration::from_millis(400));
-        let worker = thread::spawn(move || session.complete(&asking("again"), &|_| {}));
-        let mut speech_seen = false;
+        // The ask follows the speech on the wire, so once it is forwarded the
+        // speech is collected. The wake may come before it or after the next
+        // prompt, so count it from both sides.
+        let mut wakes = Vec::new();
+        let mut asked = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !speech_seen && std::time::Instant::now() < deadline {
-            match fx.forwarded.try_recv() {
-                Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
-                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
-                    speech_seen = true;
-                }
-                _ => thread::sleep(Duration::from_millis(10)),
+        while !asked && std::time::Instant::now() < deadline {
+            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
+                Ok(Forwarded::Ask { .. }) => asked = true,
+                Ok(Forwarded::InboundWake(wake)) => wakes.push(wake),
+                _ => {}
             }
         }
-        assert!(
-            speech_seen,
+        assert!(asked, "the between-turn ask never arrived before timeout");
+        let worker = thread::spawn(move || session.complete(&asking("again"), &|_| {}));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while wakes.is_empty() && std::time::Instant::now() < deadline {
+            if let Ok(Forwarded::InboundWake(wake)) =
+                fx.forwarded.recv_timeout(Duration::from_millis(100))
+            {
+                wakes.push(wake);
+            }
+        }
+        let speech: Vec<_> = wakes
+            .iter()
+            .filter(|wake| wake.instance == "buddy-1")
+            .map(|wake| wake.speech.as_str())
+            .collect();
+        assert_eq!(
+            speech,
+            ["Your reminder: time to stretch!"],
             "between-turn speech was dropped when prompting again"
         );
         drop(worker);
