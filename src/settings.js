@@ -732,7 +732,14 @@ if (typeof document !== "undefined") {
     renderCurrentTab();
     const row = panel.querySelector(`[data-row="${reveal.row}"]`);
     if (!row) return;
-    row.scrollIntoView({ block: "nearest" });
+    // A picker aim focuses its control, which draws the ring. A consent aim
+    // focuses the row, so a Space press cannot toggle a grant. Focus scrolls
+    // the target into view. A frozen control cannot take focus, so the row does.
+    const control = reveal.focus === "control" ? row.querySelector("select, input, textarea, button") : null;
+    if (control && !control.disabled) {
+      control.focus();
+      return;
+    }
     if (!row.hasAttribute("tabindex")) row.tabIndex = -1;
     row.focus();
   }

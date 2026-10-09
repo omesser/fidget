@@ -437,6 +437,26 @@ struct MenuChannel {
 }
 
 /// Settings plus the live roster the settings window reads.
+/// Where the next Settings snapshot points, once.
+#[derive(Default)]
+struct RevealSlot(Mutex<Option<settings::form::Reveal>>);
+
+impl RevealSlot {
+    fn aim(&self, reveal: settings::form::Reveal) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(reveal);
+        }
+    }
+
+    fn take(&self) -> Option<settings::form::RevealTarget> {
+        self.0
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+            .map(settings::form::Reveal::target)
+    }
+}
+
 struct SettingsState {
     settings: Arc<Mutex<Settings>>,
     path: PathBuf,
@@ -457,7 +477,7 @@ struct SettingsState {
     secrets: Arc<dyn SecretStore>,
     /// Taken by the next snapshot. A window that is still loading has no
     /// listeners, so an event aimed at it would be gone.
-    reveal: Mutex<Option<settings::form::Reveal>>,
+    reveal: RevealSlot,
     /// Generation of the Settings window. `settings_loaded` matches it once
     /// navigation finishes. MoveFocus while they differ hangs WebView2.
     settings_built: AtomicU64,
@@ -738,12 +758,7 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
         installed: view.installed.clone(),
         ..settings::form::Live::current()
     };
-    let reveal = state
-        .reveal
-        .lock()
-        .ok()
-        .and_then(|mut slot| slot.take())
-        .map(settings::form::Reveal::target);
+    let reveal = state.reveal.take();
     Ok(SettingsSnapshot {
         form: settings::form::describe_with(&live),
         view: view.row_values(),
@@ -1744,9 +1759,7 @@ fn finish_settings_document(app: &tauri::AppHandle, generation: u64) {
 /// the aim.
 fn open_settings_at(app: &tauri::AppHandle, reveal: settings::form::Reveal) {
     if let Some(state) = app.try_state::<SettingsState>() {
-        if let Ok(mut slot) = state.reveal.lock() {
-            *slot = Some(reveal);
-        }
+        state.reveal.aim(reveal);
     }
     // Off the pump: `names_hint_act` is async, so this queues the build.
     dispatch_settings(app.clone(), true);
@@ -1778,6 +1791,14 @@ async fn names_hint_act(
 #[tauri::command]
 async fn show_settings(app: tauri::AppHandle) {
     present_settings(app);
+}
+
+/// Open Settings on the AI source picker. Chat's first-run landing offers it to
+/// a user who wants a source other than the branded Harnesses. `async` for the
+/// reason `show_settings` is.
+#[tauri::command]
+async fn show_ai_source(app: tauri::AppHandle) {
+    open_settings_at(&app, settings::form::Reveal::AiSource);
 }
 
 /// Raise Settings, or build it. Main-thread callers run the build inline;
@@ -4530,6 +4551,7 @@ fn main() {
             select_harness,
             sign_in,
             show_settings,
+            show_ai_source,
             settings_snapshot,
             settings_event
         ])
@@ -4842,7 +4864,7 @@ fn main() {
                 ops: ops_tx,
                 rules: Arc::clone(&rules),
                 secrets: Arc::clone(&secrets),
-                reveal: Mutex::new(None),
+                reveal: RevealSlot::default(),
                 settings_built: AtomicU64::new(0),
                 settings_loaded: AtomicU64::new(0),
                 loading_since: Mutex::new(None),
@@ -6490,6 +6512,42 @@ mod tests {
         );
     }
 
+    /// The aim waits in the slot for the next snapshot, which takes it once.
+    #[test]
+    fn the_next_snapshot_carries_the_aim_once() {
+        let slot = RevealSlot::default();
+        assert_eq!(slot.take(), None, "nothing asked, nothing to point at");
+        slot.aim(settings::form::Reveal::AiSource);
+        let target = slot.take().expect("an aim was set");
+        assert_eq!(
+            (target.tab.as_str(), target.row.as_str()),
+            ("AI", "harness")
+        );
+        assert_eq!(
+            slot.take(),
+            None,
+            "a later snapshot does not steal focus again"
+        );
+    }
+
+    /// `show_ai_source` is the Chat button's command. Opening plain Settings
+    /// from it, as `show_settings` does, would leave the slot empty, so the
+    /// snapshot carries no aim. The body is read as text because the command
+    /// needs a live `AppHandle`.
+    #[test]
+    fn the_chat_ai_source_command_aims_settings_at_the_picker() {
+        let source = include_str!("main.rs");
+        let from = source
+            .find("async fn show_ai_source(")
+            .expect("the command exists");
+        let body = &source[from..source[from..]
+            .find("\n}")
+            .map(|n| from + n)
+            .expect("body ends")];
+        assert!(body.contains("open_settings_at(&app, settings::form::Reveal::AiSource)"));
+        assert!(!body.contains("present_settings"));
+    }
+
     /// Pins the Chat entry points as `async`. On Windows a sync command builds
     /// Settings on WebView2's pump thread and the window stays blank. Tray and
     /// the menu call `present_settings` on the shell thread.
@@ -6502,6 +6560,7 @@ mod tests {
         {
         }
         show(show_settings);
+        show(show_ai_source);
 
         fn hint(action: String, app: tauri::AppHandle, state: tauri::State<'_, SettingsState>) {
             let fut = names_hint_act(action, app, state);
