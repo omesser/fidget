@@ -381,7 +381,7 @@ Two kinds of link open Chat: one that arrives during Fidget's own `authenticate`
 
 1. Merges `{"url": …, "headers": {"Authorization": "Bearer …"}}` under `mcpServers."fidget"` in `<cwd>/.cursor/mcp.json`, beside existing servers. A file that does not parse is left alone and the attach continues without tools.
 2. `chmod 600` the file, because it holds a live credential. Windows has no mode bits here, so the file keeps the project directory's ACL.
-3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json` unless it is already there, preserving other project permissions. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
+3. Adds `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json` unless it is already there, preserving other project permissions. Writes a missing `permissions.deny` as `[]`, because cursor-agent rejects the object without it, and leaves an existing deny list as it is. Cursor's CLI uses this rule to allow calls to the Fidget server without prompting; a matching `permissions.deny` still wins.
 4. Runs `cursor-agent mcp enable fidget` in that directory (~380ms).
 
 URL and token are new every app run, so each attach rewrites and re-approves. Within one run the entry is unchanged and a re-attach costs only the spawn.

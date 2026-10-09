@@ -156,9 +156,9 @@ pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
     }
 }
 
-/// Add `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`,
-/// beside the project's other rules. It stays after detach, because it holds
-/// no credential and the next attach would add it again.
+/// Add `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`.
+/// cursor-agent rejects `permissions` that omit `deny`, so a missing one is `[]`.
+/// The allow holds no credential, so it stays after detach.
 pub fn allow_tools(cwd: &Path) -> Result<(), String> {
     let file = cwd.join(DIR).join(CLI_FILE);
     let mut root = match fs::read_to_string(&file) {
@@ -166,24 +166,50 @@ pub fn allow_tools(cwd: &Path) -> Result<(), String> {
         Err(error) if error.kind() == ErrorKind::NotFound => json!({}),
         Err(error) => return Err(format!("{}: {error}", file.display())),
     };
-    let allow = root
+    let permissions = root
         .as_object_mut()
         .expect("parse checked the root is an object")
         .entry("permissions")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| format!("{}: permissions is not an object", file.display()))?
-        .entry("allow")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-        .ok_or_else(|| format!("{}: permissions.allow is not an array", file.display()))?;
-    if allow
-        .iter()
-        .any(|item| item.as_str() == Some(TOOL_PERMISSION))
+        .or_insert_with(|| json!({}));
+    let Some(permissions) = permissions.as_object_mut() else {
+        return Err(format!("{}: permissions is not an object", file.display()));
+    };
+    if permissions.get("deny").is_some_and(|deny| !deny.is_array()) {
+        return Err(format!(
+            "{}: permissions.deny is not an array",
+            file.display()
+        ));
+    }
+    if permissions
+        .get("allow")
+        .is_some_and(|allow| !allow.is_array())
     {
+        return Err(format!(
+            "{}: permissions.allow is not an array",
+            file.display()
+        ));
+    }
+    let has_rule = permissions.get("allow").is_some_and(|allow| {
+        allow
+            .as_array()
+            .expect("allow was checked to be an array")
+            .iter()
+            .any(|item| item.as_str() == Some(TOOL_PERMISSION))
+    });
+    if permissions.contains_key("deny") && has_rule {
         return Ok(());
     }
-    allow.push(json!(TOOL_PERMISSION));
+    if !has_rule {
+        permissions
+            .entry("allow")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .expect("allow was checked to be an array")
+            .push(json!(TOOL_PERMISSION));
+    }
+    if !permissions.contains_key("deny") {
+        permissions.insert("deny".to_string(), json!([]));
+    }
     let dir = cwd.join(DIR);
     fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
     write(&file, &root)
