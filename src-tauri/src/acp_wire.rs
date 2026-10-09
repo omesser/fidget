@@ -1366,7 +1366,7 @@ async fn serve(
                     let message = match message {
                         Incoming::Update(update) if replayed(&update.session_id) => {
                             if loaded {
-                                history.take(hear(update.update));
+                                history.take(hear(&update.update));
                             }
                             continue;
                         }
@@ -1495,12 +1495,12 @@ struct Restore {
 }
 
 impl Restore {
-    fn take(&mut self, heard: Heard) {
+    fn take(&mut self, heard: Heard<'_>) {
         let continues = match &heard {
             Heard::Said { message, .. } => self
                 .message
                 .as_ref()
-                .is_some_and(|(id, ..)| message.is_none() || id == message),
+                .is_some_and(|(id, ..)| message.is_none() || id.as_ref() == *message),
             _ => false,
         };
         if !continues {
@@ -1510,15 +1510,15 @@ impl Restore {
             Heard::Said { message, block } => {
                 let (_, answer, thought) = self
                     .message
-                    .get_or_insert_with(|| (message, Answer::default(), String::new()));
-                thought.push_str(&answer.hear(&block));
+                    .get_or_insert_with(|| (message.cloned(), Answer::default(), String::new()));
+                thought.push_str(&answer.hear(block));
             }
             Heard::Prompt(block) => match self.entries.last_mut() {
                 Some(Replayed::Prompt { text: prompt }) => {
-                    prompt.push_str(&chunk_text(&block, prompt));
+                    prompt.push_str(&chunk_text(block, prompt));
                 }
                 _ => self.entries.push(Replayed::Prompt {
-                    text: chunk_text(&block, ""),
+                    text: chunk_text(block, ""),
                 }),
             },
             Heard::Thought(block) => {
@@ -1526,7 +1526,7 @@ impl Restore {
                     Some(Replayed::Thought { text }) => text.as_str(),
                     _ => "",
                 };
-                let text = chunk_text(&block, so_far);
+                let text = chunk_text(block, so_far);
                 self.think(&text);
             }
             Heard::ToolCall(tool) => self.entries.push(tool.row()),
@@ -1599,20 +1599,20 @@ impl Restore {
 /// One `session/update`, read once. The live sink (`show`) raises `Event`s
 /// from it and the restore sink (`Restore`) collects `Replayed` entries. They
 /// differ in what they do with an update, not in how it is read.
-enum Heard {
+enum Heard<'a> {
     /// A chunk of an agent message, and the `messageId` it carries.
     Said {
-        message: Option<MessageId>,
-        block: ContentBlock,
+        message: Option<&'a MessageId>,
+        block: &'a ContentBlock,
     },
     /// A chunk of the agent's reasoning.
-    Thought(ContentBlock),
+    Thought(&'a ContentBlock),
     /// A chunk of a prompt the session was sent. A load replays these.
-    Prompt(ContentBlock),
+    Prompt(&'a ContentBlock),
     /// A tool call, as first announced.
-    ToolCall(Tool),
+    ToolCall(Tool<'a>),
     /// Fields a tool call changed. A field that is absent did not change.
-    ToolUpdate(Tool),
+    ToolUpdate(Tool<'a>),
     Plan(Vec<PlanStep>),
     Usage {
         used: u64,
@@ -1624,25 +1624,25 @@ enum Heard {
 
 /// A tool call's fields, with kind and status in the wire's words. Content and
 /// locations stay as sent: only the restore sink draws them.
-struct Tool {
-    id: String,
-    title: Option<String>,
+struct Tool<'a> {
+    id: &'a str,
+    title: Option<&'a str>,
     kind: Option<String>,
     status: Option<String>,
-    locations: Option<Vec<ToolCallLocation>>,
-    content: Option<Vec<ToolCallContent>>,
+    locations: Option<&'a [ToolCallLocation]>,
+    content: Option<&'a [ToolCallContent]>,
 }
 
-impl Tool {
+impl Tool<'_> {
     /// A new row from these fields.
     fn row(self) -> Replayed {
         Replayed::ToolCall {
-            title: self.title.unwrap_or_default(),
+            title: self.title.unwrap_or_default().to_string(),
             kind: self.kind,
             status: self.status,
-            locations: self.locations.as_deref().map(places).unwrap_or_default(),
-            content: self.content.as_deref().map(pieces).unwrap_or_default(),
-            id: self.id,
+            locations: self.locations.map(places).unwrap_or_default(),
+            content: self.content.map(pieces).unwrap_or_default(),
+            id: self.id.to_string(),
         }
     }
 
@@ -1660,7 +1660,7 @@ impl Tool {
             return;
         };
         if let Some(changed) = self.title {
-            *title = changed;
+            *title = changed.to_string();
         }
         if let Some(changed) = self.kind {
             *kind = Some(changed);
@@ -1669,37 +1669,37 @@ impl Tool {
             *status = Some(changed);
         }
         if let Some(changed) = self.locations {
-            *locations = places(&changed);
+            *locations = places(changed);
         }
         if let Some(changed) = self.content {
-            *content = pieces(&changed);
+            *content = pieces(changed);
         }
     }
 }
 
-fn hear(update: SessionUpdate) -> Heard {
+fn hear(update: &SessionUpdate) -> Heard<'_> {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => Heard::Said {
-            message: chunk.message_id,
-            block: chunk.content,
+            message: chunk.message_id.as_ref(),
+            block: &chunk.content,
         },
-        SessionUpdate::AgentThoughtChunk(chunk) => Heard::Thought(chunk.content),
-        SessionUpdate::UserMessageChunk(chunk) => Heard::Prompt(chunk.content),
+        SessionUpdate::AgentThoughtChunk(chunk) => Heard::Thought(&chunk.content),
+        SessionUpdate::UserMessageChunk(chunk) => Heard::Prompt(&chunk.content),
         SessionUpdate::ToolCall(call) => Heard::ToolCall(Tool {
-            id: call.tool_call_id.0.to_string(),
-            title: Some(call.title),
+            id: &call.tool_call_id.0,
+            title: Some(&call.title),
             kind: Some(name_of(&call.kind)),
             status: Some(name_of(&call.status)),
-            locations: Some(call.locations),
-            content: Some(call.content),
+            locations: Some(&call.locations),
+            content: Some(&call.content),
         }),
         SessionUpdate::ToolCallUpdate(update) => Heard::ToolUpdate(Tool {
-            id: update.tool_call_id.0.to_string(),
-            title: update.fields.title,
+            id: &update.tool_call_id.0,
+            title: update.fields.title.as_deref(),
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
-            locations: update.fields.locations,
-            content: update.fields.content,
+            locations: update.fields.locations.as_deref(),
+            content: update.fields.content.as_deref(),
         }),
         SessionUpdate::Plan(plan) => Heard::Plan(plan_steps(plan)),
         SessionUpdate::UsageUpdate(usage) => Heard::Usage {
@@ -1710,11 +1710,11 @@ fn hear(update: SessionUpdate) -> Heard {
     }
 }
 
-fn plan_steps(plan: Plan) -> Vec<PlanStep> {
+fn plan_steps(plan: &Plan) -> Vec<PlanStep> {
     plan.entries
-        .into_iter()
+        .iter()
         .map(|entry| PlanStep {
-            content: entry.content,
+            content: entry.content.clone(),
             priority: name_of(&entry.priority),
             status: name_of(&entry.status),
         })
@@ -1748,7 +1748,7 @@ fn between_turns(
             let session_id = update.session_id.clone();
             let held = inbound.entry(session_id.clone()).or_default();
             show(
-                hear(update.update),
+                hear(&update.update),
                 &session_id,
                 &mut held.said,
                 &mut held.thought,
@@ -2085,7 +2085,7 @@ async fn turn(
                     between_turns(message, held, held_asks, inbound, false, on_event)
                 }
                 Some(Incoming::Update(update)) => {
-                    let heard = hear(update.update);
+                    let heard = hear(&update.update);
                     let answered = matches!(heard, Heard::Said { .. });
                     show(heard, session, &mut said, &mut thought, on_event);
                     if answered {
@@ -2311,7 +2311,7 @@ fn elicitation_response(
 
 /// The live sink: one update heard, into the turn's text or an `Event`.
 fn show(
-    heard: Heard,
+    heard: Heard<'_>,
     session: &SessionId,
     said: &mut Answer,
     thought: &mut String,
@@ -2330,13 +2330,13 @@ fn show(
         }
     };
     match heard {
-        Heard::Said { block, .. } => think(thought, &said.hear(&block)),
+        Heard::Said { block, .. } => think(thought, &said.hear(block)),
         // `content` and `locations` are dropped. A call reaches the Action
         // Log as a title and a status and never says what it touched. Every
         // field is meant to be read (ADR-0028).
         Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => on_event(Event::ToolCall {
-            id: tool.id,
-            title: tool.title,
+            id: tool.id.to_string(),
+            title: tool.title.map(str::to_string),
             kind: tool.kind,
             status: tool.status,
         }),
@@ -2349,7 +2349,7 @@ fn show(
         // has to parse as a Behavior name and whose rest the character says out
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
         Heard::Thought(block) => {
-            let text = chunk_text(&block, thought);
+            let text = chunk_text(block, thought);
             think(thought, &text);
         }
         // Live draws the user's row from the session log.
@@ -2694,7 +2694,7 @@ mod tests {
         let mut thought = String::new();
         for update in updates {
             show(
-                hear(update),
+                hear(&update),
                 &SessionId::new("s"),
                 &mut said,
                 &mut thought,
@@ -2931,13 +2931,13 @@ mod tests {
     #[test]
     fn a_replayed_resource_is_kept_in_its_prompt_thought_and_reply() {
         let mut replay = Restore::default();
-        replay.take(hear(SessionUpdate::UserMessageChunk(ContentChunk::new(
+        replay.take(hear(&SessionUpdate::UserMessageChunk(ContentChunk::new(
             resource_link("brief", "https://example.com/brief"),
         ))));
-        replay.take(hear(SessionUpdate::AgentThoughtChunk(ContentChunk::new(
+        replay.take(hear(&SessionUpdate::AgentThoughtChunk(ContentChunk::new(
             picture(),
         ))));
-        replay.take(hear(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+        replay.take(hear(&SessionUpdate::AgentMessageChunk(ContentChunk::new(
             resource_link("spec", "file:///spec.md"),
         ))));
         assert_eq!(
@@ -3140,7 +3140,7 @@ mod tests {
     fn restored_rows(updates: &[SessionUpdate]) -> Vec<Replayed> {
         let mut replay = Restore::default();
         for update in updates {
-            replay.take(hear(update.clone()));
+            replay.take(hear(update));
         }
         replay.finish()
     }
