@@ -31,9 +31,19 @@ pub(crate) fn plugin(app: &AppHandle) -> Option<PluginItem<'_>> {
     app.try_state().map(PluginItem)
 }
 
+/// Startup and a settings save share this call, so the saved choice is what
+/// reaches the login item.
+pub(crate) fn apply(
+    launch_at_login: bool,
+    bundled: bool,
+    item: Option<&(impl LoginItem + ?Sized)>,
+) {
+    sync(launch_at_login, bundled, item);
+}
+
 /// Register or remove the OS login item for the saved choice. No-op for a
 /// checkout binary, and when the plugin did not register.
-pub(crate) fn sync(launch_at_login: bool, bundled: bool, item: Option<&(impl LoginItem + ?Sized)>) {
+fn sync(launch_at_login: bool, bundled: bool, item: Option<&(impl LoginItem + ?Sized)>) {
     if !bundled {
         return;
     }
@@ -117,29 +127,29 @@ mod tests {
     #[test]
     fn turning_launch_at_login_on_adds_the_item_and_off_removes_it() {
         let item = Recorded(Mutex::new(None));
-        sync(true, true, Some(&item));
+        apply(true, true, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), Some(true));
-        sync(false, true, Some(&item));
+        apply(false, true, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), Some(false));
     }
 
     /// The plugin registers on every build, so a checkout still has an item.
-    /// The bundled flag is what keeps `sync` from writing it.
+    /// The bundled flag is what keeps the call from writing it.
     #[test]
     fn a_checkout_does_not_touch_the_login_item() {
         let item = Recorded(Mutex::new(None));
-        sync(true, false, Some(&item));
+        apply(true, false, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), None);
-        sync(false, false, Some(&item));
+        apply(false, false, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), None);
     }
 
-    /// No plugin means there is nothing to enable. `sync` returns rather than
+    /// No plugin means there is nothing to enable. The call returns rather than
     /// treating the absence as a login item.
     #[test]
     fn a_missing_plugin_does_not_register_a_login_item() {
-        sync(true, true, None::<&Recorded>);
-        sync(false, true, None::<&Recorded>);
+        apply(true, true, None::<&Recorded>);
+        apply(false, true, None::<&Recorded>);
     }
 
     #[cfg(target_os = "macos")]

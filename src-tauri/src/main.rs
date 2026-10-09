@@ -4674,7 +4674,7 @@ fn main() {
             {
                 fidget::eprintln_and_log!("launch at login: {why}");
             } else {
-                login_item::sync(
+                login_item::apply(
                     settings.launch_at_login,
                     login_item::process_is_bundled(),
                     login_item::plugin(app.handle()).as_ref(),

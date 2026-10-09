@@ -1516,7 +1516,7 @@ impl SettingsSession {
             self.enable_consent(CapabilityId::InputMonitoring);
         }
         if let Some(wanted) = launch_at_login {
-            crate::login_item::sync(
+            crate::login_item::apply(
                 wanted,
                 crate::login_item::process_is_bundled(),
                 crate::login_item::plugin(&self.app).as_ref(),
