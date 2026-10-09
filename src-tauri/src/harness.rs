@@ -8820,8 +8820,8 @@ mod tests {
     #[test]
     fn the_probe_configuration_refuses_what_it_cannot_read() {
         assert_eq!(
-            ProbeThen::parse("mdoel=gpt-5"),
-            Err("unknown key `mdoel`, expected model or effort".to_string())
+            ProbeThen::parse("models=gpt-5"),
+            Err("unknown key `models`, expected model or effort".to_string())
         );
         assert_eq!(
             ProbeThen::parse("effort=high gpt-5"),
