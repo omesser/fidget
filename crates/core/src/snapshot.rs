@@ -436,7 +436,8 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::engine::{Engine, State, Window};
+    use crate::engine::{Engine, Point, State, Verb, Window};
+    use crate::input::Pointer;
     use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowId, WindowRect};
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> crate::window_source::Rect {
@@ -592,6 +593,48 @@ mod tests {
         );
         assert_eq!(snapshot.cursor, Point { x: 7.0, y: 9.0 });
         assert_eq!(snapshot.elapsed_ms, 16);
+    }
+
+    /// The first Grab carries the pointer that crossed the drag threshold.
+    /// Pressed at (210, 440) on feet at (180, 500), that pointer is (215, 440),
+    /// and a later cursor at (460, 180) leaves the feet at (425, 240).
+    #[test]
+    fn the_first_grab_forwards_the_pointer_that_crossed_the_threshold() {
+        let source = FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: WorldGeometry {
+                usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
+                windows: Vec::new(),
+                dock: None,
+            },
+        };
+        let mut assembler = SnapshotAssembler::new(source);
+        let mut pointer = Pointer::default();
+        let mut engine = Engine::new(Point { x: 180.0, y: 500.0 });
+
+        let press = Point { x: 210.0, y: 440.0 };
+        let verbs = pointer.update(true, true, false, press, 16);
+        assert!(verbs.is_empty(), "a press is not a grab yet");
+        let waiting = assembler.assemble(0, press, verbs);
+        assert_eq!(waiting.cursor, press);
+        let falling = engine.tick(&waiting);
+        assert_eq!(falling.state, State::Falling);
+        assert_eq!(falling.position, Point { x: 180.0, y: 500.0 });
+
+        let crossed = Point { x: 215.0, y: 440.0 };
+        let verbs = pointer.update(true, true, false, crossed, 16);
+        assert_eq!(verbs, vec![Verb::Grab]);
+        let grabbed = assembler.assemble(16, crossed, verbs);
+        assert_eq!(grabbed.cursor, crossed);
+        let held = engine.tick(&grabbed);
+        assert_eq!(held.state, State::Dragged);
+        assert_eq!(held.position, Point { x: 180.0, y: 500.0 });
+
+        let later = Point { x: 460.0, y: 180.0 };
+        let verbs = pointer.update(true, true, false, later, 16);
+        assert_eq!(verbs, vec![Verb::Grab]);
+        let carried = engine.tick(&assembler.assemble(16, later, verbs));
+        assert_eq!(carried.position, Point { x: 425.0, y: 240.0 });
     }
 
     #[test]
@@ -970,8 +1013,8 @@ mod tests {
         );
     }
 
-    /// The sprite used to rest at the display's bottom, behind the Dock, which
-    /// draws above the overlay. The window list cannot say where the Dock's top
+    /// The Dock draws above the overlay, so a sprite resting at the display's
+    /// bottom would sit behind it. The window list cannot say where the Dock's top
     /// is, so the fix is upstream: the Engine is handed the usable part of each display.
     #[test]
     fn a_sprite_comes_to_rest_on_the_usable_floor_rather_than_behind_the_dock() {
@@ -1032,7 +1075,7 @@ mod tests {
     }
 
     /// The Dock does not stretch to the sides of the display, and a sprite
-    /// beyond its real end used to stand on the full-width strip, walking on air.
+    /// beyond its real end must not stand on the full-width strip, walking on air.
     /// Beside the Dock the floor is the display's own bottom edge.
     #[test]
     fn a_sprite_beside_the_dock_falls_to_the_display_bottom() {

@@ -4,7 +4,7 @@
 import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
 
-export const CONNECT_PROMPT = "Connect an AI to talk to me";
+const CONNECT_PROMPT = "Connect an AI to talk to me";
 // Shorter than the prompt, so the hint and Open chat fit on one line.
 export const CONNECT_HINT = "No AI connected yet.";
 

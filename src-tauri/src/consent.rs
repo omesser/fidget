@@ -236,6 +236,20 @@ impl Probe for WindowsProbe {
     }
 }
 
+/// The name the Windows process list shows for the exe at `exe`.
+/// A checkout, or an unreadable `exe`, shows the parent that launched it, so
+/// the user sees their terminal. NSIS installs per user (`%LOCALAPPDATA%`).
+#[cfg(any(test, target_os = "windows"))]
+fn process_list_name_for(
+    exe: Option<&std::path::Path>,
+    parent_chain: impl FnOnce() -> Option<String>,
+) -> String {
+    if exe.is_some_and(crate::login_item::exe_is_bundled) {
+        return "Fidget".into();
+    }
+    parent_chain().unwrap_or_else(|| "Fidget".into())
+}
+
 #[cfg(target_os = "windows")]
 mod windows {
     use std::collections::HashMap;
@@ -247,10 +261,8 @@ mod windows {
     };
 
     pub fn process_list_name() -> String {
-        if crate::login_item::process_is_bundled() {
-            return "Fidget".into();
-        }
-        parent_chain_name().unwrap_or_else(|| "Fidget".into())
+        let exe = std::env::current_exe().ok();
+        super::process_list_name_for(exe.as_deref(), parent_chain_name)
     }
 
     /// One snapshot of the process list, closed once by `Drop`.
@@ -337,27 +349,6 @@ mod windows {
             .next_back()
             .unwrap_or(&name)
             .to_string()
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use std::path::Path;
-
-        #[test]
-        fn a_windows_triple_target_checkout_is_not_packaged() {
-            assert!(!crate::login_item::exe_is_bundled(Path::new(
-                r"C:\work\fidget\target\x86_64-pc-windows-msvc\debug\fidget.exe"
-            )));
-            assert!(!crate::login_item::exe_is_bundled(Path::new(
-                r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe"
-            )));
-            assert!(!crate::login_item::exe_is_bundled(Path::new(
-                r"C:\work\fidget\target\debug\fidget.exe"
-            )));
-            assert!(crate::login_item::exe_is_bundled(Path::new(
-                r"C:\Program Files\Fidget\fidget.exe"
-            )));
-        }
     }
 }
 
@@ -712,7 +703,63 @@ pub fn live() -> &'static dyn Probe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::Mutex;
+
+    #[test]
+    fn a_checkout_is_named_for_its_parent_and_an_installed_app_for_itself() {
+        let parent = || Some("WindowsTerminal".to_string());
+        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+        let mut checkouts = vec![
+            "/work/fidget/target/debug/fidget.exe",
+            "/work/fidget/target/x86_64-pc-windows-msvc/debug/fidget.exe",
+            "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe",
+        ];
+        // A backslash separates only on Windows; the Windows job runs these.
+        #[cfg(target_os = "windows")]
+        checkouts.extend([
+            r"C:\work\fidget\target\debug\fidget.exe",
+            r"C:\work\fidget\target\release\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
+            r"target\release\fidget.exe",
+        ]);
+        for exe in checkouts {
+            assert_eq!(
+                process_list_name_for(Some(Path::new(exe)), parent),
+                "WindowsTerminal",
+                "{exe}"
+            );
+        }
+        // macOS decides by the `.app` bundle, so Windows layouts cannot share
+        // one list with it.
+        #[cfg(target_os = "macos")]
+        let installed = vec!["/Applications/Fidget.app/Contents/MacOS/fidget"];
+        #[cfg(not(target_os = "macos"))]
+        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+        let mut installed = vec!["/usr/bin/fidget"];
+        #[cfg(target_os = "windows")]
+        installed.extend([
+            r"C:\Program Files\Fidget\fidget.exe",
+            r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
+            r"D:\Portable\Fidget\fidget.exe",
+        ]);
+        for exe in installed {
+            assert_eq!(
+                process_list_name_for(Some(Path::new(exe)), parent),
+                "Fidget",
+                "{exe}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_exe_path_falls_back_to_the_parent() {
+        assert_eq!(
+            process_list_name_for(None, || Some("WindowsTerminal".into())),
+            "WindowsTerminal"
+        );
+        assert_eq!(process_list_name_for(None, || None), "Fidget");
+    }
 
     struct Fake {
         granted: Vec<CapabilityId>,

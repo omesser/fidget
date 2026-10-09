@@ -52,6 +52,7 @@ mod secrets;
 mod session_log;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
+mod tool_content;
 mod tray;
 
 use chat_surface::{
@@ -531,8 +532,7 @@ impl<'a> SpritePlacement<'a> {
     ///
     /// Every overlay draws the art. Only the bubble owner is told the line,
     /// the indicator and the cue (#178, #277). Decided here because the Shell
-    /// already knows the owner: the webview used to strip these itself, which
-    /// made it reconstruct an answer it had been handed.
+    /// already knows the owner; the webview would have to reconstruct it.
     fn new(instance: &'a Placed, display: Rect, index: usize) -> Self {
         let local = instance.sprite.in_overlay(display);
         let bubble = instance.owner == Some(index);
@@ -2577,14 +2577,11 @@ struct ChatHarness {
     /// Attached but not signed in. Names the login command for the user's
     /// own terminal.
     login: Option<String>,
-    /// Whether the child is up. Set and dead is the state the Chat surface
-    /// could not tell from attached before #474, and it is a lie worth more
-    /// than a missing label.
+    /// Whether the child is up. Set and dead must not read as attached.
     alive: bool,
     session: Option<String>,
     /// The binary `PATH` has not got, when that is why nothing is running.
-    /// Settings already names it (#659). Chat used to drop it and say
-    /// `not running` (#726).
+    /// Settings already names it; Chat must not say `not running` instead.
     missing: Option<String>,
     /// The page that installs `missing`, from the table Settings names it from.
     install: Option<String>,
@@ -4677,7 +4674,11 @@ fn main() {
             {
                 fidget::eprintln_and_log!("launch at login: {why}");
             } else {
-                login_item::sync(app.handle(), settings.launch_at_login);
+                login_item::sync(
+                    settings.launch_at_login,
+                    login_item::process_is_bundled(),
+                    login_item::plugin(app.handle()).as_ref(),
+                );
             }
 
             if let Err(why) = app
@@ -6224,7 +6225,6 @@ mod tests {
 
     /// #178 and #277: every overlay is told about every Instance, and only the
     /// one that owns the bubble is told the line, the indicator and the cue.
-    /// The webview used to strip these for itself.
     #[test]
     fn only_the_bubble_owner_is_told_the_line_the_indicator_and_the_cue() {
         let left = Rect {

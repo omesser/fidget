@@ -1149,7 +1149,7 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .completer
             .director_blank
             .is_some_and(|blank| blank != settings.director_blank)
-        // Every Completer source change retargets since #500, Off and a
+        // Every Completer source change retargets, Off and a
         // different Harness alike: `harness::retarget` has moved the handle by
         // the time the payload is built, and `completer_from` reads it.
         //
@@ -1196,7 +1196,7 @@ fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 /// #500. All of them still change what `chat_opening` would say, and the
 /// window only asked once. #473.
 ///
-/// A Completer retarget joins them since #474: the header names the model and
+/// A Completer retarget joins them: the header names the model and
 /// the host, so an endpoint edit moves what an open window is drawing. The
 /// predicate is `completer_retargets` whole rather than its two endpoint terms,
 /// because a key or a timeout change re-pushes an opening that reads the same,
@@ -1516,7 +1516,11 @@ impl SettingsSession {
             self.enable_consent(CapabilityId::InputMonitoring);
         }
         if let Some(wanted) = launch_at_login {
-            crate::login_item::sync(&self.app, wanted);
+            crate::login_item::sync(
+                wanted,
+                crate::login_item::process_is_bundled(),
+                crate::login_item::plugin(&self.app).as_ref(),
+            );
         }
         Ok(())
     }
@@ -4570,8 +4574,8 @@ mod tests {
         assert_eq!(parse_hotkey("Ctrl-Alt-Meta-B"), Some(mac));
     }
 
-    /// #194: the menu used to print the stored Mac spelling everywhere, which
-    /// names keys a Linux or Windows keyboard does not have.
+    /// #194: the menu must not print the stored Mac spelling on a Linux or
+    /// Windows keyboard, which has no such keys.
     #[test]
     fn the_shipped_default_reads_as_each_platforms_own_chord() {
         let default = parse_hotkey(DEFAULT_HIDE_HOTKEY).expect("default parses");
@@ -5121,8 +5125,7 @@ mod tests {
     /// The Chat header names the model and the host, so an endpoint edit has
     /// to reach an open window. Production change that would fail this: a
     /// `chat_surface_reloads` that watches only the switch and the Harness
-    /// source, which is what it did before #474 — the header would keep
-    /// naming the endpoint the user just left.
+    /// source: the header would keep naming the endpoint the user just left.
     #[test]
     fn a_new_endpoint_reloads_chat() {
         let settings = Settings::default();
@@ -5382,8 +5385,8 @@ mod tests {
         );
     }
 
-    /// `FIDGET_HARNESS=` has been the kill switch since #433. Going through
-    /// `env_override` dropped it, and the saved row spawned instead (#452).
+    /// `FIDGET_HARNESS=` is the kill switch; going through `env_override` would
+    /// drop it and spawn the saved row instead (#452).
     #[test]
     fn an_exported_empty_harness_is_off_whatever_the_row_saved() {
         let saved = Settings {
@@ -5414,7 +5417,7 @@ mod tests {
 
     /// A command line sitting in the source field is drawn in the row that
     /// writes the *other* field, so picking the Custom entry already on screen
-    /// used to leave the command empty and the source Off (#452).
+    /// must not leave the command empty and the source Off (#452).
     #[test]
     fn picking_the_custom_entry_already_shown_keeps_the_command_line() {
         crate::model::tests::with_harness(None, || {

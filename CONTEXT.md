@@ -277,7 +277,7 @@ _Avoid_: Saying these are "upcoming" or "deferred"
 ### Interaction verbs
 
 **Grab**:
-Press and move — the sprite follows the cursor. `grab` is also the optional
+Press and move. The pressed point stays under the pointer. `grab` is also the optional
 Animation drawn while one lasts; a package that declares none draws its `fall`,
 and never `hold`, which belongs to the Perch ride. #364.
 

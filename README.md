@@ -80,7 +80,7 @@ The full variable list, including `FIDGET_DIRECTOR_*`, is in [harness.md](./docs
 
 - **Poke** - click once for a react, then it resumes.
 - **Summon** - double-click to open a chat window for that fidget.
-- **Pick up** - click and drag; it follows the cursor.
+- **Pick up** - click and drag; the pressed point stays under the pointer.
 - **Throw** - release while moving; it flies on an arc and lands.
 - **Perch** - let it settle on a window's top edge; drag slowly to ride, fling to drop.
 - **Hide** - Control-Option-Command-B (the default; change it in Settings) toggles the fidget instantly.

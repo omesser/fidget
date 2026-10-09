@@ -7,13 +7,14 @@ use std::path::Path;
 
 use tauri::{AppHandle, Manager};
 
-// A test records enable and disable without writing the OS login item.
-trait LoginItem {
+/// Enable and disable, so a test can record the call without writing the OS login item.
+pub(crate) trait LoginItem {
     fn enable(&self) -> Result<(), String>;
     fn disable(&self) -> Result<(), String>;
 }
 
-struct PluginItem<'a>(&'a tauri_plugin_autostart::AutoLaunchManager);
+/// The registered autostart plugin.
+pub(crate) struct PluginItem<'a>(tauri::State<'a, tauri_plugin_autostart::AutoLaunchManager>);
 
 impl LoginItem for PluginItem<'_> {
     fn enable(&self) -> Result<(), String> {
@@ -25,15 +26,14 @@ impl LoginItem for PluginItem<'_> {
     }
 }
 
-/// Register or remove the OS login item. No-op for a checkout binary, and
-/// when the plugin did not register.
-pub fn sync(app: &AppHandle, wanted: bool) {
-    let manager = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>();
-    let item = manager.as_deref().map(PluginItem);
-    sync_with(process_is_bundled(), item.as_ref(), wanted);
+/// The autostart plugin, when it registered.
+pub(crate) fn plugin(app: &AppHandle) -> Option<PluginItem<'_>> {
+    app.try_state().map(PluginItem)
 }
 
-fn sync_with<Item: LoginItem + ?Sized>(bundled: bool, item: Option<&Item>, wanted: bool) {
+/// Register or remove the OS login item for the saved choice. No-op for a
+/// checkout binary, and when the plugin did not register.
+pub(crate) fn sync(launch_at_login: bool, bundled: bool, item: Option<&(impl LoginItem + ?Sized)>) {
     if !bundled {
         return;
     }
@@ -41,7 +41,7 @@ fn sync_with<Item: LoginItem + ?Sized>(bundled: bool, item: Option<&Item>, wante
         fidget::eprintln_and_log!("launch at login: plugin is not registered");
         return;
     };
-    let result = if wanted {
+    let result = if launch_at_login {
         item.enable()
     } else {
         item.disable()
@@ -70,17 +70,28 @@ pub fn exe_is_bundled(exe: &Path) -> bool {
     }
 }
 
+/// Whether `exe` sits in a Cargo `target` directory. Empty and `.` segments
+/// are skipped, as `Path::components` does, and `\` separates only on Windows.
 #[cfg(any(test, not(target_os = "macos")))]
 fn under_cargo_target(exe: &Path) -> bool {
-    let parts: Vec<_> = exe.components().collect();
-    let profile = |name: &std::ffi::OsStr| name == "debug" || name == "release";
+    under_cargo_target_split(exe, cfg!(windows))
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+fn under_cargo_target_split(exe: &Path, backslash_separates: bool) -> bool {
+    let path = exe.to_string_lossy();
+    let parts: Vec<_> = path
+        .split(|c| c == '/' || (backslash_separates && c == '\\'))
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    let profile = |name: &str| name == "debug" || name == "release";
     // A cross build is `target/<triple>/debug`, not `target/debug`.
     parts
         .windows(2)
-        .any(|window| window[0].as_os_str() == "target" && profile(window[1].as_os_str()))
+        .any(|window| window[0] == "target" && profile(window[1]))
         || parts
             .windows(3)
-            .any(|window| window[0].as_os_str() == "target" && profile(window[2].as_os_str()))
+            .any(|window| window[0] == "target" && profile(window[2]))
 }
 
 #[cfg(test)]
@@ -106,10 +117,29 @@ mod tests {
     #[test]
     fn turning_launch_at_login_on_adds_the_item_and_off_removes_it() {
         let item = Recorded(Mutex::new(None));
-        sync_with(true, Some(&item), true);
+        sync(true, true, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), Some(true));
-        sync_with(true, Some(&item), false);
+        sync(false, true, Some(&item));
         assert_eq!(*item.0.lock().expect("login item"), Some(false));
+    }
+
+    /// The plugin registers on every build, so a checkout still has an item.
+    /// The bundled flag is what keeps `sync` from writing it.
+    #[test]
+    fn a_checkout_does_not_touch_the_login_item() {
+        let item = Recorded(Mutex::new(None));
+        sync(true, false, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), None);
+        sync(false, false, Some(&item));
+        assert_eq!(*item.0.lock().expect("login item"), None);
+    }
+
+    /// No plugin means there is nothing to enable. `sync` returns rather than
+    /// treating the absence as a login item.
+    #[test]
+    fn a_missing_plugin_does_not_register_a_login_item() {
+        sync(true, true, None::<&Recorded>);
+        sync(false, true, None::<&Recorded>);
     }
 
     #[cfg(target_os = "macos")]
@@ -139,21 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn the_autostart_plugin_is_registered_on_every_build() {
-        let manifest = include_str!("../Cargo.toml");
-        assert!(
-            manifest.contains(
-                "OS login item. Registered on every build; only sync skips a checkout, which"
-            ),
-            "the plugin is registered on every build; only sync skips a checkout"
-        );
-        assert!(
-            !manifest.contains("Registered only for a packaged build"),
-            "a checkout still registers the plugin; only sync skips it"
-        );
-    }
-
-    #[test]
     fn a_target_triple_build_is_still_a_checkout() {
         assert!(under_cargo_target(Path::new(
             "/work/fidget/target/x86_64-unknown-linux-gnu/debug/fidget"
@@ -162,5 +177,45 @@ mod tests {
             "/work/fidget/target/x86_64-pc-windows-msvc/release/fidget.exe"
         )));
         assert!(!under_cargo_target(Path::new("/usr/bin/fidget")));
+    }
+
+    #[test]
+    fn empty_and_dot_segments_do_not_hide_a_checkout() {
+        for checkout in [
+            "/work/fidget/target//debug/fidget",
+            "/work/fidget/target/./debug/fidget",
+            "/work/fidget/target/x/./debug/fidget",
+        ] {
+            assert!(under_cargo_target(Path::new(checkout)), "{checkout}");
+        }
+    }
+
+    #[test]
+    fn a_backslash_is_part_of_a_name_except_on_windows() {
+        let path = Path::new(r"/a\target/debug/fidget");
+        assert!(!under_cargo_target_split(path, false));
+        assert!(under_cargo_target_split(path, true));
+    }
+
+    #[test]
+    fn windows_paths_split_on_backslashes() {
+        let under_cargo_target = |path: &Path| under_cargo_target_split(path, true);
+        for checkout in [
+            r"C:\work\fidget\target\debug\fidget.exe",
+            r"C:\work\fidget\target\release\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\debug\fidget.exe",
+            r"C:\work\fidget\target\x86_64-pc-windows-msvc\release\fidget.exe",
+            r"target\release\fidget.exe",
+        ] {
+            assert!(under_cargo_target(Path::new(checkout)), "{checkout}");
+        }
+        for installed in [
+            r"C:\Program Files\Fidget\fidget.exe",
+            r"C:\Users\me\AppData\Local\Fidget\fidget.exe",
+            r"D:\Portable\Fidget\fidget.exe",
+            r"C:\Users\me\Downloads\release\fidget.exe",
+        ] {
+            assert!(!under_cargo_target(Path::new(installed)), "{installed}");
+        }
     }
 }

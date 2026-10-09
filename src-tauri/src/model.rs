@@ -129,8 +129,8 @@ pub struct DirectorConfig {
     /// than in `apply_switch`, which the frame loop calls every tick, and
     /// nothing sets the variable once the process is running.
     env_says: Option<bool>,
-    /// The env var is set, but trim left nothing usable — `$XAI_API_KEY`
-    /// expanding to empty used to look like the key was never offered.
+    /// The env var is set, but trim left nothing usable: an empty `$XAI_API_KEY`
+    /// must not read as a key that was never offered.
     pub key_invalid: bool,
     /// Static Director interval. Free, so it stays short.
     pub wake_every: Duration,
@@ -856,7 +856,7 @@ impl Endpoint {
     /// The one number the wire carries, in the order the three cases settle.
     /// A cap the user pinned is sent verbatim; a host seen to mark its
     /// reasoning is given `THINK_CEILING` instead of a reply-sized cap; every
-    /// other host sends `max_tokens`, which is what it sent before #606.
+    /// other host sends `max_tokens`.
     fn wire_budget(&self) -> u32 {
         if self.cap_pinned || !self.marks_thinking.load(Ordering::SeqCst) {
             self.max_tokens
