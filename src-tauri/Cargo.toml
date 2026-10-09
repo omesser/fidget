@@ -21,7 +21,8 @@ tauri-build = {version = "2", features = []}
 tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"
-# OS login item. `login_item::sync` skips a checkout, which has no app to start.
+# OS login item. Registered only for a packaged build; a checkout has no app
+# to start.
 tauri-plugin-autostart = "2"
 fidget-core = {path = "../crates/core"}
 fidget-mcp-server = {path = "../crates/mcp-server"}
