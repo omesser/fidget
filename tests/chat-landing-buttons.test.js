@@ -57,15 +57,27 @@ const FAILED_PICKS = {
   notRunning: opening(harness({})),
 };
 const ANSWERING = opening(harness({ alive: true, session: "fd4be1a2" }));
+const SIGN_IN = {
+  ...opening(harness({ name: "codex", alive: true, login: "codex login" })),
+  sign_in: [
+    { id: "chatgpt", label: "ChatGPT" },
+    { id: "apikey", label: "API Key" },
+  ],
+};
+// A model API source: no Harness, and the endpoint is on or off.
+const MODEL_API = { ...opening(null), configured: true, model: "gpt-4o-mini", host: "https://api.example.test/v1" };
+const MODEL_API_OFF = { ...MODEL_API, enabled: false };
 
 function drive() {
   const stub = `
 <script>
   const heard = {};
   const calls = [];
+  let releaseSignIn = () => {};
   window.__TAURI__ = {
     core: { invoke(name, args) {
       calls.push([name, args?.harness ?? null]);
+      if (name === "sign_in") return new Promise((r) => { releaseSignIn = r; });
       return name === "chat_opening" ? Promise.resolve(${JSON.stringify(opening(null))}) : Promise.resolve();
     } },
     event: { listen(name, handler) { heard[name] = handler; return Promise.resolve(() => {}); } },
@@ -80,7 +92,11 @@ function drive() {
       return box.width > 0 && box.height > 0 && getComputedStyle(b).visibility === "visible";
     });
     const retry = document.getElementById("landing-retry");
+    const signIn = document.getElementById("landing-sign-in");
     return {
+      composer: !document.getElementById("line").disabled,
+      signIn: signIn.hidden ? [] : [...signIn.querySelectorAll(".sign-in-btn")].map((b) => b.textContent),
+      disabled: [...document.querySelectorAll(".connect-btn, #landing-retry")].filter((b) => b.disabled).length,
       landing: !document.getElementById("empty").hidden && !document.getElementById("landing").hidden,
       title: document.getElementById("landing-title").textContent,
       buttons: buttons.map((b) => b.dataset.harness),
@@ -99,6 +115,40 @@ function drive() {
       await settle();
       out[state] = seen();
     }
+    show(${JSON.stringify(FAILED_PICKS.died)});
+    await settle();
+    out.firstOfTwo = seen();
+    show(${JSON.stringify(FAILED_PICKS.missingLauncher)});
+    await settle();
+    out.secondOfTwo = seen();
+
+    show(${JSON.stringify(SIGN_IN)});
+    await settle();
+    out.signIn = seen();
+    calls.length = 0;
+    document.querySelector("#landing-sign-in .sign-in-btn").click();
+    await settle();
+    out.signingIn = seen();
+    document.querySelector('.connect-btn[data-harness="claude"]').click();
+    document.getElementById("landing-retry").click();
+    await settle();
+    out.signingInCalls = calls.slice();
+    releaseSignIn();
+    await settle();
+    out.signedIn = seen();
+
+    for (const [state, payload] of [["modelApi", ${JSON.stringify(MODEL_API)}], ["modelApiOff", ${JSON.stringify(MODEL_API_OFF)}]]) {
+      show(${JSON.stringify(opening(null))});
+      await settle();
+      document.querySelector('.connect-btn[data-harness="claude"]').click();
+      await settle();
+      show(${JSON.stringify(FAILED_PICKS.signedOut)});
+      await settle();
+      show(payload);
+      await settle();
+      out[state] = seen();
+    }
+
     show(${JSON.stringify(FAILED_PICKS.signedOut)});
     await settle();
     calls.length = 0;
@@ -163,6 +213,46 @@ test("every branded button stays after a failed first pick", { skip, timeout: 60
     );
   }
   assert.equal(seen.signedOut.retry, true, "the signed-out landing keeps Retry beside the buttons");
+  for (const state of ["died", "refusedByPreflight", "missingLauncher", "notRunning"]) {
+    assert.equal(seen[state].retry, false, `${state} has nothing to retry`);
+  }
+});
+
+test("a failed pick followed by another failed pick keeps all the buttons", { skip, timeout: 60000 }, () => {
+  const seen = drive();
+  assert.equal(seen.error, undefined, seen.error);
+  assert.deepEqual([seen.firstOfTwo.title, seen.firstOfTwo.buttons], ["Claude Code couldn't start", BRANDED]);
+  assert.deepEqual([seen.secondOfTwo.title, seen.secondOfTwo.buttons], ["Claude Code needs npx", BRANDED]);
+});
+
+test("the sign-in landing draws its sign-in buttons beside all the branded buttons", { skip, timeout: 60000 }, () => {
+  const seen = drive();
+  assert.equal(seen.error, undefined, seen.error);
+  assert.deepEqual(
+    { title: seen.signIn.title, buttons: seen.signIn.buttons, signIn: seen.signIn.signIn, retry: seen.signIn.retry },
+    { title: "Codex needs login", buttons: BRANDED, signIn: ["ChatGPT", "API Key"], retry: true },
+  );
+});
+
+test("a sign-in in flight disables the branded buttons and Retry, and a press does nothing", { skip, timeout: 60000 }, () => {
+  const seen = drive();
+  assert.equal(seen.error, undefined, seen.error);
+  assert.equal(seen.signingIn.disabled, 11, "ten branded buttons and Retry");
+  assert.deepEqual(seen.signingInCalls, [["sign_in", null]], "no pick or retry reached the Shell");
+  assert.equal(seen.signedIn.disabled, 0, "they come back when the sign-in ends");
+});
+
+test("a model API that connects clears the buttons, and a switched-off one does too", { skip, timeout: 60000 }, () => {
+  const seen = drive();
+  assert.equal(seen.error, undefined, seen.error);
+  assert.deepEqual(
+    { landing: seen.modelApi.landing, buttons: seen.modelApi.buttons, composer: seen.modelApi.composer },
+    { landing: false, buttons: [], composer: true },
+  );
+  assert.deepEqual(
+    { landing: seen.modelApiOff.landing, buttons: seen.modelApiOff.buttons, composer: seen.modelApiOff.composer },
+    { landing: false, buttons: [], composer: false },
+  );
 });
 
 test("a button on the failed landing picks that Harness, and the buttons go once one answers", { skip, timeout: 60000 }, () => {

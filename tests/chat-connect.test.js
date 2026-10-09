@@ -219,7 +219,7 @@ test("needs-auth still names the login command", () => {
     },
   });
   assert.equal(copy.title, "Codex needs login");
-  assert.equal(copy.lede, "Codex is running but not signed in. Sign in, then press Retry.");
+  assert.equal(copy.lede, "Codex is running but not signed in. Sign in, then press Retry, or pick a different Harness below.");
   assert.equal(copy.command, "codex login");
   assert.equal(copy.signInLabel, null);
   assert.equal(copy.hint, "Run this in a terminal:");
@@ -239,7 +239,7 @@ test("only the needs-login landing offers Retry", () => {
   const copy = landingCopy(login);
   assert.equal(copy.retry, true);
   assert.equal(copy.title, "Claude Code needs login");
-  assert.equal(copy.lede, "Claude Code is running but not signed in. Sign in, then press Retry.");
+  assert.equal(copy.lede, "Claude Code is running but not signed in. Sign in, then press Retry, or pick a different Harness below.");
   assert.equal(copy.command, "claude /login");
   assert.deepEqual(copy.signIn, []);
 
@@ -338,7 +338,7 @@ test("Antigravity signs in from its buttons and names no terminal command", () =
   };
   const copy = landingCopy(opening);
   assert.equal(copy.title, "Antigravity needs login");
-  assert.equal(copy.lede, "Antigravity is running but not signed in.");
+  assert.equal(copy.lede, "Antigravity is running but not signed in. Sign in, or pick a different Harness below.");
   assert.equal(copy.retry, true);
   assert.equal(copy.signInLabel, "Login using:");
   assert.equal(copy.command, null);
