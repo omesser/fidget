@@ -106,9 +106,10 @@ pub fn happened_word(happened: &Happened) -> &'static str {
     }
 }
 
-/// The line the user typed, read back out of a wake prompt: the inverse of the
-/// `they said:` line `follow_up` writes last. The moment starts at its own
-/// `what just happened:` header, so a Personality Prompt cannot move the line.
+/// The line the user typed, read back out of a stored wake prompt (the inverse
+/// of `follow_up`'s `they said:`). Reads it only after the moment's own
+/// `what just happened: spoken to` header, since the Personality Prompt may quote
+/// `they said:`. Used by `session_log::drawn` in src-tauri.
 pub fn typed_line(prompt: &str) -> Option<&str> {
     let header = format!(
         "what just happened: {}",
