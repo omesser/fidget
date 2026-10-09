@@ -538,6 +538,16 @@ pub enum Reveal {
 pub struct RevealTarget {
     pub tab: String,
     pub row: String,
+    pub focus: RevealFocus,
+}
+
+/// What takes the focus in the row. A picker shows its ring on the control.
+/// A consent row takes the focus itself, so a stray Space cannot grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RevealFocus {
+    Control,
+    Row,
 }
 
 impl Reveal {
@@ -553,11 +563,13 @@ impl Reveal {
                 RevealTarget {
                     tab: "Privacy".to_string(),
                     row,
+                    focus: RevealFocus::Row,
                 }
             }
             Self::AiSource => RevealTarget {
                 tab: "AI".to_string(),
                 row: HARNESS_ID.to_string(),
+                focus: RevealFocus::Control,
             },
         }
     }
@@ -2495,13 +2507,14 @@ pub(crate) mod tests {
         );
     }
 
-    /// #1457: the aim the Chat landing sends names a tab and a row the form
+    /// The aim the Chat landing sends names a tab and a row the form
     /// really draws, so the page can neither miss the tab nor find no control.
     #[test]
     fn the_ai_source_aim_lands_on_the_picker_the_form_draws() {
         let target = Reveal::AiSource.target();
         assert_eq!(target.tab, "AI");
         assert_eq!(target.row, "harness");
+        assert_eq!(target.focus, RevealFocus::Control);
         let description = describe();
         let tab = description
             .tabs
