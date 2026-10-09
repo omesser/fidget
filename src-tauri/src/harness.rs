@@ -6973,28 +6973,19 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        // Wait for between-turn output to arrive before closing. Buffer events
-        // until we see the thought, which signals the reader has collected the
-        // speech that preceded it.
+        // The ask is the last thing the Harness sends between turns, so once
+        // it is forwarded the speech before it has been collected. The thought
+        // is not enough: the speech follows it on the wire.
         let mut buffered = Vec::new();
-        let mut thought_seen = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !thought_seen && std::time::Instant::now() < deadline {
-            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
-                Ok(Forwarded::Thought { instance, line })
-                    if instance == "buddy-1" && !line.is_empty() =>
-                {
-                    thought_seen = true;
-                    buffered.push(Forwarded::Thought { instance, line });
-                }
-                Ok(forwarded) => buffered.push(forwarded),
-                Err(_) => {}
+        let mut asked = false;
+        while !asked && std::time::Instant::now() < deadline {
+            if let Ok(forwarded) = fx.forwarded.recv_timeout(Duration::from_millis(100)) {
+                asked = matches!(forwarded, Forwarded::Ask { .. });
+                buffered.push(forwarded);
             }
         }
-        assert!(
-            thought_seen,
-            "between-turn thought never arrived before timeout"
-        );
+        assert!(asked, "the between-turn ask never arrived before timeout");
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
         let mut speech_seen = false;
@@ -7019,7 +7010,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// Prompting again before between-turn ask arrives still emits the
+    /// Prompting again while a between-turn ask is unanswered still emits the
     /// accumulated speech as an inbound wake, not drops it.
     #[test]
     fn prompting_before_between_turn_ask_flushes_speech() {
@@ -7028,44 +7019,37 @@ mod tests {
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        // Wait for between-turn thought to arrive, which signals the reader has
-        // collected the speech. Prompt again before the ask arrives to test that
-        // the new turn flushes the accumulated speech.
-        let mut thought_seen = false;
+        // The ask follows the speech on the wire, so once it is forwarded the
+        // speech is collected. The wake may come before it or after the next
+        // prompt, so count it from both sides.
+        let mut wakes = Vec::new();
+        let mut asked = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !thought_seen && std::time::Instant::now() < deadline {
+        while !asked && std::time::Instant::now() < deadline {
             match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
-                Ok(Forwarded::Thought { instance, line })
-                    if instance == "buddy-1" && !line.is_empty() =>
-                {
-                    thought_seen = true;
-                }
-                Ok(Forwarded::Ask { .. }) => {
-                    panic!("the ask arrived before we could prompt again");
-                }
-                Ok(_) => {}
-                Err(_) => {}
+                Ok(Forwarded::Ask { .. }) => asked = true,
+                Ok(Forwarded::InboundWake(wake)) => wakes.push(wake),
+                _ => {}
             }
         }
-        assert!(
-            thought_seen,
-            "between-turn thought never arrived before timeout"
-        );
+        assert!(asked, "the between-turn ask never arrived before timeout");
         let worker = thread::spawn(move || session.complete(&asking("again"), &|_| {}));
-        let mut speech_seen = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !speech_seen && std::time::Instant::now() < deadline {
-            match fx.forwarded.recv_timeout(Duration::from_millis(100)) {
-                Ok(Forwarded::InboundWake(wake)) if wake.instance == "buddy-1" => {
-                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
-                    speech_seen = true;
-                }
-                Ok(_) => {}
-                Err(_) => {}
+        while wakes.is_empty() && std::time::Instant::now() < deadline {
+            if let Ok(Forwarded::InboundWake(wake)) =
+                fx.forwarded.recv_timeout(Duration::from_millis(100))
+            {
+                wakes.push(wake);
             }
         }
-        assert!(
-            speech_seen,
+        let speech: Vec<_> = wakes
+            .iter()
+            .filter(|wake| wake.instance == "buddy-1")
+            .map(|wake| wake.speech.as_str())
+            .collect();
+        assert_eq!(
+            speech,
+            ["Your reminder: time to stretch!"],
             "between-turn speech was dropped when prompting again"
         );
         drop(worker);
