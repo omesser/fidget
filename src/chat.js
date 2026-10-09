@@ -410,6 +410,12 @@ const applyChatAppearance = mountChatAppearance(document.documentElement);
 // cannot leave a method that is no longer offered.
 const retry = document.getElementById("landing-retry");
 
+function setPickersDisabled(disabled) {
+  for (const btn of document.querySelectorAll(".connect-btn")) {
+    btn.disabled = disabled;
+  }
+}
+
 function paintSignIn(actions, waiting) {
   const host = document.getElementById("landing-sign-in");
   host.replaceChildren();
@@ -424,14 +430,16 @@ function paintSignIn(actions, waiting) {
       drawInline(pending, waiting);
       button.after(pending);
       button.disabled = true;
-      // A Retry during the device flow would race this open for the session.
+      // A Retry or a pick during the device flow would race this open for the session.
       retry.disabled = true;
+      setPickersDisabled(true);
       invoke("sign_in", { instance, methodId: action.id })
         .catch((why) => note(String(why)))
         .finally(() => {
           pending.remove();
           button.disabled = false;
           retry.disabled = false;
+          setPickersDisabled(false);
         });
     });
     host.append(button);
@@ -488,7 +496,6 @@ function attached(opening) {
     const hint = document.getElementById("landing-hint");
     const copy = landingCopy(opening);
     paintSignIn(copy.signIn, copy.signInWaiting);
-    document.getElementById("landing-buttons").hidden = Boolean(copy.retry);
     retry.hidden = !copy.retry;
 
     drawInline(title, copy.title);
