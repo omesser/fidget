@@ -274,6 +274,22 @@ function Wait-Climbing([int]$Tenths) {
     $false
 }
 
+function Get-ClimbEdges([string[]]$Lines) {
+    $displays = @($Lines | Where-Object { $_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)' } | ForEach-Object {
+            [void]($_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)')
+            , @([int]$Matches[2], [int]$Matches[2] + [int]$Matches[1])
+        })
+    if ($displays.Count -eq 0) { return $null }
+    $left = ($displays | ForEach-Object { $_[0] } | Measure-Object -Minimum).Minimum
+    $right = ($displays | ForEach-Object { $_[1] } | Measure-Object -Maximum).Maximum
+    [pscustomobject]@{
+        Left = [int]$left
+        Right = [int]$right
+        LeftTarget = [int]$left
+        RightTarget = [int]$right - 1
+    }
+}
+
 $proc = Start-Process -FilePath $Bin -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Normal
 try {
     for ($n = 120; $n -gt 0 -and -not (Test-Path -LiteralPath $trace); $n--) { Start-Sleep -Milliseconds 250 }
@@ -286,11 +302,8 @@ try {
     $size = [int]$Matches[1]
     $half = [int][Math]::Floor($size / 2)
     # Every display's left and right edge.
-    $displays = @($overlay | Where-Object { $_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)' } | ForEach-Object {
-            [void]($_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)')
-            , @([int]$Matches[2], [int]$Matches[2] + [int]$Matches[1])
-        })
-    if ($displays.Count -eq 0) { Fail "no display bounds in $trace" }
+    $edges = Get-ClimbEdges $overlay
+    if (-not $edges) { Fail "no display bounds in $trace" }
     $gapMs = 500
     $gapLine = $overlay | Where-Object { $_ -match 'double-click interval (\d+)ms' } | Select-Object -First 1
     if ($gapLine -and $gapLine -match 'double-click interval (\d+)ms') { $gapMs = [int]$Matches[1] }
@@ -305,15 +318,15 @@ try {
     # sprite whose centre is over no display falls to the nearest edge and
     # climbs it, whatever speed the hand had. The release is held still.
     if ($side -ceq "left") {
-        $edge = ($displays | ForEach-Object { $_[0] } | Measure-Object -Minimum).Minimum
+        $edge = $edges.Left
         $into = 1
         $grabX = $cx + [int][Math]::Floor($half / 2)
-        $targetX = $edge
+        $targetX = $edges.LeftTarget
     } elseif ($side -ceq "right") {
-        $edge = ($displays | ForEach-Object { $_[1] } | Measure-Object -Maximum).Maximum
+        $edge = $edges.Right
         $into = -1
         $grabX = $cx - [int][Math]::Floor($half / 2)
-        $targetX = $edge - 1
+        $targetX = $edges.RightTarget
     } else {
         Fail "FIDGET_SCENARIO_EDGE is '$side', want left or right"
     }
