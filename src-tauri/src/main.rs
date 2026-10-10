@@ -56,8 +56,9 @@ mod tool_content;
 mod tray;
 
 use chat_surface::{
-    Settled, CHAT_ELICITATION_EVENT, CHAT_EVENT, CHAT_OPENING_EVENT, CHAT_PERMISSION_EVENT,
-    CHAT_PERMISSION_SETTLED_EVENT, CHAT_PLAN_EVENT, CHAT_RESTORED_EVENT, CHAT_THOUGHT_EVENT,
+    Settled, CHAT_ELICITATION_EVENT, CHAT_EVENT, CHAT_HEARD_EVENT, CHAT_OPENING_EVENT,
+    CHAT_PERMISSION_EVENT, CHAT_PERMISSION_SETTLED_EVENT, CHAT_PLAN_EVENT, CHAT_RESTORED_EVENT,
+    CHAT_THOUGHT_EVENT, CHAT_TOOL_EVENT,
 };
 use frame_loop::run_frame_loop;
 
@@ -2514,6 +2515,24 @@ fn show_plan(app: &tauri::AppHandle, instance: &str, steps: &[harness::PlanStep]
     let _ = app.emit_to(chat_label(instance), CHAT_PLAN_EVENT, steps);
 }
 
+fn show_tool(
+    app: &tauri::AppHandle,
+    instance: &str,
+    id: String,
+    title: Option<String>,
+    status: Option<String>,
+) {
+    let _ = app.emit_to(
+        chat_label(instance),
+        CHAT_TOOL_EVENT,
+        &serde_json::json!({ "id": id, "title": title, "status": status }),
+    );
+}
+
+fn show_heard(app: &tauri::AppHandle, instance: &str) {
+    let _ = app.emit_to(chat_label(instance), CHAT_HEARD_EVENT, &());
+}
+
 /// Retire one request in every open Chat surface, under the same lock a replay
 /// reads.
 fn settle_ask(app: &tauri::AppHandle, settled: Settled) {
@@ -4784,6 +4803,13 @@ fn main() {
                     harness::Forwarded::Plan { instance, steps } => {
                         show_plan(&forward_to, &instance, &steps)
                     }
+                    harness::Forwarded::Tool {
+                        instance,
+                        id,
+                        title,
+                        status,
+                    } => show_tool(&forward_to, &instance, id, title, status),
+                    harness::Forwarded::Heard { instance } => show_heard(&forward_to, &instance),
                     harness::Forwarded::AttachSettled => {
                         if let Some(state) = forward_to.try_state::<SettingsState>() {
                             let _ = state.ops.send(SettingsOp::ReloadChat);
