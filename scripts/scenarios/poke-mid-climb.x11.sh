@@ -150,7 +150,9 @@ for attempt in 1 2 3 4 5; do
   # Only the display's half of the sprite is drawn. Clicks a double-click
   # interval apart are separate Pokes; stop at the first. Aim near the top,
   # since it rises while the click travels, but never into a top panel.
-  if [ "$sx" -lt "$edge" ]; then px=$((edge + half / 2)); else px=$((edge - half / 2)); fi
+  # Into the display: right of a left edge, left of a right edge.
+  if [ "$dx" -lt 0 ]; then into=1; else into=-1; fi
+  px=$((edge + into * half / 2))
   before=$(pokes)
   for _ in 1 2 3 4 5 6; do
     in_state Climbing || break
@@ -169,7 +171,8 @@ done
 [ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
 
 # The quick-message pill holds a climb while the pointer rests on the sprite.
-if [ "$sx" -lt "$edge" ]; then away=$((edge + 4 * size)); else away=$((edge - 4 * size)); fi
+# Move further into the display than the click landed.
+away=$((px + into * 4 * size))
 xdotool mousemove "$((away < 0 ? 0 : away))" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
 
 sleep 4

@@ -335,7 +335,9 @@ try {
         # Only the display's half of the sprite is drawn. Clicks a double-click
         # interval apart are separate Pokes; stop at the first. Aim near the top,
         # since it rises while the click travels, but never above the display.
-        $px = if ($sx -lt $edge) { $edge + [int][Math]::Floor($half / 2) } else { $edge - [int][Math]::Floor($half / 2) }
+        # Into the display: right of a left edge, left of a right edge.
+        $into = if ($dx -lt 0) { 1 } else { -1 }
+        $px = $edge + $into * [int][Math]::Floor($half / 2)
         $before = Pokes
         for ($i = 0; $i -lt 6; $i++) {
             $frame = Last-Frame
@@ -358,8 +360,8 @@ try {
     if (-not $poked) { Fail "five throws and no Poke landed mid-climb; see $inputLog" }
 
     # The quick-message pill holds a climb while the cursor rests on the sprite.
-    $away = if ($sx -lt $edge) { $edge + 4 * $size } else { $edge - 4 * $size }
-    [ClimbInput]::Move([Math]::Max(0, $away), $sy)
+    # Move further into the display than the click landed.
+    [ClimbInput]::Move($px + $into * 4 * $size, $sy)
 
     Start-Sleep -Seconds 4
 } finally {
