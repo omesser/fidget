@@ -1,11 +1,12 @@
 #!/usr/bin/env pwsh
 # Scenario: poke-mid-climb (Windows)
-# On screen: launches Fidget with the Static Director. The sprite is thrown at
-#   a display's side edge and poked while it climbs. Fidget quits when the
-#   scenario ends. No screenshots.
-# Input: a real drag that throws the sprite, then clicks on it until one lands
-#   as a Poke, for up to five throws. The cursor moves; keep hands off the
-#   mouse for the run.
+# On screen: launches Fidget with the Static Director. The sprite is dragged
+#   past a display's side edge and let go, so it climbs that wall, and is
+#   poked while it climbs. Fidget quits when the scenario ends. No screenshots.
+# Input: a real drag that carries the sprite over the edge named by
+#   FIDGET_SCENARIO_EDGE (left or right, default left), then clicks on it
+#   until one lands as a Poke. The cursor moves; keep hands off the mouse for
+#   the run.
 # Duration: about 20 s, 1 min at most.
 # Grants: a desktop session.
 # Asserts: the Poke starts react over, then the sprite stays Climbing at one
@@ -199,7 +200,7 @@ $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
 # In-process, not ax-window-win.ps1 click: a new PowerShell compiles its
 # Add-Type before the click, and a climbing sprite has moved its own height by
-# then. Timings are throw-sprite.swift's and click-cursor.swift's.
+# then. Timings are click-cursor.swift's, and X11's for the drag.
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -208,18 +209,16 @@ public class ClimbInput {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     const uint Down = 0x0002, Up = 0x0004;
-    public static void Throw(int x, int y, int dx) {
+    public static void Place(int x, int y, int toX) {
         SetCursorPos(x, y);
         Thread.Sleep(120);
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
-        Thread.Sleep(150);
-        int px = x, py = y;
-        for (int step = 1; step <= 8; step++) {
-            px = x + dx * step / 8;
-            py = y - 10 * step / 8;
-            SetCursorPos(px, py);
-            Thread.Sleep(12);
+        Thread.Sleep(250);
+        for (int step = 1; step <= 10; step++) {
+            SetCursorPos(x + (toX - x) * step / 10, y);
+            Thread.Sleep(30);
         }
+        Thread.Sleep(300);
         mouse_event(Up, 0, 0, 0, UIntPtr.Zero);
     }
     public static void Move(int x, int y) {
@@ -297,75 +296,59 @@ try {
     if ($gapLine -and $gapLine -match 'double-click interval (\d+)ms') { $gapMs = [int]$Matches[1] }
     $clickGap = $gapMs + 100
 
+    $frame = Last-Frame
+    $sx = $frame.X; $sy = $frame.Y
+    $cx = $sx + $half
+    $side = if ($env:FIDGET_SCENARIO_EDGE) { $env:FIDGET_SCENARIO_EDGE } else { "left" }
+    # The sprite is held by a point a quarter of its width inboard of its
+    # centre, so with the cursor at the edge its centre is already past it: a
+    # sprite whose centre is over no display falls to the nearest edge and
+    # climbs it, whatever speed the hand had. The release is held still.
+    if ($side -ceq "left") {
+        $edge = ($displays | ForEach-Object { $_[0] } | Measure-Object -Minimum).Minimum
+        $into = 1
+        $grabX = $cx + [int][Math]::Floor($half / 2)
+        $targetX = $edge
+    } elseif ($side -ceq "right") {
+        $edge = ($displays | ForEach-Object { $_[1] } | Measure-Object -Maximum).Maximum
+        $into = -1
+        $grabX = $cx - [int][Math]::Floor($half / 2)
+        $targetX = $edge - 1
+    } else {
+        Fail "FIDGET_SCENARIO_EDGE is '$side', want left or right"
+    }
+    [ClimbInput]::Place($grabX, $sy + $half, $targetX)
+    Add-Content -LiteralPath $inputLog -Value "placed from ($grabX,$($sy + $half)) to x=$targetX"
+
+    if (-not (Wait-Climbing 20)) { Fail "the sprite let go over the $side edge and did not climb; see $trace" }
+    $frame = Last-Frame
+    $sx = $frame.X; $sy = $frame.Y
+    # A wall climb is centred on the display edge it was let go over.
+    $mid = $sx + $half
+    if ([Math]::Abs($mid - $edge) -gt 2) { Fail "the sprite climbs at x=$mid, not the $side edge at x=$edge; see $trace" }
+
+    # Only the display's half of the sprite is drawn. Clicks a double-click
+    # interval apart are separate Pokes; stop at the first. Aim near the top,
+    # since it rises while the click travels, but never above the display.
+    # Into the display: right of a left edge, left of a right edge.
+    $px = $edge + $into * [int][Math]::Floor($half / 2)
+    $before = Pokes
     $poked = $false
-    for ($attempt = 1; $attempt -le 5 -and -not $poked; $attempt++) {
-        if (-not (Wait-Still 100)) { continue }
+    for ($i = 0; $i -lt 6; $i++) {
         $frame = Last-Frame
-        $sx = $frame.X; $sy = $frame.Y
-        $cx = $sx + $half
-        # Toward the nearer side of the sprite's own display, and the far side on
-        # every other attempt, in case the taskbar or a neighbour is in the way.
-        $own = $displays | Where-Object { $_[0] -le $cx -and $cx -lt $_[1] } | Select-Object -First 1
-        if ($own) { $x0, $x1 = $own } else { $x0 = $cx; $x1 = $cx }
-        $nearLeft = ($cx - $x0) -lt ($x1 - $cx)
-        if ($attempt % 2 -eq 0) { $nearLeft = -not $nearLeft }
-        $dx = if ($nearLeft) { -1500 } else { 1500 }
-        # Cap dx so the drag release is at least one sprite width from the edge.
-        if ($dx -lt 0) {
-            $maxDx = $cx - $x0 - $size
-            if ($maxDx -gt 0 -and $dx -lt -$maxDx) { $dx = -$maxDx }
-        } else {
-            $maxDx = $x1 - $cx - $size
-            if ($maxDx -gt 0 -and $dx -gt $maxDx) { $dx = $maxDx }
-        }
-        [ClimbInput]::Throw($cx, $sy + $half, $dx)
-        Add-Content -LiteralPath $inputLog -Value "threw from ($cx,$($sy + $half)) by $dx"
-
-        if (-not (Wait-Climbing 40)) {
-            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: no climb"
-            continue
-        }
-        $frame = Last-Frame
-        $sx = $frame.X; $sy = $frame.Y
-        $mid = $sx + $half
-        # A wall climb is centred on a display edge; a Perch climb stands clear of it.
-        $edge = $null
-        foreach ($display in $displays) {
-            foreach ($x in $display) {
-                if ($null -eq $edge -and [Math]::Abs($x - $mid) -le 2) { $edge = $x }
-            }
-        }
-        if ($null -eq $edge) {
-            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: climbed a Perch at x=$mid"
-            continue
-        }
-
-        # Only the display's half of the sprite is drawn. Clicks a double-click
-        # interval apart are separate Pokes; stop at the first. Aim near the top,
-        # since it rises while the click travels, but never above the display.
-        # Into the display: right of a left edge, left of a right edge.
-        $into = if ($dx -lt 0) { 1 } else { -1 }
-        $px = $edge + $into * [int][Math]::Floor($half / 2)
-        $before = Pokes
-        for ($i = 0; $i -lt 6; $i++) {
-            $frame = Last-Frame
-            if (-not $frame -or $frame.State -cne "Climbing") { break }
-            $sy = $frame.Y
-            if ($sy -le $size) { break }
-            $py = $sy + [int][Math]::Floor($half / 9)
-            [ClimbInput]::Click($px, $py)
-            Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
-            Start-Sleep -Milliseconds $clickGap
-            if ((Pokes) -gt $before) {
-                $poked = $true
-                break
-            }
-        }
-        if (-not $poked) {
-            Add-Content -LiteralPath $inputLog -Value "attempt ${attempt}: no click landed before the climb ended"
+        if (-not $frame -or $frame.State -cne "Climbing") { break }
+        $sy = $frame.Y
+        if ($sy -le $size) { break }
+        $py = $sy + [int][Math]::Floor($half / 9)
+        [ClimbInput]::Click($px, $py)
+        Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
+        Start-Sleep -Milliseconds $clickGap
+        if ((Pokes) -gt $before) {
+            $poked = $true
+            break
         }
     }
-    if (-not $poked) { Fail "five throws and no Poke landed mid-climb; see $inputLog" }
+    if (-not $poked) { Fail "no Poke landed mid-climb over the $side edge; see $inputLog" }
 
     # The quick-message pill holds a climb while the cursor rests on the sprite.
     # Move further into the display than the click landed.
