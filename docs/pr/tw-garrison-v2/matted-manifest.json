@@ -1,0 +1,557 @@
+{
+  "framing": {
+    "crop": [
+      442,
+      99,
+      400,
+      453
+    ],
+    "scale": 0.271523178807947,
+    "dest": [
+      34,
+      37
+    ],
+    "canvas": [
+      176,
+      160
+    ]
+  },
+  "count": 89,
+  "frames": [
+    {
+      "i": 0,
+      "t": 0.0,
+      "file": "sleep-000.png",
+      "use_keep": true
+    },
+    {
+      "i": 1,
+      "t": 0.167,
+      "file": "sleep-001.png",
+      "use_keep": true
+    },
+    {
+      "i": 2,
+      "t": 0.333,
+      "file": "sleep-002.png",
+      "use_keep": true
+    },
+    {
+      "i": 3,
+      "t": 0.5,
+      "file": "sleep-003.png",
+      "use_keep": true
+    },
+    {
+      "i": 4,
+      "t": 0.667,
+      "file": "sleep-004.png",
+      "use_keep": false
+    },
+    {
+      "i": 5,
+      "t": 0.833,
+      "file": "sleep-005.png",
+      "use_keep": false
+    },
+    {
+      "i": 6,
+      "t": 1.0,
+      "file": "sleep-006.png",
+      "use_keep": false
+    },
+    {
+      "i": 7,
+      "t": 1.167,
+      "file": "sleep-007.png",
+      "use_keep": false
+    },
+    {
+      "i": 8,
+      "t": 1.333,
+      "file": "sleep-008.png",
+      "use_keep": false
+    },
+    {
+      "i": 9,
+      "t": 1.5,
+      "file": "sleep-009.png",
+      "use_keep": false
+    },
+    {
+      "i": 10,
+      "t": 1.667,
+      "file": "sleep-010.png",
+      "use_keep": false
+    },
+    {
+      "i": 11,
+      "t": 1.833,
+      "file": "sleep-011.png",
+      "use_keep": false
+    },
+    {
+      "i": 12,
+      "t": 2.0,
+      "file": "sleep-012.png",
+      "use_keep": false
+    },
+    {
+      "i": 13,
+      "t": 2.167,
+      "file": "sleep-013.png",
+      "use_keep": false
+    },
+    {
+      "i": 14,
+      "t": 2.333,
+      "file": "sleep-014.png",
+      "use_keep": false
+    },
+    {
+      "i": 15,
+      "t": 2.5,
+      "file": "sleep-015.png",
+      "use_keep": false
+    },
+    {
+      "i": 16,
+      "t": 2.667,
+      "file": "sleep-016.png",
+      "use_keep": false
+    },
+    {
+      "i": 17,
+      "t": 2.833,
+      "file": "sleep-017.png",
+      "use_keep": false
+    },
+    {
+      "i": 18,
+      "t": 3.0,
+      "file": "sleep-018.png",
+      "use_keep": false
+    },
+    {
+      "i": 19,
+      "t": 3.167,
+      "file": "sleep-019.png",
+      "use_keep": false
+    },
+    {
+      "i": 20,
+      "t": 3.333,
+      "file": "sleep-020.png",
+      "use_keep": false
+    },
+    {
+      "i": 21,
+      "t": 3.5,
+      "file": "sleep-021.png",
+      "use_keep": false
+    },
+    {
+      "i": 22,
+      "t": 3.667,
+      "file": "sleep-022.png",
+      "use_keep": false
+    },
+    {
+      "i": 23,
+      "t": 3.833,
+      "file": "sleep-023.png",
+      "use_keep": false
+    },
+    {
+      "i": 24,
+      "t": 4.0,
+      "file": "sleep-024.png",
+      "use_keep": false
+    },
+    {
+      "i": 25,
+      "t": 4.167,
+      "file": "sleep-025.png",
+      "use_keep": false
+    },
+    {
+      "i": 26,
+      "t": 4.333,
+      "file": "sleep-026.png",
+      "use_keep": false
+    },
+    {
+      "i": 27,
+      "t": 4.5,
+      "file": "sleep-027.png",
+      "use_keep": false
+    },
+    {
+      "i": 28,
+      "t": 4.667,
+      "file": "sleep-028.png",
+      "use_keep": false
+    },
+    {
+      "i": 29,
+      "t": 4.833,
+      "file": "sleep-029.png",
+      "use_keep": false
+    },
+    {
+      "i": 30,
+      "t": 5.0,
+      "file": "sleep-030.png",
+      "use_keep": false
+    },
+    {
+      "i": 31,
+      "t": 5.167,
+      "file": "sleep-031.png",
+      "use_keep": false
+    },
+    {
+      "i": 32,
+      "t": 5.333,
+      "file": "sleep-032.png",
+      "use_keep": false
+    },
+    {
+      "i": 33,
+      "t": 5.5,
+      "file": "sleep-033.png",
+      "use_keep": false
+    },
+    {
+      "i": 34,
+      "t": 5.667,
+      "file": "sleep-034.png",
+      "use_keep": false
+    },
+    {
+      "i": 35,
+      "t": 5.833,
+      "file": "sleep-035.png",
+      "use_keep": false
+    },
+    {
+      "i": 36,
+      "t": 6.0,
+      "file": "sleep-036.png",
+      "use_keep": false
+    },
+    {
+      "i": 37,
+      "t": 6.167,
+      "file": "sleep-037.png",
+      "use_keep": false
+    },
+    {
+      "i": 38,
+      "t": 6.333,
+      "file": "sleep-038.png",
+      "use_keep": false
+    },
+    {
+      "i": 39,
+      "t": 6.5,
+      "file": "sleep-039.png",
+      "use_keep": false
+    },
+    {
+      "i": 40,
+      "t": 6.667,
+      "file": "sleep-040.png",
+      "use_keep": false
+    },
+    {
+      "i": 41,
+      "t": 6.833,
+      "file": "sleep-041.png",
+      "use_keep": false
+    },
+    {
+      "i": 42,
+      "t": 7.0,
+      "file": "sleep-042.png",
+      "use_keep": false
+    },
+    {
+      "i": 43,
+      "t": 7.167,
+      "file": "sleep-043.png",
+      "use_keep": false
+    },
+    {
+      "i": 44,
+      "t": 7.333,
+      "file": "sleep-044.png",
+      "use_keep": false
+    },
+    {
+      "i": 45,
+      "t": 7.5,
+      "file": "sleep-045.png",
+      "use_keep": false
+    },
+    {
+      "i": 46,
+      "t": 7.667,
+      "file": "sleep-046.png",
+      "use_keep": false
+    },
+    {
+      "i": 47,
+      "t": 7.833,
+      "file": "sleep-047.png",
+      "use_keep": false
+    },
+    {
+      "i": 48,
+      "t": 8.0,
+      "file": "sleep-048.png",
+      "use_keep": false
+    },
+    {
+      "i": 49,
+      "t": 8.167,
+      "file": "sleep-049.png",
+      "use_keep": false
+    },
+    {
+      "i": 50,
+      "t": 8.333,
+      "file": "sleep-050.png",
+      "use_keep": false
+    },
+    {
+      "i": 51,
+      "t": 8.5,
+      "file": "sleep-051.png",
+      "use_keep": false
+    },
+    {
+      "i": 52,
+      "t": 8.667,
+      "file": "sleep-052.png",
+      "use_keep": false
+    },
+    {
+      "i": 53,
+      "t": 8.833,
+      "file": "sleep-053.png",
+      "use_keep": false
+    },
+    {
+      "i": 54,
+      "t": 9.0,
+      "file": "sleep-054.png",
+      "use_keep": false
+    },
+    {
+      "i": 55,
+      "t": 9.167,
+      "file": "sleep-055.png",
+      "use_keep": false
+    },
+    {
+      "i": 56,
+      "t": 9.333,
+      "file": "sleep-056.png",
+      "use_keep": false
+    },
+    {
+      "i": 57,
+      "t": 9.5,
+      "file": "sleep-057.png",
+      "use_keep": false
+    },
+    {
+      "i": 58,
+      "t": 9.667,
+      "file": "sleep-058.png",
+      "use_keep": false
+    },
+    {
+      "i": 59,
+      "t": 9.833,
+      "file": "sleep-059.png",
+      "use_keep": false
+    },
+    {
+      "i": 60,
+      "t": 10.0,
+      "file": "sleep-060.png",
+      "use_keep": false
+    },
+    {
+      "i": 61,
+      "t": 10.167,
+      "file": "sleep-061.png",
+      "use_keep": false
+    },
+    {
+      "i": 62,
+      "t": 10.333,
+      "file": "sleep-062.png",
+      "use_keep": false
+    },
+    {
+      "i": 63,
+      "t": 10.5,
+      "file": "sleep-063.png",
+      "use_keep": false
+    },
+    {
+      "i": 64,
+      "t": 10.667,
+      "file": "sleep-064.png",
+      "use_keep": false
+    },
+    {
+      "i": 65,
+      "t": 10.833,
+      "file": "sleep-065.png",
+      "use_keep": false
+    },
+    {
+      "i": 66,
+      "t": 11.0,
+      "file": "sleep-066.png",
+      "use_keep": false
+    },
+    {
+      "i": 67,
+      "t": 11.167,
+      "file": "sleep-067.png",
+      "use_keep": false
+    },
+    {
+      "i": 68,
+      "t": 11.333,
+      "file": "sleep-068.png",
+      "use_keep": false
+    },
+    {
+      "i": 69,
+      "t": 11.5,
+      "file": "sleep-069.png",
+      "use_keep": false
+    },
+    {
+      "i": 70,
+      "t": 11.667,
+      "file": "sleep-070.png",
+      "use_keep": false
+    },
+    {
+      "i": 71,
+      "t": 11.833,
+      "file": "sleep-071.png",
+      "use_keep": false
+    },
+    {
+      "i": 72,
+      "t": 12.0,
+      "file": "sleep-072.png",
+      "use_keep": false
+    },
+    {
+      "i": 73,
+      "t": 12.167,
+      "file": "sleep-073.png",
+      "use_keep": false
+    },
+    {
+      "i": 74,
+      "t": 12.333,
+      "file": "sleep-074.png",
+      "use_keep": false
+    },
+    {
+      "i": 75,
+      "t": 12.5,
+      "file": "sleep-075.png",
+      "use_keep": false
+    },
+    {
+      "i": 76,
+      "t": 12.667,
+      "file": "sleep-076.png",
+      "use_keep": false
+    },
+    {
+      "i": 77,
+      "t": 12.833,
+      "file": "sleep-077.png",
+      "use_keep": false
+    },
+    {
+      "i": 78,
+      "t": 13.0,
+      "file": "sleep-078.png",
+      "use_keep": false
+    },
+    {
+      "i": 79,
+      "t": 13.167,
+      "file": "sleep-079.png",
+      "use_keep": true
+    },
+    {
+      "i": 80,
+      "t": 13.333,
+      "file": "sleep-080.png",
+      "use_keep": true
+    },
+    {
+      "i": 81,
+      "t": 13.5,
+      "file": "sleep-081.png",
+      "use_keep": true
+    },
+    {
+      "i": 82,
+      "t": 13.667,
+      "file": "sleep-082.png",
+      "use_keep": true
+    },
+    {
+      "i": 83,
+      "t": 13.833,
+      "file": "sleep-083.png",
+      "use_keep": true
+    },
+    {
+      "i": 84,
+      "t": 14.0,
+      "file": "sleep-084.png",
+      "use_keep": true
+    },
+    {
+      "i": 85,
+      "t": 14.167,
+      "file": "sleep-085.png",
+      "use_keep": true
+    },
+    {
+      "i": 86,
+      "t": 14.333,
+      "file": "sleep-086.png",
+      "use_keep": true
+    },
+    {
+      "i": 87,
+      "t": 14.5,
+      "file": "sleep-087.png",
+      "use_keep": true
+    },
+    {
+      "i": 88,
+      "t": 14.625,
+      "file": "sleep-088.png",
+      "use_keep": true
+    }
+  ],
+  "note": "Full capture with lasers, no mirroring. Live-test; drop laser frames if bad."
+}

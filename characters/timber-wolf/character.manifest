@@ -83,10 +83,100 @@ fps = 2
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
 fps = 4
 
-# The mech never sleeps. Power-down is a slow torso twist on station.
+# The mech never sleeps. Garrison is a point-scan / threaten loop (engine key stays sleep).
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 1
+frames = [
+  "frames/sleep-0.png",
+  "frames/sleep-1.png",
+  "frames/sleep-2.png",
+  "frames/sleep-3.png",
+  "frames/sleep-4.png",
+  "frames/sleep-5.png",
+  "frames/sleep-6.png",
+  "frames/sleep-7.png",
+  "frames/sleep-8.png",
+  "frames/sleep-9.png",
+  "frames/sleep-10.png",
+  "frames/sleep-11.png",
+  "frames/sleep-12.png",
+  "frames/sleep-13.png",
+  "frames/sleep-14.png",
+  "frames/sleep-15.png",
+  "frames/sleep-16.png",
+  "frames/sleep-17.png",
+  "frames/sleep-18.png",
+  "frames/sleep-19.png",
+  "frames/sleep-20.png",
+  "frames/sleep-21.png",
+  "frames/sleep-22.png",
+  "frames/sleep-23.png",
+  "frames/sleep-24.png",
+  "frames/sleep-25.png",
+  "frames/sleep-26.png",
+  "frames/sleep-27.png",
+  "frames/sleep-28.png",
+  "frames/sleep-29.png",
+  "frames/sleep-30.png",
+  "frames/sleep-31.png",
+  "frames/sleep-32.png",
+  "frames/sleep-33.png",
+  "frames/sleep-34.png",
+  "frames/sleep-35.png",
+  "frames/sleep-36.png",
+  "frames/sleep-37.png",
+  "frames/sleep-38.png",
+  "frames/sleep-39.png",
+  "frames/sleep-40.png",
+  "frames/sleep-41.png",
+  "frames/sleep-42.png",
+  "frames/sleep-43.png",
+  "frames/sleep-44.png",
+  "frames/sleep-45.png",
+  "frames/sleep-46.png",
+  "frames/sleep-47.png",
+  "frames/sleep-48.png",
+  "frames/sleep-49.png",
+  "frames/sleep-50.png",
+  "frames/sleep-51.png",
+  "frames/sleep-52.png",
+  "frames/sleep-53.png",
+  "frames/sleep-54.png",
+  "frames/sleep-55.png",
+  "frames/sleep-56.png",
+  "frames/sleep-57.png",
+  "frames/sleep-58.png",
+  "frames/sleep-59.png",
+  "frames/sleep-60.png",
+  "frames/sleep-61.png",
+  "frames/sleep-62.png",
+  "frames/sleep-63.png",
+  "frames/sleep-64.png",
+  "frames/sleep-65.png",
+  "frames/sleep-66.png",
+  "frames/sleep-67.png",
+  "frames/sleep-68.png",
+  "frames/sleep-69.png",
+  "frames/sleep-70.png",
+  "frames/sleep-71.png",
+  "frames/sleep-72.png",
+  "frames/sleep-73.png",
+  "frames/sleep-74.png",
+  "frames/sleep-75.png",
+  "frames/sleep-76.png",
+  "frames/sleep-77.png",
+  "frames/sleep-78.png",
+  "frames/sleep-79.png",
+  "frames/sleep-80.png",
+  "frames/sleep-81.png",
+  "frames/sleep-82.png",
+  "frames/sleep-83.png",
+  "frames/sleep-84.png",
+  "frames/sleep-85.png",
+  "frames/sleep-86.png",
+  "frames/sleep-87.png",
+  "frames/sleep-88.png",
+]
+fps = 6
 
 
 # TAC laser sweep as an idle variant. scan-0.png is a byte-copy of idle-0 and
@@ -136,11 +226,11 @@ when = "idle over 2m"
 
 [behaviors.standby]
 play = ["sit"]
-then = "power_down"
+then = "garrison"
 weight = 20
 when = "idle over 3m"
 
-[behaviors.power_down]
+[behaviors.garrison]
 play = ["sit", "sleep"]
 weight = 40
 when = "idle over 5m"
