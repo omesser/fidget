@@ -168,6 +168,10 @@ for attempt in 1 2 3 4 5; do
 done
 [ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
 
+# The quick-message pill holds a climb while the pointer rests on the sprite.
+if [ "$sx" -lt "$edge" ]; then away=$((edge + 4 * size)); else away=$((edge - 4 * size)); fi
+xdotool mousemove "$((away < 0 ? 0 : away))" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
+
 sleep 4
 kill "$pid" 2> /dev/null || true
 wait "$pid" 2> /dev/null || true

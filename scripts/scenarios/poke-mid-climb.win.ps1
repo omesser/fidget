@@ -222,6 +222,9 @@ public class ClimbInput {
         }
         mouse_event(Up, 0, 0, 0, UIntPtr.Zero);
     }
+    public static void Move(int x, int y) {
+        SetCursorPos(x, y);
+    }
     public static void Click(int x, int y) {
         SetCursorPos(x, y);
         Thread.Sleep(120);
@@ -353,6 +356,10 @@ try {
         }
     }
     if (-not $poked) { Fail "five throws and no Poke landed mid-climb; see $inputLog" }
+
+    # The quick-message pill holds a climb while the cursor rests on the sprite.
+    $away = if ($sx -lt $edge) { $edge + 4 * $size } else { $edge - 4 * $size }
+    [ClimbInput]::Move([Math]::Max(0, $away), $sy)
 
     Start-Sleep -Seconds 4
 } finally {
