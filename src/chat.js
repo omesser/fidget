@@ -20,6 +20,7 @@ import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
+import { STALL_MS, idlePhase, phaseLine, reducePhase } from "./turn-phase.js";
 import { appendReply, drawReply, drawThought, replaceReply, stripUnsafe } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -180,6 +181,61 @@ function arrived(row, text) {
 
 function settled(row) {
   row.querySelector(".caret")?.remove();
+  endPhase(row);
+}
+
+// The muted line beside an answer that has not landed. The clock is the
+// window's. Tests drive the same rules with their own `now`.
+let phase = idlePhase();
+let phaseRow = null;
+let phaseTimer = null;
+
+function paintPhase(now) {
+  clearTimeout(phaseTimer);
+  phaseTimer = null;
+  if (!phaseRow) {
+    return;
+  }
+  const text = phaseLine(phase, now);
+  let node = phaseRow.querySelector(".phase");
+  if (!text) {
+    node?.remove();
+    return;
+  }
+  if (!node) {
+    node = el("phase", "p");
+    phaseRow.append(node);
+  }
+  node.textContent = text;
+  const wait = STALL_MS - (now - phase.lastAt);
+  if (wait > 0) {
+    phaseTimer = setTimeout(() => paintPhase(Date.now()), wait);
+  }
+}
+
+function armPhase(row, fresh) {
+  phase = reducePhase(phase, { type: "open", at: Date.now(), fresh: Boolean(fresh) });
+  phaseRow = row;
+  paintPhase(Date.now());
+}
+
+function disarmPhase() {
+  phase = reducePhase(phase, { type: "close" });
+  clearTimeout(phaseTimer);
+  phaseTimer = null;
+  phaseRow?.querySelector(".phase")?.remove();
+  phaseRow = null;
+}
+
+function endPhase(row) {
+  if (row === phaseRow) {
+    disarmPhase();
+  }
+}
+
+function hearPhase(event) {
+  phase = reducePhase(phase, event);
+  paintPhase(event.at);
 }
 
 // The Harness's thinking, one row per turn in the log (ADR-0034). The Shell
@@ -772,6 +828,7 @@ composer.addEventListener("submit", (event) => {
 // leaving the user looking at a question in the log that nothing is working on.
 function drop(turn) {
   turns.drop(turn);
+  endPhase(turn.them);
   turn.you.remove();
   turn.them.remove();
 }
@@ -783,6 +840,7 @@ function newSession(why) {
   // Keeping `empty` is not tidiness: the empty-state panel is a child of the
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
   // out with the rows leaves that lookup dereferencing null.
+  disarmPhase();
   log.replaceChildren(empty);
   recall.release();
   thinking.clear();
@@ -926,10 +984,13 @@ async function start() {
         const turn = turns.typed();
         turn.you = said("You", payload.said ?? "", "you", payload.at);
         turn.them = opening_answer();
+        // A typed turn starts clean. Calls kept for an unprompted row stay.
+        armPhase(turn.them, true);
         return;
       }
       if (payload.thought) {
         thinking.kept(payload.said ?? "", payload.at);
+        hearPhase({ type: "news", at: Date.now() });
         return;
       }
       if (payload.busy) {
@@ -953,6 +1014,9 @@ async function start() {
       const turn = outcome.turn;
       if (!turn.them) {
         turn.them = said(`${them} · ${payload.reacting_to || "unprompted"}`, "", "them", payload.at);
+        armPhase(turn.them);
+      } else {
+        hearPhase({ type: "news", at: Date.now() });
       }
       if (outcome.action === "speech") {
         arrived(turn.them, outcome.said);
@@ -970,6 +1034,7 @@ async function start() {
           settled(turn.them);
           note(`Harness error: ${outcome.said}`);
         } else {
+          endPhase(turn.them);
           turn.them.remove();
           harnessError(outcome.said);
         }
@@ -978,6 +1043,7 @@ async function start() {
           settled(turn.them);
           note(outcome.note);
         } else {
+          endPhase(turn.them);
           turn.them.remove();
           note(outcome.note);
         }
@@ -991,6 +1057,7 @@ async function start() {
         if (turn.alreadyHasSpeechAhead) {
           settled(turn.them);
         } else {
+          endPhase(turn.them);
           turn.them.remove();
         }
         note(MISSING_ANSWER);
@@ -1003,6 +1070,7 @@ async function start() {
     "chat-thought",
     ({ payload }) => {
       thinking.thought(payload);
+      hearPhase({ type: "news", at: Date.now() });
     },
     { target: chat.label },
   );
@@ -1011,6 +1079,29 @@ async function start() {
     "chat-plan",
     ({ payload }) => {
       showPlan(planSteps(payload));
+      hearPhase({ type: "news", at: Date.now() });
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-tool",
+    ({ payload }) => {
+      hearPhase({
+        type: "tool",
+        at: Date.now(),
+        id: payload.id,
+        title: payload.title,
+        status: payload.status,
+      });
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-heard",
+    () => {
+      hearPhase({ type: "news", at: Date.now() });
     },
     { target: chat.label },
   );
@@ -1019,6 +1110,7 @@ async function start() {
     "chat-permission",
     ({ payload }) => {
       asked(payload);
+      hearPhase({ type: "news", at: Date.now() });
     },
     { target: chat.label },
   );
@@ -1027,6 +1119,7 @@ async function start() {
     "chat-elicitation",
     ({ payload }) => {
       elicited(payload);
+      hearPhase({ type: "news", at: Date.now() });
     },
     { target: chat.label },
   );
@@ -1035,6 +1128,7 @@ async function start() {
     "chat-permission-settled",
     ({ payload }) => {
       retire(payload.request, payload.option);
+      hearPhase({ type: "news", at: Date.now() });
     },
     { target: chat.label },
   );

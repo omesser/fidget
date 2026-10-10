@@ -289,6 +289,7 @@ pub struct PlanStep {
 #[derive(Clone, Debug)]
 pub enum Event {
     ToolCall {
+        session: String,
         id: String,
         title: Option<String>,
         kind: Option<String>,
@@ -303,15 +304,13 @@ pub enum Event {
         steps: Vec<PlanStep>,
     },
     Usage {
+        session: String,
         used: u64,
         size: u64,
     },
     /// `session` is the one that asked, so the ask is owed by that session's
     /// Instance and not by whoever holds the turn.
-    Permission {
-        session: String,
-        ask: PermissionAsk,
-    },
+    Permission { session: String, ask: PermissionAsk },
     /// One `elicitation/create` form. Separate from `Permission` because the
     /// answer is accept-content or decline, not a permission `optionId`.
     /// `session` is `None` for a form no session scopes, as a sign-in link.
@@ -322,16 +321,10 @@ pub enum Event {
     /// The whole thinking so far, for the Chat surface's Thinking row
     /// (ADR-0034). Each one replaces the last; the Action Log gets none.
     /// `session` is the turn's, because one child serves every Instance.
-    Thought {
-        session: String,
-        text: String,
-    },
+    Thought { session: String, text: String },
     /// Between-turn agent text accumulated in `Inbound` and flushed
     /// when a session transitions (Ask, Elicit, Prompt, or Close).
-    InboundWake {
-        session: String,
-        speech: String,
-    },
+    InboundWake { session: String, speech: String },
     /// A forwarded ask that can no longer be answered. Every Chat surface
     /// that drew the ask has to hear this.
     PermissionSettled {
@@ -2360,6 +2353,7 @@ fn show(
         // Log as a title and a status and never says what it touched. Every
         // field is meant to be read (ADR-0028).
         Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => on_event(Event::ToolCall {
+            session: session.0.to_string(),
             id: tool.id.to_string(),
             title: tool.title.map(str::to_string),
             kind: tool.kind,
@@ -2369,7 +2363,11 @@ fn show(
             session: session.0.to_string(),
             steps,
         }),
-        Heard::Usage { used, size } => on_event(Event::Usage { used, size }),
+        Heard::Usage { used, size } => on_event(Event::Usage {
+            session: session.0.to_string(),
+            used,
+            size,
+        }),
         // Never into `said`. That is the Director's reply, whose first line
         // has to parse as a Behavior name and whose rest the character says out
         // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
@@ -3261,6 +3259,7 @@ mod tests {
                 title,
                 kind,
                 status,
+                ..
             } = event
             else {
                 panic!("expected a tool call, got {event:?}");

@@ -924,6 +924,17 @@ pub enum Forwarded {
     /// A model or effort did not take. Settings restores `restored` before the wake
     /// that found the failure returns.
     NotApplied(Vec<ConfigFailure>),
+    /// Title and status of a live tool call, for that Instance's phase line.
+    Tool {
+        instance: String,
+        id: String,
+        title: Option<String>,
+        status: Option<String>,
+    },
+    /// A harness update with nothing to draw. It only resets the phase stall.
+    Heard {
+        instance: String,
+    },
 }
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
@@ -2979,19 +2990,29 @@ fn note_event(
         instance.map_or(Owner::EveryChat, Owner::Instance)
     };
     match event {
-        // A tool call and a usage tick are logged and never forwarded, so a
-        // turn shows the surface no phases. ADR-0028 bounds what a later
-        // surface may draw from events that already arrive here.
+        // Title and status reach the phase line. What the call touched stays
+        // in the Action Log until a row draws it.
         Event::ToolCall {
+            session,
             id,
             title,
             kind,
             status,
-        } => action_log::append(
-            dir,
-            "tool_call",
-            json!({"id": id, "title": title, "kind": kind, "status": status}),
-        ),
+        } => {
+            action_log::append(
+                dir,
+                "tool_call",
+                json!({"id": id, "title": title, "kind": kind, "status": status}),
+            );
+            if let Some(instance) = instance_of(&session) {
+                forward(Forwarded::Tool {
+                    instance,
+                    id,
+                    title,
+                    status,
+                });
+            }
+        }
         Event::Plan { session, steps } => {
             // Guarded because `end_turn` clears the plan on every turn, and an
             // unguarded line would log a zero-step plan for turns that had none.
@@ -3002,8 +3023,15 @@ fn note_event(
                 forward(Forwarded::Plan { instance, steps });
             }
         }
-        Event::Usage { used, size } => {
-            action_log::append(dir, "usage_update", json!({"used": used, "size": size}))
+        Event::Usage {
+            session,
+            used,
+            size,
+        } => {
+            action_log::append(dir, "usage_update", json!({"used": used, "size": size}));
+            if let Some(instance) = instance_of(&session) {
+                forward(Forwarded::Heard { instance });
+            }
         }
         Event::Permission { session, ask } => {
             action_log::append(
@@ -4652,9 +4680,7 @@ mod tests {
             )
         }
 
-        /// The next forwarded ask, past the plan and thought a turn's end
-        /// forwards on the way and the reload a session open forwards, or a
-        /// panic naming what came instead.
+        /// The next forwarded ask. Surface updates on the way are not it.
         fn ask(&self) -> PermissionAsk {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
@@ -4662,6 +4688,8 @@ mod tests {
                     Ok(
                         Forwarded::Plan { .. }
                         | Forwarded::Thought { .. }
+                        | Forwarded::Tool { .. }
+                        | Forwarded::Heard { .. }
                         | Forwarded::InboundWake(_)
                         | Forwarded::Restored(_)
                         | Forwarded::AttachSettled,
@@ -4704,15 +4732,17 @@ mod tests {
             }
         }
 
-        /// The next forwarded reload of the Chat surface, past the plan and
-        /// thought a turn's end forwards on the way, or a panic naming what
-        /// came instead.
+        /// The next Chat reload. Surface updates on the way are not it.
         fn attach_settled(&self) {
             loop {
                 match self.forwarded.recv_timeout(Duration::from_secs(5)) {
                     Ok(Forwarded::AttachSettled) => return,
                     Ok(
-                        Forwarded::Plan { .. } | Forwarded::Thought { .. } | Forwarded::Restored(_),
+                        Forwarded::Plan { .. }
+                        | Forwarded::Thought { .. }
+                        | Forwarded::Tool { .. }
+                        | Forwarded::Heard { .. }
+                        | Forwarded::Restored(_),
                     ) => {}
                     other => panic!("expected AttachSettled, got {other:?}"),
                 }
@@ -5014,6 +5044,82 @@ mod tests {
                 if instance == "buddy-b" && line == "Reading the roster"
         ));
         assert!(!dir.join(action_log::FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The phase line needs the call's title and status. The Action Log still
+    /// keeps the call.
+    #[test]
+    fn a_tool_call_reaches_its_instances_phase_line() {
+        let dir = std::env::temp_dir().join(format!("fidget-phase-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+
+        note_event(
+            &dir,
+            &forward,
+            &Mutex::default(),
+            &Mutex::new(HashMap::from([(
+                "session-b".to_string(),
+                "buddy-b".to_string(),
+            )])),
+            &Mutex::default(),
+            Event::ToolCall {
+                session: "session-b".to_string(),
+                id: "t1".to_string(),
+                title: Some("Read file".to_string()),
+                kind: Some("read".to_string()),
+                status: Some("in_progress".to_string()),
+            },
+        );
+
+        assert!(matches!(
+            forwarded.try_recv(),
+            Ok(Forwarded::Tool { instance, id, title, status })
+                if instance == "buddy-b"
+                    && id == "t1"
+                    && title == Some("Read file".to_string())
+                    && status == Some("in_progress".to_string())
+        ));
+        assert!(dir.join(action_log::FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Usage draws nothing. It still has to reach the phase line, or silence
+    /// during a long call looks like a stall.
+    #[test]
+    fn a_usage_update_resets_its_instances_phase_stall() {
+        let dir = std::env::temp_dir().join(format!("fidget-phase-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+
+        note_event(
+            &dir,
+            &forward,
+            &Mutex::default(),
+            &Mutex::new(HashMap::from([(
+                "session-b".to_string(),
+                "buddy-b".to_string(),
+            )])),
+            &Mutex::default(),
+            Event::Usage {
+                session: "session-b".to_string(),
+                used: 1,
+                size: 2,
+            },
+        );
+
+        assert!(matches!(
+            forwarded.try_recv(),
+            Ok(Forwarded::Heard { instance }) if instance == "buddy-b"
+        ));
+        assert!(dir.join(action_log::FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

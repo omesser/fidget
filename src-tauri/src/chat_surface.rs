@@ -44,6 +44,12 @@ pub(crate) const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 /// is the turn taking it away.
 pub(crate) const CHAT_PLAN_EVENT: &str = "chat-plan";
 
+/// A live tool call's id, title, and status, for the turn's phase line.
+pub(crate) const CHAT_TOOL_EVENT: &str = "chat-tool";
+
+/// A harness update that only resets the phase stall. Nothing is drawn from it.
+pub(crate) const CHAT_HEARD_EVENT: &str = "chat-heard";
+
 /// Chat UI selection change, telling each chat surface to swap its root class.
 pub(crate) const CHAT_UI_EVENT: &str = "chat-ui";
 
