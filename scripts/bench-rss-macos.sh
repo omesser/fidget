@@ -38,7 +38,12 @@ log="$out.app.log"
 # Everything WebKit is already running belongs to some other application.
 before=$(pgrep -f com.apple.WebKit || true)
 
-"./$bin" > "$log" 2>&1 &
+# `./` on an absolute path is `.//tmp/...`, so the shell never starts it.
+if [ "${bin#/}" != "$bin" ]; then
+  "$bin" > "$log" 2>&1 &
+else
+  "./$bin" > "$log" 2>&1 &
+fi
 app=$!
 trap 'kill "$app" 2>/dev/null' EXIT INT TERM
 
