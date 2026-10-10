@@ -129,12 +129,25 @@ else
     # first that lands. Aimed near the sprite's top, since it keeps rising
     # while the click is on its way; never into the menu bar above it.
     if [ "$sx" -lt "$edge" ]; then px=$((edge + half / 2)); else px=$((edge - half / 2)); fi
+    # Further into this display than the click, and not past it. The pill
+    # opens after a dwell on the sprite and then holds the climb. Leave with
+    # the click: a silent warp keeps :hover, and the gaps add up past that dwell.
+    if [ "$px" -gt "$edge" ]; then into=1; else into=-1; fi
+    away=$((px + into * 4 * size))
+    read -r dx0 dx1 < <(awk -v c="$px" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
+    if [ -n "${dx1:-}" ]; then
+      if [ "$away" -lt "$dx0" ]; then away=$dx0; fi
+      if [ "$away" -ge "$dx1" ]; then away=$((dx1 - 1)); fi
+    elif [ "$away" -lt 0 ]; then
+      away=0
+    fi
     before=$(pokes)
     for _ in 1 2 3 4 5 6; do
       in_state Climbing || break
       read -r sx sy < <(sprite_xy)
       [ "$sy" -gt "$size" ] || break
       "$tools/click-cursor" "$px" "$((sy + half / 9))" 1 >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
+      "$tools/warp-cursor" "$away" "$sy" --event >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
       sleep "$click_gap"
       if [ "$(pokes)" -gt "$before" ]; then
         poked=1
@@ -145,19 +158,6 @@ else
     echo "attempt $attempt: no click landed before the climb ended" >> "$out/input.txt"
   done
   [ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
-
-  # The quick-message pill holds a climb while the pointer rests on the sprite.
-  # Move further into the display than the click, and not past that display.
-  if [ "$px" -gt "$edge" ]; then into=1; else into=-1; fi
-  away=$((px + into * 4 * size))
-  read -r dx0 dx1 < <(awk -v c="$px" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
-  if [ -n "${dx1:-}" ]; then
-    if [ "$away" -lt "$dx0" ]; then away=$dx0; fi
-    if [ "$away" -ge "$dx1" ]; then away=$((dx1 - 1)); fi
-  elif [ "$away" -lt 0 ]; then
-    away=0
-  fi
-  "$tools/warp-cursor" "$away" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
 
   sleep 4
   kill "$pid" 2> /dev/null || true
