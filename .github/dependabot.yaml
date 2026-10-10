@@ -14,6 +14,13 @@ updates:
       # lifts the ignore once 0.20 is reachable. See #37.
       - dependency-name: "glib"
         versions: ["< 0.20"]
+      # gtk 0.18 and gdk-pixbuf must share one glib. A 0.19+ bump of
+      # either splits it, and the Linux taskbar icon stops compiling.
+      # Lift both when tauri leaves this line (#1407).
+      - dependency-name: "gdk-pixbuf"
+        versions: [">= 0.19"]
+      - dependency-name: "gtk"
+        versions: [">= 0.19"]
 
   - directory: "/"
     package-ecosystem: "github-actions"
