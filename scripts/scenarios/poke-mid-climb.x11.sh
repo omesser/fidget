@@ -55,7 +55,10 @@ command -v xdotool > /dev/null 2>&1 || {
   exit 2
 }
 
-mkdir -p "$out/home"
+mkdir -p "$out/home/.local/share/fidget"
+cat > "$out/home/.local/share/fidget/settings.json" << 'SETTINGS_EOF'
+{"first_run_tour_shown": true}
+SETTINGS_EOF
 log="$out/app.log"
 last_frame() { grep '^frame: ' "$log" | tail -1; }
 in_state() { last_frame | grep -qE " ($1) "; }
@@ -94,9 +97,10 @@ wait_climbing() { # <tenths of a second>
 # X11 has no negative root coordinate, and xdotool reads "-1300" as an option.
 throw_sprite() { # <x> <y> <dx>
   local args=(mousemove "$1" "$2" sleep 0.12 mousedown 1 sleep 0.15) step x
-  for step in 1 2 3 4 5 6 7 8; do
-    x=$(($1 + $3 * step / 8))
-    args+=(mousemove "$((x < 0 ? 0 : x))" "$(($2 - 10 * step / 8))" sleep 0.012)
+  # 10 steps with tighter sleeps (0.01s each = 100ms total) for smoother motion.
+  for step in 1 2 3 4 5 6 7 8 9 10; do
+    x=$(($1 + $3 * step / 10))
+    args+=(mousemove "$((x < 0 ? 0 : x))" "$(($2 - 10 * step / 10))" sleep 0.01)
   done
   xdotool "${args[@]}" mouseup 1
 }
