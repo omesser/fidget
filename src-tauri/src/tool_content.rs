@@ -34,8 +34,8 @@ pub enum ToolPiece {
 /// A file a tool call touched, and the line when the Harness sent one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Place {
-    path: String,
-    line: Option<u32>,
+    pub(crate) path: String,
+    pub(crate) line: Option<u32>,
 }
 
 pub(crate) fn pieces(content: &[ToolCallContent]) -> Vec<ToolPiece> {

@@ -241,6 +241,9 @@ function hearPhase(event) {
 // The Harness's thinking, one row per turn in the log (ADR-0034). The Shell
 // sends the whole thought so far, so a row is redrawn rather than appended to.
 const thinkingRows = new Map();
+// One row per call. An update replaces only the fields it carries, as ACP
+// does, so a later status does not wipe what the call already showed.
+const toolRows = new Map();
 
 // A row whose title opens and closes the text under it: Thinking, and the
 // prompts and tool calls a loaded session replays. `stamp` is a `when` node,
@@ -845,6 +848,9 @@ function newSession(why) {
   recall.release();
   thinking.clear();
   thinkingRows.clear();
+  // The log no longer holds these rows. Leaving the map would update a
+  // detached node the next time that call id arrived.
+  toolRows.clear();
   // Not a child of the log, so replacing the rows above does not clear it.
   showPlan([]);
   turns.clear();
@@ -866,13 +872,19 @@ function newSession(why) {
 // again from `chat_ready`.
 let restoredBlock = [];
 
-function restoredFold(cls, title, text, draw) {
-  const row = foldRow(`restored ${cls}`, title);
-  draw(row.querySelector(".said"), text);
+// Starts folded. Replay passes `restored …`. A live tool call does not: it
+// belongs to this session, not the block above the composer.
+function foldShut(cls, title, body, draw) {
+  const row = foldRow(cls, title);
+  draw(row.querySelector(".said"), body);
   fold(row, false);
   const toggle = row.querySelector(".thinking-toggle");
   toggle.addEventListener("click", () => fold(row, toggle.getAttribute("aria-expanded") !== "true"));
   return row;
+}
+
+function toolLabel(entry) {
+  return [entry.title || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · ");
 }
 
 // A path or an id the Harness chose, on one line with nothing that reorders it.
@@ -880,8 +892,8 @@ function oneLine(text) {
   return stripUnsafe(text).replace(/[\r\n\t]+/g, " ");
 }
 
-// One line per thing a replayed tool call carried (ADR-0028). Text is drawn
-// as written. A mark is Markdown, so its links open.
+// One line per thing a tool call carried (ADR-0028). Text is drawn as
+// written. A mark is Markdown, so its links open. Live and replay share this.
 function toolPiece(piece) {
   const line = el("tool-piece");
   switch (piece.type) {
@@ -912,6 +924,32 @@ function drawTool(body, entry) {
   body.replaceChildren(...places, ...entry.content.map(toolPiece));
 }
 
+function hearTool(payload) {
+  if (!payload?.id) {
+    return;
+  }
+  const held = toolRows.get(payload.id);
+  const prior = held?.entry ?? { title: "", kind: null, status: null, locations: [], content: [] };
+  const entry = {
+    title: payload.title ?? prior.title,
+    kind: payload.kind ?? prior.kind,
+    status: payload.status ?? prior.status,
+    locations: payload.locations ?? prior.locations,
+    content: payload.content ?? prior.content,
+  };
+  const row = held?.row;
+  if (!row) {
+    const created = foldShut("tool", toolLabel(entry), entry, drawTool);
+    toolRows.set(payload.id, { row: created, entry });
+    add(created);
+    lowerCaret();
+    return;
+  }
+  toolRows.set(payload.id, { row, entry });
+  row.querySelector(".who-label").textContent = toolLabel(entry);
+  drawTool(row.querySelector(".said"), entry);
+}
+
 const RESTORED_ROWS = {
   // The line the user typed, drawn as their row is, ahead of the folded frame
   // it was sent in. It carries no stamp: the replay has no time.
@@ -926,15 +964,9 @@ const RESTORED_ROWS = {
     row.append(cluster, body);
     return row;
   },
-  prompt: (entry) => restoredFold("prompt", "Prompt", entry.text, drawThought),
-  thought: (entry) => restoredFold("thought", "Thinking", entry.text, drawThought),
-  tool_call: (entry) =>
-    restoredFold(
-      "tool",
-      [entry.title || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · "),
-      entry,
-      drawTool,
-    ),
+  prompt: (entry) => foldShut("restored prompt", "Prompt", entry.text, drawThought),
+  thought: (entry) => foldShut("restored thought", "Thinking", entry.text, drawThought),
+  tool_call: (entry) => foldShut("restored tool", toolLabel(entry), entry, drawTool),
   plan: (entry) => {
     const row = el("row restored plan-steps");
     const label = el("who-label");
@@ -1094,6 +1126,7 @@ async function start() {
         title: payload.title,
         status: payload.status,
       });
+      hearTool(payload);
     },
     { target: chat.label },
   );

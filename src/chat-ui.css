@@ -1192,8 +1192,8 @@ body {
   display: none;
 }
 
-/* A replayed tool call: one line per location or piece of content. A path
-   has no spaces to break at. */
+/* A tool call, live or replayed: one line per location or piece of content.
+   A path has no spaces to break at. */
 .tool-piece {
   overflow-wrap: anywhere;
 }
