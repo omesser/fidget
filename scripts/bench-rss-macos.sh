@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sample a running fidget's resident set, macOS only. WKWebView helpers are
 # launchd's children, so this diffs WebKit helpers before and after launch.
-# Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
+# Usage: scripts/bench-rss-macos.sh [--bin PATH] [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
 
 # Compare runs on peak physical footprint, which only rises; RSS drops as a busy
 # machine reclaims an idle character's pages. Note roster, displays and sprite
@@ -18,6 +18,7 @@ bin="target/debug/fidget"
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --bin) bin="$2" && shift 2 ;;
     --settle) settle="$2" && shift 2 ;;
     --seconds) seconds="$2" && shift 2 ;;
     --interval) interval="$2" && shift 2 ;;
