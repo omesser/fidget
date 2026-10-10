@@ -42,15 +42,31 @@ before=$(pgrep -f com.apple.WebKit || true)
 app=$!
 trap 'kill "$app" 2>/dev/null' EXIT INT TERM
 
+# Release keeps stderr in the process log and does not copy it back
+# (process_log::init), so the overlay line never reaches $log. Append the
+# bytes written after launch. A debug build already printed the line.
+process_log="${HOME}/Library/Application Support/fidget/process.log"
+process_log_at=0
+[ -f "$process_log" ] && process_log_at=$(wc -c < "$process_log" | tr -d ' ')
+pull_process_log() {
+  [ -f "$process_log" ] || return 0
+  now=$(wc -c < "$process_log" | tr -d ' ')
+  [ "$now" -gt "$process_log_at" ] || return 0
+  tail -c +"$((process_log_at + 1))" "$process_log" >> "$log"
+  process_log_at=$now
+}
+
 # The overlays are what allocate; sampling before they exist measures a
 # half-started app. The line is the one place the app says how many it made.
 for _ in $(seq 30); do
+  pull_process_log
   grep -q 'overlay: [0-9]* display' "$log" && break
   sleep 1
 done
-displays=$(sed -n 's/^overlay: \([0-9]*\) display.*/\1/p' "$log" | head -1)
+pull_process_log
+displays=$(sed -n 's/.*overlay: \([0-9][0-9]*\) display.*/\1/p' "$log" | head -1)
 [ -n "$displays" ] || {
-  echo "the app never reported its overlays; see $log" >&2
+  echo "the app never reported its overlays; see $log and $process_log" >&2
   exit 1
 }
 
