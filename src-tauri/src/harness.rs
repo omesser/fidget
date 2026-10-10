@@ -7349,13 +7349,7 @@ mod tests {
                     },
                     Replayed::Thought { text: text("hmm") },
                     Replayed::Reply {
-                        text: text("nod | Still here")
-                    },
-                    Replayed::Reply {
-                        text: text("Done.")
-                    },
-                    Replayed::Reply {
-                        text: text("Stretch break!")
+                        text: text("nod | Still hereDone.Stretch break!")
                     },
                 ]
             )]
