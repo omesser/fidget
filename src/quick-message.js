@@ -382,8 +382,8 @@ export function createDraftReporter(invoke) {
   };
 }
 
-// Same seat as Speech. When that bubble is already there, step clear of it
-// so a hover does not cover the line the Character is saying.
+// Same seat as a speech line or the thinking dots. When that box is already
+// there, step clear of it so a hover does not cover it.
 export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   const pos = placeBubble(spriteRect, size, bounds);
   if (!speechRect) return pos;

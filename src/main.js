@@ -246,9 +246,8 @@ function positionBubble(view, spriteRect, displayBounds) {
 
 function speechRect(view) {
   if (!view.bubble.classList.contains("visible")) return null;
-  // Only a line to read, and not one fading out, is worth stepping the pill
-  // clear of; dots or a fading box would push it up for nothing.
-  if (view.bubble.dataset.mode !== "speech") return null;
+  // Dots sit in this same box, so the pill has to step clear of them too.
+  // A fading box is the Character leaving, which dismisses the pill.
   const opacity = parseFloat(view.bubble.style.opacity);
   if (opacity < 1 && !isNaN(opacity)) return null;
   return {
