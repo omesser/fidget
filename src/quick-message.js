@@ -77,8 +77,8 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
   let autoHideTimer = null;
   let overSprite = false;
   let overPill = false;
-  // The overlay re-reports the hover every tick, so without this the dwell
-  // re-arms under the cursor that just opened Chat.
+  // The overlay re-reports hover every frame. Summon and Send both leave the
+  // pointer on the Character, and that report would open the pill again.
   let yielded = false;
   // Chat is the composer while it is up. A level, told by every frame.
   let chatOpen = false;
@@ -156,6 +156,7 @@ export function createQuickMessage({ schedule, clear, send, onChange, available 
     const line = text.trim();
     if (!ready || !visible || !line) return false;
     text = "";
+    yielded = true;
     send(line);
     hide();
     return true;
@@ -381,8 +382,8 @@ export function createDraftReporter(invoke) {
   };
 }
 
-// Same seat as Speech. When that bubble is already there, step clear of it
-// so a hover does not cover the line the Character is saying.
+// Same seat as a speech line or the thinking dots. When that box is already
+// there, step clear of it so a hover does not cover it.
 export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   const pos = placeBubble(spriteRect, size, bounds);
   if (!speechRect) return pos;

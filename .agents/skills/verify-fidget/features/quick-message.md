@@ -5,9 +5,10 @@ Hovering the sprite for about 1.5 seconds opens a composer pill above the Charac
 ## Sub-features
 
 - `qm-hover-show` after ~1.5s continuous hover on the sprite body, the pill appears (focused when an AI can answer).
-- `qm-send` typing a non-empty line and activating Send (or Enter) delivers the line and hides the pill.
+- `qm-send` typing a non-empty line and activating Send (or Enter) delivers the line and hides the pill. The pill stays down until the pointer leaves the sprite and hovers again.
 - `qm-auto-hide` after ~3s continuous away from both sprite and pill, an empty pill hides; re-entering either resets the timer.
 - `qm-bubble-yield` while Speech or a thinking bubble is up, an empty pill the pointer left hides after ~1s instead of 3s (#1298).
+- `qm-clear` the pill steps clear of a visible speech bubble and of the thinking dots, above them, or below when the top edge leaves no room.
 - `qm-connect` when no AI can answer yet, the pill shows a connect prompt and an **Open chat** control that opens Chat (not a Summon verb).
 - `qm-freeze` while the pill is visible (or the caret is in it), resting stroll / chase locomotion freezes for that Instance, and a climber holds on the wall (#1366).
 - `qm-chat-suppress` while Chat is open for that Instance, hover does not open the pill; after Chat closes, leave the sprite and hover again to open it.
@@ -35,6 +36,7 @@ Preconditions:
 
 - A glance shorter than `HOVER_DELAY_MS` (1500) must not open the pill; do not click (that is Poke) or double-click (Summon).
 - After a Summon (or any path that calls the pill's `summon` dismiss), the pill stays down while the pointer remains on the sprite; only `leaveSprite` clears that latch so a fresh hover can open it again (#1237).
+- After Send, that same latch stays set. The pointer has to leave the sprite and hover again before the pill opens.
 - While Chat is open for that Instance (`sprite.chatting` / `setChatOpen(true)`), hover does not open the pill even after the Summon latch is cleared; close Chat, leave the sprite, then hover again (#1243).
 - Auto-hide is 3000ms away from **both** sprite and pill; text in the field blocks auto-hide.
 - Opening Chat from the connect control is `overlay_open_chat`, not `verbs:.*Summon` — do not mark Summon verified from this path.
