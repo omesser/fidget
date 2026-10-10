@@ -1494,21 +1494,35 @@ async fn serve(
     cancel_forms(&mut forms, on_event);
 }
 
-/// The restore sink: a `session/load` replay, as entries. A turn's agent
-/// messages join into one reply, as a live turn joins them. The next user
-/// prompt starts the next reply.
+/// A load replay. Inside a prompted turn, agent messages join into one reply
+/// and a new `messageId` breaks the paragraph. With no prompt, each id is a reply.
 #[derive(Default)]
 struct Restore {
     entries: Vec<Replayed>,
     /// The agent message still arriving, and the `<think>` peeled out of it.
     message: Option<(Answer, String)>,
+    /// The `messageId` already joined into this turn. A missing id leaves it.
+    joined: Option<MessageId>,
+    /// The open message's id differs from `joined`, so joining it breaks the paragraph.
+    break_next: bool,
 }
 
 impl Restore {
     fn take(&mut self, heard: Heard<'_>) {
-        // A new `messageId` starts a wake between turns, not a second reply here.
-        let continues = matches!(&heard, Heard::Said { .. }) && self.message.is_some();
-        if !continues {
+        if let Heard::Said { message, .. } = &heard {
+            // A missing id continues the message already open. Only a different
+            // id is the next message.
+            let changed = message_changed(self.joined.as_ref(), *message);
+            if self.message.is_none() || changed {
+                self.end_message();
+            }
+            if changed {
+                self.break_next = true;
+            }
+            if let Some(id) = *message {
+                self.joined = Some(id.clone());
+            }
+        } else {
             self.end_message();
         }
         match heard {
@@ -1625,19 +1639,29 @@ impl Restore {
         let Some((answer, thought)) = self.message.take() else {
             return;
         };
+        let break_before = self.break_next;
+        self.break_next = false;
         let text = answer.finish();
         let turn = self.turn_start();
-        if self.reply_at(turn).is_some() {
+        // No prompt means the replay never marked a turn, so a new id is the
+        // next reply. Inside a prompt, that id stays in the one reply.
+        let split = break_before && turn == 0;
+        if self.reply_at(turn).is_some() && !split {
             self.add_turn_thought(&thought);
             if let Some(Replayed::Reply { text: held }) = self.entries[turn..]
                 .iter_mut()
                 .find(|entry| matches!(entry, Replayed::Reply { .. }))
             {
+                if break_before {
+                    break_paragraph(held);
+                }
                 held.push_str(&text);
             }
             return;
         }
-        self.add_turn_thought(&thought);
+        if !thought.is_empty() {
+            self.think(&thought);
+        }
         self.entries.push(Replayed::Reply { text });
     }
 
@@ -1821,14 +1845,12 @@ fn between_turns(
                 }
             }
             let held = inbound.entry(session_id.clone()).or_default();
-            if let Heard::Said { message, .. } = &heard {
-                held.message = held.message.take().or_else(|| message.cloned());
-            }
             show(
                 heard,
                 &session_id,
                 &mut held.said,
                 &mut held.thought,
+                &mut held.message,
                 on_event,
             );
         }
@@ -2133,6 +2155,7 @@ async fn turn(
     // that arrives mid-sentence can be shown as the sentence it belongs to.
     // It dies with the turn.
     let mut thought = String::new();
+    let mut open_message = None;
     let mut asks: Vec<PendingAsk> = Vec::new();
     let mut forms: Vec<PendingElicit> = Vec::new();
     // Reported on the transition only, and at the top of the loop rather than
@@ -2164,7 +2187,14 @@ async fn turn(
                 Some(Incoming::Update(update)) => {
                     let heard = hear(&update.update);
                     let answered = matches!(heard, Heard::Said { .. });
-                    show(heard, session, &mut said, &mut thought, on_event);
+                    show(
+                        heard,
+                        session,
+                        &mut said,
+                        &mut thought,
+                        &mut open_message,
+                        on_event,
+                    );
                     if answered {
                         let _ = reply.send(Progress::Said(said.so_far().to_string()));
                     }
@@ -2387,11 +2417,34 @@ fn elicitation_response(
 }
 
 /// The live sink: one update heard, into the turn's text or an `Event`.
+/// A different `messageId` is the next message. A missing id stays with the
+/// message already open, as a harness that omits it does.
+fn message_changed(open: Option<&MessageId>, next: Option<&MessageId>) -> bool {
+    match (open, next) {
+        (Some(open), Some(next)) => open != next,
+        _ => false,
+    }
+}
+
+/// The next message starts a paragraph. A mark that already closed on a blank
+/// line keeps that one break.
+fn break_paragraph(text: &mut String) {
+    if text.is_empty() || text.ends_with("\n\n") {
+        return;
+    }
+    if text.ends_with('\n') {
+        text.push('\n');
+    } else {
+        text.push_str("\n\n");
+    }
+}
+
 fn show(
     heard: Heard<'_>,
     session: &SessionId,
     said: &mut Answer,
     thought: &mut String,
+    message: &mut Option<MessageId>,
     on_event: &OnEvent,
 ) {
     let think = |thought: &mut String, text: &str| {
@@ -2407,7 +2460,18 @@ fn show(
         }
     };
     match heard {
-        Heard::Said { block, .. } => think(thought, &said.hear(block)),
+        Heard::Said {
+            message: incoming,
+            block,
+        } => {
+            if message_changed(message.as_ref(), incoming) {
+                said.separate();
+            }
+            if let Some(id) = incoming {
+                *message = Some(id.clone());
+            }
+            think(thought, &said.hear(block));
+        }
         // `content` and `locations` are dropped. A call reaches the Action
         // Log as a title and a status and never says what it touched. Every
         // field is meant to be read (ADR-0028).
@@ -2521,6 +2585,11 @@ impl Answer {
                 }
             }
         }
+    }
+
+    /// The next message is its own paragraph in the answer.
+    fn separate(&mut self) {
+        break_paragraph(&mut self.said);
     }
 
     /// Adds a chunk's block to the answer, a mark as its own paragraph, and
@@ -2769,12 +2838,14 @@ mod tests {
         let (seen, on_event) = collector();
         let mut said = Answer::default();
         let mut thought = String::new();
+        let mut message = None;
         for update in updates {
             show(
                 hear(&update),
                 &SessionId::new("s"),
                 &mut said,
                 &mut thought,
+                &mut message,
                 &on_event,
             );
         }
@@ -3299,10 +3370,12 @@ mod tests {
     }
 
     /// A tool between two agent messages is still one turn. A new `messageId`
-    /// does not open a second reply, and the words stay ahead of that tool.
+    /// breaks the paragraph and does not open a second reply. The words stay
+    /// ahead of that tool, and the Behavior line still reads.
     #[test]
     fn one_turn_with_several_message_ids_draws_one_reply_live_and_restored() {
         let updates = vec![
+            wire_text("user_message_chunk", "go"),
             wire_message("m1", "nod | Hello"),
             wire(
                 serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
@@ -3319,19 +3392,22 @@ mod tests {
             wire_message("m2", " there"),
         ];
         let (reply, _) = drive(updates.clone());
-        assert_eq!(reply, "nod | Hello there");
+        assert_eq!(reply, "nod | Hello\n\n there");
         let behaviors = ["nod".to_string()];
         assert_eq!(
             fidget_core::director::dialogue_of(&reply, &behaviors).as_deref(),
-            Some("Hello there")
+            Some("Hello\n\n there")
         );
 
         let rows = restored_rows(&updates);
         assert_eq!(
             rows,
             vec![
+                Replayed::Prompt {
+                    text: "go".to_string()
+                },
                 Replayed::Reply {
-                    text: "nod | Hello there".to_string()
+                    text: "nod | Hello\n\n there".to_string()
                 },
                 Replayed::ToolCall {
                     id: "t1".to_string(),
@@ -3350,7 +3426,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(drawn_replies, ["Hello there"]);
+        assert_eq!(drawn_replies, ["Hello\n\n there"]);
     }
 
     /// A thought chunk between two messages stays above the one reply, where
@@ -3358,6 +3434,7 @@ mod tests {
     #[test]
     fn a_thought_between_messages_stays_above_the_one_reply() {
         let updates = vec![
+            wire_text("user_message_chunk", "go"),
             wire_message("m1", "Hello"),
             wire_text("agent_thought_chunk", "first"),
             wire(
@@ -3367,7 +3444,7 @@ mod tests {
             wire_message("m2", "<think>second</think> there"),
         ];
         let (reply, events) = drive(updates.clone());
-        assert_eq!(reply, "Hello there");
+        assert_eq!(reply, "Hello\n\n there");
         assert_eq!(
             events.iter().rev().find_map(|event| match event {
                 Event::Thought { text, .. } if !text.is_empty() => Some(text.as_str()),
@@ -3378,11 +3455,14 @@ mod tests {
         assert_eq!(
             restored_rows(&updates),
             vec![
+                Replayed::Prompt {
+                    text: "go".to_string()
+                },
                 Replayed::Thought {
                     text: "firstsecond".to_string()
                 },
                 Replayed::Reply {
-                    text: "Hello there".to_string()
+                    text: "Hello\n\n there".to_string()
                 },
                 Replayed::ToolCall {
                     id: "t1".to_string(),
@@ -3401,6 +3481,7 @@ mod tests {
     #[test]
     fn a_think_tag_after_a_tool_stays_ahead_of_the_one_reply() {
         let updates = vec![
+            wire_text("user_message_chunk", "go"),
             wire_message("m1", "Hello"),
             wire(
                 serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
@@ -3409,7 +3490,7 @@ mod tests {
             wire_message("m2", "<think>hmm</think> there"),
         ];
         let (reply, events) = drive(updates.clone());
-        assert_eq!(reply, "Hello there");
+        assert_eq!(reply, "Hello\n\n there");
         assert_eq!(
             events.iter().rev().find_map(|event| match event {
                 Event::Thought { text, .. } if !text.is_empty() => Some(text.as_str()),
@@ -3420,11 +3501,14 @@ mod tests {
         assert_eq!(
             restored_rows(&updates),
             vec![
+                Replayed::Prompt {
+                    text: "go".to_string()
+                },
                 Replayed::Thought {
                     text: "hmm".to_string()
                 },
                 Replayed::Reply {
-                    text: "Hello there".to_string()
+                    text: "Hello\n\n there".to_string()
                 },
                 Replayed::ToolCall {
                     id: "t1".to_string(),
@@ -3456,6 +3540,26 @@ mod tests {
             })
             .collect();
         assert_eq!(replies, ["One", "Two"]);
+    }
+
+    /// No replayed user prompt means no turn to join. Each `messageId` is its
+    /// own reply, and chunks that share an id stay one message.
+    #[test]
+    fn a_restore_without_a_user_chunk_keeps_each_message_its_own_reply() {
+        let updates = vec![
+            wire_message("m1", "Back from lunch."),
+            wire_message("m1", " Hello."),
+            wire_message("m2", "Build is green."),
+        ];
+        let rows = restored_rows(&updates);
+        let replies: Vec<&str> = rows
+            .iter()
+            .filter_map(|row| match row {
+                Replayed::Reply { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(replies, ["Back from lunch. Hello.", "Build is green."]);
     }
 
     #[test]

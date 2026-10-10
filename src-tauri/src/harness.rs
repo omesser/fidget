@@ -4109,7 +4109,7 @@ mod tests {
                         );
                         plan("completed");
                         user_chunk(loaded, "the second wake's prompt");
-                        chunk(loaded, "<think>hmm</think>nod | Still here");
+                        message("m0", "<think>hmm</think>nod | Still here");
                         message("m1", "Done.");
                         message("m2", "Stretch ");
                         message("m2", "break!");
@@ -7349,7 +7349,7 @@ mod tests {
                     },
                     Replayed::Thought { text: text("hmm") },
                     Replayed::Reply {
-                        text: text("nod | Still hereDone.Stretch break!")
+                        text: text("nod | Still here\n\nDone.\n\nStretch break!")
                     },
                 ]
             )]
