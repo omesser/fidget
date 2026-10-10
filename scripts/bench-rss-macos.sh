@@ -44,7 +44,7 @@ trap 'kill "$app" 2>/dev/null' EXIT INT TERM
 
 # Release keeps stderr in the process log and does not copy it back
 # (process_log::init), so the overlay line never reaches $log. Append the
-# bytes written after launch. A debug build already printed the line.
+# bytes written after launch. A debug build prints that line into $log.
 process_log="${HOME}/Library/Application Support/fidget/process.log"
 process_log_at=0
 [ -f "$process_log" ] && process_log_at=$(wc -c < "$process_log" | tr -d ' ')

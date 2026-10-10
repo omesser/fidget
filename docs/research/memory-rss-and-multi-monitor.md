@@ -270,7 +270,7 @@ or `heaptrack`. Instruments needs a GUI session and a human. The allocator
 ranking is unanswered, and the 47.6 MB above is the first thing to point it
 at.
 
-**A release build.** Everything in the macOS section is `target/debug`.
+**A release build.** Everything in the macOS section is `target/debug`. One release run is recorded in [macOS release resident set](macos-release-resident-set.md).
 
 **Chat windows open.** Every macOS run is overlays only.
 
