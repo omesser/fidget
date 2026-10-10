@@ -2277,8 +2277,8 @@ async fn turn(
 }
 
 /// Every field of the tool call a consent row could read, as plain values.
-/// A diff is a path and an image is nothing. `name` is not here. The SDK
-/// gates it behind `unstable_tool_call_name`, which this crate does not enable.
+/// A diff contributes its path. `name` is absent because the SDK gates it
+/// behind `unstable_tool_call_name`, which this crate does not enable.
 fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionAsk {
     let fields = &request.tool_call.fields;
     let mut locations: Vec<String> = fields
@@ -2291,6 +2291,8 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
     for piece in fields.content.iter().flatten() {
         match piece {
             ToolCallContent::Content(block) => {
+                // Not drawn here yet unless it is text. A replayed tool
+                // row marks the other blocks in `tool_content`.
                 if let ContentBlock::Text(text) = &block.content {
                     content.push(text.text.clone());
                 }
@@ -2304,9 +2306,9 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
                     locations.push(path);
                 }
             }
-            // An image, an embedded resource, a terminal to watch. Nothing a
-            // text surface can read out, and `input` still says what was
-            // asked. Drawing a placeholder for them would only crowd it out.
+            // Not drawn on the consent row yet. A replayed tool row
+            // names a terminal, and marks any other variant, in
+            // `tool_content`.
             _ => {}
         }
     }
