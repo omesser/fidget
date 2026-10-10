@@ -400,6 +400,29 @@ test("Send delivers the trimmed line and puts the pill away", () => {
   assert.equal(qm.typing, false, "no caret left to hold the pet");
 });
 
+test("a send keeps the composer down until the pointer leaves the Character", () => {
+  const { qm, sent, advance } = shown();
+  qm.setText("hey");
+
+  assert.equal(qm.submit(), true);
+  assert.deepEqual(sent, ["hey"]);
+  assert.equal(qm.visible, false);
+
+  for (let tick = 0; tick < 10; tick += 1) {
+    qm.enterSprite();
+    advance(HOVER_DELAY_MS);
+  }
+  assert.equal(qm.visible, false, "the pointer never left, so the pill stays down");
+  assert.equal(qm.takeFocus(), false, "the field does not take the caret back");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS - 1);
+  assert.equal(qm.visible, false, "a fresh hover still waits out the dwell");
+  advance(1);
+  assert.equal(qm.visible, true, "leaving and hovering again opens it");
+});
+
 test("no pill opens while Chat is up, and a fresh hover opens it once Chat is gone", () => {
   const { qm, advance } = harness();
 
