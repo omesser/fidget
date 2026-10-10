@@ -250,7 +250,7 @@ function In-State([string]$Pattern) {
 
 function Pokes { @(Select-String -LiteralPath $trace -Pattern $pokePattern -CaseSensitive).Count }
 
-# A self-started climb of a tall display outlasts the old 30s rest budget.
+# A tall-display climb can outlast the grounded rest budget. This is the wall-clock stop.
 $RestCeilingMs = 90000
 
 # Falling and Climbing do not spend the rest budget; the ceiling stops a stuck sprite.
@@ -299,7 +299,7 @@ function Wait-Climbing([int]$Tenths) {
 function Get-ClimbEdges([string[]]$Lines) {
     $displays = @($Lines | Where-Object { $_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)' } | ForEach-Object {
             [void]($_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)')
-            # The log's x is the origin. The far side is that plus the width.
+            # The log's x is the origin. The far side is origin plus width, parenthesized so + is arithmetic.
             $origin = [int]$Matches[2]
             $width = [int]$Matches[1]
             , @($origin, ($origin + $width))

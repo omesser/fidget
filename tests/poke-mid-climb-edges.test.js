@@ -42,7 +42,6 @@ if ($null -eq $edges) { throw "no edges" }
 Write-Output "$($edges.Left) $($edges.Right) $($edges.LeftTarget) $($edges.RightTarget)"
 `);
 
-// 30s is the old rest budget. Climbing must still be waiting; grounded and still is done.
 const REST = loader(`
 $budget = 30000
 $climb = Get-RestDecision "Climbing" $false $budget $budget $budget
