@@ -250,20 +250,42 @@ function In-State([string]$Pattern) {
 
 function Pokes { @(Select-String -LiteralPath $trace -Pattern $pokePattern -CaseSensitive).Count }
 
+# A self-started climb of a tall display outlasts the old 30s rest budget.
+$RestCeilingMs = 90000
+
+# Falling and Climbing do not spend the rest budget; the ceiling stops a stuck sprite.
+function Get-RestDecision([string]$State, [bool]$Still, [int]$RestMs, [int]$WallMs, [int]$BudgetMs) {
+    if ($WallMs -ge $RestCeilingMs) { return "give-up" }
+    if ($State -cmatch '^(Falling|Climbing)$') { return "wait" }
+    if ($Still -and $State -cmatch '^(Grounded|Perched)$') { return "done" }
+    if ($RestMs -ge $BudgetMs) { return "give-up" }
+    "wait"
+}
+
 # Resting and not walking: a press on a walking sprite lands where it was, and
 # the drag then throws whatever window is underneath.
 function Wait-Still([int]$Tenths) {
-    for ($n = $Tenths; $n -gt 0; $n--) {
+    $budgetMs = $Tenths * 100
+    $restMs = 0
+    $wall = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
         if ($proc.HasExited) { Fail "Fidget exited; see $err" }
         $a = Last-Frame
-        if ($a -and $a.State -cmatch '^(Grounded|Perched)$') {
+        $state = if ($a) { $a.State } else { "" }
+        $still = $false
+        $airborne = $state -cmatch '^(Falling|Climbing)$'
+        if ($a -and $state -cmatch '^(Grounded|Perched)$') {
             Start-Sleep -Milliseconds 200
             $b = Last-Frame
-            if ($b.X -eq $a.X -and $b.Y -eq $a.Y -and $b.State -cmatch '^(Grounded|Perched)$') { return $true }
+            if ($b.X -eq $a.X -and $b.Y -eq $a.Y -and $b.State -cmatch '^(Grounded|Perched)$') { $still = $true }
+            $restMs += 200
         }
+        $decision = Get-RestDecision $state $still $restMs ([int]$wall.ElapsedMilliseconds) $budgetMs
+        if ($decision -ceq "done") { return $true }
+        if ($decision -ceq "give-up") { return $false }
         Start-Sleep -Milliseconds 100
+        if (-not $airborne) { $restMs += 100 }
     }
-    $false
 }
 
 function Wait-Climbing([int]$Tenths) {
@@ -277,7 +299,10 @@ function Wait-Climbing([int]$Tenths) {
 function Get-ClimbEdges([string[]]$Lines) {
     $displays = @($Lines | Where-Object { $_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)' } | ForEach-Object {
             [void]($_ -match ' covers (\d+)x\d+ at \((-?\d+),-?\d+\)')
-            , @([int]$Matches[2], [int]$Matches[2] + [int]$Matches[1])
+            # The log's x is the origin. The far side is that plus the width.
+            $origin = [int]$Matches[2]
+            $width = [int]$Matches[1]
+            , @($origin, ($origin + $width))
         })
     if ($displays.Count -eq 0) { return $null }
     $left = ($displays | ForEach-Object { $_[0] } | Measure-Object -Minimum).Minimum
