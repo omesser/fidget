@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Scenario: poke-mid-climb (X11)
-# On screen: launches Fidget with the Static Director. The sprite is thrown at
-#   a display's side edge and poked while it climbs. Fidget quits when the
-#   scenario ends. No screenshots.
-# Input: a real drag through xdotool that throws the sprite, then clicks on it
-#   until one lands as a Poke, for up to five throws. The cursor moves; keep
-#   hands off the mouse for the run.
+# On screen: launches Fidget with the Static Director. The sprite is dragged
+#   past a display's side edge and let go, so it climbs that wall, and is
+#   poked while it climbs. Fidget quits when the scenario ends. No screenshots.
+# Input: a real drag through xdotool that carries the sprite over the edge
+#   named by FIDGET_SCENARIO_EDGE (left or right, default left), then clicks on
+#   it until one lands as a Poke. The cursor moves; keep hands off the mouse
+#   for the run.
 # Duration: about 20 s, 1 min at most.
 # Grants: an X11 session and xdotool.
 # Asserts: the Poke starts react over, then the sprite stays Climbing at one
@@ -55,7 +56,10 @@ command -v xdotool > /dev/null 2>&1 || {
   exit 2
 }
 
-mkdir -p "$out/home"
+mkdir -p "$out/home/.local/share/fidget"
+cat > "$out/home/.local/share/fidget/settings.json" << 'SETTINGS_EOF'
+{"first_run_tour_shown": true}
+SETTINGS_EOF
 log="$out/app.log"
 last_frame() { grep '^frame: ' "$log" | tail -1; }
 in_state() { last_frame | grep -qE " ($1) "; }
@@ -89,16 +93,19 @@ wait_climbing() { # <tenths of a second>
   done
 }
 
-# One xdotool call per gesture: a process per step would stretch the drag past
-# the 60 ms the app measures a Throw over. Timings are throw-sprite.swift's.
-# X11 has no negative root coordinate, and xdotool reads "-1300" as an option.
-throw_sprite() { # <x> <y> <dx>
-  local args=(mousemove "$1" "$2" sleep 0.12 mousedown 1 sleep 0.15) step x
-  for step in 1 2 3 4 5 6 7 8; do
-    x=$(($1 + $3 * step / 8))
-    args+=(mousemove "$((x < 0 ? 0 : x))" "$(($2 - 10 * step / 8))" sleep 0.012)
+# One xdotool call per gesture, as the app samples the pointer on its own tick.
+# X11 has no negative root coordinate, so the target is the screen's own edge
+# pixel. The sprite is held by a point a quarter of its width inboard of its
+# centre, so with the pointer at the edge its centre is already past it: a
+# sprite whose centre is over no display falls to the nearest edge and climbs
+# it, whatever speed the hand had. No Throw is involved, and the release is
+# held still so none can be measured.
+place_sprite() { # <grab x> <y> <target x>
+  local args=(mousemove "$1" "$2" sleep 0.12 mousedown 1 sleep 0.25) step
+  for step in 1 2 3 4 5 6 7 8 9 10; do
+    args+=(mousemove "$(($1 + ($3 - $1) * step / 10))" "$2" sleep 0.03)
   done
-  xdotool "${args[@]}" mouseup 1
+  xdotool "${args[@]}" sleep 0.3 mouseup 1
 }
 
 click_at() { # <x> <y>
@@ -121,52 +128,58 @@ displays=$(sed -nE 's/^overlay: .* covers ([0-9]+)x[0-9]+ at \((-?[0-9]+),-?[0-9
 click_gap=$(sed -nE 's/^overlay: double-click interval ([0-9]+)ms/\1/p' "$log" | head -1)
 click_gap=$(awk -v ms="${click_gap:-500}" 'BEGIN { print (ms + 100) / 1000 }')
 
+read -r sx sy < <(sprite_xy)
+cx=$((sx + half))
+side=${FIDGET_SCENARIO_EDGE:-left}
+case "$side" in
+  left)
+    edge=$(awk 'NR == 1 || $1 < m { m = $1 } END { print m }' <<< "$displays")
+    into=1
+    grab_x=$((cx + half / 2))
+    target_x=$edge
+    ;;
+  right)
+    edge=$(awk 'NR == 1 || $2 > m { m = $2 } END { print m }' <<< "$displays")
+    into=-1
+    grab_x=$((cx - half / 2))
+    target_x=$((edge - 1))
+    ;;
+  *) fail "FIDGET_SCENARIO_EDGE is '$side', want left or right" ;;
+esac
+
+place_sprite "$grab_x" "$((sy + half))" "$target_x" >> "$out/input.txt" 2>&1 || fail "could not place the sprite; see $out/input.txt"
+wait_climbing 20 || fail "the sprite let go over the $side edge and did not climb; see $log"
+read -r sx sy < <(sprite_xy)
+# A wall climb is centred on the display edge it was let go over.
+mid=$((sx + half))
+if [ $((mid - edge)) -gt 2 ] || [ $((edge - mid)) -gt 2 ]; then
+  fail "the sprite climbs at x=$mid, not the $side edge at x=$edge; see $log"
+fi
+
+# Only the display's half of the sprite is drawn. Clicks a double-click
+# interval apart are separate Pokes; stop at the first. Aim near the top,
+# since it rises while the click travels, but never into a top panel.
+# Into the display: right of a left edge, left of a right edge.
+px=$((edge + into * half / 2))
+before=$(pokes)
 poked=
-for attempt in 1 2 3 4 5; do
-  wait_still 100 || continue
+for _ in 1 2 3 4 5 6; do
+  in_state Climbing || break
   read -r sx sy < <(sprite_xy)
-  cx=$((sx + half))
-  # Toward the nearer side of the sprite's own display, and the far side on
-  # every other attempt, in case a panel or a neighbour display is in the way.
-  read -r x0 x1 < <(awk -v c="$cx" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
-  [ -n "${x1:-}" ] || { x0=$cx x1=$cx; }
-  near_left=$((cx - x0 < x1 - cx))
-  if [ $((attempt % 2)) -eq 0 ]; then near_left=$((1 - near_left)); fi
-  if [ "$near_left" -eq 1 ]; then dx=-1500; else dx=1500; fi
-  throw_sprite "$cx" "$((sy + half))" "$dx" >> "$out/input.txt" 2>&1 || fail "could not throw the sprite; see $out/input.txt"
-
-  if ! wait_climbing 40; then
-    echo "attempt $attempt: no climb" >> "$out/input.txt"
-    continue
+  [ "$sy" -gt "$size" ] || break
+  click_at "$px" "$((sy + half / 9))" >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
+  sleep "$click_gap"
+  if [ "$(pokes)" -gt "$before" ]; then
+    poked=1
+    break
   fi
-  read -r sx sy < <(sprite_xy)
-  # A wall climb is centred on a display edge; a Perch climb stands clear of it.
-  edge=$(awk -v c="$((sx + half))" '{ for (i = 1; i <= 2; i++) if ($i - c <= 2 && c - $i <= 2) { print $i; exit } }' <<< "$displays")
-  if [ -z "$edge" ]; then
-    echo "attempt $attempt: climbed a Perch at x=$((sx + half))" >> "$out/input.txt"
-    continue
-  fi
-
-  # Only the display's half of the sprite is drawn. Clicks a double-click
-  # interval apart are separate Pokes; stop at the first. Aim near the top,
-  # since it rises while the click travels, but never into a top panel.
-  if [ "$sx" -lt "$edge" ]; then px=$((edge + half / 2)); else px=$((edge - half / 2)); fi
-  before=$(pokes)
-  for _ in 1 2 3 4 5 6; do
-    in_state Climbing || break
-    read -r sx sy < <(sprite_xy)
-    [ "$sy" -gt "$size" ] || break
-    click_at "$px" "$((sy + half / 9))" >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
-    sleep "$click_gap"
-    if [ "$(pokes)" -gt "$before" ]; then
-      poked=1
-      break
-    fi
-  done
-  [ -n "$poked" ] && break
-  echo "attempt $attempt: no click landed before the climb ended" >> "$out/input.txt"
 done
-[ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
+[ -n "$poked" ] || fail "no Poke landed mid-climb over the $side edge; see $out/input.txt"
+
+# The quick-message pill holds a climb while the pointer rests on the sprite.
+# Move further into the display than the click landed.
+away=$((px + into * 4 * size))
+xdotool mousemove "$((away < 0 ? 0 : away))" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
 
 sleep 4
 kill "$pid" 2> /dev/null || true

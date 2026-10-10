@@ -129,8 +129,13 @@ overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
 and `ax-window-win.ps1 menu` send that click, print the open menu's items and
 press Escape.
 
-`poke-mid-climb` throws and clicks the same way as on macOS, from the frame
-trace and the `overlay:` lines. X11 sends each gesture as one `xdotool` call.
+`poke-mid-climb` clicks the same way as on macOS, from the frame trace and
+the `overlay:` lines, but places the sprite instead of throwing it. It holds
+the sprite a quarter of its width inboard of its centre and drags the pointer
+to the screen edge named by `FIDGET_SCENARIO_EDGE` (`left`, the default, or
+`right`), so the centre is past the edge and the Engine catches it on that
+wall. The same input gives the same climb every run. X11 sends each gesture as
+one `xdotool` call.
 Windows sends it from a class the leaf compiles once, because a fresh
 `ax-window-win.ps1` takes longer to start than a climb takes to pass the
 cursor. The Windows leaf reads `process.log` from its private `APPDATA`. The
