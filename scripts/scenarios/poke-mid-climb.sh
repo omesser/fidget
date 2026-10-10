@@ -80,6 +80,7 @@ else
   # and a climbing sprite has moved its own height by then.
   build "$root/scripts/click-cursor.swift" click-cursor
   build "$root/scripts/scenarios/throw-sprite.swift" throw-sprite
+  build "$root/scripts/warp-cursor.swift" warp-cursor
 
   env HOME="$out/home" FIDGET_DIRECTOR_API_KEY=x FIDGET_TRACE_FRAMES=1 \
     FIDGET_CHARACTERS="$root/characters" "$bin" > "$log" 2>&1 &
@@ -144,6 +145,19 @@ else
     echo "attempt $attempt: no click landed before the climb ended" >> "$out/input.txt"
   done
   [ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
+
+  # The quick-message pill holds a climb while the pointer rests on the sprite.
+  # Move further into the display than the click, and not past that display.
+  if [ "$px" -gt "$edge" ]; then into=1; else into=-1; fi
+  away=$((px + into * 4 * size))
+  read -r dx0 dx1 < <(awk -v c="$px" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
+  if [ -n "${dx1:-}" ]; then
+    if [ "$away" -lt "$dx0" ]; then away=$dx0; fi
+    if [ "$away" -ge "$dx1" ]; then away=$((dx1 - 1)); fi
+  elif [ "$away" -lt 0 ]; then
+    away=0
+  fi
+  "$tools/warp-cursor" "$away" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
 
   sleep 4
   kill "$pid" 2> /dev/null || true
