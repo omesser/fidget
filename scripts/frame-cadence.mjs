@@ -11,8 +11,8 @@ import { pathToFileURL } from "node:url";
 import { interpolate } from "../src/interpolate.js";
 
 const EDGES = [0, 10, 14, 18, 20, 25, 34, 50];
-// A 60 Hz frame is 16.7 ms, so a gap past 20 ms is a vsync the loop missed.
-const DROP_MS = 20;
+// A 60 Hz frame is 16.7 ms, so a gap past this is a vsync the loop missed.
+export const DROP_MS = 20;
 
 const round = (value, places) => Number(value.toFixed(places));
 const mean = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -27,6 +27,19 @@ function histogram(frameDeltas, tickDeltas) {
     frames: frameDeltas.filter((d) => bin(d) === i).length,
     ticks: tickDeltas.filter((d) => bin(d) === i).length,
   }));
+}
+
+// A gap equal to DROP_MS is still one frame. Only a longer gap missed a vsync.
+function summarizeGaps(gaps) {
+  return {
+    fps: gaps.length ? round(1000 / mean(gaps), 1) : null,
+    drops: gaps.filter((d) => d > DROP_MS).length,
+    histogram: histogram(gaps, []).map(({ bin, frames }) => ({ bin, count: frames })),
+  };
+}
+
+export function summarizeTimestamps(timestamps) {
+  return summarizeGaps(deltas(timestamps));
 }
 
 // Each count covers the second before its stamp, so the first one in the
@@ -101,6 +114,7 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
   }
 
   const tickDeltas = deltas(ticks.map((tick) => tick.at));
+  const display = summarizeGaps(frameDeltas);
   // A moving tick waits toward the 16 ms deadline and a still one keeps the
   // wake-based pace, so the blended rate describes neither. A tick moved when
   // its traced position differs from the tick before it.
@@ -114,9 +128,9 @@ export function analyze(log, { from = -Infinity, to = Infinity }) {
   const byMs = lags.map((l) => l.ms).sort((a, b) => a - b);
   const bySamples = lags.map((l) => l.samples).sort((a, b) => a - b);
   return {
-    frames: [...overlays.values()].reduce((n, frames) => n + frames.length, 0),
-    fps: frameDeltas.length ? round(1000 / mean(frameDeltas), 1) : null,
-    drops: frameDeltas.filter((d) => d > DROP_MS).length,
+    frames: [...overlays.values()].reduce((n, series) => n + series.length, 0),
+    fps: display.fps,
+    drops: display.drops,
     restarts,
     ticks: ticks.length,
     tickHz: tickDeltas.length ? round(1000 / mean(tickDeltas), 1) : null,
