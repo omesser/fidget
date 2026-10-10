@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { analyze, compare, report } from "../scripts/frame-cadence.mjs";
+import { DROP_MS, analyze, compare, report, summarizeTimestamps, unwrapProcessLog } from "../scripts/frame-cadence.mjs";
 
 // Five Engine ticks of a walk, one 40 ms late, and the display frames an overlay
 // drew across them: a quiet loop restarts on the late arrival, then misses a
@@ -33,6 +33,46 @@ const log = [
   "cadence-ticks: 1400 12",
   "frame: 2000 Grounded pos(1,2) sprite(3,4) walk#5 BMO",
 ].join("\n");
+
+// Gaps of 16 ms, then exactly DROP_MS, then one millisecond over it. A gap
+// equal to the threshold is still a frame. Only the one past it is a drop.
+test("timestamps become a histogram, a drop count, and an average fps", () => {
+  const times = [0, 16, 32, 32 + DROP_MS, 32 + DROP_MS + (DROP_MS + 1)];
+  assert.deepEqual(summarizeTimestamps(times), {
+    fps: 54.8,
+    drops: 1,
+    histogram: [
+      { bin: "0-10", count: 0 },
+      { bin: "10-14", count: 0 },
+      { bin: "14-18", count: 2 },
+      { bin: "18-20", count: 0 },
+      { bin: "20-25", count: 2 },
+      { bin: "25-34", count: 0 },
+      { bin: "34-50", count: 0 },
+      { bin: "50+", count: 0 },
+    ],
+  });
+});
+
+test("a release process log timestamp still leaves the frame line", () => {
+  const body = "frame: 1000 Perched pos(1,2) sprite(3,4) idle#0 BMO";
+  const wrapped = `1700000000 ${body}`;
+  assert.equal(unwrapProcessLog(wrapped), body);
+  assert.equal(unwrapProcessLog(`note ${body}`), `note ${body}`);
+  assert.equal(analyze(wrapped, {}).ticks, 1);
+  const dir = mkdtempSync(join(tmpdir(), "frame-cadence-"));
+  writeFileSync(join(dir, "process.log"), "1700000000 cadence: overlay-0 1.000 0 - 1.000\n");
+  const run = spawnSync("node", ["scripts/frame-cadence.mjs", "unwrap", join(dir, "process.log")]);
+  assert.equal(run.status, 0, run.stderr.toString());
+  assert.equal(run.stdout.toString(), "cadence: overlay-0 1.000 0 - 1.000\n");
+});
+
+test("one timestamp has no frame rate and no drops", () => {
+  const one = summarizeTimestamps([1000]);
+  assert.equal(one.fps, null);
+  assert.equal(one.drops, 0);
+  assert.equal(one.histogram.reduce((n, bin) => n + bin.count, 0), 0);
+});
 
 test("a window of the log reduces to cadence, drops, and interpolation lag", () => {
   assert.deepEqual(analyze(log, { from: 1000, to: 1400 }), {
@@ -93,7 +133,7 @@ test("a window with no display frames says so rather than dividing by zero", () 
 test("the report is a Markdown table a baseline doc can paste", () => {
   const text = report(analyze(log, { from: 1000, to: 1400 }));
   assert.match(text, /\| Mean fps \| 48 \|/);
-  assert.match(text, /\| Dropped \(>20 ms\) \| 1 \|/);
+  assert.match(text, new RegExp(`\\| Dropped \\(>${DROP_MS} ms\\) \\| 1 \\|`));
   assert.match(text, /\| Interpolation lag p50, moving \| 16\.8 ms \(1 samples\) \|/);
   assert.match(text, /\| 25-34 \| 1 \| 0 \|/);
   assert.match(text, /\| Engine ticks\/s, loop counter \| 57\.5 \|/);
@@ -113,7 +153,7 @@ test("an A/B comparison reports each side's mean and rounds, and B minus A", () 
       "| Metric | A | B | B - A |",
       "|---|---|---|---|",
       "| Mean fps | N/A (N/A, N/A) | 48 (48) | N/A |",
-      "| Dropped (>20 ms) | 0 (0, 0) | 1 (1) | 1 |",
+      `| Dropped (>${DROP_MS} ms) | 0 (0, 0) | 1 (1) | 1 |`,
       "| Engine ticks/s, loop counter | N/A (N/A, N/A) | 57.5 (57.5) | N/A |",
       "| Engine ticks, still (Hz) | 45 (50, 40) | 4 (4) | -41 |",
       "| Engine ticks, still (ms) | 22.5 (20, 25) | 250 (250) | 227.5 |",
