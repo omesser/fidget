@@ -247,7 +247,7 @@ function drive() {
 
 const skip = chrome ? false : "headless Chromium is not installed";
 
-test("the pill steps clear of a speech bubble and of the thinking dots", { skip, timeout: 120000 }, () => {
+test("the pill steps clear of a speech bubble and of the thinking dots", { skip, timeout: 90000 }, () => {
   const report = drive();
   assert.equal(report.error, undefined, report.error);
   assert.equal(report.cases.length, 10);
