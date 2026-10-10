@@ -100,9 +100,12 @@ mkdir -p "$out"
 
 APP_PID=""
 SCRATCH_HOME=""
+LOG_PATH=""
 BURNERS=()
 
 stop_app() {
+  # The scratch home holds the only release copy of the trace.
+  harvest_process_log "${LOG_PATH:-}"
   if [ -n "$APP_PID" ]; then
     kill -TERM "$APP_PID" 2> /dev/null || true
     sleep 0.3
@@ -117,6 +120,18 @@ stop_app() {
 stop_burners() {
   [ "${#BURNERS[@]}" -eq 0 ] || kill "${BURNERS[@]}" 2> /dev/null || true
   BURNERS=()
+}
+
+# Release process_log::init dup2s stderr onto process.log, so the terminal
+# redirect stays empty. Debug already teed the same lines into the log.
+harvest_process_log() {
+  local log=$1 found
+  [ -n "$log" ] && [ -f "$log" ] || return 0
+  [ -n "${SCRATCH_HOME:-}" ] || return 0
+  grep -qE '^(frame|cadence): ' "$log" 2> /dev/null && return 0
+  found=$(find "$SCRATCH_HOME" -name process.log -type f 2> /dev/null | head -1 || true)
+  [ -n "$found" ] || return 0
+  node scripts/frame-cadence.mjs unwrap "$found" >> "$log"
 }
 
 trap 'stop_app; stop_burners' EXIT
@@ -165,11 +180,21 @@ still_characters() {
   echo "$dir"
 }
 
+# Release traces are in process.log until harvest copies them. The terminal
+# file stays empty, so a wait on only that file kills the app before it lands.
+log_has() {
+  local pattern=$1 log=$2 found
+  grep -qE "$pattern" "$log" 2> /dev/null && return 0
+  [ -n "${SCRATCH_HOME:-}" ] || return 1
+  found=$(find "$SCRATCH_HOME" -name process.log -type f 2> /dev/null | head -1 || true)
+  [ -n "$found" ] && grep -qE "$pattern" "$found"
+}
+
 # The sprite spawns mid-air; wait for it to land so a fall is not sampled.
 wait_landed() {
   local log=$1 _
   for _ in $(seq 1 80); do
-    grep -qE '^frame: .* (Grounded|Perched) ' "$log" 2> /dev/null && return 0
+    log_has 'frame: .* (Grounded|Perched) ' "$log" && return 0
     kill -0 "$APP_PID" 2> /dev/null || return 1
     sleep 0.25
   done
@@ -179,7 +204,7 @@ wait_landed() {
 wait_walk() {
   local log=$1 deadline=$((SECONDS + walk_timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    grep -qE ' (walk|ballwalk)#' "$log" && return 0
+    log_has ' (walk|ballwalk)#' "$log" && return 0
     kill -0 "$APP_PID" 2> /dev/null || return 1
     sleep 0.5
   done
@@ -190,6 +215,7 @@ wait_walk() {
 run() {
   local name=$1 tag=${2:-$1}
   local log="$out/$tag.log"
+  LOG_PATH="$log"
   if [ "$name" = load ]; then
     for _ in $(seq 1 "$(cpu_count)"); do
       yes > /dev/null &

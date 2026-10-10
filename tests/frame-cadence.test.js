@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DROP_MS, analyze, compare, report, summarizeTimestamps } from "../scripts/frame-cadence.mjs";
+import { DROP_MS, analyze, compare, report, summarizeTimestamps, unwrapProcessLog } from "../scripts/frame-cadence.mjs";
 
 // Five Engine ticks of a walk, one 40 ms late, and the display frames an overlay
 // drew across them: a quiet loop restarts on the late arrival, then misses a
@@ -52,6 +52,19 @@ test("timestamps become a histogram, a drop count, and an average fps", () => {
       { bin: "50+", count: 0 },
     ],
   });
+});
+
+test("a release process log timestamp still leaves the frame line", () => {
+  const body = "frame: 1000 Perched pos(1,2) sprite(3,4) idle#0 BMO";
+  const wrapped = `1700000000 ${body}`;
+  assert.equal(unwrapProcessLog(wrapped), body);
+  assert.equal(unwrapProcessLog(`note ${body}`), `note ${body}`);
+  assert.equal(analyze(wrapped, {}).ticks, 1);
+  const dir = mkdtempSync(join(tmpdir(), "frame-cadence-"));
+  writeFileSync(join(dir, "process.log"), "1700000000 cadence: overlay-0 1.000 0 - 1.000\n");
+  const run = spawnSync("node", ["scripts/frame-cadence.mjs", "unwrap", join(dir, "process.log")]);
+  assert.equal(run.status, 0, run.stderr.toString());
+  assert.equal(run.stdout.toString(), "cadence: overlay-0 1.000 0 - 1.000\n");
 });
 
 test("one timestamp has no frame rate and no drops", () => {

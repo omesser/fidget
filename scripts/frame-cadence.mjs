@@ -42,6 +42,17 @@ export function summarizeTimestamps(timestamps) {
   return summarizeGaps(deltas(timestamps));
 }
 
+// Release process_log::init prefixes stderr with epoch seconds and keeps the
+// terminal quiet. The trace line after that stamp is what the bench counts.
+const PROCESS_LOG_LINE = /^\d+ ((?:frame|cadence-ticks|cadence|overlay|director):.*)$/;
+
+export function unwrapProcessLog(text) {
+  return text
+    .split("\n")
+    .map((line) => line.match(PROCESS_LOG_LINE)?.[1] ?? line)
+    .join("\n");
+}
+
 // Each count covers the second before its stamp, so the first one in the
 // window reaches back before it and is left out.
 function countedHz(counts) {
@@ -55,6 +66,7 @@ function countedHz(counts) {
  * @param {{from?: number, to?: number}} window - Unix ms, inclusive
  */
 export function analyze(log, { from = -Infinity, to = Infinity }) {
+  log = unwrapProcessLog(log);
   const inWindow = (at) => at >= from && at <= to;
   const ticks = [];
   const placements = [];
@@ -214,6 +226,16 @@ export function compare(a, b) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [path, ...args] = process.argv.slice(2);
+  if (path === "unwrap") {
+    const file = args[0];
+    if (!file || args.length !== 1) {
+      console.error("usage: node scripts/frame-cadence.mjs unwrap PROCESS_LOG");
+      process.exit(2);
+    }
+    const text = unwrapProcessLog(readFileSync(file, "utf8"));
+    process.stdout.write(text.endsWith("\n") || text.length === 0 ? text : `${text}\n`);
+    process.exit(0);
+  }
   if (path === "compare") {
     const sides = { "--a": [], "--b": [] };
     let files;
