@@ -55,7 +55,7 @@ url = "2"
 # `acp_wire.rs`: a current-thread tokio runtime, `rt` + `sync` + `macros` and
 # nothing more. tokio was already in the tree through Tauri. The frame loop
 # never sees a future (ADR-0004).
-agent-client-protocol = "2.1"
+agent-client-protocol = "3.1"
 # Log rotation for the Action Log and the process log: K=10 retention
 # (10 rotated + 1 current), 2 MB per file, ~22 MB ceiling. BytesSurpassed
 # keeps a line whole.
