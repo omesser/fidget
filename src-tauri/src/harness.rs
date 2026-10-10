@@ -23,6 +23,7 @@ use crate::acp_wire::{
     Wire,
 };
 use crate::action_log;
+use crate::tool_content::{Place, ToolPiece};
 
 pub use crate::acp_wire::{
     ElicitationAnswer, ElicitationForm, PermissionAsk, PlanStep, Replayed, SignIn,
@@ -924,17 +925,27 @@ pub enum Forwarded {
     /// A model or effort did not take. Settings restores `restored` before the wake
     /// that found the failure returns.
     NotApplied(Vec<ConfigFailure>),
-    /// Title and status of a live tool call, for that Instance's phase line.
+    /// A live tool call for that Instance's Chat. The phase line reads the
+    /// title and status. The row also draws content and locations.
     Tool {
         instance: String,
-        id: String,
-        title: Option<String>,
-        status: Option<String>,
+        call: LiveCall,
     },
     /// A harness update with nothing to draw. It only resets the phase stall.
     Heard {
         instance: String,
     },
+}
+
+/// One tool-call update for Chat. Absent content or locations were not in it.
+#[derive(Debug)]
+pub struct LiveCall {
+    pub id: String,
+    pub title: Option<String>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+    pub locations: Option<Vec<Place>>,
+    pub content: Option<Vec<ToolPiece>>,
 }
 
 type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
@@ -2990,14 +3001,16 @@ fn note_event(
         instance.map_or(Owner::EveryChat, Owner::Instance)
     };
     match event {
-        // Title and status reach the phase line. What the call touched stays
-        // in the Action Log until a row draws it.
+        // The row draws what the call touched. The Action Log stays a
+        // pointer: id, title, kind, and status, not the output.
         Event::ToolCall {
             session,
             id,
             title,
             kind,
             status,
+            content,
+            locations,
         } => {
             action_log::append(
                 dir,
@@ -3007,9 +3020,14 @@ fn note_event(
             if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::Tool {
                     instance,
-                    id,
-                    title,
-                    status,
+                    call: LiveCall {
+                        id,
+                        title,
+                        kind,
+                        status,
+                        content,
+                        locations,
+                    },
                 });
             }
         }
@@ -5073,18 +5091,87 @@ mod tests {
                 title: Some("Read file".to_string()),
                 kind: Some("read".to_string()),
                 status: Some("in_progress".to_string()),
+                locations: None,
+                content: None,
             },
         );
 
         assert!(matches!(
             forwarded.try_recv(),
-            Ok(Forwarded::Tool { instance, id, title, status })
+            Ok(Forwarded::Tool { instance, call })
                 if instance == "buddy-b"
-                    && id == "t1"
-                    && title == Some("Read file".to_string())
-                    && status == Some("in_progress".to_string())
+                    && call.id == "t1"
+                    && call.title == Some("Read file".to_string())
+                    && call.status == Some("in_progress".to_string())
         ));
         assert!(dir.join(action_log::FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The chat row needs what the call touched. The Action Log still only
+    /// points at the call, so the output is not copied into it.
+    #[test]
+    fn a_tool_call_forwards_what_it_touched_and_the_action_log_does_not() {
+        let dir = std::env::temp_dir().join(format!("fidget-phase-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+        let locations = vec![crate::tool_content::Place {
+            path: "/tmp/roster.json".to_string(),
+            line: Some(4),
+        }];
+        let content = vec![crate::tool_content::ToolPiece::Text {
+            text: "names".to_string(),
+        }];
+
+        note_event(
+            &dir,
+            &forward,
+            &Mutex::default(),
+            &Mutex::new(HashMap::from([(
+                "session-b".to_string(),
+                "buddy-b".to_string(),
+            )])),
+            &Mutex::default(),
+            Event::ToolCall {
+                session: "session-b".to_string(),
+                id: "t1".to_string(),
+                title: Some("Read file".to_string()),
+                kind: Some("read".to_string()),
+                status: Some("completed".to_string()),
+                locations: Some(locations.clone()),
+                content: Some(content.clone()),
+            },
+        );
+
+        match forwarded.try_recv() {
+            Ok(Forwarded::Tool { instance, call }) => {
+                assert_eq!(instance, "buddy-b");
+                assert_eq!(call.id, "t1");
+                assert_eq!(call.title.as_deref(), Some("Read file"));
+                assert_eq!(call.kind.as_deref(), Some("read"));
+                assert_eq!(call.status.as_deref(), Some("completed"));
+                assert_eq!(call.locations, Some(locations));
+                assert_eq!(call.content, Some(content));
+            }
+            other => panic!("expected a tool call, got {other:?}"),
+        }
+        let logged: serde_json::Value = serde_json::from_str(
+            std::fs::read_to_string(dir.join(action_log::FILE))
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(logged["id"], "t1");
+        assert_eq!(logged["title"], "Read file");
+        assert_eq!(logged["kind"], "read");
+        assert_eq!(logged["status"], "completed");
+        assert!(logged.get("content").is_none());
+        assert!(logged.get("locations").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

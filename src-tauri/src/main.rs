@@ -2515,17 +2515,18 @@ fn show_plan(app: &tauri::AppHandle, instance: &str, steps: &[harness::PlanStep]
     let _ = app.emit_to(chat_label(instance), CHAT_PLAN_EVENT, steps);
 }
 
-fn show_tool(
-    app: &tauri::AppHandle,
-    instance: &str,
-    id: String,
-    title: Option<String>,
-    status: Option<String>,
-) {
+fn show_tool(app: &tauri::AppHandle, instance: &str, call: harness::LiveCall) {
     let _ = app.emit_to(
         chat_label(instance),
         CHAT_TOOL_EVENT,
-        &serde_json::json!({ "id": id, "title": title, "status": status }),
+        &serde_json::json!({
+            "id": call.id,
+            "title": call.title,
+            "kind": call.kind,
+            "status": call.status,
+            "locations": call.locations,
+            "content": call.content,
+        }),
     );
 }
 
@@ -4803,12 +4804,9 @@ fn main() {
                     harness::Forwarded::Plan { instance, steps } => {
                         show_plan(&forward_to, &instance, &steps)
                     }
-                    harness::Forwarded::Tool {
-                        instance,
-                        id,
-                        title,
-                        status,
-                    } => show_tool(&forward_to, &instance, id, title, status),
+                    harness::Forwarded::Tool { instance, call } => {
+                        show_tool(&forward_to, &instance, call)
+                    }
                     harness::Forwarded::Heard { instance } => show_heard(&forward_to, &instance),
                     harness::Forwarded::AttachSettled => {
                         if let Some(state) = forward_to.try_state::<SettingsState>() {

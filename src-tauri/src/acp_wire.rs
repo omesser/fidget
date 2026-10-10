@@ -294,6 +294,10 @@ pub enum Event {
         title: Option<String>,
         kind: Option<String>,
         status: Option<String>,
+        /// Absent when this update did not carry locations. Empty replaces them.
+        locations: Option<Vec<Place>>,
+        /// Absent when this update did not carry content. Empty replaces it.
+        content: Option<Vec<ToolPiece>>,
     },
     /// The agent's steps and which one is current. ACP has the agent send a
     /// complete list and the client replace the plan entirely, so this is never
@@ -2467,15 +2471,16 @@ fn show(
             }
             think(thought, &said.hear(block));
         }
-        // `content` and `locations` are dropped. A call reaches the Action
-        // Log as a title and a status and never says what it touched. Every
-        // field is meant to be read (ADR-0028).
+        // None leaves the row's previous content or locations. An update
+        // replaces only the fields it carries, as the replay does.
         Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => on_event(Event::ToolCall {
             session: session.0.to_string(),
             id: tool.id.to_string(),
             title: tool.title.map(str::to_string),
             kind: tool.kind,
             status: tool.status,
+            locations: tool.locations.map(places),
+            content: tool.content.map(pieces),
         }),
         Heard::Plan(steps) => on_event(Event::Plan {
             session: session.0.to_string(),
@@ -3560,6 +3565,95 @@ mod tests {
             })
             .collect();
         assert_eq!(replies, ["Back from lunch. Hello.", "Build is green."]);
+    }
+
+    /// An update that omits content or locations leaves them off the event.
+    /// The row keeps what it already drew. A field that arrives replaces it.
+    #[test]
+    fn a_live_tool_call_carries_the_content_and_locations_an_update_sent() {
+        let updates = vec![
+            wire(serde_json::json!({
+                "sessionUpdate": "tool_call", "toolCallId": "t1",
+                "title": "Read file", "kind": "read", "status": "pending",
+                "locations": [{"path": "/tmp/roster.json", "line": 4}],
+                "content": [{"type": "content", "content": {"type": "text", "text": "waiting"}}],
+            })),
+            wire(serde_json::json!({
+                "sessionUpdate": "tool_call_update", "toolCallId": "t1",
+                "status": "completed",
+                "content": [{"type": "content", "content": {"type": "text", "text": "names"}}],
+            })),
+        ];
+        let (_, events) = drive(updates.clone());
+        let Event::ToolCall {
+            title,
+            status,
+            locations,
+            content,
+            ..
+        } = &events[0]
+        else {
+            panic!("expected a tool call, got {events:?}");
+        };
+        assert_eq!(title.as_deref(), Some("Read file"));
+        assert_eq!(status.as_deref(), Some("pending"));
+        assert_eq!(
+            locations.as_deref(),
+            Some(
+                [Place {
+                    path: "/tmp/roster.json".to_string(),
+                    line: Some(4),
+                }]
+                .as_slice()
+            )
+        );
+        assert_eq!(
+            content.as_deref(),
+            Some(
+                [ToolPiece::Text {
+                    text: "waiting".to_string()
+                }]
+                .as_slice()
+            )
+        );
+        let Event::ToolCall {
+            title,
+            locations,
+            content,
+            status,
+            ..
+        } = &events[1]
+        else {
+            panic!("expected a tool update, got {events:?}");
+        };
+        assert_eq!(title, &None);
+        assert_eq!(locations, &None);
+        assert_eq!(status.as_deref(), Some("completed"));
+        assert_eq!(
+            content.as_deref(),
+            Some(
+                [ToolPiece::Text {
+                    text: "names".to_string()
+                }]
+                .as_slice()
+            )
+        );
+        assert_eq!(
+            restored_rows(&updates),
+            vec![Replayed::ToolCall {
+                id: "t1".to_string(),
+                title: "Read file".to_string(),
+                kind: Some("read".to_string()),
+                status: Some("completed".to_string()),
+                locations: vec![Place {
+                    path: "/tmp/roster.json".to_string(),
+                    line: Some(4),
+                }],
+                content: vec![ToolPiece::Text {
+                    text: "names".to_string(),
+                }],
+            }]
+        );
     }
 
     #[test]
