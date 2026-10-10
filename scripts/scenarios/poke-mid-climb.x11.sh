@@ -137,6 +137,14 @@ for attempt in 1 2 3 4 5; do
   near_left=$((cx - x0 < x1 - cx))
   if [ $((attempt % 2)) -eq 0 ]; then near_left=$((1 - near_left)); fi
   if [ "$near_left" -eq 1 ]; then dx=-1500; else dx=1500; fi
+  # Cap dx so the drag release is at least one sprite width from the edge.
+  if [ "$dx" -lt 0 ]; then
+    max_dx=$((cx - x0 - size))
+    [ "$max_dx" -gt 0 ] && dx=$((dx > -max_dx ? dx : -max_dx))
+  else
+    max_dx=$((x1 - cx - size))
+    [ "$max_dx" -gt 0 ] && dx=$((dx < max_dx ? dx : max_dx))
+  fi
   throw_sprite "$cx" "$((sy + half))" "$dx" >> "$out/input.txt" 2>&1 || fail "could not throw the sprite; see $out/input.txt"
 
   if ! wait_climbing 40; then

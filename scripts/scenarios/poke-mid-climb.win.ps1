@@ -112,7 +112,7 @@ $homeDir = Join-Path $out "home"
 New-Item -ItemType Directory -Force -Path (Join-Path $homeDir "AppData\Roaming\fidget") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $homeDir "AppData\Local") | Out-Null
 $utf8 = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText((Join-Path $homeDir "AppData\Roaming\fidget\settings.json"), '{"hide_in_fullscreen": false}', $utf8)
+[System.IO.File]::WriteAllText((Join-Path $homeDir "AppData\Roaming\fidget\settings.json"), '{"hide_in_fullscreen": false, "first_run_tour_shown": true}', $utf8)
 
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -310,6 +310,14 @@ try {
         $nearLeft = ($cx - $x0) -lt ($x1 - $cx)
         if ($attempt % 2 -eq 0) { $nearLeft = -not $nearLeft }
         $dx = if ($nearLeft) { -1500 } else { 1500 }
+        # Cap dx so the drag release is at least one sprite width from the edge.
+        if ($dx -lt 0) {
+            $maxDx = $cx - $x0 - $size
+            if ($maxDx -gt 0 -and $dx -lt -$maxDx) { $dx = -$maxDx }
+        } else {
+            $maxDx = $x1 - $cx - $size
+            if ($maxDx -gt 0 -and $dx -gt $maxDx) { $dx = $maxDx }
+        }
         [ClimbInput]::Throw($cx, $sy + $half, $dx)
         Add-Content -LiteralPath $inputLog -Value "threw from ($cx,$($sy + $half)) by $dx"
 
