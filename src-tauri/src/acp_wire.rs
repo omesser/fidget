@@ -38,6 +38,15 @@ use tokio::sync::mpsc;
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
+/// How long a cancelled turn may go without one frame from the child before
+/// the child counts as hung and is retired (#1529). The default turn budget,
+/// again: no frame for that long, with nobody left to wait on, is not work.
+#[cfg(not(test))]
+const CANCELLED_SILENCE: Duration = Duration::from_secs(120);
+/// Just past the superseding wake's 3 s handover, as in production.
+#[cfg(test)]
+const CANCELLED_SILENCE: Duration = Duration::from_millis(3500);
+
 /// How long `authenticate` may block. A browser login is the user, not a
 /// stalled child, and a turn's budget would abandon it.
 const SIGN_IN_WAIT: Duration = Duration::from_secs(5 * 60);
@@ -499,6 +508,9 @@ pub enum TurnError {
     Timeout,
     /// The child is gone.
     Lost,
+    /// A cancelled turn heard nothing for `CANCELLED_SILENCE`. The child is
+    /// being retired. Not the child's fault to charge: it may only be stuck.
+    Silent,
     /// A `stopReason` other than `end_turn`, by name.
     Stopped(String),
     /// A turn was already in flight on the wire.
@@ -884,7 +896,10 @@ fn run(
     _done: sync_mpsc::Sender<()>,
     on_event: OnEvent,
 ) {
-    let runtime = match tokio::runtime::Builder::new_current_thread().build() {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+    {
         Ok(runtime) => runtime,
         Err(why) => {
             let _ = ready.send(Err(SpawnError::Failed(format!(
@@ -1438,7 +1453,7 @@ async fn serve(
                     inbound: &mut inbound,
                 };
                 let outcome = turn(cx, &id, serving, &text, &reply, on_event).await;
-                let lost = outcome == Err(TurnError::Lost);
+                let lost = matches!(outcome, Err(TurnError::Lost | TurnError::Silent));
                 let _ = reply.send(Progress::Done(outcome));
                 if lost {
                     break;
@@ -2232,6 +2247,8 @@ async fn turn(
     // a Cancel that drains them all has to restart the budget too, or a
     // Harness that ignores the cancel leaves `prompt` waiting for nothing.
     let mut blocked = false;
+    // Set by our cancel and pushed back by every frame after it.
+    let mut quiet_until: Option<Instant> = None;
     loop {
         let open = !asks.is_empty() || !forms.is_empty();
         if open != blocked {
@@ -2245,9 +2262,19 @@ async fn turn(
         // `biased`, updates first. The SDK dispatches a turn's chunks before
         // its response, so the response is read only once the channel ahead
         // of it is empty, and no chunk is left behind on the way out.
+        let silence = async {
+            match quiet_until {
+                Some(at) => tokio::time::sleep_until(at.into()).await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             biased;
-            message = incoming.recv() => match message {
+            message = incoming.recv() => {
+            if quiet_until.is_some() {
+                quiet_until = Some(Instant::now() + CANCELLED_SILENCE);
+            }
+            match message {
                 // Another session's update or question is not this turn's.
                 // It is held the way it would be with no prompt open.
                 Some(message) if incoming_session(&message).is_some_and(|other| &other != session) => {
@@ -2288,7 +2315,7 @@ async fn turn(
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
-            },
+            }},
             response = &mut finished => {
                 end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return match response {
@@ -2302,6 +2329,7 @@ async fn turn(
                 Some(Msg::Cancel) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
+                    quiet_until = Some(Instant::now() + CANCELLED_SILENCE);
                 }
                 // Shutdown is not Cancel (#634). The turn leaves with the wire
                 // rather than looping for a `cancelled` stop the Harness may
@@ -2344,6 +2372,10 @@ async fn turn(
                     return Err(TurnError::Lost);
                 }
             },
+            () = silence => {
+                end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
+                return Err(TurnError::Silent);
+            }
             () = cx.incoming_closed() => {
                 end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                 return Err(TurnError::Lost);

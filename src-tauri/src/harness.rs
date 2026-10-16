@@ -1518,12 +1518,10 @@ impl Session {
                 return Some(turn);
             }
             if Instant::now() >= until {
-                // The ignored cancel withdrew nothing. Retiring the child ends
-                // that turn as a loss, so the lock comes back (#1529).
+                // A Harness that ignored the cancel keeps its turn, so no turn
+                // was withdrawn for this wake and the next cancelled one must
+                // not be read as though it were.
                 self.note_withdrawal(None);
-                if let Ok(mut state) = self.state.lock() {
-                    self.lost(&wire, &mut state);
-                }
                 return None;
             }
             thread::sleep(HANDOVER_POLL);
@@ -1605,7 +1603,7 @@ impl Session {
                 );
                 Ok(reply)
             }
-            Err(TurnError::Lost) => Err(LOST.to_string()),
+            Err(TurnError::Lost | TurnError::Silent) => Err(LOST.to_string()),
             Err(TurnError::Timeout) => {
                 action_log::append(
                     self.data.as_path(),
@@ -1695,6 +1693,7 @@ impl Session {
         if let Ok(mut state) = self.state.lock() {
             match &outcome {
                 Err(TurnError::Lost) => self.lost(&wire, &mut state),
+                Err(TurnError::Silent) => self.retire(&wire),
                 _ => state.answered(),
             }
             // A finished turn is the proof `session/load` was not, so any
@@ -1848,27 +1847,24 @@ impl Session {
         why.to_string()
     }
 
-    /// The wire died. Empty its slot before `alive()` flips, so no wake reuses
-    /// it, and charge the loss once. A replacement in the slot is left alone.
+    /// The wire died. Drop it, charge the loss, and let a later wake respawn.
+    /// Empty the slot here. `alive()` flips only once the wire's thread has
+    /// dropped its receiver, and a wake arriving before then would reuse it.
     fn lost(&self, wire: &Wire, state: &mut State) {
+        self.retire(wire);
+        self.charge_loss(state);
+    }
+
+    /// Drop a wire that is gone or going, without charging for it.
+    fn retire(&self, wire: &Wire) {
         wire.shutdown();
-        let Ok(mut slot) = self.wire.lock() else {
-            return;
-        };
-        let ours = match slot.as_deref() {
-            Some(current) if std::ptr::eq(current, wire) => true,
-            Some(_) => return,
-            None => false,
-        };
-        *slot = None;
-        drop(slot);
+        if let Ok(mut slot) = self.wire.lock() {
+            *slot = None;
+        }
         self.update_inspect(|inspect| {
             inspect.alive = false;
             inspect.initializing = false;
         });
-        if ours {
-            self.charge_loss(state);
-        }
     }
 
     /// Record that the binary we spawn is not on `PATH`. The name is
@@ -4670,7 +4666,7 @@ mod tests {
                 }
                 Some("session/cancel") => {
                     record(count, "cancel");
-                    // `codex-acp` 2.2.2 can miss the turn a cancel names (#1529).
+                    // Alive but deaf to cancel, then silent: a hung child.
                     if script == "load-deaf" {
                         continue;
                     }
@@ -9671,45 +9667,13 @@ mod tests {
         session.shutdown();
     }
 
-    /// The retired turn reports its loss late, after a wake has respawned.
-    /// That report must not take down the replacement or charge twice.
+    /// A cancel the Harness drops is not a death (#1529): the newer wake is
+    /// refused and the child kept. Silence after the cancel is one, retired
+    /// without a backoff charge, and the next wake reloads the conversation.
     #[test]
-    fn a_late_loss_leaves_the_replacement_wire_alone() {
-        let (fx, session) = Fixture::new("plain");
-        let session = session.with_backoff(Duration::ZERO);
-        assert_eq!(
-            session.complete(&asking("hi"), &|_| {}),
-            Ok(Reply::whole("Hello"))
-        );
-        let old = session.current_wire().unwrap();
-        session.lost(&old, &mut session.state.lock().unwrap());
-        assert_eq!(
-            session.complete(&asking("again"), &|_| {}),
-            Ok(Reply::whole("Hello"))
-        );
-        assert_eq!(fx.count("spawn"), 2);
-        let failures = session.state.lock().unwrap().spawn_failures;
-        session.lost(&old, &mut session.state.lock().unwrap());
-        assert!(
-            session.current_wire().is_some(),
-            "the replacement was retired"
-        );
-        assert!(session.inspect().alive);
-        assert_eq!(session.state.lock().unwrap().spawn_failures, failures);
-        session.shutdown();
-    }
-
-    /// A Harness that never ends the cancelled turn (#1529). The child is
-    /// retired once the handover runs out, so the old turn lets go of the
-    /// lock, and the next wake after the backoff loads the same conversation.
-    #[test]
-    fn a_turn_that_ignores_its_cancel_retires_the_child() {
+    fn a_silent_cancelled_turn_retires_the_child_uncharged() {
         let (fx, session) = Fixture::new("load-deaf");
-        let session = Arc::new(
-            session
-                .with_timeout(Duration::from_secs(10))
-                .with_backoff(Duration::from_millis(200)),
-        );
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
         let worker = {
             let session = Arc::clone(&session);
             thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
@@ -9719,26 +9683,13 @@ mod tests {
             session.complete(&asking("again"), &|_| {}),
             Err("harness busy".to_string())
         );
-        let until = Instant::now() + Duration::from_secs(2);
-        while !worker.is_finished() && Instant::now() < until {
-            thread::sleep(Duration::from_millis(20));
-        }
-        assert!(
-            worker.is_finished(),
-            "the ignored turn still holds the lock"
-        );
+        assert_eq!(fx.count("spawn"), 1, "a dropped cancel retired the child");
         assert_eq!(worker.join().unwrap(), Err(LOST.to_string()));
-        assert_eq!(session.state.lock().unwrap().spawn_failures, 1);
-
-        let until = Instant::now() + Duration::from_secs(3);
-        let later = loop {
-            let reply = session.complete(&asking("later"), &|_| {});
-            if reply.is_ok() || Instant::now() >= until {
-                break reply;
-            }
-            thread::sleep(Duration::from_millis(50));
-        };
-        assert_eq!(later, Ok(Reply::whole("Hello")));
+        assert_eq!(session.state.lock().unwrap().spawn_failures, 0);
+        assert_eq!(
+            session.complete(&asking("later"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("spawn"), 2);
         assert_eq!(fx.count("new"), 1, "the conversation was not kept");
         assert_eq!(fx.count("load"), 1);

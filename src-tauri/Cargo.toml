@@ -60,7 +60,7 @@ agent-client-protocol = "3.1"
 # (10 rotated + 1 current), 2 MB per file, ~22 MB ceiling. BytesSurpassed
 # keeps a line whole.
 file-rotate = "0.8"
-tokio = {version = "1", features = ["rt", "sync", "macros"]}
+tokio = {version = "1", features = ["rt", "sync", "macros", "time"]}
 # How the SDK reads a child's pipes. Spawned by us rather than by the SDK's
 # `AcpAgent`, which has no working-directory knob; attach cwd is a setting
 # (#782). The data folder holds the session file and Action Log.
