@@ -4449,7 +4449,7 @@ mod tests {
                                 }}),
                             );
                         }
-                        "slow" | "load-slow" | "load-deaf" if prompts == 1 => {
+                        "slow" | "load-slow" | "load-deaf" | "deaf-busy" if prompts == 1 => {
                             pending_prompt = Some(id)
                         }
                         // Works for a while and then answers, asking nothing.
@@ -4668,6 +4668,17 @@ mod tests {
                     record(count, "cancel");
                     // Alive but deaf to cancel, then silent: a hung child.
                     if script == "load-deaf" {
+                        continue;
+                    }
+                    // Ignores the cancel but keeps working past the silence limit.
+                    if script == "deaf-busy" {
+                        if let Some(id) = pending_prompt.take() {
+                            for _ in 0..5 {
+                                thread::sleep(Duration::from_secs(1));
+                                chunk(&session, "Hello");
+                            }
+                            stop(&id, "end_turn");
+                        }
                         continue;
                     }
                     if let Some(id) = pending_prompt.take() {
@@ -9693,6 +9704,25 @@ mod tests {
         assert_eq!(fx.count("spawn"), 2);
         assert_eq!(fx.count("new"), 1, "the conversation was not kept");
         assert_eq!(fx.count("load"), 1);
+        session.shutdown();
+    }
+
+    /// Frames after a dropped cancel are work, so the child is kept (#1529).
+    #[test]
+    fn a_cancelled_turn_that_keeps_talking_keeps_the_child() {
+        let (fx, session) = Fixture::new("deaf-busy");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
+        };
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        let _ = session.complete(&asking("again"), &|_| {});
+        assert!(
+            worker.join().unwrap().is_ok(),
+            "the working child was retired"
+        );
+        assert_eq!(fx.count("spawn"), 1);
         session.shutdown();
     }
 
