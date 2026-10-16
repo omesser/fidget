@@ -79,7 +79,10 @@ const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
 /// How long a superseding wake waits for the cancelled turn to hand the lock
 /// back, and how often it looks. Generous for a Harness that answers
 /// `session/cancel` at all, since the loser only has a log line left to write.
+#[cfg(not(test))]
 const HANDOVER: Duration = Duration::from_secs(3);
+#[cfg(test)]
+const HANDOVER: Duration = Duration::from_millis(300);
 const HANDOVER_POLL: Duration = Duration::from_millis(20);
 
 /// What every caller is told when the child is gone.
@@ -4674,7 +4677,7 @@ mod tests {
                     if script == "deaf-busy" {
                         if let Some(id) = pending_prompt.take() {
                             for _ in 0..5 {
-                                thread::sleep(Duration::from_secs(1));
+                                thread::sleep(Duration::from_millis(150));
                                 chunk(&session, "Hello");
                             }
                             stop(&id, "end_turn");

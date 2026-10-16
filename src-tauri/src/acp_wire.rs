@@ -43,9 +43,9 @@ const CANCEL_GRACE: Duration = Duration::from_secs(2);
 /// again: no frame for that long, with nobody left to wait on, is not work.
 #[cfg(not(test))]
 const CANCELLED_SILENCE: Duration = Duration::from_secs(120);
-/// Just past the superseding wake's 3 s handover, as in production.
+/// Past the superseding wake's handover, as in production.
 #[cfg(test)]
-const CANCELLED_SILENCE: Duration = Duration::from_millis(3500);
+const CANCELLED_SILENCE: Duration = Duration::from_millis(500);
 
 /// How long `authenticate` may block. A browser login is the user, not a
 /// stalled child, and a turn's budget would abandon it.
