@@ -1520,8 +1520,13 @@ impl Session {
             if Instant::now() >= until {
                 // A Harness that ignored the cancel keeps its turn, so no turn
                 // was withdrawn for this wake and the next cancelled one must
-                // not be read as though it were.
+                // not be read as though it were. Retiring the child ends that
+                // turn as a loss, so the lock comes back and the next wake
+                // respawns after the backoff (#1529).
                 self.note_withdrawal(None);
+                if let Ok(mut state) = self.state.lock() {
+                    self.lost(&wire, &mut state);
+                }
                 return None;
             }
             thread::sleep(HANDOVER_POLL);
@@ -1849,16 +1854,27 @@ impl Session {
     /// The wire died. Drop it, charge the loss, and let a later wake respawn.
     /// Empty the slot here. `alive()` flips only once the wire's thread has
     /// dropped its receiver, and a wake arriving before then would reuse it.
+    /// A wire already retired is charged once, and a replacement standing in
+    /// the slot is left alone.
     fn lost(&self, wire: &Wire, state: &mut State) {
         wire.shutdown();
-        if let Ok(mut slot) = self.wire.lock() {
-            *slot = None;
-        }
+        let Ok(mut slot) = self.wire.lock() else {
+            return;
+        };
+        let ours = match slot.as_deref() {
+            Some(current) if std::ptr::eq(current, wire) => true,
+            Some(_) => return,
+            None => false,
+        };
+        *slot = None;
+        drop(slot);
         self.update_inspect(|inspect| {
             inspect.alive = false;
             inspect.initializing = false;
         });
-        self.charge_loss(state);
+        if ours {
+            self.charge_loss(state);
+        }
     }
 
     /// Record that the binary we spawn is not on `PATH`. The name is
