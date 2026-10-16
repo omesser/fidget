@@ -4443,7 +4443,9 @@ mod tests {
                                 }}),
                             );
                         }
-                        "slow" | "load-slow" if prompts == 1 => pending_prompt = Some(id),
+                        "slow" | "load-slow" | "load-deaf" if prompts == 1 => {
+                            pending_prompt = Some(id)
+                        }
                         // Works for a while and then answers, asking nothing.
                         // A turn long enough for another wake to land inside
                         // it, with no ask to confuse the two.
@@ -4658,6 +4660,10 @@ mod tests {
                 }
                 Some("session/cancel") => {
                     record(count, "cancel");
+                    // `codex-acp` 2.2.2 can miss the turn a cancel names (#1529).
+                    if script == "load-deaf" {
+                        continue;
+                    }
                     if let Some(id) = pending_prompt.take() {
                         stop(&id, "cancelled");
                     }
@@ -9652,6 +9658,48 @@ mod tests {
         assert_eq!(session.state.lock().unwrap().spawn_failures, 0);
         let turns = fx.events("turn");
         assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
+        session.shutdown();
+    }
+
+    /// A Harness that never ends the cancelled turn (#1529). The child is
+    /// retired once the handover runs out, so the old turn lets go of the
+    /// lock, and the next wake after the backoff loads the same conversation.
+    #[test]
+    fn a_turn_that_ignores_its_cancel_retires_the_child() {
+        let (fx, session) = Fixture::new("load-deaf");
+        let session = Arc::new(
+            session
+                .with_timeout(Duration::from_secs(10))
+                .with_backoff(Duration::from_millis(200)),
+        );
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
+        };
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        assert_eq!(
+            session.complete(&asking("again"), &|_| {}),
+            Err("harness busy".to_string())
+        );
+        let until = Instant::now() + Duration::from_secs(2);
+        while !worker.is_finished() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            worker.is_finished(),
+            "the ignored turn still holds the lock"
+        );
+        assert_eq!(worker.join().unwrap(), Err(LOST.to_string()));
+        assert_eq!(session.state.lock().unwrap().spawn_failures, 1);
+
+        thread::sleep(Duration::from_millis(250));
+        assert_eq!(
+            session.complete(&asking("later"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("spawn"), 2);
+        assert_eq!(fx.count("new"), 1, "the conversation was not kept");
+        assert_eq!(fx.count("load"), 1);
         session.shutdown();
     }
 
