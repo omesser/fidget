@@ -1518,11 +1518,8 @@ impl Session {
                 return Some(turn);
             }
             if Instant::now() >= until {
-                // A Harness that ignored the cancel keeps its turn, so no turn
-                // was withdrawn for this wake and the next cancelled one must
-                // not be read as though it were. Retiring the child ends that
-                // turn as a loss, so the lock comes back and the next wake
-                // respawns after the backoff (#1529).
+                // The ignored cancel withdrew nothing. Retiring the child ends
+                // that turn as a loss, so the lock comes back (#1529).
                 self.note_withdrawal(None);
                 if let Ok(mut state) = self.state.lock() {
                     self.lost(&wire, &mut state);
@@ -1851,11 +1848,8 @@ impl Session {
         why.to_string()
     }
 
-    /// The wire died. Drop it, charge the loss, and let a later wake respawn.
-    /// Empty the slot here. `alive()` flips only once the wire's thread has
-    /// dropped its receiver, and a wake arriving before then would reuse it.
-    /// A wire already retired is charged once, and a replacement standing in
-    /// the slot is left alone.
+    /// The wire died. Empty its slot before `alive()` flips, so no wake reuses
+    /// it, and charge the loss once. A replacement in the slot is left alone.
     fn lost(&self, wire: &Wire, state: &mut State) {
         wire.shutdown();
         let Ok(mut slot) = self.wire.lock() else {
@@ -9677,6 +9671,34 @@ mod tests {
         session.shutdown();
     }
 
+    /// The retired turn reports its loss late, after a wake has respawned.
+    /// That report must not take down the replacement or charge twice.
+    #[test]
+    fn a_late_loss_leaves_the_replacement_wire_alone() {
+        let (fx, session) = Fixture::new("plain");
+        let session = session.with_backoff(Duration::ZERO);
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        let old = session.current_wire().unwrap();
+        session.lost(&old, &mut session.state.lock().unwrap());
+        assert_eq!(
+            session.complete(&asking("again"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("spawn"), 2);
+        let failures = session.state.lock().unwrap().spawn_failures;
+        session.lost(&old, &mut session.state.lock().unwrap());
+        assert!(
+            session.current_wire().is_some(),
+            "the replacement was retired"
+        );
+        assert!(session.inspect().alive);
+        assert_eq!(session.state.lock().unwrap().spawn_failures, failures);
+        session.shutdown();
+    }
+
     /// A Harness that never ends the cancelled turn (#1529). The child is
     /// retired once the handover runs out, so the old turn lets go of the
     /// lock, and the next wake after the backoff loads the same conversation.
@@ -9708,11 +9730,15 @@ mod tests {
         assert_eq!(worker.join().unwrap(), Err(LOST.to_string()));
         assert_eq!(session.state.lock().unwrap().spawn_failures, 1);
 
-        thread::sleep(Duration::from_millis(250));
-        assert_eq!(
-            session.complete(&asking("later"), &|_| {}),
-            Ok(Reply::whole("Hello"))
-        );
+        let until = Instant::now() + Duration::from_secs(3);
+        let later = loop {
+            let reply = session.complete(&asking("later"), &|_| {});
+            if reply.is_ok() || Instant::now() >= until {
+                break reply;
+            }
+            thread::sleep(Duration::from_millis(50));
+        };
+        assert_eq!(later, Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("spawn"), 2);
         assert_eq!(fx.count("new"), 1, "the conversation was not kept");
         assert_eq!(fx.count("load"), 1);
