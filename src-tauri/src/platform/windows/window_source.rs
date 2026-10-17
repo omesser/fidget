@@ -82,7 +82,7 @@ impl WindowSource for WindowsWindowSource {
 }
 
 /// Visible application windows, frontmost first (z-order).
-fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
+pub(super) fn visible_windows(can_read_names: bool) -> Vec<WindowRect> {
     let state = Mutex::new((Vec::new(), can_read_names, overlay_hwnds()));
 
     // SAFETY: EnumWindows takes a callback and a pointer-sized parameter. The

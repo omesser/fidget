@@ -5,10 +5,11 @@
 #   fixture Harness. Cleanup closes only that tab, so it never comes back in
 #   Notepad's restored session. If this run started Notepad, it also closes
 #   that one window, and only when every tab left in it was there at launch.
-# Input: SendInput cursor moves, clicks, typed words, Escape, Ctrl+Home, Ctrl+S.
+# Input: SendInput cursor moves, clicks, typed words, Escape, Enter, Ctrl+Home,
+#   Ctrl+S. Case 5 opens and closes a small window of the script's own.
 #   Each press is held until Fidget traces it down. A pill word is one SendInput;
 #   a Notepad word goes one character at a time, each saved and read back first.
-# Duration: about 15 s (an estimate until the first Windows run). Every wait
+# Duration: about 30 s (an estimate until the first Windows run). Every wait
 #   gives up 3 s after its trigger; at startup that is the first frame after
 #   the launch, the overlay's page load after that frame, and its first report
 #   after the page load. Waits wake on each line of Fidget's piped stderr, on
@@ -24,9 +25,12 @@
 # Asserts: (1) a sprite click leaves typing in Notepad; (2) hover opens the
 #   pill, Fidget prints the pill-open SetForegroundWindow line, and "two" lands
 #   in the pill (text="two" focused=true), with no close or hand-back line
-#   since the pill opened; (3) Escape closes the pill; (4) a click into
-#   Notepad closes the empty pill (the page blur finds another window in front)
-#   and typing lands in Notepad.
+#   since the pill opened; (3) Escape and (4) Enter close the
+#   pill and hand typing back to Notepad; (5) with the window that was in front
+#   closed while the pill was open, Escape steps aside to Notepad; (6) a click
+#   into Notepad closes the empty pill (the page blur finds another window in
+#   front), Fidget's hand-back stays put, and typing lands in Notepad; (7) hover opens a pill, a click on it
+#   keeps typing in it, and Escape hands it back.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
 # Self-checks that launch nothing: FIDGET_SCENARIO_NOTEPAD_TABS (names split by
@@ -38,12 +42,10 @@
 #   FIDGET_SCENARIO_TRACE_LINE=<line> prints which waited-on trace patterns it
 #   matches; FIDGET_SCENARIO_PROFILE_LOCK=<folder> prints whether
 #   its EBWebView\lockfile is missing, free or in use;
-#   FIDGET_SCENARIO_PILL_LOG=<process.log> prints whether "two" typed into the
-#   pill landed or the pill went first, judged from FIDGET_SCENARIO_PILL_OPENED_AT
-#   (the pill's first line, 0-based); FIDGET_SCENARIO_READ_DOC=<file> prints
-#   the file as Notepad's is read, or busy; FIDGET_SCENARIO_TYPE_BEFORE,
-#   FIDGET_SCENARIO_TYPE_WORD and FIDGET_SCENARIO_TYPE_EXPECTED print the file
-#   after each character typed into Notepad, split by |;
+#   FIDGET_SCENARIO_PILL_LOG=<process.log> prints whether "two" (or the pattern
+#   named by FIDGET_SCENARIO_PILL_TYPED) typed into the pill landed or the pill
+#   went first, judged from FIDGET_SCENARIO_PILL_OPENED_AT (0-based); FIDGET_SCENARIO_READ_DOC=<file> prints
+#   the file as Notepad's is read, or busy;
 #   FIDGET_SCENARIO_UNEXPECTED=<results.txt> throws, to check the FAIL line;
 #   FIDGET_SCENARIO_PREPARE_ONLY=1 makes the run folder and stops.
 # Each run writes to a new chat-close-pill-type-<time>-<hex> folder in
@@ -99,13 +101,19 @@ $T = [ordered]@{
     listening = '(?:^|\s)overlay: draft instance=\S+ '
     opened    = '(?:^|\s)overlay: draft instance=\S+ text="" focused=true$'
     two       = '(?:^|\s)overlay: draft instance=\S+ text="two" focused=true$'
+    eight     = '(?:^|\s)overlay: draft instance=\S+ text="eight" focused=true$'
     closed    = '(?:^|\s)overlay: draft instance=\S+ closed$'
     pillGone  = '(?:^|\s)overlay: (?:draft instance=\S+ closed|hand back )'
     blurAway  = '(?:^|\s)overlay \S+: window blur foreground=false dnd='
+    restore   = '(?:^|\s)overlay: hand back Restore to 0x[0-9a-f]+ -> -?\d+$'
+    stepAside = '(?:^|\s)overlay: hand back StepAside to 0x[0-9a-f]+ -> -?\d+$'
+    stay      = '(?:^|\s)overlay: hand back Stay to none$'
     pillOpen  = '(?:^|\s)overlay: pill open SetForegroundWindow\((0x[0-9a-f]+)\) -> (-?\d+) GetForegroundWindow\(\) -> (0x[0-9a-f]+)$'
     hitTest   = '(?:^|\s)hit-test: '
     hit       = '(?:^|\s)hit-test: cursor\(.*\bHIT\s+click-through OFF'
     miss      = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through '
+    control   = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through OFF'
+    five      = '(?:^|\s)overlay: draft instance=\S+ text="five" focused=true$'
     down      = '(?:^|\s)click: down '
     up        = '(?:^|\s)click: up '
 }
@@ -123,7 +131,8 @@ function Get-TypingVerdict([string[]]$Lines, [int]$OpenedAt, [string]$Typed) {
     $null
 }
 if ($env:FIDGET_SCENARIO_PILL_LOG) {
-    $verdict = Get-TypingVerdict @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_PILL_LOG) ([int]$env:FIDGET_SCENARIO_PILL_OPENED_AT) $T.two
+    $typed = if ($env:FIDGET_SCENARIO_PILL_TYPED) { $T[$env:FIDGET_SCENARIO_PILL_TYPED] } else { $T.two }
+    $verdict = Get-TypingVerdict @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_PILL_LOG) ([int]$env:FIDGET_SCENARIO_PILL_OPENED_AT) $typed
     Write-Output "pill: $(if ($verdict) { $verdict } else { 'none' })"
     exit 0
 }
@@ -725,6 +734,73 @@ function Close-OurNotepad {
     ""
 }
 
+# The middle of the open pill's text field on screen, read through UI Automation
+# from Fidget's own windows, or $null. A closed pill can stay in the page,
+# disabled and hidden, so only an enabled, on-screen field counts.
+function Find-Pill {
+    $enabled = New-Object System.Windows.Automation.PropertyCondition ($UiaEl::IsEnabledProperty), $true
+    $edit = [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@((Of-Type ([System.Windows.Automation.ControlType]::Edit)), $enabled))
+    foreach ($h in [PillWin]::Tops()) {
+        if ((Owner-Of $h) -ne $script:proc.Id) { continue }
+        try {
+            foreach ($field in $UiaEl::FromHandle($h).FindAll([System.Windows.Automation.TreeScope]::Descendants, $edit)) {
+                if ($field.Current.IsOffscreen) { continue }
+                $b = $field.Current.BoundingRectangle
+                if (-not $b.IsEmpty) { return @{ X = [int]($b.X + $b.Width / 2); Y = [int]($b.Y + $b.Height / 2) } }
+            }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+    }
+    $null
+}
+# A click on the pill once the overlay's hit test takes clicks there (the pill is
+# off the art, so the line says miss, OFF), and only if Fidget's window is then under the point.
+function Click-Pill([string]$Case) {
+    if (-not (Wait-Ui 3 { ($script:pill = Find-Pill) })) { Fail "${Case}: no enabled pill text field in Fidget's windows through UI Automation in 3 s" }
+    if (-not (Wait-ForNext $T.control { $null = [PillWin]::SetCursorPos($script:pill.X, $script:pill.Y) })) { Fail "${Case}: the pill's click area did not follow the cursor; see $log" }
+    $under = [PillWin]::RootAt($script:pill.X, $script:pill.Y)
+    if ((Owner-Of $under) -ne $script:proc.Id) { Fail "${Case}: refusing to click the pill at ($($script:pill.X),$($script:pill.Y)): it would land on $(Describe-Window $under)" }
+    Press-Hold $script:pill.X $script:pill.Y $Case
+}
+# A small window of the script's own, on its own thread, for the window that
+# closes while the pill is open (case 5). Nothing else is ever closed this way.
+Add-Type -ReferencedAssemblies System.Windows.Forms @"
+using System;
+using System.Threading;
+using System.Windows.Forms;
+public static class PillGone {
+    static Form form;
+    public static IntPtr Open(string title, int x, int y) {
+        ManualResetEvent shown = new ManualResetEvent(false);
+        IntPtr hwnd = IntPtr.Zero;
+        Thread t = new Thread(delegate() {
+            form = new Form();
+            form.Text = title;
+            form.StartPosition = FormStartPosition.Manual;
+            form.SetBounds(x, y, 360, 220);
+            form.Shown += delegate { hwnd = form.Handle; shown.Set(); };
+            Application.Run(form);
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.IsBackground = true;
+        t.Start();
+        shown.WaitOne(3000);
+        return hwnd;
+    }
+    public static void Close() {
+        Form f = form;
+        if (f != null && !f.IsDisposed) { f.BeginInvoke(new MethodInvoker(f.Close)); }
+    }
+}
+"@
+Note-Step "window-gone helper compiled"
+# Counts first, closes the pill with $Key, then waits 3 s for the closed draft
+# and 3 s more for Fidget's hand-back line of the $Back kind.
+function Close-HandsBack([uint16]$Key, [string]$Back, [string]$Case) {
+    $backs = Count $T[$Back]
+    if (-not (Wait-ForNext $T.closed { Press $Key })) { Fail "${Case}: the pill did not close; see $log" }
+    if (-not (Wait-LogCount $T[$Back] $backs)) { Note-Keys "at $Case"; Fail "${Case}: the pill closed but Fidget printed no $Back hand-back line; see $log" }
+}
+
 $startMs = Get-NowMs
 $cleanupFailed = $false
 # One UI Automation subscription for the whole run: subscribing on the desktop
@@ -830,30 +906,67 @@ try {
     Type-IntoPill two $T.two hover-type " (SetForegroundWindow returned $setResult, overlay in front: $overlayAhead)"
     Ok "hover-type: the pill took `"two`" with no click"
 
-    # 3. Escape closes the pill.
-    if (-not (Wait-ForNext $T.closed { Press 0x1B })) { Fail "escape: the pill did not close; see $log" }
-    Ok "escape: the pill closed"
+    # 3. Escape closes the pill and typing goes back to Notepad (#1577).
+    Close-HandsBack 0x1B restore escape
+    Type-IntoNotepad three escape onethreeabc
+    Ok "escape: the pill closed and typing went back to Notepad"
 
-    # 4. A click into Notepad below its last line closes the empty pill, and
+    # 4. Enter sends the pill's text, closes it, and typing goes back to Notepad.
+    Open-Pill enter
+    Type-IntoPill five $T.five enter
+    Close-HandsBack 0x0D restore enter
+    Type-IntoNotepad six enter onethreesixabc
+    Ok "enter: the pill sent, closed, and typing went back to Notepad"
+
+    # 5. The window in front at pill-open closes while the pill is open: Escape
+    # steps aside, and typing lands in Notepad, the next window in front.
+    # On Notepad's monitor, so a fullscreen app elsewhere stays untouched.
+    $work = [PillWin]::Monitor($script:hwnd).rcWork
+    $script:gone = [PillGone]::Open("fidget-pill-gone-$docName", $work.L + 80, $work.T + 80)
+    if ($script:gone -eq [IntPtr]::Zero) { Fail "gone: the script's own window did not show in 3 s" }
+    $null = [PillWin]::Bring($script:gone)
+    if (-not (Wait-Ui 3 { [PillWin]::GetForegroundWindow() -eq $script:gone })) { Note-Keys "at gone"; Fail "gone: the script's own window did not come to the front; see $focusLog" }
+    Open-Pill gone
+    [PillGone]::Close()
+    if (-not (Wait-Ui 3 { -not [PillWin]::IsWindow($script:gone) })) { Fail "gone: the script's own window did not close in 3 s" }
+    Close-HandsBack 0x1B stepAside gone
+    Type-IntoNotepad seven gone onethreesixsevenabc
+    Ok "gone: with the window in front closed, typing stepped aside to Notepad"
+
+    # 6. A click into Notepad below its last line closes the empty pill, and
     # typing lands at the end of Notepad's text.
     Open-Pill click-away
     $r = New-Object PillWin+RECT
     $null = [PillWin]::GetWindowRect($script:hwnd, [ref]$r)
-    # Both lines within 3 s of the release Fidget logged: the field's own blur
+    # All three lines within 3 s of the release Fidget logged: the field's own blur
     # timer closes the pill 3000 ms later too, so the closed line alone proves nothing.
+    # Stay, not Restore: both would leave Notepad in front, so only the line tells.
     $blurs = Count $T.blurAway
     $closes = Count $T.closed
+    $stays = Count $T.stay
     Click-Notepad ([int](($r.L + $r.R) / 2)) ([int]($r.T + ($r.B - $r.T) * 7 / 10)) click-away
-    $both = Wait-OnChanges 3 (Split-Path -Parent $log) { (Count $T.blurAway) -gt $blurs -and (Count $T.closed) -gt $closes }
-    if (-not $both) {
+    $all = Wait-OnChanges 3 (Split-Path -Parent $log) { (Count $T.blurAway) -gt $blurs -and (Count $T.closed) -gt $closes -and (Count $T.stay) -gt $stays }
+    if (-not $all) {
         if ((Count $T.blurAway) -le $blurs) { Fail "click-away: no 'window blur foreground=false' line within 3 s of Fidget logging the release in Notepad; see $log" }
-        Fail "click-away: the pill did not close within 3 s of Fidget logging the release in Notepad; see $log"
+        if ((Count $T.closed) -le $closes) { Fail "click-away: the pill did not close within 3 s of Fidget logging the release in Notepad; see $log" }
+        Fail "click-away: no 'hand back Stay' line within 3 s of Fidget logging the release in Notepad; see $log"
     }
-    Type-IntoNotepad four click-away oneabcfour
+    Type-IntoNotepad four click-away onethreesixsevenabcfour
     Ok "click-away: the click moved typing to Notepad"
+
+    # 7. Hover opens a pill of its own, a click on it keeps the keyboard there
+    # (judged from the opening), and Escape hands typing back to Notepad (#1577).
+    Open-Pill click-pill
+    Click-Pill click-pill
+    Type-IntoPill eight $T.eight click-pill
+    Ok "click-pill: the click kept typing in the pill"
+    Close-HandsBack 0x1B restore click-pill
+    Type-IntoNotepad nine click-pill onethreesixsevenabcfournine
+    Ok "click-pill: Escape handed typing back to Notepad"
 
     "PASS: evidence in $Out ($((Get-NowMs) - $startMs) ms)" | Tee-Object -FilePath $results -Append | Write-Output
 } finally {
+    [PillGone]::Close()
     Stop-FidgetTree $script:proc $harnessTag
     $script:proc = $null
     Note-Step "cleanup: fidget stopped"

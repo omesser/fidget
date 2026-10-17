@@ -2265,6 +2265,7 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
             // Win32 for live windows, and any attach is undone before returning.
             unsafe {
                 let foreground = GetForegroundWindow();
+                platform::remember_foreground(foreground);
                 let mut attached = None;
                 if !foreground.is_null() {
                     let foreground_thread =

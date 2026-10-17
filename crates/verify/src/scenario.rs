@@ -1287,6 +1287,18 @@ mod tests {
                 "listening two",
             ),
             (
+                "1792238686 overlay: draft instance=d4 text=\"eight\" focused=true",
+                "listening eight",
+            ),
+            (
+                "1792238687 overlay: draft instance=d4 text=\"five\" focused=true",
+                "listening five",
+            ),
+            (
+                "1792238686 overlay: draft instance=d4 text=\"eight\" focused=false",
+                "listening",
+            ),
+            (
                 "1792238678 overlay: draft instance=d4 text=\"tw\" focused=true",
                 "listening",
             ),
@@ -1300,7 +1312,7 @@ mod tests {
             ),
             (
                 "1792238681 overlay: hand back Restore to 0x150e64 -> 0",
-                "pillGone",
+                "pillGone restore",
             ),
             (
                 "1792238682 overlay overlay-0: window blur foreground=false dnd=off",
@@ -1319,12 +1331,26 @@ mod tests {
                 "pillOpen",
             ),
             (
+                "1792238681 overlay: hand back Restore to 0x1a2b -> 1",
+                "pillGone restore",
+            ),
+            (
+                "1792238682 overlay: hand back StepAside to 0x3c4d -> 1",
+                "pillGone stepAside",
+            ),
+            ("1792238683 overlay: hand back StepAside to none", "pillGone"),
+            ("1792238684 overlay: hand back Stay to none", "pillGone stay"),
+            (
                 "1792238673 hit-test: cursor(1720,1328) scale 1.0 -> point(1720,1328) on overlay 0 HIT  click-through OFF  <- flipped",
                 "hitTest hit",
             ),
             (
                 "1792238673 hit-test: cursor(2120,1328) scale 1.0 -> point(2120,1328) on overlay 0 miss click-through on  <- flipped",
                 "hitTest miss",
+            ),
+            (
+                "1792238685 hit-test: cursor(1600,1180) scale 1.0 -> point(1600,1180) on overlay 0 miss click-through OFF  <- flipped",
+                "hitTest miss control",
             ),
             (
                 "1792238674 click: down hits=[true] target=Some(0) cursor=(1720,1328)->(1720,1328) scale=1.0 visible=true sprite=(1657,1264)",
@@ -1379,6 +1405,40 @@ mod tests {
                 pill_self_check_with(&[
                     ("FIDGET_SCENARIO_PILL_LOG", path.as_os_str()),
                     ("FIDGET_SCENARIO_PILL_OPENED_AT", "0".as_ref()),
+                ]),
+                want,
+                "{log}"
+            );
+        }
+    }
+
+    // Case 7 opens its own pill by hover, then clicks it: "eight" after the
+    // click lines is typed, and a close the click caused fails it.
+    #[cfg(windows)]
+    #[test]
+    fn chat_close_pill_type_win_judges_the_pill_click_from_its_hover_opening() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("process.log");
+        let d = "1792261251 overlay: draft instance=e7";
+        let open = "1792261251 overlay: pill open SetForegroundWindow(0x40ec4) -> 1 GetForegroundWindow() -> 0x40ec4";
+        let click = "1792261252 click: down hits=[true] target=Some(0) cursor=(1720,1300)->(1720,1300) scale=1.0 visible=true sprite=(1657,1264)\n\
+             1792261252 click: up hits=[true] target=Some(0) cursor=(1720,1300)->(1720,1300) scale=1.0 visible=true sprite=(1657,1264)";
+        for (log, want) in [
+            (
+                format!("{open}\n{d} text=\"\" focused=true\n{click}\n{d} text=\"eight\" focused=true\n"),
+                "pill: typed".to_string(),
+            ),
+            (
+                format!("{open}\n{d} text=\"\" focused=true\n{click}\n{d} closed\n{d} text=\"eight\" focused=true\n"),
+                format!("pill: lost {d} closed"),
+            ),
+        ] {
+            fs::write(&path, &log).unwrap();
+            assert_eq!(
+                pill_self_check_with(&[
+                    ("FIDGET_SCENARIO_PILL_LOG", path.as_os_str()),
+                    ("FIDGET_SCENARIO_PILL_OPENED_AT", "0".as_ref()),
+                    ("FIDGET_SCENARIO_PILL_TYPED", "eight".as_ref()),
                 ]),
                 want,
                 "{log}"
