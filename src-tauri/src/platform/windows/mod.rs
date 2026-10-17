@@ -7,6 +7,7 @@
 #![cfg(not(unix))]
 
 mod console;
+mod focus_return;
 mod overlay;
 mod pointer;
 mod process;
