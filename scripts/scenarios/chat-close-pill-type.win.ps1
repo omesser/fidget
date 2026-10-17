@@ -767,14 +767,14 @@ using System.Threading;
 using System.Windows.Forms;
 public static class PillGone {
     static Form form;
-    public static IntPtr Open(string title) {
+    public static IntPtr Open(string title, int x, int y) {
         ManualResetEvent shown = new ManualResetEvent(false);
         IntPtr hwnd = IntPtr.Zero;
         Thread t = new Thread(delegate() {
             form = new Form();
             form.Text = title;
             form.StartPosition = FormStartPosition.Manual;
-            form.SetBounds(80, 80, 360, 220);
+            form.SetBounds(x, y, 360, 220);
             form.Shown += delegate { hwnd = form.Handle; shown.Set(); };
             Application.Run(form);
         });
@@ -917,9 +917,11 @@ try {
 
     # 5. The window in front at pill-open closes while the pill is open: Escape
     # steps aside, and typing lands in Notepad, the next window in front.
-    $script:gone = [PillGone]::Open("fidget-pill-gone-$docName")
+    # On Notepad's monitor, so a fullscreen app elsewhere stays untouched.
+    $work = [PillWin]::Monitor($script:hwnd).rcWork
+    $script:gone = [PillGone]::Open("fidget-pill-gone-$docName", $work.L + 80, $work.T + 80)
     if ($script:gone -eq [IntPtr]::Zero) { Fail "gone: the script's own window did not show in 3 s" }
-    $null = [PillWin]::SetForegroundWindow($script:gone)
+    $null = [PillWin]::Bring($script:gone)
     if (-not (Wait-Ui 3 { [PillWin]::GetForegroundWindow() -eq $script:gone })) { Note-Keys "at gone"; Fail "gone: the script's own window did not come to the front; see $focusLog" }
     Open-Pill gone
     [PillGone]::Close()
