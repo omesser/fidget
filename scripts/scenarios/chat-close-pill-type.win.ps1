@@ -9,7 +9,7 @@
 #   Ctrl+S. Case 5 opens and closes a small window of the script's own.
 #   Each press is held until Fidget traces it down. A pill word is one SendInput;
 #   a Notepad word goes one character at a time, each saved and read back first.
-# Duration: about 25 s (an estimate until the first Windows run). Every wait
+# Duration: about 30 s (an estimate until the first Windows run). Every wait
 #   gives up 3 s after its trigger; at startup that is the first frame after
 #   the launch, the overlay's page load after that frame, and its first report
 #   after the page load. Waits wake on each line of Fidget's piped stderr, on
@@ -28,7 +28,8 @@
 #   since the pill opened; (3) Escape and (4) Enter close the
 #   pill and hand typing back to Notepad; (5) with the window that was in front
 #   closed while the pill was open, Escape steps aside to Notepad; (6) a click
-#   into Notepad takes focus off the pill and typing lands in Notepad.
+#   into Notepad takes focus off the pill and typing lands in Notepad; (7) a
+#   click on that pill puts typing back in it, and Escape hands it to Notepad.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
 # Self-checks that launch nothing: FIDGET_SCENARIO_NOTEPAD_TABS (names split by
@@ -101,6 +102,7 @@ $T = [ordered]@{
     listening = '(?:^|\s)overlay: draft instance=\S+ '
     opened    = '(?:^|\s)overlay: draft instance=\S+ text="" focused=true$'
     two       = '(?:^|\s)overlay: draft instance=\S+ text="two" focused=true$'
+    eight     = '(?:^|\s)overlay: draft instance=\S+ text="eight" focused=true$'
     closed    = '(?:^|\s)overlay: draft instance=\S+ closed$'
     pillGone  = '(?:^|\s)overlay: (?:draft instance=\S+ closed|hand back )'
     blurAway  = '(?:^|\s)overlay \S+: window blur foreground=false dnd='
@@ -110,6 +112,7 @@ $T = [ordered]@{
     hitTest   = '(?:^|\s)hit-test: '
     hit       = '(?:^|\s)hit-test: cursor\(.*\bHIT\s+click-through OFF'
     miss      = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through '
+    control   = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through OFF'
     down      = '(?:^|\s)click: down '
     up        = '(?:^|\s)click: up '
 }
@@ -729,6 +732,30 @@ function Close-OurNotepad {
     ""
 }
 
+# The middle of the pill's text field on screen, read through UI Automation
+# from Fidget's own windows, or $null while there is none.
+function Find-Pill {
+    $edit = Of-Type ([System.Windows.Automation.ControlType]::Edit)
+    foreach ($h in [PillWin]::Tops()) {
+        if ((Owner-Of $h) -ne $script:proc.Id) { continue }
+        try {
+            $field = $UiaEl::FromHandle($h).FindFirst([System.Windows.Automation.TreeScope]::Descendants, $edit)
+            if (-not $field) { continue }
+            $b = $field.Current.BoundingRectangle
+            if (-not $b.IsEmpty) { return @{ X = [int]($b.X + $b.Width / 2); Y = [int]($b.Y + $b.Height / 2) } }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+    }
+    $null
+}
+# A click on the pill, only where Fidget's own window is, once the overlay's hit
+# test takes clicks there (the pill is off the art, so the line says miss, OFF).
+function Click-Pill([string]$Case) {
+    if (-not (Wait-Ui 3 { ($script:pill = Find-Pill) })) { Fail "${Case}: no pill text field in Fidget's windows through UI Automation in 3 s" }
+    $under = [PillWin]::RootAt($script:pill.X, $script:pill.Y)
+    if ((Owner-Of $under) -ne $script:proc.Id) { Fail "${Case}: refusing to click the pill at ($($script:pill.X),$($script:pill.Y)): it would land on $(Describe-Window $under)" }
+    if (-not (Wait-ForNext $T.control { $null = [PillWin]::SetCursorPos($script:pill.X, $script:pill.Y) })) { Fail "${Case}: the pill's click area did not follow the cursor; see $log" }
+    Press-Hold $script:pill.X $script:pill.Y $Case
+}
 # A small window of the script's own, on its own thread, for the window that
 # closes while the pill is open (case 5). Nothing else is ever closed this way.
 Add-Type -ReferencedAssemblies System.Windows.Forms @"
@@ -915,6 +942,15 @@ try {
     }
     Type-IntoNotepad four click-away onethreesixsevenabcfour
     Ok "click-away: the click moved typing to Notepad"
+
+    # 7. A click on the pill left open takes the keyboard back into it, and
+    # Escape then hands typing back to Notepad (#1577).
+    if (-not (Wait-ForNext $T.opened { Click-Pill click-pill })) { Note-Keys "after the pill click"; Fail "click-pill: the pill did not show text=`"`" focused=true after the click; see $log" }
+    if (-not (Wait-ForNext $T.eight { [PillWin]::Text("eight") })) { Note-Keys "at click-pill"; Fail "click-pill: the pill never showed text=`"eight`" focused=true; see $log" }
+    Ok "click-pill: the click put typing in the pill"
+    Close-HandsBack 0x1B restore click-pill
+    Type-IntoNotepad nine click-pill onethreesixsevenabcfournine
+    Ok "click-pill: Escape handed typing back to Notepad"
 
     "PASS: evidence in $Out ($((Get-NowMs) - $startMs) ms)" | Tee-Object -FilePath $results -Append | Write-Output
 } finally {

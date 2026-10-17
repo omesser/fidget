@@ -125,7 +125,9 @@ SetForegroundWindow(...)` line, which shows whether Windows let the pill take
 the foreground (#1577). It checks that Escape and Enter hand typing back to
 Notepad (Fidget's `overlay: hand back Restore ...` line), and that with the
 window in front at pill-open closed (a small window of the leaf's own), Escape
-steps aside to Notepad (`hand back StepAside ...`). At startup it waits 3 s for each of the first frame,
+steps aside to Notepad (`hand back StepAside ...`). A click on the pill left open after a
+click into Notepad puts typing back in the pill, and Escape then hands it back
+to Notepad. At startup it waits 3 s for each of the first frame,
 the overlay's `overlay: <label> page loaded` line and its first draft report.
 WebView2's profile is one folder every run reuses,
 `%LOCALAPPDATA%\fidget-scenarios\webview2`, so only the first run on a PC
