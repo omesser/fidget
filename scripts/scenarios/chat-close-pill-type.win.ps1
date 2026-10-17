@@ -732,28 +732,31 @@ function Close-OurNotepad {
     ""
 }
 
-# The middle of the pill's text field on screen, read through UI Automation
-# from Fidget's own windows, or $null while there is none.
+# The middle of the open pill's text field on screen, read through UI Automation
+# from Fidget's own windows, or $null. A closed pill can stay in the page,
+# disabled and hidden, so only an enabled, on-screen field counts.
 function Find-Pill {
-    $edit = Of-Type ([System.Windows.Automation.ControlType]::Edit)
+    $enabled = New-Object System.Windows.Automation.PropertyCondition ($UiaEl::IsEnabledProperty), $true
+    $edit = [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@((Of-Type ([System.Windows.Automation.ControlType]::Edit)), $enabled))
     foreach ($h in [PillWin]::Tops()) {
         if ((Owner-Of $h) -ne $script:proc.Id) { continue }
         try {
-            $field = $UiaEl::FromHandle($h).FindFirst([System.Windows.Automation.TreeScope]::Descendants, $edit)
-            if (-not $field) { continue }
-            $b = $field.Current.BoundingRectangle
-            if (-not $b.IsEmpty) { return @{ X = [int]($b.X + $b.Width / 2); Y = [int]($b.Y + $b.Height / 2) } }
+            foreach ($field in $UiaEl::FromHandle($h).FindAll([System.Windows.Automation.TreeScope]::Descendants, $edit)) {
+                if ($field.Current.IsOffscreen) { continue }
+                $b = $field.Current.BoundingRectangle
+                if (-not $b.IsEmpty) { return @{ X = [int]($b.X + $b.Width / 2); Y = [int]($b.Y + $b.Height / 2) } }
+            }
         } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
     }
     $null
 }
-# A click on the pill, only where Fidget's own window is, once the overlay's hit
-# test takes clicks there (the pill is off the art, so the line says miss, OFF).
+# A click on the pill once the overlay's hit test takes clicks there (the pill is
+# off the art, so the line says miss, OFF), and only if Fidget's window is then under the point.
 function Click-Pill([string]$Case) {
-    if (-not (Wait-Ui 3 { ($script:pill = Find-Pill) })) { Fail "${Case}: no pill text field in Fidget's windows through UI Automation in 3 s" }
+    if (-not (Wait-Ui 3 { ($script:pill = Find-Pill) })) { Fail "${Case}: no enabled pill text field in Fidget's windows through UI Automation in 3 s" }
+    if (-not (Wait-ForNext $T.control { $null = [PillWin]::SetCursorPos($script:pill.X, $script:pill.Y) })) { Fail "${Case}: the pill's click area did not follow the cursor; see $log" }
     $under = [PillWin]::RootAt($script:pill.X, $script:pill.Y)
     if ((Owner-Of $under) -ne $script:proc.Id) { Fail "${Case}: refusing to click the pill at ($($script:pill.X),$($script:pill.Y)): it would land on $(Describe-Window $under)" }
-    if (-not (Wait-ForNext $T.control { $null = [PillWin]::SetCursorPos($script:pill.X, $script:pill.Y) })) { Fail "${Case}: the pill's click area did not follow the cursor; see $log" }
     Press-Hold $script:pill.X $script:pill.Y $Case
 }
 # A small window of the script's own, on its own thread, for the window that
