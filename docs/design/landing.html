@@ -299,18 +299,21 @@
 </script>
 <script>
   // The page stays as generated; the OS only decides which row already there
-  // leads. Android reports a platform matching Linux, so it must be guarded.
+  // leads.
   const ROWS = [
-    { id: "macos", name: "macOS", signal: /macos|mac|iphone|ipad/i },
+    { id: "macos", name: "macOS", signal: /macos|mac/i },
     { id: "windows", name: "Windows", signal: /win32|win64|windows/i },
     { id: "linux", name: "Linux", signal: /x11|linux/i },
   ];
-  if (!/Android/.test(navigator.userAgent)) {
+  // Phones report a platform matching a desktop row they cannot install, so
+  // the user agent guards Android and iOS out together.
+  if (!/(Android|iPhone|iPad)/.test(navigator.userAgent)) {
     const platform = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
     const group = document.getElementById("get");
     // userAgentData spells macOS with a lower-case m, so mac matches either case.
     const row = ROWS.find((candidate) => candidate.signal.test(platform));
-    const leader = row && group.querySelector(`.btn[data-os="${row.id}"]`);    if (row && leader) {
+    const leader = row && group.querySelector(`.btn[data-os="${row.id}"]`);
+    if (row && leader) {
       group.prepend(leader);
       for (const button of group.querySelectorAll(".btn")) {
         button.classList.toggle("primary", button === leader);
@@ -339,7 +342,7 @@
       navigator.clipboard?.writeText(button.dataset.copy)?.then(() => {
         button.textContent = "Copied";
         setTimeout(() => { button.textContent = "Copy"; }, 2000);
-      });
+      })?.catch(() => {});
     });
   }
 </script>

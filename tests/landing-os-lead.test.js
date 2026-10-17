@@ -14,8 +14,7 @@ import { findChrome, launchWithPipe, createPageTarget, cleanupChrome } from "./c
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
-const SETTLE_MS = 300;
-const CLICK_MS = 200;
+const WAIT_MS = 3000;
 
 const chrome = findChrome();
 const skip = chrome ? false : "headless Chromium is not installed";
@@ -49,11 +48,16 @@ const cases = {
     label: "Download for Linux", order: ["linux", "macos", "windows"],
     notes: [["macos", true], ["linux", false], ["unsupported", true]],
   },
-  // The page's Android guard must keep the generated state even though the
-  // platform string itself names nothing the signposts match.
+  // Phones keep the generated state; the page's user-agent guard is what
+  // keeps their desktop-matching signals off the rows.
   Android: {
     ua: `Mozilla/5.0 (Linux; Android 14; Pixel 8) ${CHROME_UA} Mobile`,
     platform: "Android", platformVersion: "14.0.0", architecture: "arm",
+  },
+  iPhone: {
+    ua: `Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/537.36 ` +
+      "(KHTML, like Gecko) Chrome/155.0.8059.85 Mobile Safari/537.36",
+    platform: "iOS", platformVersion: "17.4.0", architecture: "arm",
   },
   // The metadata names Android but the user agent does not, so the page's
   // user-agent guard never fires and no row matches: the page keeps the
@@ -136,24 +140,18 @@ async function pose(site, cdp, useCase, beforeNavigate) {
   cdp.on(sessionId, "Runtime.exceptionThrown", (thrown) =>
     errors.push(thrown.exceptionDetails.text ?? "an exception was thrown"));
   if (beforeNavigate) await beforeNavigate(cdp);
-  // A load event for the pre-navigation about:blank target is not ours, and
-  // the readyState poll covers the event that never arrives.
-  let navigated = false;
-  const loaded = new Promise((resolve) => cdp.on(sessionId, "Page.loadEventFired", () => {
-    if (navigated) resolve();
-  }));
-  const settled = (async () => {
-    for (let waited = 0; waited < 5000; waited += 100) {
-      const ready = (await cdp.send("Runtime.evaluate",
-        { expression: "document.readyState", returnByValue: true }, sessionId)).result.value;
-      if (ready === "complete") return;
-    }
-  })();
+  // Page.enable is on before these tests navigate, so the load event that
+  // ends this promise is this navigate's own.
+  const loaded = new Promise((resolve) => cdp.on(sessionId, "Page.loadEventFired", resolve));
   await cdp.send("Page.navigate", { url: pathToFileURL(join(site, "index.html")).href }, sessionId);
-  navigated = true;
-  await Promise.race([loaded, settled]);
-  // The arch promise lands after load, so the state is read late.
-  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+  await loaded;
+  // The page registers its arch call first, so awaiting the same call here
+  // settles after every change the arch answer can make.
+  await cdp.send("Runtime.evaluate", {
+    expression: "Promise.resolve(navigator.userAgentData?.getHighEntropyValues?.(['architecture']))",
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionId);
   return {
     sessionId,
     state: (await cdp.send("Runtime.evaluate", { expression: STATE, returnByValue: true }, sessionId)).result.value,
@@ -195,11 +193,16 @@ test("the Homebrew copy button copies the command and says Copied", { skip }, as
     const seen = (await cdp.send("Runtime.evaluate", {
       expression: `(async () => {
         const button = document.querySelector(".copy[data-copy]");
+        const said = new Promise((resolve) => new MutationObserver((_, observer) => {
+          observer.disconnect();
+          resolve(button.textContent);
+        }).observe(button, { childList: true, subtree: true, characterData: true }));
         button.click();
-        await new Promise((resolve) => setTimeout(resolve, ${CLICK_MS}));
+        const settled = await Promise.race([said,
+          new Promise((resolve) => setTimeout(() => resolve(null), ${WAIT_MS}))]);
         let clipboard = null;
         try { clipboard = await navigator.clipboard.readText(); } catch {}
-        return { said: button.textContent, clipboard };
+        return { said: settled, clipboard };
       })()`,
       awaitPromise: true,
       returnByValue: true,
