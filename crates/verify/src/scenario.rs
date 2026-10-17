@@ -1339,7 +1339,7 @@ mod tests {
                 "pillGone stepAside",
             ),
             ("1792238683 overlay: hand back StepAside to none", "pillGone"),
-            ("1792238684 overlay: hand back Stay to none", "pillGone"),
+            ("1792238684 overlay: hand back Stay to none", "pillGone stay"),
             (
                 "1792238673 hit-test: cursor(1720,1328) scale 1.0 -> point(1720,1328) on overlay 0 HIT  click-through OFF  <- flipped",
                 "hitTest hit",
