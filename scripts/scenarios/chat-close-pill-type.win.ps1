@@ -28,8 +28,8 @@
 #   since the pill opened; (3) Escape and (4) Enter close the
 #   pill and hand typing back to Notepad; (5) with the window that was in front
 #   closed while the pill was open, Escape steps aside to Notepad; (6) a click
-#   into Notepad takes focus off the pill and typing lands in Notepad; (7) a
-#   click on that pill puts typing back in it, and Escape hands it to Notepad.
+#   into Notepad takes focus off the pill and typing lands in Notepad; (7) hover
+#   opens a pill, a click on it keeps typing in it, and Escape hands it back.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
 # Self-checks that launch nothing: FIDGET_SCENARIO_NOTEPAD_TABS (names split by
@@ -41,12 +41,10 @@
 #   FIDGET_SCENARIO_TRACE_LINE=<line> prints which waited-on trace patterns it
 #   matches; FIDGET_SCENARIO_PROFILE_LOCK=<folder> prints whether
 #   its EBWebView\lockfile is missing, free or in use;
-#   FIDGET_SCENARIO_PILL_LOG=<process.log> prints whether "two" typed into the
-#   pill landed or the pill went first, judged from FIDGET_SCENARIO_PILL_OPENED_AT
-#   (the pill's first line, 0-based); FIDGET_SCENARIO_READ_DOC=<file> prints
-#   the file as Notepad's is read, or busy; FIDGET_SCENARIO_TYPE_BEFORE,
-#   FIDGET_SCENARIO_TYPE_WORD and FIDGET_SCENARIO_TYPE_EXPECTED print the file
-#   after each character typed into Notepad, split by |;
+#   FIDGET_SCENARIO_PILL_LOG=<process.log> prints whether "two" (or the pattern
+#   named by FIDGET_SCENARIO_PILL_TYPED) typed into the pill landed or the pill
+#   went first, judged from FIDGET_SCENARIO_PILL_OPENED_AT (0-based); FIDGET_SCENARIO_READ_DOC=<file> prints
+#   the file as Notepad's is read, or busy;
 #   FIDGET_SCENARIO_UNEXPECTED=<results.txt> throws, to check the FAIL line;
 #   FIDGET_SCENARIO_PREPARE_ONLY=1 makes the run folder and stops.
 # Each run writes to a new chat-close-pill-type-<time>-<hex> folder in
@@ -131,7 +129,8 @@ function Get-TypingVerdict([string[]]$Lines, [int]$OpenedAt, [string]$Typed) {
     $null
 }
 if ($env:FIDGET_SCENARIO_PILL_LOG) {
-    $verdict = Get-TypingVerdict @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_PILL_LOG) ([int]$env:FIDGET_SCENARIO_PILL_OPENED_AT) $T.two
+    $typed = if ($env:FIDGET_SCENARIO_PILL_TYPED) { $T[$env:FIDGET_SCENARIO_PILL_TYPED] } else { $T.two }
+    $verdict = Get-TypingVerdict @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_PILL_LOG) ([int]$env:FIDGET_SCENARIO_PILL_OPENED_AT) $typed
     Write-Output "pill: $(if ($verdict) { $verdict } else { 'none' })"
     exit 0
 }
@@ -950,10 +949,10 @@ try {
     Type-IntoNotepad four click-away onethreesixsevenabcfour
     Ok "click-away: the click moved typing to Notepad"
 
-    # 7. A click on the pill left open takes the keyboard back into it, and
-    # Escape then hands typing back to Notepad (#1577).
-    $script:pillFrom = Line-Count
-    if (-not (Wait-ForNext $T.opened { Click-Pill click-pill })) { Note-Keys "after the pill click"; Fail "click-pill: the pill did not show text=`"`" focused=true after the click; see $log" }
+    # 7. Hover opens a pill of its own, a click on it keeps the keyboard there
+    # (judged from the opening), and Escape hands typing back to Notepad (#1577).
+    Open-Pill click-pill
+    Click-Pill click-pill
     Type-IntoPill eight $T.eight click-pill
     Ok "click-pill: the click put typing in the pill"
     Close-HandsBack 0x1B restore click-pill
