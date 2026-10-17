@@ -1291,6 +1291,10 @@ mod tests {
                 "listening eight",
             ),
             (
+                "1792238687 overlay: draft instance=d4 text=\"five\" focused=true",
+                "listening five",
+            ),
+            (
                 "1792238686 overlay: draft instance=d4 text=\"eight\" focused=false",
                 "listening",
             ),
