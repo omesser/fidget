@@ -305,10 +305,13 @@
     { id: "windows", name: "Windows", signal: /win32|win64|windows/i },
     { id: "linux", name: "Linux", signal: /x11|linux/i },
   ];
-  // Phones report a platform matching a desktop row they cannot install, so
-  // the user agent guards Android and iOS out together.
-  if (!/(Android|iPhone|iPad)/.test(navigator.userAgent)) {
-    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
+  // Phones report a platform matching a desktop row they cannot install, so the
+  // user agent guards Android and iOS out together. An iPad asking for the
+  // desktop site sends a Mac user agent, and only its touch count gives it away.
+  const platform = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
+  const phone = /(Android|iPhone|iPad)/.test(navigator.userAgent)
+    || (/mac/i.test(platform) && navigator.maxTouchPoints > 1);
+  if (!phone) {
     const group = document.getElementById("get");
     // userAgentData spells macOS with a lower-case m, so mac matches either case.
     const row = ROWS.find((candidate) => candidate.signal.test(platform));

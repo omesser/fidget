@@ -59,6 +59,13 @@ const cases = {
       "(KHTML, like Gecko) Chrome/155.0.8059.85 Mobile Safari/537.36",
     platform: "iOS", platformVersion: "17.4.0", architecture: "arm",
   },
+  // iPadOS asks for the desktop site, so an iPad sends a Mac user agent; only
+  // its touch count keeps its desktop-matching rows off.
+  "an iPad asking for the desktop site": {
+    ua: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ${CHROME_UA}`,
+    platform: "macOS", platformVersion: "10.15.7", architecture: "arm",
+    touch: true,
+  },
   // The metadata names Android but the user agent does not, so the page's
   // user-agent guard never fires and no row matches: the page keeps the
   // generated state.
@@ -136,6 +143,10 @@ async function pose(site, cdp, useCase, beforeNavigate) {
     userAgent: useCase.ua,
     userAgentMetadata: metadata(useCase),
   }, sessionId);
+  // An iPad's touch count comes from an emulated touch point, not from its UA.
+  if (useCase.touch) {
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 }, sessionId);
+  }
   const errors = [];
   cdp.on(sessionId, "Runtime.exceptionThrown", (thrown) =>
     errors.push(thrown.exceptionDetails.text ?? "an exception was thrown"));
