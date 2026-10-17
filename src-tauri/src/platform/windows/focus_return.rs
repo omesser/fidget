@@ -11,8 +11,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::pill_focus::{hand_back, HandBack};
 
-use super::overlay::overlay_hwnds;
 use super::super::windows_perch::counts_for_desktop;
+use super::overlay::overlay_hwnds;
 
 /// The foreground window when a pill took the keyboard; 0 is none.
 static FOREGROUND_BEFORE_PILL: AtomicIsize = AtomicIsize::new(0);
@@ -34,9 +34,9 @@ fn next_window_in_front(overlay: HWND) -> Option<HWND> {
     // Use visible_windows' enum walk rather than z-order iteration.
     // EnumWindows doesn't guarantee z-order, but the first eligible match
     // is good enough: the user already moved on (step-aside case).
+    use std::sync::Mutex;
     use windows_sys::Win32::Foundation::{BOOL, LPARAM, TRUE};
     use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
-    use std::sync::Mutex;
 
     let state = Mutex::new(None::<HWND>);
 
@@ -112,9 +112,7 @@ pub fn hand_back_keyboard(overlay: HWND) -> Result<(), String> {
         let decision = hand_back(holding, alive);
 
         if crate::dev_flags::TRACE_BUBBLE.is_on() {
-            eprintln!(
-                "overlay: hand_back decision={decision:?} holding={holding} alive={alive}"
-            );
+            eprintln!("overlay: hand_back decision={decision:?} holding={holding} alive={alive}");
         }
 
         match decision {

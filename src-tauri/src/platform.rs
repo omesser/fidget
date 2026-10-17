@@ -404,7 +404,8 @@ pub fn remember_foreground(window: &tauri::Window) {
 #[cfg(target_os = "windows")]
 pub fn remember_foreground(window: &tauri::Window) {
     if let Ok(hwnd) = window.hwnd() {
-        let foreground = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        let foreground =
+            unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
         windows::focus_return::remember_foreground(foreground);
     }
 }
