@@ -1287,6 +1287,14 @@ mod tests {
                 "listening two",
             ),
             (
+                "1792238686 overlay: draft instance=d4 text=\"eight\" focused=true",
+                "listening eight",
+            ),
+            (
+                "1792238686 overlay: draft instance=d4 text=\"eight\" focused=false",
+                "listening unfocused",
+            ),
+            (
                 "1792238678 overlay: draft instance=d4 text=\"tw\" focused=true",
                 "listening",
             ),
@@ -1335,6 +1343,10 @@ mod tests {
             (
                 "1792238673 hit-test: cursor(2120,1328) scale 1.0 -> point(2120,1328) on overlay 0 miss click-through on  <- flipped",
                 "hitTest miss",
+            ),
+            (
+                "1792238685 hit-test: cursor(1600,1180) scale 1.0 -> point(1600,1180) on overlay 0 miss click-through OFF  <- flipped",
+                "hitTest miss control",
             ),
             (
                 "1792238674 click: down hits=[true] target=Some(0) cursor=(1720,1328)->(1720,1328) scale=1.0 visible=true sprite=(1657,1264)",
