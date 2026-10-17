@@ -29,7 +29,7 @@
 #   pill and hand typing back to Notepad; (5) with the window that was in front
 #   closed while the pill was open, Escape steps aside to Notepad; (6) a click
 #   into Notepad closes the empty pill (the page blur finds another window in
-#   front) and typing lands in Notepad; (7) hover opens a pill, a click on it
+#   front), Fidget's hand-back stays put, and typing lands in Notepad; (7) hover opens a pill, a click on it
 #   keeps typing in it, and Escape hands it back.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
@@ -107,6 +107,7 @@ $T = [ordered]@{
     blurAway  = '(?:^|\s)overlay \S+: window blur foreground=false dnd='
     restore   = '(?:^|\s)overlay: hand back Restore to 0x[0-9a-f]+ -> -?\d+$'
     stepAside = '(?:^|\s)overlay: hand back StepAside to 0x[0-9a-f]+ -> -?\d+$'
+    stay      = '(?:^|\s)overlay: hand back Stay to none$'
     pillOpen  = '(?:^|\s)overlay: pill open SetForegroundWindow\((0x[0-9a-f]+)\) -> (-?\d+) GetForegroundWindow\(\) -> (0x[0-9a-f]+)$'
     hitTest   = '(?:^|\s)hit-test: '
     hit       = '(?:^|\s)hit-test: cursor\(.*\bHIT\s+click-through OFF'
@@ -937,15 +938,18 @@ try {
     Open-Pill click-away
     $r = New-Object PillWin+RECT
     $null = [PillWin]::GetWindowRect($script:hwnd, [ref]$r)
-    # Both lines within 3 s of the release Fidget logged: the field's own blur
+    # All three lines within 3 s of the release Fidget logged: the field's own blur
     # timer closes the pill 3000 ms later too, so the closed line alone proves nothing.
+    # Stay, not Restore: both would leave Notepad in front, so only the line tells.
     $blurs = Count $T.blurAway
     $closes = Count $T.closed
+    $stays = Count $T.stay
     Click-Notepad ([int](($r.L + $r.R) / 2)) ([int]($r.T + ($r.B - $r.T) * 7 / 10)) click-away
-    $both = Wait-OnChanges 3 (Split-Path -Parent $log) { (Count $T.blurAway) -gt $blurs -and (Count $T.closed) -gt $closes }
-    if (-not $both) {
+    $all = Wait-OnChanges 3 (Split-Path -Parent $log) { (Count $T.blurAway) -gt $blurs -and (Count $T.closed) -gt $closes -and (Count $T.stay) -gt $stays }
+    if (-not $all) {
         if ((Count $T.blurAway) -le $blurs) { Fail "click-away: no 'window blur foreground=false' line within 3 s of Fidget logging the release in Notepad; see $log" }
-        Fail "click-away: the pill did not close within 3 s of Fidget logging the release in Notepad; see $log"
+        if ((Count $T.closed) -le $closes) { Fail "click-away: the pill did not close within 3 s of Fidget logging the release in Notepad; see $log" }
+        Fail "click-away: no 'hand back Stay' line within 3 s of Fidget logging the release in Notepad; see $log"
     }
     Type-IntoNotepad four click-away onethreesixsevenabcfour
     Ok "click-away: the click moved typing to Notepad"
@@ -955,7 +959,7 @@ try {
     Open-Pill click-pill
     Click-Pill click-pill
     Type-IntoPill eight $T.eight click-pill
-    Ok "click-pill: the click put typing in the pill"
+    Ok "click-pill: the click kept typing in the pill"
     Close-HandsBack 0x1B restore click-pill
     Type-IntoNotepad nine click-pill onethreesixsevenabcfournine
     Ok "click-pill: Escape handed typing back to Notepad"
