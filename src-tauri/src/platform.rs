@@ -380,7 +380,7 @@ pub fn hand_back_keyboard(window: &tauri::WebviewWindow) -> Result<(), String> {
         .hwnd()
         .map_err(|e| format!("window has no native handle: {e}"))?
         .0 as windows_sys::Win32::Foundation::HWND;
-    windows::focus_return::hand_back_keyboard(hwnd)
+    windows::hand_back_keyboard(hwnd)
 }
 
 /// The X11 window behind a webview, or None on Wayland.
@@ -406,7 +406,7 @@ pub fn remember_foreground(window: &tauri::Window) {
 /// Remember the foreground window before a pill takes the keyboard.
 #[cfg(target_os = "windows")]
 pub fn remember_foreground(foreground: windows_sys::Win32::Foundation::HWND) {
-    windows::focus_return::remember_foreground(foreground);
+    windows::remember_foreground(foreground);
 }
 
 /// Last pill closed: on X11, if the overlay still has focus, activate the window

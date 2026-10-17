@@ -3,15 +3,13 @@
 /// Whether the foreground window at pill-open is worth remembering: a real
 /// window that is not one of Fidget's own (the overlay already in front).
 pub(super) fn worth_remembering(foreground: u64, foreground_pid: u32, own_pid: u32) -> bool {
-    let _ = (foreground, foreground_pid, own_pid);
-    true
+    foreground != 0 && foreground_pid != own_pid
 }
 
 /// Where a step aside hands the keyboard: the first window, front to back,
 /// that `skip` keeps (not Fidget's, not minimized, not cloaked).
 pub(super) fn step_aside_target(front_to_back: &[u64], skip: impl Fn(u64) -> bool) -> Option<u64> {
-    let _ = skip;
-    front_to_back.first().copied()
+    front_to_back.iter().copied().find(|&w| !skip(w))
 }
 
 #[cfg(test)]

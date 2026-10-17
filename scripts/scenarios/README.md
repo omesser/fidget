@@ -122,7 +122,10 @@ Fidget is running. A fullscreen app keeps running: the leaf logs it to
 `chat-close-pill-type-<time>-<hex>` folder under the evidence dir it is given,
 or under `$env:TEMP`. It prints Fidget's `overlay: pill open
 SetForegroundWindow(...)` line, which shows whether Windows let the pill take
-the foreground (#1577). At startup it waits 3 s for each of the first frame,
+the foreground (#1577). It checks that Escape and Enter hand typing back to
+Notepad (Fidget's `overlay: hand back Restore ...` line), and that with the
+window in front at pill-open closed (a small window of the leaf's own), Escape
+steps aside to Notepad (`hand back StepAside ...`). At startup it waits 3 s for each of the first frame,
 the overlay's `overlay: <label> page loaded` line and its first draft report.
 WebView2's profile is one folder every run reuses,
 `%LOCALAPPDATA%\fidget-scenarios\webview2`, so only the first run on a PC
