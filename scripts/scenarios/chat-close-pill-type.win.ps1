@@ -113,6 +113,7 @@ $T = [ordered]@{
     hit       = '(?:^|\s)hit-test: cursor\(.*\bHIT\s+click-through OFF'
     miss      = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through '
     control   = '(?:^|\s)hit-test: cursor\(.*\bmiss click-through OFF'
+    five      = '(?:^|\s)overlay: draft instance=\S+ text="five" focused=true$'
     down      = '(?:^|\s)click: down '
     up        = '(?:^|\s)click: up '
 }
@@ -790,6 +791,7 @@ public static class PillGone {
     }
 }
 "@
+Note-Step "window-gone helper compiled"
 # Counts first, closes the pill with $Key, then waits 3 s for the closed draft
 # and 3 s more for Fidget's hand-back line of the $Back kind.
 function Close-HandsBack([uint16]$Key, [string]$Back, [string]$Case) {
@@ -910,7 +912,7 @@ try {
 
     # 4. Enter sends the pill's text, closes it, and typing goes back to Notepad.
     Open-Pill enter
-    if (-not (Wait-ForNext (Draft-Holds "five") { [PillWin]::Text("five") })) { Fail "enter: the pill never showed `"five`"; see $log" }
+    Type-IntoPill five $T.five enter
     Close-HandsBack 0x0D restore enter
     Type-IntoNotepad six enter onethreesixabc
     Ok "enter: the pill sent, closed, and typing went back to Notepad"
@@ -950,8 +952,9 @@ try {
 
     # 7. A click on the pill left open takes the keyboard back into it, and
     # Escape then hands typing back to Notepad (#1577).
+    $script:pillFrom = Line-Count
     if (-not (Wait-ForNext $T.opened { Click-Pill click-pill })) { Note-Keys "after the pill click"; Fail "click-pill: the pill did not show text=`"`" focused=true after the click; see $log" }
-    if (-not (Wait-ForNext $T.eight { [PillWin]::Text("eight") })) { Note-Keys "at click-pill"; Fail "click-pill: the pill never showed text=`"eight`" focused=true; see $log" }
+    Type-IntoPill eight $T.eight click-pill
     Ok "click-pill: the click put typing in the pill"
     Close-HandsBack 0x1B restore click-pill
     Type-IntoNotepad nine click-pill onethreesixsevenabcfournine
