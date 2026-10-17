@@ -28,8 +28,9 @@
 #   since the pill opened; (3) Escape and (4) Enter close the
 #   pill and hand typing back to Notepad; (5) with the window that was in front
 #   closed while the pill was open, Escape steps aside to Notepad; (6) a click
-#   into Notepad takes focus off the pill and typing lands in Notepad; (7) hover
-#   opens a pill, a click on it keeps typing in it, and Escape hands it back.
+#   into Notepad closes the empty pill (the page blur finds another window in
+#   front) and typing lands in Notepad; (7) hover opens a pill, a click on it
+#   keeps typing in it, and Escape hands it back.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
 # Self-checks that launch nothing: FIDGET_SCENARIO_NOTEPAD_TABS (names split by
