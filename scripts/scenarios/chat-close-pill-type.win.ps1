@@ -6,7 +6,8 @@
 #   Notepad's restored session. If this run started Notepad, it also closes
 #   that one window, and only when every tab left in it was there at launch.
 # Input: SendInput cursor moves, clicks, typed words, Escape, Ctrl+Home, Ctrl+S.
-#   Each press is held until Fidget traces it down; each word is one SendInput.
+#   Each press is held until Fidget traces it down. A pill word is one SendInput;
+#   a Notepad word goes one character at a time, each saved and read back first.
 # Duration: about 15 s (an estimate until the first Windows run). Every wait
 #   gives up 3 s after its trigger; at startup that is the first frame after
 #   the launch, the overlay's page load after that frame, and its first report
@@ -22,8 +23,10 @@
 #   fullscreen window is only logged. bash for the fixture Harness wrapper.
 # Asserts: (1) a sprite click leaves typing in Notepad; (2) hover opens the
 #   pill, Fidget prints the pill-open SetForegroundWindow line, and "two" lands
-#   in the pill (text="two" focused=true); (3) Escape closes the pill; (4) a
-#   click into Notepad takes focus off the pill and typing lands in Notepad.
+#   in the pill (text="two" focused=true), with no close or hand-back line
+#   since the pill opened; (3) Escape closes the pill; (4) a click into
+#   Notepad closes the empty pill (the page blur finds another window in front)
+#   and typing lands in Notepad.
 #   It prints the pill-open line, which says whether Windows refused the pill
 #   the foreground (#1577).
 # Self-checks that launch nothing: FIDGET_SCENARIO_NOTEPAD_TABS (names split by
@@ -35,6 +38,13 @@
 #   FIDGET_SCENARIO_TRACE_LINE=<line> prints which waited-on trace patterns it
 #   matches; FIDGET_SCENARIO_PROFILE_LOCK=<folder> prints whether
 #   its EBWebView\lockfile is missing, free or in use;
+#   FIDGET_SCENARIO_PILL_LOG=<process.log> prints whether "two" typed into the
+#   pill landed or the pill went first, judged from FIDGET_SCENARIO_PILL_OPENED_AT
+#   (the pill's first line, 0-based); FIDGET_SCENARIO_READ_DOC=<file> prints
+#   the file as Notepad's is read, or busy; FIDGET_SCENARIO_TYPE_BEFORE,
+#   FIDGET_SCENARIO_TYPE_WORD and FIDGET_SCENARIO_TYPE_EXPECTED print the file
+#   after each character typed into Notepad, split by |;
+#   FIDGET_SCENARIO_UNEXPECTED=<results.txt> throws, to check the FAIL line;
 #   FIDGET_SCENARIO_PREPARE_ONLY=1 makes the run folder and stops.
 # Each run writes to a new chat-close-pill-type-<time>-<hex> folder in
 #   [evidence dir], or in $env:TEMP without one.
@@ -47,6 +57,21 @@ $Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
 $TestBin = if ($args.Count -gt 2) { $args[2] } else { "" }
 $Out = if ($args.Count -gt 3) { $args[3] } else { "" }
 $ErrorActionPreference = "Stop"
+# An error nothing here expected still ends the run with a FAIL line in
+# results.txt once that exists (Fail writes its own, then throws "scenario failed").
+$results = $null
+trap {
+    if ("$_" -ne "scenario failed") {
+        $line = "FAIL: unexpected error: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+        [Console]::Error.WriteLine($line)
+        if ($results) { $line | Add-Content -LiteralPath $results }
+    }
+    break
+}
+if ($env:FIDGET_SCENARIO_UNEXPECTED) {
+    $results = $env:FIDGET_SCENARIO_UNEXPECTED
+    throw "boom from the self-check"
+}
 
 function Show-Header {
     $header = @()
@@ -74,8 +99,9 @@ $T = [ordered]@{
     listening = '(?:^|\s)overlay: draft instance=\S+ '
     opened    = '(?:^|\s)overlay: draft instance=\S+ text="" focused=true$'
     two       = '(?:^|\s)overlay: draft instance=\S+ text="two" focused=true$'
-    unfocused = '(?:^|\s)overlay: draft instance=\S+ (?:text="[^"]*" focused=false|closed)$'
     closed    = '(?:^|\s)overlay: draft instance=\S+ closed$'
+    pillGone  = '(?:^|\s)overlay: (?:draft instance=\S+ closed|hand back )'
+    blurAway  = '(?:^|\s)overlay \S+: window blur foreground=false dnd='
     pillOpen  = '(?:^|\s)overlay: pill open SetForegroundWindow\((0x[0-9a-f]+)\) -> (-?\d+) GetForegroundWindow\(\) -> (0x[0-9a-f]+)$'
     hitTest   = '(?:^|\s)hit-test: '
     hit       = '(?:^|\s)hit-test: cursor\(.*\bHIT\s+click-through OFF'
@@ -85,6 +111,57 @@ $T = [ordered]@{
 }
 # The pill's text, whatever its focus, holding $Word.
 function Draft-Holds([string]$Word) { "(?:^|\s)overlay: draft instance=\S+ text=`"[^`"]*$Word[^`"]*`" " }
+
+# The verdict on typing into the pill that opened at line $OpenedAt (0-based):
+# "typed" at the first $Typed line, "lost <line>" at a pillGone line before it
+# (even before the typing), else $null.
+function Get-TypingVerdict([string[]]$Lines, [int]$OpenedAt, [string]$Typed) {
+    foreach ($l in @($Lines | Select-Object -Skip $OpenedAt)) {
+        if ($l -match $Typed) { return "typed" }
+        if ($l -match $T.pillGone) { return "lost $($l.Trim())" }
+    }
+    $null
+}
+if ($env:FIDGET_SCENARIO_PILL_LOG) {
+    $verdict = Get-TypingVerdict @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_PILL_LOG) ([int]$env:FIDGET_SCENARIO_PILL_OPENED_AT) $T.two
+    Write-Output "pill: $(if ($verdict) { $verdict } else { 'none' })"
+    exit 0
+}
+
+# Notepad's file as it is now, opened with a share that lets Notepad keep it open
+# for writing. $null while Notepad holds it unshared mid-save: not saved yet.
+function Read-Doc([string]$Path = $doc) {
+    try {
+        $stream = [System.IO.FileStream]::new($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]"ReadWrite, Delete")
+    } catch [System.IO.IOException] {
+        $e = $_.Exception
+        while ($e -and $e -isnot [System.IO.IOException]) { $e = $e.InnerException }
+        # 32 is a sharing violation, 33 a lock violation.
+        if ($e -and ($e.HResult -band 0xFFFF) -in 32, 33) { return $null }
+        throw
+    }
+    try { [System.IO.StreamReader]::new($stream, $true).ReadToEnd().TrimStart([char]0xFEFF) } finally { $stream.Dispose() }
+}
+if ($env:FIDGET_SCENARIO_READ_DOC) {
+    $text = Read-Doc $env:FIDGET_SCENARIO_READ_DOC
+    Write-Output "doc: $(if ($null -eq $text) { 'busy' } else { $text })"
+    exit 0
+}
+
+# The file after each character of $Word typed into $Before ends at $Expected,
+# or "fail: ..." when no single insertion of $Word gives $Expected.
+function Get-TypingSteps([string]$Before, [string]$Expected, [string]$Word) {
+    for ($at = 0; $at -le $Before.Length; $at++) {
+        if ($Before.Insert($at, $Word) -cne $Expected) { continue }
+        return ,@(for ($k = 1; $k -le $Word.Length; $k++) { $Before.Insert($at, $Word.Substring(0, $k)) })
+    }
+    "fail: `"$Word`" typed into `"$Before`" can't give `"$Expected`""
+}
+if ($null -ne $env:FIDGET_SCENARIO_TYPE_WORD) {
+    $steps = Get-TypingSteps $env:FIDGET_SCENARIO_TYPE_BEFORE $env:FIDGET_SCENARIO_TYPE_EXPECTED $env:FIDGET_SCENARIO_TYPE_WORD
+    Write-Output "steps: $(if ($steps -is [string]) { $steps } else { $steps -join '|' })"
+    exit 0
+}
 
 if ($null -ne $env:FIDGET_SCENARIO_TRACE_LINE) {
     $names = @($T.Keys | Where-Object { $env:FIDGET_SCENARIO_TRACE_LINE -match $T[$_] })
@@ -202,8 +279,33 @@ if ($env:FIDGET_SCENARIO_READY_LOG) {
     exit 0
 }
 
+# Where Notepad goes: a monitor no fullscreen window covers, the primary first,
+# sized to fit its work area. With every monitor covered it stays on the primary,
+# and coming to the front is what puts it over the fullscreen app.
+function Get-NotepadPlacement([object[]]$Monitors) {
+    $order = @($Monitors | Where-Object { $_.Primary }) + @($Monitors | Where-Object { -not $_.Primary })
+    $pick = $order | Where-Object { -not $_.Full } | Select-Object -First 1
+    $free = [bool]$pick
+    if (-not $pick) { $pick = $order[0] }
+    $ww = $pick.R - $pick.L
+    $wh = $pick.B - $pick.T
+    $w = [math]::Min(1400, $ww - 100)
+    $h = [math]::Min(900, $wh - 100)
+    @{ Name = $pick.Name; X = $pick.L + [math]::Max(0, [math]::Min(400, $ww - $w)); Y = $pick.T + [math]::Max(0, [math]::Min(250, $wh - $h)); W = $w; H = $h; Free = $free }
+}
+if ($env:FIDGET_SCENARIO_MONITORS) {
+    $mons = @($env:FIDGET_SCENARIO_MONITORS -split ';' | ForEach-Object {
+        $f = $_ -split ','
+        @{ Name = $f[0]; Primary = $f[1] -eq '1'; Full = $f[2] -eq '1'; L = [int]$f[3]; T = [int]$f[4]; R = [int]$f[5]; B = [int]$f[6] }
+    })
+    $p = Get-NotepadPlacement $mons
+    Write-Output "place: $($p.Name) ($($p.X),$($p.Y)) $($p.W)x$($p.H) $(if ($p.Free) { 'free' } else { 'covered' })"
+    exit 0
+}
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 . (Join-Path $PSScriptRoot "wait-helpers.win.ps1")
+$script:t0 = Get-NowMs
 
 # The middle of the sprite at rest: its top-left from the frame line, its size
 # from the overlay's startup line. $null until both are there.
@@ -247,6 +349,9 @@ $script:WatchDir = $Out
 $results = Join-Path $Out "results.txt"
 $focusLog = Join-Path $Out "focus.log"
 Set-Content -LiteralPath $results -Value $null
+# Milliseconds since the script started, per step, so a slow step shows in focus.log.
+function Note-Step([string]$What) { "step +$((Get-NowMs) - $script:t0) ms: $What" | Add-Content -LiteralPath $focusLog }
+Note-Step "run folder made"
 $script:proc = $null
 $script:notepad = $null
 $script:hwnd = [IntPtr]::Zero
@@ -347,6 +452,35 @@ public static class PillWin {
     public static string Class(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
     public static IntPtr RootAt(int x, int y) { var p = new POINT(); p.X = x; p.Y = y; return GetAncestor(WindowFromPoint(p), 2); }
     public static MONITORINFOEX Monitor(IntPtr h) { var i = new MONITORINFOEX(); i.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX)); GetMonitorInfo(MonitorFromWindow(h, 2), ref i); return i; }
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint attach, uint to, bool on);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsGUIThread(bool convert);
+    // Windows refuses the foreground to a background script, so for the call
+    // this thread's input joins the foreground thread's. The window in front
+    // gets no key or click and is never moved, minimized or closed.
+    public static bool Bring(IntPtr h) {
+        if (SetForegroundWindow(h) && GetForegroundWindow() == h) return true;
+        IsGUIThread(true);
+        uint unused;
+        uint front = GetWindowThreadProcessId(GetForegroundWindow(), out unused);
+        uint me = GetCurrentThreadId();
+        bool joined = front != 0 && front != me && AttachThreadInput(me, front, true);
+        try { BringWindowToTop(h); SetForegroundWindow(h); }
+        finally { if (joined) AttachThreadInput(me, front, false); }
+        return GetForegroundWindow() == h;
+    }
+    delegate bool MonitorProc(IntPtr m, IntPtr dc, ref RECT r, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorProc p, IntPtr l);
+    public static List<MONITORINFOEX> Monitors() {
+        var all = new List<MONITORINFOEX>();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr m, IntPtr dc, ref RECT r, IntPtr l) => {
+            var i = new MONITORINFOEX(); i.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX));
+            if (GetMonitorInfo(m, ref i)) all.Add(i);
+            return true;
+        }, IntPtr.Zero);
+        return all;
+    }
     public static List<IntPtr> Tops() {
         var all = new List<IntPtr>();
         EnumWindows((h, l) => { int v; bool cloaked = DwmGetWindowAttribute(h, 14, out v, 4) == 0 && v != 0; if (IsWindowVisible(h) && !cloaked) all.Add(h); return true; }, IntPtr.Zero);
@@ -361,6 +495,7 @@ $null = [PillWin]::SetProcessDpiAwarenessContext([IntPtr]-4)
 $null = [PillWin]::SetThreadDpiAwarenessContext([IntPtr]-4)
 $awareness = [PillWin]::GetAwarenessFromDpiAwarenessContext([PillWin]::GetThreadDpiAwarenessContext())
 if ($awareness -ne 2) { Fail "this thread is not per-monitor DPI aware (awareness $awareness), so its pixels would not match Fidget's" }
+Note-Step "Win32 helper compiled"
 
 function Proc-Name([uint32]$ProcessId) { $g = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue; if ($g) { $g.ProcessName } else { "?" } }
 function Owner-Of([IntPtr]$H) { [uint32]$owner = 0; $null = [PillWin]::GetWindowThreadProcessId($H, [ref]$owner); $owner }
@@ -382,6 +517,12 @@ function Get-Fullscreen {
     }
 }
 function Note-Foreground([string]$When) { "foreground $When`: $(Describe-Window ([PillWin]::GetForegroundWindow()))" | Add-Content -LiteralPath $focusLog }
+# Each monitor, and whether a fullscreen window covers it; Notepad's place from that.
+function Get-MonitorMap([string[]]$Covered) {
+    foreach ($m in [PillWin]::Monitors()) {
+        @{ Name = $m.szDevice; Primary = ($m.dwFlags -band 1) -eq 1; Full = $Covered -contains $m.szDevice; L = $m.rcWork.L; T = $m.rcWork.T; R = $m.rcWork.R; B = $m.rcWork.B }
+    }
+}
 
 # The shared WebView2 profile, under the real LOCALAPPDATA (read before the run
 # points it at its own folder). A startup step that misses on the run that
@@ -403,19 +544,25 @@ function Fail-Startup([string]$Message) {
     if ($coldProfile) { $Message += ". This run made the shared WebView2 profile in $webviewProfile, so it started cold: rerun once" }
     Fail $Message
 }
+Note-Step "profile checked"
 Note-Foreground "before the run"
 # Evidence only: a fullscreen app keeps running, and nothing here focuses or moves it.
 $full = @(Get-Fullscreen)
 foreach ($h in $full) { "fullscreen: $(Describe-Window $h)" | Add-Content -LiteralPath $focusLog }
 if (-not $full.Count) { "fullscreen: none" | Add-Content -LiteralPath $focusLog }
+# Their monitors, kept for placing Notepad later rather than scanning again.
+$fullMonitors = @($full | ForEach-Object { [PillWin]::Monitor($_).szDevice })
 
+# Lines in Fidget's log so far; the next pill's lines start here.
+function Line-Count { if (Test-Path -LiteralPath $log) { @(Get-Content -LiteralPath $log).Count } else { 0 } }
+$script:pillFrom = 0
 function Count([string]$Pattern) {
     if (-not (Test-Path -LiteralPath $log)) { return 0 }
     @(Get-Content -LiteralPath $log | Where-Object { $_ -match $Pattern }).Count
 }
 # Until $Test holds, re-checked on each UI Automation event (focus, windows,
 # structure, names), for desktop state with no line or file of its own.
-function Wait-Ui([double]$Seconds, [scriptblock]$Test) { [bool](Wait-UiaChange 0 $Seconds $Test) }
+function Wait-Ui([double]$Seconds, [scriptblock]$Test) { [bool](Wait-UiaChange 0 $Seconds $Test $script:uia) }
 # One more matching line in Fidget's log than $Before, within 3 s.
 function Wait-LogCount([string]$Pattern, [int]$Before) { Wait-ForCount 3 $log $Pattern $Before }
 # Counts first, then pulls the trigger, then waits 3 s for one more matching line.
@@ -478,26 +625,48 @@ function Click-Sprite([string]$Case) {
     Move-Away $Case
     if (-not (Wait-ForNext $T.hit { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: the sprite's click area did not follow the cursor; see $log" }
     if (Count $T.opened) { Fail "${Case}: the pill opened before the press; see $log" }
+    $under = [PillWin]::RootAt($script:aim.X, $script:aim.Y)
+    if ((Owner-Of $under) -ne $script:proc.Id) { Fail "${Case}: refusing to click the sprite at ($($script:aim.X),$($script:aim.Y)): it would land on $(Describe-Window $under)" }
     Press-Hold $script:aim.X $script:aim.Y $Case
     Move-Away $Case
 }
 function Open-Pill([string]$Case) {
     Aim $Case
     Move-Away $Case
+    $script:pillFrom = Line-Count
     if (-not (Wait-ForNext $T.opened { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: hovering the sprite did not open a focused pill in 3 s; see $log" }
 }
-function Read-Doc { [System.IO.File]::ReadAllText($doc).TrimStart([char]0xFEFF) }
 # Notepad's text: Ctrl+S with our tab in front, then the file holds what is expected (or 3 s pass).
 function Notepad-Holds([string]$Expected) {
     if (-not (Foreground-Is)) { return $false }
     [PillWin]::Key(0x11, $false); Press 0x53; [PillWin]::Key(0x11, $true)
     Wait-Until 3 { (Read-Doc) -ceq $Expected }
 }
+# Types $Word into the open pill and judges it from the pill's opening: $Typed
+# passes; the pill closing or handing the keyboard back first fails at once,
+# naming the window in front then.
+function Type-IntoPill([string]$Word, [string]$Typed, [string]$Case, [string]$Detail = "") {
+    [PillWin]::Text($Word)
+    $script:verdict = $null
+    $null = Wait-Until 3 { ($script:verdict = Get-TypingVerdict @(Get-Content -LiteralPath $log) $script:pillFrom $Typed) }
+    if ($script:verdict -eq "typed") { return }
+    $front = Describe-Window ([PillWin]::GetForegroundWindow())
+    Note-Keys "at $Case"
+    if ($script:verdict) { Fail "${Case}: the pill went away before `"$Word`" reached it: $($script:verdict.Substring(5)); in front then: $front$Detail; see $log" }
+    Fail "${Case}: the pill never showed text=`"$Word`" focused=true in 3 s; in front: $front$Detail; see $log"
+}
 # Types $Word with Notepad in front and checks it landed there, not in the pill.
+# One character per SendInput, saved and read back before the next: Windows
+# keeps a thread's last injected character, so a busy Notepad that reads
+# several queued at once types the last one for each ("four" gave "rrrr").
 function Type-IntoNotepad([string]$Word, [string]$Case, [string]$Expected) {
     if (-not (Wait-Ui 3 { Foreground-Is })) { Note-Keys "at $Case"; Fail "${Case}: Notepad was not in front to type into; see $focusLog" }
-    [PillWin]::Text($Word)
-    if (-not (Notepad-Holds $Expected)) { Note-Keys "at $Case"; Fail "${Case}: Notepad holds `"$(Read-Doc)`", not `"$Expected`"; see $focusLog" }
+    $steps = Get-TypingSteps (Read-Doc) $Expected $Word
+    if ($steps -is [string]) { Fail "${Case}: $($steps.Substring(6)); see $focusLog" }
+    for ($k = 0; $k -lt $Word.Length; $k++) {
+        [PillWin]::Text($Word.Substring($k, 1))
+        if (-not (Notepad-Holds $steps[$k])) { Note-Keys "at $Case"; Fail "${Case}: Notepad holds `"$(Read-Doc)`", not `"$($steps[$k])`"; see $focusLog" }
+    }
     if (Count (Draft-Holds $Word)) { Fail "${Case}: the pill took `"$Word`"; see $log" }
 }
 
@@ -558,12 +727,17 @@ function Close-OurNotepad {
 
 $startMs = Get-NowMs
 $cleanupFailed = $false
+# One UI Automation subscription for the whole run: subscribing on the desktop
+# root costs time on each wait that would otherwise make its own.
+$script:uia = [FidgetUiaSignal]::new(0)
+Note-Step "setup done (UI Automation subscribed)"
 try {
     # Our window is the one showing our file: Notepad titles a window by its open
     # tab, and a new tab opens in front. The window and its process come from there.
     $null = Start-Process -FilePath notepad.exe -ArgumentList "`"$doc`""
-    $found = Wait-UiaChange 0 3 { [PillWin]::Tops() | Where-Object { [PillWin]::Title($_).Contains($docName) } | Select-Object -First 1 }
+    $found = Wait-UiaChange 0 3 { [PillWin]::Tops() | Where-Object { [PillWin]::Title($_).Contains($docName) } | Select-Object -First 1 } $script:uia
     if (-not $found) { Fail "Notepad did not show $docName in 3 s" }
+    Note-Step "notepad window found"
     $script:hwnd = [IntPtr]$found
     $script:notepad = Get-Process -Id (Owner-Of $script:hwnd)
     if ($script:notepad.ProcessName -ne "Notepad") { Fail "the $docName window belongs to $($script:notepad.ProcessName), not Notepad" }
@@ -576,10 +750,19 @@ try {
     "notepad: launch tabs `"$($script:launchTabs -join '", "')`"" | Add-Content -LiteralPath $focusLog
     "notepad: process $($script:notepad.Id), tabs $($ourTab.Names.Count), was running $notepadWasRunning; cleanup will $plan" | Add-Content -LiteralPath $focusLog
     if ([PillWin]::IsIconic($script:hwnd)) { Fail "the Notepad window holding $docName is minimized; the run leaves it that way" }
-    # A window already open keeps its place; one this run opened goes clear of the sprite.
-    if (-not $notepadWasRunning) { $null = [PillWin]::MoveWindow($script:hwnd, 400, 250, 1400, 900, $true) }
-    # Windows can refuse a background process the foreground; a click on our own tab takes it.
-    $null = [PillWin]::SetForegroundWindow($script:hwnd)
+    Note-Step "notepad tabs read"
+    # A window already open keeps its place. One this run opened goes on a monitor
+    # no fullscreen app covers (the sprite starts on the primary), and the
+    # fullscreen app itself is never moved, minimized or closed.
+    if (-not $notepadWasRunning) {
+        $place = Get-NotepadPlacement @(Get-MonitorMap $fullMonitors)
+        $null = [PillWin]::MoveWindow($script:hwnd, $place.X, $place.Y, $place.W, $place.H, $true)
+        "notepad: placed on $($place.Name) at ($($place.X),$($place.Y)) $($place.W)x$($place.H)$(if (-not $place.Free) { '; every monitor has a fullscreen window, so it comes to the front over one' })" | Add-Content -LiteralPath $focusLog
+    }
+    # Windows can refuse a background process the foreground; Bring joins the
+    # foreground thread's input for the call, and a click on our own tab is the last resort.
+    $brought = [PillWin]::Bring($script:hwnd)
+    "notepad: brought to the front: $brought" | Add-Content -LiteralPath $focusLog
     if (-not (Wait-Ui 3 { Foreground-Is })) {
         $b = $ourTab.Tab.Current.BoundingRectangle
         $tabX = [int]($b.X + $b.Width / 3)
@@ -597,6 +780,7 @@ try {
     $text.SetFocus()
     if (-not (Wait-Ui 3 { Keys-InNotepad })) { Note-Keys "focusing Notepad's text"; Fail "Notepad's text area did not take the keys; see $focusLog" }
     [PillWin]::Key(0x11, $false); Press 0x24; [PillWin]::Key(0x11, $true)
+    Note-Step "notepad in front with the keys"
 
     # Fidget's private folders, set after Notepad starts so Notepad keeps the real ones.
     $null = Initialize-ScenarioData $Out @{ hide_in_fullscreen = $false }
@@ -617,12 +801,14 @@ try {
     # Each startup step waits 3 s from the one before it, woken by each line of
     # Fidget's piped stderr.
     $script:proc = Start-FidgetPiped $Bin @() (Join-Path $Out "app.log") (Join-Path $Out "app.err")
+    Note-Step "fidget launched"
     if (-not (Wait-LogCount $T.frame 0)) { Fail-Startup "Fidget drew no frame in 3 s of its launch; see $log" }
     if (-not (Wait-LogCount $T.loaded 0)) { Fail-Startup "the overlay's page did not load in 3 s of the first frame; see $log" }
     # The pre-launch check reads this lockfile, so it must be there now.
     if (-not (Test-Path -LiteralPath $profileLock)) { Fail "WebView2 loaded the page but holds no $profileLock, so the pre-launch profile check can't see a running WebView2" }
     if (-not (Wait-Until 3 { Test-OverlayListening (Get-Content -LiteralPath $log) })) { Fail-Startup "the overlay did not report in 3 s of its page loading; see $log" }
     if (-not (Wait-Ui 3 { Foreground-Is })) { Note-Keys "as Fidget started"; Fail "Notepad lost focus as Fidget started; see $focusLog" }
+    Note-Step "fidget ready"
 
     # 1. No pill open: a sprite click leaves Notepad in front, and typing lands there.
     Click-Sprite sprite-click
@@ -641,20 +827,27 @@ try {
     $overlayAhead = if ($Matches[1] -eq $Matches[3]) { "yes" } else { "no" }
     "pill-open: SetForegroundWindow returned $setResult; the overlay is in front: $overlayAhead; line: $($line.Trim())" | Tee-Object -FilePath $results -Append | Write-Output
     Note-Keys "with the pill open"
-    if (-not (Wait-ForNext $T.two { [PillWin]::Text("two") })) { Fail "hover-type: the pill never showed text=`"two`" focused=true (SetForegroundWindow returned $setResult, overlay in front: $overlayAhead); see $log" }
+    Type-IntoPill two $T.two hover-type " (SetForegroundWindow returned $setResult, overlay in front: $overlayAhead)"
     Ok "hover-type: the pill took `"two`" with no click"
 
     # 3. Escape closes the pill.
     if (-not (Wait-ForNext $T.closed { Press 0x1B })) { Fail "escape: the pill did not close; see $log" }
     Ok "escape: the pill closed"
 
-    # 4. A click into Notepad below its last line takes focus off the pill, and
+    # 4. A click into Notepad below its last line closes the empty pill, and
     # typing lands at the end of Notepad's text.
     Open-Pill click-away
     $r = New-Object PillWin+RECT
     $null = [PillWin]::GetWindowRect($script:hwnd, [ref]$r)
-    if (-not (Wait-ForNext $T.unfocused { Click-Notepad ([int](($r.L + $r.R) / 2)) ([int]($r.T + ($r.B - $r.T) * 7 / 10)) click-away })) {
-        Fail "click-away: the pill stayed focused after the click into Notepad; see $log"
+    # Both lines within 3 s of the release Fidget logged: the field's own blur
+    # timer closes the pill 3000 ms later too, so the closed line alone proves nothing.
+    $blurs = Count $T.blurAway
+    $closes = Count $T.closed
+    Click-Notepad ([int](($r.L + $r.R) / 2)) ([int]($r.T + ($r.B - $r.T) * 7 / 10)) click-away
+    $both = Wait-OnChanges 3 (Split-Path -Parent $log) { (Count $T.blurAway) -gt $blurs -and (Count $T.closed) -gt $closes }
+    if (-not $both) {
+        if ((Count $T.blurAway) -le $blurs) { Fail "click-away: no 'window blur foreground=false' line within 3 s of Fidget logging the release in Notepad; see $log" }
+        Fail "click-away: the pill did not close within 3 s of Fidget logging the release in Notepad; see $log"
     }
     Type-IntoNotepad four click-away oneabcfour
     Ok "click-away: the click moved typing to Notepad"
@@ -663,7 +856,10 @@ try {
 } finally {
     Stop-FidgetTree $script:proc $harnessTag
     $script:proc = $null
+    Note-Step "cleanup: fidget stopped"
     $why = Close-OurNotepad
+    Note-Step "cleanup: notepad done"
+    if ($script:uia) { $script:uia.Dispose() }
     if ($why) {
         [Console]::Error.WriteLine("FAIL: cleanup: $why")
         "FAIL: cleanup: $why" | Add-Content -LiteralPath $results

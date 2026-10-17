@@ -60,10 +60,10 @@ public class FidgetUiaSignal : IDisposable {
 "@
 
 # Run a check now and again on each UI Automation change until it returns
-# true or the seconds run out.
-function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check) {
+# true or the seconds run out. A caller's own $Shared signal is reused, not disposed.
+function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, $Shared = $null) {
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    $signal = [FidgetUiaSignal]::new($ProcessId)
+    $signal = if ($Shared) { $Shared } else { [FidgetUiaSignal]::new($ProcessId) }
     try {
         while ($true) {
             $result = & $Check
@@ -72,6 +72,6 @@ function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check) 
             if (-not $signal.Wait($left)) { return (& $Check) }
         }
     } finally {
-        $signal.Dispose()
+        if (-not $Shared) { $signal.Dispose() }
     }
 }

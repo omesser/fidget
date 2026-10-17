@@ -1243,6 +1243,11 @@ mod tests {
     /// The leaf's stdout for one self-check: `env` set, nothing launched.
     #[cfg(windows)]
     fn pill_self_check(key: &str, value: &std::ffi::OsStr) -> String {
+        pill_self_check_with(&[(key, value)])
+    }
+
+    #[cfg(windows)]
+    fn pill_self_check_with(envs: &[(&str, &std::ffi::OsStr)]) -> String {
         let out = Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(repo_scenarios().join("chat-close-pill-type.win.ps1"))
@@ -1251,7 +1256,7 @@ mod tests {
                 "C:\\Windows\\System32\\cmd.exe",
                 "C:\\Windows\\System32\\cmd.exe",
             ])
-            .env(key, value)
+            .envs(envs.iter().copied())
             .output()
             .unwrap();
         assert_eq!(out.status.code(), Some(0), "{out:?}");
@@ -1287,11 +1292,23 @@ mod tests {
             ),
             (
                 "1792238679 overlay: draft instance=d4 text=\"\" focused=false",
-                "listening unfocused",
+                "listening",
             ),
             (
                 "1792238680 overlay: draft instance=d4 closed",
-                "listening unfocused closed",
+                "listening closed pillGone",
+            ),
+            (
+                "1792238681 overlay: hand back Restore to 0x150e64 -> 0",
+                "pillGone",
+            ),
+            (
+                "1792238682 overlay overlay-0: window blur foreground=false dnd=off",
+                "blurAway",
+            ),
+            (
+                "1792238682 overlay overlay-0: window blur foreground=true dnd=off",
+                "",
             ),
             (
                 "1792238676 overlay: pill open SetForegroundWindow(0x1a2b) -> 1 GetForegroundWindow() -> 0x1a2b",
@@ -1323,6 +1340,52 @@ mod tests {
         }
     }
 
+    // From the pill opening, a close or hand-back line before the typed text
+    // fails, even one before the typing (live run 4, #1577). An unfocused line
+    // alone decides nothing.
+    #[cfg(windows)]
+    #[test]
+    fn chat_close_pill_type_win_judges_pill_typing_from_the_pill_opening() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("process.log");
+        let d = "1792261251 overlay: draft instance=e7";
+        let open = "1792261251 overlay: pill open SetForegroundWindow(0x40ec4) -> 1 GetForegroundWindow() -> 0x40ec4";
+        let back = "1792261251 overlay: hand back Restore to 0x150e64 -> 0";
+        let run4 = format!(
+            "{open}\n{d} text=\"\" focused=true\n{d} text=\"\" focused=false\n{back}\n{d} closed\n\
+             {open}\n{d} text=\"\" focused=true\n"
+        );
+        for (log, want) in [
+            (run4.clone(), format!("pill: lost {back}")),
+            (
+                format!("{open}\n{d} text=\"\" focused=true\n{d} closed\n"),
+                format!("pill: lost {d} closed"),
+            ),
+            (
+                format!("{open}\n{d} text=\"\" focused=false\n{d} text=\"two\" focused=true\n"),
+                "pill: typed".to_string(),
+            ),
+            (
+                format!("{open}\n{d} text=\"two\" focused=true\n{d} closed\n"),
+                "pill: typed".to_string(),
+            ),
+            (
+                format!("{open}\n{d} text=\"tw\" focused=true\n"),
+                "pill: none".to_string(),
+            ),
+        ] {
+            fs::write(&path, &log).unwrap();
+            assert_eq!(
+                pill_self_check_with(&[
+                    ("FIDGET_SCENARIO_PILL_LOG", path.as_os_str()),
+                    ("FIDGET_SCENARIO_PILL_OPENED_AT", "0".as_ref()),
+                ]),
+                want,
+                "{log}"
+            );
+        }
+    }
+
     // The leaf aims at the sprite's middle: its top-left from the frame line and
     // its size from the overlay's startup line, not a fixed offset.
     #[cfg(windows)]
@@ -1347,6 +1410,115 @@ mod tests {
             pill_self_check("FIDGET_SCENARIO_AIM_LOG", path.as_os_str()),
             "aim: (1707,1304)"
         );
+    }
+
+    // Notepad typing goes one character at a time, each checked in the file:
+    // "four" sent as one SendInput gave "rrrr" in a busy Notepad (#1593 live run).
+    #[cfg(windows)]
+    #[test]
+    fn chat_close_pill_type_win_checks_notepad_after_each_character() {
+        for (before, word, expected, want) in [
+            ("abc", "one", "oneabc", "steps: oabc|onabc|oneabc"),
+            (
+                "oneabc",
+                "four",
+                "oneabcfour",
+                "steps: oneabcf|oneabcfo|oneabcfou|oneabcfour",
+            ),
+            ("", "x", "x", "steps: x"),
+            (
+                "abc",
+                "three",
+                "onethreeabc",
+                "steps: fail: \"three\" typed into \"abc\" can't give \"onethreeabc\"",
+            ),
+        ] {
+            let got = pill_self_check_with(&[
+                ("FIDGET_SCENARIO_TYPE_BEFORE", before.as_ref()),
+                ("FIDGET_SCENARIO_TYPE_WORD", word.as_ref()),
+                ("FIDGET_SCENARIO_TYPE_EXPECTED", expected.as_ref()),
+            ]);
+            assert_eq!(got, want, "{word} into {before:?}");
+        }
+    }
+
+    // Notepad's file reads through a share that lets Notepad keep writing; a
+    // writer that shares nothing means not saved yet, never an error.
+    #[cfg(windows)]
+    #[test]
+    fn chat_close_pill_type_win_reads_notepads_file_while_it_is_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.txt");
+        fs::write(&path, "oneabc").unwrap();
+        let read = || pill_self_check("FIDGET_SCENARIO_READ_DOC", path.as_os_str());
+        assert_eq!(read(), "doc: oneabc");
+        let sharing = std::fs::OpenOptions::new()
+            .write(true)
+            .share_mode(0x1 | 0x2)
+            .open(&path)
+            .unwrap();
+        assert_eq!(read(), "doc: oneabc", "a writer that shares reading");
+        drop(sharing);
+        let exclusive = std::fs::OpenOptions::new()
+            .write(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        assert_eq!(read(), "doc: busy", "a writer that shares nothing");
+        drop(exclusive);
+    }
+
+    // An error the leaf did not expect still ends the run with a FAIL line in
+    // results.txt, not only a PowerShell error on the console.
+    #[test]
+    fn chat_close_pill_type_win_writes_a_fail_line_for_an_unexpected_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let results = dir.path().join("results.txt");
+        let shell = if cfg!(windows) { "powershell" } else { "pwsh" };
+        let Ok(out) = Command::new(shell)
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(repo_scenarios().join("chat-close-pill-type.win.ps1"))
+            .args(["--go", "fidget.exe", "fidget-test.exe"])
+            .env("FIDGET_SCENARIO_UNEXPECTED", &results)
+            .output()
+        else {
+            return; // No PowerShell on this host.
+        };
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        let text = fs::read_to_string(&results).unwrap_or_default();
+        assert!(
+            text.contains("FAIL: unexpected error: boom from the self-check"),
+            "{text}"
+        );
+    }
+
+    // Notepad goes on a monitor no fullscreen app covers, primary first, sized
+    // to its work area; with every monitor covered it stays on the primary.
+    #[cfg(windows)]
+    #[test]
+    fn chat_close_pill_type_win_places_notepad_clear_of_a_fullscreen_app() {
+        for (monitors, want) in [
+            (
+                "DISPLAY2,1,1,0,0,3440,1392;DISPLAY1,0,0,-1200,-209,0,1663",
+                "place: DISPLAY1 (-1100,41) 1100x900 free",
+            ),
+            ("P,1,0,0,0,1920,1152", "place: P (400,250) 1400x900 free"),
+            (
+                "S,0,1,1920,0,3840,1080;P,1,0,0,0,1920,1152",
+                "place: P (400,250) 1400x900 free",
+            ),
+            (
+                "S,0,1,1920,0,3840,1080;P,1,1,0,0,1920,1152",
+                "place: P (400,250) 1400x900 covered",
+            ),
+        ] {
+            assert_eq!(
+                pill_self_check("FIDGET_SCENARIO_MONITORS", monitors.as_ref()),
+                want,
+                "{monitors}"
+            );
+        }
     }
 
     // Move-Away waits for a hit-test miss only when Fidget last saw the cursor

@@ -65,11 +65,24 @@ export function keepOnDrag(text) {
   return text.trim().length > 0;
 }
 
-// The overlay lost the keyboard to another window (#1565): a pill with text
-// stays, an empty one goes. A pet drag can blur it too; the drag decides that.
-export function windowBlurred(machines, gestureActive) {
-  if (gestureActive) return;
+// The page lost focus. With the overlay still in front (hasForeground, #1577)
+// or a pet drag on, nothing changes. Otherwise another window took the
+// keyboard (#1565): a pill with text stays, an empty one goes.
+export function windowBlurred(machines, gestureActive, hasForeground = false) {
+  if (gestureActive || hasForeground) return;
   for (const machine of machines) machine.away();
+}
+
+// The pill takes the caret once the overlay is in front, since that activation
+// blurs a field focused first (#1577). Skipped if the pill closed meanwhile
+// (stillTyping false); a refused request still focuses it.
+export async function focusAfterForeground(requestForeground, focusField, stillTyping = () => true) {
+  try {
+    await requestForeground();
+  } catch (err) {
+    console.error("overlay_request_focus", err);
+  }
+  if (stillTyping()) focusField();
 }
 
 // hoverDelay: the Shell's delay in force, in ms, read as each hover starts.

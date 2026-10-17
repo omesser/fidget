@@ -69,6 +69,13 @@ pub fn hand_back(holding: bool, previous_alive: bool) -> HandBack {
     }
 }
 
+/// Whether the overlay `overlay` is the foreground window `foreground`
+/// (Win32 handles as integers; 0 is none).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn holds_foreground(foreground: isize, overlay: isize) -> bool {
+    foreground != 0 && foreground == overlay
+}
+
 /// One on-screen window, as macOS lists them front to back.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct AppWindow {
@@ -101,6 +108,13 @@ pub fn shared() -> &'static Mutex<OpenPills> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_overlay_holds_the_foreground_only_when_it_is_the_window_in_front() {
+        assert!(holds_foreground(0x40ec4, 0x40ec4));
+        assert!(!holds_foreground(0x150e64, 0x40ec4), "Notepad in front");
+        assert!(!holds_foreground(0, 0), "no foreground window is not ours");
+    }
 
     #[test]
     fn a_step_aside_on_macos_picks_the_frontmost_ordinary_app_not_ours() {

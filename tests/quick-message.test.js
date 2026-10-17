@@ -12,6 +12,7 @@ import {
   createQuickMessage,
   createDraftReporter,
   crossedDrag,
+  focusAfterForeground,
   keepOnDrag,
   windowBlurred,
   placeQuickMessage,
@@ -1014,4 +1015,67 @@ test("a click away closes an empty pill; a pet drag's blur leaves it to the drag
   const { qm } = shown();
   windowBlurred([qm], false);
   assert.equal(qm.visible, false);
+});
+
+test("a window blur while the overlay is still the foreground window leaves an empty pill open", () => {
+  // WebView2 blurs the page as SetForegroundWindow activates the overlay
+  // (#1577); the overlay never left the front, so the pill stays, focused.
+  const { qm } = shown();
+  windowBlurred([qm], false, true);
+  assert.equal(qm.visible, true);
+  assert.deepEqual(qm.draft, { text: "", focused: true });
+});
+
+test("a window blur with another window in front closes an empty pill", () => {
+  const { qm } = shown();
+  windowBlurred([qm], false, false);
+  assert.equal(qm.visible, false);
+});
+
+test("the pill's field takes the caret only once the overlay is in front", async () => {
+  const order = [];
+  let front;
+  const done = focusAfterForeground(
+    () =>
+      new Promise((resolve) => {
+        front = resolve;
+      }).then(() => order.push("front")),
+    () => order.push("focus"),
+  );
+  await Promise.resolve();
+  assert.deepEqual(order, [], "no caret before SetForegroundWindow returns");
+  front();
+  await done;
+  assert.deepEqual(order, ["front", "focus"]);
+});
+
+test("a failed foreground request still gives the field the caret", async () => {
+  const errors = [];
+  const error = console.error;
+  console.error = (...args) => errors.push(args);
+  try {
+    let focused = false;
+    await focusAfterForeground(
+      () => Promise.reject(new Error("refused")),
+      () => {
+        focused = true;
+      },
+    );
+    assert.equal(focused, true);
+    assert.equal(errors.length, 1);
+  } finally {
+    console.error = error;
+  }
+});
+
+test("the field skips the caret when the pill closed while the request was out", async () => {
+  let focused = false;
+  await focusAfterForeground(
+    () => Promise.resolve(),
+    () => {
+      focused = true;
+    },
+    () => false,
+  );
+  assert.equal(focused, false);
 });
