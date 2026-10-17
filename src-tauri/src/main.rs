@@ -2076,7 +2076,9 @@ fn overlay_report_qm_draft(
         if let Err(why) = overlay.set_focusable(open) {
             eprintln!("overlay: {label} could not set its key state: {why}");
         }
-        if !open {
+        if open {
+            platform::remember_foreground(&overlay);
+        } else {
             let handed = overlay.clone();
             let _ = overlay.run_on_main_thread(move || {
                 if let Err(why) = platform::hand_back_keyboard(&handed) {
