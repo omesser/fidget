@@ -60,7 +60,8 @@ const cases = {
     platform: "iOS", platformVersion: "17.4.0", architecture: "arm",
   },
   // iPadOS asks for the desktop site, so an iPad sends a Mac user agent; only
-  // its touch count keeps its desktop-matching rows off.
+  // its touch count keeps its desktop-matching rows off. Every iPad browser is
+  // WebKit and sends no client hints, so this pose also stands for Safari.
   "an iPad asking for the desktop site": {
     ua: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ${CHROME_UA}`,
     platform: "macOS", platformVersion: "10.15.7", architecture: "arm",
