@@ -1,0 +1,53 @@
+{
+  "source": {
+    "file": "/workspace/docs/pr/tw-garrison-v2/capture-frame0.png",
+    "dimensions": {
+      "width": 1280,
+      "height": 672
+    }
+  },
+  "crop": {
+    "x": 349,
+    "y": 99,
+    "width": 567,
+    "height": 453
+  },
+  "scale": 0.271523178807947,
+  "scale_adjustment": 1.0,
+  "destination": {
+    "x": 11,
+    "y": 37,
+    "canvas_width": 176,
+    "canvas_height": 160
+  },
+  "reference": {
+    "file": "/workspace/characters/timber-wolf/frames/idle-0.png",
+    "content_bounds": {
+      "x": 36,
+      "y": 37,
+      "width": 104,
+      "height": 123
+    },
+    "bottom_margin": 0
+  },
+  "processing": {
+    "background_removal": "v7b: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%\u00d755% ellipse) - FIXED mask creation bug",
+    "torso_protection": {
+      "type": "ellipse",
+      "center": {
+        "x": 632,
+        "y": 325
+      },
+      "radii": {
+        "width": 368,
+        "height": 247
+      },
+      "coverage": {
+        "width_pct": 65,
+        "height_pct": 55
+      }
+    },
+    "interpolation": "LANCZOS4",
+    "alignment_strategy": "feet at bottom, centered horizontally"
+  }
+}
