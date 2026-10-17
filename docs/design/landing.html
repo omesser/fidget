@@ -95,9 +95,10 @@
   .btn b { font-size: 1rem; }
   .btn span { font-size: .8rem; opacity: .8; }
   .btn:hover { filter: brightness(1.05); }
+  .btn.quiet { background: transparent; color: var(--accent); }
+  .copy { font: inherit; font-size: .8rem; padding: .15rem .6rem; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--win); color: var(--ink); cursor: pointer; }
   a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .brew { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-    font-size: .9rem; color: var(--ink-3); }
   code { font: .88rem ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px;
     padding: .2rem .45rem; color: var(--ink); overflow-wrap: anywhere; }
@@ -188,10 +189,13 @@
       <p class="lede">{{lede}}</p>
       <p class="download-label" id="download-label">Download for</p>
       <div class="get" id="get" role="group" aria-labelledby="download-label">
-        <a class="btn" href="{{download_macos}}"><b>macOS</b>{{version_macos}}<span>Apple Silicon · .dmg</span></a>
-        <a class="btn" href="{{download_windows}}"><b>Windows</b>{{version_windows}}<span>x86_64 · installer</span></a>
-        <a class="btn" href="{{download_linux}}"><b>Linux</b>{{version_linux}}<span>x86_64 · AppImage</span></a>
+        <a class="btn" data-os="macos" href="{{download_macos}}"><b>macOS</b>{{version_macos}}<span>Apple Silicon · .dmg</span></a>
+        <a class="btn" data-os="windows" href="{{download_windows}}"><b>Windows</b>{{version_windows}}<span>x86_64 · installer</span></a>
+        <a class="btn" data-os="linux" href="{{download_linux}}"><b>Linux</b>{{version_linux}}<span>x86_64 · AppImage</span></a>
       </div>
+      <p class="note" data-os-note="macos" hidden>{{install_brew}}</p>
+      <p class="note" data-os-note="linux" hidden>Prefer a .deb? <a href="https://github.com/omesser/fidget/releases">Get it from Releases</a>.</p>
+      <p class="note" data-os-note="unsupported" hidden>There's no build for your machine yet. You can <a href="https://github.com/omesser/fidget#get-it">run it from source</a>.</p>
       <p class="note">{{notes}} <a href="https://github.com/omesser/fidget#get-it">Install steps</a></p>
     </div>
 
@@ -291,6 +295,52 @@
     clip.removeAttribute("autoplay");
     clip.pause();
     clip.controls = true;
+  }
+</script>
+<script>
+  // The page stays as generated; the OS only decides which row already there
+  // leads. Android reports a platform matching Linux, so it must be guarded.
+  const ROWS = [
+    { id: "macos", name: "macOS", signal: /macos|mac|iphone|ipad/i },
+    { id: "windows", name: "Windows", signal: /win32|win64|windows/i },
+    { id: "linux", name: "Linux", signal: /x11|linux/i },
+  ];
+  if (!/Android/.test(navigator.userAgent)) {
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
+    const group = document.getElementById("get");
+    // userAgentData spells macOS with a lower-case m, so mac matches either case.
+    const row = ROWS.find((candidate) => candidate.signal.test(platform));
+    const leader = row && group.querySelector(`.btn[data-os="${row.id}"]`);    if (row && leader) {
+      group.prepend(leader);
+      for (const button of group.querySelectorAll(".btn")) {
+        button.classList.toggle("primary", button === leader);
+        button.classList.toggle("quiet", button !== leader);
+      }
+      document.getElementById("download-label").textContent = `Download for ${row.name}`;
+      const note = document.querySelector(`[data-os-note="${row.id}"]`);
+      // The brew line renders empty when README.md stops naming Homebrew.
+      if (note && note.textContent.trim()) note.hidden = false;
+      // Which machines have no build is only known once the arch is asked for.
+      const arch = navigator.userAgentData?.getHighEntropyValues?.(["architecture"]);
+      arch?.then((values) => {
+        const name = values.architecture || "";
+        const built = row.id === "macos" ? !/x86/.test(name)
+          : row.id === "windows" || row.id === "linux" ? !/arm/.test(name) : true;
+        if (!built) {
+          note?.setAttribute("hidden", "");
+          document.querySelector('[data-os-note="unsupported"]')?.removeAttribute("hidden");
+        }
+      }).catch(() => {});
+    }
+  }
+  // The clipboard write settles; a blocked one keeps "Copy".
+  for (const button of document.querySelectorAll(".copy[data-copy]")) {
+    button.addEventListener("click", () => {
+      navigator.clipboard?.writeText(button.dataset.copy)?.then(() => {
+        button.textContent = "Copied";
+        setTimeout(() => { button.textContent = "Copy"; }, 2000);
+      });
+    });
   }
 </script>
 </body>

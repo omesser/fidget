@@ -14,7 +14,8 @@ Two sources are optional. Without the hero video the desk scene stands in.
 Each download button links its asset in the release file that
 `gh release view --json tagName,assets` wrote, and names that release's tag
 above its format. Without such a file or such an asset, the button links the
-Latest release page and names no version.
+Latest release page and names no version. The macOS Homebrew line is read from
+the Get It section fenced command, and claims nothing when there is none.
 
 The page names frames by the paths make-character-gallery.py publishes under
 `<out>/characters/`, and copies nothing itself, so the gallery's checks are the
@@ -151,6 +152,11 @@ def read_readme(text):
     get_it = section(found, "Get It")
     opening = text.split("## What It Does", 1)[0]
     video = ATTACHMENT.search(opening)
+    # sections() drops code fences, so the command is read from the raw text;
+    # an absent command renders nothing, since the page cannot claim what the
+    # README does not.
+    get_it_only = text.split("## Get It", 1)[1].split("\n## ", 1)[0]
+    brew = re.search(r"^brew install --cask \S+$", get_it_only, re.M)
     return {
         "video": video and video.group(1),
         "headline": found["#title"],
@@ -158,6 +164,7 @@ def read_readme(text):
         "features": features,
         "harnesses": harnesses,
         "notes": [sentence(get_it, "not signed"), sentence(get_it, "works offline")],
+        "brew": brew.group(0) if brew else "",
     }
 
 
@@ -256,6 +263,10 @@ def render(readme_text, characters_root, rust_source, shell, release=None):
         "description": html.escape(re.sub(r"[*`]", "", re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", words["lede"]))),
         "lede": inline(words["lede"]),
         "notes": " ".join(inline(n) for n in words["notes"]),
+        "install_brew": (
+            f'Or install with Homebrew: <code>{html.escape(words["brew"])}</code> '
+            f'<button type="button" class="copy" data-copy="{html.escape(words["brew"])}">Copy</button>'
+        ) if words["brew"] else "",
         "features": "\n".join(f"<div><b>{inline(t)}</b><p>{inline(b)}</p></div>" for t, b in words["features"]),
         "harnesses": "".join(f"<li>{html.escape(h)}</li>" for h in words["harnesses"]),
         "count": (COUNT[len(cast)] if len(cast) < len(COUNT) else str(len(cast)))
@@ -359,6 +370,20 @@ def self_check():
         assert "<b>macOS</b><span>v9</span><span>Apple Silicon · .dmg</span>" in page, \
             "the release tag is not above the format"
         assert "<b>Windows</b><span>x86_64 · installer</span>" in page, "a button without its asset named a version"
+        assert "<code>brew install --cask omesser/fidget/fidget</code>" in page, \
+            "the Homebrew note lost the command"
+        assert 'data-copy="brew install --cask omesser/fidget/fidget"' in page, \
+            "the Copy button does not carry the command it copies"
+        assert "btn primary" not in page and "btn quiet" not in page, \
+            "the static page led with a row before any OS was detected"
+        assert all(f'data-os="{row}"' in page for row in ("macos", "windows", "linux")), \
+            "the OS-lead script has no row to find"
+        naked = render(readme.replace("brew install --cask omesser/fidget/fidget", ""),
+                       scratch, rust, shell, release)
+        assert '<p class="note" data-os-note="macos" hidden></p>' in naked, \
+            "the Homebrew note did not render empty and hidden"
+        assert "Or install with Homebrew" not in naked, \
+            "the page claimed a Homebrew line the README does not make"
 
     assert downloads(release) == {
         "macos": (f"{REPO}/releases/download/v9/F_9_aarch64.dmg", "v9"),
