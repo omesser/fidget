@@ -2076,9 +2076,7 @@ fn overlay_report_qm_draft(
         if let Err(why) = overlay.set_focusable(open) {
             eprintln!("overlay: {label} could not set its key state: {why}");
         }
-        if open {
-            platform::remember_foreground(&overlay);
-        } else {
+        if !open {
             let handed = overlay.clone();
             let _ = overlay.run_on_main_thread(move || {
                 if let Err(why) = platform::hand_back_keyboard(&handed) {
@@ -2267,6 +2265,7 @@ fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
             // Win32 for live windows, and any attach is undone before returning.
             unsafe {
                 let foreground = GetForegroundWindow();
+                platform::remember_foreground(foreground);
                 let mut attached = None;
                 if !foreground.is_null() {
                     let foreground_thread =

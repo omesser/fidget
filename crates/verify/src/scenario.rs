@@ -1319,6 +1319,16 @@ mod tests {
                 "pillOpen",
             ),
             (
+                "1792238681 overlay: hand back Restore to 0x1a2b -> 1",
+                "restore",
+            ),
+            (
+                "1792238682 overlay: hand back StepAside to 0x3c4d -> 1",
+                "stepAside",
+            ),
+            ("1792238683 overlay: hand back StepAside to none", ""),
+            ("1792238684 overlay: hand back Stay to none", ""),
+            (
                 "1792238673 hit-test: cursor(1720,1328) scale 1.0 -> point(1720,1328) on overlay 0 HIT  click-through OFF  <- flipped",
                 "hitTest hit",
             ),

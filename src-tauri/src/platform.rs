@@ -305,6 +305,9 @@ mod windows;
 #[cfg(any(test, not(unix)))]
 mod windows_perch;
 
+#[cfg(any(test, not(unix)))]
+mod windows_hand_back;
+
 mod ctrl_c;
 
 /// Children spawned while this is held inherit "ignore Ctrl+C".
@@ -402,12 +405,8 @@ pub fn remember_foreground(window: &tauri::Window) {
 
 /// Remember the foreground window before a pill takes the keyboard.
 #[cfg(target_os = "windows")]
-pub fn remember_foreground(window: &tauri::Window) {
-    if let Ok(hwnd) = window.hwnd() {
-        let foreground =
-            unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
-        windows::focus_return::remember_foreground(foreground);
-    }
+pub fn remember_foreground(foreground: windows_sys::Win32::Foundation::HWND) {
+    windows::focus_return::remember_foreground(foreground);
 }
 
 /// Last pill closed: on X11, if the overlay still has focus, activate the window

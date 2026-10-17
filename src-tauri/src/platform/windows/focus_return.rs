@@ -1,150 +1,114 @@
-//! Keyboard hand-back for Windows when a quick message pill closes.
+//! Keyboard hand-back on Windows when an overlay's last quick message pill
+//! closes (#1577): back to the window in front at pill-open, or a step aside.
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowLongW, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow,
-    GWL_EXSTYLE, GWL_STYLE,
+    GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow, SetForegroundWindow,
 };
 
 use crate::pill_focus::{hand_back, HandBack};
 
-use super::super::windows_perch::counts_for_desktop;
-use super::overlay::overlay_hwnds;
+use super::super::windows_hand_back::{step_aside_target, worth_remembering};
+use super::window_source::visible_windows;
 
 /// The foreground window when a pill took the keyboard; 0 is none.
 static FOREGROUND_BEFORE_PILL: AtomicIsize = AtomicIsize::new(0);
 
-/// Remember the foreground window before a pill takes the keyboard.
-pub fn remember_foreground(hwnd: HWND) {
-    FOREGROUND_BEFORE_PILL.store(hwnd as isize, Ordering::Relaxed);
+fn owner_pid(hwnd: HWND) -> u32 {
+    let mut pid = 0u32;
+    // SAFETY: a plain query; a stale hwnd leaves pid at 0.
+    unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+    pid
+}
 
-    if crate::dev_flags::TRACE_BUBBLE.is_on() {
-        eprintln!("overlay: remembered foreground hwnd={:#x}", hwnd as usize);
+/// Remember `foreground` before the pill takes the keyboard, unless it is
+/// Fidget's own (the overlay already in front) or none.
+pub fn remember_foreground(foreground: HWND) {
+    if worth_remembering(foreground as u64, owner_pid(foreground), std::process::id()) {
+        FOREGROUND_BEFORE_PILL.store(foreground as isize, Ordering::Relaxed);
     }
 }
 
-/// Next eligible window: visible, not ours, not cloaked, not minimized.
-fn next_window_in_front(overlay: HWND) -> Option<HWND> {
-    let own_pid = std::process::id();
-    let overlays = overlay_hwnds();
-
-    // Use visible_windows' enum walk rather than z-order iteration.
-    // EnumWindows doesn't guarantee z-order, but the first eligible match
-    // is good enough: the user already moved on (step-aside case).
-    use std::sync::Mutex;
-    use windows_sys::Win32::Foundation::{BOOL, LPARAM, TRUE};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
-
-    let state = Mutex::new(None::<HWND>);
-
-    unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let state = &*(lparam as *const Mutex<Option<HWND>>);
-
-        if let Ok(mut locked) = state.lock() {
-            if locked.is_some() {
-                return TRUE;
-            }
-
-            let own_pid = std::process::id();
-            let overlays = overlay_hwnds();
-
-            // Check if this window is eligible
-            let mut pid = 0u32;
-            GetWindowThreadProcessId(hwnd, &mut pid);
-            if pid == own_pid {
-                return TRUE;
-            }
-
-            let is_visible = IsWindowVisible(hwnd) != 0;
-            let style = GetWindowLongW(hwnd, GWL_STYLE);
-            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-
-            if !counts_for_desktop(is_visible, style, ex_style, hwnd as u64, &overlays) {
-                return TRUE;
-            }
-
-            // Check if minimized (iconic)
-            if IsIconic(hwnd) != 0 {
-                return TRUE;
-            }
-
-            // Check if cloaked
-            let mut cloaked = 0u32;
-            let cloak_read = DwmGetWindowAttribute(
+/// Fidget's own, minimized, or cloaked (another virtual desktop, a
+/// suspended app): no window to step aside to.
+fn skipped(hwnd: HWND, own_pid: u32) -> bool {
+    let mut cloaked = 0u32;
+    // SAFETY: Win32 queries on a window from visible_windows' walk; cloaked
+    // is a live u32 the size passed.
+    unsafe {
+        owner_pid(hwnd) == own_pid
+            || IsIconic(hwnd) != 0
+            || (DwmGetWindowAttribute(
                 hwnd,
-                DWMWA_CLOAKED as _,
+                DWMWA_CLOAKED as u32,
                 (&mut cloaked as *mut u32).cast(),
                 std::mem::size_of::<u32>() as u32,
-            );
-            if cloak_read >= 0 && cloaked != 0 {
-                return TRUE;
-            }
-
-            // Found an eligible window
-            *locked = Some(hwnd);
-        }
-
-        TRUE
+            ) >= 0
+                && cloaked != 0)
     }
-
-    // SAFETY: EnumWindows takes a callback and lparam. The state reference
-    // lives until EnumWindows returns, and the callback never escapes.
-    unsafe {
-        EnumWindows(Some(enum_callback), &state as *const _ as LPARAM);
-    }
-
-    state.into_inner().unwrap()
 }
 
-/// The overlay's last pill closed: give the foreground back.
+/// The overlay's last pill closed: give the keyboard back. Main thread.
 pub fn hand_back_keyboard(overlay: HWND) -> Result<(), String> {
     let previous = FOREGROUND_BEFORE_PILL.swap(0, Ordering::Relaxed) as HWND;
-
-    // SAFETY: Win32 queries on window handles; IsWindow vets the remembered one.
-    unsafe {
-        let foreground_before = GetForegroundWindow();
-        let holding = foreground_before == overlay;
+    // SAFETY: Win32 queries and SetForegroundWindow on window handles;
+    // IsWindow vets the remembered one first.
+    let (decision, target) = unsafe {
+        let holding = GetForegroundWindow() == overlay;
         let alive = !previous.is_null() && IsWindow(previous) != 0;
-
         let decision = hand_back(holding, alive);
-
-        if crate::dev_flags::TRACE_BUBBLE.is_on() {
-            eprintln!("overlay: hand_back decision={decision:?} holding={holding} alive={alive}");
-        }
-
-        match decision {
-            HandBack::Restore => {
-                SetForegroundWindow(previous);
-            }
+        let target = match decision {
+            HandBack::Restore => Some(previous),
             HandBack::StepAside => {
-                if let Some(next) = next_window_in_front(overlay) {
-                    SetForegroundWindow(next);
-                }
+                let own_pid = std::process::id();
+                let ids: Vec<u64> = visible_windows(false).iter().map(|w| w.id).collect();
+                step_aside_target(&ids, |id| skipped(id as HWND, own_pid)).map(|id| id as HWND)
             }
-            HandBack::Stay => {}
-        }
+            HandBack::Stay => None,
+        };
+        (decision, target)
+    };
+    // SAFETY: target is a live top-level window from the checks above.
+    let result = target.map(|hwnd| unsafe { SetForegroundWindow(hwnd) });
+    if crate::dev_flags::TRACE_BUBBLE.is_on() {
+        eprintln!(
+            "{}",
+            hand_back_line(decision, target.map(|h| h as usize), result)
+        );
     }
-
     Ok(())
+}
+
+/// The trace a scenario waits on after a pill closes.
+fn hand_back_line(decision: HandBack, target: Option<usize>, result: Option<i32>) -> String {
+    match (target, result) {
+        (Some(hwnd), Some(result)) => {
+            format!("overlay: hand back {decision:?} to {hwnd:#x} -> {result}")
+        }
+        _ => format!("overlay: hand back {decision:?} to none"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// next_window_in_front filters our own process ID, cloaked windows,
-    /// and minimized windows, using visible_windows / counts_for_desktop.
-    /// Integration test: actual filtering requires Win32 handles.
     #[test]
-    fn step_aside_filters_via_counts_for_desktop_and_is_iconic() {
-        // This is a white-box test proving the filtering path exists.
-        // Live Windows testing proves it works end-to-end.
-        assert!(
-            true,
-            "next_window_in_front uses counts_for_desktop, IsIconic, and DWMWA_CLOAKED"
+    fn the_hand_back_line_names_the_decision_target_and_result() {
+        assert_eq!(
+            hand_back_line(HandBack::Restore, Some(0x1a2b), Some(1)),
+            "overlay: hand back Restore to 0x1a2b -> 1"
+        );
+        assert_eq!(
+            hand_back_line(HandBack::StepAside, None, None),
+            "overlay: hand back StepAside to none"
+        );
+        assert_eq!(
+            hand_back_line(HandBack::Stay, None, None),
+            "overlay: hand back Stay to none"
         );
     }
 }
