@@ -216,3 +216,49 @@ test("no release file sends every button to the Latest release page", () => {
   assert.deepEqual(lines(page), [["Apple Silicon · .dmg"], ["x86_64 · installer"], ["x86_64 · AppImage"]],
     "no release, no version");
 });
+
+// The OS lead happens in the browser. The generated page must stay the
+// default one, with every row the lead script can pick and every note it can
+// unhide present but hidden.
+test("the static download group keeps three equal buttons and three hidden install lines", () => {
+  const page = published(PAGE);
+  assert.match(page, /<p class="download-label" id="download-label">Download for<\/p>/,
+    "the lead script has no label to name the row it leads with");
+  const group = page.match(/<div class="get" id="get"[^>]*>([\s\S]*?)<\/div>/)[1];
+  const rows = [...group.matchAll(/data-os="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(rows, ["macos", "windows", "linux"], "the lead script cannot find its rows in order");
+  assert.ok(!page.includes('class="btn primary"') && !page.includes('class="btn quiet"'),
+    "a static page led with a row before any OS was known");
+  assert.ok(page.includes('<p class="note" data-os-note="macos" hidden>Or install with Homebrew: '
+    + "<code>brew install --cask omesser/fidget/fidget</code> "
+    + '<button type="button" class="copy" data-copy="brew install --cask omesser/fidget/fidget">Copy</button></p>'),
+    "the macOS brew note lost its command or its Copy button");
+  assert.ok(page.includes('<p class="note" data-os-note="linux" hidden>Prefer a .deb? '
+    + '<a href="https://github.com/omesser/fidget/releases">Get it from Releases</a>.</p>'),
+    "the Linux .deb note is wrong or not hidden");
+  assert.ok(page.includes("<p class=\"note\" data-os-note=\"unsupported\" hidden>There's no build for your machine yet. "
+    + 'You can <a href="https://github.com/omesser/fidget#get-it">run it from source</a>.</p>'),
+    "the run-from-source note is wrong or not hidden");
+});
+
+test("the OS lead runs as a second plain script with no network calls", () => {
+  const page = published(PAGE);
+  const blocks = page.match(/<script>\n[\s\S]*?<\/script>/g) ?? [];
+  assert.equal(blocks.length, 2);
+  assert.ok(blocks[1].includes("download-label"), "the OS lead is not the second script");
+  assert.ok(!blocks[1].includes("fetch(") && !blocks[1].includes("XMLHttpRequest"),
+    "the OS lead reached the network");
+});
+
+test("a README that stops advertising Homebrew empties the install line", () => {
+  const readme = join(scratch, "README.md");
+  const out = join(scratch, "no-brew");
+  writeFileSync(readme, readFileSync(join(ROOT, "README.md"), "utf8")
+    .replace("brew install --cask omesser/fidget/fidget", ""));
+  execFileSync("python3", [SCRIPT, "--readme", readme, "--out", out], { cwd: ROOT, stdio: "pipe" });
+  const page = readFileSync(join(out, PAGE), "utf8");
+  assert.ok(page.includes('<p class="note" data-os-note="macos" hidden></p>'),
+    "the empty Homebrew note did not stay empty and hidden");
+  assert.ok(!page.includes("Or install with Homebrew"),
+    "the page claimed a Homebrew line the README does not make");
+});
