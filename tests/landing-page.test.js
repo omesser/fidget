@@ -310,9 +310,15 @@ test("the How it works section is a two-lane picture from the README", () => {
   assert.match(section, /data-light="behavior"/);
   assert.ok(!/class="[^"]*how-motion/.test(page) && !/class="[^"]*how-lit-/.test(page),
     "the published page armed the light-up classes");
-  assert.ok(section.includes('aria-label="Always on. No AI needed.: Frame loop, You, Your fidget"')
+  assert.ok(section.includes('aria-label="Always on. No AI needed. Frame loop, You, Your fidget"')
     && section.includes('>Your fidget</') && !section.includes('<dt>Your fidget</dt>'),
     "the picture or its label lost Your fidget, or the sheet kept an empty term");
+  const directorLabel = director.match(/aria-label="([^"]*)"/)?.[1] ?? "";
+  assert.ok(directorLabel.startsWith("Optional: the Director.") && directorLabel.endsWith("ACP, MCP, Your fidget"),
+    "lane 2's spoken label does not match its drawn picture");
+  const labels = [...section.matchAll(/aria-label="([^"]*)"/g)].map((match) => match[1]);
+  assert.ok(labels.every((label) => !label.includes(".:")),
+    "a lane label reads a period straight into a colon");
 
   const blocks = page.match(/<script>\n[\s\S]*?<\/script>/g) ?? [];
   assert.equal(blocks.length, 2);

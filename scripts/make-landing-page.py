@@ -255,8 +255,11 @@ def read_how(text, found):
 HOW_SHEET = {
     "always": ("Frame loop", "You", "Your fidget"),
     # README bullet order, so the alternative reads like the captions above.
+    # Lane 2 draws the sink the outputs land on, so it ends this list; the
+    # sheet skips it, since no caption names it.
     "director": ("Personality", "Instance Prompt", "Window titles", "Director",
-                 "A Behavior", "A line", "Your agent", "ACP", "MCP"),
+                 "A Behavior", "A line", "Your agent", "ACP", "MCP",
+                 "Your fidget"),
 }
 
 
@@ -276,6 +279,17 @@ def how_sheet(how, suffix):
         parts.append(f"<dt>{html.escape(name)}</dt>")
         parts.append(f"<dd>{inline(caption)}</dd>")
     return "".join(parts)
+
+
+def how_svg_label(how, suffix):
+    """The lane's spoken label: its title as a sentence, then the names it draws.
+
+    role="img" hides the drawn text, so this is all a screen reader hears. A
+    period running into a colon reads oddly, so names follow as the next sentence.
+    """
+    title = how["lanes"][suffix]
+    gap = " " if title.endswith(".") else ". "
+    return f"{title}{gap}{', '.join(HOW_SHEET[suffix])}"
 
 
 def how_slots(how, shell):
@@ -299,10 +313,8 @@ def how_slots(how, shell):
         "how_wake": html.escape(how["wake"]),
         "how_sheet_always": how_sheet(how, "always"),
         "how_sheet_director": how_sheet(how, "director"),
-        "how_svg_always_label": html.escape(
-            f'{how["lanes"]["always"]}: {", ".join(HOW_SHEET["always"])}'),
-        "how_svg_director_label": html.escape(
-            f'{how["lanes"]["director"]}: {", ".join(HOW_SHEET["director"])}'),
+        "how_svg_always_label": html.escape(how_svg_label(how, "always")),
+        "how_svg_director_label": html.escape(how_svg_label(how, "director")),
     }
     for suffix, title in how["lanes"].items():
         slots[f"how_lane_{suffix}"] = html.escape(title)
@@ -549,9 +561,12 @@ def self_check():
         assert "attach over ACP on stdio" in page and "the Harness calls back over MCP" in page
         assert "Opening wake" in page
         assert "not a live dump" in page, "the wake sample lost its sample lead-in"
-        assert ('aria-label="Always on. No AI needed.: Frame loop, You, Your fidget"' in page
+        labels = re.findall(r'aria-label="([^"]*)"', page)
+        assert ("Always on. No AI needed. Frame loop, You, Your fidget" in labels
+                and any(label.startswith("Optional: the Director.")
+                        and label.endswith("ACP, MCP, Your fidget") for label in labels)
                 and '<dt>Your fidget</dt>' not in page), \
-            "the picture's label lost Your fidget or the sheet kept an empty term"
+            "the picture's labels lost the sink or the sheet kept an empty term"
         assert "A pet first. The AI is the part that makes it someone." in page
         assert not re.search(r"<script[^>]*mermaid", page) and 'class="mermaid"' not in page
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
