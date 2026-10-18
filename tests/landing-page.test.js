@@ -250,6 +250,94 @@ test("the OS lead runs as a second plain script with no network calls", () => {
     "the OS lead reached the network");
 });
 
+// #1548: the how-it-works picture sits between the section that says what the
+// pet does alone and the one that says what it becomes with a Director.
+const howSection = (page) => {
+  const start = page.indexOf('<section id="how">');
+  assert.ok(start >= 0, "the page has a section id=how");
+  const end = page.indexOf("</section>", start);
+  assert.ok(end >= 0, "section id=how closes");
+  return page.slice(start, end);
+};
+
+test("the how section sits between What it does and the harnesses", () => {
+  const page = published(PAGE);
+  assert.ok(page.indexOf("What it does") < page.indexOf('<section id="how">'),
+    "the how section left its place between What it does and the harnesses");
+  assert.ok(page.indexOf('<section id="how">') < page.indexOf('<section id="harnesses">'),
+    "the harnesses section left the how section behind it");
+});
+
+test("the how section reads the issue's copy verbatim", () => {
+  const section = howSection(published(PAGE));
+  const lines = ["How it works",
+    "A pet first. The AI is the part that makes it someone.",
+    "Always on. No AI needed.",
+    "Frame loop",
+    "Walks, falls, lands, perches. Every frame, on your machine.",
+    "You",
+    "Poke, throw, drag, summon.",
+    "Your fidget",
+    "Optional: the Director",
+    "Personality",
+    "Who it is. A plain text file.",
+    "Instance Prompt",
+    "Your own twist, on top.",
+    "Window titles",
+    "Only if you say yes. Never pixels.",
+    "Director",
+    "Wakes now and then and decides what's next.",
+    "A Behavior",
+    "nap, prowl, patrol…",
+    "A line",
+    "in character",
+    "Your agent",
+    "Attach the one you already use. It can talk and use tools."];
+  for (const line of lines) {
+    assert.ok(section.includes(line), `the how section must read: ${line}`);
+  }
+});
+
+test("the how section links no design page", () => {
+  const section = howSection(published(PAGE));
+  assert.ok(!section.includes('href="design.html"'),
+    "the how section linked a design page the footer already owns");
+});
+
+test("the how reveal stages with data attributes from the first script block", () => {
+  const page = published(PAGE);
+  const section = howSection(page);
+  for (const order of ["1", "2", "3"]) {
+    assert.ok(section.includes(`data-lit-order="${order}"`),
+      `the picture holds no stage ${order}`);
+  }
+  const blocks = page.match(/<script>\n[\s\S]*?<\/script>/g) ?? [];
+  assert.equal(blocks.length, 2, "a third script block crept in");
+  const first = blocks[0];
+  assert.ok(first.includes("IntersectionObserver"), "the first script does not stage the reveal");
+  assert.ok(first.includes('getElementById("how")'), "the first script never finds #how");
+  assert.ok(first.includes('matchMedia("(prefers-reduced-motion: reduce)")'),
+    "the first script lost its reduced-motion gate");
+  assert.ok(first.includes("classList.add"), "the first script never lights the picture");
+});
+
+test("each how picture is a titled image and the section reads whole at once", () => {
+  const page = published(PAGE);
+  const section = howSection(page);
+  const svgs = [...section.matchAll(/<svg\b[^>]*>/g)].map((m) => m[0]);
+  assert.equal(svgs.length, 2, "how-grid does not hold two svg children");
+  for (const tag of svgs) {
+    assert.ok(tag.includes('role="img"'), "an svg carries no role=img");
+  }
+  assert.equal((section.match(/<title>/g) ?? []).length, 2, "an svg lacks a title");
+  assert.equal((section.match(/<desc>/g) ?? []).length, 2, "an svg lacks a desc");
+  assert.match(section, /<p class="sr">/, "the section carries no visually-hidden read");
+  const style = page.match(/<style>\n[\s\S]*?<\/style>/)[0];
+  assert.match(style, /\.sr/, "the stylesheet holds no .sr class");
+  assert.match(style, /clip-path: inset\(50%\)/, ".sr is not the standard clip pattern");
+  assert.match(section, /<div class="how-grid">/, "the section holds no how grid");
+});
+
 test("a README that stops advertising Homebrew empties the install line", () => {
   const readme = join(scratch, "README.md");
   const out = join(scratch, "no-brew");
