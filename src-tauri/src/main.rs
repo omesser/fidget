@@ -424,6 +424,8 @@ struct InstanceState {
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
+    /// Whether the cursor hovered this Instance last tick, by `AlphaMask::hovers`.
+    hovering: bool,
     /// The open quick-message draft, refreshed from the overlay's report each tick.
     qm: Option<fidget_core::quick_message::QmDraft>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
@@ -4151,6 +4153,7 @@ fn spawn_live(
         spoken: None,
         speech: SpeechBubble::default(),
         drawn_last: None,
+        hovering: false,
         qm: None,
         traced_last: None,
         status_last: None,
@@ -4432,6 +4435,7 @@ fn spawn_instances(
             spoken: None,
             speech: SpeechBubble::default(),
             drawn_last: None,
+            hovering: false,
             qm: None,
             traced_last: None,
             status_last: None,

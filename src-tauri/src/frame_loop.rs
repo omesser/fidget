@@ -623,12 +623,33 @@ pub(crate) fn run_frame_loop(
             // both be picked up by one press.
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
-            // The art under the cursor, told to the overlays as hover (#1565).
+            // Told to the overlays as hover (#1565), which a frame dropping
+            // the pixel under a still cursor must not end (#1609).
+            for live in lives.iter_mut() {
+                live.hovering = visible
+                    && live.drawn_last.as_ref().is_some_and(|last| {
+                        live.character
+                            .draw(
+                                last.animation,
+                                last.animation_ms,
+                                last.variant_draw,
+                                last.facing,
+                            )
+                            .is_some_and(|art| {
+                                art.mask.hovers(
+                                    &last.rect,
+                                    cursor_at.0,
+                                    cursor_at.1,
+                                    art.mirrored,
+                                    live.hovering,
+                                )
+                            })
+                    });
+            }
             let hovered: std::collections::HashSet<_> = lives
                 .iter()
-                .zip(&pressed)
-                .filter(|(_, over)| **over)
-                .map(|(live, _)| live.id.clone())
+                .filter(|live| live.hovering)
+                .map(|live| live.id.clone())
                 .collect();
 
             // Last tick's click-through decided whether the overlay could

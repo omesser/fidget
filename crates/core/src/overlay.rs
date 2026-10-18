@@ -223,6 +223,18 @@ impl AlphaMask {
         self.opaque[(py * self.width + px) as usize]
     }
 
+    /// Whether the cursor hovers the sprite, given whether it did last tick.
+    pub fn hovers(
+        &self,
+        sprite: &SpriteRect,
+        cursor_x: i32,
+        cursor_y: i32,
+        mirrored: bool,
+        _was: bool,
+    ) -> bool {
+        self.hit(sprite, cursor_x, cursor_y, mirrored)
+    }
+
     /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
     /// with the sprite's top-left anywhere between the `trail` positions.
     /// One rectangle per horizontal run of ink, stretched over the trail's bounds.
@@ -440,6 +452,36 @@ mod tests {
             "and the ink is on the right"
         );
         assert!(!mask.hit(&sprite, 123, 200, false));
+    }
+
+    /// The repro of #1609: two frames of one loop, the second leaving out the
+    /// pixel a still cursor rests on.
+    #[test]
+    fn hover_survives_a_frame_that_uncovers_a_still_cursor() {
+        let arm_up = AlphaMask::from_rows(&["####", ".##."]);
+        let arm_down = AlphaMask::from_rows(&[".##.", ".##."]);
+        let sprite = SpriteRect {
+            x: 100,
+            y: 200,
+            scale: 4,
+        };
+
+        assert!(
+            arm_up.hovers(&sprite, 101, 201, false, false),
+            "arriving on the arm"
+        );
+        assert!(
+            arm_down.hovers(&sprite, 101, 201, false, true),
+            "the arm swings away, the cursor has not moved"
+        );
+        assert!(
+            !arm_down.hovers(&sprite, 101, 201, false, false),
+            "arriving where nothing is drawn is no hover"
+        );
+        assert!(
+            !arm_down.hovers(&sprite, 116, 201, false, true),
+            "leaving the box ends it"
+        );
     }
 
     #[test]
