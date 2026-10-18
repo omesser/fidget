@@ -275,17 +275,80 @@ export function drawThought(body, text, doc = globalThis.document) {
   }
 }
 
-// An ask's title: the Harness's characters, with only the spans it marked as
-// code drawn as code. `lexInline` is what separates this from a reply — a title
-// is a label, so its `#`, `1.` and `*` are characters rather than Markdown, and
-// a path keeps its underscores.
+// An ask's title: the Harness's characters, with only the spans it wrapped in
+// backticks drawn as code. No Markdown parser sees it, so `**`, `~~`, `#`, `1.`
+// and link brackets stay characters, even around a span.
 export function drawTitle(body, text, doc = globalThis.document) {
   body.replaceChildren();
-  for (const token of Lexer.lexInline(stripUnsafe(text ?? ""), FLAVOUR)) {
-    if (token.type === "codespan") {
-      inline([token], body, doc);
+  for (const part of codeSpans(stripUnsafe(text ?? ""))) {
+    if (part.code) {
+      const code = doc.createElement("code");
+      code.textContent = part.text;
+      body.append(code);
     } else {
-      asSource(token, body, doc);
+      body.append(doc.createTextNode(part.text));
     }
   }
+}
+
+// CommonMark's code span: a run of N backticks closes at the next run of
+// exactly N, and an opener with no closer is text. Inside, a line ending is a
+// space, and one space comes off each end when both ends have one.
+export function codeSpans(source) {
+  const parts = [];
+  let plain = "";
+  let at = 0;
+  while (at < source.length) {
+    const open = source.indexOf("`", at);
+    if (open < 0) {
+      break;
+    }
+    const after = runEnd(source, open);
+    const close = closer(source, after, after - open);
+    if (close < 0) {
+      plain += source.slice(at, after);
+      at = after;
+      continue;
+    }
+    plain += source.slice(at, open);
+    if (plain) {
+      parts.push({ code: false, text: plain });
+    }
+    plain = "";
+    let inner = source.slice(after, close).replace(/\r\n|\r|\n/g, " ");
+    if (inner.startsWith(" ") && inner.endsWith(" ") && /[^ ]/.test(inner)) {
+      inner = inner.slice(1, -1);
+    }
+    parts.push({ code: true, text: inner });
+    at = close + (after - open);
+  }
+  plain += source.slice(at);
+  if (plain) {
+    parts.push({ code: false, text: plain });
+  }
+  return parts;
+}
+
+function runEnd(source, from) {
+  let end = from;
+  while (source[end] === "`") {
+    end += 1;
+  }
+  return end;
+}
+
+function closer(source, from, length) {
+  let scan = from;
+  while (scan < source.length) {
+    const next = source.indexOf("`", scan);
+    if (next < 0) {
+      return -1;
+    }
+    const end = runEnd(source, next);
+    if (end - next === length) {
+      return next;
+    }
+    scan = end;
+  }
+  return -1;
 }

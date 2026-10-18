@@ -164,8 +164,8 @@ test("a title draws each code span and leaves the text between them alone", () =
 });
 
 // `cursor-agent` sends a shell ask with the command in the call's title, as a
-// code span. The title is Markdown the Harness wrote, so the renderer draws
-// that span as code: the backticks go and the command reads as a command.
+// code span. The Harness marked it, so it draws as code: the backticks go and
+// the command reads as a command.
 test("a title the Harness marked as code is drawn as code", () => {
   const body = render({
     title: "`(sleep 120 && osascript -e 'display notification') &`",
@@ -207,15 +207,76 @@ test("markup inside a code span stays text", () => {
   assert.equal(elements(body).some((node) => node.tagName === "SCRIPT"), false);
 });
 
-// Markdown turns a code span's line endings into spaces, so a command that
-// spans lines arrives on one. A Harness that wants the lines sends a fence.
-test("a code span's lines are the renderer's, not ours", () => {
+// A code span keeps CommonMark's rule: its line endings are spaces, so a
+// command that spans lines arrives on one.
+test("a code span's line endings are spaces, as in CommonMark", () => {
   const body = render({ title: "`python3 -c '\nprint(1)\n'`", kind: "execute", content: [] });
 
   assert.equal(
     body.querySelector(".ask-title").querySelector("code").textContent,
     "python3 -c ' print(1) '",
   );
+});
+
+// Only the backticks are Markdown in a title. A span inside emphasis,
+// strikethrough or a link is still code, and the marks around it stay text.
+test("a code span inside other markup is code, and the markup stays text", () => {
+  for (const [title, around, code] of [
+    ["**`rm -rf`**", ["**", "**"], "rm -rf"],
+    ["**`rm -rf`** now", ["**", "** now"], "rm -rf"],
+    ["~~`x`~~", ["~~", "~~"], "x"],
+    ["*run `ls`*", ["*run ", "*"], "ls"],
+    ["[`a`](http://b)", ["[", "](http://b)"], "a"],
+  ]) {
+    const host = render({ title, kind: "execute", content: [] }).querySelector(".ask-title");
+
+    assert.deepEqual(
+      host.childNodes.map((node) => [node.tagName ?? "#text", node.textContent]),
+      [
+        ["#text", around[0]],
+        ["CODE", code],
+        ["#text", around[1]],
+      ],
+      title,
+    );
+    for (const tag of ["STRONG", "EM", "DEL", "S", "A", "SPAN"]) {
+      assert.equal(host.querySelector(tag) ?? null, null, `${title} drew a ${tag}`);
+    }
+  }
+});
+
+test("a title mixes text and several code spans in the order written", () => {
+  const host = render({
+    title: "Copy `__init__.py` to **`dist/`** then run `make` (1. of 2)",
+    kind: "execute",
+    content: [],
+  }).querySelector(".ask-title");
+
+  assert.deepEqual(
+    host.childNodes.map((node) => [node.tagName ?? "#text", node.textContent]),
+    [
+      ["#text", "Copy "],
+      ["CODE", "__init__.py"],
+      ["#text", " to **"],
+      ["CODE", "dist/"],
+      ["#text", "** then run "],
+      ["CODE", "make"],
+      ["#text", " (1. of 2)"],
+    ],
+  );
+});
+
+// A backtick run closes only at a run of the same length, so a lone backtick
+// is a character and a double-backtick span can hold one.
+test("an unclosed backtick is text, and a longer run holds a backtick", () => {
+  const lone = render({ title: "Use a ` here", kind: "other", content: [] }).querySelector(".ask-title");
+
+  assert.equal(lone.textContent, "Use a ` here");
+  assert.equal(lone.querySelector("code"), null);
+
+  const held = render({ title: "Type `` a`b ``", kind: "other", content: [] }).querySelector(".ask-title");
+
+  assert.equal(held.querySelector("code").textContent, "a`b");
 });
 
 test("a question is a paragraph, and input with no content is a json fence", () => {
