@@ -65,6 +65,25 @@ test("execute content stays the command the Harness sent", () => {
   ]);
 });
 
+// The title is one part, as the Harness wrote it. What its backticks mean is
+// the renderer's job in the row, not this one's, so a title is a title whether
+// the Harness marked all of it, part of it, or none of it, on any kind of ask.
+test("a title is one part, however much of it the Harness marked as code", () => {
+  for (const kind of ["execute", "read", "other"]) {
+    for (const title of [
+      "`(sleep 120 && osascript -e 'display notification') &`",
+      "`src/markdown.js`",
+      "Rust `cargo test`",
+      "`a` and `b`",
+      "Open Calculator",
+      "```sh\nls\n```",
+    ]) {
+      const first = askSays({ ...ask, kind, title, content: [] })[0];
+      assert.deepEqual(first, { kind: "title", text: title }, `${kind} ${title}`);
+    }
+  }
+});
+
 test("a long question does not drop the path", () => {
   const says = askSays({
     ...ask,

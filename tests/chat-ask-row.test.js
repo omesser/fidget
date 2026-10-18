@@ -123,7 +123,7 @@ function drawn(ask) {
   }));
 }
 
-test("an execute ask draws the command as text, and the kind and path as metadata", () => {
+test("an execute ask draws its content as text, and the kind and path as metadata", () => {
   const body = render({
     title: "Open <img src=x>",
     kind: "execute",
@@ -139,6 +139,85 @@ test("an execute ask draws the command as text, and the kind and path as metadat
   assert.equal(body.querySelector(".ask-metadata").textContent, "execute · /tmp/<report>");
 });
 
+// A title is a label rather than a document: the Harness's characters are drawn
+// as written, and only a span it marked as code is rendered. Emphasis, lists,
+// headings, links and tags stay text.
+test("a title keeps the characters the Harness wrote", () => {
+  for (const title of ["Read __init__.py", "1. Do it", "*a* and _b_", "# x", "[a](b) <b>x</b>"]) {
+    const body = render({ title, kind: "other", content: [] });
+
+    assert.equal(body.querySelector(".ask-title").textContent, title, title);
+    for (const tag of ["STRONG", "EM", "H1", "OL", "UL", "LI", "A", "B", "PRE"]) {
+      assert.equal(body.querySelector(tag) ?? null, null, `${title} drew a ${tag}`);
+    }
+  }
+});
+
+test("a title draws each code span and leaves the text between them alone", () => {
+  const body = render({ title: "Run `ls` in `~/src`", kind: "execute", content: [] });
+
+  assert.deepEqual(
+    body.querySelector(".ask-title").childNodes.map((node) => node.textContent),
+    ["Run ", "ls", " in ", "~/src"],
+  );
+  assert.equal(body.textContent.includes("`"), false);
+});
+
+// `cursor-agent` sends a shell ask with the command in the call's title, as a
+// code span. The title is Markdown the Harness wrote, so the renderer draws
+// that span as code: the backticks go and the command reads as a command.
+test("a title the Harness marked as code is drawn as code", () => {
+  const body = render({
+    title: "`(sleep 120 && osascript -e 'display notification') &`",
+    kind: "execute",
+    content: ["Shell allowlist is empty"],
+    locations: [],
+  });
+  const code = body.querySelector(".ask-title").querySelector("code");
+
+  assert.equal(code.tagName, "CODE");
+  assert.equal(code.textContent, "(sleep 120 && osascript -e 'display notification') &");
+  assert.equal(body.textContent.includes("`"), false);
+  assert.equal(body.querySelector(".ask-metadata").textContent, "execute");
+});
+
+// The mark is the Harness's, not the shape's or the kind's: a span inside a
+// longer title is code too, and a title that is only words keeps its words.
+test("a code span inside a longer title is code too", () => {
+  const marked = render({ title: "Rust `cargo test`", kind: "read", content: [] });
+
+  assert.equal(marked.querySelector(".ask-title").querySelector("code").textContent, "cargo test");
+  assert.equal(marked.querySelector(".ask-title").textContent, "Rust cargo test");
+  assert.equal(marked.textContent.includes("`"), false);
+  assert.equal(marked.querySelector(".ask-metadata").textContent, "read");
+
+  const plain = render({ title: "Open Calculator", kind: "edit", content: [] });
+
+  assert.equal(plain.querySelector(".ask-title").textContent, "Open Calculator");
+  assert.equal(plain.querySelector(".ask-title").querySelector("code"), null);
+});
+
+test("markup inside a code span stays text", () => {
+  const body = render({ title: "`echo <script>alert(1)</script>`", kind: "execute", content: [] });
+
+  assert.equal(
+    body.querySelector(".ask-title").querySelector("code").textContent,
+    "echo <script>alert(1)</script>",
+  );
+  assert.equal(elements(body).some((node) => node.tagName === "SCRIPT"), false);
+});
+
+// Markdown turns a code span's line endings into spaces, so a command that
+// spans lines arrives on one. A Harness that wants the lines sends a fence.
+test("a code span's lines are the renderer's, not ours", () => {
+  const body = render({ title: "`python3 -c '\nprint(1)\n'`", kind: "execute", content: [] });
+
+  assert.equal(
+    body.querySelector(".ask-title").querySelector("code").textContent,
+    "python3 -c ' print(1) '",
+  );
+});
+
 test("a question is a paragraph, and input with no content is a json fence", () => {
   const question = render({
     title: "Question",
@@ -146,7 +225,7 @@ test("a question is a paragraph, and input with no content is a json fence", () 
     content: ["Which branch? <b>main</b>"],
   });
   assert.equal(question.querySelector(".ask-title").textContent, "Question");
-  assert.equal(question.querySelector("p").textContent, "Which branch? <b>main</b>");
+  assert.equal(question.querySelector(".ask-content").querySelector("p").textContent, "Which branch? <b>main</b>");
   assert.equal(elements(question).some((node) => node.tagName === "B"), false);
 
   const fallback = render({ title: "Run", kind: "execute", content: [], input: { command: "pwd" } });
@@ -218,7 +297,7 @@ test("prose and a fence in one entry are a paragraph and a code block", () => {
     input: { question: "not shown" },
   });
 
-  assert.equal(body.querySelector("p").textContent, "Check this");
+  assert.equal(body.querySelector(".ask-content").querySelector("p").textContent, "Check this");
   assert.equal(body.querySelector("code").textContent, '{"title":"Teams"}');
   assert.equal(body.textContent.includes("before allowing"), true);
   assert.equal(body.textContent.includes("```"), false);

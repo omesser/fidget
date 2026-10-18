@@ -28,18 +28,20 @@ const OPENING = {
   host: "",
   chat_ui: "minimal",
   login: null,
-  harness_name: "Claude Code",
+  harness_name: "cursor-agent",
   instructions: "",
   personality: "",
   instance_prompt: "",
   prompt_limit: 2000,
 };
 
+// The shape `cursor-agent` sends: the command is the call's title, written as
+// one code span, and the shell's own note is the content.
 const ASK = {
   request: "5",
-  title: "Open Calculator",
+  title: "`open -a Calculator`",
   kind: "execute",
-  content: ["open -a Calculator"],
+  content: ["Shell allowlist is empty"],
   input: null,
   locations: ["/Applications/Calculator.app"],
   options: [
@@ -92,7 +94,7 @@ const stub = `
       who: row.querySelector(".who-label")?.textContent ?? "",
       said: row.querySelector(".said")?.textContent.trim().slice(0, 60) ?? "",
       ask: row.classList.contains("ask"),
-      code: row.querySelector(".said > code")?.textContent ?? "",
+      code: row.querySelector(".ask-title code")?.textContent ?? "",
       paint: ((code) => {
         if (!code) return "";
         const s = getComputedStyle(code);
