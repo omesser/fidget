@@ -575,8 +575,8 @@ struct SpritePlacement<'a> {
     /// Whether this Instance has a Chat window that is not minimized. Sent to
     /// every overlay, because the pill that must stay down can open on any of them.
     chatting: bool,
-    /// The cursor is over this Instance's art, by the Shell's hit test: :hover
-    /// misses it once Chat has closed (#1565). Bubble owner only, like the pill.
+    /// The cursor hovers this Instance, by `AlphaMask::hovers`: :hover misses
+    /// it once Chat has closed (#1565). Bubble owner only, like the pill.
     hovered: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were

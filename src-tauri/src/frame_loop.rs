@@ -598,23 +598,32 @@ pub(crate) fn run_frame_loop(
             // can see is not there to press, so the click reaches the window underneath.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
+            // Hover is told to the overlays (#1565) and outlasts a frame that
+            // drops the pixel under a still cursor. A press needs the pixel.
             let pressed: Vec<bool> = lives
-                .iter()
+                .iter_mut()
                 .map(|live| {
-                    visible
-                        && live.drawn_last.as_ref().is_some_and(|last| {
-                            live.character
-                                .draw(
-                                    last.animation,
-                                    last.animation_ms,
-                                    last.variant_draw,
-                                    last.facing,
-                                )
-                                .is_some_and(|art| {
-                                    art.mask
-                                        .hit(&last.rect, cursor_at.0, cursor_at.1, art.mirrored)
-                                })
+                    let (x, y) = cursor_at;
+                    let (hit, hovering) = live
+                        .drawn_last
+                        .as_ref()
+                        .filter(|_| visible)
+                        .and_then(|last| {
+                            let art = live.character.draw(
+                                last.animation,
+                                last.animation_ms,
+                                last.variant_draw,
+                                last.facing,
+                            )?;
+                            Some((
+                                art.mask.hit(&last.rect, x, y, art.mirrored),
+                                art.mask
+                                    .hovers(&last.rect, x, y, art.mirrored, live.hovering),
+                            ))
                         })
+                        .unwrap_or_default();
+                    live.hovering = hovering;
+                    hit
                 })
                 .collect();
 
@@ -623,35 +632,6 @@ pub(crate) fn run_frame_loop(
             // both be picked up by one press.
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
-            // Told to the overlays as hover (#1565), which a frame dropping
-            // the pixel under a still cursor must not end (#1609).
-            for live in lives.iter_mut() {
-                live.hovering = visible
-                    && live.drawn_last.as_ref().is_some_and(|last| {
-                        live.character
-                            .draw(
-                                last.animation,
-                                last.animation_ms,
-                                last.variant_draw,
-                                last.facing,
-                            )
-                            .is_some_and(|art| {
-                                art.mask.hovers(
-                                    &last.rect,
-                                    cursor_at.0,
-                                    cursor_at.1,
-                                    art.mirrored,
-                                    live.hovering,
-                                )
-                            })
-                    });
-            }
-            let hovered: std::collections::HashSet<_> = lives
-                .iter()
-                .filter(|live| live.hovering)
-                .map(|live| live.id.clone())
-                .collect();
-
             // Last tick's click-through decided whether the overlay could
             // hear this press. Passing through drops a lost pointerup. Must
             // not consult the session poll: that poll misses a swallowed press.
@@ -2161,7 +2141,7 @@ pub(crate) fn run_frame_loop(
                     thinking,
                     asking,
                     chatting: chat_is_up(&app, &live.id),
-                    hovered: hovered.contains(&live.id),
+                    hovered: live.hovering,
                     cue: frame.cue,
                     contact: frame.contact,
                     owner,

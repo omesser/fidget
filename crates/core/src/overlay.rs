@@ -223,23 +223,22 @@ impl AlphaMask {
         self.opaque[(py * self.width + px) as usize]
     }
 
-    /// Whether the cursor hovers the sprite, given whether it did last tick.
     /// Hover starts on a drawn pixel and lasts while the cursor stays in the
     /// sprite's box: the art animates under a still cursor, and a pixel the
-    /// next frame leaves out is not the cursor leaving (#1609).
+    /// next frame leaves out is not the cursor leaving.
     pub fn hovers(
         &self,
         sprite: &SpriteRect,
         cursor_x: i32,
         cursor_y: i32,
         mirrored: bool,
-        was: bool,
+        hovered_last_tick: bool,
     ) -> bool {
         let local_x = cursor_x - sprite.x;
         let local_y = cursor_y - sprite.y;
         let in_box = (0..self.width * sprite.scale).contains(&local_x)
             && (0..self.height * sprite.scale).contains(&local_y);
-        self.hit(sprite, cursor_x, cursor_y, mirrored) || (was && in_box)
+        self.hit(sprite, cursor_x, cursor_y, mirrored) || (hovered_last_tick && in_box)
     }
 
     /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
@@ -461,8 +460,6 @@ mod tests {
         assert!(!mask.hit(&sprite, 123, 200, false));
     }
 
-    /// The repro of #1609: two frames of one loop, the second leaving out the
-    /// pixel a still cursor rests on.
     #[test]
     fn hover_survives_a_frame_that_uncovers_a_still_cursor() {
         let arm_up = AlphaMask::from_rows(&["####", ".##."]);
