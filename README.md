@@ -121,6 +121,61 @@ Every example below assumes this setup:
 | `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. |
 | `When I ask you to check something on my machine, do it, then report back in one line, in character.` | Does the check with your Harness's tools and reports back in one line, in character. |
 
+## How It Works
+
+A pet first. The AI is the part that makes it someone.
+
+```mermaid
+flowchart LR
+  subgraph always["Always on. No AI needed."]
+    F["Frame loop"] --> Y(("Your fidget"))
+    P["You"] --> Y
+  end
+  subgraph mind["Optional: the Director"]
+    C["Personality"] --> D{"Director"}
+    I["Instance Prompt"] --> D
+    W["Window titles"] --> D
+  end
+  D -- "A Behavior" --> Y
+  D -- "A line" --> Y
+  H["Your agent"] -.->|"attach over ACP on stdio"| D
+  D -.->|"the Harness calls back over MCP"| H
+```
+
+### Always on. No AI needed.
+
+- **Frame loop:** Walks, falls, lands, perches. Every frame, on your machine.
+- **You:** Poke, throw, drag, summon.
+
+### Optional: the Director
+
+- **Personality:** Who it is. A plain text file.
+- **Instance Prompt:** Your own twist, on top.
+- **Window titles:** Only if you say yes. Never pixels.
+- **Director:** Wakes now and then and decides what's next.
+- **A Behavior:** nap, prowl, patrol…
+- **A line:** in character.
+- **Your agent:** Attach the one you already use. It can talk and use tools.
+- **ACP:** attach over ACP on stdio.
+- **MCP:** the Harness calls back over MCP.
+
+A sample of an opening wake and a later follow-up, not a live dump:
+
+```text
+Opening wake
+  Personality: Friendly and curious; he's your helpful assistant.
+  Instance Prompt: You're a theatre critic. When you're perched on a window, review that app in one dramatic line.
+  Behaviors it may propose: nap, prowl, patrol
+  This moment: perched on the editor
+
+A later wake
+  What just happened: you poked it
+  Recent Behaviors: patrol, nap
+  Time of day: afternoon
+  State: Perched
+  Window titles (allowed): README.md - VS Code
+```
+
 ## Characters
 
 Buddy Bot is the default. Eight Characters ship; each moves and speaks differently. A name links to its full prompt.
