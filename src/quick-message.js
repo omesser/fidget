@@ -86,7 +86,14 @@ export async function focusAfterForeground(requestForeground, focusField, stillT
 }
 
 // hoverDelay: the Shell's delay in force, in ms, read as each hover starts.
-export function createQuickMessage({ schedule, clear, send, onChange, available = true, hoverDelay }) {
+export function createQuickMessage({
+  schedule,
+  clear,
+  send,
+  onChange,
+  available = true,
+  hoverDelay,
+}) {
   let visible = false;
   let text = "";
   let focused = false;
