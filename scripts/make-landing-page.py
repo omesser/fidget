@@ -16,12 +16,12 @@ Each download button links its asset in the release file that
 `gh release view --json tagName,assets,body` wrote, and names that release's tag
 above its format. Without such a file or such an asset, the button links the
 Latest release page and names no version. The What's new strip under the hero
-carries up to three lines from that release file's body: the bullets under a
-`## Highlights` heading. A release without one shows no strip — GitHub's own
-notes for it are commit subjects and "by @author in <pull request>", which read
-as housekeeping to a visitor — and so does a release file with no tag. The
-macOS Homebrew line is read from the Get It section fenced command, and claims
-nothing when there is none.
+carries up to three lines from that release file's body: the bold title of each
+of the first three bullets under a `## Highlights` heading. A release without one
+shows no strip — GitHub's own notes for it are commit subjects and "by @author in
+<pull request>", which read as housekeeping to a visitor — and so does a release
+file with no tag. The macOS Homebrew line is read from the Get It section fenced
+command, and claims nothing when there is none.
 
 The page names frames by the paths make-character-gallery.py publishes under
 `<out>/characters/`, and copies nothing itself, so the gallery's checks are the
@@ -82,6 +82,11 @@ HOW_LIGHT = ("frame", "director", "behavior")
 # The What's new strip reads the release's own Highlights list, so the one
 # heading it looks for is a constant the self-check can point at.
 HIGHLIGHTS = re.compile(r"^##[ \t]+Highlights[ \t]*$", re.M)
+# A Highlights bullet, and the bold title one can open with. The colon inside
+# the bold is what makes it a title rather than an emphasized first word:
+# `- **Chat can be a perch now:** the detail` (docs/agents/writing.md).
+BULLET = re.compile(r"^[*-][ \t]+")
+TITLE = re.compile(r"^\*\*(?P<title>[^*]+?):\*\*")
 
 _spec = importlib.util.spec_from_file_location("gallery", ROOT / "scripts" / "make-character-gallery.py")
 gallery = importlib.util.module_from_spec(_spec)
@@ -416,19 +421,31 @@ def download_slots(release):
     return slots
 
 
+def short_line(bullet):
+    """The line a Highlights bullet contributes: its bold title when it opens
+    with one, else the bullet as written.
+
+    A release writes a title as the short form of the bullet, and the detail for
+    the Release page after it. The strip has three nouns a visitor can take in at
+    a glance; the detail is a link away."""
+    found = TITLE.match(bullet)
+    return found["title"].strip() if found else bullet
+
+
 def release_lines(body):
-    """Up to three strip lines: the bullets under the release's `## Highlights`
-    heading, or none. GitHub writes its own notes for a release — commit
-    subjects, "by @author in <pull request>" — and those read as housekeeping to
-    a visitor, so a release with no Highlights shows no strip at all."""
+    """Up to three strip lines: the short form of each bullet under the release's
+    `## Highlights` heading, or none. GitHub writes its own notes for a release —
+    commit subjects, "by @author in <pull request>" — and those read as
+    housekeeping to a visitor, so a release with no Highlights shows no strip at
+    all."""
     body = re.sub(r"\r\n?", "\n", body)
     heading = HIGHLIGHTS.search(body)
     if not heading:
         return []
     section = re.split(r"^##[ \t]", body[heading.end():], maxsplit=1, flags=re.M)[0]
-    written = [re.sub(r"^[*-][ \t]+", "", line).strip()
-               for line in section.splitlines() if re.match(r"^[*-][ \t]+\S", line)]
-    return written[:3]
+    bullets = [re.sub(BULLET, "", line).strip() for line in section.splitlines()
+               if BULLET.match(line)]
+    return [short_line(bullet) for bullet in bullets if bullet][:3]
 
 
 def strip_text(line):
@@ -651,10 +668,12 @@ def self_check():
     }, "a button linked an asset that is not its own, or named a version it does not link"
 
     notes = ("## Highlights\n"
-             "- Chat can be a perch now\n"
+             "- **Chat can be a perch now:** a failed turn shows its error\n"
              "- Tool calls read clearly\n")
     assert release_lines(notes) == ["Chat can be a perch now", "Tool calls read clearly"], \
-        "the strip did not read a release's Highlights list"
+        "the strip did not read a release's Highlights list, or lost a bullet's short form"
+    assert release_lines("## Highlights\n- **Chat** can be a `perch` now\n") == ["**Chat** can be a `perch` now"], \
+        "a highlighted first word with no title colon was read as a title"
     assert release_lines(notes.replace("\n", "\r\n")) == release_lines(notes), \
         "a CRLF release body — what `gh release view` writes — lost a line"
     assert release_lines("## What's Changed\n"

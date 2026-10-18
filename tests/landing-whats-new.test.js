@@ -19,17 +19,14 @@ const PAGE = "index.html";
 const RELEASES = "https://github.com/omesser/fidget/releases";
 const REAL_BODY = readFileSync(join(ROOT, "tests", "fixtures", "release-body-v0.6.0.md"), "utf8");
 
-// The first three bullets under that body's `## Highlights`, as the strip renders
-// them. Only a release's own written lines reach the page: GitHub's generated
-// entries — `* fix(scope): Subject by @author in <pull request>` — are commit
-// subjects, and a release carrying nothing else shows no strip.
+// The first three bullets under that body's `## Highlights`, reduced to the title
+// each opens with. A bullet's title is the strip's copy and everything after its
+// colon stays on the Release page; the vision asks for two or three short lines,
+// and a whole bullet runs to a sentence or two.
 const FIRST_THREE = [
-  "<b>Quick message pill on Windows:</b> when the pill closes, Fidget gives the keyboard"
-    + " back to the window you were using, and a pill opened by hover stays open.",
-  "<b>Hover delay setting:</b> a row on the Development tab in Settings sets how long the"
-    + " pointer rests on the character before the pill opens.",
-  "<b>Chat:</b> a failed turn shows its error in Chat, and an ask's title shows as sent,"
-    + " with backticked spans as code.",
+  "Quick message pill on Windows",
+  "Hover delay setting",
+  "Chat",
 ];
 
 // The two notes sections GitHub writes on its own, from that same body.
@@ -59,7 +56,7 @@ function pageWith(name, release) {
 const strip = (page) => page.match(/<p class="whats-new">([\s\S]*?)<\/p>/)?.[1] ?? null;
 const tail = ` <a href="${RELEASES}">All releases →</a>`;
 
-test("the strip names the tag and the first three Highlights bullets of a real release body", () => {
+test("the strip names the tag and the first three Highlights titles of a real release body", () => {
   const page = pageWith("real", { tagName: "v0.6.0", assets: [], body: REAL_BODY });
   assert.equal(strip(page), `<b>New in v0.6.0</b> · ${FIRST_THREE.join(" · ")}${tail}`);
   // Under the hero, above the features.
@@ -82,11 +79,23 @@ test("a Highlights heading with no bullets of its own shows no strip", () => {
   assert.equal(strip(page), null, "the strip read a bullet outside its own Highlights list");
 });
 
-test("a Highlights bullet renders as inline Markdown, and a link the page cannot resolve stays text", () => {
-  const page = pageWith("markdown", { tagName: "v1", assets: [], body:
-    "## Highlights\n- **Chat** can be a `perch` now\n- A [stray](docs/x.md) link\n" });
-  assert.equal(strip(page), "<b>New in v1</b> · <b>Chat</b> can be a <code>perch</code> now"
-    + ` · A [stray](docs/x.md) link${tail}`);
+test("a Highlights bullet shows its bold title, and the whole bullet when it has no title", () => {
+  const page = pageWith("titles", { tagName: "v1", assets: [], body:
+    "## Highlights\n"
+    + "- **Chat can be a perch now:** a failed turn shows its error in Chat\n"
+    + "- **Chat** can be a `perch` now\n"
+    + "- Tool calls read clearly\n" });
+  // The third bullet's colon is outside the bold, so the bullet is not a title
+  // and its words stay.
+  assert.equal(strip(page), `<b>New in v1</b> · Chat can be a perch now`
+    + " · <b>Chat</b> can be a <code>perch</code> now · Tool calls read clearly" + tail);
+});
+
+test("a link the page cannot resolve stays text, so a release note cannot fail the deploy", () => {
+  const page = pageWith("links", { tagName: "v1", assets: [], body:
+    "## Highlights\n- A [stray](docs/x.md) link\n- See [the docs](https://example.com/x)\n" });
+  assert.equal(strip(page), "<b>New in v1</b> · A [stray](docs/x.md) link"
+    + ' · See <a href="https://example.com/x">the docs</a>' + tail);
 });
 
 test("a CRLF release body — what gh release view writes — reads the same as an LF one", () => {

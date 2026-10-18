@@ -502,13 +502,14 @@ A `workflow_dispatch` package build leaves the tap alone. To reconcile a tag tha
 
 ## Release Notes
 
-Body copy for a Release starts with a `## Highlights` bullet list. The landing
-page's "What's new" strip reads the Latest Release at deploy and shows its tag,
-then the first three bullets, so those bullets are the page's copy: write the
-short, human line a visitor should read (`- Chat can be a perch now`), not a
-commit subject. A release without the list shows no strip — GitHub's own entries
-for it are commit subjects and `by @author in <pull request>` — and neither does
-a deploy with no release file.
+Start a Release body with a `## Highlights` bullet list, each bullet opening with
+a bold title: `- **Chat can be a perch now:** the failed turn shows its error`.
+The landing page's "What's new" strip reads the Latest Release at deploy and shows
+its tag, then the title of the first three bullets, so a title is the page's copy
+— the short line a visitor should read. Everything after the colon stays on the
+Release page. A bullet with no bold title shows as written. A release with no
+list shows no strip — GitHub's own entries for it are commit subjects and
+`by @author in <pull request>` — and neither does a deploy with no release file.
 
 ## Further Reading
 
