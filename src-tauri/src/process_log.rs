@@ -230,11 +230,8 @@ fn start_stderr_capture_unix() {
 fn start_stderr_capture_windows() {
     use std::io::BufRead;
     use std::os::windows::io::FromRawHandle;
-    use windows_sys::Win32::Foundation::{
-        DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
-    };
+    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Pipes::CreatePipe;
-    use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
     unsafe {
         let mut read_handle: HANDLE = INVALID_HANDLE_VALUE;
@@ -246,6 +243,10 @@ fn start_stderr_capture_windows() {
 
         #[cfg(debug_assertions)]
         let original_stderr = {
+            // Inside the block on purpose: release builds compile the block
+            // out, and imports hoisted to the fn turn unused there.
+            use windows_sys::Win32::Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS};
+            use windows_sys::Win32::System::Threading::GetCurrentProcess;
             let stderr_handle = windows_sys::Win32::System::Console::GetStdHandle(
                 windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
             );
