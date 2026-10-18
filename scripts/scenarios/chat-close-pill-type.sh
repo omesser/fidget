@@ -204,6 +204,9 @@ wait_text() { # <case> <check command...>
 capped 3 osascript -e 'tell application "TextEdit" to activate' > "$out/textedit.txt" 2>&1 ||
   fail "could not bring TextEdit forward"
 wait_textedit_front sprite-click "$one"
+# The Character falls in at startup, so a center read mid-fall misses by the click.
+landed() { grep ' frame: ' "$log" | tail -1 | grep -qv ' Falling '; }
+wait_until 5 landed || fail "the Character never landed; see $log"
 sprite_center
 capped 3 "$tools/click-cursor" "$cx" "$cy" 1 > "$out/sprite-click.txt" 2>&1 || fail "could not click the sprite"
 capped 3 "$tools/ax" type "$pid" four >> "$out/helpers.log" 2>&1 || fail "could not type"
