@@ -294,7 +294,7 @@ export function drawTitle(body, text, doc = globalThis.document) {
 // CommonMark's code span: a run of N backticks closes at the next run of
 // exactly N, and an opener with no closer is text. Inside, a line ending is a
 // space, and one space comes off each end when both ends have one.
-export function codeSpans(source) {
+function codeSpans(source) {
   const parts = [];
   let plain = "";
   let at = 0;
