@@ -61,7 +61,7 @@ Any Node with `node --test` works. No package manager, no `node_modules`; `packa
 pre-commit install
 ```
 
-Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, and `cargo clippy --workspace --all-targets -- -D warnings`, as CI runs it. The toolchain is pinned in `rust-toolchain.toml`. The webview modules in `src/*.js` also lint under a pinned oxlint for undeclared globals (`no-undef`, `no-global-assign`; scripts/hooks/oxlint.sh fetches a checksum-pinned wheel once, so nothing enters `node_modules`).
+Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, and `cargo clippy --workspace --all-targets -- -D warnings`, as CI runs it. The toolchain is pinned in `rust-toolchain.toml`. The webview modules in `src/*.js` also lint under oxlint's official pre-commit hook for undeclared globals (`no-undef`, `no-global-assign`, set in `.oxlintrc.json`). pre-commit installs the pinned oxlint into its own cache with the system node, so nothing enters `node_modules`.
 
 ## Trace Variables
 

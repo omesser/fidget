@@ -104,17 +104,14 @@ repos:
         # Case-insensitive: Windows does not distinguish `.PS1`.
         files: (?i)\.ps1$
 
-    # Webview modules lint for undeclared globals. The script runs a pinned
-    # oxlint (no npm in the toolchain); `.oxlintrc.json` is the browser env.
-  - repo: local
+    # Webview modules lint for undeclared globals. pre-commit installs the
+    # pinned oxlint into its own cache, so no node_modules; `.oxlintrc.json`
+    # holds the browser env and the two rules.
+  - repo: https://github.com/oxc-project/mirrors-oxlint
+    rev: v1.88.0
     hooks:
-      - id: oxlint-globals
+      - id: oxlint
         name: oxlint (no-undef, no-global-assign)
-        entry: scripts/hooks/oxlint.sh
-        language: system
-        # One process fetches the wheel; parallel file-chunk invocations race
-        # on the same cache entry.
-        require_serial: true
         files: ^src/[^/]+\.js$
 
     # Swift (macOS only; skipped on Linux CI)
