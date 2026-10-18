@@ -1434,13 +1434,19 @@ body {
   color: var(--chat-ink-4);
 }
 
-/* The parts of a permission ask, one line each. The command shares reply
-   code's paint (`.said.md code` above) and is the one part that is a block:
-   it is the thing being approved. The `kind · paths` tail is metadata. */
+/* The parts of a permission ask, one line each. A code span the Harness marked
+   shares reply code's paint (`.said.md code` above). `ask-code` is an
+   elicitation's own URL line; the `kind · paths` tail is metadata. */
 .row.ask .ask-code,
 .row.ask .ask-prose {
   display: block;
   margin-block: 0.35em;
+}
+
+/* A title is the Harness's text rather than Markdown, so the line endings it
+   wrote are lines here, where the renderer's `normal` would fold them. */
+.row.ask .ask-title {
+  white-space: pre-wrap;
 }
 
 .row.ask .ask-code {

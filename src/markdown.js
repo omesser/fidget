@@ -274,3 +274,18 @@ export function drawThought(body, text, doc = globalThis.document) {
     }
   }
 }
+
+// An ask's title: the Harness's characters, with only the spans it marked as
+// code drawn as code. `lexInline` is what separates this from a reply — a title
+// is a label, so its `#`, `1.` and `*` are characters rather than Markdown, and
+// a path keeps its underscores.
+export function drawTitle(body, text, doc = globalThis.document) {
+  body.replaceChildren();
+  for (const token of Lexer.lexInline(stripUnsafe(text ?? ""), FLAVOUR)) {
+    if (token.type === "codespan") {
+      inline([token], body, doc);
+    } else {
+      asSource(token, body, doc);
+    }
+  }
+}
