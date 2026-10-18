@@ -251,7 +251,7 @@
     <div class="how" id="how-diagram">
       <div class="how-lanes">
       <figure class="how-lane">
-      <svg data-lane="always" viewBox="0 0 420 250" aria-hidden="true">
+      <svg data-lane="always" viewBox="0 0 420 250" role="img" aria-label="{{how_svg_always_label}}">
         <defs>
           <marker id="how-arrow-always" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
@@ -272,7 +272,7 @@
       <figcaption><dl class="how-sheet">{{how_sheet_always}}</dl></figcaption>
     </figure>
     <figure class="how-lane">
-      <svg data-lane="director" viewBox="0 0 420 312" aria-hidden="true">
+      <svg data-lane="director" viewBox="0 0 420 312" role="img" aria-label="{{how_svg_director_label}}">
         <defs>
           <marker id="how-arrow-director" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
@@ -288,8 +288,8 @@
           <text x="22" y="203" fill="var(--ink)" font-size="15" font-weight="600">{{how_window_titles_name}}</text>
           <rect x="192" y="44" width="128" height="52" rx="12" fill="var(--paper)" stroke="var(--line)"/>
           <text x="204" y="75" fill="var(--ink)" font-size="15" font-weight="600">{{how_your_agent_name}}</text>
-          <rect x="192" y="196" width="128" height="70" rx="16" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
-          <text x="256" y="228" text-anchor="middle" fill="var(--ink)" font-size="15" font-weight="600">{{how_director_name}}</text>
+          <rect x="192" y="196" width="104" height="70" rx="16" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
+          <text x="244" y="228" text-anchor="middle" fill="var(--ink)" font-size="15" font-weight="600">{{how_director_name}}</text>
           <line x1="148" y1="70" x2="192" y2="214" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
           <line x1="148" y1="134" x2="192" y2="234" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
           <line x1="148" y1="198" x2="192" y2="254" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
@@ -299,10 +299,12 @@
           <text x="290" y="152" fill="var(--ink-2)" font-size="14">{{how_mcp_name}}</text>
         </g>
         <g data-light="behavior">
-          <line x1="320" y1="228" x2="416" y2="228" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-          <text x="326" y="214" fill="var(--ink)" font-size="13" font-weight="600">{{how_line_name}}</text>
-          <line x1="320" y1="258" x2="416" y2="258" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-          <text x="326" y="244" fill="var(--ink)" font-size="13" font-weight="600">{{how_behavior_name}}</text>
+          <circle cx="376" cy="241" r="30" fill="var(--paper-2)" stroke="var(--accent)" stroke-width="2"/>
+          <text x="376" y="290" text-anchor="middle" fill="var(--ink)" font-size="13" font-weight="600">{{how_fidget_name}}</text>
+          <line x1="296" y1="226" x2="344" y2="234" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <text x="300" y="214" fill="var(--ink)" font-size="13" font-weight="600">{{how_line_name}}</text>
+          <line x1="296" y1="258" x2="344" y2="247" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <text x="344" y="278" text-anchor="end" fill="var(--ink)" font-size="13" font-weight="600">{{how_behavior_name}}</text>
         </g>
       </svg>
       <figcaption><dl class="how-sheet">{{how_sheet_director}}</dl></figcaption>

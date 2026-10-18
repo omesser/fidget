@@ -284,6 +284,8 @@ test("the How it works section is a two-lane picture from the README", () => {
     && director.includes(">Window titles</") && director.includes(">Director</")
     && director.includes(">ACP</") && director.includes(">MCP</"),
     "lane 2 svg lost a name");
+  assert.ok(director.includes(">Your fidget</"),
+    "lane 2 svg lost the sink the outputs land on");
 
   const sheets = section.match(/<dl class="how-sheet">([\s\S]*?)<\/dl>/g) ?? [];
   assert.equal(sheets.length, 2, "the section's captions are not two per-lane sheets");
@@ -308,6 +310,9 @@ test("the How it works section is a two-lane picture from the README", () => {
   assert.match(section, /data-light="behavior"/);
   assert.ok(!/class="[^"]*how-motion/.test(page) && !/class="[^"]*how-lit-/.test(page),
     "the published page armed the light-up classes");
+  assert.ok(section.includes('aria-label="Always on. No AI needed.: Frame loop, You, Your fidget"')
+    && section.includes('>Your fidget</') && !section.includes('<dt>Your fidget</dt>'),
+    "the picture or its label lost Your fidget, or the sheet kept an empty term");
 
   const blocks = page.match(/<script>\n[\s\S]*?<\/script>/g) ?? [];
   assert.equal(blocks.length, 2);

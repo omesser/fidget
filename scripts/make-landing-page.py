@@ -264,14 +264,17 @@ def how_sheet(how, suffix):
     """A per-lane <dl> of its names and captions, in README bullet order.
 
     Per lane because lane membership is part of the picture: one flat list
-    lost whose caption belongs to which lane.
+    lost whose caption belongs to which lane. A name with no caption is not
+    a term; Your fidget is the sink the lanes feed, and the picture's
+    aria-label names it there.
     """
     parts = []
     for name in HOW_SHEET[suffix]:
-        parts.append(f"<dt>{html.escape(name)}</dt>")
         caption = how["nodes"][HOW_NODES[name]]
-        if caption:
-            parts.append(f"<dd>{inline(caption)}</dd>")
+        if not caption:
+            continue
+        parts.append(f"<dt>{html.escape(name)}</dt>")
+        parts.append(f"<dd>{inline(caption)}</dd>")
     return "".join(parts)
 
 
@@ -296,6 +299,10 @@ def how_slots(how, shell):
         "how_wake": html.escape(how["wake"]),
         "how_sheet_always": how_sheet(how, "always"),
         "how_sheet_director": how_sheet(how, "director"),
+        "how_svg_always_label": html.escape(
+            f'{how["lanes"]["always"]}: {", ".join(HOW_SHEET["always"])}'),
+        "how_svg_director_label": html.escape(
+            f'{how["lanes"]["director"]}: {", ".join(HOW_SHEET["director"])}'),
     }
     for suffix, title in how["lanes"].items():
         slots[f"how_lane_{suffix}"] = html.escape(title)
@@ -542,6 +549,9 @@ def self_check():
         assert "attach over ACP on stdio" in page and "the Harness calls back over MCP" in page
         assert "Opening wake" in page
         assert "not a live dump" in page, "the wake sample lost its sample lead-in"
+        assert ('aria-label="Always on. No AI needed.: Frame loop, You, Your fidget"' in page
+                and '<dt>Your fidget</dt>' not in page), \
+            "the picture's label lost Your fidget or the sheet kept an empty term"
         assert "A pet first. The AI is the part that makes it someone." in page
         assert not re.search(r"<script[^>]*mermaid", page) and 'class="mermaid"' not in page
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
