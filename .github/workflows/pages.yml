@@ -36,14 +36,14 @@ jobs:
           python-version: '3.12'
 
       # With no Latest release, or no answer, the buttons link the Releases
-      # page rather than fail the build.
+      # page, and the What's new strip is absent, rather than fail the build.
       - name: Read the Latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view -R "$GITHUB_REPOSITORY" --json tagName,assets > release.json || {
+          gh release view -R "$GITHUB_REPOSITORY" --json tagName,assets,body > release.json || {
             rm -f release.json
-            echo "::warning::No Latest release read, so the download buttons link /releases/latest"
+            echo "::warning::No Latest release read, so the download buttons link /releases/latest and the What's new strip is absent"
           }
 
       - name: Assemble the site

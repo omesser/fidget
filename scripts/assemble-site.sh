@@ -3,8 +3,9 @@
 # pages.yml and tests/landing-page.test.js both run it (ADR-0011).
 #
 # Usage: scripts/assemble-site.sh OUT_DIR RELEASE_JSON
-# RELEASE_JSON is `gh release view --json tagName,assets`; it may be absent,
-# and then the download buttons link /releases/latest.
+# RELEASE_JSON is `gh release view --json tagName,assets,body`; it may be
+# absent, and then the download buttons link /releases/latest and the What's
+# new strip is absent.
 #
 # Flat, so a link is `/cues.html`; only generated art sits under
 # `OUT_DIR/characters/`.

@@ -500,6 +500,16 @@ A `workflow_dispatch` package build leaves the tap alone. To reconcile a tag tha
 
 `scripts/bump-homebrew-cask.sh` and a hand copy into the tap are for when that job cannot run. The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the only macOS disk image the Release ships.
 
+## Release Notes
+
+Body copy for a Release starts with a `## Highlights` bullet list. The landing
+page's "What's new" strip reads the Latest Release at deploy and shows its tag,
+then the first three bullets, so those bullets are the page's copy: write the
+short, human line a visitor should read (`- Chat can be a perch now`), not a
+commit subject. A release without the list shows no strip — GitHub's own entries
+for it are commit subjects and `by @author in <pull request>` — and neither does
+a deploy with no release file.
+
 ## Further Reading
 
 - [README](../README.md): what it does, how to run, platform support

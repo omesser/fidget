@@ -13,10 +13,15 @@ source it cannot find fails the build.
 
 Two sources are optional. Without the hero video the desk scene stands in.
 Each download button links its asset in the release file that
-`gh release view --json tagName,assets` wrote, and names that release's tag
+`gh release view --json tagName,assets,body` wrote, and names that release's tag
 above its format. Without such a file or such an asset, the button links the
-Latest release page and names no version. The macOS Homebrew line is read from
-the Get It section fenced command, and claims nothing when there is none.
+Latest release page and names no version. The What's new strip under the hero
+carries up to three lines from that release file's body: the bullets under a
+`## Highlights` heading. A release without one shows no strip — GitHub's own
+notes for it are commit subjects and "by @author in <pull request>", which read
+as housekeeping to a visitor — and so does a release file with no tag. The
+macOS Homebrew line is read from the Get It section fenced command, and claims
+nothing when there is none.
 
 The page names frames by the paths make-character-gallery.py publishes under
 `<out>/characters/`, and copies nothing itself, so the gallery's checks are the
@@ -46,6 +51,7 @@ HERO = "buddy-bot"
 # GitHub renders an attachment URL alone on its line as a video player.
 ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
 LATEST = f"{REPO}/releases/latest"
+RELEASES = f"{REPO}/releases"
 # The asset names carry the version, so a button matches its asset by suffix.
 DOWNLOADS = (("macos", "_aarch64.dmg"), ("windows", "-setup.exe"), ("linux", ".AppImage"))
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
@@ -73,6 +79,9 @@ HOW_LANES = {
 # Light-up hooks the shell must carry; the node test pins the script's array
 # to this same order: frame loop, then the Director waking, then a Behavior.
 HOW_LIGHT = ("frame", "director", "behavior")
+# The What's new strip reads the release's own Highlights list, so the one
+# heading it looks for is a constant the self-check can point at.
+HIGHLIGHTS = re.compile(r"^##[ \t]+Highlights[ \t]*$", re.M)
 
 _spec = importlib.util.spec_from_file_location("gallery", ROOT / "scripts" / "make-character-gallery.py")
 gallery = importlib.util.module_from_spec(_spec)
@@ -388,6 +397,44 @@ def download_slots(release):
     return slots
 
 
+def release_lines(body):
+    """Up to three strip lines: the bullets under the release's `## Highlights`
+    heading, or none. GitHub writes its own notes for a release — commit
+    subjects, "by @author in <pull request>" — and those read as housekeeping to
+    a visitor, so a release with no Highlights shows no strip at all."""
+    body = re.sub(r"\r\n?", "\n", body)
+    heading = HIGHLIGHTS.search(body)
+    if not heading:
+        return []
+    section = re.split(r"^##[ \t]", body[heading.end():], maxsplit=1, flags=re.M)[0]
+    written = [re.sub(r"^[*-][ \t]+", "", line).strip()
+               for line in section.splitlines() if re.match(r"^[*-][ \t]+\S", line)]
+    return written[:3]
+
+
+def strip_text(line):
+    """A release line as inline Markdown. A link only the repository could
+    resolve is left as its text, since a release note is not the README whose
+    malformed links may fail the build."""
+    try:
+        return inline(line)
+    except Malformed:
+        return html.escape(line, quote=False)
+
+
+def whats_new(release):
+    """The strip under the hero, or "" with no tagged release to name, or nothing
+    in that release's notes a visitor should read."""
+    release = release or {}
+    tag = release.get("tagName")
+    lines = release_lines(release.get("body") or "") if tag else []
+    if not lines:
+        return ""
+    shown = " · ".join(strip_text(line) for line in lines)
+    return (f'<p class="whats-new"><b>New in {html.escape(tag, quote=False)}</b> · {shown} '
+            f'<a href="{RELEASES}">All releases →</a></p>')
+
+
 def render(readme_text, characters_root, rust_source, shell, release=None):
     words = read_readme(readme_text)
     _, defaults = gallery.from_rust(rust_source)
@@ -414,6 +461,7 @@ def render(readme_text, characters_root, rust_source, shell, release=None):
         + (" character ships" if len(cast) == 1 else " characters ship"),
         "cast": figures,
         **download_slots(release),
+        "whats_new": whats_new(release),
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
@@ -577,6 +625,23 @@ def self_check():
         "linux": (f"{REPO}/releases/download/v9/F_9_amd64.AppImage", "v9"),
     }, "a button linked an asset that is not its own, or named a version it does not link"
 
+    notes = ("## Highlights\n"
+             "- Chat can be a perch now\n"
+             "- Tool calls read clearly\n")
+    assert release_lines(notes) == ["Chat can be a perch now", "Tool calls read clearly"], \
+        "the strip did not read a release's Highlights list"
+    assert release_lines(notes.replace("\n", "\r\n")) == release_lines(notes), \
+        "a CRLF release body — what `gh release view` writes — lost a line"
+    assert release_lines("## What's Changed\n"
+                         "* fix(site): Keep the strip honest by @omesser in https://github.com/omesser/fidget/pull/2\n"
+                         "* build(deps): bump serde by @dependabot[bot] in https://github.com/omesser/fidget/pull/3\n") == [], \
+        "a release GitHub wrote its own notes for still reached the strip"
+    assert release_lines("## Highlights\n\n## Summary\n- not a highlight\n") == [], \
+        "a Highlights heading with no bullets of its own reached the strip"
+    assert whats_new(None) == "" and whats_new({"tagName": None}) == "", "an absent release drew a strip"
+    assert whats_new({"tagName": "v9", "body": "## What's Changed\n* chore: Tidy up\n"}) == "", \
+        "a release with nothing written for a visitor drew a strip"
+
     print(f"self-check: {len(words['features'])} features, {len(words['harnesses'])} Harnesses, checks passed")
 
 
@@ -589,8 +654,9 @@ def main():
     parser.add_argument("--self-check", action="store_true",
                         help="run the generator's own checks and exit")
     parser.add_argument("--release", type=pathlib.Path,
-                        help="`gh release view --json tagName,assets` output; without it every "
-                        "download button links the Latest release page")
+                        help="`gh release view --json tagName,assets,body` output; without it every "
+                        "download button links the Latest release page and the What's new strip "
+                        "is absent")
     arguments = parser.parse_args()
 
     if arguments.self_check:
@@ -601,7 +667,7 @@ def main():
     if arguments.release and arguments.release.is_file():
         release = json.loads(arguments.release.read_text(encoding="utf-8"))
     else:
-        print(f"no release file, so every download button links {LATEST}")
+        print(f"no release file, so every download button links {LATEST} and the What's new strip is absent")
     try:
         page = render(arguments.readme.read_text(encoding="utf-8"), CHARACTERS,
                       gallery.RUST.read_text(encoding="utf-8"), SHELL.read_text(encoding="utf-8"), release)
