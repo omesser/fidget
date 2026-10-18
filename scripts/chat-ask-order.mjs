@@ -3,19 +3,23 @@
 // (`window.__TAURI__` stubbed). Exit 1: answer above its ask, or the command's
 // <code> lacks kind/paths or paints unlike reply code. FIDGET_CHROME picks Chromium.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { pageWait } from "../tests/page-wait.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
-// The import must follow the ??= below: chrome-cdp.js resolves Chrome once at
-// import time, so a static import would read the env value before it lands.
-process.env.FIDGET_CHROME ??= join(
+// The import must follow this assignment: chrome-cdp.js resolves Chrome once
+// at import time. The shell is set only when it exists, so PATH Chrome still
+// runs wherever the Playwright build is absent.
+const playwrightShell = join(
   homedir(),
   "Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell",
 );
+if (existsSync(playwrightShell) && process.env.FIDGET_CHROME === undefined) {
+  process.env.FIDGET_CHROME = playwrightShell;
+}
 const { probePage } = await import("../tests/chrome-cdp.js");
 
 const OPENING = {
