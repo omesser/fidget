@@ -7,16 +7,16 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { probePage } from "../tests/chrome-cdp.js";
 import { pageWait } from "../tests/page-wait.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
-// findChrome() only looks on PATH, so keep the Playwright shell as this
-// script's own fallback instead of reporting Chromium missing.
+// The import must follow the ??= below: chrome-cdp.js resolves Chrome once at
+// import time, so a static import would read the env value before it lands.
 process.env.FIDGET_CHROME ??= join(
   homedir(),
   "Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell",
 );
+const { probePage } = await import("../tests/chrome-cdp.js");
 
 const OPENING = {
   name: "BMO",
