@@ -224,15 +224,22 @@ impl AlphaMask {
     }
 
     /// Whether the cursor hovers the sprite, given whether it did last tick.
+    /// Hover starts on a drawn pixel and lasts while the cursor stays in the
+    /// sprite's box: the art animates under a still cursor, and a pixel the
+    /// next frame leaves out is not the cursor leaving (#1609).
     pub fn hovers(
         &self,
         sprite: &SpriteRect,
         cursor_x: i32,
         cursor_y: i32,
         mirrored: bool,
-        _was: bool,
+        was: bool,
     ) -> bool {
-        self.hit(sprite, cursor_x, cursor_y, mirrored)
+        let local_x = cursor_x - sprite.x;
+        let local_y = cursor_y - sprite.y;
+        let in_box = (0..self.width * sprite.scale).contains(&local_x)
+            && (0..self.height * sprite.scale).contains(&local_y);
+        self.hit(sprite, cursor_x, cursor_y, mirrored) || (was && in_box)
     }
 
     /// Rectangles, `[left, top, right, bottom]`, covering every drawn pixel
