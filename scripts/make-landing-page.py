@@ -201,8 +201,8 @@ def read_how(text, found):
     """
     body = section(found, "How It Works")
     paras = paragraphs(body)
-    if not paras:
-        raise Malformed("README.md How It Works has no opening paragraph")
+    if len(paras) < 2:
+        raise Malformed("README.md How It Works has no opening paragraph and sample lead-in")
 
     lanes = {}
     for line in body:
@@ -237,8 +237,14 @@ def read_how(text, found):
     if len(fences) != 2 or {lang for lang, _ in fences} != {"mermaid", "text"}:
         raise Malformed("README.md How It Works allows only a mermaid fence and one text sample")
     found_fences = {lang: body for lang, body in fences}
+    # The lead-in is the paragraph the sample introduces: the last one before
+    # the text fence, and a colon is what a lead-in ends with.
+    lead = paragraphs(how_only.split("```text", 1)[0].splitlines())[-1]
+    if not lead.endswith(":"):
+        raise Malformed("README.md How It Works puts no lead-in before its wake sample")
     return {
         "sub": paras[0],
+        "wake_lead": lead,
         "lanes": lanes,
         "nodes": nodes,
         "mermaid": found_fences["mermaid"],
@@ -246,12 +252,24 @@ def read_how(text, found):
     }
 
 
-def how_alt(how):
-    """One <dl> from lane titles then nodes, so the picture and the alternative share data."""
-    parts = [f"<dt>{html.escape(title)}</dt>" for title in HOW_LANES]
-    for name, slot in HOW_NODES.items():
+HOW_SHEET = {
+    "always": ("Frame loop", "You", "Your fidget"),
+    # README bullet order, so the alternative reads like the captions above.
+    "director": ("Personality", "Instance Prompt", "Window titles", "Director",
+                 "A Behavior", "A line", "Your agent", "ACP", "MCP"),
+}
+
+
+def how_sheet(how, suffix):
+    """A per-lane <dl> of its names and captions, in README bullet order.
+
+    Per lane because lane membership is part of the picture: one flat list
+    lost whose caption belongs to which lane.
+    """
+    parts = []
+    for name in HOW_SHEET[suffix]:
         parts.append(f"<dt>{html.escape(name)}</dt>")
-        caption = how["nodes"][slot]
+        caption = how["nodes"][HOW_NODES[name]]
         if caption:
             parts.append(f"<dd>{inline(caption)}</dd>")
     return "".join(parts)
@@ -274,14 +292,16 @@ def how_slots(how, shell):
         )
     slots = {
         "how_sub": inline(how["sub"]),
+        "how_wake_lead": inline(how["wake_lead"]),
         "how_wake": html.escape(how["wake"]),
-        "how_alt": how_alt(how),
+        "how_sheet_always": how_sheet(how, "always"),
+        "how_sheet_director": how_sheet(how, "director"),
     }
     for suffix, title in how["lanes"].items():
         slots[f"how_lane_{suffix}"] = html.escape(title)
     for name, slot in HOW_NODES.items():
         slots[f"how_{slot}_name"] = html.escape(name)
-        slots[f"how_{slot}"] = inline(how["nodes"][slot])
+    # Captions reach the page through the two per-lane sheets instead.
     for name in slots:
         marker = "{{" + name + "}}"
         if marker not in shell:
@@ -473,6 +493,9 @@ def self_check():
     assert how["nodes"]["your_agent"] == "Attach the one you already use. It can talk and use tools."
     assert how["nodes"]["acp"] == "attach over ACP on stdio."
     assert how["nodes"]["mcp"] == "the Harness calls back over MCP."
+    assert how["wake_lead"] == "A sample of an opening wake and a later follow-up, not a live dump:"
+    assert fails(readme.replace("A sample of an opening wake and a later follow-up, not a live dump:", "")), \
+        "a How It Works with no sample lead-in built a page"
     dim = list(re.finditer(r"([^{]*)\[data-light\][^{]*\{[^}]*opacity[^}]*\}", shell))
     assert dim, "the shell has no [data-light] opacity rule"
     assert all(".how.how-motion" in m.group(1) for m in dim), \
@@ -518,6 +541,7 @@ def self_check():
             assert title in page, f"{title} did not reach the page"
         assert "attach over ACP on stdio" in page and "the Harness calls back over MCP" in page
         assert "Opening wake" in page
+        assert "not a live dump" in page, "the wake sample lost its sample lead-in"
         assert "A pet first. The AI is the part that makes it someone." in page
         assert not re.search(r"<script[^>]*mermaid", page) and 'class="mermaid"' not in page
         assert "One character ships with Fidget" in page, "the cast count is not the package count"

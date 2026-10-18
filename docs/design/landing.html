@@ -156,23 +156,24 @@
     font-size: .9rem; display: flex; flex-wrap: wrap; gap: 1.25rem; }
   footer a { color: inherit; }
 
-  .how { position: relative; margin: 0 0 1.5rem; }
-  .how-lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .how-lane { width: 100%; height: auto; display: block; background: var(--win);
+  .how { margin: 0 0 1.5rem; }
+  .how-lanes { display: grid; grid-template-columns: 520fr 420fr; gap: 1rem; }
+  .how-lane { margin: 0; }
+  .how-lane svg { width: 100%; height: auto; display: block; background: var(--win);
     border: 1px solid var(--line); border-radius: 12px; }
-  .how-cap { margin: 0; font-size: 11px; line-height: 1.35; color: var(--ink-2); }
+  .how-sheet { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem;
+    margin: .8rem .1rem 0; font-size: .9rem; color: var(--ink-2); }
+  .how-sheet dt { font-weight: 600; color: var(--ink); margin: 0; }
+  .how-sheet dd { margin: 0; }
+  .how-wake-lead { margin: 1.25rem 0 .5rem; color: var(--ink-2); }
   .how.how-motion [data-light] { opacity: .45; }
   .how.how-lit-frame [data-light="frame"],
   .how.how-lit-director [data-light="director"],
   .how.how-lit-behavior [data-light="behavior"] { opacity: 1; }
-  .how-alt { position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; }
   .how-wake { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px;
     padding: 1rem 1.2rem; overflow-x: auto; color: var(--ink-2); white-space: pre-wrap; }
   .how-more { margin: 1rem 0 0; }
-  .how-alt dt { font-weight: 600; }
-  .how-alt dd { margin: 0 0 .55rem; color: var(--ink-2); }
 
   @media (max-width: 760px) {
     .hero { grid-template-columns: 1fr; padding-top: 1rem; }
@@ -183,8 +184,6 @@
     .perched { width: 96px; height: 96px; }
     .say { left: 6%; bottom: calc(44% + 106px); }
     .how-lanes { grid-template-columns: 1fr; }
-    .how-alt { position: static; width: auto; height: auto; overflow: visible;
-      clip: auto; clip-path: none; white-space: normal; margin: 1rem 0 0; font-size: .9rem; }
   }
 </style>
 </head>
@@ -249,76 +248,68 @@
   <div class="wrap">
     <h2>How it works</h2>
     <p class="sub">{{how_sub}}</p>
-    <figure class="how" id="how-diagram">
+    <div class="how" id="how-diagram">
       <div class="how-lanes">
-        <svg class="how-lane" data-lane="always" viewBox="0 0 520 300" aria-hidden="true">
-          <defs>
-            <marker id="how-arrow-always" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
-            </marker>
-          </defs>
-          <text x="18" y="28" fill="var(--accent)" font-size="14" font-weight="600">{{how_lane_always}}</text>
-          <g data-light="frame">
-            <rect x="16" y="46" width="214" height="96" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="30" y="72" fill="var(--ink)" font-size="14" font-weight="600">{{how_frame_loop_name}}</text>
-            <foreignObject x="30" y="80" width="186" height="52"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_frame_loop}}</div></foreignObject>
-            <rect x="16" y="160" width="214" height="96" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="30" y="186" fill="var(--ink)" font-size="14" font-weight="600">{{how_you_name}}</text>
-            <foreignObject x="30" y="194" width="186" height="52"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_you}}</div></foreignObject>
-            <circle cx="400" cy="154" r="62" fill="var(--paper-2)" stroke="var(--accent)" stroke-width="2"/>
-            <text x="400" y="150" text-anchor="middle" fill="var(--ink)" font-size="14" font-weight="600">{{how_fidget_name}}</text>
-            <text x="400" y="168" text-anchor="middle" fill="var(--ink-2)" font-size="11">{{how_fidget}}</text>
-            <line x1="230" y1="94" x2="338" y2="130" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-always)"/>
-            <line x1="230" y1="208" x2="338" y2="178" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-always)"/>
-          </g>
-        </svg>
-        <svg class="how-lane" data-lane="director" viewBox="0 0 680 400" aria-hidden="true">
-          <defs>
-            <marker id="how-arrow-director" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
-            </marker>
-          </defs>
-          <text x="18" y="28" fill="var(--accent)" font-size="14" font-weight="600">{{how_lane_director}}</text>
-          <g data-light="director">
-            <rect x="16" y="48" width="190" height="78" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="30" y="72" fill="var(--ink)" font-size="14" font-weight="600">{{how_personality_name}}</text>
-            <foreignObject x="30" y="80" width="162" height="38"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_personality}}</div></foreignObject>
-            <rect x="16" y="140" width="190" height="78" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="30" y="164" fill="var(--ink)" font-size="14" font-weight="600">{{how_instance_prompt_name}}</text>
-            <foreignObject x="30" y="172" width="162" height="38"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_instance_prompt}}</div></foreignObject>
-            <rect x="16" y="232" width="190" height="78" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="30" y="256" fill="var(--ink)" font-size="14" font-weight="600">{{how_window_titles_name}}</text>
-            <foreignObject x="30" y="264" width="162" height="38"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_window_titles}}</div></foreignObject>
-            <rect x="248" y="48" width="190" height="86" rx="14" fill="var(--paper)" stroke="var(--line)"/>
-            <text x="262" y="72" fill="var(--ink)" font-size="14" font-weight="600">{{how_your_agent_name}}</text>
-            <foreignObject x="262" y="80" width="162" height="46"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_your_agent}}</div></foreignObject>
-            <rect x="248" y="200" width="190" height="96" rx="16" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
-            <text x="343" y="232" text-anchor="middle" fill="var(--ink)" font-size="14" font-weight="600">{{how_director_name}}</text>
-            <foreignObject x="260" y="240" width="166" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="how-cap">{{how_director}}</div></foreignObject>
-            <line x1="206" y1="87" x2="248" y2="218" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-            <line x1="206" y1="179" x2="248" y2="244" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-            <line x1="206" y1="271" x2="248" y2="270" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-            <line x1="300" y1="134" x2="300" y2="196" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#how-arrow-director)"/>
-            <line x1="340" y1="200" x2="340" y2="138" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#how-arrow-director)"/>
-            <text x="352" y="155" fill="var(--ink-2)" font-size="11">{{how_acp_name}}</text>
-            <text x="352" y="169" fill="var(--ink-3)" font-size="10">{{how_acp}}</text>
-            <text x="352" y="184" fill="var(--ink-2)" font-size="11">{{how_mcp_name}}</text>
-            <text x="352" y="198" fill="var(--ink-3)" font-size="10">{{how_mcp}}</text>
-          </g>
-          <g data-light="behavior">
-            <line x1="438" y1="205" x2="632" y2="205" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-            <text x="452" y="228" fill="var(--ink)" font-size="12" font-weight="600">{{how_line_name}}</text>
-            <text x="452" y="243" fill="var(--ink-2)" font-size="11">{{how_line}}</text>
-            <line x1="438" y1="262" x2="632" y2="262" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
-            <text x="452" y="285" fill="var(--ink)" font-size="12" font-weight="600">{{how_behavior_name}}</text>
-            <text x="452" y="300" fill="var(--ink-2)" font-size="11">{{how_behavior}}</text>
-          </g>
-        </svg>
-      </div>
-      <figcaption>
-        <dl class="how-alt" id="how-alt">{{how_alt}}</dl>
-      </figcaption>
+      <figure class="how-lane">
+      <svg data-lane="always" viewBox="0 0 420 250" aria-hidden="true">
+        <defs>
+          <marker id="how-arrow-always" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
+          </marker>
+        </defs>
+        <text x="12" y="26" fill="var(--accent)" font-size="15" font-weight="600">{{how_lane_always}}</text>
+        <g data-light="frame">
+          <rect x="12" y="48" width="132" height="58" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="24" y="82" fill="var(--ink)" font-size="15" font-weight="600">{{how_frame_loop_name}}</text>
+          <rect x="12" y="146" width="132" height="58" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="24" y="180" fill="var(--ink)" font-size="15" font-weight="600">{{how_you_name}}</text>
+          <circle cx="340" cy="176" r="64" fill="var(--paper-2)" stroke="var(--accent)" stroke-width="2"/>
+          <text x="340" y="172" text-anchor="middle" fill="var(--ink)" font-size="15" font-weight="600">{{how_fidget_name}}</text>
+          <line x1="144" y1="77" x2="280" y2="146" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-always)"/>
+          <line x1="144" y1="175" x2="274" y2="176" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-always)"/>
+        </g>
+      </svg>
+      <figcaption><dl class="how-sheet">{{how_sheet_always}}</dl></figcaption>
     </figure>
+    <figure class="how-lane">
+      <svg data-lane="director" viewBox="0 0 420 312" aria-hidden="true">
+        <defs>
+          <marker id="how-arrow-director" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"/>
+          </marker>
+        </defs>
+        <text x="12" y="26" fill="var(--accent)" font-size="15" font-weight="600">{{how_lane_director}}</text>
+        <g data-light="director">
+          <rect x="12" y="44" width="136" height="52" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="22" y="75" fill="var(--ink)" font-size="15" font-weight="600">{{how_personality_name}}</text>
+          <rect x="12" y="108" width="136" height="52" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="22" y="139" fill="var(--ink)" font-size="15" font-weight="600">{{how_instance_prompt_name}}</text>
+          <rect x="12" y="172" width="136" height="52" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="22" y="203" fill="var(--ink)" font-size="15" font-weight="600">{{how_window_titles_name}}</text>
+          <rect x="192" y="44" width="128" height="52" rx="12" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="204" y="75" fill="var(--ink)" font-size="15" font-weight="600">{{how_your_agent_name}}</text>
+          <rect x="192" y="196" width="128" height="70" rx="16" fill="var(--paper)" stroke="var(--accent)" stroke-width="2"/>
+          <text x="256" y="228" text-anchor="middle" fill="var(--ink)" font-size="15" font-weight="600">{{how_director_name}}</text>
+          <line x1="148" y1="70" x2="192" y2="214" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <line x1="148" y1="134" x2="192" y2="234" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <line x1="148" y1="198" x2="192" y2="254" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <line x1="230" y1="100" x2="230" y2="188" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#how-arrow-director)"/>
+          <line x1="278" y1="192" x2="278" y2="104" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#how-arrow-director)"/>
+          <text x="240" y="152" fill="var(--ink-2)" font-size="14">{{how_acp_name}}</text>
+          <text x="290" y="152" fill="var(--ink-2)" font-size="14">{{how_mcp_name}}</text>
+        </g>
+        <g data-light="behavior">
+          <line x1="320" y1="228" x2="416" y2="228" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <text x="326" y="214" fill="var(--ink)" font-size="13" font-weight="600">{{how_line_name}}</text>
+          <line x1="320" y1="258" x2="416" y2="258" stroke="var(--ink-3)" stroke-width="1.75" marker-end="url(#how-arrow-director)"/>
+          <text x="326" y="244" fill="var(--ink)" font-size="13" font-weight="600">{{how_behavior_name}}</text>
+        </g>
+      </svg>
+      <figcaption><dl class="how-sheet">{{how_sheet_director}}</dl></figcaption>
+      </figure>
+      </div>
+    </div>
+    <p class="how-wake-lead">{{how_wake_lead}}</p>
     <pre class="how-wake" aria-label="Sample Director wake, not a live model">{{how_wake}}</pre>
     <p class="how-more"><a href="design.html">The full design →</a></p>
   </div>

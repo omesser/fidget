@@ -278,27 +278,28 @@ test("the How it works section is a two-lane picture from the README", () => {
   const director = section.match(/<svg[^>]*data-lane="director"[^>]*>[\s\S]*?<\/svg>/)?.[0];
   assert.ok(always, "lane 1 is not its own svg");
   assert.ok(director, "lane 2 is not its own svg");
-  assert.ok(always.includes(">Frame loop</") && always.includes("Walks, falls, lands, perches"),
-    "lane 1 svg lost Frame loop");
-  assert.ok(always.includes(">You</") && always.includes("Poke, throw, drag, summon."),
-    "lane 1 svg lost You");
-  assert.ok(always.includes(">Your fidget</"), "lane 1 svg lost Your fidget");
-  assert.ok(director.includes(">Personality</") && director.includes("Who it is. A plain text file."),
-    "lane 2 svg lost Personality");
-  assert.ok(director.includes(">Instance Prompt</") && director.includes("Your own twist, on top."),
-    "lane 2 svg lost Instance Prompt");
-  assert.ok(director.includes(">Window titles</") && director.includes("Only if you say yes. Never pixels."),
-    "lane 2 svg lost Window titles");
-  assert.ok(director.includes(">Director</") && director.includes("Wakes now and then"),
-    "lane 2 svg lost Director");
-  assert.ok(director.includes("attach over ACP on stdio") && director.includes("the Harness calls back over MCP"),
-    "lane 2 svg lost the ACP/MCP phrases");
+  assert.ok(always.includes(">Frame loop</") && always.includes(">You</") && always.includes(">Your fidget</"),
+    "lane 1 svg lost a name");
+  assert.ok(director.includes(">Personality</") && director.includes(">Instance Prompt</")
+    && director.includes(">Window titles</") && director.includes(">Director</")
+    && director.includes(">ACP</") && director.includes(">MCP</"),
+    "lane 2 svg lost a name");
 
-  const withoutDl = section.replace(/<dl[\s\S]*?<\/dl>/, "");
-  assert.ok(!withoutDl.includes("<dl"), "the section has more than one dl");
-  const alwaysWithoutDl = withoutDl.match(/<svg[^>]*data-lane="always"[^>]*>[\s\S]*?<\/svg>/)?.[0];
-  assert.ok(alwaysWithoutDl?.includes(">Frame loop</") && alwaysWithoutDl.includes(">You</"),
-    "lane names were only in the dl");
+  const sheets = section.match(/<dl class="how-sheet">([\s\S]*?)<\/dl>/g) ?? [];
+  assert.equal(sheets.length, 2, "the section's captions are not two per-lane sheets");
+  assert.ok(sheets[0].includes("Walks, falls, lands, perches") && sheets[0].includes("Poke, throw, drag, summon."),
+    "lane 1's captions left the page");
+  assert.ok(sheets[1].includes("Who it is. A plain text file.") && sheets[1].includes("Your own twist, on top.")
+    && sheets[1].includes("Only if you say yes. Never pixels.") && sheets[1].includes("Wakes now and then")
+    && sheets[1].includes("nap, prowl, patrol…") && sheets[1].includes("A line")
+    && sheets[1].includes("attach over ACP on stdio") && sheets[1].includes("the Harness calls back over MCP")
+    && sheets[1].includes("Your agent"),
+    "lane 2's captions left the page");
+
+  const withoutSheets = section.replace(/<dl[\s\S]*?<\/dl>/g, "");
+  const bareAlways = withoutSheets.match(/<svg[^>]*data-lane="always"[^>]*>[\s\S]*?<\/svg>/)?.[0];
+  assert.ok(bareAlways?.includes(">Frame loop</"),
+    "lane names were only in the caption sheet");
 
   assert.match(section, /data-lane="always"/);
   assert.match(section, /data-lane="director"/);
@@ -317,6 +318,7 @@ test("the How it works section is a two-lane picture from the README", () => {
     "a How it works script reached the network");
 
   assert.match(section, /<a href="design\.html">The full design →<\/a>/);
+  assert.match(section, /<p class="how-wake-lead">A sample of an opening wake and a later follow-up, not a live dump:<\/p>\s*<pre[^>]*>/);
   assert.match(section, /<pre[^>]*>[\s\S]*Opening wake/);
-  assert.match(section, /<dl class="how-alt" id="how-alt">[\s\S]*Frame loop[\s\S]*Your agent/);
+  assert.match(section, /<dl class="how-sheet">[\s\S]*?<\/dl>/);
 });
