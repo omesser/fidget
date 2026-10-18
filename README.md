@@ -163,7 +163,7 @@ A sample of an opening wake and a later follow-up, not a live dump:
 
 ```text
 Opening wake
-  Personality: Friendly and curious; he's your helpful assistant.
+  Personality Prompt: Friendly and curious; he's your helpful assistant.
   Instance Prompt: You're a theatre critic. When you're perched on a window, review that app in one dramatic line.
   Behaviors it may propose: nap, prowl, patrol
   This moment: perched on the editor

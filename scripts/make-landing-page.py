@@ -70,8 +70,8 @@ HOW_LANES = {
     "Always on. No AI needed.": "always",
     "Optional: the Director": "director",
 }
-# Light-up order is data, not CSS folklore: frame loop, then the Director waking,
-# then a Behavior.
+# Light-up hooks the shell must carry; the node test pins the script's array
+# to this same order: frame loop, then the Director waking, then a Behavior.
 HOW_LIGHT = ("frame", "director", "behavior")
 
 _spec = importlib.util.spec_from_file_location("gallery", ROOT / "scripts" / "make-character-gallery.py")
@@ -237,20 +237,11 @@ def read_how(text, found):
     if len(fences) != 2 or {lang for lang, _ in fences} != {"mermaid", "text"}:
         raise Malformed("README.md How It Works allows only a mermaid fence and one text sample")
     found_fences = {lang: body for lang, body in fences}
-    mermaid = found_fences["mermaid"]
-    missing = [name for name in HOW_NODES if name not in mermaid]
-    missing += [title for title in HOW_LANES if title not in mermaid]
-    missing += [nodes[slot].rstrip(".") for slot in ("acp", "mcp") if nodes[slot].rstrip(".") not in mermaid]
-    if missing:
-        raise Malformed(
-            "README.md How It Works mermaid does not name "
-            + ", ".join(repr(item) for item in missing)
-        )
     return {
         "sub": paras[0],
         "lanes": lanes,
         "nodes": nodes,
-        "mermaid": mermaid,
+        "mermaid": found_fences["mermaid"],
         "wake": found_fences["text"].strip("\n"),
     }
 
@@ -266,8 +257,21 @@ def how_alt(how):
     return "".join(parts)
 
 
-def how_slots(how):
-    """{{how_*}} markers, values already escaped."""
+def how_slots(how, shell):
+    """{{how_*}} markers, values escaped, and the parities that make them honest.
+
+    The mermaid must still name the picture; the shell still has every marker.
+    Both run from render(), every build.
+    """
+    missing = [name for name in HOW_NODES if name not in how["mermaid"]]
+    missing += [title for title in HOW_LANES if title not in how["mermaid"]]
+    missing += [how["nodes"][slot].rstrip(".") for slot in ("acp", "mcp")
+                if how["nodes"][slot].rstrip(".") not in how["mermaid"]]
+    if missing:
+        raise Malformed(
+            "README.md How It Works mermaid does not name "
+            + ", ".join(repr(item) for item in missing)
+        )
     slots = {
         "how_sub": inline(how["sub"]),
         "how_wake": html.escape(how["wake"]),
@@ -278,21 +282,6 @@ def how_slots(how):
     for name, slot in HOW_NODES.items():
         slots[f"how_{slot}_name"] = html.escape(name)
         slots[f"how_{slot}"] = inline(how["nodes"][slot])
-    return slots
-
-
-def join_how(how, shell):
-    """Mermaid still names the picture; the shell still has every how_* slot."""
-    missing = [name for name in HOW_NODES if name not in how["mermaid"]]
-    missing += [title for title in HOW_LANES if title not in how["mermaid"]]
-    missing += [how["nodes"][slot].rstrip(".") for slot in ("acp", "mcp")
-                if how["nodes"][slot].rstrip(".") not in how["mermaid"]]
-    if missing:
-        raise Malformed(
-            "README.md How It Works mermaid does not name "
-            + ", ".join(repr(item) for item in missing)
-        )
-    slots = how_slots(how)
     for name in slots:
         marker = "{{" + name + "}}"
         if marker not in shell:
@@ -408,7 +397,7 @@ def render(readme_text, characters_root, rust_source, shell, release=None):
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
-        **join_how(words["how"], shell),
+        **how_slots(words["how"], shell),
         # The desk stays in the page. CSS hides it behind the video, and it
         # shows again when a video that fails to load removes itself.
         "video": (
