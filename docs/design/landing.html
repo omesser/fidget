@@ -152,6 +152,36 @@
   .harnesses li { border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem;
     font-size: .9rem; background: var(--win); }
 
+  /* How it works: one picture per lane, drawing itself from the palette so dark
+     mode follows; .sr hides the single plain-words read for screen readers. */
+  .how-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem 2rem; }
+  .how-grid svg { display: block; width: 100%; height: auto; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .how-box { fill: var(--win); stroke: var(--line); stroke-width: 2; }
+  .how-hub { fill: var(--win); stroke: var(--accent); stroke-width: 2; }
+  .how-aside { fill: var(--paper-2); stroke: var(--line); stroke-width: 2; stroke-dasharray: 6 6; }
+  .how-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .how-dash { fill: none; stroke: var(--accent); stroke-width: 2;
+    stroke-dasharray: 6 6; stroke-opacity: .5; }
+  .how-tip { fill: var(--accent); }
+  .how-title { fill: var(--ink); font-size: 15px; font-weight: 600; }
+  .how-name { fill: var(--ink); font-size: 13px; font-weight: 600; }
+  .how-big { fill: var(--ink); font-size: 14px; font-weight: 600; }
+  .how-small { fill: var(--ink); font-size: 12px; font-weight: 600; }
+  .how-quiet { fill: var(--ink-2); font-size: 13px; font-weight: 600; }
+  .how-sub { fill: var(--ink-2); font-size: 11px; }
+  .how-faint { fill: var(--ink-3); font-size: 11px; }
+
+  /* The static page already reads whole; the reveal classes only stage a first
+     look, so they dim nothing on their own and the delays stagger three readings. */
+  #how.reveal [data-lit-order] { opacity: .16; transform: translateY(8px); }
+  #how.reveal.lit [data-lit-order] { opacity: 1; transform: translateY(0);
+    transition: opacity .55s ease, transform .55s ease; }
+  #how.reveal.lit [data-lit-order="1"] { transition-delay: 0s; }
+  #how.reveal.lit [data-lit-order="2"] { transition-delay: .8s; }
+  #how.reveal.lit [data-lit-order="3"] { transition-delay: 1.6s; }
+
   footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--ink-3);
     font-size: .9rem; display: flex; flex-wrap: wrap; gap: 1.25rem; }
   footer a { color: inherit; }
@@ -161,6 +191,7 @@
     nav a.link.opt { display: none; }
     .get { grid-template-columns: 1fr; }
     .cast { grid-template-columns: repeat(4, 1fr); }
+    .how-grid { grid-template-columns: 1fr; gap: 1.25rem; }
     .desk { aspect-ratio: 1 / 1; }
     .perched { width: 96px; height: 96px; }
     .say { left: 6%; bottom: calc(44% + 106px); }
@@ -220,6 +251,85 @@
       <a href="cues.html">Try the gestures in your browser</a>.</p>
     <div class="features">
       {{features}}
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">A pet first. The AI is the part that makes it someone.</p>
+    <p class="sr">How it works: your fidget is a real little program. Its frame loop walks,
+      falls, lands and perches every frame on your machine, and your pokes, throws and
+      drags land on it with no AI. Attach the optional Director and it reads who the pet
+      is from a plain-text personality file, adds your own twist on top and reads window
+      titles only if you say yes, then now and then it wakes and decides what's next,
+      handing the pet a new behavior or one line spoken in character. The Director can be
+      the agent you already use, one that talks and uses tools.</p>
+    <div class="how-grid">
+      <svg viewBox="0 0 480 340" role="img">
+        <title>The always-on lane</title>
+        <desc>Frame loop and You, both flowing into Your fidget, with no AI involved.</desc>
+        <defs>
+          <marker id="how-tip-1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" class="how-tip"/>
+          </marker>
+        </defs>
+        <g data-lit-order="1">
+          <text x="24" y="30" class="how-title">Always on. No AI needed.</text>
+          <rect x="24" y="48" width="420" height="72" rx="12" class="how-box"/>
+          <text x="44" y="78" class="how-name">Frame loop</text>
+          <text x="44" y="100" class="how-sub">Walks, falls, lands, perches. Every frame, on your machine.</text>
+          <rect x="24" y="142" width="280" height="56" rx="12" class="how-box"/>
+          <text x="44" y="167" class="how-name">You</text>
+          <text x="44" y="187" class="how-sub">Poke, throw, drag, summon.</text>
+          <path d="M400,120 L362,208" class="how-line" marker-end="url(#how-tip-1)"/>
+          <path d="M304,170 L332,216" class="how-line" marker-end="url(#how-tip-1)"/>
+          <circle cx="360" cy="262" r="54" class="how-hub"/>
+          <text x="360" y="267" text-anchor="middle" class="how-name">Your fidget</text>
+        </g>
+      </svg>
+      <svg viewBox="0 0 520 480" role="img">
+        <title>The Director lane</title>
+        <desc>Personality, an instance prompt and window titles feed it; it hands Your fidget a behavior or one line.</desc>
+        <defs>
+          <marker id="how-tip-2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" class="how-tip"/>
+          </marker>
+        </defs>
+        <g data-lit-order="2">
+          <text x="24" y="30" class="how-title">Optional: the Director</text>
+          <text x="24" y="54" class="how-faint">Wakes now and then and decides what's next.</text>
+          <rect x="24" y="64" width="228" height="62" rx="12" class="how-box"/>
+          <text x="42" y="90" class="how-name">Personality</text>
+          <text x="42" y="112" class="how-sub">Who it is. A plain text file.</text>
+          <rect x="24" y="142" width="228" height="62" rx="12" class="how-box"/>
+          <text x="42" y="168" class="how-name">Instance Prompt</text>
+          <text x="42" y="190" class="how-sub">Your own twist, on top.</text>
+          <rect x="24" y="220" width="228" height="62" rx="12" class="how-box"/>
+          <text x="42" y="246" class="how-name">Window titles</text>
+          <text x="42" y="268" class="how-sub">Only if you say yes. Never pixels.</text>
+          <path d="M252,95 C290,110 306,128 314,146" class="how-line" marker-end="url(#how-tip-2)"/>
+          <path d="M252,173 L270,173" class="how-line" marker-end="url(#how-tip-2)"/>
+          <path d="M252,251 C290,236 306,218 314,198" class="how-line" marker-end="url(#how-tip-2)"/>
+          <polygon points="360,111 444,173 360,235 276,173" class="how-hub"/>
+          <text x="360" y="178" text-anchor="middle" class="how-big">Director</text>
+        </g>
+        <g data-lit-order="3">
+          <path d="M360,235 C390,275 405,300 422,318" class="how-line" marker-end="url(#how-tip-2)"/>
+          <path d="M362,237 C344,315 374,352 410,372" class="how-line" marker-end="url(#how-tip-2)"/>
+          <text x="240" y="308" class="how-name">A Behavior</text>
+          <text x="240" y="328" class="how-sub">nap, prowl, patrol…</text>
+          <text x="240" y="384" class="how-name">A line</text>
+          <text x="240" y="404" class="how-sub">in character</text>
+          <circle cx="450" cy="352" r="44" class="how-box"/>
+          <text x="450" y="356" text-anchor="middle" class="how-small">Your fidget</text>
+          <path d="M486,412 C512,330 504,240 452,172" class="how-dash" marker-end="url(#how-tip-2)"/>
+          <rect x="24" y="412" width="472" height="58" rx="12" class="how-aside"/>
+          <text x="42" y="447" class="how-quiet">Your agent</text>
+          <text x="128" y="447" class="how-faint">Attach the one you already use. It can talk and use tools.</text>
+        </g>
+      </svg>
     </div>
   </div>
 </section>
@@ -295,6 +405,20 @@
     clip.removeAttribute("autoplay");
     clip.pause();
     clip.controls = true;
+  }
+
+  // The reveal staging lives on #how as data; this only hands a first view over
+  // to it once the section scrolls in, and reduced motion keeps every stage lit.
+  const how = document.getElementById("how");
+  if (how && !still && "IntersectionObserver" in window) {
+    how.classList.add("reveal");
+    const lighting = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        how.classList.add("lit");
+        lighting.disconnect();
+      }
+    });
+    lighting.observe(how);
   }
 </script>
 <script>
