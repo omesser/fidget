@@ -5,7 +5,8 @@
     python3 scripts/make-landing-page.py --self-check
 
 A Generated page under ADR-0038. The headline, opening paragraph, feature list,
-Harness names, install notes and opening hero video are read from README.md;
+How It Works labels, Harness names, install notes and opening hero video are
+read from README.md;
 the cast, count and sprites are read from Character Manifests. The page shell
 is docs/design/landing.html, with double-brace slots this script fills. A
 source it cannot find fails the build.
@@ -49,6 +50,29 @@ LATEST = f"{REPO}/releases/latest"
 DOWNLOADS = (("macos", "_aarch64.dmg"), ("windows", "-setup.exe"), ("linux", ".AppImage"))
 COUNT = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
          "Nine", "Ten", "Eleven", "Twelve")
+# README `- **Name:** caption` → slot suffix. Extras are Malformed. "Your fidget"
+# is the sink the lanes feed: a name, no caption.
+HOW_NODES = {
+    "Frame loop": "frame_loop",
+    "You": "you",
+    "Your fidget": "fidget",
+    "Personality": "personality",
+    "Instance Prompt": "instance_prompt",
+    "Window titles": "window_titles",
+    "Director": "director",
+    "A Behavior": "behavior",
+    "A line": "line",
+    "Your agent": "your_agent",
+    "ACP": "acp",
+    "MCP": "mcp",
+}
+HOW_LANES = {
+    "Always on. No AI needed.": "always",
+    "Optional: the Director": "director",
+}
+# Light-up order is data, not CSS folklore: frame loop, then the Director waking,
+# then a Behavior.
+HOW_LIGHT = ("frame", "director", "behavior")
 
 _spec = importlib.util.spec_from_file_location("gallery", ROOT / "scripts" / "make-character-gallery.py")
 gallery = importlib.util.module_from_spec(_spec)
@@ -165,7 +189,115 @@ def read_readme(text):
         "harnesses": harnesses,
         "notes": [sentence(get_it, "not signed"), sentence(get_it, "works offline")],
         "brew": brew.group(0) if brew else "",
+        "how": read_how(text, found),
     }
+
+
+def read_how(text, found):
+    """How It Works as lanes, nodes, mermaid, and wake sample, or Malformed.
+
+    Bullets and lane titles come from sections(); fences are read from the raw
+    slice because sections() drops them, the same way Get It reads brew.
+    """
+    body = section(found, "How It Works")
+    paras = paragraphs(body)
+    if not paras:
+        raise Malformed("README.md How It Works has no opening paragraph")
+
+    lanes = {}
+    for line in body:
+        heading = re.match(r"### (.+)", line)
+        if heading and heading.group(1).strip() in HOW_LANES:
+            title = heading.group(1).strip()
+            lanes[HOW_LANES[title]] = title
+    for title, suffix in HOW_LANES.items():
+        if suffix not in lanes:
+            raise Malformed(f"README.md How It Works is missing lane {title!r}")
+
+    nodes = {}
+    for line in body:
+        bullet = re.match(r"- \*\*(.+?):\*\* (.+)", line)
+        if not bullet:
+            continue
+        name, caption = bullet.group(1), bullet.group(2)
+        if name not in HOW_NODES:
+            raise Malformed(f"README.md How It Works has unknown bullet {name!r}")
+        if name == "Your fidget":
+            raise Malformed("README.md How It Works must not caption Your fidget")
+        nodes[HOW_NODES[name]] = caption
+    for name, slot in HOW_NODES.items():
+        if slot == "fidget":
+            nodes[slot] = ""
+            continue
+        if slot not in nodes:
+            raise Malformed(f"README.md How It Works is missing bullet {name!r}")
+
+    how_only = text.split("## How It Works", 1)[1].split("\n## ", 1)[0]
+    fences = re.findall(r"```(\w*)\n(.*?)```", how_only, re.S)
+    if len(fences) != 2 or {lang for lang, _ in fences} != {"mermaid", "text"}:
+        raise Malformed("README.md How It Works allows only a mermaid fence and one text sample")
+    found_fences = {lang: body for lang, body in fences}
+    mermaid = found_fences["mermaid"]
+    missing = [name for name in HOW_NODES if name not in mermaid]
+    missing += [title for title in HOW_LANES if title not in mermaid]
+    missing += [nodes[slot].rstrip(".") for slot in ("acp", "mcp") if nodes[slot].rstrip(".") not in mermaid]
+    if missing:
+        raise Malformed(
+            "README.md How It Works mermaid does not name "
+            + ", ".join(repr(item) for item in missing)
+        )
+    return {
+        "sub": paras[0],
+        "lanes": lanes,
+        "nodes": nodes,
+        "mermaid": mermaid,
+        "wake": found_fences["text"].strip("\n"),
+    }
+
+
+def how_alt(how):
+    """One <dl> from lane titles then nodes, so the picture and the alternative share data."""
+    parts = [f"<dt>{html.escape(title)}</dt>" for title in HOW_LANES]
+    for name, slot in HOW_NODES.items():
+        parts.append(f"<dt>{html.escape(name)}</dt>")
+        caption = how["nodes"][slot]
+        if caption:
+            parts.append(f"<dd>{inline(caption)}</dd>")
+    return "".join(parts)
+
+
+def how_slots(how):
+    """{{how_*}} markers, values already escaped."""
+    slots = {
+        "how_sub": inline(how["sub"]),
+        "how_wake": html.escape(how["wake"]),
+        "how_alt": how_alt(how),
+    }
+    for suffix, title in how["lanes"].items():
+        slots[f"how_lane_{suffix}"] = html.escape(title)
+    for name, slot in HOW_NODES.items():
+        slots[f"how_{slot}_name"] = html.escape(name)
+        slots[f"how_{slot}"] = inline(how["nodes"][slot])
+    return slots
+
+
+def join_how(how, shell):
+    """Mermaid still names the picture; the shell still has every how_* slot."""
+    missing = [name for name in HOW_NODES if name not in how["mermaid"]]
+    missing += [title for title in HOW_LANES if title not in how["mermaid"]]
+    missing += [how["nodes"][slot].rstrip(".") for slot in ("acp", "mcp")
+                if how["nodes"][slot].rstrip(".") not in how["mermaid"]]
+    if missing:
+        raise Malformed(
+            "README.md How It Works mermaid does not name "
+            + ", ".join(repr(item) for item in missing)
+        )
+    slots = how_slots(how)
+    for name in slots:
+        marker = "{{" + name + "}}"
+        if marker not in shell:
+            raise Malformed(f"{SHELL.name} holds no {marker} marker")
+    return slots
 
 
 # --------------------------------------------------------------------------
@@ -276,6 +408,7 @@ def render(readme_text, characters_root, rust_source, shell, release=None):
         "brand": hero["idle"]["frames"][0],
         "hero": sprite(hero["sit"], f'{hero["name"]}, perched on a window',
                        ' id="hero-sprite" aria-describedby="hero-say"'),
+        **join_how(words["how"], shell),
         # The desk stays in the page. CSS hides it behind the video, and it
         # shows again when a video that fails to load removes itself.
         "video": (
@@ -321,10 +454,42 @@ def self_check():
         "a `#` line inside a code fence became the headline"
     assert fails(readme.replace("## What It Does", "## What It Is")), \
         "a README with no What It Does section built a page"
+    assert "How It Works" in (fails(readme.replace("## How It Works", "## How It Happens")) or ""), \
+        "a README with no How It Works section built a page"
+    assert fails(readme.replace("- **Director:** Wakes now and then and decides what's next.\n", "")), \
+        "a README that drops a How It Works bullet built a page"
+    assert fails(readme.replace('|"attach over ACP on stdio"|', '|"stdio"|')), \
+        "a mermaid that drops the ACP caption built a page"
+    assert fails(readme.replace("```text\n", "```json\n")), \
+        "a How It Works slice with no text sample built a page"
+    assert fails(readme.replace("```mermaid", "```")), \
+        "a fence-poor How It Works built a page"
     assert fails(readme.replace("<code>", "<kbd>")), "a Harness table with no names built a page"
 
     words = read_readme(readme)
     assert "claude" in words["harnesses"] and "anything else" not in words["harnesses"]
+    how = words["how"]
+    assert how["sub"] == "A pet first. The AI is the part that makes it someone."
+    assert how["lanes"]["always"] == "Always on. No AI needed."
+    assert how["lanes"]["director"] == "Optional: the Director"
+    assert how["nodes"]["fidget"] == ""
+    assert how["nodes"]["frame_loop"] == "Walks, falls, lands, perches. Every frame, on your machine."
+    assert how["nodes"]["you"] == "Poke, throw, drag, summon."
+    assert how["nodes"]["personality"] == "Who it is. A plain text file."
+    assert how["nodes"]["instance_prompt"] == "Your own twist, on top."
+    assert how["nodes"]["window_titles"] == "Only if you say yes. Never pixels."
+    assert how["nodes"]["director"] == "Wakes now and then and decides what's next."
+    assert how["nodes"]["behavior"] == "nap, prowl, patrol…"
+    assert how["nodes"]["line"] == "in character."
+    assert how["nodes"]["your_agent"] == "Attach the one you already use. It can talk and use tools."
+    assert how["nodes"]["acp"] == "attach over ACP on stdio."
+    assert how["nodes"]["mcp"] == "the Harness calls back over MCP."
+    dim = list(re.finditer(r"([^{]*)\[data-light\][^{]*\{[^}]*opacity[^}]*\}", shell))
+    assert dim, "the shell has no [data-light] opacity rule"
+    assert all(".how.how-motion" in m.group(1) for m in dim), \
+        "the dim rule is not under .how.how-motion"
+    assert all(f'data-light="{step}"' in shell for step in HOW_LIGHT), \
+        "the shell is missing a data-light hook"
     attachment = "https://github.com/user-attachments/assets/0a1b2c3d-4e5f-6789-abcd-ef0123456789"
     readme_without_attachments = ATTACHMENT.sub("", readme)
     opening_video = readme_without_attachments.replace(
@@ -358,6 +523,14 @@ def self_check():
 
         (package / "frames" / "walk-0.png").write_bytes(art)
         page = render(readme, scratch, rust, shell)
+        for name in HOW_NODES:
+            assert name in page, f"{name} did not reach the page"
+        for title in HOW_LANES:
+            assert title in page, f"{title} did not reach the page"
+        assert "attach over ACP on stdio" in page and "the Harness calls back over MCP" in page
+        assert "Opening wake" in page
+        assert "A pet first. The AI is the part that makes it someone." in page
+        assert not re.search(r"<script[^>]*mermaid", page) and 'class="mermaid"' not in page
         assert "One character ships with Fidget" in page, "the cast count is not the package count"
         assert "<figcaption>Solo</figcaption>" in page
         page = render(readme, scratch, rust, shell, release)
