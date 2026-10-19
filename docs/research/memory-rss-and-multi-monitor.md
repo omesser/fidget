@@ -266,14 +266,15 @@ permanently attached and no third exists. The per-display section says what
 stands in for that comparison. The operator dropped the three-display run on
 2026-10-19, see
 [macOS release resident set](macos-release-resident-set.md#dropped-from-424),
-which also holds the single-display placeholder.
+which also holds a one-display release run.
 
 **A heap profile with top allocators.** #424 asks for Instruments Allocations
-or `heaptrack`. Instruments needs a GUI session and a human. The allocator
-ranking is unanswered, and the 47.6 MB above is the first thing to point it
-at. `scripts/bench-rss-macos.sh --heap DIR` takes the profile without
-Instruments. It is not run yet, see
-[macOS release resident set](macos-release-resident-set.md#heap-profile).
+or `heaptrack`. Instruments needs a GUI session and a human.
+`scripts/bench-rss-macos.sh --heap DIR` takes the profile without
+Instruments. A release run with one Character is in
+[macOS release resident set](macos-release-resident-set.md#heap-profile), and
+`art_urls` is the second-largest live allocator there. It did not install the
+seven unused Characters, so the 47.6 MB above stays unexplained.
 
 **A release build.** Everything in the macOS section is `target/debug`. One release run is recorded in [macOS release resident set](macos-release-resident-set.md).
 

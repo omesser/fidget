@@ -54,7 +54,7 @@ printf 'overlay: 2 displays\\n' >> "$HOME/Library/Application Support/fidget/pro
 const topAllocators = join(import.meta.dirname, "..", "scripts", "heap-top-allocators.sh");
 const fixture = join(import.meta.dirname, "fixtures", "malloc-history-allbysize.txt");
 
-test("heap-top-allocators ranks live bytes by the innermost frame in the named image", () => {
+test("heap-top-allocators ranks malloc-zone bytes by the innermost frame in the named image", () => {
   const result = spawnSync("/bin/bash", [topAllocators, fixture, "libperl.dylib", "3"], {
     encoding: "utf8",
     timeout: 5000,
@@ -65,20 +65,23 @@ test("heap-top-allocators ranks live bytes by the innermost frame in the named i
     result.stdout,
     `top 3 allocators in libperl.dylib, live bytes by innermost frame
    10172 KB    2036 calls  Perl_safesysmalloc
-     192 KB       2 calls  Perl_init_i18nl10n
+     112 KB       1 calls  Perl_init_i18nl10n
       52 KB       2 calls  Perl_safesysrealloc
-   10464 KB live in total, 0 KB of it with no libperl.dylib frame
+   10384 KB live in malloc zones, 0 KB of it with no libperl.dylib frame
+      80 KB virtual in VM regions outside malloc, not a resident figure
 `,
   );
 });
 
-test("heap-top-allocators walks past Rust allocator glue, and keeps it when nothing else is there", () => {
+test("heap-top-allocators walks past Rust allocator glue, mangled or not, keeps it when nothing else is there, and sets VM regions aside", () => {
   const dir = mkdtempSync(join(tmpdir(), "bench-rss-macos-"));
   const report = join(dir, "report.txt");
   writeFileSync(
     report,
     `1 call for 4096 bytes: 0x1 (fidget) main | 0x2 (fidget) fidget::overlay::build | 0x3 (fidget) <alloc::vec::Vec<T> as core::clone::Clone>::clone | 0x4 (fidget) alloc::raw_vec::finish_grow | 0x5 (fidget) __rust_alloc | 0x6 (libsystem_malloc.dylib) _malloc
 1 call for 1024 bytes: 0x7 (fidget) __rust_alloc | 0x8 (libsystem_malloc.dylib) _malloc
+1 call for 2048 bytes: 0xc (fidget) _RNvCsiHWy0h3YqYU_6fidget8art_urls | 0xd (fidget) _RNvXs4_NtCs6zY7rJBZy9D_5alloc6stringNtB5_6StringNtNtCsjIpoRzUjyHQ_4core5clone5Clone5clone | 0xe (libsystem_malloc.dylib) _malloc
+1 call for 1073741824 bytes: 0x9 (fidget) fidget::overlay::build | 0xa (WebKit) WebKit::SharedMemory::allocate | 0xb (libsystem_kernel.dylib) mach_vm_map
 `,
   );
 
@@ -89,8 +92,10 @@ test("heap-top-allocators walks past Rust allocator glue, and keeps it when noth
     result.stdout,
     `top 20 allocators in fidget, live bytes by innermost frame
        4 KB       1 calls  fidget::overlay::build
+       2 KB       1 calls  fidget::art_urls
        1 KB       1 calls  __rust_alloc
-       5 KB live in total, 0 KB of it with no fidget frame
+       7 KB live in malloc zones, 0 KB of it with no fidget frame
+ 1048576 KB virtual in VM regions outside malloc, not a resident figure
 `,
   );
 });
@@ -158,7 +163,8 @@ test("--heap launches with MallocStackLogging and writes fidget's and its helper
   assert.equal(
     result.stdout.split("top 20 allocators")[1],
     ` in fidget, live bytes by innermost frame
-   10464 KB live in total, 10464 KB of it with no fidget frame
+   10384 KB live in malloc zones, 10384 KB of it with no fidget frame
+      80 KB virtual in VM regions outside malloc, not a resident figure
 `,
   );
 });
