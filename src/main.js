@@ -419,7 +419,7 @@ function attachQuickMessage(view, id) {
   field.disabled = true;
   field.autocomplete = "off";
   // On macOS, WebKit autocorrects a spellchecked field, and its correction
-  // panel takes the next Escape for itself, so Escape left the pill open (#1644).
+  // panel takes the next Escape for itself, so Escape would not reach the pill.
   field.spellcheck = false;
   field.setAttribute("aria-label", "Quick message");
   // Only where a click off the art lands. Elsewhere the hint stays text.

@@ -1136,7 +1136,7 @@ field.addEventListener("blur", () => {
 });
 field.addEventListener("keydown", (e) => {
   if (!pillUp) return;
-  if (e.key === "Escape") {
+  if (e.key === "Escape" && !e.isComposing) {
     e.preventDefault();
     dismissQuick("escape");
     return;

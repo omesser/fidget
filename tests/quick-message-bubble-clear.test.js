@@ -179,8 +179,8 @@ function drive() {
   return probePage(html, { args: ["--window-size=1000,700"] });
 }
 
-let driven;
-const report = () => (driven ??= drive());
+let probe;
+const report = () => (probe ??= drive());
 
 test("the pill steps clear of a speech bubble and of the thinking dots", { skip: chromeSkip, timeout: 90000 }, async () => {
   const { error, cases } = await report();
@@ -194,8 +194,6 @@ test("the pill steps clear of a speech bubble and of the thinking dots", { skip:
   }
 });
 
-// WebKit's autocorrection panel takes the next Escape for itself, so the pill
-// would stay open (#1644). Off with spellcheck, which also stops autocorrect.
 test("the pill's field opts out of spellcheck", { skip: chromeSkip, timeout: 90000 }, async () => {
   const { error, spellcheck } = await report();
   assert.equal(error, undefined, error);
