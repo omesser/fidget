@@ -245,7 +245,7 @@ SWIFT
   fi
   [ "$code" -eq 3 ] || fail "the menu read failed (exit $code); see $menu_dump"
   if [ "$attempt" -ge 3 ]; then
-    fail "no open menu in the AX tree after $attempt Control-clicks; see $menu_dump"
+    fail "the app drew no menu window after $attempt Control-clicks; see $menu_dump"
   fi
   echo "retry: the Control-click drew no menu window (#1651); clicking again (attempt $((attempt + 1)) of 3)" >&2
   echo "retry: that read is in $menu_dump" >&2
