@@ -74,9 +74,8 @@ pub(crate) fn abandoned() -> bool {
     })
 }
 
-/// One slot per Character Instance, in one registry.
-/// Each HTTP session stays inside that Instance's `Endpoint`. There is no cap,
-/// so N Instances make N calls.
+/// One slot per Character Instance, in one registry. There is no cap, so N
+/// Instances make N calls.
 #[derive(Default)]
 pub struct Slots {
     slots: HashMap<InstanceId, Slot>,
@@ -133,7 +132,7 @@ pub struct Answered {
     /// The cap ended this turn, so what was said is as far as the model got.
     /// The line the Chat surface remembers is marked with it.
     pub truncated: bool,
-    /// Planning peeled from the reply for the Thinking row (ADR-0034).
+    /// Planning peeled from the reply for the Thinking row.
     pub peeled_thought: Option<String>,
 }
 
@@ -191,8 +190,8 @@ impl Slots {
     }
 
     /// Append `line` to the Director's prompt and send it. Newest-wins, except
-    /// where ADR-0016 keeps the wake on the wire: mid-answer, an ambient tick,
-    /// or a Summon over a reply still generating. The return says whether it started.
+    /// mid-answer, an ambient tick, or a Summon over a reply still generating.
+    /// The return says whether it started.
     pub fn wake_with_prompt<C: Completer + Send + Sync + 'static>(
         &mut self,
         id: &InstanceId,
@@ -219,11 +218,9 @@ impl Slots {
             if director.awaiting_user() {
                 return Woke::AwaitingUser;
             }
-            // A reply the user is waiting for gives way to a touch of the
-            // sprite or a typed line, not to opening Chat to read it or to a
-            // muse. The Harness refuses a reactive turn to an ambient tick
-            // anyway (`Session::supersede`), so superseding would drop an
-            // answer still on its way.
+            // A reply the user is waiting for gives way to a touch or a typed
+            // line, not to reading Chat or a muse. The Harness refuses a
+            // reactive turn to an ambient tick, so superseding would lose it.
             let takes_a_reply = match claim {
                 Claim::Interaction | Claim::Line => true,
                 Claim::Opener | Claim::Ambient => false,
@@ -289,9 +286,8 @@ impl Slots {
     }
 
     /// The reply for `id`, with the moment it was computed for, or else the
-    /// newest Speech of a reply still arriving. A superseded moment is
-    /// dropped here rather than handed out for a caller to compare, and so
-    /// is its Speech.
+    /// newest Speech of a reply still arriving. A superseded reply and its
+    /// Speech are dropped here rather than handed out to compare.
     pub fn take(&mut self, id: &InstanceId) -> Option<Arrived> {
         let slot = self.slots.get_mut(id)?;
         let mut speech = None;
@@ -537,7 +533,6 @@ pub(crate) mod tests {
     }
 
     /// Stands in for the SSE loop: checks between frames, without a server.
-    /// Spins far longer than a test should need.
     struct Watchful {
         saw: Arc<AtomicBool>,
     }
@@ -573,7 +568,6 @@ pub(crate) mod tests {
     }
 
     impl Completer for Answers {
-        /// Writes the whole reply at once, then takes `delay` to end the turn.
         fn complete(&self, _: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
             said(self.behavior);
             thread::sleep(self.delay);
@@ -594,7 +588,6 @@ pub(crate) mod tests {
         ))
     }
 
-    /// The worker builds the prompt, then appends the display line.
     #[test]
     fn a_finished_prompt_is_the_one_the_completer_receives() {
         struct Noted {
@@ -695,9 +688,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// The other direction, which ADR-0016 turns around. A reactive call is an
-    /// answer the user is waiting for and an ambient tick is the fidget musing.
-    /// The muse is dropped rather than costing the user their answer.
+    /// The other direction. A reactive call is an answer the user is waiting
+    /// for and an ambient tick is the fidget musing. The muse is dropped rather
+    /// than costing the user their answer.
     #[test]
     fn an_ambient_tick_does_not_supersede_a_reactive_call() {
         let mut slots = Slots::new();
@@ -742,7 +735,7 @@ pub(crate) mod tests {
     }
 
     /// Peeled planning rides with the Answered so the frame loop can hand it
-    /// to the thought door (ADR-0034) before the reply is remembered.
+    /// to the thought door before the reply is remembered.
     #[test]
     fn take_carries_peeled_thought_from_a_marked_contract() {
         struct SaysMarked;
@@ -804,7 +797,6 @@ pub(crate) mod tests {
 
         slots.wake(&first, answering("stroll", 0), wake_context());
         slots.wake(&second, answering("nap", 0), wake_context());
-        // Supersedes `first` only. `second` has said nothing about it.
         slots.wake(&first, answering("nap", 0), wake_context());
 
         let theirs = polled(&mut slots, &second).expect("the second fidget still answers");

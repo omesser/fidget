@@ -34,7 +34,7 @@ pub(crate) const VAR: &str = "FIDGET_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "FIDGET_MCP_BIN";
 /// Spawn `current_dir` and ACP session cwd. Empty is the data folder, not
-/// `$HOME`: bare home mixes app files with harness project configs (#782).
+/// `$HOME`: bare home mixes app files with harness project configs.
 pub(crate) const CWD: &str = "FIDGET_HARNESS_CWD";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
 /// so the Development row it owns can print it.
@@ -127,9 +127,8 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
         // `copilot` alone is the interactive TUI. `--acp` is the documented
-        // ACP-over-stdio flag ("Start as Agent Client Protocol server"). The
-        // `--stdio` the README used to name is absent from `--help` and
-        // changes nothing: with or without it, `initialize` answers the same.
+        // ACP-over-stdio flag. `--stdio` is absent from `--help` and changes
+        // nothing: with or without it, `initialize` answers the same.
         "copilot" => (value, vec!["copilot", "--acp"]),
         // `acp` is absent from `cursor-agent --help`, which lists `agent`,
         // `login` and `mcp`. It answers `initialize` all the same.
@@ -170,8 +169,8 @@ fn antigravity_argv() -> Vec<&'static str> {
 }
 
 /// `cursor-agent` loads MCP servers from its own project config and not from
-/// `session/new` (#1020). The preset and a custom `cursor-agent …` line both
-/// carry that name.
+/// `session/new`. The preset and a custom `cursor-agent …` line both carry
+/// that name.
 fn takes_cursor_config(launch: &Launch) -> bool {
     launch.name == "cursor-agent"
 }
@@ -220,13 +219,9 @@ impl Launch {
         }
     }
 
-    /// The child, inheriting our environment. No provider key in it, because
-    /// one overrides a subscription login with no prompt. No `CLAUDE_CONFIG_DIR`
-    /// and no `--bare`, because both cut the child off from the login the user
-    /// already has. The `pi` preset adds the loopback URL and token, because
-    /// `pi-acp` forwards `process.env` to `pi` and the project file names those
-    /// variables instead of the values. Own process group once `own_interrupt`
-    /// has taken Ctrl+C, so a SIGINT on `cargo run` misses it.
+    /// The child inherits our environment without a provider key,
+    /// `CLAUDE_CONFIG_DIR`, or `--bare`; each overrides or cuts the login.
+    /// `pi` gets the token via `process.env`; `own_interrupt` isolates it.
     fn command(&self, cwd: &AttachCwd, mcp_available: bool) -> Command {
         let mut command = Command::new(resolved_program(&self.argv[0], None));
         let endpoint = crate::mcp_http::endpoint();
@@ -436,10 +431,8 @@ fn attach_cwd_display(cwd: &Result<AttachCwd, CwdError>) -> String {
 }
 
 /// Where the Harness runs when the Working directory row is blank, for that
-/// row's placeholder. Resolved rather than described, so the row shows the
-/// path instead of leaving the user to know it (#913). Reads
-/// `FIDGET_HARNESS_CWD` first, because a row the environment owns runs
-/// somewhere else again.
+/// row's placeholder. Resolved so the row shows the path, and reads
+/// `FIDGET_HARNESS_CWD` first because the environment may own the row.
 pub(crate) fn attach_cwd_placeholder() -> String {
     project_dir_label("")
 }
@@ -666,9 +659,8 @@ fn timed_command(
 }
 
 /// On Windows, resolves stand-in executables (.cmd, .bat, .exe) to absolute
-/// paths because CreateProcess with a bare name + PATH override does not
-/// reliably find them the way the shell does. Rust's Command wraps .cmd/.bat
-/// via ComSpec/cmd.exe automatically when given an absolute path.
+/// paths because CreateProcess with a bare name + PATH override does not find
+/// them as the shell does. Rust wraps .cmd/.bat when given an absolute path.
 fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
     windows_program(program, path_override).unwrap_or_else(|| OsString::from(program))
 }
@@ -917,8 +909,7 @@ struct SavedSession {
 
 impl SavedSlot {
     /// The identity half of a remembered slot. One place, so the three sites
-    /// that match a slot against a key cannot drift apart when the key gains
-    /// a field.
+    /// that match a slot against a key cannot drift when the key gains a field.
     fn key(&self) -> SessionKey {
         SessionKey {
             instance: self.instance.clone(),
@@ -929,7 +920,7 @@ impl SavedSlot {
 }
 
 /// Instance plus Character. Two Instances of one Character do not share, and
-/// a retarget is a different Character Prompt (ADR-0012). Blank-AI mode joins
+/// a retarget is a different Character Prompt. Blank-AI mode joins
 /// them so a shaped session cannot keep answering after the mode switches on.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct SessionKey {
@@ -995,8 +986,8 @@ pub enum Forwarded {
         option: Option<String>,
     },
     /// The Harness's thinking so far, blank lines included: the whole
-    /// thought, which the Chat surface's Thinking row redraws. ADR-0034.
-    /// `instance` is whose session thought it.
+    /// thought, which the Chat surface's Thinking row redraws. `instance` is
+    /// whose session thought it.
     Thought {
         instance: String,
         line: String,
@@ -1010,9 +1001,8 @@ pub enum Forwarded {
     InboundWake(InboundWake),
     Restored(Restored),
     /// The attachment moved: preflight finished, a session opened, or a login
-    /// went missing or came back mid-session (#991). Chat's first ReloadChat
-    /// races preflight and `session/new`, so a missing launcher would never
-    /// reach the landing (#726) and the header would keep "no session yet".
+    /// went missing or came back. Chat's first ReloadChat races preflight and
+    /// `session/new`, so a missing launcher needs this to reach the landing.
     AttachSettled,
     /// A model or effort did not take. Settings restores `restored` before the wake
     /// that found the failure returns.
@@ -1062,24 +1052,19 @@ pub struct Session {
     backoff_first: Duration,
     /// One prompt in flight. A newer wake cancels the turn holding this and
     /// takes it; only the wake that may not do that is told "harness busy",
-    /// and nothing is ever queued (ADR-0008, ADR-0016).
+    /// and nothing is ever queued.
     turn: Mutex<()>,
     /// Whether the turn holding `turn` answers something the user did. Beside
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
-    /// Instance whose wake holds `turn`. One child serves every Instance
-    /// (ADR-0008) and `wire.cancel` names no session, so a cancel without this
-    /// name lands on whichever character is mid-reply.
-    /// Shared with the wire's reader, which names it as the owner of a form
-    /// no session scopes.
+    /// Instance whose wake holds `turn`. `wire.cancel` names no session, so a
+    /// cancel without this lands on whichever character is mid-reply. The
+    /// wire's reader also names it as owner of a form no session scopes.
     serving_instance: Arc<Mutex<Option<String>>>,
-    /// Questions the Harness has put to the user that nothing has settled,
-    /// by request id to the asking session (or `Turn` when none). The Instance
-    /// is resolved through `owners` when `awaiting_user` reads, so an ask that
-    /// arrives before open records its owner still resolves once it does.
-    /// Raised and lowered by the wire's own events, which `end_turn` balances
-    /// by settling everything it still holds. Shared with the wire's reader.
+    /// Open questions by request id to the asking session (or `Turn`). Owners
+    /// resolve through `owners` when `awaiting_user` reads, so an ask that
+    /// arrives before open resolves. The wire raises, `end_turn` clears.
     asked: Arc<Mutex<HashMap<String, Asker>>>,
     /// Instance behind each session id this child opened, so the wire's
     /// reader thread can name whose a thought or an ask is without taking
@@ -1217,10 +1202,9 @@ pub struct NotAppliedNotice {
     pub text: String,
 }
 
-/// What an open records: the inputs the conversation runs on, the last values that
-/// worked, and the failures. An unconfirmed value falls back to the last one that
-/// worked. An unadvertised value is only logged: one model and effort setting serves
-/// every Harness, so restoring it here would undo a value meant for another.
+/// What an open records: the inputs it runs on, the last values that worked,
+/// and the failures. Unconfirmed falls back to the last good; unadvertised is
+/// only logged, since one setting serves every Harness.
 fn after_open(
     last_good: &OpenInputs,
     inputs: &OpenInputs,
@@ -1429,8 +1413,8 @@ impl Session {
     }
 
     /// `initialize` and `session` methods get at least a minute whatever the
-    /// turn budget is. A cold `npx` first run downloads the adapter and its CLI,
-    /// 12.5 to 18 s on a fast Mac and link (#1147); a minute leaves room for slower ones.
+    /// turn budget is. A cold `npx` first run downloads the adapter and CLI,
+    /// 12.5 to 18 s on a fast Mac and link; a minute covers slower ones.
     fn attach_timeout(&self) -> Duration {
         self.timeout.max(Duration::from_secs(60))
     }
@@ -1484,7 +1468,7 @@ impl Session {
                 session.update_inspect(|inspect| inspect.initializing = false);
             }
             // Chat's ReloadChat after a pick races this thread. A second
-            // opening is how `inspect.missing` reaches the landing (#726).
+            // opening is how `inspect.missing` reaches the landing.
             (session.forward)(Forwarded::AttachSettled);
         });
     }
@@ -1506,8 +1490,8 @@ impl Session {
     }
 
     /// Take the turn lock from the wake in flight by cancelling it, or `None`
-    /// for the one wake that may not. Newest-wins (ADR-0016) on one session
-    /// (ADR-0008). A reactive Poke must not give way to the next proactive wake.
+    /// for the one wake that may not. Newest-wins on one session: a reactive
+    /// Poke must not give way to the next proactive wake.
     fn supersede(&self, request: &WakeRequest) -> Option<MutexGuard<'_, ()>> {
         if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
             return None;
@@ -1555,7 +1539,7 @@ impl Session {
 
     /// The same withdrawal, taken by the wake that lost the session. Taken
     /// rather than read so it cannot colour this Instance's next wake. The
-    /// grace bounds the entry no `parsed` line comes for (ADR-0016).
+    /// grace bounds the entry no `parsed` line comes for.
     fn claim_withdrawn_wake(&self, instance: &str) -> Option<String> {
         let (winner, at) = self.withdrawn.lock().ok()?.remove(instance)?;
         (at.elapsed() < WITHDRAWAL_GRACE).then_some(winner)
@@ -1578,7 +1562,7 @@ impl Session {
         let (session_id, outcome) = self.attempt(request, said)?;
         // `session/load` can succeed with a dead id (`hermes`). The first turn
         // is the evidence. Reopen once. Not a loss (already charged), a
-        // timeout (would spend the budget twice), or our own cancel (ADR-0012).
+        // timeout (would spend the budget twice), or our own cancel.
         let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
             Err(TurnError::Stopped(reason)) if reason != CANCELLED && self.reopen_loaded(&key) => {
@@ -1619,7 +1603,7 @@ impl Session {
                 ))
             }
             Err(TurnError::Stopped(reason)) => {
-                // One child serves every Instance (ADR-0008), so a cancel for
+                // One child serves every Instance, so a cancel for
                 // another character's wake reaches this turn without superseding
                 // this Instance's slot. The log line must say it was given up.
                 let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
@@ -1945,8 +1929,8 @@ impl Session {
     }
 
     /// Config and `enable` before the `acp` spawn. Cursor reads approvals once
-    /// per process, so afterwards is too late (#1020). A failure is logged and
-    /// the spawn goes ahead: a session without tools beats no session.
+    /// per process, so afterwards is too late. A failure is logged and the
+    /// spawn goes ahead: a session without tools beats no session.
     fn install_cursor(&self, cwd: &Path) {
         let Some(endpoint) = crate::mcp_http::endpoint() else {
             return;
@@ -2228,7 +2212,7 @@ impl Session {
     fn spawn_and_initialize(&self) -> Result<Arc<Wire>, SpawnError> {
         // The store first. Empty cwd is `data_dir`, which we own; `checked`
         // would refuse a first-run folder that does not exist yet. A user
-        // path still goes through `checked` with no `create_dir_all` (#782).
+        // path still goes through `checked` with no `create_dir_all`.
         self.data.ensure()?;
         let cwd = match &self.cwd {
             Ok(cwd) => {
@@ -2490,7 +2474,7 @@ impl Session {
     }
 
     /// Cancel this Instance's own turn, recording the withdrawal so it reads
-    /// as given up (ADR-0016). `wire.cancel()` names no session (ADR-0008), so
+    /// as given up. `wire.cancel()` names no session, so
     /// ask who holds it first. The caller is the frame loop and must not wait.
     fn cancel_own_turn(&self, instance: &str) {
         let ours = self
@@ -2508,8 +2492,8 @@ impl Session {
     }
 
     /// Forget this Instance's ACP conversations so the next wake is
-    /// `session/new`. Every lane opened with the old Instance Prompt
-    /// (ADR-0012). In-memory ids and saved slots both go, or a restart loads it.
+    /// `session/new`: every lane opened with the old Instance Prompt. In-memory
+    /// ids and saved slots both go, or a restart loads it.
     pub fn drop_conversation(&self, instance: &str) {
         self.cancel_own_turn(instance);
         let Ok(mut state) = self.state.lock() else {
@@ -2669,7 +2653,7 @@ impl Completer for Session {
         reply
     }
 
-    /// One child serves every Instance (ADR-0008), so an outstanding ask
+    /// One child serves every Instance, so an outstanding ask
     /// belongs to the Instance whose session asked it, mid-turn or between
     /// turns. Another character's wake is not held by this one's question.
     fn awaiting_user(&self, instance: &str) -> bool {
@@ -2768,7 +2752,7 @@ pub fn run_probe() -> i32 {
         // from the data folder, so a probe `remember` writes the real `memory.md`.
         SessionDataDir::probe(),
         // Named, never answered. Only a click on the Chat surface may answer a
-        // permission request (ADR-0022), and the probe has no surface. The ask
+        // permission request, and the probe has no surface. The ask
         // times out with the turn, which is itself the report.
         Arc::new(Box::new(|forwarded| match forwarded {
             Forwarded::Ask { ask, .. } => println!(
@@ -2868,7 +2852,7 @@ fn probe_key() -> SessionKey {
 /// it in a test.
 fn probe(session: &Session, then: Option<&ProbeThen>) -> i32 {
     // Served before attach, so `choose_mcp` takes the branch the app takes.
-    // Without it a Harness got the stdio shim with nothing to dial (#984).
+    // Without it a Harness got the stdio shim with nothing to dial.
     let (calls, answers) = std::sync::mpsc::channel();
     let served = crate::mcp_http::serve(calls).is_some();
     thread::spawn(move || answer_probe_calls(answers));
@@ -3087,7 +3071,7 @@ fn or_unset(value: &str) -> &str {
 
 /// Answer the Harness's tool calls through the frame loop's `dispatch`,
 /// against an empty desktop and no Instances. `speak` reports that it
-/// reached nobody rather than a success nothing shows (ADR-0026).
+/// reached nobody rather than a success nothing shows.
 fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
     use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, PlacementQuery};
     let memory_path = fidget_core::memory::shared_path();
@@ -3121,10 +3105,9 @@ fn note_event(
     event: Event,
 ) {
     let instance_of = |session: &str| owners.lock().ok()?.get(session).cloned();
-    // Chat is named once, on arrival. `awaiting_user` resolves the same
-    // `Asker` each time it reads, so an ask on a session still opening outside
-    // a wake is drawn in the turn holder's Chat but owed by its own Instance
-    // once the open records it (docs/harness.md).
+    // Chat is named once, on arrival. `awaiting_user` resolves the same `Asker`
+    // each read, so an ask on a session still opening outside a wake is drawn
+    // in the turn holder's Chat but owed by its Instance once it records it.
     let owe = |request: &str, asker: Asker| {
         let serving = serving.lock().ok().and_then(|serving| serving.clone());
         let instance = owners.lock().ok().and_then(|owners| {
@@ -3220,7 +3203,7 @@ fn note_event(
         }
         // Forwarded and not logged. The Action Log points at the Harness's own
         // session dump rather than copying it (GLOSSARY.md), and a reply is not
-        // copied there either (ADR-0034).
+        // copied there either.
         Event::InboundWake { session, speech } => {
             if let Some(instance) = instance_of(&session) {
                 forward(Forwarded::InboundWake(InboundWake { instance, speech }));
@@ -3303,8 +3286,8 @@ fn parsed_fields(
     })
 }
 
-/// The Action Log's word for each of ADR-0008's two wake kinds. Proactive is
-/// the wake policy's word; Ambient in the glossary is Ambient Capture.
+/// The Action Log's word for the two wake kinds. Proactive is the wake
+/// policy's word; Ambient in the glossary is Ambient Capture.
 fn wake_kind(reactive: bool) -> &'static str {
     if reactive {
         "reactive"
@@ -3335,7 +3318,7 @@ fn not_authenticated(command: &str) -> String {
     format!("harness not authenticated: run `{command}`")
 }
 
-/// A Harness is the user's to install and never ours to ship (ADR-0018), so
+/// A Harness is the user's to install and never ours to ship, so
 /// the only fix is one the user makes outside the app, the same shape as
 /// `not_authenticated` and for the same reason.
 fn not_installed(command: &str) -> String {
@@ -3346,7 +3329,7 @@ fn not_installed(command: &str) -> String {
 }
 
 /// The product a launcher belongs to and the page that installs it. The one
-/// table Chat, Settings and the wake all name it from (ADR-0035).
+/// table Chat, Settings and the wake all name it from.
 pub(crate) fn install_page(command: &str) -> Option<(&'static str, &'static str)> {
     Some(match command {
         "npx" => ("Node.js", "https://nodejs.org/"),
@@ -3369,8 +3352,8 @@ pub(crate) fn install_page(command: &str) -> Option<(&'static str, &'static str)
 }
 
 /// The command that logs the user in. The table outranks the handshake,
-/// because ACP describes `authMethods` in prose and ADR-0018 hosts no
-/// terminal to run a `terminal` method. A custom command keeps the adapter's text.
+/// because ACP describes `authMethods` in prose and Fidget hosts no terminal
+/// to run a `terminal` method. A custom command keeps the adapter's text.
 fn login_command(name: &str, handshake: &Handshake) -> String {
     named_login(name).map(str::to_string).unwrap_or_else(|| {
         handshake
@@ -3387,8 +3370,8 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 }
 
 /// The documented sign-in line for a named Harness, before any handshake.
-/// Chat's Connect reads it at the pick, Settings after `-32000` (ADR-0022).
-/// fidget never runs it (ADR-0018).
+/// Chat's Connect reads it at the pick, Settings after `-32000`.
+/// fidget never runs it.
 pub(crate) fn login_hint(name: &str) -> String {
     named_login(name)
         .map(str::to_string)
@@ -3418,8 +3401,8 @@ fn named_login(name: &str) -> Option<&'static str> {
     })
 }
 
-/// The MCP server to hand this session. Loopback first (ADR-0023). No
-/// `mcpCapabilities.http` on handshake means the stdio shim (ADR-0026).
+/// The MCP server to hand this session. Loopback first. No
+/// `mcpCapabilities.http` on handshake means the stdio shim.
 /// Branch on that bit only. Token in the Authorization header, never URL or argv.
 fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
     choose_mcp(handshake, crate::mcp_http::endpoint(), mcp_stdio())
@@ -3515,7 +3498,7 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 
 /// Read the source, the variable, else `saved` from Settings, and hold the
 /// Session until the row moves it or the process exits. Process-global because
-/// the session is one per app (ADR-0008) and a Retarget rebuilds `DirectorSettings`.
+/// the session is one per app and a Retarget rebuilds `DirectorSettings`.
 pub(crate) fn attach(target: Option<Target>, forward: Forward) -> Option<Arc<Session>> {
     let mut slot = attachment();
     if slot.forward.is_some() {
@@ -3539,7 +3522,7 @@ fn open(target: Option<Target>, forward: Arc<Forward>) -> Option<Arc<Session>> {
 }
 
 /// What a Completer source row now in force asks of the attachment.
-/// Alive is not an input. A set Harness is still the Completer (ADR-0008).
+/// Alive is not an input. A set Harness is still the Completer.
 /// `Drop` is only a row that names no Harness, never a session failing.
 #[derive(Debug, PartialEq, Eq)]
 enum Reattach {
@@ -3577,7 +3560,7 @@ pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
         Reattach::Open(target) => open(Some(target), forward),
     };
     // Swapped under the one lock `attached` reads. A gap here is a wake landing
-    // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
+    // on the HTTP Completer that nobody chose.
     slot.switch_gen = slot.switch_gen.wrapping_add(1);
     let switch_gen = slot.switch_gen;
     let old = std::mem::replace(&mut slot.session, opened.clone());
@@ -3781,7 +3764,6 @@ mod tests {
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
 
-    /// A tool-using Ask is not the Model API hop.
     #[test]
     fn an_unset_timeout_gives_a_harness_turn_minutes_not_the_http_hop() {
         crate::model::tests::with_env(None, None, None, || {
@@ -3795,7 +3777,6 @@ mod tests {
         });
     }
 
-    /// The Model API field is not this budget.
     #[test]
     fn a_director_timeout_does_not_set_the_harness_turn() {
         crate::model::tests::with_env(None, None, None, || {
@@ -3807,7 +3788,6 @@ mod tests {
         });
     }
 
-    /// The Development field and `FIDGET_HARNESS_TURN_TIMEOUT` still win.
     #[test]
     fn a_set_timeout_is_the_harness_turn_budget() {
         crate::model::tests::with_env(None, None, None, || {
@@ -4013,9 +3993,8 @@ mod tests {
     }
 
     /// codex-acp's MCP startup shape: a session-scoped link, unprompted.
-    /// `mcp-link` sends it right after `session/new`, and `mcp-link-turn`
-    /// inside the first turn, which is where a slow MCP server's lands.
-    /// `mcp-link-tool` scopes it to a tool call, which blocks that turn.
+    /// `mcp-link` sends it after `session/new`, `mcp-link-turn` in the first
+    /// turn where a slow server's lands, and `mcp-link-tool` in a tool call.
     fn mcp_link(session: &str, tool_call: Option<&str>) {
         let mut link = json!({"jsonrpc": "2.0", "id": 102, "method": "elicitation/create", "params": {
             "sessionId": session,
@@ -4488,8 +4467,6 @@ mod tests {
                             record(count, "spoken");
                             stop(&id, "end_turn");
                         }
-                        // Thinks before it answers, so each turn's thought
-                        // names the session it came from.
                         // Hands over a picture and a link and says no text.
                         "resource-only" => {
                             block_chunk(&session, "agent_thought_chunk", screenshot());
@@ -5002,7 +4979,7 @@ mod tests {
     }
 
     /// The same wake, arriving on the Director's own backoff rather than
-    /// because the user did something. ADR-0008 names the two kinds.
+    /// because the user did something.
     fn proactive(prompt: &str) -> WakeRequest {
         WakeRequest {
             reactive: false,
@@ -5491,8 +5468,7 @@ mod tests {
 
     /// A thought is forwarded to the Chat surface of the Instance whose session
     /// thought it, and written nowhere. The Action Log points at the Harness's
-    /// own session dump rather than copying it (GLOSSARY.md). Replies are not in
-    /// it either (ADR-0034).
+    /// own session dump instead, as it does for replies.
     #[test]
     fn a_thought_reaches_its_instances_surface_and_not_the_action_log() {
         let dir = std::env::temp_dir().join(format!("fidget-thought-{}", uuid::Uuid::new_v4()));
@@ -5728,7 +5704,7 @@ mod tests {
 
     /// A form no session scopes, as a sign-in link, is owed by the Instance
     /// whose turn is running. Between turns nobody owes it, so every Chat
-    /// draws it and whichever is open can answer (#1422).
+    /// draws it and whichever is open can answer.
     #[test]
     fn a_form_no_session_scopes_goes_to_the_turn_holder_or_to_every_chat() {
         let dir = std::env::temp_dir().join(format!("fidget-unscoped-{}", uuid::Uuid::new_v4()));
@@ -5823,7 +5799,7 @@ mod tests {
 
     /// Asserted through `reattach` rather than a live retarget, because the
     /// attachment is process-global. A set Harness is the Completer even if
-    /// silent (ADR-0008). Only Off reaches `Drop`.
+    /// silent. Only Off reaches `Drop`.
     #[test]
     fn only_the_source_row_moves_the_attachment_and_only_off_drops_it() {
         let hermes = launched("hermes");
@@ -5957,8 +5933,8 @@ mod tests {
     }
 
     /// The Working directory row shows this path instead of naming the data
-    /// folder in words (#913). A placeholder that stopped resolving would put
-    /// a path on screen that the attach does not use.
+    /// folder in words. A placeholder that stopped resolving would put a path
+    /// on screen that the attach does not use.
     #[test]
     fn working_directory_placeholder_is_the_path_a_blank_row_runs_in() {
         crate::model::tests::with_env(None, None, None, || {
@@ -6471,10 +6447,9 @@ mod tests {
         assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
     }
 
-    /// One child serves every Instance (ADR-0008), so the wire alone does not
-    /// say whose turn a thought is. Production change that would fail this: a
-    /// thought forwarded without the Instance whose session thought it, which
-    /// draws one character's thinking in another character's Chat window.
+    /// One child serves every Instance, so the wire alone does not
+    /// say whose turn a thought is. A thought forwarded without its Instance
+    /// would draw one character's thinking in another character's Chat.
     #[test]
     fn each_thought_names_the_instance_whose_session_thought_it() {
         let (fx, session) = Fixture::new("thinking");
@@ -6526,7 +6501,7 @@ mod tests {
         );
     }
 
-    /// An Instance Prompt change cannot retrofit the opening turn (ADR-0012),
+    /// An Instance Prompt change cannot retrofit the opening turn,
     /// so the next wake must be `session/new`, not a turn on the old id.
     #[test]
     fn dropping_a_conversation_opens_a_new_acp_session() {
@@ -6786,7 +6761,6 @@ mod tests {
         assert_eq!(fx.count("new"), 2);
     }
 
-    /// A new Session reading the file restores each identity's id.
     #[test]
     fn a_restart_loads_each_instance_session_from_the_file() {
         let (fx, session) = Fixture::new("load");
@@ -6849,7 +6823,6 @@ mod tests {
         );
     }
 
-    /// No child yet. Both calls return, and the second does not panic.
     #[test]
     fn shutdown_before_a_child_exists_is_repeatable() {
         let (_fx, session) = Fixture::new("happy");
@@ -6901,8 +6874,8 @@ mod tests {
         assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
     }
 
-    /// Without this the log said a prompt went out and never what came of it.
-    /// Taking what the Harness proposed would have needed the trace flag.
+    /// The log otherwise says a prompt went out and never what came of it.
+    /// Taking what the Harness proposed would need the trace flag.
     #[test]
     fn the_parsed_event_says_what_the_reply_became() {
         let spoke = |line: &str| {
@@ -7349,7 +7322,7 @@ mod tests {
         prompt_sessions(fx)
     }
 
-    /// #1430, #1434: the open conversation takes an applied model through
+    /// The open conversation takes an applied model through
     /// `session/set_config_option` and keeps its id. The same model sets nothing.
     #[test]
     fn an_applied_model_is_set_on_the_open_conversation() {
@@ -7642,10 +7615,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// A Harness that works on after its turn ends, as a cron fire does. Its
-    /// tool call reaches the Action Log, its thought reaches the Instance's
-    /// Thinking row, its agent text reaches Chat/bubble, and its ask reaches
-    /// Chat and is answered.
+    /// A Harness that works past its turn, like a cron fire. Its tool call
+    /// reaches the Action Log, its thought the Thinking row, its text Chat, and
+    /// its ask Chat, where it is answered.
     #[test]
     fn work_between_turns_reaches_the_user_and_its_ask_is_answered() {
         let (fx, session) = Fixture::new("between-turn");
@@ -7857,7 +7829,7 @@ mod tests {
     }
 
     /// An ask on B's session while A is mid-turn is owed by B. A's wake is
-    /// not held for it, and B's is until the user answers (#1395).
+    /// not held for it, and B's is until the user answers.
     #[test]
     fn an_ask_on_another_session_mid_turn_is_owed_by_that_sessions_instance() {
         let Crosstalk {
@@ -7889,7 +7861,7 @@ mod tests {
     }
 
     /// B's speech during A's turn is not A's reply. It reaches B's Chat as
-    /// work between turns (#1395).
+    /// work between turns.
     #[test]
     fn another_sessions_update_mid_turn_is_not_folded_into_the_turn() {
         // Bound so the Fixture's directory outlives the turn.
@@ -7912,7 +7884,7 @@ mod tests {
 
     /// Two Chats are open, A's and B's. While A's turn runs, B's session
     /// plans, asks and sends a form. A's Chat draws none of those rows, and
-    /// B's Chat draws none of A's plan (#1422).
+    /// B's Chat draws none of A's plan.
     #[test]
     fn a_second_chat_shows_none_of_the_first_chats_ask_form_or_plan_rows() {
         let (fx, session) = Fixture::new("crosstalk-rows");
@@ -8028,11 +8000,9 @@ mod tests {
         }
     }
 
-    /// The conversation a loaded session replays reaches that Instance's Chat
-    /// whole and in order, once: prompts, thinking, replies, tool calls, and
-    /// the plan. The respawn loads the same id and replays it again, and Chat
-    /// already holds it. Neither replay is a wake, a live plan, or live
-    /// thinking (#1393).
+    /// A loaded session's replay reaches its Instance's Chat whole and in
+    /// order, once: prompts, thinking, replies, tool calls, and the plan. A
+    /// respawn's replay is already held, not a wake, a live plan, or thinking.
     #[test]
     fn a_loaded_sessions_replay_is_restored_once_and_wakes_nobody() {
         let (fx, session) = Fixture::new("load-history");
@@ -8119,7 +8089,7 @@ mod tests {
     }
 
     /// A turn that hands over only a link and a picture is not an empty
-    /// turn: the link is the reply and the picture is the thought (ADR-0028).
+    /// turn: the link is the reply and the picture is the thought.
     #[test]
     fn a_resource_only_turn_reaches_the_reply_and_the_thinking_row() {
         let (fx, session) = Fixture::new("resource-only");
@@ -8139,7 +8109,6 @@ mod tests {
         assert_eq!(thoughts, ["[image image/png]\n\n"]);
     }
 
-    /// A replay made only of resources restores rows, not an empty log.
     #[test]
     fn a_resource_only_replay_is_restored_as_rows() {
         let (fx, session) = Fixture::new("load-resources");
@@ -8261,9 +8230,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// The budget guards a Harness that went quiet, not a user who is busy
-    /// (#1001). Three budgets pass before the click and the turn still ends
-    /// on the answer, the ask retired by that answer and not by a cancel.
+    /// The budget guards a Harness that went quiet, not a user who is busy.
+    /// Three budgets pass before the click and the turn still ends on the
+    /// answer, the ask retired by that answer and not by a cancel.
     #[test]
     fn a_slow_answer_to_an_ask_is_not_a_timeout() {
         let (fx, session) = Fixture::new("permission");
@@ -8345,9 +8314,8 @@ mod tests {
     }
 
     /// A row nobody answered is retired all the same when the turn is taken
-    /// from under it, with no option, because nothing was chosen. Or its
-    /// buttons outlive the turn. Reached through a newer wake now that a
-    /// wait on the user is not a timeout (#1001).
+    /// from under it, with no option. Reached through a newer wake now that a
+    /// wait on the user is not a timeout.
     #[test]
     fn a_newer_wake_retires_the_ask_nobody_answered() {
         let (fx, session) = Fixture::new("permission");
@@ -8416,10 +8384,9 @@ mod tests {
         }
     }
 
-    /// #1037. `Session::supersede` refuses to give a reactive turn up for an
-    /// ambient tick, so the Harness answers the chat turn. The slot must not
-    /// have thrown its claim on that answer away in the meantime, or the
-    /// reply the user is waiting on reaches nobody.
+    /// `Session::supersede` refuses to give a reactive turn up for an ambient
+    /// tick, so the Harness answers the chat turn. The slot must keep its claim
+    /// on that answer, or the reply the user waits on reaches nobody.
     #[test]
     fn an_ambient_tick_does_not_take_a_chat_turn_the_harness_keeps() {
         let (fx, session) = Fixture::new("working");
@@ -8446,9 +8413,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #1038, ADR-0016. The character has a question out to the user, and every
-    /// wake is dropped until the user answers it. Newest-wins is about the world
-    /// moving past a moment; the user mid-answer is not that.
+    /// The character has a question out to the user, and every wake is dropped
+    /// until the user answers it. Newest-wins is about the world moving past a
+    /// moment; the user mid-answer is not that.
     #[test]
     fn no_wake_takes_a_turn_blocked_on_the_users_answer() {
         use Happened::*;
@@ -8501,7 +8468,7 @@ mod tests {
     }
 
     /// A Poke is a touch of the sprite, so a turn that is only thinking still
-    /// gives way to it. Opening Chat does not. ADR-0016 stands for the touch.
+    /// gives way to it. Opening Chat does not. Newest-wins stands for a touch.
     #[test]
     fn a_poke_still_takes_a_chat_turn_that_is_only_thinking() {
         let (fx, session) = Fixture::new("slow");
@@ -8556,7 +8523,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// The guard with nothing asked: silence on the wire is a stall (#1001).
+    /// The guard with nothing asked: silence on the wire is a stall.
     #[test]
     fn a_slow_turn_is_cancelled_and_the_next_one_works() {
         let (fx, session) = Fixture::new("slow");
@@ -8676,7 +8643,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// The Chat button's path (#1000): `authenticate`, then a fresh
+    /// The Chat button's path: `authenticate`, then a fresh
     /// `session/new`. Ok from `authenticate` is not signed-in, so the landing
     /// clears only when that session opens, and stays up when it is refused.
     #[test]
@@ -8905,7 +8872,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// The attach path's translation, on the turn path (#991). The session
+    /// The attach path's translation, on the turn path. The session
     /// stays open: the token died, not the child, and the next answer is the
     /// proof the user signed in somewhere else.
     #[test]
@@ -9044,7 +9011,7 @@ mod tests {
 
     /// `cancelled` is a stop reason, not evidence the load failed. Reopening
     /// would re-send a prompt carrying the Instance Prompt a save just
-    /// replaced (ADR-0012). A cancel says nothing about the id.
+    /// replaced. A cancel says nothing about the id.
     #[test]
     fn a_cancelled_turn_is_not_reopened_as_a_failed_load() {
         let (fx, session) = Fixture::new("load-slow");
@@ -9113,7 +9080,7 @@ mod tests {
     }
 
     /// Chat's first ReloadChat races preflight. The forwarded settle is how
-    /// a missing launcher reaches an already-open surface (#726).
+    /// a missing launcher reaches an already-open surface.
     #[test]
     fn spawn_preflight_forwards_when_the_launcher_is_missing() {
         const NOPE: &str = "/nonexistent/fidget-no-such-harness";
@@ -9202,8 +9169,8 @@ mod tests {
     }
 
     /// A Chat surface asks for its opening once, before the first wake has
-    /// opened a session, and draws `no session yet`. The session that wake
-    /// opens has to reach the open window, or the header keeps saying so.
+    /// opened a session, and draws `no session yet`. The session wake opens
+    /// has to reach the open window, or the header keeps saying so.
     #[test]
     fn a_session_the_first_wake_opens_reaches_an_open_chat_surface() {
         let (fx, session) = Fixture::new("happy");
@@ -9221,7 +9188,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&fx.dir);
     }
 
-    /// A re-pick never restarts a Harness that is answering.
     #[test]
     fn a_repick_of_a_live_harness_stands() {
         let (fx, session) = Fixture::new("plain");
@@ -9467,8 +9433,6 @@ mod tests {
         session.shutdown();
     }
 
-    /// Initializing gates chat during ACP handshake. Set true at spawn_preflight,
-    /// false on success or failure.
     #[test]
     fn initializing_gates_chat_until_spawn_completes() {
         const NOPE: &str = "/nonexistent/fidget-no-such-harness";
@@ -9487,24 +9451,20 @@ mod tests {
             }) as Forward),
         ));
 
-        // Before spawn_preflight, initializing is false
         assert!(!session.inspect().initializing, "initializing starts false");
 
         session.spawn_preflight();
 
-        // Immediately after spawn_preflight, initializing is true
         assert!(
             session.inspect().initializing,
             "initializing is true during spawn"
         );
 
-        // Wait for attach to complete
         match rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Forwarded::AttachSettled) => {}
             other => panic!("expected AttachSettled, got {other:?}"),
         }
 
-        // After spawn fails, initializing is false
         let inspect = session.inspect();
         assert!(
             !inspect.initializing,
@@ -9582,9 +9542,8 @@ mod tests {
     }
 
     /// Documents the missing-binary contract: `missing` = `argv[0]` for every
-    /// preset. npx adapters (claude, codex, pi) report `npx` missing, not the
-    /// vendor CLI. First-party CLIs (copilot, cursor-agent, goose, grok,
-    /// hermes, opencode) report their own name.
+    /// preset: npx adapters report `npx`, first-party CLIs report their name
+    /// (copilot, cursor-agent, goose, grok, hermes, opencode).
     #[test]
     fn each_preset_reports_its_argv_0_as_missing() {
         let cases = [
@@ -9643,8 +9602,8 @@ mod tests {
         );
     }
 
-    /// ADR-0016's newest-wins, at the Harness seam. The Poke that arrives
-    /// under a turn takes it rather than being refused.
+    /// Newest-wins, at the Harness seam. The Poke that arrives under a turn
+    /// takes it rather than being refused.
     #[test]
     fn a_newer_wake_cancels_the_turn_in_flight_and_takes_it() {
         let (fx, session) = Fixture::new("slow");
@@ -9681,9 +9640,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// A cancel the Harness drops is not a death (#1529): the newer wake is
-    /// refused and the child kept. Silence after the cancel is one, retired
-    /// without a backoff charge, and the next wake reloads the conversation.
+    /// A cancel the Harness drops is not a death: the newer wake is refused and
+    /// the child kept. Silence after the cancel is one, retired without a
+    /// backoff charge, and the next wake reloads the conversation.
     #[test]
     fn a_silent_cancelled_turn_retires_the_child_uncharged() {
         let (fx, session) = Fixture::new("load-deaf");
@@ -9710,7 +9669,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// Frames after a dropped cancel are work, so the child is kept (#1529).
+    /// Frames after a dropped cancel are work, so the child is kept.
     #[test]
     fn a_cancelled_turn_that_keeps_talking_keeps_the_child() {
         let (fx, session) = Fixture::new("deaf-busy");
@@ -9884,7 +9843,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// One child serves every Instance (ADR-0008), so character B's wake takes
+    /// One child serves every Instance, so character B's wake takes
     /// character A's turn without A's own slot ever having been superseded.
     /// Nothing raised A's abandon flag, so A took a wake that read as broken.
     #[test]
@@ -9930,7 +9889,7 @@ mod tests {
     }
 
     /// Saving an Instance Prompt cancels the reply in flight as well as
-    /// tearing the conversation down (ADR-0012). Dropping the conversation
+    /// tearing the conversation down. Dropping the conversation
     /// alone leaves the old ACP session generating on a replaced transcript.
     #[test]
     fn saving_an_instance_prompt_cancels_that_instances_turn() {
@@ -9961,7 +9920,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// One child serves every Instance (ADR-0008), so a save that cancelled
+    /// One child serves every Instance, so a save that cancelled
     /// whatever held the turn would stop character B mid-reply because character A
     /// edited a prompt B has nothing to do with.
     #[test]
@@ -10206,9 +10165,9 @@ mod tests {
         assert_eq!(config_lines(&fx), vec!["config=reasoning=high".to_string()]);
     }
 
-    /// A Harness that lists no option is sent no set, and none is reported. Model and
-    /// effort are both skipped, as a model with no option always was. The conversation
-    /// keeps its id and the Harness keeps its defaults.
+    /// A Harness that lists no option is sent no set, and none is reported.
+    /// Model and effort are skipped. The conversation keeps its id and the
+    /// Harness keeps its defaults.
     #[test]
     fn a_harness_that_lists_no_option_is_sent_no_set_and_reports_none() {
         use crate::acp_wire::{Field::*, Outcome::*};
@@ -10566,7 +10525,6 @@ mod tests {
         });
     }
 
-    /// The probe on a Harness that lists no option does not pass, and says why.
     #[test]
     fn the_probe_fails_when_the_harness_lists_no_option_to_set() {
         crate::model::tests::with_env(None, None, None, || {
@@ -10582,7 +10540,6 @@ mod tests {
         });
     }
 
-    /// A set the answer does not confirm is a probe that proved nothing.
     #[test]
     fn the_probe_fails_when_the_answer_does_not_show_the_new_value() {
         crate::model::tests::with_env(None, None, None, || {
@@ -10728,7 +10685,7 @@ mod tests {
 
     /// The probe hands a Harness that advertised `mcpCapabilities.http` the
     /// same loopback URL the app would. Without a listener of its own,
-    /// `choose_mcp` fell through to a stdio shim with nothing to dial (#984).
+    /// `choose_mcp` fell through to a stdio shim with nothing to dial.
     #[test]
     fn the_probe_serves_the_loopback_endpoint_before_it_attaches() {
         let (fx, session) = Fixture::new("happy");
@@ -11035,9 +10992,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// ADR-0023's branch. The loopback server for a Harness whose ACP
+    /// The MCP transport branch: the loopback server for a Harness whose ACP
     /// `initialize` advertised `mcpCapabilities.http`, and never for one that
-    /// did not. A future Hermes with that bit set would get the HTTP server directly.
+    /// did not. A future Hermes with that bit would get the HTTP server.
     #[test]
     fn the_loopback_server_goes_only_to_a_harness_that_advertised_http_mcp() {
         let (calls, _held) = mpsc::channel();
@@ -11124,7 +11081,6 @@ mod tests {
         assert!(!takes_cursor_config(&launch(Some("hermes")).unwrap()));
     }
 
-    /// Probe a missing launcher.
     #[test]
     fn probe_missing_launcher() {
         let launch = Launch {
@@ -11137,7 +11093,6 @@ mod tests {
         }
     }
 
-    /// Probe a launcher that exits nonzero.
     #[test]
     fn probe_launcher_exits_nonzero() {
         let launch = Launch {
@@ -11153,7 +11108,6 @@ mod tests {
         }
     }
 
-    /// Probe a healthy launcher.
     #[test]
     fn probe_healthy_launcher() {
         let launch = Launch {
@@ -11166,7 +11120,6 @@ mod tests {
         }
     }
 
-    /// npx presets cite npx itself as their probe command.
     #[test]
     fn npx_presets_probe_npx() {
         for preset in ["claude", "codex", "pi"] {
@@ -11176,7 +11129,6 @@ mod tests {
         }
     }
 
-    /// First-party CLIs cite their own binary.
     #[test]
     fn first_party_clis_probe_themselves() {
         for preset in [
@@ -11196,14 +11148,12 @@ mod tests {
         }
     }
 
-    /// antigravity probes with --help instead of --version.
     #[test]
     fn antigravity_probes_with_help() {
         let launch = launch(Some("antigravity")).unwrap();
         assert_eq!(launch.version_flag(), "--help");
     }
 
-    /// Probe timeout produces an unhealthy outcome.
     #[test]
     fn probe_timeout() {
         let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
@@ -11240,7 +11190,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Probe with no output produces an unhealthy outcome.
     #[test]
     fn probe_no_output() {
         let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));

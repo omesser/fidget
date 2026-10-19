@@ -1,8 +1,8 @@
 //! Readonly MCP resources: Memory, the Action Log, and window names.
 //!
-//! One consent covers every name the fidget reports (ADR-0032). The owner and
-//! the title reach `WindowRect` when it is usable (sensing layer), and this
-//! resource reads them again over its own path, under the same consent.
+//! One consent covers every name the fidget reports. The owner and title reach
+//! `WindowRect` when usable, and this resource reads them again over its own
+//! path under the same consent.
 
 use std::fs;
 use std::sync::Mutex;
@@ -13,15 +13,13 @@ pub const WINDOWS_URI: &str = "fidget://windows";
 pub const MEMORY_URI: &str = "fidget://memory";
 pub const ACTION_LOG_URI: &str = "fidget://action-log";
 
-/// MCP request bodies stop at 1 MiB (`mcp_http::BODY_LIMIT`). The current
-/// Action Log file can be 2 MiB before rotation, so a full read would be
-/// larger than a client is allowed to POST and larger than the stdio shim
-/// will relay. 512 KiB of complete JSONL lines is half that budget, leaves
-/// room for JSON-RPC wrapping, and never splits a line.
+/// MCP request bodies stop at 1 MiB (`mcp_http::BODY_LIMIT`), and the Action
+/// Log can reach 2 MiB before rotation. 512 KiB of complete JSONL lines is half
+/// that budget, leaves room for JSON-RPC wrapping, and never splits a line.
 pub const ACTION_LOG_TAIL_BYTES: usize = 512 * 1024;
 
-/// One visible window as the titles resource sees it. Sibling of `WindowRect`:
-/// owner and title, no bounds, no id.
+/// One visible window as the titles resource sees it: owner and title, no
+/// bounds, no id.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WindowTitle {
     pub owner: String,

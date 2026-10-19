@@ -1,6 +1,6 @@
 //! The ACP wire. The official SDK and its executor, on one thread.
-//! No SDK type leaves the file. Reversing the crate choice (ADR-0022)
-//! rewrites this file only. The frame loop never sees it (ADR-0004).
+//! No SDK type leaves the file. Reversing the crate choice rewrites this
+//! file only. The frame loop never sees it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -39,8 +39,8 @@ use tokio::sync::mpsc;
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
 
 /// How long a cancelled turn may go without one frame from the child before
-/// the child counts as hung and is retired (#1529). The default turn budget,
-/// again: no frame for that long, with nobody left to wait on, is not work.
+/// the child counts as hung and is retired. The default turn budget: no frame
+/// for that long, with nobody left to wait on, is not work.
 #[cfg(not(test))]
 const CANCELLED_SILENCE: Duration = Duration::from_secs(120);
 /// Past the superseding wake's handover, as in production.
@@ -55,9 +55,9 @@ const SIGN_IN_WAIT: Duration = Duration::from_secs(5 * 60);
 /// must not hold the next open for the whole turn budget.
 const CLOSE_WAIT: Duration = Duration::from_secs(2);
 
-/// The MCP server `session/new` is told about.
-/// The loopback server is the shipped path (ADR-0023). Stdio is the fallback
-/// when the Harness advertises no `mcpCapabilities.http`.
+/// The MCP server `session/new` is told about. The loopback server is the
+/// shipped path; stdio is the fallback when the Harness advertises no
+/// `mcpCapabilities.http`.
 #[derive(Clone)]
 pub enum McpChoice {
     /// The loopback server the app serves, and the `Authorization` value that
@@ -177,11 +177,9 @@ pub(crate) fn auth_offer(method: &AuthMethod) -> AuthOffer {
     }
 }
 
-/// Agent methods that need a key or a cloud project this app never sends, so
-/// a button cannot collect them. Codex reads `api-key` from `authenticate`
-/// `_meta` or `CODEX_API_KEY` / `OPENAI_API_KEY`. Antigravity answers Ok to a
-/// keyless `gemini-api-key` and stores it as the method, and refuses
-/// `agent-platform` without `GOOGLE_CLOUD_PROJECT` or a key.
+/// Agent key methods this app never sends, so a button cannot collect them.
+/// Codex reads `api-key` from `_meta` or env; Antigravity accepts a keyless
+/// `gemini-api-key` and refuses `agent-platform` without a cloud project.
 const SHELVED: [&str; 3] = ["api-key", "gemini-api-key", "agent-platform"];
 
 /// Whether an agent method id can be a button. The shelved key ids cannot.
@@ -224,9 +222,8 @@ pub(crate) fn sign_in_button(login_active: bool, offers: &[AuthOffer]) -> Vec<Si
 pub struct PermissionAsk {
     /// The request id, as text, handed back with the answer.
     pub request: String,
-    /// The tool call's title, absent when it had none. Not a placeholder.
-    /// The surface has to tell an ask that described itself badly from one
-    /// this file emptied out (#678).
+    /// The tool call's title, absent when it had none. Not a placeholder, so
+    /// the surface can tell a badly described ask from one this file emptied.
     pub title: Option<String>,
     pub kind: Option<String>,
     /// The tool call's `content`, as the text of it. Where a question from an
@@ -263,9 +260,8 @@ pub struct ElicitationForm {
     /// user opened it; the Harness learns the rest on its own side.
     pub url: Option<String>,
     /// A link Fidget did not ask for, such as an MCP server's sign-in after
-    /// `session/new`. It waits in Chat rather than opening it. A link that
-    /// arrives during Fidget's own `authenticate`, or that a tool call blocks
-    /// on, opens Chat instead.
+    /// `session/new`. It waits in Chat rather than opening; a link during
+    /// Fidget's own `authenticate`, or one a tool call blocks on, opens.
     #[serde(skip)]
     pub waits: bool,
 }
@@ -311,10 +307,9 @@ pub enum Event {
         /// Absent when this update did not carry content. Empty replaces it.
         content: Option<Vec<ToolPiece>>,
     },
-    /// The agent's steps and which one is current. ACP has the agent send a
-    /// complete list and the client replace the plan entirely, so this is never
-    /// a delta; an empty list is the turn's plan going away. `session` is the
-    /// one that planned, for the same reason as `Thought`'s.
+    /// The agent's steps and which one is current. ACP sends a complete list
+    /// and the client replaces the plan entirely, so this is never a delta; an
+    /// empty list is the turn's plan going away; `session` is who planned.
     Plan {
         session: String,
         steps: Vec<PlanStep>,
@@ -334,9 +329,9 @@ pub enum Event {
         session: Option<String>,
         form: ElicitationForm,
     },
-    /// The whole thinking so far, for the Chat surface's Thinking row
-    /// (ADR-0034). Each one replaces the last; the Action Log gets none.
-    /// `session` is the turn's, because one child serves every Instance.
+    /// The whole thinking so far, for the Chat surface's Thinking row. Each
+    /// one replaces the last; the Action Log gets none. `session` is the
+    /// turn's, because one child serves every Instance.
     Thought { session: String, text: String },
     /// Between-turn agent text accumulated in `Inbound` and flushed
     /// when a session transitions (Ask, Elicit, Prompt, or Close).
@@ -520,10 +515,9 @@ pub enum TurnError {
     Failed(String),
 }
 
-/// `-32000` is ACP's word for it. claude-code-acp says a token that died
+/// `-32000` is ACP's word for it. claude-code-acp reports a token that died
 /// mid-session as `-32603` with `errorKind: "authentication_failed"` in
-/// `data`, the field it documents for clients to dispatch on instead of the
-/// message text (#991).
+/// `data`, the field it tells clients to dispatch on instead of the text.
 fn auth_refused(error: &Error) -> bool {
     error.code == ErrorCode::AuthRequired
         || error
@@ -617,10 +611,9 @@ enum Msg {
     Shutdown,
 }
 
-/// What the wire thread tells `prompt` about the turn it is running. The
-/// budget is kept on `prompt`'s side; only the turn knows when the Harness
-/// has stopped to ask the user something, and the user is not on the clock
-/// (#1001).
+/// What the wire thread tells `prompt` about the turn it is running. Only the
+/// turn knows when the Harness has stopped to ask the user something, and the
+/// user is not on the clock, so `prompt` holds the budget.
 enum Progress {
     /// A permission ask or elicitation form is open. The budget stops.
     Asked,
@@ -765,12 +758,8 @@ impl Wire {
     }
 
     /// One `session/prompt`. The concatenated `agent_message_chunk`s once the
-    /// turn ends in `end_turn`. `timeout` guards a Harness that went quiet,
-    /// not the user: it stops while an ask or form waits on them and starts
-    /// over whole once the last one is settled (#1001). Past it,
-    /// `session/cancel` goes out and the reply is waited on for
-    /// `CANCEL_GRACE` so the wire is quiet again. `said` hears the answer so
-    /// far each time a chunk of it lands.
+    /// turn ends in `end_turn`. `timeout` guards a Harness that went quiet, not
+    /// the user: it stops while an ask or form waits and restarts when settled.
     pub fn prompt(
         &self,
         session_id: &str,
@@ -1019,13 +1008,9 @@ fn run(
                 },
             )
             .await;
-        // `ready` still held here means `initialize` never completed. The
-        // SDK can end the connection from its transport side first, a reply
-        // written into a child that already exited, and drop the closure
-        // above before it labels the error. The label belongs here too, or
-        // the same death reads as two different failures (#907). A child
-        // that is gone says how it went, which is the one clue to a launcher
-        // that died at startup, such as `node` failing to load.
+        // `ready` still held here means `initialize` never completed. The SDK
+        // can end the connection from its transport side first and drop the
+        // closure above before it labels the error, so the label belongs here.
         if let Some(ready) = ready.take() {
             let refused = refused.or(outcome.err().map(error_text));
             let status = exit_status(&mut child);
@@ -1186,8 +1171,8 @@ impl<R: futures_io::AsyncRead + Unpin> futures_io::AsyncRead for Tee<R> {
 }
 
 /// Whether `pgid` is a group we may SIGKILL. A real group, and not our own.
-/// Isolation is supposed to move the child out first. If that fails, the
-/// child is still in our group, and SIGKILLing it there kills us (#457).
+/// Isolation is supposed to move the child out first; if that fails, the
+/// child is still in our group, and SIGKILLing it there kills us.
 #[cfg(unix)]
 pub(crate) fn killable_group(pgid: libc::pid_t) -> bool {
     pgid > 0 && pgid != unsafe { libc::getpgrp() }
@@ -1241,7 +1226,7 @@ struct Inbound {
     said: Answer,
     thought: String,
     /// The `messageId` of the message arriving. A different one is the next
-    /// fire, and ends this wake (#1435).
+    /// fire, and ends this wake.
     message: Option<MessageId>,
 }
 
@@ -1387,9 +1372,8 @@ async fn serve(
                     (id, applied, foreign_model)
                 });
                 // ACP replays a loaded conversation as updates before it
-                // answers, even a load that then fails and falls back to
-                // `session/new`. Every update queued for either id is history,
-                // never work between turns. Only a load that answered keeps it.
+                // answers, even a load that then falls back to `session/new`.
+                // Queued updates are history; only an answered load keeps it.
                 let loaded = matches!(&opened, Ok((id, _, _)) if loading.as_ref() == Some(id));
                 let replayed = |id: &SessionId| {
                     loading.as_ref() == Some(id)
@@ -1430,9 +1414,8 @@ async fn serve(
                 reply,
             }) => {
                 let id = SessionId::new(session_id);
-                // Drain any pending updates for this session before flushing,
-                // so between-turn speech that has been emitted but not yet
-                // processed doesn't get dropped.
+                // Drain pending updates for this session before flushing, so
+                // between-turn speech is not dropped.
                 while let Ok(message) = incoming.try_recv() {
                     let signing_in = auth.is_some();
                     between_turns(
@@ -1478,9 +1461,8 @@ async fn serve(
             Step::Command(Msg::Close { session_id, reply }) => {
                 let id = SessionId::new(session_id);
                 options.remove(&id);
-                // Drain any pending updates for this session before flushing,
-                // so between-turn speech that has been emitted but not yet
-                // processed doesn't get dropped.
+                // Drain pending updates for this session before flushing, so
+                // between-turn speech is not dropped.
                 while let Ok(message) = incoming.try_recv() {
                     let signing_in = auth.is_some();
                     between_turns(
@@ -1711,12 +1693,10 @@ impl Restore {
 /// from it and the restore sink (`Restore`) collects `Replayed` entries. They
 /// differ in what they do with an update, not in how it is read.
 enum Heard<'a> {
-    /// A chunk of an agent message, and the `messageId` it carries.
     Said {
         message: Option<&'a MessageId>,
         block: &'a ContentBlock,
     },
-    /// A chunk of the agent's reasoning.
     Thought(&'a ContentBlock),
     /// A chunk of a prompt the session was sent. A load replays these.
     Prompt(&'a ContentBlock),
@@ -1748,7 +1728,6 @@ struct Tool<'a> {
 }
 
 impl Tool<'_> {
-    /// A new row from these fields.
     fn row(self) -> Replayed {
         Replayed::ToolCall {
             title: self.title.unwrap_or_default().to_string(),
@@ -2103,10 +2082,9 @@ pub(crate) fn model_outside_available(options: &[SessionConfigOption]) -> Option
     (!listed).then(|| current.to_string())
 }
 
-/// Set the model, then the effort. A model change can replace the effort options,
-/// so the effort goes out against the options the model call returned. A value with
-/// no option is not sent. A value counts as set only when the answer lists the
-/// option at that value.
+/// Set the model, then the effort against the options the model call
+/// returned, since a model change can replace them. A value with no option is
+/// not sent; it counts as set only when the answer lists it at that value.
 async fn apply_completer(
     cx: &ConnectionTo<Agent>,
     session_id: &SessionId,
@@ -2190,7 +2168,6 @@ async fn set_config(
     }
 }
 
-/// First option whose category is `model`.
 fn model_config_id(options: &[SessionConfigOption]) -> Option<SessionConfigId> {
     options
         .iter()
@@ -2242,10 +2219,9 @@ async fn turn(
     let mut open_message = None;
     let mut asks: Vec<PendingAsk> = Vec::new();
     let mut forms: Vec<PendingElicit> = Vec::new();
-    // Reported on the transition only, and at the top of the loop rather than
-    // in the arms that push or settle: several asks can be open at once, and
-    // a Cancel that drains them all has to restart the budget too, or a
-    // Harness that ignores the cancel leaves `prompt` waiting for nothing.
+    // Reported on the transition only, and at the top of the loop: several asks
+    // can be open at once, and a Cancel that drains them all has to restart the
+    // budget too, or a Harness that ignores it leaves `prompt` waiting.
     let mut blocked = false;
     // Set by our cancel and pushed back by every frame after it.
     let mut quiet_until: Option<Instant> = None;
@@ -2331,9 +2307,9 @@ async fn turn(
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
                     quiet_until = Some(Instant::now() + CANCELLED_SILENCE);
                 }
-                // Shutdown is not Cancel (#634). The turn leaves with the wire
-                // rather than looping for a `cancelled` stop the Harness may
-                // never send. The reply is lost. The sender kills the child next.
+                // Shutdown is not Cancel. The turn leaves with the wire rather
+                // than looping for a `cancelled` stop the Harness may never
+                // send. The reply is lost; the sender kills the child next.
                 Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
                     end_turn(session, &mut asks, &mut forms, &mut thought, on_event);
@@ -2399,8 +2375,8 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
     for piece in fields.content.iter().flatten() {
         match piece {
             ToolCallContent::Content(block) => {
-                // Not drawn here yet unless it is text. A replayed tool
-                // row marks the other blocks in `tool_content`.
+                // Only text is drawn here. A replayed tool row marks the
+                // other blocks in `tool_content`.
                 if let ContentBlock::Text(text) = &block.content {
                     content.push(text.text.clone());
                 }
@@ -2414,7 +2390,7 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
                     locations.push(path);
                 }
             }
-            // Not drawn on the consent row yet. A replayed tool row
+            // Only text is drawn on the consent row. A replayed tool row
             // names a terminal, and marks any other variant, in
             // `tool_content`.
             _ => {}
@@ -2519,7 +2495,6 @@ fn elicitation_response(
     }
 }
 
-/// The live sink: one update heard, into the turn's text or an `Event`.
 /// A different `messageId` is the next message. A missing id stays with the
 /// message already open, as a harness that omits it does.
 fn message_changed(open: Option<&MessageId>, next: Option<&MessageId>) -> bool {
@@ -2599,8 +2574,8 @@ fn show(
             size,
         }),
         // Never into `said`. That is the Director's reply, whose first line
-        // has to parse as a Behavior name and whose rest the character says out
-        // loud. Reasoning is neither, so it leaves by its own door (ADR-0034).
+        // has to parse as a Behavior name and whose rest the character says
+        // out loud. Reasoning is neither, so it leaves by its own door.
         Heard::Thought(block) => {
             let text = chunk_text(block, thought);
             think(thought, &text);
@@ -2610,11 +2585,9 @@ fn show(
     }
 }
 
-/// The thought so far, once it holds something other than whitespace.
-///
-/// Every line stays, blank ones too: the Thinking row draws the whole thought,
-/// and a paragraph break is something the harness wrote. `None` while an
-/// adapter has streamed only empty thinking blocks.
+/// The thought so far, once it holds something other than whitespace. Every
+/// line stays, blank ones too, because the Thinking row draws the whole
+/// thought and a paragraph break is something the harness wrote.
 pub(crate) fn thought_to_show(thought: &str) -> Option<&str> {
     if thought.trim().is_empty() {
         None
@@ -3029,8 +3002,8 @@ mod tests {
     }
 
     /// The shape `session/new` actually puts on the wire. The token rides in
-    /// a header and nowhere else (ADR-0023). Not in the URL, which a Harness
-    /// may keep in a session file, and not in an argv, which is in a process list.
+    /// a header and nowhere else. Not in the URL, which a Harness may keep in
+    /// a session file, and not in an argv, which is in a process list.
     #[test]
     fn an_http_choice_carries_the_token_in_a_header_and_not_in_the_url() {
         let server = mcp_server(&McpChoice::Http {
@@ -3052,8 +3025,8 @@ mod tests {
         assert!(!wire["url"].as_str().unwrap().contains("deadbeef"));
     }
 
-    /// The fallback keeps the shape it always had. Every Agent must take stdio,
-    /// and the untagged variant is how the protocol spells it.
+    /// Every Agent must take stdio, and the untagged variant is how the
+    /// protocol spells it.
     #[test]
     fn a_stdio_choice_is_still_a_bare_command_and_carries_its_args() {
         let sidecar = mcp_server(&McpChoice::Stdio(McpLaunch {
@@ -3127,7 +3100,7 @@ mod tests {
 
     /// A thought reaches the Shell and never the answer. `said` is the
     /// Director's reply, whose first line has to parse as a Behavior name
-    /// and whose rest is spoken out loud. A thought is neither (ADR-0034).
+    /// and whose rest is spoken out loud. A thought is neither.
     #[test]
     fn a_thought_is_an_event_and_never_part_of_the_answer() {
         let (said, events) = drive(vec![
@@ -3157,8 +3130,8 @@ mod tests {
         ContentBlock::Image(ImageContent::new("AAAA", "image/png"))
     }
 
-    /// A turn that only hands over a resource says so. Dropped, it came back
-    /// empty and the turn read as silence (ADR-0028).
+    /// A turn that only hands over a resource says so; dropping it makes the
+    /// turn read as silence.
     #[test]
     fn a_resource_only_turn_is_its_mark_not_nothing() {
         let (said, events) = drive(vec![
@@ -3172,7 +3145,6 @@ mod tests {
         assert_eq!(thoughts(&events), ["[image image/png]\n\n"]);
     }
 
-    /// A mark is a paragraph between the text before and after it.
     #[test]
     fn a_mark_between_two_chunks_of_text_stays_between_them() {
         let (said, _) = drive(vec![
@@ -3293,8 +3265,8 @@ mod tests {
         );
     }
 
-    /// The wire sends the whole thought (#994), so a sixth line and a blank in
-    /// the middle both survive.
+    /// The wire sends the whole thought, so a sixth line and a blank in the
+    /// middle both survive.
     #[test]
     fn a_thought_keeps_every_line_including_a_blank() {
         let (_, events) = drive(vec![
@@ -3448,7 +3420,6 @@ mod tests {
         assert_eq!(steps[1].priority, "medium");
     }
 
-    /// One `session/update` as the wire spells it.
     fn wire(update: serde_json::Value) -> SessionUpdate {
         serde_json::from_value(update).unwrap()
     }
@@ -3469,7 +3440,6 @@ mod tests {
         }))
     }
 
-    /// What a load replay of `updates` hands Chat.
     fn restored_rows(updates: &[SessionUpdate]) -> Vec<Replayed> {
         let mut replay = Restore::default();
         for update in updates {
@@ -3995,7 +3965,7 @@ mod tests {
     }
 
     /// Two Harness fires in a row are two wakes. The agent's `messageId`
-    /// is what says the second one began (#1435).
+    /// is what says the second one began.
     #[test]
     fn a_new_message_id_between_turns_starts_a_new_wake() {
         assert_eq!(
@@ -4012,7 +3982,7 @@ mod tests {
     }
 
     /// A Harness that sends no `messageId` keeps one wake until something
-    /// else flushes it, as it did before.
+    /// else flushes it.
     #[test]
     fn a_harness_without_message_ids_keeps_one_wake() {
         assert_eq!(
@@ -4031,7 +4001,6 @@ mod tests {
         );
     }
 
-    /// Another session's id change is not this one's.
     #[test]
     fn a_message_id_is_a_boundary_within_its_own_session_only() {
         let both = wakes(vec![
@@ -4114,7 +4083,7 @@ mod tests {
     }
 
     /// A missing title is missing, not `(untitled)`. The surface has to tell
-    /// an ask that said nothing from one this file emptied out (#678).
+    /// an ask that said nothing from one this file emptied out.
     #[test]
     fn a_titleless_ask_forwards_no_title_rather_than_a_placeholder() {
         let ask = asked_for(serde_json::json!({"toolCallId": "t1"}));
@@ -4226,9 +4195,8 @@ mod tests {
         elicitation_form(&request, "44".to_string())
     }
 
-    /// Production change that would fail this: drawing the Harness's raw
-    /// string. `open_link` opens the parsed URL, so the row showed one host
-    /// and Open went to another.
+    /// Drawing the Harness's raw string would show one host while Open went
+    /// to another, because `open_link` opens the parsed URL.
     #[test]
     fn a_link_is_drawn_as_the_url_open_opens() {
         let split = linked("https://accounts.example.com\n.evil.test/login");
@@ -4398,14 +4366,13 @@ mod windows_job {
     }
 
     fn find_primary_thread(pid: u32) -> Result<u32, String> {
+        // Assumes the first thread enumerated for the PID is the primary.
+        // A `CREATE_SUSPENDED` spawn keeps it suspended, so it is first.
+        // #1671 removes the assumption.
         use windows_sys::Win32::Foundation::CloseHandle;
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
         };
-
-        // Assumes the first thread enumerated for the PID is the primary
-        // thread. For a `CREATE_SUSPENDED` spawn the primary is still
-        // suspended, so it is the first found.
 
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);

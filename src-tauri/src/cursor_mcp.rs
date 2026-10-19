@@ -1,30 +1,19 @@
-//! The one `fidget` server in `<cwd>/.cursor/mcp.json`, and the approval
-//! that makes `cursor-agent` load it.
+//! The one `fidget` server in `<cwd>/.cursor/mcp.json`, and the approval that
+//! makes `cursor-agent` load it.
 //!
-//! `cursor-agent acp` ignores the `mcpServers` handed over on `session/new`
-//! and loads servers only from an approved `mcp.json` (#1020). Reaching it
-//! takes two mechanisms because Cursor splits the job in two, and neither
-//! half can do the other's:
-//!
-//! - `mcp.json` is the only place a server can be *defined*. `cursor-agent
-//!   mcp` offers `login`, `list`, `list-tools`, `enable` and `disable`, and
-//!   no `add`.
-//! - `cursor-agent mcp enable` is the only way to *approve* one. Its own help
-//!   calls it "Add an MCP server to the local approved list" for a server
-//!   already "configured in .cursor/mcp.json or ~/.cursor/mcp.json".
-//!
-//! So attach writes the file and then runs the CLI. That split is Cursor's,
-//! not ours.
+//! `cursor-agent acp` ignores the `mcpServers` handed over on `session/new` and
+//! loads servers only from an approved `mcp.json`. `mcp.json` is the only place
+//! a server can be defined, and `cursor-agent mcp enable` is the only way to
+//! approve one, so attach writes the file and then runs the CLI. That split is
+//! Cursor's, not ours.
 //!
 //! The entry is the same loopback URL and bearer token every other Harness
-//! gets (ADR-0023), which is what keeps this working on every platform fidget
-//! ships. Both are new every app run, so the entry is rewritten and re-approved
-//! on each attach rather than set up once. Rewriting is skipped when the entry
-//! is already what we would write, but `enable` runs every attach regardless,
-//! ~380ms. Approving twice is harmless: an unchanged entry hashes to the id
-//! Cursor already holds, so no second approval is recorded.
+//! gets, which keeps this working on every platform fidget ships. Both are new
+//! every app run, so attach rewrites and re-approves it: rewriting is skipped
+//! when the entry already matches, but `enable` always runs, ~380ms. Approving
+//! twice is harmless because an unchanged entry hashes to the id Cursor holds.
 //!
-//! The token is why the file is 0600 and why `remove` runs on detach: it is
+//! The token is why the file is 0600 and why `remove` runs on detach: it is a
 //! live credential for as long as the session is, and a stale copy authorises
 //! nothing once the app restarts.
 
@@ -47,17 +36,15 @@ const DIR: &str = ".cursor";
 /// past which it is hung, and the attach goes on without it.
 const ENABLE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// What `install` changed, so `remove` undoes exactly that and nothing of the
-/// user's.
+/// What `install` changed, so `remove` undoes exactly that and nothing else.
 #[derive(Debug)]
 pub struct Installed {
     file: PathBuf,
     created_file: bool,
 }
 
-/// Merge the `fidget` server into `<cwd>/.cursor/mcp.json` beside whatever
-/// the user already has there. A file that does not parse is an error and is
-/// not written over.
+/// Merge the `fidget` server into `<cwd>/.cursor/mcp.json` beside whatever the
+/// user has there. A file that does not parse is an error, not overwritten.
 pub fn install(cwd: &Path, url: &str, authorization: &str) -> Result<Installed, String> {
     let dir = cwd.join(DIR);
     let file = dir.join(FILE);
@@ -157,8 +144,8 @@ pub fn enable(cli: &Path, cwd: &Path) -> Result<(), String> {
 }
 
 /// Add `Mcp(fidget:*)` to `permissions.allow` in `<cwd>/.cursor/cli.json`.
-/// cursor-agent rejects `permissions` that omit `deny`, so a missing one is `[]`.
-/// The allow holds no credential, so it stays after detach.
+/// cursor-agent rejects `permissions` that omit `deny`, so a missing one is
+/// `[]`. The allow holds no credential, so it stays after detach.
 pub fn allow_tools(cwd: &Path) -> Result<(), String> {
     let file = cwd.join(DIR).join(CLI_FILE);
     let mut root = match fs::read_to_string(&file) {
@@ -216,12 +203,9 @@ pub fn allow_tools(cwd: &Path) -> Result<(), String> {
 }
 
 impl Installed {
-    /// Undo `install`. Nothing here fails loudly: a quit is not the moment
-    /// to refuse, so each step logs and the next still runs.
-    ///
-    /// `cursor-agent mcp disable` is not called. Measured, it prunes no
-    /// approval and instead marks the server never to load again, which would
-    /// break the next attach.
+    /// Undo `install`. Nothing fails loudly: a quit is not the moment to
+    /// refuse, so each step logs and the next still runs. `cursor-agent mcp
+    /// disable` is not run: it prunes no approval and marks it never to load.
     pub fn remove(self) {
         if let Err(why) = self.remove_entry() {
             eprintln!("harness: cursor mcp: {why}");
@@ -470,7 +454,6 @@ mod tests {
         assert_eq!(root, json!({"mcpServers": {"other": {"command": "echo"}}}));
     }
 
-    /// No token is left behind in a project directory after a quit.
     #[test]
     fn remove_leaves_no_token_on_disk() {
         let cwd = dir("notoken");

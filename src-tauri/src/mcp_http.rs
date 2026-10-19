@@ -1,32 +1,22 @@
 //! The MCP server the app serves itself, on loopback HTTP.
 //!
-//! The one place tools are dispatched (ADR-0023), and so the one thing that
-//! reaches a fidget on screen. `crates/mcp-server` runs in a separate process
-//! — however it is reached, sidecar or `--mcp-stdio` — and relays back here
-//! rather than answering, because the tools have to be dispatched where the
-//! `Roster` lives, and the `Roster` lives on the frame-loop thread. This file
-//! is therefore a transport and a gate: every `tools/call` is handed to the
-//! frame loop over `calls`. Readonly resources are answered here — Memory
-//! and the Action Log are files, and window titles are a platform walk that
-//! is not `WindowSource`.
+//! `crates/mcp-server` runs in a separate process and relays calls back here
+//! rather than answering, because the tools must be dispatched where the
+//! `Roster` lives, on the frame-loop thread. Readonly resources are answered
+//! here: Memory and the Action Log are files, and window titles are a platform
+//! walk that is not `WindowSource`.
 //!
-//! Streamable HTTP without the streaming half. The spec lets a server answer a
-//! POST with `application/json` instead of an SSE stream, and nothing here
-//! needs a server-initiated message — seven synchronous tools, three readonly
-//! resources, no sampling, no progress. That is why this is `std` rather than
-//! axum and hyper in a desktop app's tree.
+//! Streamable HTTP without the streaming half: the spec lets a server answer a
+//! POST with `application/json`, and nothing here needs a server-initiated
+//! message. That is why this is `std` rather than axum and hyper in a desktop
+//! app's tree.
 //!
-//! Three things keep it off the network, and they are the ones ADR-0018's
-//! credential rules imply for a listener rather than a client:
-//!
-//! 1. The listener binds `127.0.0.1` on an ephemeral port, and a connection
-//!    from anywhere but loopback is dropped before a byte is read.
-//! 2. Every request carries `Authorization: Bearer <token>`, a fresh 32 bytes
-//!    per app run that never touches the disk, the Action Log, or a trace.
-//! 3. A request with an `Origin` header is refused outright. No MCP client
-//!    sends one; a page in the user's browser would have to, so refusing it
-//!    closes the DNS-rebinding hole the MCP spec warns about without having
-//!    to guess which origins are the user's own.
+//! The listener binds `127.0.0.1` on an ephemeral port and drops a connection
+//! from anywhere but loopback before reading a byte. Every request carries a
+//! fresh 32-byte token in `Authorization: Bearer`, and it never touches disk,
+//! the Action Log, or a trace. Any `Origin` header is refused, because no MCP
+//! client sends one and a browser page would, closing the DNS-rebinding hole
+//! without guessing which origins are the user's own.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
@@ -55,8 +45,7 @@ const BODY_LIMIT: usize = 1024 * 1024;
 /// `tools/call`, `resources/list` and `resources/read` unchanged.
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
-/// One `tools/call` on its way to the frame loop, and the channel it is
-/// answered on.
+/// One `tools/call` on its way to the frame loop, and its reply channel.
 pub struct Call {
     pub tool: String,
     pub arguments: Value,
@@ -71,23 +60,23 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    /// The `Authorization` value a client sends. A method rather than a public
-    /// field so the token cannot be formatted into a log line by accident:
-    /// `Endpoint` deliberately implements neither `Debug` nor `Serialize`.
+    /// The `Authorization` value a client sends. A method, not a field, and
+    /// `Endpoint` implements neither `Debug` nor `Serialize`, so it cannot be
+    /// logged by accident.
     pub fn authorization(&self) -> String {
         format!("Bearer {}", self.token)
     }
 
-    /// The URL and the raw token, for the Settings box that shows a user how
-    /// to register this endpoint with a Harness they run themselves.
-    /// Raw rather than `Bearer `-prefixed because three of the five registration templates add that prefix themselves.
+    /// The URL and raw token, for the Settings box that shows a user how to
+    /// register this endpoint with a Harness they run themselves. Raw rather
+    /// than `Bearer `-prefixed because three of five templates add that prefix.
     pub fn registration(&self) -> (String, String) {
         (self.url.clone(), self.token.clone())
     }
 
-    /// What a stdio shim needs to dial this endpoint, as environment
-    /// variables for the child the Harness spawns (ADR-0026).
-    /// A method so the token leaves this type only where it is handed to that process.
+    /// What a stdio shim needs to dial this endpoint, as environment variables
+    /// for the child the Harness spawns. A method so the token leaves this type
+    /// only where it is handed to that process.
     pub fn stdio_env(&self) -> Vec<(String, String)> {
         vec![
             (fidget_mcp_server::URL_VAR.to_string(), self.url.clone()),
@@ -107,9 +96,8 @@ pub fn tools_listed() -> usize {
     LISTED.load(Ordering::Relaxed)
 }
 
-/// Bind loopback and serve, once per app run.
-///
-/// `None` is a bind or a token that failed: a session with no tools rather than an app that will not start.
+/// Bind loopback and serve, once per app run. `None` is a bind or a token that
+/// failed: a session with no tools rather than an app that will not start.
 pub fn serve(calls: mpsc::Sender<Call>) -> Option<Endpoint> {
     ENDPOINT
         .get_or_init(|| match start(calls) {
@@ -122,9 +110,8 @@ pub fn serve(calls: mpsc::Sender<Call>) -> Option<Endpoint> {
         .clone()
 }
 
-/// What `serve` bound, for anyone who did not call it. `None` before `serve`
-/// as well as after a failed one — a probe that never starts a listener reads
-/// the same as an app whose bind failed, and neither has tools to hand out.
+/// What `serve` bound, for anyone who did not call it. `None` before `serve` as
+/// well as after a failed one: neither has tools to hand out.
 pub fn endpoint() -> Option<Endpoint> {
     ENDPOINT.get().cloned().flatten()
 }
@@ -151,9 +138,8 @@ fn start(calls: mpsc::Sender<Call>) -> std::io::Result<Endpoint> {
 fn accept_loop(listener: TcpListener, token: String, calls: mpsc::Sender<Call>) {
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        // Bound to loopback already, so this can only fail on a platform that
-        // lied about the bind. Checked anyway, because it is the one assertion
-        // the rest of the file's safety rests on.
+        // Bound to loopback, so this can only fail on a platform that lied
+        // about the bind; checked anyway because the file's safety rests on it.
         let local = stream.peer_addr().is_ok_and(|peer| {
             matches!(peer.ip(), IpAddr::V4(v4) if v4.is_loopback()) || peer.ip().is_loopback()
         });
@@ -162,17 +148,14 @@ fn accept_loop(listener: TcpListener, token: String, calls: mpsc::Sender<Call>) 
         }
         let token = token.clone();
         let calls = calls.clone();
-        // A thread per connection. An MCP client keeps one or two alive for the
-        // session, and only a Harness the user attached can get past the token,
-        // so there is no fan-out here worth a pool.
+        // A thread per connection: an MCP client keeps one or two alive for the
+        // session, and only a token-bearing Harness reaches here, so no pool.
         let _ = thread::Builder::new()
             .name("mcp-http-conn".into())
             .spawn(move || serve_connection(stream, &token, &calls));
     }
 }
 
-/// One request read off `reader`: the method, the path, the headers we act on,
-/// and the body.
 struct Request {
     method: String,
     origin: bool,
@@ -269,9 +252,8 @@ fn answer(request: &Request, token: &str, calls: &mpsc::Sender<Call>) -> (&'stat
         );
     };
     match handle(&message, calls) {
-        // A notification is answered with no body, which is what the spec
-        // asks for and what a client waiting on `notifications/initialized`
-        // expects.
+        // A notification is answered with no body, which is what the spec asks
+        // for and what a client waiting on `notifications/initialized` expects.
         None => ("202 Accepted", Vec::new()),
         Some(text) => ("200 OK", text.into_bytes()),
     }
@@ -282,16 +264,12 @@ fn error_body(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// One JSON-RPC message in, its response out — `None` for a notification.
-///
-/// Public so the tests can drive the protocol without a socket.
 pub(crate) fn handle(message: &Value, calls: &mpsc::Sender<Call>) -> Option<String> {
     let method = message
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default();
     let id = message.get("id").cloned();
-    // A notification has no id, and the spec says a notification gets no
-    // response — which is the 202 the caller turns this `None` into.
     let id = id?;
     let params = message.get("params").cloned().unwrap_or(Value::Null);
 
@@ -420,7 +398,6 @@ fn call_tool(params: &Value, calls: &mpsc::Sender<Call>) -> Value {
 mod tests {
     use super::*;
 
-    /// A frame loop that dispatches nothing and reports what it was asked.
     fn answering(answer: Value) -> (mpsc::Sender<Call>, thread::JoinHandle<Option<Call>>) {
         let (tx, rx) = mpsc::channel::<Call>();
         let handle = thread::spawn(move || {
@@ -469,7 +446,6 @@ mod tests {
         assert_eq!(call.arguments["message"], json!("hi"));
     }
 
-    /// A frame loop that refuses is an `isError` result, not success.
     #[test]
     fn a_refused_tool_call_is_reported_as_an_error_not_as_success() {
         let (tx, rx) = mpsc::channel::<Call>();
@@ -652,9 +628,6 @@ mod tests {
         );
     }
 
-    /// The token is the one thing here that must never be formattable. If a
-    /// `Debug` or `Serialize` derive ever lands on `Endpoint`, this stops
-    /// compiling — which is the point.
     #[test]
     fn the_endpoint_hands_out_a_header_and_not_a_token() {
         let endpoint = Endpoint {
@@ -665,8 +638,7 @@ mod tests {
         assert!(!endpoint.url.contains("secret"));
     }
 
-    /// End to end over a real socket, which is the half the unit tests above
-    /// cannot reach: the header parse, the framing, and keep-alive.
+    /// End to end over a real socket: header parse, framing, and keep-alive.
     #[test]
     fn a_real_socket_serves_a_tool_call() {
         let (tx, loop_thread) = answering(json!({"success": true, "message": "on screen"}));

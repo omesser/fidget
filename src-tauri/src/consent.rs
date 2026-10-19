@@ -1,23 +1,20 @@
 //! Consented capabilities settings can offer.
 //!
-//! DESIGN.md decision 9: first run grants nothing, and the app never prompts
-//! at launch. The upgrade path is settings (#148): this catalog names each
-//! grant, what it buys, what it costs, and the system prompt fires only when
-//! the user flips one on.
+//! First run grants nothing, and the app never prompts at launch. The system
+//! prompt fires only when the user flips a grant on in settings.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum CapabilityId {
-    /// macOS only: reading Dock bounds and window geometry.
+    /// Reading Dock or taskbar bounds and window geometry.
     #[cfg(not(target_os = "linux"))]
     Accessibility,
-    /// Reading the names of what is open: window titles and the owning
-    /// application alike, one consent for the pair (ADR-0032). macOS uses TCC
-    /// Screen Recording; Linux uses xdg-desktop-portal ScreenCast (Wayland);
-    /// Windows uses no prompt (both are readable without a permission dialog).
+    /// Reading window titles and the owning application names under one
+    /// consent. macOS prompts through TCC Screen Recording; Linux through
+    /// xdg-desktop-portal ScreenCast; Windows reads both without a prompt.
     WindowNames,
-    /// macOS only: the idle event tap (#721).
+    /// macOS only: the idle event tap.
     #[cfg(target_os = "macos")]
     InputMonitoring,
 }
@@ -42,12 +39,9 @@ pub struct ConsentRow {
 }
 
 impl ConsentRow {
-    /// The settings form row id this grant is drawn as.
-    ///
-    /// Keyed off the capability rather than the title, which is copy and
-    /// changes: #888 renamed the macOS grant's row and the derived id stopped
-    /// matching the checkbox, so the Privacy pane drew it unchecked whatever
-    /// the grant said.
+    /// The settings form row id this grant is drawn as. Keyed off the
+    /// capability, not the title: the title is copy and changes, and a derived
+    /// id would stop matching the checkbox.
     pub fn row_id(&self) -> String {
         use crate::settings::form;
         match self.id {
@@ -121,9 +115,8 @@ pub const CAPABILITIES: &[Capability] = &[
     },
 ];
 
-/// Tests that do not care about the live OS, and the fallback when a platform
-/// has no consent system. Was Linux's answer when X11 sensing was consent-free;
-/// the portal Probe replaced it once Wayland titles needed a grant.
+/// Tests that do not care about the live OS, and the fallback on a platform
+/// with no consent system.
 #[cfg(any(
     test,
     not(any(target_os = "macos", target_os = "linux", target_os = "windows"))
@@ -151,7 +144,7 @@ pub fn wanted(id: CapabilityId) -> bool {
     }
 }
 
-/// Whether the capability is both wanted and granted. #912 gates on it.
+/// Whether the capability is both wanted and granted.
 pub fn usable(id: CapabilityId, probe: &dyn Probe) -> bool {
     wanted(id) && probe.granted(id)
 }
@@ -231,8 +224,8 @@ impl Probe for WindowsProbe {
     }
 
     fn prompt(&self, _id: CapabilityId) {
-        // Windows WindowNames needs no prompt: always granted.
-        // Accessibility would prompt here when implemented.
+        // Windows Accessibility would prompt here; the probe does not exist
+        // yet.
     }
 }
 
@@ -426,7 +419,7 @@ mod macos {
     pub fn accessibility_granted() -> bool {
         // SAFETY: the binding takes nothing and documents no precondition;
         // objc2 marks every generated C function `unsafe` regardless. It is the
-        // non-prompting half of the pair, so settings may poll it (decision 9).
+        // non-prompting half of the pair, so settings may poll it.
         unsafe { AXIsProcessTrusted() }
     }
 
@@ -509,17 +502,8 @@ mod macos {
             return None;
         }
         // SAFETY: `symbol` is non-null, checked directly above, and dlsym
-        // returns the address of the code it resolved, so transmuting it to a
-        // function pointer is the intended use of the pair. The declared shape
-        // is the load-bearing part: `int f(int)` is what libSystem has exported
-        // under this name for years, and a call through a wrong signature would
-        // be undefined, not merely a wrong pid.
-        //
-        // This is the one FFI declaration in the file with no crate to defer
-        // to: a private SPI with no public header, so there is nothing for a
-        // binding generator to read and nothing to check the shape against.
-        // The comment is the whole of the available mitigation, not an excuse
-        // for a risk something else in the tree already carries.
+        // returns code, so transmuting it to a function pointer is intended.
+        // The shape `int f(int)` is what libSystem exports; a wrong one is UB.
         let pid = unsafe {
             let get: GetResponsible = std::mem::transmute(symbol);
             get(std::process::id() as i32)
@@ -558,9 +542,9 @@ mod macos {
         None
     }
 
-    /// The parent of `pid`, or `None` when the kernel will not say.
-    ///
-    /// Flavor, struct and field offset come from `libc`. A hand-written `PROC_PIDTBSDINFO` was 5 (`PROC_PIDTHREADINFO`) and every call wrote nothing.
+    /// The parent of `pid`, or `None` when the kernel will not say. Flavor,
+    /// struct and field offset come from `libc`, so the layout is not
+    /// hand-written.
     pub(super) fn parent_pid(pid: i32) -> Option<i32> {
         // SAFETY: proc_bsdinfo is integers and byte arrays, so all-zeroes is a
         // value it can hold; the call overwrites it on success.
@@ -586,9 +570,6 @@ mod macos {
 
     #[cfg(test)]
     mod tests {
-        /// The old flavor made this return `None` for every pid, and nothing
-        /// noticed: the only test over this path asserts a non-empty name.
-        /// std's `parent_id` is the independent answer to check against.
         #[test]
         fn the_parent_pid_is_the_one_std_reports() {
             let ppid = std::os::unix::process::parent_id() as i32;
@@ -621,7 +602,6 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 }
 
 /// The sentence settings prints so the user can find the row in System Settings.
-///
 /// An unsigned `cargo run` is listed as whoever launched it, not "fidget".
 #[cfg(target_os = "macos")]
 pub fn listed_under_hint(name: &str) -> String {
@@ -638,11 +618,8 @@ pub fn pane_intro(listed_as: &str) -> String {
     )
 }
 
-/// Linux-specific intro: xdg-desktop-portal for Wayland window names.
-///
-/// The checkbox is named for what it buys and the copy names the portal it
-/// prompts through, the way #888 settled it for macOS.
-/// No macOS-specific vocabulary (TCC, Privacy & Security, Accessibility).
+/// Linux-specific intro: names the portal it prompts through and avoids
+/// macOS-specific vocabulary.
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
     "Checking a box prompts via xdg-desktop-portal. Window positions are already readable without a grant."
@@ -655,7 +632,7 @@ pub fn listed_under_hint(name: &str) -> String {
     format!("Windows lists this process as {name}.")
 }
 
-/// Windows pane intro: names the process for future reference.
+/// Windows pane intro: names the process Privacy will list.
 #[cfg(target_os = "windows")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
@@ -664,8 +641,9 @@ pub fn pane_intro(listed_as: &str) -> String {
     )
 }
 
-/// The localized name TCC will show. Packaged builds are this app; `cargo run`
-/// is the responsible parent (the IDE or terminal that launched it).
+/// The name the OS privacy list shows. Packaged builds are this app;
+/// `cargo run` is listed under the responsible parent, the IDE or terminal
+/// that launched it.
 pub fn process_listed_as() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -785,10 +763,9 @@ mod tests {
         }
     }
 
-    /// #888: the Privacy pane maps a saved value by row id, so a row id is a
-    /// stored key and not copy. #975 renamed the capability and every label
-    /// and had to leave these strings where they were. A rename that moves one
-    /// draws the checkbox unchecked whatever the grant says.
+    /// The Privacy pane maps a saved value by row id, so a row id is a stored
+    /// key and not copy. Renaming one draws the checkbox unchecked whatever
+    /// the grant says.
     #[test]
     fn a_consent_row_id_is_a_stored_key_and_does_not_move() {
         let ids: Vec<String> = rows(|_| false).iter().map(ConsentRow::row_id).collect();
@@ -957,8 +934,7 @@ mod tests {
         }
     }
 
-    /// Flipping on is what decision 9 allows: the system prompt at that
-    /// moment, never at launch.
+    /// Flipping on prompts at that moment, never at launch.
     #[test]
     fn enabling_an_ungranted_capability_prompts() {
         #[cfg(target_os = "linux")]
@@ -999,8 +975,8 @@ mod tests {
         }
     }
 
-    /// A `cargo run` from Cursor is listed as Cursor, not fidget. The
-    /// hint has to carry that name or the Accessibility list is a guessing game.
+    /// A `cargo run` from Cursor is listed as Cursor, not fidget. The hint has
+    /// to carry that name or the Accessibility list is a guessing game.
     #[test]
     #[cfg(target_os = "macos")]
     fn the_grant_hint_names_the_app_macos_will_list() {
@@ -1017,8 +993,7 @@ mod tests {
     }
 
     /// The walk in `bundled_ancestor_name` is 24 hops and only pays past the
-    /// first: `zsh -> Cursor Helper -> Cursor` needs two. A wrong `proc_pidinfo`
-    /// flavor writes nothing; the short-write guard reads that as "no parent".
+    /// first: `zsh -> Cursor Helper -> Cursor` needs two.
     #[test]
     #[cfg(target_os = "macos")]
     fn the_parent_walk_climbs_past_the_first_hop() {
@@ -1049,12 +1024,6 @@ mod tests {
     }
 
     /// Pins the assembled Privacy pane sentence, which nothing else covers.
-    ///
-    /// The name is a sample, not a discovered value. `pane_intro` formats
-    /// whatever it is handed, so this passes wherever it runs. What TCC really
-    /// lists comes from `process_listed_as`, and `process_listed_as_is_not_empty`
-    /// is what covers that. `settings::form::Live::current` builds the Privacy
-    /// section comment from this sentence (#871).
     #[test]
     #[cfg(target_os = "macos")]
     fn macos_pane_intro_wraps_the_listed_name_in_the_pane_copy() {
@@ -1064,8 +1033,7 @@ mod tests {
         );
     }
 
-    /// Linux rows are portal capabilities, not TCC. The catalog is the real
-    /// rows settings shows, not a mock (#250).
+    /// The catalog is the real rows settings shows, not a mock.
     #[test]
     #[cfg(target_os = "linux")]
     fn linux_rows_are_portal_capabilities() {
@@ -1136,8 +1104,6 @@ mod tests {
         );
     }
 
-    /// Linux uses the portal probe, not Null. Null is tests-only or
-    /// platforms with no consent system. First run grants nothing.
     #[test]
     #[cfg(target_os = "linux")]
     fn linux_live_probe_is_portal_not_null() {
@@ -1145,8 +1111,6 @@ mod tests {
         assert!(!probe.granted(CapabilityId::WindowNames));
     }
 
-    /// Usable requires both wanted and granted. #886 will gate on this,
-    /// not wanted alone.
     #[test]
     #[cfg(target_os = "linux")]
     fn usable_requires_both_wanted_and_granted() {

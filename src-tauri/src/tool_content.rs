@@ -1,7 +1,7 @@
 //! What a tool call carried, as the pieces Chat draws in its replayed row.
 //!
-//! ADR-0028: every field the wire sends reaches the reader in some form. A
-//! diff is a path and line counts, never a viewer. A terminal is its id.
+//! Every field the wire sends reaches the reader in some form. A diff is a path
+//! and line counts, never a viewer. A terminal is its id.
 
 use agent_client_protocol::schema::v1::{ContentBlock, ToolCallContent, ToolCallLocation};
 use serde::Serialize;
@@ -92,10 +92,9 @@ struct Counts {
 /// diff costs more time than a count in a folded row is worth.
 const MAX_DIFF_LINES: usize = 10_000;
 
-/// Lines added and removed going from `old` to `new`, as `git diff --numstat`
-/// counts them: only `\n` ends a line. A file with no `old` text is all added.
-/// Lines the two share at the start and the end are skipped before the cap
-/// applies, so a small edit in a big file stays exact.
+/// Lines added and removed from `old` to `new`, counted as `git diff --numstat`
+/// does: only `\n` ends a line, and no `old` text means all added. Shared head
+/// and tail lines are skipped before the cap, so a small edit stays exact.
 fn line_counts(old: Option<&str>, new: &str) -> Counts {
     let old: Vec<&str> = old.unwrap_or("").split_inclusive('\n').collect();
     let new: Vec<&str> = new.split_inclusive('\n').collect();
@@ -136,7 +135,6 @@ mod tests {
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    /// Counts that are exact, as a pair.
     fn counts(old: Option<&str>, new: &str) -> (usize, usize) {
         let counted = line_counts(old, new);
         assert!(!counted.approximate, "{old:?} to {new:?} hit the cap");
