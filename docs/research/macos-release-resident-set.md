@@ -210,5 +210,5 @@ per evaluated script is the likely reading, which would point at the
 
 ## Still open
 
-A run with Chat open. This run did not open Chat. Linux and Windows numbers
+A run with Chat open. None of these runs opened Chat. Linux and Windows numbers
 are not in this document.

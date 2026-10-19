@@ -7,8 +7,9 @@
 set -euo pipefail
 
 # The glue patterns match demangled names, and the report's Rust symbols are
-# mangled. BSD awk has no asort, so sort ranks the rows; its leading count is cut.
-c++filt < "$1" | awk -v image="$2" -v top="${3:-20}" '
+# mangled. GNU c++filt keeps v0 crate hashes (alloc[4ca4a55bf09a7fe7]), so sed
+# drops them. BSD awk has no asort, so sort ranks the rows; its leading count is cut.
+c++filt < "$1" | sed -E 's/\[[0-9a-f]{16}\]//g' | awk -v image="$2" -v top="${3:-20}" '
   /^[0-9]+ calls? for [0-9]+ bytes: / {
     bytes = $4
     n = split(substr($0, index($0, ": ") + 2), frames, " [|] ")

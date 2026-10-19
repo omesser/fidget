@@ -100,6 +100,30 @@ test("heap-top-allocators walks past Rust allocator glue, mangled or not, keeps 
   );
 });
 
+test("heap-top-allocators drops the crate hashes GNU c++filt keeps, so glue still matches", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bench-rss-macos-"));
+  const report = join(dir, "report.txt");
+  writeFileSync(
+    report,
+    `1 call for 2048 bytes: 0x1 (fidget) fidget[0123456789abcdef]::art_urls | 0x2 (fidget) <alloc[4ca4a55bf09a7fe7]::string::String as core[d8b6e4c3c0a8a1f2]::clone::Clone>::clone | 0x3 (libsystem_malloc.dylib) _malloc
+`,
+  );
+  // Stands in for GNU c++filt: the report already reads as its output.
+  const tools = join(dir, "tools");
+  mkdirSync(tools);
+  writeFileSync(join(tools, "c++filt"), "#!/bin/bash\ncat\n");
+  chmodSync(join(tools, "c++filt"), 0o755);
+
+  const result = spawnSync("/bin/bash", [topAllocators, report, "fidget"], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { ...process.env, PATH: `${tools}:${process.env.PATH}` },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^ {7}2 KB {7}1 calls {2}fidget::art_urls$/m);
+});
+
 // Real sleeps stand in for WebKit helpers, so the script only ever reads
 // processes this test started; fake tools record what they were pointed at.
 function heapRun(helperCount) {
