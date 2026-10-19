@@ -1,0 +1,45 @@
+malloc_history Report Version:  2.0
+Process:         perl [52768]
+Path:            /usr/bin/perl
+Load Address:    0x104d3c000
+Identifier:      perl
+Version:         175
+Code Type:       ARM64E
+Platform:        macOS
+Parent Process:  zsh [52767]
+Target Type:     live task
+
+Date/Time:       2026-10-19 03:59:45.871 +0300
+Launch Time:     2026-10-19 03:59:42.788 +0300
+OS Version:      macOS 27.0.1 (26A434)
+Report Version:  7
+Analysis Tool:   /usr/bin/malloc_history
+
+Physical footprint:         13.6M
+Physical footprint (peak):  13.6M
+Idle exit:                  untracked
+----
+
+2000 calls for 10240000 bytes: 0x180677e80 (dyld) start | 0x104d3cf34 (perl) main | 0x1059d4060 (libperl.dylib) perl_run | 0x1059d4194 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a87e14 (libperl.dylib) Perl_pp_mapwhile | 0x105a669cc (libperl.dylib) Perl_sv_mortalcopy_flags | 0x105a60638 (libperl.dylib) Perl_sv_setsv_flags | 0x105a5b604 (libperl.dylib) Perl_sv_grow | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+1 call for 114688 bytes: 0x180677e80 (dyld) start | 0x104d3cef4 (perl) main | 0x1059cf7e0 (libperl.dylib) perl_construct | 0x105ad2304 (libperl.dylib) Perl_init_i18nl10n | 0x105ad0bd4 (libperl.dylib) ??? | 0x1808e930c (libsystem_c.dylib) newlocale | 0x1808f7370 (libsystem_c.dylib) __setrunelocale | 0x1808f7b48 (libsystem_c.dylib) _Read_RuneMagi | 0x180853e38 (libsystem_malloc.dylib) _calloc | 0x180874820 (libsystem_malloc.dylib) _malloc_zone_calloc_instrumented_or_legacy
+
+1 call for 81920 bytes: 0x180677e80 (dyld) start | 0x104d3cef4 (perl) main | 0x1059cf7e0 (libperl.dylib) perl_construct | 0x105ad2304 (libperl.dylib) Perl_init_i18nl10n | 0x105ad0bd4 (libperl.dylib) ??? | 0x1808e927c (libsystem_c.dylib) newlocale | 0x1808f6d3c (libsystem_c.dylib) __collate_load_tables | 0x180a09a04 (libsystem_kernel.dylib) mmap
+
+12 calls for 49152 bytes: 0x180677e80 (dyld) start | 0x104d3cf28 (perl) main | 0x1059d333c (libperl.dylib) perl_parse | 0x1059fc150 (libperl.dylib) Perl_yyparse | 0x105aef014 (libperl.dylib) ??? | 0x1059bb428 (libperl.dylib) Perl_op_convert_list | 0x1059c6698 (libperl.dylib) Perl_ck_grep | 0x1059c4e84 (libperl.dylib) Perl_ck_fun | 0x1059c5b48 (libperl.dylib) ??? | 0x1059b3078 (libperl.dylib) Perl_list | 0x1059b4544 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a889e4 (libperl.dylib) Perl_pp_flop | 0x105a6781c (libperl.dylib) Perl_newSViv | 0x105a61448 (libperl.dylib) ??? | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+12 calls for 49152 bytes: 0x180677e80 (dyld) start | 0x104d3cf28 (perl) main | 0x1059d333c (libperl.dylib) perl_parse | 0x1059fc150 (libperl.dylib) Perl_yyparse | 0x105aef014 (libperl.dylib) ??? | 0x1059bb428 (libperl.dylib) Perl_op_convert_list | 0x1059c6698 (libperl.dylib) Perl_ck_grep | 0x1059c4e84 (libperl.dylib) Perl_ck_fun | 0x1059c5b48 (libperl.dylib) ??? | 0x1059b3078 (libperl.dylib) Perl_list | 0x1059b4550 (libperl.dylib) ??? | 0x105a7e8f0 (libperl.dylib) Perl_pp_anonlist | 0x105a4f1d8 (libperl.dylib) Perl_av_make | 0x105a62344 (libperl.dylib) Perl_newSV | 0x105a61448 (libperl.dylib) ??? | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+1 call for 49152 bytes: 0x180677e80 (dyld) start | 0x104d3cef4 (perl) main | 0x1059cf6d0 (libperl.dylib) perl_construct | 0x105a4b700 (libperl.dylib) Perl_hv_ksplit | 0x105a33870 (libperl.dylib) Perl_safesyscalloc | 0x180874820 (libsystem_malloc.dylib) _malloc_zone_calloc_instrumented_or_legacy
+
+9 calls for 36864 bytes: 0x180677e80 (dyld) start | 0x104d3cf34 (perl) main | 0x1059d4060 (libperl.dylib) perl_run | 0x1059d4194 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a87e14 (libperl.dylib) Perl_pp_mapwhile | 0x105a669cc (libperl.dylib) Perl_sv_mortalcopy_flags | 0x105a5ff60 (libperl.dylib) Perl_sv_setsv_flags | 0x105a5ab28 (libperl.dylib) Perl_sv_upgrade | 0x105a5a9a0 (libperl.dylib) Perl_more_bodies | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+1 call for 32768 bytes: 0x180677e80 (dyld) start | 0x104d3cf34 (perl) main | 0x1059d4060 (libperl.dylib) perl_run | 0x1059d4194 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a54b34 (libperl.dylib) Perl_pp_aassign | 0x105a83ecc (libperl.dylib) Perl_tmps_grow_p | 0x105a337c0 (libperl.dylib) Perl_safesysrealloc | 0x180875358 (libsystem_malloc.dylib) _realloc | 0x180874b2c (libsystem_malloc.dylib) _malloc_zone_realloc
+
+1 call for 20480 bytes: 0x180677e80 (dyld) start | 0x104d3cf28 (perl) main | 0x1059d333c (libperl.dylib) perl_parse | 0x1059fc150 (libperl.dylib) Perl_yyparse | 0x105aef014 (libperl.dylib) ??? | 0x1059bb428 (libperl.dylib) Perl_op_convert_list | 0x1059c6698 (libperl.dylib) Perl_ck_grep | 0x1059c4e84 (libperl.dylib) Perl_ck_fun | 0x1059c5b48 (libperl.dylib) ??? | 0x1059b3078 (libperl.dylib) Perl_list | 0x1059b4544 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a88c48 (libperl.dylib) Perl_pp_flop | 0x105a83010 (libperl.dylib) Perl_stack_grow | 0x105a4ea30 (libperl.dylib) Perl_av_extend_guts | 0x105a337c0 (libperl.dylib) Perl_safesysrealloc | 0x180875358 (libsystem_malloc.dylib) _realloc | 0x180874b2c (libsystem_malloc.dylib) _malloc_zone_realloc
+
+1 call for 16384 bytes: 0x180677e80 (dyld) start | 0x104d3cf34 (perl) main | 0x1059d4060 (libperl.dylib) perl_run | 0x1059d4194 (libperl.dylib) ??? | 0x105a503ec (libperl.dylib) Perl_runops_standard | 0x105a546cc (libperl.dylib) Perl_pp_aassign | 0x105a4e9cc (libperl.dylib) Perl_av_extend_guts | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+1 call for 16384 bytes: 0x180677e80 (dyld) start | 0x104d3cf28 (perl) main | 0x1059d333c (libperl.dylib) perl_parse | 0x1059fc150 (libperl.dylib) Perl_yyparse | 0x105aef014 (libperl.dylib) ??? | 0x1059bb428 (libperl.dylib) Perl_op_convert_list | 0x1059c6698 (libperl.dylib) Perl_ck_grep | 0x1059c4e84 (libperl.dylib) Perl_ck_fun | 0x1059c5b48 (libperl.dylib) ??? | 0x1059b3078 (libperl.dylib) Perl_list | 0x1059b4550 (libperl.dylib) ??? | 0x105a7e8f0 (libperl.dylib) Perl_pp_anonlist | 0x105a4f16c (libperl.dylib) Perl_av_make | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+1 call for 8192 bytes: 0x180677e80 (dyld) start | 0x104d3cef4 (perl) main | 0x1059cf368 (libperl.dylib) perl_construct | 0x1059cf89c (libperl.dylib) Perl_init_stacks | 0x105a830f4 (libperl.dylib) Perl_new_stackinfo | 0x105a336b4 (libperl.dylib) Perl_safesysmalloc | 0x180874630 (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy

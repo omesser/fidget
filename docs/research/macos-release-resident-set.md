@@ -87,8 +87,30 @@ second. `FIDGET_TRACE_ENGINE=1` writes those lines.
 Idle and walking read the same median. The other four animations are a few
 samples, and they sit within a few MB of that median.
 
+## Dropped from #424
+
+On 2026-10-19 the operator dropped the three-display macOS run and the Linux
+multi-monitor runs from #424: "macos - only 2 displays available / linux
+multi monitor setup - unavailable at this time / Eliminate those
+requirements". Linear scaling with display count is not confirmed on either
+platform, and #424 no longer asks for it.
+
+## One display
+
+Not measured yet. The run is the one above with the DELL P2414H unplugged, so
+the built-in panel is the only overlay. The script then expects three WebKit
+helpers.
+
+## Heap profile
+
+Not measured yet. `scripts/bench-rss-macos.sh --heap DIR` launches `fidget`
+under `MallocStackLogging=1`, saves its `malloc_history -allBySize` and
+`footprint` reports, and prints live bytes grouped by the innermost frame in
+the `fidget` image. Stack logging adds a Performance Tool Data region, so a
+heap run's footprint and RSS do not compare with the figures above. The
+WebKit helpers are not profiled.
+
 ## Still open
 
-A single-display run, a three-display run, an Instruments heap profile, and
-a run with Chat open are still open. This run kept both attached displays
-and did not open Chat. Linux and Windows numbers are not in this document.
+A run with Chat open. This run did not open Chat. Linux and Windows numbers
+are not in this document.
