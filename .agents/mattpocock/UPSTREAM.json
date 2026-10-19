@@ -5,7 +5,7 @@
   "branch": "main",
   "commit": "49dd158d1076134a641b33efb035946536778336",
   "license": "MIT",
-  "synced": "2026-10-12",
+  "synced": "2026-10-19",
   "vendored_into": ".agents/skills",
   "not_vendored": ["skills/deprecated", "skills/in-progress", "skills/misc", "skills/productivity"],
   "_excluded": "Names upstream ships under the subpath that this sync deliberately does not vendor. Generated from EXCLUDED in scripts/sync-mattpocock.sh.",
