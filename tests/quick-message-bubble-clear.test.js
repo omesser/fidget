@@ -164,7 +164,8 @@ function drive() {
     for (const [seat, y] of [["mid", 300], ["top", 0]]) {
       cases.push(...await at(seat, 400, y));
     }
-    console.log("__PROBE_RESULT__" + JSON.stringify({ cases }));
+    const spellcheck = field().spellcheck;
+    console.log("__PROBE_RESULT__" + JSON.stringify({ cases, spellcheck }));
   }
   window.addEventListener("load", () => run().catch((why) => {
     console.log("__PROBE_RESULT__" + JSON.stringify({ error: String(why), cases: [] }));
@@ -178,14 +179,25 @@ function drive() {
   return probePage(html, { args: ["--window-size=1000,700"] });
 }
 
+let driven;
+const report = () => (driven ??= drive());
+
 test("the pill steps clear of a speech bubble and of the thinking dots", { skip: chromeSkip, timeout: 90000 }, async () => {
-  const report = await drive();
-  assert.equal(report.error, undefined, report.error);
-  assert.equal(report.cases.length, 10);
-  for (const row of report.cases) {
+  const { error, cases } = await report();
+  assert.equal(error, undefined, error);
+  assert.equal(cases.length, 10);
+  for (const row of cases) {
     assert.equal(row.bubble.visible, true, row.name);
     assert.equal(row.pill.visible, true, row.name);
     assert.equal(row.bubble.mode, row.expect, `${row.name} ${JSON.stringify(row)}`);
     assert.equal(row.overlap, false, `${row.name} ${JSON.stringify(row)}`);
   }
+});
+
+// WebKit's autocorrection panel takes the next Escape for itself, so the pill
+// would stay open (#1644). Off with spellcheck, which also stops autocorrect.
+test("the pill's field opts out of spellcheck", { skip: chromeSkip, timeout: 90000 }, async () => {
+  const { error, spellcheck } = await report();
+  assert.equal(error, undefined, error);
+  assert.equal(spellcheck, false);
 });
