@@ -6,8 +6,9 @@
 #   the menu's bounds.
 #   Fidget quits when the scenario ends.
 # Input: one Control-click on the sprite (synthetic, via CGEvent), held while
-#   the menu is read; Escape closes the menu before the release.
-# Duration: a few seconds, 10 s at most.
+#   the menu is read; Escape closes the menu before the release. When the app
+#   draws no menu at all, the leaf clicks again, three times at most.
+# Duration: a few seconds; 20 s at most when a Control-click has to be repeated.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
 # Asserts: the Control-click lands as Menu, and the open menu's Accessibility
 #   items include Chat…, Settings… and Quit.
@@ -59,15 +60,25 @@ wait_for_trace 3 "$log" '^frame: .* sprite\(' || fail "Fidget traced no frame; s
 # A click on a walking sprite lands where it was, so wait for it to rest.
 wait_for_rest "$log" || fail "the sprite never came to rest; see $log"
 read -r w h < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
-read -r x y < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
-cx=$((x + w / 2))
-cy=$((y + h / 2))
-echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
 
-# Hold the Control-down while the menu is read: a release before the menu
-# tracks lands on the overlay as a Poke. Escape closes it, then the release.
-menu_dump="$out/menu.ax.txt"
-swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT' || fail "no open menu in the AX tree; see $menu_dump"
+# The app opens the tray menu and, in about one Control-click in five, draws no
+# menu at all: `popup_menu_at` returns with no menu window and the frame traces
+# keep coming through the click. Nothing can read a menu that is not drawn, so
+# the leaf clicks again and says so in the dump (#1503). The sprite is re-read
+# first: a Poke can leave it somewhere other than where it was clicked.
+attempt=0
+while :; do
+  attempt=$((attempt + 1))
+  menu_dump="$out/menu.ax.txt"
+  [ "$attempt" -eq 1 ] || menu_dump="$out/menu.ax.$attempt.txt"
+  read -r x y < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
+  cx=$((x + w / 2))
+  cy=$((y + h / 2))
+  echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
+
+  # Hold the Control-down while the menu is read: a release before the menu
+  # tracks lands on the overlay as a Poke. Escape closes it, then the release.
+  if swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT'
 import AppKit
 import ApplicationServices
 
@@ -116,78 +127,89 @@ func value(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
     return AXUIElementCopyAttributeValue(element, name as CFString, &out) == .success ? out : nil
 }
 
-// The items and the frame of the popped-up menu. It is no child of the
-// application element, but AXMenuOpened hands it over, and its own children
-// are the rows it draws.
-func children(_ element: AXUIElement) -> [AXUIElement] {
-    (value(element, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+// The popped-up menu is no child of the application element, and the element
+// AXMenuOpened hands over answers nothing in one run in three — role, frame and
+// children all come back empty while the app is tracking the menu it just drew
+// — so the menu is read the way it is drawn: the menu-layer window is the
+// frame, and the rows under that window are the items (#1503).
+func menuWindow() -> CGRect? {
+    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: AnyObject]] ?? []
+    return info.first {
+        ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 100
+    }.flatMap { CGRect(dictionaryRepresentation: $0[kCGWindowBounds as String] as! CFDictionary) }
 }
-func menuTitles(_ element: AXUIElement?) -> [String] {
-    guard let element else { return [] }
-    var titles: [String] = []
-    func walk(_ node: AXUIElement) {
-        for child in children(node) {
-            if value(child, kAXRoleAttribute) as? String == "AXMenuItem",
-                let title = value(child, kAXTitleAttribute) as? String, !title.isEmpty
-            {
-                titles.append(title)
-            }
-            walk(child)
-        }
-    }
-    walk(element)
-    return titles
-}
-// AXPosition and AXSize are the menu element's own attributes, so the
-// rectangle it draws in needs no window list.
-func elementFrame(_ element: AXUIElement?) -> CGRect? {
-    guard let element,
-        let posValue = value(element, kAXPositionAttribute),
-        let sizeValue = value(element, kAXSizeAttribute)
-    else { return nil }
-    var origin = CGPoint.zero
-    var size = CGSize.zero
-    guard AXValueGetValue(posValue as! AXValue, .cgPoint, &origin),
-        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
-        size.width > 0, size.height > 0
-    else { return nil }
-    return CGRect(origin: origin, size: size)
-}
-// AXMenuOpened carries the menu it opened, so both the frame and the items
-// come from that element and the window list is not polled (#1503).
-var opened: AXUIElement?
 // Wait on AXMenuOpened / AXMenuClosed from the app, never a sleep: the run
 // loop returns on the notification, or after the seconds given.
 var seen: Set<String> = []
 var observer: AXObserver?
-AXObserverCreate(pid, { _, element, name, _ in
-    let name = name as String
-    if name == kAXMenuOpenedNotification { opened = element }
-    seen.insert(name)
+// Every notification the app posts, counted, so a read can wait for the app to
+// finish making the menu without watching the clock.
+var tick = 0
+AXObserverCreate(pid, { _, _, name, _ in
+    seen.insert(name as String)
+    tick += 1
 }, &observer)
 if let observer {
     let app = AXUIElementCreateApplication(pid)
-    for name in [kAXMenuOpenedNotification, kAXMenuClosedNotification] {
+    for name in [
+        kAXMenuOpenedNotification, kAXMenuClosedNotification, kAXCreatedNotification,
+        kAXWindowCreatedNotification, kAXFocusedUIElementChangedNotification,
+        kAXFocusedWindowChangedNotification, kAXLayoutChangedNotification,
+        kAXMovedNotification, kAXResizedNotification,
+    ] {
         AXObserverAddNotification(observer, app, name as CFString, nil)
     }
     CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
 }
-func waitFor(_ name: String, seconds: Double, or done: () -> Bool = { false }) {
+func waitFor(_ name: String, seconds: Double) {
     let deadline = Date().addingTimeInterval(seconds)
-    while !seen.contains(name) && !done() && Date() < deadline {
+    while !seen.contains(name) && Date() < deadline {
         CFRunLoopRunInMode(.defaultMode, deadline.timeIntervalSinceNow, true)
+    }
+}
+// AXMenuOpened lands while the app is still making the menu: the window is not
+// listed yet when the notification arrives, so the window list is read again on
+// each notification the app posts after it and the menu is read the moment it
+// is there. The 1.5 s is the ceiling for an app that says nothing more, never
+// the wait.
+func menuRect(seconds: Double) -> (CGRect?, Int) {
+    let started = Date()
+    let deadline = started.addingTimeInterval(seconds)
+    var handled = tick
+    while true {
+        if let rect = menuWindow() {
+            return (rect, Int(Date().timeIntervalSince(started) * 1000))
+        }
+        if Date() >= deadline { return (nil, Int(seconds * 1000)) }
+        while tick == handled && Date() < deadline {
+            CFRunLoopRunInMode(.defaultMode, deadline.timeIntervalSinceNow, true)
+        }
+        handled = tick
     }
 }
 mouse(.leftMouseDown)
 waitFor(kAXMenuOpenedNotification, seconds: 3)
-let rect = elementFrame(opened)
-let items = menuTitles(opened)
-// The two ways the element can disappoint, named in the dump rather than left
-// to a bare exit code.
-if opened == nil {
-    FileHandle.standardError.write("no menu element 3s after the Control-click\n".data(using: .utf8)!)
+let (rect, waited) = menuRect(seconds: 1.5)
+var items: [String] = []
+if let rect {
+    let system = AXUIElementCreateSystemWide()
+    for y in stride(from: rect.minY + 4, to: rect.maxY, by: 6) {
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(rect.midX), Float(y), &hit) == .success,
+            let hit, value(hit, kAXRoleAttribute) as? String == "AXMenuItem",
+            let title = value(hit, kAXTitleAttribute) as? String, !title.isEmpty, items.last != title
+        else { continue }
+        items.append(title)
+    }
+}
+FileHandle.standardError.write(
+    ("menu-read: \(waited)ms, \(items.count) item(s)\n").data(using: .utf8)!)
+// The two ways the read can disappoint, named in the dump rather than left to a
+// bare exit code.
+if rect == nil {
+    FileHandle.standardError.write("no menu window \(waited)ms after the Control-click\n".data(using: .utf8)!)
 } else if items.isEmpty {
-    FileHandle.standardError.write("the menu element carries no items\n".data(using: .utf8)!)
+    FileHandle.standardError.write("the menu window drew no items\n".data(using: .utf8)!)
 }
 // The menu's own bounds, never the display: evidence can end up attached to a
 // public PR, and the rest of the screen is the owner's.
@@ -206,6 +228,15 @@ clearFlags()
 items.forEach { print($0) }
 exit(items.isEmpty ? 1 : 0)
 SWIFT
+  then
+    break
+  fi
+  if [ "$attempt" -ge 3 ]; then
+    fail "no open menu in the AX tree after $attempt Control-clicks; see $menu_dump"
+  fi
+  echo "retry: the Control-click drew no menu window; clicking again (attempt $((attempt + 1)) of 3)" >&2
+  echo "retry: that read is in $menu_dump" >&2
+done
 
 wait_for_trace 2 "$log" '^verbs: .*\[Menu\]' || fail "the Control-click did not land as Menu; see $log"
 echo "ok: the Control-click landed as Menu"
