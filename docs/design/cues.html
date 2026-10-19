@@ -506,7 +506,7 @@
   <section id="quick-message-spec">
     <h2>Quick message</h2>
     <p>Hover BMO for <span id="spec-dwell-long">1.5 seconds</span> and a pill appears over the sprite, the field focused. Empty, it says <b>talk to me</b>. Send is an accent disc, <code>#5cc9b5</code>, with a dark triangle — not a link. The box is the speech bubble's chrome and it has no tail. Appear and dismiss fade over 180ms. The caret is that same accent. The same pill on a light, a dark and a busy desktop is <a href="bubble.html#quick-message-chrome">Fidget Bubble</a>.</p>
-    <p>Leave during the <span id="spec-dwell-short">1.5s</span> and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape does not dismiss. Enter sends.</p>
+    <p>Leave during the <span id="spec-dwell-short">1.5s</span> and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape dismisses and clears the draft. Enter sends.</p>
     <p>While the caret is in the field the stroll holds in place. This desk has no walk-cycle frames, so the slide stands in for the Engine's walk. Idle is the sprite at rest, which stays. A jump is not drawn here; the Engine still lets one leave. <b>Release the caret</b> blurs the field without a dismiss, which is when the stroll resumes and the pill remains. The stroll pauses while the pointer is on the sprite, so a still cursor can finish the dwell — on the desktop the pet can keep walking through that wait.</p>
     <p>When nothing can answer, the field is disabled and the draft is cleared so the sentence shows. That is <b>Nothing can answer yet</b>, or <b>Starting Hermes…</b> while a harness is still coming up. Send is the dim disc <code>#2c3340</code>, not the accent.</p>
     <div class="quick-message visible quick-frozen" id="quick-message-frozen">
@@ -1066,6 +1066,7 @@ function dismissQuick(why) {
     drag: "Dismissed — the pet moved at least 4px.",
     summon: "Dismissed — double-click is Summon and opens Chat.",
     send: "Sent.",
+    escape: "Dismissed — Escape. The draft is cleared.",
   };
   setQmStatus(said[why] || "Dismissed.");
 }
@@ -1137,7 +1138,7 @@ field.addEventListener("keydown", (e) => {
   if (!pillUp) return;
   if (e.key === "Escape") {
     e.preventDefault();
-    setQmStatus("Escape does not dismiss.");
+    dismissQuick("escape");
     return;
   }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
