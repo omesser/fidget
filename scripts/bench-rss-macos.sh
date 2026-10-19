@@ -3,10 +3,9 @@
 # launchd's children, so this diffs WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--bin PATH] [--settle N] [--seconds N] [--interval N] [--out FILE] [--research] [--heap DIR]
 
-# --heap DIR runs fidget under MallocStackLogging=1 (lite: live allocations) and, before the kill, writes
-# its `malloc_history -allBySize` and `footprint` to DIR and prints the top
-# allocators, plus `footprint` and `heap -s` of each of its WebKit helpers.
-# Logging adds Performance Tool Data, so take RSS from a plain run.
+# --heap DIR runs fidget under MallocStackLogging=1 (lite: live allocations) and, before
+# the kill, saves its malloc_history and footprint and each WebKit helper's footprint and
+# heap -s to DIR. Logging adds Performance Tool Data, so take RSS from a plain run.
 
 # Compare runs on peak physical footprint, which only rises; RSS drops as a busy
 # machine reclaims an idle character's pages. Note roster, displays and sprite

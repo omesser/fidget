@@ -1,13 +1,19 @@
 # macOS release resident set
 
-One macOS release run for #424. Debug numbers stay in
+Three macOS release runs for #424. Debug numbers stay in
 [Memory, RSS, and multi-monitor scaling](memory-rss-and-multi-monitor.md).
 This document does not replace them.
 
-The run measured commit `c8bfd7afaaf8b1e1ea5b407208935ab2435e445b`.
+The two-display run measured commit `c8bfd7afaaf8b1e1ea5b407208935ab2435e445b`.
 The running binary is `target/release/fidget`, built with
 `cargo build --release --bin fidget` from the same Rust sources as that
 commit. The commit itself only changes the sampler.
+
+The "One display" and "Heap profile" sections are two later runs. They
+measured `target/release/fidget` built the same way at `c8120e6f` on the #424
+branch, and their citations read that tree. The one exception is the
+allocator table, which a later `scripts/heap-top-allocators.sh` recomputed
+from the saved report.
 
 ---
 
@@ -97,10 +103,8 @@ platform, and #424 no longer asks for it.
 
 ## One display
 
-These two sections postdate the anchor above. Both runs measured
-`target/release/fidget` built with `cargo build --release --bin fidget` at
-`c8120e6f` on the #424 branch, with the same machine, roster, and Director
-setting as the run above. Free memory was not recorded for either.
+Both later runs used the same machine, roster, and Director setting as the
+run above. Free memory was not recorded for either.
 
 The operator unplugged the DELL P2414H, so the built-in Retina panel was the
 only overlay, 1728×1117 points at (0, 0). The run was
@@ -109,14 +113,15 @@ only overlay, 1728×1117 points at (0, 0). The run was
 expects for one display.
 
 Total peak physical footprint is 430.0 MB. Median RSS is 289 MB, over 59
-samples. The minimum summed RSS is 286 MB and the maximum is 292 MB.
+samples. The minimum summed RSS is 286 MB and the maximum is 292 MB. #424
+guessed 200-400 MB for one display and one Instance.
 
 | Process | RSS median | Footprint peak |
 |---|---|---|
 | `fidget` | 155 MB | 80.9 MB |
 | `com.apple.WebKit.GPU` | 41 MB | 134.1 MB |
 | `com.apple.WebKit.Networking` | 14 MB | 7.3 MB |
-| 1728×1117 `WebContent` | 79 MB | 207.7 MB |
+| 3456×2234 `WebContent` | 79 MB | 207.7 MB |
 
 Networking's `vmmap` line is `7504K`, reported here as 7.3 MB.
 
