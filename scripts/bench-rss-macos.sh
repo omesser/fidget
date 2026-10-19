@@ -3,9 +3,10 @@
 # launchd's children, so this diffs WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--bin PATH] [--settle N] [--seconds N] [--interval N] [--out FILE] [--research] [--heap DIR]
 
-# --heap DIR runs fidget under MallocStackLogging=1 and, before the kill, writes
+# --heap DIR runs fidget under MallocStackLogging=1 (lite: live allocations) and, before the kill, writes
 # its `malloc_history -allBySize` and `footprint` to DIR and prints the top
-# allocators. Logging adds Performance Tool Data, so take RSS from a plain run.
+# allocators, plus `footprint` and `heap -s` of each of its WebKit helpers.
+# Logging adds Performance Tool Data, so take RSS from a plain run.
 
 # Compare runs on peak physical footprint, which only rises; RSS drops as a busy
 # machine reclaims an idle character's pages. Note roster, displays and sprite
@@ -137,4 +138,14 @@ malloc_history "$app" -allBySize > "$heap/malloc-history.txt" ||
   { echo "malloc_history could not read pid $app" >&2 && exit 1; }
 footprint -p "$app" > "$heap/footprint.txt" ||
   { echo "footprint could not read pid $app" >&2 && exit 1; }
-scripts/heap-top-allocators.sh "$heap/malloc-history.txt" fidget 20
+scripts/heap-top-allocators.sh "$heap/malloc-history.txt" fidget
+
+# A helper set of any other size holds another application's processes.
+[ "$found" -eq "$expected" ] || {
+  echo "not profiling WebKit helpers: $found found, $expected expected" >&2
+  exit 1
+}
+for pid in $helpers; do
+  footprint -p "$pid" > "$heap/footprint-$pid.txt" || echo "footprint could not read pid $pid" >&2
+  heap -s "$pid" > "$heap/heap-$pid.txt" || echo "heap could not read pid $pid" >&2
+done

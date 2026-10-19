@@ -97,18 +97,20 @@ platform, and #424 no longer asks for it.
 
 ## One display
 
-Not measured yet. The run is the one above with the DELL P2414H unplugged, so
-the built-in panel is the only overlay. The script then expects three WebKit
-helpers.
+Not measured yet. These placeholders postdate the anchor above, and each run
+will name its own commit. The run is the one above with the DELL P2414H
+unplugged, so the built-in Retina panel is the only overlay. The script then
+expects three WebKit helpers.
 
 ## Heap profile
 
 Not measured yet. `scripts/bench-rss-macos.sh --heap DIR` launches `fidget`
-under `MallocStackLogging=1`, saves its `malloc_history -allBySize` and
-`footprint` reports, and prints live bytes grouped by the innermost frame in
-the `fidget` image. Stack logging adds a Performance Tool Data region, so a
-heap run's footprint and RSS do not compare with the figures above. The
-WebKit helpers are not profiled.
+under `MallocStackLogging=1`. Before the kill it saves `fidget`'s
+`malloc_history -allBySize` and `footprint` reports and prints live bytes
+grouped by the innermost non-allocator frame in the `fidget` image. It also
+saves `footprint` and `heap -s` for each of the run's own WebKit helpers. Stack
+logging adds a Performance Tool Data region, so a heap run's footprint and RSS
+do not compare with the figures above.
 
 ## Still open
 

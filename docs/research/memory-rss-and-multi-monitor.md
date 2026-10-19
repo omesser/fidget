@@ -263,10 +263,10 @@ See #431. The other three runs agree. B reads 226 MB idle and 226 MB walking.
 
 **A single-display comparison, and three displays.** Both displays are
 permanently attached and no third exists. The per-display section says what
-stands in for that comparison. On 2026-10-19 the operator dropped the
-three-display run from #424: "macos - only 2 displays available". The
-single-display run is now a release run, placeheld in
-[macOS release resident set](macos-release-resident-set.md#one-display).
+stands in for that comparison. The operator dropped the three-display run on
+2026-10-19, see
+[macOS release resident set](macos-release-resident-set.md#dropped-from-424),
+which also holds the single-display placeholder.
 
 **A heap profile with top allocators.** #424 asks for Instruments Allocations
 or `heaptrack`. Instruments needs a GUI session and a human. The allocator
