@@ -47,8 +47,7 @@ in that job already runs. The tracker calls this the Windows compile job.
 |---|---|
 | `bug` | A `fix`. Shipped behavior misbehaves. |
 | `enhancement` | A `feat`. A new capability. |
-| `documentation` | Documentation. New work uses this label. |
-| `docs` | Same as `documentation`. Older items only. |
+| `documentation` | Documentation. |
 | `testing` | The change is tests or verification scenarios. Tests inside a behavior change take that behavior's label. |
 | `refactoring` | A `refactor`. Structure changes, behavior stays. |
 | `performance` | A `perf` change, or CPU, GPU, memory, idle cost, or a benchmark. |
