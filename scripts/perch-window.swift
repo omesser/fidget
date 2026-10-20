@@ -1,6 +1,6 @@
 // A real window that steps or flings itself down the screen so Perches can be
 // verified without an Accessibility grant. --fast jumps in one move, --glide
-// slides. Usage: swift scripts/perch-window.swift [--fast|--glide] x y w h [level]
+// slides.
 
 import AppKit
 
