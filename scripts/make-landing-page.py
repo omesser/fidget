@@ -90,6 +90,8 @@ HOW_LANES = {
 # Light-up hooks the shell must carry; the node test pins the script's array
 # to this same order: frame loop, then the Director waking, then a Behavior.
 HOW_LIGHT = ("frame", "director", "behavior")
+# The What's new strip reads the release's own Highlights list, so the one
+# heading it looks for is a constant the self-check can point at.
 HIGHLIGHTS = re.compile(r"^##[ \t]+Highlights[ \t]*$", re.M)
 # A Highlights bullet, and the bold title one can open with. The colon inside
 # the bold is what makes it a title rather than an emphasized first word:

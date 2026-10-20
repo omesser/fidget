@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Samples a running fidget's resident set, macOS only. WKWebView helpers are
 # launchd's children, so this diffs WebKit helpers before and after launch.
-# Usage: scripts/bench-rss-macos.sh; --heap DIR is described below.
+# Usage: scripts/bench-rss-macos.sh.
 
 # --heap DIR runs fidget with MallocStackLogging=1 and, before the kill, saves
 # its malloc_history, footprint, and each WebKit helper's footprint and heap -s.
-# Logging inflates footprint, so take RSS from a plain run.
+# Logging adds Performance Tool Data, so take RSS from a plain run.
 
 # Compare runs on peak physical footprint, which only rises; RSS drops as a busy
 # machine reclaims an idle character's pages. Note roster, displays and sprite

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prove the Settings webview stacks above the X11 overlay.
-# Run: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh;
-# FIDGET_VERIFY_BIN=path/to/fidget overrides the binary.
+# Run: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-settings-zorder-x11.sh,
+# with FIDGET_VERIFY_BIN=path/to/fidget to override the binary.
 
 set -euo pipefail
 

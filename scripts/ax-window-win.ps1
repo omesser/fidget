@@ -1,6 +1,7 @@
 # Drive one window through UI Automation (dump, size, press/link NAME, click or
-# menu at -X/-Y, tray ROW). FromHandle, not RootElement.FindFirst: a desktop-wide
-# descendant search can hang on a multi-monitor session.
+# menu at -X/-Y, tray ROW). Dump prints `role|name`, plus `|x,y,w,h` with
+# `frames`, and no command takes a -Title. FromHandle, not RootElement.FindFirst:
+# a desktop-wide descendant search can hang on a multi-monitor session.
 param(
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet('dump', 'size', 'press', 'link', 'click', 'tray', 'menu')]

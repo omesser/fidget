@@ -178,6 +178,8 @@ def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.
     body_cy = 23.0 + bob + squash
     head_cy = 14.5 + bob
 
+    # Feet under the body: the math.pi offset is half a walk cycle, so one foot
+    # swings forward as the other swings back, and a rest leaves them level.
     for side, phase in ((-1, 0.0), (1, math.pi)):
         swing = math.sin(step + phase)
         fx = 13 + (0 if side < 0 else 5) + int(round(swing * 2))

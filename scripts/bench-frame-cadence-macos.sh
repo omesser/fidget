@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# macOS display-frame cadence, dropped frames and interpolation lag, reduced by
-# scripts/frame-cadence.mjs. idle-quiet drops FIDGET_TRACE_FRAMES so the tick
-# counter shows whether the per-tick print slows the Engine; two --bin values
-# alternate rounds because a binary's still-tick rate drifts over minutes.
+# macOS display-frame cadence and interpolation lag, reduced by
+# scripts/frame-cadence.mjs. Two --bin values alternate rounds because a
+# still-tick rate drifts over minutes; idle-quiet drops the trace to price it.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

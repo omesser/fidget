@@ -1,7 +1,6 @@
-// A real window that steps or flings itself down the screen, so Perches can be
+// A real window that steps or flings itself down the screen so Perches can be
 // verified without an Accessibility grant. --fast jumps in one move, --glide
-// slides every frame, and a level makes the prop Dock furniture. Usage: swift
-// scripts/perch-window.swift [--fast|--glide] x y width height [level]
+// slides. Usage: swift scripts/perch-window.swift [--fast|--glide] x y w h [level]
 
 import AppKit
 
