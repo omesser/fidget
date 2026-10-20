@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Point the Homebrew cask at a GitHub Release tag's Apple Silicon disk image.
+# Usage: scripts/bump-homebrew-cask.sh v0.0.1-dev
+#        scripts/bump-homebrew-cask.sh --check v0.0.1-dev
 
 set -euo pipefail
 
