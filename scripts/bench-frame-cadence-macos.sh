@@ -1,23 +1,8 @@
 #!/usr/bin/env bash
-# Display-frame cadence, dropped frames and interpolation lag on macOS (#426).
-# Launches fidget with FIDGET_TRACE_FRAMES (Engine ticks) and
-# FIDGET_TRACE_CADENCE (the overlay's display frames), samples a window, and
-# reduces it with scripts/frame-cadence.mjs into one report per scenario.
-#
-# idle: BMO held still by a copy whose only Behavior is `fidget`. It fails if
-#   a walk frame lands in the window anyway. Idle runs BMO whatever
-#   FIDGET_CHARACTERS says, so FIDGET_INSTANCES must name BMO.
-# walking: sampled from the first walk frame.
-# load: walking with one `yes` per core running from launch.
-# idle-quiet: idle with FIDGET_TRACE_FRAMES off, so the loop's own tick
-#   counter says whether the per-tick `frame:` print slows the Engine.
-#
-# A/B: pass --bin twice. One binary's still-tick rate drifts by several Hz over
-# minutes, so each round runs every scenario on both, B first on even rounds,
-# and prints each side's mean over --rounds (default 3) and B minus A.
-#
-# Every scenario launches fidget on the live desktop, so it refuses to run
-# unless FIDGET_BENCH_GREEN_LIGHT=1 says the operator agreed to it.
+# macOS display-frame cadence, dropped frames and interpolation lag, reduced by
+# scripts/frame-cadence.mjs. idle-quiet drops FIDGET_TRACE_FRAMES so the tick
+# counter shows whether the per-tick print slows the Engine; two --bin values
+# alternate rounds because a binary's still-tick rate drifts over minutes.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -167,8 +152,8 @@ launch_app() {
 }
 
 # FIDGET_DIRECTOR=0 still runs the Static Director, which walks BMO on its
-# patrol. The idle scenarios run a copy of BMO whose only weighted Behavior is
-# `fidget`, which plays `idle`. Prints the search path holding the copy.
+# patrol, so the idle scenarios run a copy whose only weighted Behavior is
+# `fidget`.
 still_characters() {
   local dir="$out/still-characters"
   rm -rf "$dir"

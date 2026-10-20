@@ -67,7 +67,6 @@ trap 'kill "$stripes" 2> /dev/null; stop_fidget; pkill -f "count=$marks" || true
 
 wait_for_marks 10 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 wait_for_ax 10 "$pid" "$tools/window-id" "$pid" BMO || fail "Chat did not open"
-# The ask's buttons exist only once the page has rendered under the Glass rules.
 wait_for_ax_dump 10 "$pid" BMO '^AXButton\|Allow\|' || fail "Chat never drew the ask; see $log"
 screencapture -x -o -l "$("$tools/window-id" "$pid" BMO)" "$out/chat.png"
 screencapture -x -R "$("$tools/window-id" "$pid" BMO bounds)" "$out/screen.png"

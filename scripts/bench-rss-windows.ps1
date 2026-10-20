@@ -60,9 +60,8 @@ function Stop-App {
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-App } | Out-Null
 trap { Stop-App; break }
 
-# Tails one log with Get-Content -Wait and returns its first overlay line,
-# waiting for the file to be created first. $Since above zero also requires the
-# line's leading timestamp to be at least that.
+# Tails one log for its first overlay line, waiting for the file to appear.
+# $Since above zero also requires the line's timestamp to be at least that.
 $tail = {
     param([string]$Path, [long]$Since, [int]$Seconds)
     $watcher = New-Object System.IO.FileSystemWatcher (Split-Path -Parent $Path), (Split-Path -Leaf $Path)
@@ -79,8 +78,7 @@ $tail = {
         Select-Object -First 1
 }
 
-# The first overlay line from either log wins. An app that exits first, or no
-# line within the time, fails the run.
+# The first overlay line from either log wins.
 $waitSeconds = 30
 $waits = @(
     Start-Job -ScriptBlock $tail -ArgumentList $processLog, $launchedAt, $waitSeconds

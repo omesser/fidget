@@ -1,7 +1,6 @@
 // Prints the CGWindowID of <pid>'s on-screen window titled <title>, for
-// `screencapture -l`, or with `bounds` its frame as x,y,w,h for `-R`.
-// Any layer: a focused Chat floats at layer 25 (#1255).
-// Reads the window server only, so it needs no grant.
+// `screencapture -l`, or with `bounds` its frame as x,y,w,h for `-R`. Any layer:
+// a focused Chat floats at layer 25. Reads the window server, so no grant.
 import CoreGraphics
 import Foundation
 

@@ -1,4 +1,4 @@
-// #183 Stage 1 probe: one mouse-only, listen-only session tap; prints key=value facts.
+// One mouse-only, listen-only session tap; prints key=value facts.
 // Run from spike-183-input-monitoring.sh's throwaway .app so TCC blames that bundle.
 // Usage: spike-183-tap <full|no-motion>: MOUSE_EVENTS' six types, or without mouseMoved.
 

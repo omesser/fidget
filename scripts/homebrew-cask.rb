@@ -2,8 +2,7 @@
 # frozen_string_literal: true
 
 # Check the Homebrew cask against its Release disk image, or rewrite the
-# stanzas that track that image: version, checksum, url, app, quit, zap,
-# caveat, and livecheck.
+# stanzas that track it.
 #   scripts/homebrew-cask.rb verify | bump [--check] <tag>
 
 require "digest"

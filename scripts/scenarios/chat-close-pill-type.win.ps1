@@ -66,8 +66,8 @@ $Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
 $TestBin = if ($args.Count -gt 2) { $args[2] } else { "" }
 $Out = if ($args.Count -gt 3) { $args[3] } else { "" }
 $ErrorActionPreference = "Stop"
-# An error nothing here expected still ends the run with a FAIL line in
-# results.txt once that exists (Fail writes its own, then throws "scenario failed").
+# An unexpected error still ends the run with a FAIL line once results.txt
+# exists; Fail writes its own, then throws "scenario failed".
 $results = $null
 trap {
     if ("$_" -ne "scenario failed") {
@@ -99,8 +99,7 @@ if (-not $Bin -or -not $TestBin) {
 }
 
 # Every trace line a wait or assert reads, each matched to its eprintln! in
-# src-tauri/src (main.rs, frame_loop.rs). Lines in process.log may carry a
-# timestamp first.
+# src-tauri/src; a process.log line may carry a timestamp first.
 $T = [ordered]@{
     frame     = '(?:^|\s)frame: \d+ '
     loaded    = '(?:^|\s)overlay: \S+ page loaded$'
@@ -124,12 +123,8 @@ $T = [ordered]@{
     down      = '(?:^|\s)click: down '
     up        = '(?:^|\s)click: up '
 }
-# The pill's text, whatever its focus, holding $Word.
 function Draft-Holds([string]$Word) { "(?:^|\s)overlay: draft instance=\S+ text=`"[^`"]*$Word[^`"]*`" " }
 
-# The verdict on typing into the pill that opened at line $OpenedAt (0-based):
-# "typed" at the first $Typed line, "lost <line>" at a pillGone line before it
-# (even before the typing), else $null.
 function Get-TypingVerdict([string[]]$Lines, [int]$OpenedAt, [string]$Typed) {
     foreach ($l in @($Lines | Select-Object -Skip $OpenedAt)) {
         if ($l -match $Typed) { return "typed" }
@@ -164,8 +159,6 @@ if ($env:FIDGET_SCENARIO_READ_DOC) {
     exit 0
 }
 
-# The file after each character of $Word typed into $Before ends at $Expected,
-# or "fail: ..." when no single insertion of $Word gives $Expected.
 function Get-TypingSteps([string]$Before, [string]$Expected, [string]$Word) {
     for ($at = 0; $at -le $Before.Length; $at++) {
         if ($Before.Insert($at, $Word) -cne $Expected) { continue }
@@ -185,8 +178,6 @@ if ($null -ne $env:FIDGET_SCENARIO_TRACE_LINE) {
     exit 0
 }
 
-# Cleanup's plan for Notepad, from its tab names: it closes only our tab, and the
-# window too only when this run opened Notepad. Anything else fails loudly.
 function Get-NotepadPlan([string[]]$Tabs, [string]$Ours, [bool]$WasRunning) {
     $mine = @($Tabs | Where-Object { $_.Contains($Ours) }).Count
     if ($mine -eq 0) { return "fail: no Notepad tab shows $Ours" }
@@ -194,10 +185,8 @@ function Get-NotepadPlan([string[]]$Tabs, [string]$Ours, [bool]$WasRunning) {
     if ($WasRunning) { return "close our tab only" }
     "close our tab, then the window this run opened if no tab is left"
 }
-# After our tab is closed, whether the window this run opened may close too:
-# only with no tab left. Any tab, Untitled too, may hold the user's unsaved
-# text; one open at launch is the user's, restored by Notepad (the #1590 live
-# run's modified doc.txt).
+# Whether the window this run opened may close: only with no tab left, since any
+# tab (Untitled too) may hold the user's text restored into it at launch.
 function Get-WindowVerdict([string[]]$AtLaunch, [string[]]$Left, [string]$Ours) {
     if ($null -eq $Left -or $Left.Count -eq 0) { return "close" }
     $name = $Left[0]
@@ -205,9 +194,8 @@ function Get-WindowVerdict([string[]]$AtLaunch, [string[]]$Left, [string]$Ours) 
     if ($theirs -ccontains $name) { return "leave: `"$name`" was open at launch" }
     "leave: `"$name`" is still open"
 }
-# WebView2's lock on a profile: the browser holds <profile>\EBWebView\lockfile
-# open for writing, sharing only reads, and the file goes when it closes
-# (Chromium process_singleton_win.cc L244 at bef1ce99).
+# WebView2 holds <profile>\EBWebView\lockfile open for writing, sharing only
+# reads, and removes it when it closes (Chromium process_singleton_win.cc).
 function Get-ProfileLock([string]$Folder) {
     $lock = Join-Path (Join-Path $Folder "EBWebView") "lockfile"
     $missing = [pscustomobject]@{ State = "missing"; Pids = @() }
@@ -270,10 +258,9 @@ if ($env:FIDGET_SCENARIO_PROFILE_LOCK) {
     Write-Output "lock: $($verdict.State)$(if ($verdict.Pids.Count) { " pid $($verdict.Pids -join ',')" })"
     exit 0
 }
-# The tab names in one Notepad window, read through UI Automation. A window
-# already gone has none; a failed read while it is still there throws, so it
-# never reads as no tabs. $Read and $Exists stand in for UI Automation and
-# IsWindow in the self-check.
+# The tab names in one Notepad window, read through UI Automation: a window
+# already gone has none, and a failed read while it is still there throws rather
+# than reading as no tabs. $Read and $Exists are the self-check's stand-ins.
 function Get-TabNames([IntPtr]$H, [scriptblock]$Read = $null, [scriptblock]$Exists = $null) {
     if (-not $Read) { $Read = { param($W) [string[]]@($UiaEl::FromHandle($W).FindAll([System.Windows.Automation.TreeScope]::Descendants, (Of-Type ([System.Windows.Automation.ControlType]::TabItem))) | ForEach-Object { $_.Current.Name }) } }
     if (-not $Exists) { $Exists = { param($W) [PillWin]::IsWindow($W) } }
@@ -295,8 +282,8 @@ if ($env:FIDGET_SCENARIO_TAB_READ) {
     } catch { Write-Output "tabs: throws: $_" }
     exit 0
 }
-# Cleanup leaving Notepad's window open is a note, not a failure: the note goes
-# to results.txt and the console, and the caller gets "" back.
+# Leaving Notepad's window open is a note, not a failure: results.txt and the
+# console get it, and the caller gets "" back.
 function Leave-WindowOpen([string]$Why) {
     $line = "note: cleanup left the Notepad window open: $Why"
     $line | Add-Content -LiteralPath $results
@@ -339,8 +326,7 @@ if ($env:FIDGET_SCENARIO_READY_LOG) {
 }
 
 # Where Notepad goes: a monitor no fullscreen window covers, the primary first,
-# sized to fit its work area. With every monitor covered it stays on the primary,
-# and coming to the front is what puts it over the fullscreen app.
+# sized to its work area; with every monitor covered it stays on the primary.
 function Get-NotepadPlacement([object[]]$Monitors) {
     $order = @($Monitors | Where-Object { $_.Primary }) + @($Monitors | Where-Object { -not $_.Primary })
     $pick = $order | Where-Object { -not $_.Full } | Select-Object -First 1
@@ -366,8 +352,6 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 . (Join-Path $PSScriptRoot "wait-helpers.win.ps1")
 $script:t0 = Get-NowMs
 
-# The middle of the sprite at rest: its top-left from the frame line, its size
-# from the overlay's startup line. $null until both are there.
 function Get-SpriteAim([string]$LogFile) {
     $at = Get-SpriteAtRest $LogFile
     if (-not $at) { return $null }
@@ -399,11 +383,10 @@ $notepadWasRunning = [bool](Get-Process -Name Notepad -ErrorAction SilentlyConti
 
 $TestBin = (Resolve-Path -LiteralPath $TestBin).Path
 # A fresh folder per run, under the given one or $env:TEMP, so a rerun keeps
-# earlier evidence and nothing is ever cleared. New-Item stops if the name is taken.
+# earlier evidence and nothing is ever cleared.
 $base = if ($Out) { $Out } else { $env:TEMP }
 $Out = Join-Path $base "chat-close-pill-type-$(Get-Date -Format yyyyMMdd-HHmmss)-$((Get-Random -Maximum 65536).ToString('x4'))"
 New-Item -ItemType Directory -Path $Out | Out-Null
-# The shared waits watch this run's folder.
 $script:WatchDir = $Out
 $results = Join-Path $Out "results.txt"
 $focusLog = Join-Path $Out "focus.log"
@@ -439,7 +422,6 @@ $manifest = Join-Path (Join-Path $chars "bmo") "character.manifest"
 $standing = Get-Content -LiteralPath $manifest | ForEach-Object { if ($_ -match '^play = ') { $_ -replace '"walk"', '"idle"' } else { $_ } }
 [System.IO.File]::WriteAllLines($manifest, [string[]]$standing)
 if (Select-String -LiteralPath $manifest -Pattern '^play = .*"walk"' -Quiet) { Fail "BMO still walks in $manifest" }
-# FIDGET_SCENARIO_PREPARE_ONLY stops here, with the run folder made and nothing launched.
 if ($env:FIDGET_SCENARIO_PREPARE_ONLY) {
     Write-Output "prepared: $Out"
     exit 0
@@ -576,16 +558,14 @@ function Get-Fullscreen {
     }
 }
 function Note-Foreground([string]$When) { "foreground $When`: $(Describe-Window ([PillWin]::GetForegroundWindow()))" | Add-Content -LiteralPath $focusLog }
-# Each monitor, and whether a fullscreen window covers it; Notepad's place from that.
 function Get-MonitorMap([string[]]$Covered) {
     foreach ($m in [PillWin]::Monitors()) {
         @{ Name = $m.szDevice; Primary = ($m.dwFlags -band 1) -eq 1; Full = $Covered -contains $m.szDevice; L = $m.rcWork.L; T = $m.rcWork.T; R = $m.rcWork.R; B = $m.rcWork.B }
     }
 }
 
-# The shared WebView2 profile, under the real LOCALAPPDATA (read before the run
-# points it at its own folder). A startup step that misses on the run that
-# made it says so.
+# The shared WebView2 profile, under the real LOCALAPPDATA, read before the run
+# points it at its own folder.
 $webviewProfile = Join-Path (Join-Path $env:LOCALAPPDATA "fidget-scenarios") "webview2"
 $coldProfile = -not (Test-Path -LiteralPath $webviewProfile)
 $profileLock = Join-Path (Join-Path $webviewProfile "EBWebView") "lockfile"
@@ -609,10 +589,8 @@ Note-Foreground "before the run"
 $full = @(Get-Fullscreen)
 foreach ($h in $full) { "fullscreen: $(Describe-Window $h)" | Add-Content -LiteralPath $focusLog }
 if (-not $full.Count) { "fullscreen: none" | Add-Content -LiteralPath $focusLog }
-# Their monitors, kept for placing Notepad later rather than scanning again.
 $fullMonitors = @($full | ForEach-Object { [PillWin]::Monitor($_).szDevice })
 
-# Lines in Fidget's log so far; the next pill's lines start here.
 function Line-Count { if (Test-Path -LiteralPath $log) { @(Get-Content -LiteralPath $log).Count } else { 0 } }
 $script:pillFrom = 0
 function Count([string]$Pattern) {
@@ -622,9 +600,7 @@ function Count([string]$Pattern) {
 # Until $Test holds, re-checked on each UI Automation event (focus, windows,
 # structure, names), for desktop state with no line or file of its own.
 function Wait-Ui([double]$Seconds, [scriptblock]$Test) { [bool](Wait-UiaChange 0 $Seconds $Test $script:uia) }
-# One more matching line in Fidget's log than $Before, within 3 s.
 function Wait-LogCount([string]$Pattern, [int]$Before) { Wait-ForCount 3 $log $Pattern $Before }
-# Counts first, then pulls the trigger, then waits 3 s for one more matching line.
 function Wait-ForNext([string]$Pattern, [scriptblock]$Trigger) {
     $before = Count $Pattern
     & $Trigger
@@ -659,7 +635,6 @@ function Press-Hold([int]$X, [int]$Y, [string]$Case) {
     if (-not $seen) { Fail "${Case}: Fidget did not see the press at ($X,$Y) in 3 s; see $log" }
     if (-not (Wait-LogCount $T.up $ups)) { Fail "${Case}: Fidget did not see the release at ($X,$Y) in 3 s; see $log" }
 }
-# A click only on our Notepad window, checked by the window under the point.
 function Click-Notepad([int]$X, [int]$Y, [string]$Case) {
     $under = [PillWin]::RootAt($X, $Y)
     if ((Owner-Of $under) -ne $script:notepad.Id) { Fail "${Case}: refusing to click ($X,$Y): it would land on $(Describe-Window $under)" }
@@ -695,15 +670,13 @@ function Open-Pill([string]$Case) {
     $script:pillFrom = Line-Count
     if (-not (Wait-ForNext $T.opened { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: hovering the sprite did not open a focused pill in 3 s; see $log" }
 }
-# Notepad's text: Ctrl+S with our tab in front, then the file holds what is expected (or 3 s pass).
 function Notepad-Holds([string]$Expected) {
     if (-not (Foreground-Is)) { return $false }
     [PillWin]::Key(0x11, $false); Press 0x53; [PillWin]::Key(0x11, $true)
     Wait-Until 3 { (Read-Doc) -ceq $Expected }
 }
-# Types $Word into the open pill and judges it from the pill's opening: $Typed
-# passes; the pill closing or handing the keyboard back first fails at once,
-# naming the window in front then.
+# Types $Word into the open pill and judges it from the opening: $Typed passes;
+# a close or hand-back first fails at once, naming the window in front.
 function Type-IntoPill([string]$Word, [string]$Typed, [string]$Case, [string]$Detail = "") {
     [PillWin]::Text($Word)
     $script:verdict = $null
@@ -714,10 +687,9 @@ function Type-IntoPill([string]$Word, [string]$Typed, [string]$Case, [string]$De
     if ($script:verdict) { Fail "${Case}: the pill went away before `"$Word`" reached it: $($script:verdict.Substring(5)); in front then: $front$Detail; see $log" }
     Fail "${Case}: the pill never showed text=`"$Word`" focused=true in 3 s; in front: $front$Detail; see $log"
 }
-# Types $Word with Notepad in front and checks it landed there, not in the pill.
 # One character per SendInput, saved and read back before the next: Windows
-# keeps a thread's last injected character, so a busy Notepad that reads
-# several queued at once types the last one for each ("four" gave "rrrr").
+# keeps a thread's last injected character, so a busy Notepad that reads several
+# queued at once types the last one for each ("four" gave "rrrr").
 function Type-IntoNotepad([string]$Word, [string]$Case, [string]$Expected) {
     if (-not (Wait-Ui 3 { Foreground-Is })) { Note-Keys "at $Case"; Fail "${Case}: Notepad was not in front to type into; see $focusLog" }
     $steps = Get-TypingSteps (Read-Doc) $Expected $Word
@@ -746,7 +718,7 @@ function Find-OurTab {
     $null
 }
 # Closes our tab by its own close button, so Notepad's session forgets it; a
-# prompt about our unsaved scratch text gets Don't save. Returns "" or what failed.
+# prompt about our unsaved scratch text gets Don't save.
 function Close-OurNotepad {
     $found = Find-OurTab
     if (-not $found) { return "" }
@@ -833,8 +805,6 @@ public static class PillGone {
 }
 "@
 Note-Step "window-gone helper compiled"
-# Counts first, closes the pill with $Key, then waits 3 s for the closed draft
-# and 3 s more for Fidget's hand-back line of the $Back kind.
 function Close-HandsBack([uint16]$Key, [string]$Back, [string]$Case) {
     $backs = Count $T[$Back]
     if (-not (Wait-ForNext $T.closed { Press $Key })) { Fail "${Case}: the pill did not close; see $log" }
@@ -861,7 +831,7 @@ try {
     if (-not $ourTab) { Fail "Notepad shows no tab named $docName to UI Automation" }
     $plan = Get-NotepadPlan $ourTab.Names $docName $notepadWasRunning
     if ($plan.StartsWith("fail: ")) { Fail $plan.Substring(6) }
-    # The tabs at launch, read through UI Automation, decide whether cleanup may close the window.
+    # The tabs at launch decide whether cleanup may close the window.
     try { $script:launchTabs = Get-TabNames $script:hwnd } catch { Fail "at launch: $_" }
     "notepad: launch tabs `"$($script:launchTabs -join '", "')`"" | Add-Content -LiteralPath $focusLog
     "notepad: process $($script:notepad.Id), tabs $($ourTab.Names.Count), was running $notepadWasRunning; cleanup will $plan" | Add-Content -LiteralPath $focusLog

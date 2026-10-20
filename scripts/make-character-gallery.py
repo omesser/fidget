@@ -57,11 +57,6 @@ class Malformed(Exception):
     """A package the gallery cannot describe truthfully."""
 
 
-# --------------------------------------------------------------------------
-# What the Engine says, read from the Engine
-# --------------------------------------------------------------------------
-
-
 def from_rust(source):
     """The Required Animation Set and the manifest defaults, from character.rs.
 
@@ -91,11 +86,6 @@ def from_rust(source):
         "scale": constant("DEFAULT_SCALE"),
         "weight": constant("DEFAULT_WEIGHT"),
     }
-
-
-# --------------------------------------------------------------------------
-# One package
-# --------------------------------------------------------------------------
 
 
 def source(package, declared):
@@ -253,11 +243,6 @@ def character(package, required, defaults, art_root):
     }
 
 
-# --------------------------------------------------------------------------
-# The page
-# --------------------------------------------------------------------------
-
-
 def gallery(characters_root, rust_source, out):
     required, defaults = from_rust(rust_source)
     packages = sorted(p for p in characters_root.iterdir() if (p / "character.manifest").is_file())
@@ -282,11 +267,6 @@ def gallery(characters_root, rust_source, out):
     page = out / "characters.html"
     page.write_text(shell.replace(PLACEHOLDER, block), encoding="utf-8")
     return data, page
-
-
-# --------------------------------------------------------------------------
-# The check
-# --------------------------------------------------------------------------
 
 
 def self_check():

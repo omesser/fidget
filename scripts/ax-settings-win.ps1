@@ -14,8 +14,8 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Get-AutomationElementFromHandle {
-    # FromHandle, not RootElement.FindFirst(Descendants): the latter can hang
-    # indefinitely on a multi-monitor desktop (#715).
+    # FromHandle, not RootElement.FindFirst(Descendants): a desktop-wide search
+    # can hang indefinitely on a multi-monitor session.
     param([IntPtr]$WindowHandle)
     if ($WindowHandle -eq [IntPtr]::Zero) { return $null }
     try {
@@ -27,7 +27,6 @@ function Get-AutomationElementFromHandle {
 
 function Find-SettingsWindow {
     # ProcessId, not Pid: $PID is Constant+AllScope and cannot be a parameter.
-    # WindowHandle takes FromHandle so a known HWND never starts a desktop search.
     param([int]$ProcessId = 0, [IntPtr]$WindowHandle = 0)
 
     if ($WindowHandle -ne [IntPtr]::Zero) {
@@ -47,7 +46,7 @@ function Find-SettingsWindow {
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Window
     )
-    # Class + name + window: Name=Settings alone matches the Windows Settings app (#805).
+    # Class + name + window: Name=Settings alone matches the Windows Settings app.
     if ($ProcessId -gt 0) {
         $pidCond = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
@@ -57,8 +56,6 @@ function Find-SettingsWindow {
     } else {
         $webviewCond = New-Object System.Windows.Automation.AndCondition($classCond, $nameCond, $typeCond)
     }
-    # RootElement descendant search can hang on multi-monitor (#715). Prefer
-    # Get-AutomationElementFromHandle when HWND is already known.
     return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $webviewCond

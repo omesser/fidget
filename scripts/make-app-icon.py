@@ -198,8 +198,6 @@ def preview(icon):
     sheet.paste(big, (56, 76), big)
     draw.text((56, 496), f"{CANVAS} × {CANVAS} · {BODY}px squircle body on Apple's macOS grid", fill=faint, font=font(19))
 
-    # Both tiles are the same slot, which is the whole point: the square fills
-    # it and the squircle keeps the inset its neighbours keep.
     slot = 240
     before = Image.open(SOURCE).convert("RGBA").resize((slot, slot), Image.Resampling.LANCZOS)
     after = icon.resize((slot, slot), Image.Resampling.LANCZOS)
@@ -212,8 +210,7 @@ def preview(icon):
         draw.text((x, 120 + slot + 20), note, fill=faint, font=font(18), spacing=8)
 
     # Read the frames back out of the file rather than re-rendering them, so
-    # what the sheet shows is what shipped. Drawn at true size on one
-    # baseline, which is the only way a size ladder says anything.
+    # the sheet shows what shipped; drawn at true size on one baseline.
     written = Image.open(ICONS / "icon.ico")
     draw.text((56, 552), " · ".join(str(s) for s in ICO_SIZES), fill=ink, font=font(26, bold=True))
     x, baseline = 56, 800

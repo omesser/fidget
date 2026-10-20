@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Download the cask's Release disk image and check the checksum, app,
-# bundle id, and that livecheck's latest release is the pinned tag.
-# No Homebrew required. macOS with brew also runs brew style.
-# Usage: scripts/verify-homebrew-cask.sh
+# Downloads the cask's Release disk image and checks the checksum, app, bundle
+# id, and that livecheck's latest release is the pinned tag. No Homebrew required;
+# macOS with brew also runs brew style.
 
 set -euo pipefail
 

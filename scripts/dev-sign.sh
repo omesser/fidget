@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Run after each build: scripts/dev-sign.sh [binary or .app, default target/debug/fidget]
-# A stable self-signed identity stops Keychain prompts (ad-hoc cdhash changes every
-# build). Development only (`-A`). A key saved before the first signed run: re-save it.
+# Run after each build. A stable self-signed identity stops Keychain prompts; an
+# ad-hoc cdhash changes every build. `-A` is for development only. A key saved
+# before the first signed run must be re-saved.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,9 +20,9 @@ if [[ ! -e $TARGET ]]; then
   exit 1
 fi
 
-# Identities, not certificates: a certificate whose private key never arrived
-# cannot sign. `-v` is wrong here too — it filters to trusted identities, and
-# this one is trusted by nothing, which codesign does not mind.
+# Identities, not certificates: one whose private key never arrived cannot sign.
+# `-v` filters to trusted identities, and this one is trusted by nothing, which
+# codesign does not mind.
 if ! security find-identity "$KEYCHAIN" | grep -q "\"$IDENTITY\""; then
   echo "dev-sign: creating the '$IDENTITY' certificate in the login keychain"
   tmp="$(mktemp -d)"
@@ -42,11 +42,10 @@ if ! security find-identity "$KEYCHAIN" | grep -q "\"$IDENTITY\""; then
   security import "$tmp/id.p12" -k "$KEYCHAIN" -P fidget -T /usr/bin/codesign -A
 fi
 
-# A bundle carries the frameworks Tauri links; the raw binary carries nothing.
+# A bundle carries the frameworks Tauri links; a raw binary carries nothing.
 deep=()
 [[ $TARGET == *.app ]] && deep=(--deep)
 
 codesign --force "${deep[@]}" --sign "$IDENTITY" "$TARGET"
-# Reporting only. A signature that succeeded must not fail the script because
-# codesign phrased its output differently.
+# Reporting only: a successful signature must not fail on codesign's phrasing.
 codesign -dvvv "$TARGET" 2>&1 | grep -E '^(Authority|CDHash)=' || true

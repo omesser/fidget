@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034  # scripts/lib/sync-exclusions.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
-# Keep the vendored Matt Pocock skills in `.agents/skills/` current; `--fetch`
-# re-vendors from upstream first. `UPSTREAM.json` records this sync's names and
-# gates deletion. `scripts/sync-pstack.sh` owns the `.claude`/`.cursor` symlinks.
+# Keeps the vendored Matt Pocock skills in `.agents/skills/` current; `--fetch`
+# re-vendors from upstream first. `UPSTREAM.json` gates deletion, and
+# `sync-pstack.sh` owns the `.claude`/`.cursor` symlinks.
 
 set -euo pipefail
 
@@ -39,7 +39,7 @@ mine() { owned_names "$META"; }
 
 # Names this sync must never write or delete: everything pstack owns, plus any
 # directory neither lock file claims, which this repository wrote. Computed
-# rather than hand-listed, so it also covers a collision upstream adds later.
+# rather than hand-listed, so it covers a collision upstream adds later.
 reserved_names() {
   local pstack_owned
   pstack_owned=$(owned_names "$PSTACK_META" | sort)
@@ -75,8 +75,8 @@ if [ "${1:-}" = "--fetch" ]; then
     echo "skipping $clash (name already owned by pstack or by this repository)"
   done
 
-  # Only names this script owned are eligible, so a pstack or repo-owned skill
-  # is never removed here.
+  # Only names this script owned are eligible, so pstack and repo-owned skills
+  # survive.
   comm -23 <(echo "$before") <(echo "$after") | while read -r gone; do
     [ -n "$gone" ] || continue
     echo "removing $gone (gone from upstream, excluded, or now reserved)"

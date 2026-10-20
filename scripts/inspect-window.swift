@@ -1,6 +1,5 @@
-// Reports the overlay's on-screen geometry as JSON, via CGWindowListCopyWindowInfo,
-// which returns window bounds, owner and layer with no permission prompt. No
-// stock command-line tool reports a window's bounds or level.
+// CGWindowListCopyWindowInfo reports bounds, owner and layer with no permission
+// prompt, and no stock command-line tool reports a window's bounds or level.
 
 // Not the crate's own WindowSource: that is deliberately blind to our own
 // process, because a Character able to see the overlay would find a Perch under

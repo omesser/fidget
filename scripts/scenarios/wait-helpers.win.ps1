@@ -82,7 +82,6 @@ function Start-FidgetPiped([string]$Bin, [string[]]$Arguments, [string]$StdoutLo
     return $process
 }
 
-# Milliseconds since the epoch, for the printed duration.
 function Get-NowMs {
     return [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 }
@@ -112,9 +111,6 @@ function Initialize-ScenarioData([string]$Out, [hashtable]$Settings = @{}) {
     return $data
 }
 
-# Block until $Test returns true, running it now and again on each wake (a
-# stderr line from a piped Fidget, or a change under $Dir), or until $Seconds
-# run out. A dead Fidget fails at its next wake or at the deadline.
 function Wait-OnChanges([double]$Seconds, [string]$Dir, [scriptblock]$Test) {
     if (-not $Dir) { $Dir = $script:WatchDir }
     if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { $Dir = [System.IO.Path]::GetTempPath() }
@@ -138,31 +134,26 @@ function Test-FileMatches([string]$FilePath, [string]$Pattern) {
     (Test-Path -LiteralPath $FilePath) -and [bool](Select-String -LiteralPath $FilePath -Pattern $Pattern -Quiet)
 }
 
-# Wait for a line matching a pattern to land in a file.
 function Wait-ForLine([double]$Seconds, [string]$FilePath, [string]$Pattern) {
     return (Wait-OnChanges $Seconds (Split-Path -Parent $FilePath) { Test-FileMatches $FilePath $Pattern })
 }
 
-# Wait for a trace line in the app log or process.log.
 function Wait-ForTrace([double]$Seconds, [string]$LogFile, [string]$Pattern) {
     return (Wait-ForLine $Seconds $LogFile $Pattern)
 }
 
-# Wait for a line in the fixture Harness marks file.
 function Wait-ForMarks([double]$Seconds, [string]$MarksFile, [string]$Pattern) {
     return (Wait-ForLine $Seconds $MarksFile $Pattern)
 }
 
-# Wait for a file to exist.
 function Wait-ForFile([double]$Seconds, [string]$FilePath) {
     $dir = Split-Path -Parent $FilePath
     while ($dir -and -not (Test-Path -LiteralPath $dir)) { $dir = Split-Path -Parent $dir }
     return (Wait-OnChanges $Seconds $dir { Test-Path -LiteralPath $FilePath })
 }
 
-# Wait until a file holds more than $Before lines matching a pattern, for a
-# line that repeats (a second spawn, a second Poke). Take the count before the
-# trigger.
+# Waits for one more matching line than $Before, for a line that repeats (a
+# second spawn, a second Poke); take the count before the trigger.
 function Wait-ForCount([double]$Seconds, [string]$FilePath, [string]$Pattern, [int]$Before) {
     return (Wait-OnChanges $Seconds (Split-Path -Parent $FilePath) {
             (Test-Path -LiteralPath $FilePath) -and
@@ -171,15 +162,13 @@ function Wait-ForCount([double]$Seconds, [string]$FilePath, [string]$Pattern, [i
 }
 
 # Wait until a probe returns true, for state with no file of its own (a UI
-# Automation dump, a window frame). The probe runs now and again after each
-# change under the scenario folder, where Fidget's trace grows as it draws.
+# Automation dump, a window frame); re-run after each change under WatchDir.
 function Wait-Until([double]$Seconds, [scriptblock]$Probe) {
     return (Wait-OnChanges $Seconds $script:WatchDir $Probe)
 }
 
-# Run ax-window-win.ps1 in this session (no new powershell per check),
-# splatting $AxArgs as its parameters, e.g. @{ Command = "dump"; ProcessId = $id;
-# Title = "BMO" }. Writes its output to $OutFile; true when it exits 0.
+# Run ax-window-win.ps1 in this session (no new powershell per check), splatting
+# $AxArgs as its parameters, e.g. @{ Command = "dump"; ProcessId = $id }.
 $script:AxScript = Join-Path $PSScriptRoot "..\ax-window-win.ps1"
 function Invoke-AxWin([string]$OutFile, [hashtable]$AxArgs) {
     $global:LASTEXITCODE = 0
@@ -192,13 +181,10 @@ function Invoke-AxWin([string]$OutFile, [hashtable]$AxArgs) {
     return ($LASTEXITCODE -eq 0)
 }
 
-# Run a UI Automation check now and again on each UIA change event from
-# the process until it returns true or the seconds run out.
 function Wait-ForUia([double]$Seconds, [int]$ProcessId, [scriptblock]$Check) {
     return [bool](Wait-UiaChange $ProcessId $Seconds $Check)
 }
 
-# Wait for a UI Automation dump of a window to match a pattern.
 function Wait-ForAxDump([double]$Seconds, [int]$ProcessId, [string]$Title, [string]$Pattern) {
     $ax = Join-Path $PSScriptRoot "..\ax-window-win.ps1"
     return [bool](Wait-UiaChange $ProcessId $Seconds {
@@ -229,7 +215,6 @@ function Get-SpriteAtRest([string]$TraceFile) {
     return $at
 }
 
-# Check the last frame for a state pattern
 function In-State([string]$LogFile, [string]$StatePattern) {
     if (-not (Test-Path -LiteralPath $LogFile)) { return $false }
     $frame = Get-Content -LiteralPath $LogFile | Where-Object { $_ -match '^frame: ' } | Select-Object -Last 1

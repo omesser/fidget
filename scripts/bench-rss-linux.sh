@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
-# Compare scenarios on VmHWM and read the RSS series for shape, and record the
-# roster, display count and what the sprite was doing beside the number.
+# Compare on VmHWM, read the RSS series for shape, and record the roster,
+# display count and what the sprite was doing beside the number.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -35,8 +35,8 @@ log="$out.app.log"
 app=$!
 trap 'kill -TERM "$app" 2>/dev/null; sleep 1; kill -KILL "$app" 2>/dev/null' EXIT INT TERM
 
-# The overlays are what allocate; sampling before they exist measures a
-# half-started app. The line is the one place the app says how many it made.
+# The overlays are what allocate, so sampling before they exist measures a
+# half-started app.
 for _ in $(seq 30); do
   grep -q 'overlay: [0-9]* display' "$log" && break
   sleep 1

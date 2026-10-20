@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # X11 overlay parity: Perch, ride, drop, Poke, EWMH states. The Perch window
-# predates the app, as in verify-overlay.sh. xprop exits 0 on a missing property.
-# Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-overlay-x11.sh
+# predates the app, as in verify-overlay.sh; xprop exits 0 on a missing property.
+# Run: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-overlay-x11.sh
 
 set -euo pipefail
 

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Shared helpers for the X11 verify scripts. Callers already run under
-# `set -euo pipefail`; this file does not set it.
+# Shared helpers for the X11 verify scripts. Callers already set
+# `set -euo pipefail`, so this file does not.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,7 +38,7 @@ fail() {
   exit 1
 }
 
-# $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
+# $1=file  $2=grep -E pattern  $3=attempts of a quarter-second each
 await() {
   local file="$1" pattern="$2" attempts="$3"
   for _ in $(seq 1 "$attempts"); do
@@ -67,9 +67,9 @@ cleanup() {
   fi
 }
 
-# GDK leaves placeholders (10x10, and ~200x200 with a Settings webview) under
-# the app's WM_CLASS. Excluding the Settings WM_NAME and requiring half the
-# display holds for a display-sized overlay. Needs MIN_OVERLAY_W/H set first.
+# GDK leaves 10x10 placeholders, and ~200x200 ones with a Settings webview, under
+# the app's WM_CLASS. Requiring half the display holds for a display-sized
+# overlay. Needs MIN_OVERLAY_W/H set first.
 find_overlay_window() {
   local id w h name
   for id in $(xdotool search --class 'Fidget' 2> /dev/null || true); do

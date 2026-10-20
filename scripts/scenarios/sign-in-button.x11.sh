@@ -66,7 +66,6 @@ if [ -n "${FIDGET_SCENARIO_AX_NEEDS_LOGIN:-}${FIDGET_SCENARIO_AX_WAITING:-}${FID
     [ -z "${FIDGET_SCENARIO_AX_SIGNED_IN:-}" ] || [ -z "${FIDGET_SCENARIO_OPENED:-}" ]; then
     fail "set FIDGET_SCENARIO_AX_NEEDS_LOGIN, FIDGET_SCENARIO_AX_WAITING, FIDGET_SCENARIO_AX_SIGNED_IN and FIDGET_SCENARIO_OPENED"
   fi
-  # The launcher the fixture dumps name.
   launcher=${FIDGET_SCENARIO_LAUNCHER:-/opt/fidget/scripts/scenarios/fixture-harness.sh}
   check_needs_login "$FIDGET_SCENARIO_AX_NEEDS_LOGIN"
   check_waiting "$FIDGET_SCENARIO_AX_WAITING"
@@ -125,8 +124,8 @@ handed() { [ "$(cat "$opened")" = "$link" ]; }
 sessions() { [ "$(grep -cx new "$marks")" -ge "$1" ]; }
 
 wait_for_marks 2 "$marks" '^spawn$' || fail "Harness never spawned; see $log"
-# Open Chat. The 1 s timed wake sends session/new (refused: auth required), which
-# shows the needs-login UI. A session/new only comes from a wake, not from attach alone.
+# The 1 s timed wake sends session/new (refused: auth required), which shows the
+# needs-login UI; a session/new only comes from a wake, not from attach alone.
 rc=0
 ax tray "$pid" BMO Chat > "$out/open.txt" 2>&1 || rc=$?
 if [ "$rc" -eq 2 ]; then

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2034  # scripts/lib/sync-exclusions.sh reads EXCLUDED; shellcheck can't follow a dynamic source path without -x
-# Keep the vendored pstack skills, index and symlinks in `.agents/skills/`
+# Keeps the vendored pstack skills, index and symlinks in `.agents/skills/`
 # current; `--fetch` re-vendors from upstream first.
 
 # `.agents/skills/` mixes vendored skills with repo-owned ones. `UPSTREAM.json`
@@ -60,8 +60,7 @@ if [ "${1:-}" = "--fetch" ]; then
   done
 
   # Dropped upstream, or newly excluded. Only names this script put there are
-  # eligible, so neither a repo-owned skill nor one the other sync owns can be
-  # removed here.
+  # eligible, so pstack never removes a repo-owned or other-sync-owned skill.
   comm -23 <(echo "$before") <(echo "$after") | while read -r gone; do
     [ -n "$gone" ] || continue
     echo "removing $gone (gone from upstream or excluded)"

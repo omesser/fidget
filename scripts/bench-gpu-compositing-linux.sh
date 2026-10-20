@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# GPU compositing cost of the transparent overlay on Linux (#425).
-# mask_rebuild lines are XShapeCombineMask calls. Per-call time belongs to #428.
+# GPU compositing cost of the transparent overlay on Linux. `mask_rebuild` lines
+# are XShapeCombineMask calls.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -117,10 +117,9 @@ need_bin() {
   }
 }
 
-# Other sessions on the host run their own X servers and compositors, so a
-# process counts only when it serves this DISPLAY. A compositor inherits it as
-# DISPLAY. An X server names it on its command line; its own DISPLAY is the
-# shell it was started from.
+# Other sessions run their own X servers and compositors, so a process counts only
+# when it serves this DISPLAY. A compositor inherits DISPLAY; an X server names it
+# on its command line, and its own DISPLAY is its starting shell.
 compositor_on_display() {
   local pid
   for pid in $(pgrep -x "$1" 2> /dev/null); do
@@ -500,10 +499,9 @@ park_pointer() {
   fi
 }
 
-# The middle of the sprite box from the last Grounded or Perched frame line
-# after line $2: its top-left corner plus half the size the overlay line
-# reports. A climb or a perch puts the feet on an edge, so the feet are not a
-# safe aim, and a falling sprite has moved on before the pointer gets there.
+# The middle of the sprite box from the last Grounded or Perched frame after line
+# $2: top-left plus half the reported size. A climb or perch puts the feet on an
+# edge, so the feet are not a safe aim, and a falling sprite has moved on.
 sprite_center() {
   local log=$1
   local from=${2:-0}

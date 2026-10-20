@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove that native Wayland fullscreen apps don't appear in XWayland's window list (#1369).
+# Prove that native Wayland fullscreen apps don't appear in XWayland's window list.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

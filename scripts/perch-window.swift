@@ -1,18 +1,7 @@
-// A real window at a chosen rectangle, which then steps or flings itself down
-// the screen. The frame loop's Perches can only be verified against a desktop,
-// and moving another app's window needs an Accessibility grant; ours is free.
-
-// --fast covers the travel in one jump: a Perch that outruns the sprite leaves
-// it behind to fall. Each event prints one JSON line: Unix ms, the bounds the
-// window server settled on (what was asked for is not evidence), and depth.
-
-// An optional window level makes the prop desktop furniture (Dock 20, menu bar
-// 24), the only way to check from a script that neither is a Perch. It quits on
-// its own, so an interrupted run leaves no stray window.
-
-// --glide slides the window every frame, keeping the Engine riding and the poll
-// at ride cadence for longer than one step.
-// Usage: swift scripts/perch-window.swift [--fast|--glide] x y width height [level]
+// A real window that steps or flings itself down the screen, so Perches can be
+// verified without an Accessibility grant. --fast jumps in one move, --glide
+// slides every frame, and a level makes the prop Dock furniture. Usage: swift
+// scripts/perch-window.swift [--fast|--glide] x y width height [level]
 
 import AppKit
 
@@ -33,7 +22,6 @@ let flingPoints = stepPoints * Double(steps)
 /// Faster than the app's ~10Hz window poll, so a burial never survives a tick.
 let reassertInterval = 0.05
 
-/// How far a glide travels each way, and how much each frame moves it.
 let glidePoints = 200.0
 let glideStep = 2.0
 let glideInterval = 1.0 / 60.0
@@ -43,9 +31,8 @@ let fast = args.first == "--fast"
 let glide = args.first == "--glide"
 if fast || glide { args.removeFirst() }
 
-/// A backstop, not a schedule: the script kills this window when it is done
-/// with it, and this is what happens if the script never gets the chance.
-/// A glide lives through a whole bench sample, so it gets longer.
+/// A backstop, not a schedule: the script kills this window itself, and a glide
+/// lives through a whole bench sample so it gets longer.
 let quitAfter = glide ? 180.0 : 45.0
 guard args.count == 4 || args.count == 5, let x = Double(args[0]), let y = Double(args[1]),
     let width = Double(args[2]), let height = Double(args[3])

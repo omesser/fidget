@@ -30,7 +30,7 @@ SHOWCASES = (
     ("cat-walk.gif", "cat", "walk", 8, 8),
     ("jotaro-kujo-react.gif", "jotaro-kujo", "react", 8, 7),
     ("nim-sleep.gif", "nim", "sleep", 4, 3),
-    # Permission granted by MekaRamen (Yeoh Kher En) to publish (#388).
+    # Permission granted by MekaRamen (Yeoh Kher En) to publish.
     ("timber-wolf-walk.gif", "timber-wolf", "walk", 20, 8),
     ("trump-wave.gif", "trump", "wave", 3, 4),
 )

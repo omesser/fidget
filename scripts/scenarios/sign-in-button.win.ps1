@@ -154,8 +154,8 @@ try {
     }
 
     if (-not (Wait-ForMarks 3 $marks '^spawn$')) { Fail "Harness never spawned; see $log" }
-    # Open Chat. The 1 s timed wake sends session/new (refused: auth required), which
-    # shows the needs-login UI. A session/new only comes from a wake, not from attach alone.
+    # The 1 s timed wake sends session/new (refused: auth required), showing
+    # needs-login; session/new comes only from a wake, not from attach alone.
     if (-not (Invoke-Ax "open" @{ Command = "tray"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "Chat" })) {
         Fail "the tray's Chat row did not open Chat; see $out\open.txt"
     }

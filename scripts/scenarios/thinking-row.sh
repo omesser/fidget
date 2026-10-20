@@ -73,7 +73,7 @@ capture() { # <name> <glyph the first Thinking row starts with>
 wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 # `chat: <label> is open` is the line a fresh Chat writes; it never writes
-# `is not minimized`, which is a deminiaturize transition (#1503).
+# `is not minimized`, which is a deminiaturize transition.
 wait_for_trace 3 "$trace" '^[0-9]+ chat: chat-[^ ]+ is open$' || fail "Chat never logged open; see $trace"
 [ -n "$("$tools/window-id" "$pid" BMO 2> /dev/null)" ] || fail "Chat did not open for the ask"
 wait_for_marks 3 "$marks" '^thought 2$' || fail "no thinking turn; see $log"

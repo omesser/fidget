@@ -75,12 +75,8 @@ wait_climbing() { # <tenths of a second timeout>
 }
 
 # One xdotool call per gesture, as the app samples the pointer on its own tick.
-# X11 has no negative root coordinate, so the target is the screen's own edge
-# pixel. The sprite is held by a point a quarter of its width inboard of its
-# centre, so with the pointer at the edge its centre is already past it: a
-# sprite whose centre is over no display falls to the nearest edge and climbs
-# it, whatever speed the hand had. No Throw is involved, and the release is
-# held still so none can be measured.
+# X11 has no negative root coordinate, so the target is the screen's own edge;
+# the grab sits a quarter-width inboard, so the centre is past it at any speed.
 place_sprite() { # <grab x> <y> <target x>
   # Holds as on Windows: 0.12 s lets click-through turn off, 0.25 s makes a grab,
   # 0.03 s a step keeps the path, 0.3 s still means the release throws nothing.
@@ -141,10 +137,9 @@ if [ $((mid - edge)) -gt 2 ] || [ $((edge - mid)) -gt 2 ]; then
   fail "the sprite climbs at x=$mid, not the $side edge at x=$edge; see $trace"
 fi
 
-# Only the display's half of the sprite is drawn. Clicks a double-click
-# interval apart are separate Pokes; stop at the first. Aim near the top,
-# since it rises while the click travels, but never into a top panel.
-# Into the display: right of a left edge, left of a right edge.
+# Only the display's half is drawn; click into it, right of a left edge or left
+# of a right one. Clicks a double-click interval apart are separate Pokes, so
+# stop at the first. Aim high, since it rises, but below any panel.
 px=$((edge + into * half / 2))
 before=$(pokes)
 poked=

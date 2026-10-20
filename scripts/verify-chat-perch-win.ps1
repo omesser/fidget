@@ -272,7 +272,6 @@ try {
     $chat = $script:chat
     if (-not (Wait-For 30 { (Lines $marks) -contains "asked" })) { Fail "fixture did not ask its question" }
 
-    # 1. Focused Chat stays at normal level.
     $work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $r = Rect $chat
     [ChatPerchWin]::SetWindowPos($chat, [IntPtr]::Zero, $work.Left + [int](($work.Width - $r[2]) / 2),
@@ -293,7 +292,6 @@ try {
     if (Topmost $chat) { Fail "focused Chat is WS_EX_TOPMOST: $state" }
     Pass "normal_level" $state
 
-    # 2. The Character perches on Chat.
     $chatRect = Rect $chat
     Add-Content -LiteralPath (Join-Path $out "run.txt") -Value "chat=$($chatRect -join ',')"
     $ledgeX = $chatRect[0] + [int]($chatRect[2] / 2)
@@ -309,7 +307,6 @@ try {
     if (Topmost $chat) { Fail "Chat turned WS_EX_TOPMOST after the perch: $(Chat-State)" }
     Pass "perch" ($script:perched[-1])
 
-    # 4. The bubble's chat button takes a click over Chat.
     $overlay = [ChatPerchWin]::FindAt([uint32]$proc.Id, "Fidget", $ledgeX, $ledgeY)
     if ($overlay -eq [IntPtr]::Zero) { Fail "no overlay window titled Fidget over Chat's ledge" }
     $script:button = $null
@@ -338,7 +335,6 @@ try {
     }
     Pass "bubble_button_click" "button=$($button -join ',') instance=$ask"
 
-    # 3. The composer takes a click and typing.
     $edits = @(Dump $chat "chat-before" | Where-Object { $_ -match '^entry\|' })
     if ($edits.Count -eq 0) { Fail "no composer entry in Chat; see $out\chat-before.ax.txt" }
     if (-not ($edits[-1] -match '\|(-?\d+),(-?\d+),(\d+),(\d+)$')) { Fail "composer has no frame: $($edits[-1])" }

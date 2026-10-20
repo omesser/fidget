@@ -73,7 +73,6 @@ check_tab_sequence() {
   return 1
 }
 
-# A tab's evidence is a nonempty still taken while a control had focus.
 check_tab_still() {
   local tab="$1" png="$2" line="$3"
   if [ -s "$png" ] && [ -n "$line" ] && [ "$line" != "none|||false" ]; then

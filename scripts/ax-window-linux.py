@@ -210,7 +210,6 @@ def cmd_dump(argv):
         return 1
     client = x11_client_frame(pid, title) if with_frames else None
     if with_frames and client is not None:
-        # Emit the window line with the X11 client frame, then its AT-SPI children.
         role = short_role(window)
         name = node_name(window)
         _, x, y, w, h = client

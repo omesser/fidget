@@ -82,8 +82,6 @@ function Check-After([string]$File) {
     Write-Output "ok: Chat still shows the landing, and no note says the link did not open"
 }
 
-# What the click led to: the "did not open" note, a webview navigation (the
-# landing is gone), a new top-level window that is not Fidget's, or $null.
 function Get-LinkOutcome([string[]]$Dump, [string[]]$NewTitles) {
     if ($Dump | Where-Object { $_.Contains("That link did not open") }) { return "refused" }
     if (-not ($Dump | Where-Object { $_.Contains("|Codex needs ") })) { return "navigated" }
@@ -91,7 +89,6 @@ function Get-LinkOutcome([string[]]$Dump, [string[]]$NewTitles) {
     return $null
 }
 
-# Top-level windows on the desktop, by native handle and title.
 function Get-TopWindows {
     $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
         [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)

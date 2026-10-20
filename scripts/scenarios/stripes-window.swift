@@ -1,7 +1,6 @@
 // Fills the main display with hard-edged diagonal stripes at the normal window
 // level, so a capture of a see-through window shows a known backdrop rather
-// than the desktop. Runs until killed.
-// Usage: stripes-window
+// than the desktop. Usage: stripes-window
 import AppKit
 
 final class Stripes: NSView {

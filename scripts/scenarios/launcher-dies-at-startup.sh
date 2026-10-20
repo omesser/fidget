@@ -45,7 +45,6 @@ fail() {
 build_ax_events
 
 # `abort-first` prints a dyld line and aborts on its first spawn, then answers.
-# The wrapper answers the launcher probe's `--version` as harness.rs's does.
 harness="$out/launcher.sh"
 # shellcheck disable=SC2016 # "$1" and "$@" belong to the wrapper.
 printf '#!/bin/sh\n[ "$1" = --version ] && { echo fake-acp-agent 1.0.0; exit 0; }\nexec %q %s "$@"\n' \

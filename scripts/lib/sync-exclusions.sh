@@ -1,13 +1,13 @@
 # shellcheck shell=bash
-# Shared by scripts/sync-mattpocock.sh and scripts/sync-pstack.sh. Each defines
-# its own `EXCLUDED`, one `name|reason` per line, then sources this for the
-# two helpers below so the two syncs cannot drift on how they read it.
+# Shared by scripts/sync-mattpocock.sh and scripts/sync-pstack.sh, which each
+# define `EXCLUDED` as `name|reason` lines. Reading it only here keeps the two
+# syncs from drifting apart.
 
 excluded_names() {
   printf '%s\n' "$EXCLUDED" | cut -d'|' -f1 | sort
 }
 
-# The `excluded` object body for the lock file, one JSON member per line.
+# The `excluded` object body for the lock file.
 excluded_json() {
   local first=1 name reason
   while IFS='|' read -r name reason; do

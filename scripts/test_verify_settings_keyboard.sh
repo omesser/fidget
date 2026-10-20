@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The pure checks in verify-settings-keyboard-webview.sh against fixtures
-# (#854). No app, no Accessibility grant.
+# The pure checks in verify-settings-keyboard-webview.sh against fixtures. No
+# app, no Accessibility grant.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

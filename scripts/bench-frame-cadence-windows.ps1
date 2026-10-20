@@ -1,7 +1,6 @@
-# Build with: cd src-tauri; cargo build --release --bin fidget
-# Set FIDGET_BENCH_GREEN_LIGHT=1 only after agreeing this run puts fidget on the live desktop.
-# From the repo root: scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20 -Bin target\release\fidget.exe
-# The tables this script prints are the measurement. Do not type numbers into the repo that this script did not print.
+# Usage: scripts\bench-frame-cadence-windows.ps1 matrix -Seconds 20
+#   -Bin target\release\fidget.exe. FIDGET_BENCH_GREEN_LIGHT=1: the operator
+#   agreed to fidget on the desktop. Type only numbers it printed.
 
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -21,7 +20,6 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-# $IsWindows is absent on Windows PowerShell 5.1.
 if ($env:FIDGET_BENCH_GREEN_LIGHT -ne '1') {
     [Console]::Error.WriteLine("$Scenario launches fidget on the live desktop. Set FIDGET_BENCH_GREEN_LIGHT=1 once the operator has agreed.")
     exit 2

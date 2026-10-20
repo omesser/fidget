@@ -123,7 +123,6 @@ $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
 
-# Convert Windows paths to forward slashes for bash.
 $rootBash = $root -replace '\\', '/'
 $testBinBash = $TestBin -replace '\\', '/'
 $marksBash = $marks -replace '\\', '/'

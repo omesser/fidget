@@ -32,11 +32,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "characters"
 CLEAR = (0, 0, 0, 0)
 
 
-# --------------------------------------------------------------------------
-# The grid
-# --------------------------------------------------------------------------
-
-
 def blank():
     return [[CLEAR] * SIZE for _ in range(SIZE)]
 
@@ -70,10 +65,6 @@ def png(px):
         + chunk(b"IEND", b"")
     )
 
-
-# --------------------------------------------------------------------------
-# Nim — modern pixel art
-# --------------------------------------------------------------------------
 
 # A lit ramp rather than a palette of flat fills: every shade of Nim is one of
 # these, chosen by which way the surface faces the light.
@@ -187,8 +178,6 @@ def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.
     body_cy = 23.0 + bob + squash
     head_cy = 14.5 + bob
 
-    # Feet, under the body: a walk swings them along the same arc, half a cycle
-    # apart, and a rest leaves them side by side.
     for side, phase in ((-1, 0.0), (1, math.pi)):
         swing = math.sin(step + phase)
         fx = 13 + (0 if side < 0 else 5) + int(round(swing * 2))

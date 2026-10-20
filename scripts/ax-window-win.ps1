@@ -1,15 +1,5 @@
-# Dump or resize one top-level window through UI Automation.
-# Dump lines are `role|name`. Pass `frames` after the title to append
-# `|x,y,w,h` on every line. `size` resizes the window and prints `x,y,w,h`.
-# `press NAME` invokes the first button named NAME; `link NAME` the first link.
-# `click -X X -Y Y` sends a real left click at that screen point and takes
-# no -ProcessId or -Title.
-# `menu -X X -Y Y` right-clicks that point, prints the names of the popup
-# menu's items one per line, then presses Escape. It also takes no -ProcessId.
-# `tray ROW` clicks the taskbar icon named fidget, invokes the menu row whose
-# name starts with ROW, then waits for a window titled TITLE.
-#
-# EnumWindows plus FromHandle, not RootElement.FindFirst: a desktop-wide
+# Drive one window through UI Automation (dump, size, press/link NAME, click or
+# menu at -X/-Y, tray ROW). FromHandle, not RootElement.FindFirst: a desktop-wide
 # descendant search can hang on a multi-monitor session.
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -218,7 +208,7 @@ function Get-PopupMenuItems {
 }
 
 # Where to click: the sprite's middle once two frame lines in a row put it
-# within 2 px, else -X/-Y. Re-reads the trace only when it changes.
+# within 2 px, else -X/-Y.
 function Get-ClickPoint {
     if (-not ($TraceFile -and (Test-Path -LiteralPath $TraceFile) -and $SpriteW -gt 0 -and $SpriteH -gt 0)) {
         return @($X, $Y)
@@ -246,10 +236,9 @@ function Get-ClickPoint {
     }
 }
 
-# Move the cursor, then press once the overlay's clickable area has followed
-# it: with -TraceFile and FIDGET_TRACE_HITTEST=1, a new hit-test line that says
-# HIT with click-through OFF. Fails after 3 s from the move. A plain window
-# (no -TraceFile) is clickable at once.
+# Move the cursor, then press once the overlay's clickable area follows it:
+# with -TraceFile and FIDGET_TRACE_HITTEST=1, a new hit-test line says HIT with
+# click-through OFF. Fails after 3 s; without -TraceFile, click at once.
 function Invoke-Click([int]$ClickX, [int]$ClickY, [switch]$Right) {
     $start = if ($TraceFile -and (Test-Path -LiteralPath $TraceFile)) { (Get-Item -LiteralPath $TraceFile).Length } else { -1 }
     [FidgetWinEnum]::SetCursorPos($ClickX, $ClickY) | Out-Null
@@ -312,7 +301,6 @@ if ($Command -eq "menu") {
             $items | ForEach-Object { Write-Output $_.Current.Name }
         }
         [FidgetWinEnum]::Escape()
-        # Return once MenuClosed (or any change) shows the menu gone.
         $deadline = [DateTime]::UtcNow.AddSeconds(2)
         while (@(Get-PopupMenuItems -FidgetPid $pidArg).Count -gt 0 -and
             $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) {

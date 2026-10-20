@@ -145,7 +145,6 @@ case "$harness_kind" in
     command -v node > /dev/null || fail "node is not on PATH; the codex Harness runs on Node"
     node_major=$(node -p 'process.versions.node.split(".")[0]')
     [ "$node_major" -ge 22 ] || fail "node $(node -v) is on PATH; the codex Harness needs 22 or newer"
-    # Keep sign-in and user configuration available under the isolated HOME.
     export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
     [ -d "$CODEX_HOME" ] || fail "no $CODEX_HOME; sign in with \`codex login\` first"
     [ ! -d "$HOME/.npm" ] || ln -s "$HOME/.npm" "$out/home/.npm"

@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# Rank the live bytes in a `malloc_history PID -allBySize` report by the
-# innermost frame inside IMAGE that is not allocator glue: Rust's std and alloc
-# are linked into fidget, so its innermost frame is nearly always __rust_alloc.
-# Usage: scripts/heap-top-allocators.sh FILE IMAGE [N]
+# Usage: scripts/heap-top-allocators.sh FILE IMAGE [N]. Ranks live bytes in a
+# `malloc_history PID -allBySize` report by innermost frame inside IMAGE; Rust's
+# std and alloc are linked in, so that frame is usually `__rust_alloc`.
 
 set -euo pipefail
 
-# The glue patterns match demangled names, and the report's Rust symbols are
-# mangled. GNU c++filt keeps v0 crate hashes (alloc[4ca4a55bf09a7fe7]), so sed
-# drops them. BSD awk has no asort, so sort ranks the rows; its leading count is cut.
+# Glue patterns match demangled names, and the report's Rust symbols are mangled.
+# GNU c++filt keeps v0 crate hashes, which sed drops. BSD awk has no asort, so
+# sort ranks the rows and cut drops its count.
 c++filt < "$1" | sed -E 's/\[[0-9a-f]{16}\]//g' | awk -v image="$2" -v top="${3:-20}" '
   /^[0-9]+ calls? for [0-9]+ bytes: / {
     bytes = $4
     n = split(substr($0, index($0, ": ") + 2), frames, " [|] ")
-    # Stack logging also records VM regions at their virtual size, gigabytes for
-    # a 100 MB process, so only records that end in malloc are heap.
+    # Stack logging records VM regions at virtual size, gigabytes for a 100 MB
+    # process, so only records ending in malloc are heap.
     if (frames[n] !~ / \(libsystem_malloc\.dylib\) /) { regions += bytes; next }
     total += bytes
     tag = " (" image ") "

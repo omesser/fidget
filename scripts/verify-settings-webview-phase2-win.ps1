@@ -271,7 +271,6 @@ function Park-OnSecondary([IntPtr]$hwnd, $monitors) {
     Log 'No secondary monitor -- left Settings where it opened'
     return
   }
-  # Place near top-left of secondary work area (not a magic negative coord).
   $x = [int]$sec.left + 40
   $y = [int]$sec.top + 40
   [void][Phase2Win]::SetWindowPos($hwnd, [Phase2Win]::HWND_TOP, $x, $y, 0, 0,
@@ -309,7 +308,7 @@ function Get-AutomationElementFromHandle([IntPtr]$hwnd) {
 
 function New-TabItemAndNameCondition([string]$Name) {
   # TabItem AND Name: Name-only FindFirst can return the Pane named Presence
-  # (the tabpanel aria-label) instead of the tab (#715 ESTHER).
+  # (the tabpanel aria-label) instead of the tab.
   $nameCond = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::NameProperty, $Name)
   $typeCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -363,7 +362,7 @@ function Get-SupportedPatternNames($el) {
 }
 
 function Invoke-UiaActivate($el, [IntPtr]$settingsHwnd, [string]$label) {
-  # WebView2 tabs often expose neither Invoke nor SelectionItem (#715). Try
+  # WebView2 tabs often expose neither Invoke nor SelectionItem. Try
   # LegacyIAccessible, then PostMessage -- never SetCursorPos.
   $tried = @()
 

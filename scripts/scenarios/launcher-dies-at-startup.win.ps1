@@ -102,7 +102,6 @@ function Check-Fits([int]$Width, [string]$File) {
     Write-Output "ok: ${Width}: both boxes inside the window, Error output at y $y above the composer at $fold"
 }
 
-# Check-Fits without failing: true once both boxes end inside the window.
 function Test-Fits([int]$Width, [string]$File) {
     $frameLine = Read-Dump $File | Where-Object { $_ -match '^frame\|' } | Select-Object -First 1
     if (-not $frameLine) { return $false }

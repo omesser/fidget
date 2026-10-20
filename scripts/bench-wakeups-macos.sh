@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Baseline: wakeups/sec, package idle residency, and CPU time for a release
-# fidget binary, per scenario. A reviewer reruns this directly rather than
-# trusting a number in a doc.
+# Measures wakeups/sec, package idle residency and CPU time for a release fidget
+# binary, per scenario, so a reviewer reruns it rather than trusting a doc.
 
-# Needs sudo (powermetrics), swift, FIDGET_TRACE_FRAMES and FIDGET_DIRECTOR_API_KEY.
-# Usage: scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden
-#   [--duration SECS] [--out DIR]; --scenario baseline launches nothing.
+# Needs sudo (powermetrics) and swift. Usage:
+# scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat|hidden
+# [--duration SECS] [--out DIR]; baseline launches nothing.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

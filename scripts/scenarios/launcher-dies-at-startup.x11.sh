@@ -77,7 +77,6 @@ if [ -n "${FIDGET_SCENARIO_AX_FAILED:-}${FIDGET_SCENARIO_AX_420:-}${FIDGET_SCENA
     [ -z "${FIDGET_SCENARIO_AX_320:-}" ] || [ -z "${FIDGET_SCENARIO_AX_LIVE:-}" ]; then
     fail "set FIDGET_SCENARIO_AX_FAILED, FIDGET_SCENARIO_AX_420, FIDGET_SCENARIO_AX_320 and FIDGET_SCENARIO_AX_LIVE"
   fi
-  # The launcher line the fixture dumps name.
   harness=${FIDGET_SCENARIO_HARNESS:-/opt/fidget/scripts/scenarios/fixture-harness.sh /opt/fidget/target/debug/deps/fidget-0 script=abort-first count=/tmp/harness.log}
   name=${harness%% *}
   check_failed "$FIDGET_SCENARIO_AX_FAILED"

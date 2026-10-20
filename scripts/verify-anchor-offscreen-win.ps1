@@ -74,7 +74,6 @@ if (-not (Wait-ForLine 3 $Log '^overlay:')) {
   if ($script:AppProc.HasExited) { Fail "app exited during startup" }
   Fail "app published no overlay line within 3 s"
 }
-# The anchor logs where it landed once it is built and moved.
 if (-not (Wait-ForLine 3 $Log '^anchor:')) { Fail "app logged no anchor line within 3 s" }
 
 function Intersects($a, $b) {

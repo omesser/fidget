@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Prove focused Chat stays perch-eligible under the X11 overlay.
-# Chat must not take _NET_WM_STATE_ABOVE (layer 1); perch_eligible keeps layer 0.
-# Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-chat-perch-x11.sh
-# FIDGET_VERIFY_BIN=path/to/fidget overrides the binary.
+# Prove focused Chat stays perch-eligible under the X11 overlay. Chat must not
+# take _NET_WM_STATE_ABOVE (layer 1); perch_eligible keeps layer 0. Run it under
+# xvfb-run; FIDGET_VERIFY_BIN overrides the binary.
 
 set -euo pipefail
 
@@ -238,7 +237,6 @@ else
   fail "Sprite did not hold Chat ledge y=$PLACE_Y; Chat may be missing from the Perch list"
 fi
 
-# Character beside Chat (left of the window), then click the composer band.
 BESIDE_X=$((CHAT_X - 80))
 if [ "$BESIDE_X" -lt 40 ]; then
   BESIDE_X=$((CHAT_X + CHAT_W + 80))

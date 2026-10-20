@@ -107,9 +107,8 @@ else
     fi
 
     # Only the half on the display's side of the edge is drawn. Each click is
-    # its own Poke: they are a double-click interval apart, and stop at the
-    # first that lands. Aimed near the sprite's top, since it keeps rising
-    # while the click is on its way; never into the menu bar above it.
+    # its own Poke: a double-click interval apart, stopping at the first that
+    # lands. Aim near the top, since it rises; never into the menu bar above.
     if [ "$sx" -lt "$edge" ]; then px=$((edge + half / 2)); else px=$((edge - half / 2)); fi
     # Further into this display than the click, and not past it. The pill
     # opens after a dwell on the sprite and then holds the climb. Leave with

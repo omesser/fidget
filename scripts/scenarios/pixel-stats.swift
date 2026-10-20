@@ -1,9 +1,7 @@
-// Prints two numbers for a PNG: the median alpha (0-255), and a sharpness: the
-// largest luminance step between neighbouring pixels in each row, inside an 8%
-// margin, at the 25th percentile of rows. Hard-edged stripes seen through the
-// panel put a large step in every row. Under a blur, the rows without text or
-// borders step by one or two.
-// Usage: pixel-stats <png>
+// Prints a PNG's median alpha (0-255) and a sharpness: the largest luminance
+// step between neighbouring pixels in each row, inside an 8% margin, at the 25th
+// percentile of rows. Stripes seen through the panel step in every row; under a
+// blur, rows without text step by one or two. Usage: pixel-stats <png>
 import CoreGraphics
 import Foundation
 import ImageIO

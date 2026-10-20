@@ -61,7 +61,6 @@ trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
 
 wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 
-# Wait for the question to be asked and Chat to open.
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 wait_for_trace 2 "$log" '^frame: .* sprite\(-?[0-9]+,-?[0-9]+\)' || fail "no frame trace in $log"
 
@@ -74,16 +73,14 @@ screencapture -x -R "$rect" "$out/before-poke.png"
 "$tools/ax" dump "$pid" Fidget > "$out/before-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/before-poke.ax.txt"
 ! grep -qF "Question for you" "$out/before-poke.ax.txt" || fail "the question cue showed before the Poke; see $out/before-poke.ax.txt"
 
-# Send a Poke: one click on the sprite's center.
 "$tools/click-cursor" "$((sx + sw / 2))" "$((sy + sh / 2))" 1 > "$out/poke.txt" 2>&1 || fail "could not click the sprite; see $out/poke.txt"
 wait_for_trace 2 "$log" '^verbs: .*Poke' || fail "the click did not land as a Poke; see $log"
 # A Poke points at the question on the director's next due wake, not on the
-# click itself, so the cue is given more than the usual budget (#1503).
+# click itself, so the cue is given more than the usual budget.
 wait_for_trace 5 "$log" 'showAsk instance=' || fail "the Poke did not raise the question cue; see $log"
 wait_for_ax_dump 2 "$pid" Fidget 'Question for you' || fail "the question cue never appeared; see $log"
 screencapture -x -R "$rect" "$out/after-poke.png"
 
-# Check the bubble content via the Accessibility API.
 "$tools/ax" dump "$pid" Fidget > "$out/after-poke.ax.txt" 2>&1 || fail "AX dump failed; see $out/after-poke.ax.txt"
 if ! grep -qF "AXStaticText||Question for you in the |" "$out/after-poke.ax.txt" ||
   ! grep -qF "AXButton|chat|" "$out/after-poke.ax.txt"; then

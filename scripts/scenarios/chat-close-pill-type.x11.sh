@@ -53,8 +53,6 @@ ok() { echo "ok: $*" | tee -a "$results"; }
 lock="$out/run.lock"
 exec 9> "$lock"
 flock -n 9 || fail "another run holds $lock"
-# TERM to the tree of each process this run started, up to 3 s for all of them
-# to exit, then kill -9 on what is left of those trees. Only by PID.
 cleanup() {
   local tree=() p
   exec 9>&-

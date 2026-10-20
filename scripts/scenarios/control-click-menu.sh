@@ -63,9 +63,7 @@ read -r w h < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head 
 
 # The app opens the tray menu and, in about one Control-click in five, draws no
 # menu at all: `popup_menu_at` returns with no menu window and the frame traces
-# keep coming through the click (#1651). Nothing can read a menu that is not
-# drawn, so the leaf clicks again and says so in the dump. Only that failure is
-# retried; a menu window that drew and read no items is this leaf's own bug.
+# keep coming through the click (#1651). Only that failure is retried.
 attempt=0
 while :; do
   attempt=$((attempt + 1))

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# fidget's window-list poll cost on macOS (#427): call rate idle (10 Hz) and
-# riding (60 Hz), per-call time, growth with window count. usage() lists
-# scenarios; all but env and micro need FIDGET_BENCH_GREEN_LIGHT=1.
+# fidget's window-list poll cost on macOS: call rate idle (10 Hz) and riding
+# (60 Hz), per-call time, and growth with window count. All but env and micro
+# need FIDGET_BENCH_GREEN_LIGHT=1.
 
-# Per-call numbers come from dtrace on SkyLight's SLWindowListCopyWindowInfo:
-# on macOS 26 the pid provider has no CGWindowListCopyWindowInfo probe. Needs
-# sudo; run `sudo -v` first for an unattended run.
+# Per-call numbers come from dtrace on SkyLight's SLWindowListCopyWindowInfo: on
+# macOS 26 the pid provider has no CGWindowListCopyWindowInfo probe. Needs sudo;
+# run `sudo -v` first for an unattended run.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -246,8 +246,8 @@ wait_state() {
 flood=scripts/window-flood-macos.swift
 
 # Floods the display with $count windows and appends the flood's pid to
-# PROP_PIDS. A count of 0 adds nothing, which is the "desktop as found" row.
-# On failure ADD_REASON says why, so the row records it.
+# PROP_PIDS. A count of 0 adds nothing, the "desktop as found" row; ADD_REASON
+# records why a failure happened.
 add_flood_windows() {
   local count=$1
   local log=$2

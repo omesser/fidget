@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Machine-checkable verification for the overlay window and the frame loop.
-# Not a cargo test: every check needs a real desktop, window server and running
-# app, so it is slow, macOS-only, and cannot run in CI.
+# Machine-checkable verification for the overlay window and the frame loop. Not
+# a cargo test: it needs a real desktop, window server and running app, so it is
+# slow, macOS-only, and cannot run in CI.
 
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
 
 # Unattended: export FIDGET_DIRECTOR_API_KEY to avoid Keychain prompts.
-# Capturable by default (ADR-0024); export FIDGET_CAPTURABLE=0 to test the
+# Capturable by default; export FIDGET_CAPTURABLE=0 to test the
 # hide-from-captures setting instead.
 
 set -uo pipefail

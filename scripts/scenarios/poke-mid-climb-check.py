@@ -1,6 +1,5 @@
 # The poke-mid-climb trace check, shared by the macOS and X11 leaves.
 # poke-mid-climb.win.ps1 carries a PowerShell copy; keep the messages identical.
-# Usage: python3 poke-mid-climb-check.py <app log>
 import re, sys
 
 frame = re.compile(r"^frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) ")

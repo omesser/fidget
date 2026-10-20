@@ -37,8 +37,8 @@ app.setActivationPolicy(.accessory)
 
 let bounds = CGDisplayBounds(CGMainDisplayID())
 let size = NSSize(width: 160, height: 100)
-// A cascade that wraps. Past one screenful windows stack on each other, which
-// is fine: a stacked window still appears in the on-screen list.
+// Past one screenful, windows stack on each other; a stacked window still
+// appears in the on-screen list.
 let columns = max(1, Int((bounds.width - size.width) / 24))
 let rows = max(1, Int((bounds.height - size.height) / 24))
 var windows: [NSWindow] = []

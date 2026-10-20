@@ -75,8 +75,8 @@ shot() { # <name>
 }
 
 wait_for_marks 3 "$marks" '^spawn$' || fail "Harness never spawned; see $log"
-# Open Chat. The 1 s timed wake sends session/new (refused: auth required), which
-# shows the needs-login UI. A session/new only comes from a wake, not from attach alone.
+# The 1 s timed wake sends session/new (refused: auth required), which shows the
+# needs-login UI; a session/new only comes from a wake, not from attach alone.
 "$tools/ax" open "$pid" Chat BMO > "$out/open.txt" 2>&1 || fail "the menu's Chat row did not open Chat; see $out/open.txt"
 wait_for_ax_dump 3 "$pid" BMO . || fail "Chat did not open for needs-login"
 wait_for_marks 2 "$marks" '^new$' || fail "timed wake did not send session/new; see $marks"

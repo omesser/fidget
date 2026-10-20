@@ -234,7 +234,6 @@ public class ClimbInput {
 }
 "@
 
-# The newest frame's state and the sprite's top-left, logged after pos(...).
 function Last-Frame {
     if (-not (Test-Path -LiteralPath $trace)) { return $null }
     $line = Get-Content -LiteralPath $trace -Tail 40 | Where-Object { $_ -cmatch $framePattern } | Select-Object -Last 1
@@ -317,7 +316,6 @@ try {
     if (-not ($sizeLine -match ' sprite (\d+)x\d+;')) { Fail "no sprite size in $trace" }
     $size = [int]$Matches[1]
     $half = [int][Math]::Floor($size / 2)
-    # Every display's left and right edge.
     $edges = Get-ClimbEdges $overlay
     if (-not $edges) { Fail "no display bounds in $trace" }
     $gapMs = 500
@@ -329,10 +327,9 @@ try {
     $sx = $frame.X; $sy = $frame.Y
     $cx = $sx + $half
     $side = if ($env:FIDGET_SCENARIO_EDGE) { $env:FIDGET_SCENARIO_EDGE } else { "left" }
-    # The sprite is held by a point a quarter of its width inboard of its
-    # centre, so with the cursor at the edge its centre is already past it: a
-    # sprite whose centre is over no display falls to the nearest edge and
-    # climbs it, whatever speed the hand had. The release is held still.
+    # Held a quarter of its width inboard of centre, so at the edge the sprite's
+    # centre is past it: it falls to the nearest edge and climbs, whatever speed
+    # the hand had. The release is held still.
     if ($side -ceq "left") {
         $edge = $edges.Left
         $into = 1
@@ -357,9 +354,8 @@ try {
     if ([Math]::Abs($mid - $edge) -gt 2) { Fail "the sprite climbs at x=$mid, not the $side edge at x=$edge; see $trace" }
 
     # Only the display's half of the sprite is drawn. Clicks a double-click
-    # interval apart are separate Pokes; stop at the first. Aim near the top,
-    # since it rises while the click travels, but never above the display.
-    # Into the display: right of a left edge, left of a right edge.
+    # interval apart are separate Pokes, so stop at the first; aim near the top
+    # (it rises as the click travels) but never above the display.
     $px = $edge + $into * [int][Math]::Floor($half / 2)
     $before = Pokes
     $poked = $false

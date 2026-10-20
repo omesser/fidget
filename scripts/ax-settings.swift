@@ -1,13 +1,8 @@
 // Drives and reads the macOS Settings window through the Accessibility API.
-// Every question the verification asks (is this row frozen, do the sections
-// come in this order) is a string or boolean the AX tree already holds.
 
 // Not osascript: System Events cannot report a control's AXEnabled, and it
 // addresses controls by index, so a reordered section silently checks the
 // wrong row. Coordinates appear nowhere; controls are pressed by name.
-
-// Needs an Accessibility grant for whatever runs it (System Settings > Privacy
-// & Security > Accessibility).
 
 import AppKit
 import ApplicationServices
@@ -35,7 +30,6 @@ guard AXIsProcessTrusted() else {
 
 let app = AXUIElementCreateApplication(pid)
 
-/// One attribute, or nil when the element does not carry it.
 func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
@@ -52,9 +46,9 @@ func children(_ element: AXUIElement) -> [AXUIElement] {
     attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
 }
 
-/// Depth-first search for the first element a predicate accepts. Depth-first
-/// because the tab group sits deeper than the window's own buttons, and the
-/// first match by either order is the same element in every tree this drives.
+/// The first element a predicate accepts, depth-first: the tab group sits
+/// deeper than the window's own buttons, and the first match by either order is
+/// the same element in every tree this drives.
 func find(
     _ element: AXUIElement,
     depth: Int = 0,
@@ -70,9 +64,8 @@ func find(
     return nil
 }
 
-/// Waits for a predicate to find something, polling rather than sleeping a
-/// fixed span: the window server answers as soon as the window exists, and a
-/// fixed sleep is either a stall or a flake.
+/// Polls rather than sleeping a fixed span: the window server answers as soon
+/// as the window exists, and a fixed sleep is either a stall or a flake.
 func waitFor(
     _ seconds: Double,
     _ probe: () -> AXUIElement?
@@ -127,9 +120,8 @@ func click(_ element: AXUIElement) -> Bool {
 
 func menuWindowCount() -> Int { menuWindows().count }
 
-/// Picks an item out of an already-open menu by typing its title, then Return.
-/// macOS menus select by typed prefix, so this picks by name from a menu the
-/// tree offers no element for. The tracking menu takes the keyboard.
+/// macOS menus select by typed prefix, so this picks an item by name from a
+/// menu the tree offers no element for. The tracking menu takes the keyboard.
 func typeSelect(_ title: String) {
     for character in title {
         var utf16 = Array(String(character).utf16)
@@ -149,8 +141,7 @@ func typeSelect(_ title: String) {
     }
 }
 
-/// AXPress, falling back to AXShowMenu, AXPick, then a synthesized click. A
-/// status item answers to AXPress on some macOS versions and only to
+/// A status item answers to AXPress on some macOS versions and only to
 /// AXShowMenu on others, and which one has never been documented.
 func press(_ element: AXUIElement) -> Bool {
     for action in [kAXPressAction as String, "AXShowMenu", kAXPickAction as String] {
@@ -191,7 +182,7 @@ func popup(labelled label: String) -> AXUIElement? {
 
 /// On-screen menu-layer windows this pid owns. WebKit's `<select>` menu
 /// publishes to no accessibility tree, not even by hit test, so such a window
-/// is the only evidence that it opened (#797).
+/// is the only evidence that it opened.
 func menuWindows() -> [[String: AnyObject]] {
     let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
     return ((info as? [[String: AnyObject]]) ?? []).filter {
@@ -267,7 +258,7 @@ func webContentSettled(_ window: AXUIElement) -> Bool {
 
 /// Commands that address a control the webview owns wait for that priming.
 /// `open`, `move`, `frame` and `focus-window` do not: the status item and the
-/// window rectangle are AppKit's. #779.
+/// window rectangle are AppKit's.
 func settledWindow(titled title: String) -> AXUIElement? {
     guard let window = window(titled: title) else { return nil }
     _ = waitFor(5, { webContentSettled(window) ? window : nil })
@@ -278,7 +269,6 @@ switch args[0] {
 case "open":
     // The status item, not the app's own menu bar: Settings has no keyboard
     // shortcut and no menu of its own, so the tray row is the only way in.
-    // `open <pid> Chat BMO` presses the Chat… row and waits for that window.
     let rowPrefix = args.count >= 3 ? args[2] : "Settings"
     let windowTitle = args.count >= 4 ? args[3] : "Settings"
     guard let extras = waitFor(20, { attribute(app, "AXExtrasMenuBar").map { $0 as! AXUIElement } })
@@ -369,7 +359,7 @@ case "popup-frame":
     printRect(rect)
 
 case "open-popup":
-    // Press the popup and leave the menu up. #849 needs a still of that menu
+    // Press the popup and leave the menu up. A still of that menu is needed
     // against the overlay; `pick` would dismiss it before the capture.
     guard args.count >= 3 else { die("usage: ax-settings open-popup <pid> <label>") }
     var opened = menuWindows().first
@@ -400,7 +390,7 @@ case "open-popup":
     printRect(CGRect(x: x, y: y, width: w, height: h), extra: "layer=\(layer)")
 
 case "type-select":
-    // Menu already open. WebKit publishes no AXMenu, so the option is typed (#801).
+    // Menu already open. WebKit publishes no AXMenu, so the option is typed.
     guard args.count >= 4 else { die("usage: ax-settings type-select <pid> <label> <option>") }
     guard menuWindowCount() > 0 else { die("no menu is open") }
     typeSelect(args[3])
@@ -533,7 +523,7 @@ case "menus":
 case "press-button":
     // Tree order, 1-based among buttons that share a title. The BYO section
     // draws two Copy buttons; the snippet is first and the Hermes token is
-    // second when that row is showing. #855.
+    // second when that row is showing.
     guard args.count >= 3 else {
         die("usage: ax-settings press-button <pid> <title> [index] [window title]")
     }

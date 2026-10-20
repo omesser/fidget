@@ -76,7 +76,7 @@ wait_at_layer() { # <layer> <description>
 wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 # `chat: <label> is open` is the line a fresh Chat writes; it never writes
-# `is not minimized`, which is a deminiaturize transition (#1503).
+# `is not minimized`, which is a deminiaturize transition.
 wait_for_trace 3 "$trace" '^[0-9]+ chat: chat-[^ ]+ is open$' || fail "Chat never logged open; see $trace"
 at_layer 0 || fail "focused Chat is at layer $("$tools/window-layer" "$pid" BMO), not 0"
 echo "ok: focused Chat stays at layer 0 (a Perch under the overlay)"

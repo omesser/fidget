@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Repeatable measurement of X11 mask rebuild frequency and cost.
-# Runs fidget with FIDGET_TRACE_MASK_REBUILD=1, measures N mask updates.
-# Event-driven: stops after N mask updates, with deadline as failure guard.
+# Repeatable measurement of X11 mask rebuild frequency and cost. Stops after N
+# mask updates; the deadline is only a failure guard.
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -103,7 +102,6 @@ log=$(mktemp -t fidget-mask-measure-XXXXXX.log)
 cleanup() {
   if [ -n "${app_pid:-}" ]; then
     kill -TERM "$app_pid" 2> /dev/null || true
-    # Wait for graceful shutdown (event-driven, no fixed sleep)
     wait "$app_pid" 2> /dev/null || true
   fi
   rm -f "$log"
@@ -140,7 +138,6 @@ for _ in $(seq 120); do
     echo " ready"
     break
   fi
-  # Event-driven: check if log is growing
   current_size=$(wc -c < "$log" 2> /dev/null || echo "0")
   if [ "$current_size" -eq "$last_size" ]; then
     stall_count=$((stall_count + 1))
@@ -164,7 +161,6 @@ if ! grep -q 'overlay: [0-9]* display' "$log" 2> /dev/null; then
   exit 1
 fi
 
-# Wait for first mask_rebuild line or fail if none appears
 echo -n "Waiting for mask trace..."
 for _ in $(seq 40); do
   if grep -q 'mask_rebuild:' "$log" 2> /dev/null; then
@@ -199,7 +195,6 @@ case "$scenario" in
     ;;
 esac
 
-# Event-driven: wait for N mask updates, with deadline as failure guard
 measure_start=$(date +%s)
 echo "Waiting for $target_updates mask updates (deadline: ${deadline_sec}s)..."
 
@@ -226,7 +221,6 @@ while true; do
   sleep 0.1
 done
 
-# Stop app gracefully
 kill -TERM "$app_pid" 2> /dev/null || true
 wait "$app_pid" 2> /dev/null || true
 app_pid=""
@@ -253,7 +247,6 @@ if [ "$update_count" -eq 0 ]; then
   exit 0
 fi
 
-# Parse rebuild lines: extract time and position-only flag
 grep 'mask_rebuild:' "$log" |
   sed -n 's/.*mask_rebuild: \([0-9]*\)x\([0-9]*\) @\([0-9]*\)x scale, \([0-9]*\) opaque pixels, \([0-9.]*\) ms\(.*\)/\1 \2 \3 \4 \5 \6/p' \
     > /tmp/mask_rebuild_parsed.$$
@@ -266,7 +259,6 @@ echo "  Full rebuilds: $full_rebuilds (mask/facing/scale changed, pixmap regener
 echo "  Position-only: $position_only (reused cached pixmap)"
 echo ""
 
-# Metric: full rebuild ratio (lower is better)
 rebuild_ratio=$(awk "BEGIN {printf \"%.2f\", $full_rebuilds / $update_count}")
 echo "Full rebuild ratio: $rebuild_ratio (lower is better; 0.00 = all reuse)"
 if [ "$measure_elapsed" -gt 0 ]; then
@@ -274,7 +266,6 @@ if [ "$measure_elapsed" -gt 0 ]; then
 fi
 echo ""
 
-# Timing stats
 awk '{
   time = $5
   sum += time

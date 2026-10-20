@@ -105,13 +105,11 @@ function Check-Trace([string]$File) {
     Write-Host "PASS: painted rect in region while visible, cleared after hide, pill followed with its draft"
 }
 
-# Fixture mode: check a saved trace and exit
 if ($env:FIDGET_SCENARIO_TRACE) {
     Check-Trace $env:FIDGET_SCENARIO_TRACE
     exit 0
 }
 
-# Ensure dual-display geometry
 $displays = Get-CimInstance -ClassName Win32_DesktopMonitor | Measure-Object
 if ($displays.Count -lt 2) {
     [Console]::Error.WriteLine("SKIP: need dual displays, have $($displays.Count)")

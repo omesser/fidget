@@ -78,8 +78,6 @@ build_tool click-cursor "$root/scripts/click-cursor.swift"
 
 # Case 7 quits TextEdit, which would take unsaved work with it.
 ! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
-# Close the documents this run made, then quit the TextEdit it launched. Each
-# step is capped, and none can fail the run. Runs on pass, fail and Ctrl-C.
 close_textedit() {
   if pgrep -x TextEdit > /dev/null; then
     capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
@@ -88,7 +86,6 @@ close_textedit() {
   fi
 }
 trap close_textedit EXIT
-# Ctrl-C ends the run; the EXIT trap does the cleanup.
 trap 'exit 130' INT TERM
 
 # Preflight, before Fidget starts: helpers post input only with an Accessibility
@@ -100,9 +97,7 @@ if ! answer=$(capped 3 "$tools/ax" menus $$ 2>&1); then
   esac
 fi
 
-# Then one Apple event to each app the run drives.
 # -1743 is a refused Automation grant; no answer in 3 s is an unanswered prompt.
-# `get name` is answered locally, so each asks for something only the app knows.
 # TextEdit opens on these files. Started with no document, a cold TextEdit
 # shows its Open panel, which takes the keyboard from any new document.
 one=scenario-one.txt two=scenario-two.txt
@@ -121,7 +116,7 @@ for probe in "TextEdit:count documents" "System Events:count processes"; do
 done
 
 # BMO whose Behaviors stand rather than walk. An app switch wakes the Director,
-# and greet's patrol walked the Character out from under a hover (run 114714).
+# and greet's patrol walked the Character out from under a hover.
 still="$out/characters/bmo/character.manifest"
 mkdir -p "$out/characters" && cp -R "$root/characters/bmo" "$out/characters/"
 sed -E '/^play = /s/"walk"/"idle"/g' "$root/characters/bmo/character.manifest" > "$still"
@@ -144,10 +139,8 @@ trap 'stop_fidget; pkill -f "count=$marks" || true; close_textedit' EXIT
 frame='^[0-9]+ frame: '
 draft='^[0-9]+ overlay: draft .*text='
 
-# Startup: the launch is the trigger for the first drawn frame.
 wait_for_count 3 "$log" "$frame" 0 || fail "no frame within 3 s of launch; see $log and $out/app.log"
 
-# Sets cx, cy to the sprite's center, from the newest frame line.
 sprite_center() {
   local size at
   size=$(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1)
@@ -167,14 +160,12 @@ open_pill() { # <case>
     fail "$1: the pill did not open; see $log"
 }
 
-# Type <word> with no click; the open pill's draft must end with it.
 type_into_pill() { # <word> <case>
   wait_for_next 3 "$log" "${draft}\"[^\"]*$1\"" "$tools/ax" type "$pid" "$1" ||
     fail "$2: \"$1\" never reached the pill (#1565); see $log"
   echo "ok: $2: the pill took \"$1\" with no click"
 }
 
-# The frontmost app's name, for waits and failure messages.
 front_name() { capped 3 osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'; }
 textedit_front() { [ "$(front_name)" = TextEdit ]; }
 # A cold TextEdit can answer `activate` before it is in front; typing then goes
@@ -190,7 +181,6 @@ wait_textedit_front() { # <case> <document name>
 # The text of TextEdit's focused document, read through Accessibility (Apple
 # events timed out after typing).
 text_front() { capped 2 "$tools/ax" value "$(pgrep -x TextEdit | head -1)" 2> /dev/null; }
-# Re-read on each new log line, up to 3 s; fail loudly if no read succeeded.
 wait_text() { # <case> <check command...>
   local case=$1
   shift
@@ -229,7 +219,6 @@ wait_for_next 3 "$log" '^[0-9]+ chat: chat-[^ ]+ is closed$' osascript \
   -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" \
   -e 'tell application "System Events" to keystroke "w" using command down' ||
   fail "Chat did not close; see $log"
-# A single cursor move onto the sprite opens the pill.
 open_pill after-chat
 echo "ok: after-chat: a single cursor move opened the pill"
 type_into_pill two after-chat
@@ -245,9 +234,7 @@ wait_textedit_front other-app "$one"
 open_pill other-app
 type_into_pill three other-app
 
-# TextEdit's text ends with <word>; re-checked on each new log line.
 textedit_ends() { case "$(text_front)" in *"$1") ;; *) return 1 ;; esac }
-# After the pill closes, <word> typed with no click must land in TextEdit.
 typing_back_in_textedit() { # <word> <case>
   capped 3 "$tools/ax" type "$pid" "$1" >> "$out/helpers.log" 2>&1 || fail "$2: could not type"
   wait_text "$2" textedit_ends "$1" || fail "$2: \"$1\" did not reach TextEdit after the pill closed; see $log"
@@ -290,7 +277,7 @@ bounds=$(capped 3 osascript -e 'tell application "System Events" to get position
 IFS=', ' read -r left top <<< "$bounds"
 # Click the first line's start, past the title bar and the text inset. That
 # blurs the pill, which reports its draft again: still "nine", unfocused.
-# macOS capitalizes the word as the field loses focus (run 115837: "Nine").
+# macOS capitalizes the word as the field loses focus ("Nine").
 mark=$(wc -l < "$log")
 wait_for_next 3 "$log" "${draft}\"[Nn]ine\" focused=false" "$tools/click-cursor" "$((left + 8))" "$((top + 40))" 1 ||
   fail "click-away: the pill did not keep \"nine\" after the click; see $log"

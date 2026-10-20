@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# #183 Stage 1: does a mouse-only listen-only CGEventTap prompt for Input
-# Monitoring? Usage: scripts/spike-183-input-monitoring.sh <bundle id> [out dir].
+# Does a mouse-only listen-only CGEventTap prompt for Input Monitoring?
+# Usage: scripts/spike-183-input-monitoring.sh <bundle id> [out dir].
 # Needs swiftc, passwordless sudo, and Accessibility for the terminal.
 
 set -euo pipefail
@@ -12,7 +12,7 @@ BUNDLE="${1:-}"
 OUT="${2:-$HOME/Library/Caches/fidget-spike-183}"
 APP="$OUT/Spike183.app"
 
-# A bare `tccutil reset ListenEvent` wipes every app's grant and
+# A bare `tccutil reset ListenEvent` wipes every app's grant, and
 # dev.omesser.fidget is the shipped app, so only a throwaway id is accepted.
 case "$BUNDLE" in
   *tccspike*) ;;

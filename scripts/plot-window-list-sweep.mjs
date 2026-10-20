@@ -1,6 +1,5 @@
 // Plots poll time against on-screen window count, as a dependency-free SVG,
 // from the rows.tsv that `scripts/bench-window-list-macos.sh sweep` writes.
-// Usage: node scripts/plot-window-list-sweep.mjs rows.tsv out.svg
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

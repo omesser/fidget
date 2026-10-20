@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# GPU compositing cost of the overlay on macOS (#429); same subcommands as the
-# Linux twin. Frame rate is N/A (needs Instruments); `frame:` ticks are ticks_hz.
-# All but env and baseline take the screen and need FIDGET_BENCH_GREEN_LIGHT=1.
+# GPU compositing cost of the overlay on macOS, same subcommands as the Linux
+# twin. Frame rate is N/A (needs Instruments), so `frame:` ticks stand in as
+# ticks_hz. All but env and baseline take the screen and need GREEN_LIGHT.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -176,8 +176,7 @@ emit() {
 }
 
 # One line per second: "<Device Utilization %> <In use system memory bytes>".
-# The first accelerator is the one sampled; a Mac with two GPUs reports the
-# first ioreg lists.
+# Samples the first accelerator; a Mac with two GPUs reports the first ioreg lists.
 ioreg_sample() {
   local stats
   stats=$(ioreg -r -d 1 -c IOAccelerator 2> /dev/null | grep -m1 PerformanceStatistics || true)

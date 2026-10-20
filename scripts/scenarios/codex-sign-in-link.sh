@@ -91,7 +91,6 @@ human=120 cold_npx=180 browser_sign_in=600
 
 echo ">>> Double-click BMO to open Chat."
 wait_for_ax "$human" "$pid" "$tools/window-id" "$pid" BMO || fail "Chat did not open"
-# npx fetches codex-acp on a cold cache, and codex then reports signed out.
 wait_for_ax "$cold_npx" "$pid" shows sign-in '^AXButton\|ChatGPT \(device code\)\|' ||
   fail "Chat offered no device-code sign-in; see $out/sign-in.ax.txt and $log"
 echo "ok: Chat offers ChatGPT (device code)"

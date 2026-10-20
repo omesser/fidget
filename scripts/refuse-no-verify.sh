@@ -9,8 +9,7 @@ command=${BASH_REMATCH[1]}
 command=$(printf '%b' "${command//'\"'/\"}")
 
 # Quoted text becomes one placeholder word so a message that names the flag
-# passes. Newlines turn into `;` first so a quote spanning lines is caught whole,
-# then every separator becomes a newline (`[\n*]` repeats it to fill the set).
+# passes; newlines turn into `;` first so a quote spanning lines is caught whole.
 # ponytail: no heredoc or wrapper awareness. A heredoc body line naming the flag
 # is refused, a stray `'` in one can hide a later `-n`, and `sudo`, `env` or `{`
 # before `git` is not seen. Port the old node tokenizer if agents trip on these.

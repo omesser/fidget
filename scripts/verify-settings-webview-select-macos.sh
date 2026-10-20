@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 # Prove the Settings webview AI-source <select> menu draws above the overlay
-# while a Character is summoned (#849 / #706 artefact 5).
-# Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-webview-select-macos.sh
-
-# Needs Accessibility for scripts/ax-settings.swift. Not CI.
-# One fact: the open menu's window layer is above the overlay, a mouse pick
-# lands, and a still shows both. A fail is not a custom dropdown.
+# while a Character is summoned: the menu's layer is above the overlay, a mouse
+# pick lands, and a still shows both. Needs Accessibility; not CI.
 
 set -uo pipefail
 

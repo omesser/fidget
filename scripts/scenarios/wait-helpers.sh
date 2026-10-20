@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Shared wait core for the macOS and X11 scenario leaves. Each wait starts at
 # its trigger, returns as soon as its event lands, and gives up after the
-# seconds it is given (2-3 s at the call sites). A dead Fidget ($pid) fails it.
+# seconds it is given (2-5 s at the call sites). A dead Fidget ($pid) fails it.
 
 # Milliseconds since the epoch. BSD date has no %N, so ask perl, which ships
 # with macOS.
@@ -75,7 +75,7 @@ wait_for_marks() { # <seconds> <marks file> <pattern>
 
 # Fidget is up once it writes its `overlay:` line, which lands before it
 # attaches a Harness. A wait for a harness mark starts here, so the mark gets
-# the whole budget instead of sharing it with the app's launch (#1503).
+# the whole budget instead of sharing it with the app's launch.
 wait_for_up() { # <seconds> <app log>
   wait_for_line "$1" "$2" '^overlay:'
 }

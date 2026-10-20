@@ -1,6 +1,5 @@
-# Shared helper for Windows scenario leaves: Git Bash lookup + short-path conversion.
-# Dotted by the six .win.ps1 leaves that need bash-safe harness paths.
-# Sets $bashPath to the short path of bash.exe, or $null if not found.
+# Shared helper for Windows leaves: bash.exe from Git Bash or PATH, as a short
+# path so the harness line holds no spaces. Sets $bashPath, or $null if none.
 
 function Get-ShortPath([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) {

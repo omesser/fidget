@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Click Copy on the Settings webview BYO row and read the pasteboard (#855).
+# Click Copy on the Settings webview BYO row and read the pasteboard.
 # Usage: [FIDGET_VERIFY_BIN=path/to/fidget] ./scripts/verify-settings-webview-clipboard-macos.sh
 # Needs Accessibility. Stills land in .verify/. Holds /tmp/fidget-settings-overlay.lock.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # Windows Spatial e2e, twin of verify-overlay-x11.sh. Dual display and a built
 # binary ($env:FIDGET_VERIFY_BIN overrides). Missing WDA_EXCLUDEFROMCAPTURE only
-# warns: capture exclusion is off by default (ADR-0024). Logs under .verify/.
+# warns: capture exclusion is off by default. Logs under .verify/.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

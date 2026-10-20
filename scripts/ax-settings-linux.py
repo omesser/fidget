@@ -51,8 +51,7 @@ def find_settings_window():
                 continue
             for win_idx in range(app.childCount):
                 win = app.getChildAtIndex(win_idx)
-                # Prefer the Settings notebook over overlay frames that share
-                # the same window title 'fidget'.
+                # Overlay frames carry the same title; the AI tab marks Settings.
                 if has_ai_tab(win):
                     return win
         return None
@@ -194,7 +193,6 @@ def cmd_pick_source(args):
         print(f"menu item not found: {args.title!r}", file=sys.stderr)
         return 1
 
-    # Prefer selecting the menu item directly; fall back to opening the combo.
     acted = False
     try:
         act = item.queryAction()

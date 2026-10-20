@@ -1,6 +1,5 @@
-// Print one line per Accessibility change notification from a process, until
-// killed. Scenario waits read these lines and re-check their window on each,
-// so they block on AXObserver events instead of polling.
+// Print one line per Accessibility change notification from a process until
+// killed, so scenario waits block on AXObserver events instead of polling.
 // Usage: ax-events <pid>
 import ApplicationServices
 import Foundation

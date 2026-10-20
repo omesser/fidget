@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 // Reduce a fidget log run under FIDGET_TRACE_FRAMES and FIDGET_TRACE_CADENCE
-// to the numbers #426 asks for. scripts/bench-frame-cadence-macos.sh writes the
+// to frame cadence numbers. scripts/bench-frame-cadence-macos.sh writes the
 // log and calls this with its sample window.
-//
-// Usage: node scripts/frame-cadence.mjs LOG [--from UNIX_MS] [--to UNIX_MS] [--json OUT]
-//        node scripts/frame-cadence.mjs compare --a JSON... --b JSON...
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";

@@ -1,6 +1,5 @@
-# Token is the product name. url, app, quit, zap, and the caveat name the
-# bundle in one Release disk image; scripts/bump-homebrew-cask.sh rewrites
-# them from that tag. livecheck follows GitHub's latest Release.
+# scripts/bump-homebrew-cask.sh rewrites the stanzas that track one Release
+# disk image: version, sha256, url, app, quit, zap, and the caveat.
 cask "fidget" do
   version "0.2.0"
   sha256 "1572c97ef496e88a1cb3ccd89f81ef92b01d912c1f1ed00d5c16b6dee285a29c"

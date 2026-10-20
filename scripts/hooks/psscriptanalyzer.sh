@@ -6,7 +6,7 @@ if ! command -v pwsh > /dev/null 2>&1; then
   exit 0
 fi
 
-# Skip rather than install. This runs on `git commit`, and installing a module
+# Skip rather than install: this runs on `git commit`, and installing a module
 # into the committer's PowerShell profile is more than a lint should do behind
 # their back. ubuntu-latest ships PSScriptAnalyzer, so CI is unaffected.
 if ! pwsh -NoProfile -Command 'if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) { exit 1 }' > /dev/null 2>&1; then
@@ -15,8 +15,8 @@ if ! pwsh -NoProfile -Command 'if (-not (Get-Module -ListAvailable PSScriptAnaly
 fi
 
 # macos-latest pwsh aborts Invoke-ScriptAnalyzer with FileLoadException
-# (exit 134 / Abort trap: 6) — a runtime crash, not a finding.
-# ubuntu-latest still runs the real lint.
+# (exit 134 / Abort trap: 6) — a runtime crash, not a finding. ubuntu-latest
+# still runs the real lint.
 pwsh_runtime_crash() {
   local status="$1"
   local output="$2"
