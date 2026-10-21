@@ -74,14 +74,20 @@ build_tool() { # <name> <source>
 # The ending flows quit TextEdit, which would take unsaved work with it, so
 # refuse before doing any work and end only the TextEdit this run starts, by pid.
 textedit_pid=
+capture_textedit_pid() {
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    textedit_pid=$(pgrep -x TextEdit | head -1) || true
+    [ -n "$textedit_pid" ] && return 0
+    sleep 0.3
+  done
+  fail "TextEdit did not start"
+}
 ! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
 close_textedit() {
-  local pid=${textedit_pid:-}
-  [ -n "$pid" ] || pid=$(pgrep -x TextEdit | head -1)
-  [ -n "$pid" ] || return 0
+  [ -n "$textedit_pid" ] || return 0
   capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
   capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
-  kill "$pid" 2> /dev/null || true
+  kill "$textedit_pid" 2> /dev/null || true
 }
 trap close_textedit EXIT
 trap 'exit 130' INT TERM
@@ -104,6 +110,7 @@ fi
 one=scenario-one.txt
 : > "$out/$one"
 capped 3 open -g -a TextEdit "$out/$one" || fail "could not open $one in TextEdit"
+capture_textedit_pid
 for probe in "TextEdit:count documents" "System Events:count processes"; do
   app=${probe%%:*}
   if ! answer=$(capped 3 osascript -e "tell application \"$app\" to ${probe#*:}" 2>&1); then
@@ -114,8 +121,6 @@ for probe in "TextEdit:count documents" "System Events:count processes"; do
     fail "$why. Grant it in System Settings > Privacy & Security > Automation for this terminal, then run again."
   fi
 done
-textedit_pid=$(pgrep -x TextEdit | head -1)
-[ -n "$textedit_pid" ] || fail "TextEdit did not start"
 
 # BMO whose Behaviors stand rather than walk, so no patrol moves a sprite the
 # drag or a hover just aimed at. Its speak-phrases are off too: a bubble grabs

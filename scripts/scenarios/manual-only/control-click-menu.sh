@@ -54,7 +54,8 @@ env HOME="$out/home" \
   FIDGET_CHARACTER=bmo FIDGET_CHARACTERS="$root/characters" \
   "$bin" > "$log" 2>&1 &
 pid=$!
-trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
+trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT
+trap 'exit 130' INT TERM
 
 # The overlay spans the display, so its centre is not the sprite. The newest
 # frame trace line says where the sprite is drawn, in global points.
