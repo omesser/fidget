@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +16,6 @@ const scenarios = path.join(import.meta.dirname, "..", "scripts", "scenarios");
 const NAME_LOOKUPS = /\bpgrep\b|Get-Process\s+-Name\b|GetProcessesByName\b/i;
 const KILLS = /\b(?:kill|pkill|killall|Stop-Process|taskkill)\b|\.Kill\(/i;
 
-// Every way these leaves can end a process, and what makes it a name kill.
 const NAME_KILLS = [
   {
     rule: "Stop-Process without -Id",
@@ -153,6 +153,26 @@ function sandbox() {
   return { dir, bin, stub, touched: path.join(dir, "touched") };
 }
 
+// kill(pid, 0) still succeeds while the child is a zombie, so wait until
+// this process reaps it. A live stand-in does not exit within the wait.
+async function reaped(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  let timer;
+  const pending = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), 200);
+  });
+  const exited = once(child, "exit").then(() => {
+    clearTimeout(timer);
+    return true;
+  });
+  return Promise.race([exited, pending]);
+}
+
+// The leaf's own watchdog walks children with pgrep -P. Answer that from the
+// real pgrep so the watchdog can end its sleep; otherwise every capped call
+// waits out its whole 3 s inside the command substitution.
+const REAL_PGREP = '[ "$1" = "-P" ] && exec /usr/bin/pgrep "$@"';
+
 function runLeaf(leaf, sandbox) {
   return spawnSync(
     "bash",
@@ -161,7 +181,9 @@ function runLeaf(leaf, sandbox) {
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: `${sandbox.bin}:${process.env.PATH ?? ""}`,
+        // Unix tools only after the stubs. A Windows `head` earlier on PATH
+        // keeps the captured pid from being the stand-in's, so the kill misses.
+        PATH: `${sandbox.bin}:/usr/bin:/bin`,
         TMPDIR: sandbox.dir,
       },
     },
@@ -251,5 +273,133 @@ for (const leaf of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
         standin.kill();
       }
     },
+  );
+
+  // The builds and the Accessibility preflight sit between the first refusal
+  // and the run's own open. A TextEdit that appears in that gap is the user's.
+  test(
+    `${leaf} refuses a TextEdit that appears after the first check and before open`,
+    { skip: process.platform === "win32" && "needs bash and a pgrep stub" },
+    async () => {
+      const box = sandbox();
+      const calls = path.join(box.dir, "pgrep-calls");
+      const standin = spawn("sleep", ["30"], { stdio: "ignore" });
+      try {
+        box.stub(
+          "pgrep",
+          [
+            REAL_PGREP,
+            '[ "$1" = "-x" ] && [ "$2" = "TextEdit" ] || exit 1',
+            `n=$(cat ${JSON.stringify(calls)} 2>/dev/null || echo 0)`,
+            "n=$((n + 1))",
+            `echo "$n" > ${JSON.stringify(calls)}`,
+            '[ "$n" -eq 1 ] && exit 1',
+            `echo ${standin.pid}`,
+            "exit 0",
+          ].join("\n"),
+        );
+        stubSwiftc(box);
+        for (const tool of ["osascript", "open", "pkill", "killall"]) {
+          box.stub(tool, `echo ${tool} >> ${JSON.stringify(box.touched)}; exit 1`);
+        }
+
+        const run = runLeaf(leaf, box);
+        const touched = fs.existsSync(box.touched)
+          ? fs.readFileSync(box.touched, "utf8")
+          : "";
+        const ended = await reaped(standin);
+        fs.rmSync(box.dir, { recursive: true, force: true });
+
+        assert.equal(
+          run.status,
+          1,
+          `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`,
+        );
+        assert.match(run.stderr, REFUSAL);
+        assert.equal(touched, "", `the refused run still ran ${touched}`);
+        assert.equal(ended, false, "the run ended a TextEdit it did not start");
+      } finally {
+        try {
+          standin.kill();
+        } catch {
+          // The assertion above already failed if the run ended it.
+        }
+      }
+    },
+  );
+
+  // The stand-in starts only when the stubbed open runs, then a probe fails.
+  // Cleanup has to end that process, and only because the run started it.
+  test(
+    `${leaf} ends the TextEdit its own open started when a later probe fails`,
+    { skip: process.platform === "win32" && "needs bash and a pgrep stub" },
+    async () => {
+      const box = sandbox();
+      const opened = path.join(box.dir, "opened");
+      const standin = spawn("sleep", ["30"], { stdio: "ignore" });
+      try {
+        box.stub(
+          "pgrep",
+          [
+            REAL_PGREP,
+            '[ "$1" = "-x" ] && [ "$2" = "TextEdit" ] || exit 1',
+            `[ -f ${JSON.stringify(opened)} ] || exit 1`,
+            `echo ${standin.pid}`,
+            "exit 0",
+          ].join("\n"),
+        );
+        stubSwiftc(box);
+        box.stub(
+          "open",
+          `echo open >> ${JSON.stringify(box.touched)}; : > ${JSON.stringify(opened)}; exit 0`,
+        );
+        box.stub(
+          "osascript",
+          `echo osascript >> ${JSON.stringify(box.touched)}; exit 1`,
+        );
+        for (const tool of ["pkill", "killall"]) {
+          box.stub(tool, `echo ${tool} >> ${JSON.stringify(box.touched)}; exit 0`);
+        }
+
+        const run = runLeaf(leaf, box);
+        const touched = fs.existsSync(box.touched)
+          ? fs.readFileSync(box.touched, "utf8")
+          : "";
+        const ended = await reaped(standin);
+        fs.rmSync(box.dir, { recursive: true, force: true });
+
+        assert.equal(
+          run.status,
+          1,
+          `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`,
+        );
+        assert.match(run.stderr, /no answer from TextEdit/);
+        assert.match(touched, /^open\n/);
+        assert.equal(ended, true, "cleanup left the TextEdit this run started");
+      } finally {
+        try {
+          standin.kill();
+        } catch {
+          // Cleanup already ended it, which is what the test wants.
+        }
+      }
+    },
+  );
+}
+
+// A successful swiftc, so a leaf can get past its builds to the open below.
+function stubSwiftc(box) {
+  box.stub(
+    "swiftc",
+    [
+      "out=",
+      'while [ "$#" -gt 0 ]; do',
+      '  if [ "$1" = "-o" ]; then out=$2; shift 2; continue; fi',
+      "  shift",
+      "done",
+      '[ -n "$out" ] || exit 1',
+      'printf "%s\\n" "#!/bin/sh" "exit 0" > "$out"',
+      'chmod +x "$out"',
+    ].join("\n"),
   );
 }

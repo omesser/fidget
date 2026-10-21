@@ -86,7 +86,11 @@ capture_textedit_pid() {
   done
   fail "TextEdit did not start"
 }
-! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
+refuse_running_textedit() {
+  ! pgrep -x TextEdit > /dev/null ||
+    fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
+}
+refuse_running_textedit
 close_textedit() {
   [ -n "$textedit_pid" ] || return 0
   capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
@@ -115,6 +119,8 @@ fi
 one=scenario-one.txt two=scenario-two.txt
 : > "$out/$one"
 printf abc > "$out/$two"
+# The builds and the preflight are long enough for the user to open TextEdit.
+refuse_running_textedit
 capped 3 open -g -a TextEdit "$out/$one" || fail "could not open $one in TextEdit"
 capture_textedit_pid
 for probe in "TextEdit:count documents" "System Events:count processes"; do
@@ -299,6 +305,8 @@ open_pill app-quit
 # A quit that gets no answer in 3 s ends TextEdit by signal: either way it quits.
 capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > "$out/quit.txt" 2>&1 ||
   kill "$textedit_pid" || fail "could not quit TextEdit"
+# The pid is dead. A later failure must not tell TextEdit to close every document.
+textedit_pid=
 wait_for_next 3 "$log" "$closed" "$tools/ax" key "$pid" escape || fail "app-quit: the pill did not close; see $log"
 front_pid() { capped 3 osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true'; }
 not_front() { [ "$(front_pid)" != "$pid" ]; }
@@ -308,6 +316,8 @@ echo "ok: app-quit: Fidget stepped aside"
 # 8. A click through a transparent part of the overlay moves TextEdit's caret
 # to the click: the word lands before the document's text, which only that
 # click can cause (a fresh document's caret is at the end).
+# The user may have opened TextEdit since case 7 quit it.
+refuse_running_textedit
 capped 3 open -a TextEdit "$out/$two" > "$out/textedit2.txt" 2>&1 || fail "could not reopen TextEdit"
 capture_textedit_pid
 wait_textedit_front click-away "$two"

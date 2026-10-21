@@ -82,7 +82,11 @@ capture_textedit_pid() {
   done
   fail "TextEdit did not start"
 }
-! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
+refuse_running_textedit() {
+  ! pgrep -x TextEdit > /dev/null ||
+    fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
+}
+refuse_running_textedit
 close_textedit() {
   [ -n "$textedit_pid" ] || return 0
   capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
@@ -109,6 +113,8 @@ fi
 # One Apple event to each app the run drives; a refusal is a denied grant.
 one=scenario-one.txt
 : > "$out/$one"
+# The builds and the preflight are long enough for the user to open TextEdit.
+refuse_running_textedit
 capped 3 open -g -a TextEdit "$out/$one" || fail "could not open $one in TextEdit"
 capture_textedit_pid
 for probe in "TextEdit:count documents" "System Events:count processes"; do
