@@ -120,6 +120,16 @@ test("the check accepts a pid kill and this run's Harness marker", () => {
   assert.deepEqual(violations(allowed), []);
 });
 
+test("capture_textedit_pid looks up the pid once after open", () => {
+  for (const name of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
+    const text = fs.readFileSync(findLeaf(name), "utf8");
+    const body = text.match(/capture_textedit_pid\(\) \{([\s\S]*?)\n\}/);
+    assert.ok(body, name);
+    assert.doesNotMatch(body[1], /\bsleep\b/, name);
+    assert.equal((body[1].match(/\bpgrep\b/g) || []).length, 1, name);
+  }
+});
+
 test("the check catches each way of killing by name", () => {
   for (const sample of [
     "pkill -x TextEdit",

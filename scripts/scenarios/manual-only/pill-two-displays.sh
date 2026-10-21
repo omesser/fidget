@@ -74,13 +74,11 @@ build_tool() { # <name> <source>
 # The ending flows quit TextEdit, which would take unsaved work with it, so
 # refuse before doing any work and end only the TextEdit this run starts, by pid.
 textedit_pid=
+# open has already returned. One lookup; a miss fails here instead of polling.
+# pgrep exits 1 when nothing matches, which under pipefail would hide that.
 capture_textedit_pid() {
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    textedit_pid=$(pgrep -x TextEdit | head -1) || true
-    [ -n "$textedit_pid" ] && return 0
-    sleep 0.3
-  done
-  fail "TextEdit did not start"
+  textedit_pid=$(pgrep -x TextEdit | head -1) || true
+  [ -n "$textedit_pid" ] || fail "TextEdit did not start"
 }
 refuse_running_textedit() {
   ! pgrep -x TextEdit > /dev/null ||
