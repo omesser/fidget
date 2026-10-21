@@ -15,16 +15,17 @@ const scenarios = path.join(import.meta.dirname, "..", "scripts", "scenarios");
 const NAME_KILLS = [
   {
     rule: "Stop-Process without -Id",
-    at: (line) => /\bStop-Process\b/.test(line) && !/\s-Id\b/.test(line),
+    matches: (line) => /\bStop-Process\b/i.test(line) && !/\s-Id\b/i.test(line),
   },
   {
     rule: "taskkill without /PID",
-    at: (line) => /\btaskkill(?:\.exe)?\b/i.test(line) && !/\/PID\b/.test(line),
+    matches: (line) =>
+      /\btaskkill(?:\.exe)?\b/i.test(line) && !/\/PID\b/i.test(line),
   },
-  { rule: "killall", at: (line) => /\bkillall\b/.test(line) },
+  { rule: "killall", matches: (line) => /\bkillall\b/.test(line) },
   {
     rule: "pkill without -P or this run's count= path",
-    at: (line) =>
+    matches: (line) =>
       /\bpkill\b/.test(line) &&
       !/\s-P\b/.test(line) &&
       !(/\s-f\b/.test(line) && /\$marks\b/.test(line)),
@@ -36,7 +37,7 @@ function violations(text) {
   for (const [at, line] of text.split("\n").entries()) {
     if (/^\s*#/.test(line)) continue;
     for (const kill of NAME_KILLS) {
-      if (kill.at(line)) found.push(`${at + 1}: ${kill.rule}: ${line.trim()}`);
+      if (kill.matches(line)) found.push(`${at + 1}: ${kill.rule}: ${line.trim()}`);
     }
   }
   return found;
@@ -98,7 +99,7 @@ for (const leaf of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
         fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, {
           mode: 0o755,
         });
-      stub("pgrep", "exit 0");
+      stub("pgrep", '[ "$1" = "-x" ] && [ "$2" = "TextEdit" ] && exit 0; exit 1');
       for (const tool of ["swiftc", "osascript", "open", "pkill", "killall"]) {
         stub(tool, `echo ${tool} >> ${JSON.stringify(touched)}; exit 0`);
       }
