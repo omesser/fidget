@@ -48,7 +48,9 @@ cleanup() {
   fi
   rm -rf "$codex_home"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# A signal has to end the run; cleanup is the EXIT trap's job.
+trap 'exit 130' INT TERM
 
 fail() {
   echo "FAIL: $*" >&2
