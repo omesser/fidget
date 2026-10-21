@@ -30,7 +30,8 @@ out="${TMPDIR:-/tmp}/fidget-scenario-control-click-menu-$(date +%Y%m%d-%H%M%S)"
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
 mkdir -p "$out/home" "$tools"
 seed_tour_shown "$out/home"
-log="$out/app.log"
+log="$out/app.log" marks="$out/harness.log"
+: > "$marks"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -41,8 +42,9 @@ fail() {
 [ -x "$tools/window-id" ] || swiftc -O "$root/scripts/scenarios/helpers/window-id.swift" -o "$tools/window-id"
 [ "$tools/ax" -nt "$root/scripts/ax-settings.swift" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
 
-harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=nop"
-[ "$(wc -w <<< "$harness")" -eq 3 ] || fail "a path in the Harness line holds a space: $harness"
+# count= gives this run's Harness a unique command line for the kill on exit.
+harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=nop count=$marks"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
 start_ms=$(now_ms)
 env HOME="$out/home" \
@@ -52,7 +54,7 @@ env HOME="$out/home" \
   FIDGET_CHARACTER=bmo FIDGET_CHARACTERS="$root/characters" \
   "$bin" > "$log" 2>&1 &
 pid=$!
-trap 'stop_fidget; pkill -f "script=nop" || true' EXIT INT TERM
+trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
 
 # The overlay spans the display, so its centre is not the sprite. The newest
 # frame trace line says where the sprite is drawn, in global points.

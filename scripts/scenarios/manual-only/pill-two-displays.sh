@@ -31,8 +31,9 @@ out=$(mktemp -d "${TMPDIR:-/tmp}/fidget-scenario-pill-two-displays-$(date +%Y%m%
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
 data="$out/home/Library/Application Support/fidget"
 mkdir -p "$data" "$tools"
-log="$data/process.log"
+log="$data/process.log" marks="$out/harness.log"
 : > "$log"
+: > "$marks"
 seed_tour_shown "$out/home"
 
 fail() {
@@ -70,22 +71,25 @@ wait_for_next() { # <seconds> <file> <ERE> <command...>
 build_tool() { # <name> <source>
   [ "$tools/$1" -nt "$2" ] || swiftc -O "$2" -o "$tools/$1" || fail "could not build $1"
 }
+# The ending flows quit TextEdit, which would take unsaved work with it, so
+# refuse before doing any work and end only the TextEdit this run starts, by pid.
+textedit_pid=
+! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
+close_textedit() {
+  local pid=${textedit_pid:-}
+  [ -n "$pid" ] || pid=$(pgrep -x TextEdit | head -1)
+  [ -n "$pid" ] || return 0
+  capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
+  capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
+  kill "$pid" 2> /dev/null || true
+}
+trap close_textedit EXIT
+trap 'exit 130' INT TERM
+
 build_tool ax "$root/scripts/ax-settings.swift"
 build_tool warp-cursor "$root/scripts/warp-cursor.swift"
 build_tool click-cursor "$root/scripts/click-cursor.swift"
 build_tool throw-sprite "$root/scripts/scenarios/helpers/throw-sprite.swift"
-
-# The ending flows quit TextEdit, which would take unsaved work with it.
-! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
-close_textedit() {
-  if pgrep -x TextEdit > /dev/null; then
-    capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
-    capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
-    if pgrep -x TextEdit > /dev/null; then pkill -x TextEdit 2> /dev/null || true; fi
-  fi
-}
-trap close_textedit EXIT
-trap 'exit 130' INT TERM
 
 # Preflight, before Fidget starts: helpers post input only with an Accessibility
 # grant, and macOS drops synthetic clicks and keys from an ungranted terminal.
@@ -110,6 +114,8 @@ for probe in "TextEdit:count documents" "System Events:count processes"; do
     fail "$why. Grant it in System Settings > Privacy & Security > Automation for this terminal, then run again."
   fi
 done
+textedit_pid=$(pgrep -x TextEdit | head -1)
+[ -n "$textedit_pid" ] || fail "TextEdit did not start"
 
 # BMO whose Behaviors stand rather than walk, so no patrol moves a sprite the
 # drag or a hover just aimed at. Its speak-phrases are off too: a bubble grabs
@@ -129,8 +135,9 @@ sed -E \
 
 # Two Instances share one process; the pill focus work runs inside it.
 # `slow` holds the first turn, so a startup wake neither speaks nor opens Chat.
-harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=slow"
-[ "$(wc -w <<< "$harness")" -eq 3 ] || fail "a path in the Harness line holds a space: $harness"
+# count= gives this run's Harness a unique command line for the kill on exit.
+harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=slow count=$marks"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
@@ -141,7 +148,7 @@ env HOME="$out/home" \
   FIDGET_CHARACTERS="$out/characters" \
   "$bin" > "$out/app.log" 2>&1 &
 pid=$!
-trap 'stop_fidget; pkill -f "script=slow" || true; close_textedit' EXIT
+trap 'stop_fidget; pkill -f "count=$marks" || true; close_textedit' EXIT
 
 # Readiness: the covers lines name the display frames the run needs. Every
 # process.log line carries its own timestamp prefix, so patterns keep `^[0-9]+ `.

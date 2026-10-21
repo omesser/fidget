@@ -75,21 +75,24 @@ wait_for_next() { # <seconds> <file> <ERE> <command...>
 build_tool() { # <name> <source>
   [ "$tools/$1" -nt "$2" ] || swiftc -O "$2" -o "$tools/$1" || fail "could not build $1"
 }
-build_tool ax "$root/scripts/ax-settings.swift"
-build_tool warp-cursor "$root/scripts/warp-cursor.swift"
-build_tool click-cursor "$root/scripts/click-cursor.swift"
-
-# Case 7 quits TextEdit, which would take unsaved work with it.
+# Case 7 quits TextEdit, which would take unsaved work with it, so refuse
+# before doing any work and end only the TextEdit this run starts, by pid.
+textedit_pid=
 ! pgrep -x TextEdit > /dev/null || fail "TextEdit is running. Quit it first: this run opens and quits TextEdit itself."
 close_textedit() {
-  if pgrep -x TextEdit > /dev/null; then
-    capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
-    capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
-    if pgrep -x TextEdit > /dev/null; then pkill -x TextEdit 2> /dev/null || true; fi
-  fi
+  local pid=${textedit_pid:-}
+  [ -n "$pid" ] || pid=$(pgrep -x TextEdit | head -1)
+  [ -n "$pid" ] || return 0
+  capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
+  capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
+  kill "$pid" 2> /dev/null || true
 }
 trap close_textedit EXIT
 trap 'exit 130' INT TERM
+
+build_tool ax "$root/scripts/ax-settings.swift"
+build_tool warp-cursor "$root/scripts/warp-cursor.swift"
+build_tool click-cursor "$root/scripts/click-cursor.swift"
 
 # Preflight, before Fidget starts: helpers post input only with an Accessibility
 # grant, and macOS drops synthetic clicks and keys from an ungranted terminal.
@@ -117,6 +120,8 @@ for probe in "TextEdit:count documents" "System Events:count processes"; do
     fail "$why. Grant it in System Settings > Privacy & Security > Automation for this terminal, then run again."
   fi
 done
+textedit_pid=$(pgrep -x TextEdit | head -1)
+[ -n "$textedit_pid" ] || fail "TextEdit did not start"
 
 # BMO whose Behaviors stand rather than walk. An app switch wakes the Director,
 # and greet's patrol walked the Character out from under a hover.
@@ -288,7 +293,7 @@ typing_back_in_textedit eight escape
 open_pill app-quit
 # A quit that gets no answer in 3 s ends TextEdit by signal: either way it quits.
 capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > "$out/quit.txt" 2>&1 ||
-  pkill -x TextEdit || fail "could not quit TextEdit"
+  kill "$textedit_pid" || fail "could not quit TextEdit"
 wait_for_next 3 "$log" "$closed" "$tools/ax" key "$pid" escape || fail "app-quit: the pill did not close; see $log"
 front_pid() { capped 3 osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true'; }
 not_front() { [ "$(front_pid)" != "$pid" ]; }
@@ -300,6 +305,8 @@ echo "ok: app-quit: Fidget stepped aside"
 # click can cause (a fresh document's caret is at the end).
 capped 3 open -a TextEdit "$out/$two" > "$out/textedit2.txt" 2>&1 || fail "could not reopen TextEdit"
 wait_textedit_front click-away "$two"
+textedit_pid=$(pgrep -x TextEdit | head -1)
+[ -n "$textedit_pid" ] || fail "TextEdit did not reopen"
 open_pill click-away
 type_into_pill nine click-away
 bounds=$(capped 3 osascript -e 'tell application "System Events" to get position of front window of process "TextEdit"') ||
