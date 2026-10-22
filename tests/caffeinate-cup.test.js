@@ -8,7 +8,7 @@ test("a frame without the field draws no cup", () => {
   assert.equal(cupModel(null), null);
 });
 
-test("off with flags stays a button, and an empty set is disabled", () => {
+test("off with flags stays a button, and an empty set is disabled with its reason", () => {
   const off = cupModel({ on: false, flags: "-dims", reason: null });
   assert.equal(off.disabled, false);
   assert.equal(off.on, false);
@@ -19,6 +19,8 @@ test("off with flags stays a button, and an empty set is disabled", () => {
   assert.equal(on.svg, off.svg, "on and off are one drawing");
   assert.equal(on.on, true);
   assert.equal(on.disabled, false);
+  assert.equal(off.title, "keep my computer awake");
+  assert.equal(on.title, "keep my computer awake");
 
   const empty = cupModel({
     on: false,
@@ -27,5 +29,5 @@ test("off with flags stays a button, and an empty set is disabled", () => {
   });
   assert.equal(empty.disabled, true);
   assert.equal(empty.on, false);
-  assert.match(empty.title, /at least one/i);
+  assert.equal(empty.title, "At least one caffeinate flag has to stay on.");
 });

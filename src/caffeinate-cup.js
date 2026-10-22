@@ -11,7 +11,7 @@ export const CUP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 </svg>`;
 
 // `null` hides the button. A `reason` disables it, which happens when every
-// flag is off.
+// flag is off, and becomes the tooltip.
 export function cupModel(field) {
   if (field == null) return null;
   const disabled = Boolean(field.reason);
@@ -19,7 +19,7 @@ export function cupModel(field) {
   return {
     disabled,
     on,
-    title: field.reason || (on ? "Caffeinate on" : "Caffeinate off"),
+    title: field.reason || "keep my computer awake",
     svg: CUP_SVG,
   };
 }
