@@ -2,6 +2,7 @@
 //! Nothing here depends on Tauri or a platform binding (docs/SPEC.md); adapters
 //! to the outside world are declared here as traits and implemented in the shell.
 
+pub mod caffeinate;
 pub mod character;
 pub mod debug;
 pub mod director;
