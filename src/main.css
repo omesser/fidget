@@ -193,9 +193,33 @@ body {
   }
 }
 
-/* After thinking-bounce so the expression page's bubble slice — which treats
-   `background: transparent` as overlay layout — stays speech and thinking.
-   Tails stay on Speech. Opacity only: a scale keyframe fought the exit fade. */
+/* After thinking-bounce: the expression page copies from the bubble rule
+   through these keyframes, and a transparent backdrop in that slice is overlay
+   layout. The cup is overlay chrome, so it stays out of the copied speech. */
+.caffeinate-cup {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.caffeinate-cup.on {
+  color: #c4a484;
+}
+
+.caffeinate-cup:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* Tails stay on Speech. Opacity only: a scale keyframe fought the exit fade. */
 .bubble.quick-message {
   display: flex;
   align-items: center;

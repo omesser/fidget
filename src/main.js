@@ -2,6 +2,7 @@
 // Rust side sends every Instance's placement; this keeps the two most recent
 // per Instance to interpolate between, and drops an id that stops arriving.
 
+import { cupModel, CUP_SVG } from "./caffeinate-cup.js";
 import { arrived, interpolate, onDisplay } from "./interpolate.js";
 import {
   createBubbleMachine,
@@ -114,6 +115,9 @@ function createView(id) {
     // for why the renderer is the one who has to.
     hotspot: null,
     bubbleRect: null,
+    cup: null,
+    cupHotspot: null,
+    cupKey: "",
     // The sprite's top-left the bubble and pill were last placed from. The
     // Shell sweeps their rects from here over the sprite's trail (#1568).
     placedFrom: null,
@@ -170,6 +174,8 @@ function createView(id) {
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
     view.bubbleRect = null;
+    view.cupHotspot = null;
+    if (view.cup) view.cup.hidden = true;
     reportOverlayRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
@@ -249,6 +255,60 @@ function positionBubble(view, spriteRect, displayBounds) {
     : null;
   view.bubbleRect = readableBubbleRect(view.bubble, pos);
   view.placedFrom = [Math.round(spriteRect.x), Math.round(spriteRect.y)];
+  reportOverlayRects();
+}
+
+// A press here is the cup, not a Poke. The overlay's pointer listeners
+// report every press on the window to the Engine unless it stops here.
+function syncCup(view, field) {
+  const model = cupModel(field);
+  if (!model) {
+    view.cup?.remove();
+    view.cup = null;
+    view.cupHotspot = null;
+    return;
+  }
+  if (!view.cup) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "caffeinate-cup";
+    // Parsed, not assigned as markup: the webview source is scanned for HTML
+    // sinks, and this string is the one drawing the cup test already asserts.
+    const drawn = new DOMParser().parseFromString(CUP_SVG, "image/svg+xml");
+    button.append(document.importNode(drawn.documentElement, true));
+    button.setAttribute("aria-label", "Caffeinate");
+    const swallow = (event) => event.stopPropagation();
+    button.addEventListener("pointerdown", swallow);
+    button.addEventListener("pointerup", swallow);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (button.disabled) return;
+      window.__TAURI__.core.invoke("overlay_toggle_caffeinate").catch((err) => {
+        console.error("overlay_toggle_caffeinate", err);
+      });
+    });
+    stage.append(button);
+    view.cup = button;
+  }
+  view.cup.disabled = model.disabled;
+  view.cup.title = model.title;
+  view.cup.classList.toggle("on", model.on);
+  view.cup.setAttribute("aria-pressed", model.on ? "true" : "false");
+}
+
+function placeCup(view, spriteX, spriteY) {
+  if (!view.cup || !view.latest) return;
+  if (!view.latest.visible) {
+    view.cup.hidden = true;
+    view.cupHotspot = null;
+    return;
+  }
+  const x = spriteX + view.latest.width - 18;
+  const y = Math.max(0, spriteY - 6);
+  view.cup.hidden = false;
+  view.cup.style.transform = `translate(${x}px, ${y}px)`;
+  view.cupHotspot = view.cup.disabled ? null : [x, y, 22, 22];
+  view.placedFrom = view.placedFrom ?? [spriteX, spriteY];
   reportOverlayRects();
 }
 
@@ -557,6 +617,7 @@ function reportOverlayRects() {
     const follows = view.placedFrom ? { instance: view.id, at: view.placedFrom } : null;
     const push = (rect, clickable) => rects.push(follows ? { rect, clickable, follows } : { rect, clickable });
     if (view.hotspot) push(view.hotspot, true);
+    if (view.cupHotspot) push(view.cupHotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
     if (view.bubbleRect) push(view.bubbleRect, false);
   }
@@ -578,6 +639,7 @@ function removeView(id) {
   view.quickMachine.dispose();
   view.sprite.remove();
   view.bubble.remove();
+  view.cup?.remove();
   view.quick.remove();
   view.cueLayer.remove();
   views.delete(id);
@@ -597,6 +659,7 @@ function drawView(view, now) {
   // grid by the compositor (ADR-0006). `mirror` comes from the Shell, not the
   // heading: a Character that draws its own left strip is sent as authored.
   view.sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.mirror})`;
+  placeCup(view, spriteX, spriteY);
 
   // Carried on every frame rather than announced on change: a change announced
   // while this file was still fetching its art is a change nobody heard.
@@ -613,6 +676,8 @@ function drawView(view, now) {
     // still `.visible` — so this is cleared here as well as in `hide`.
     view.hotspot = null;
     view.bubbleRect = null;
+    view.cupHotspot = null;
+    if (view.cup) view.cup.hidden = true;
     reportOverlayRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
@@ -785,6 +850,7 @@ async function start() {
         view.quick.style.zIndex = `${index * 2 + 2}`;
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
+        if (view.cup) view.cup.style.zIndex = `${index * 2 + 3}`;
 
         // One overlay owns each Instance's bubble (`bubble_owner`), and the
         // Shell sends the line, the indicator and the cue to that one only.
@@ -825,6 +891,13 @@ async function start() {
           traceBubble(`pill follows instance=${sprite.id} chars=${chars} focused=${Boolean(sprite.qm?.focused)}`);
         }
         notePointerLeft(view);
+
+        const cupKey = JSON.stringify(cupModel(payload.caffeinate));
+        if (view.cupKey !== cupKey) {
+          view.cupKey = cupKey;
+          syncCup(view, payload.caffeinate);
+          if (needsFrame(view)) arm();
+        }
 
         if (changed && needsFrame(view)) arm();
       });

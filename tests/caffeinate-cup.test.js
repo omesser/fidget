@@ -1,0 +1,29 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { cupModel } from "../src/caffeinate-cup.js";
+
+test("a frame without the field draws no cup", () => {
+  assert.equal(cupModel(undefined), null);
+  assert.equal(cupModel(null), null);
+});
+
+test("off with flags stays a button, and an empty set is disabled", () => {
+  const off = cupModel({ on: false, flags: "-dims", reason: null });
+  assert.equal(off.disabled, false);
+  assert.equal(off.on, false);
+  assert.match(off.svg, /<svg/);
+
+  const on = cupModel({ on: true, flags: "-dims", reason: null });
+  assert.equal(on.on, true);
+  assert.equal(on.disabled, false);
+
+  const empty = cupModel({
+    on: false,
+    flags: null,
+    reason: "At least one caffeinate flag has to stay on.",
+  });
+  assert.equal(empty.disabled, true);
+  assert.equal(empty.on, false);
+  assert.match(empty.title, /at least one/i);
+});
