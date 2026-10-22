@@ -128,6 +128,9 @@ pub struct Context {
     /// `state` is read after the tick, so this is the only place the moment
     /// before the verb survives.
     pub lately: Lately,
+    /// This launch's stay-awake hold. `None` on platforms that do not offer it,
+    /// so an ordinary wake omits the line.
+    pub caffeinate: Option<crate::caffeinate::Fact>,
 }
 
 impl Context {
@@ -144,6 +147,7 @@ impl Context {
             standing: String::new(),
             front_title: None,
             lately: Lately::default(),
+            caffeinate: None,
         }
     }
 }
@@ -1168,6 +1172,7 @@ mod tests {
             standing: String::new(),
             front_title: None,
             lately: Default::default(),
+            caffeinate: None,
         }
     }
 
@@ -2135,6 +2140,7 @@ mod tests {
             standing: "the display floor, above the Dock".to_string(),
             front_title: None,
             lately: Default::default(),
+            caffeinate: None,
         };
 
         let payload = character_prompt(&moment, ["greet", "stroll", "wave"], false);
@@ -2171,6 +2177,23 @@ mod tests {
             payload.contains("standing on: the display floor, above the Dock"),
             "standing: {payload}"
         );
+        assert!(
+            !payload.contains("caffeinate:"),
+            "a platform without the hold omits the line: {payload}"
+        );
+    }
+
+    #[test]
+    fn the_prompt_names_the_caffeinate_hold_when_this_launch_offers_it() {
+        let mut moment = context(working(), &[]);
+        let flags =
+            crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true).expect("dims");
+        moment.caffeinate = Some(crate::caffeinate::Fact::On(flags));
+        let on = follow_up(&moment);
+        assert!(on.contains("state: idle\ncaffeinate: on (-dims)\n"), "{on}");
+        moment.caffeinate = Some(crate::caffeinate::Fact::Off);
+        let off = follow_up(&moment);
+        assert!(off.contains("state: idle\ncaffeinate: off\n"), "{off}");
     }
 
     /// ADR-0012: the layer is additive and empty by default, so an Instance

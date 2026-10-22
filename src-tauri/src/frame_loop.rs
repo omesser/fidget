@@ -1678,6 +1678,7 @@ pub(crate) fn run_frame_loop(
                                 standing: String::new(),
                                 front_title: None,
                                 lately: Lately::default(),
+                                caffeinate: None,
                             });
                         }
                     }
@@ -1843,6 +1844,7 @@ pub(crate) fn run_frame_loop(
                                 .frontmost_application
                                 .as_deref()
                                 .and_then(|name| assembler.front_title(name)),
+                            caffeinate: None,
                         };
                         let was_addressed = live.addressed;
                         if live.addressed {

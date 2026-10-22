@@ -135,6 +135,10 @@ pub(crate) fn follow_up(context: &Context) -> String {
     let clock = format_clock(context.activity.hour, context.activity.minute);
     let happened = happened_word(&context.happened);
     let state = state_word(context.state);
+    let caffeinate = match context.caffeinate {
+        Some(fact) => format!("{}\n", fact.prompt_line()),
+        None => String::new(),
+    };
     let weekday = WEEKDAYS[usize::from(context.activity.weekday % 7)];
     let desktop = desktop_lines(context);
     let (streak, was, lately) = lately_lines(context);
@@ -153,6 +157,7 @@ pub(crate) fn follow_up(context: &Context) -> String {
          recent: {recent}\n\
          time: {weekday} {clock}\n\
          state: {state}\n\
+         {caffeinate}\
          {lately}\
          standing on: {standing}\n\
          {desktop}\
