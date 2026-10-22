@@ -246,12 +246,12 @@ impl<S: Spawner> Machine<S> {
         let resumed = self.finish_stop(poll, &mut notes, &mut error, pid, true);
 
         let was = self.intent;
-        let mut quiet = false;
+        let mut suppress_off_note = false;
         for request in requests {
             match request {
                 Request::Release => {
                     self.intent = Intent::Off;
-                    quiet = true;
+                    suppress_off_note = true;
                 }
                 Request::Set(true) => match flags {
                     Ok(_) => self.intent = Intent::On,
@@ -271,17 +271,24 @@ impl<S: Spawner> Machine<S> {
             }
         }
         if self.intent == Intent::On {
-            quiet = false;
+            suppress_off_note = false;
         }
-        let rose = was == Intent::Off && self.intent == Intent::On;
+        let announce = was == Intent::Off && self.intent == Intent::On;
         let asked_on = requests
             .iter()
             .any(|request| matches!(request, Request::Set(true) | Request::Toggle));
 
         if !resumed {
-            self.classify_dead(poll, flags, quiet, asked_on, &mut notes);
+            self.classify_dead(poll, flags, suppress_off_note, asked_on, &mut notes);
         }
-        self.reconcile(flags, pid, rose, quiet, &mut notes, &mut error);
+        self.reconcile(
+            flags,
+            pid,
+            announce,
+            suppress_off_note,
+            &mut notes,
+            &mut error,
+        );
         self.finish_stop(poll, &mut notes, &mut error, pid, false);
 
         Tick {
@@ -341,7 +348,7 @@ impl<S: Spawner> Machine<S> {
         &mut self,
         poll: Poll,
         flags: Result<AssertedFlags, Empty>,
-        quiet: bool,
+        suppress_off_note: bool,
         asked_on: bool,
         notes: &mut Vec<Note>,
     ) {
@@ -353,7 +360,7 @@ impl<S: Spawner> Machine<S> {
         }
         self.phase = Phase::Idle;
         if self.intent == Intent::Off {
-            if !quiet {
+            if !suppress_off_note {
                 notes.push(Note::Off);
             }
             return;
@@ -370,8 +377,8 @@ impl<S: Spawner> Machine<S> {
         &mut self,
         flags: Result<AssertedFlags, Empty>,
         pid: u32,
-        rose: bool,
-        quiet: bool,
+        announce: bool,
+        suppress_off_note: bool,
         notes: &mut Vec<Note>,
         error: &mut Option<String>,
     ) {
@@ -390,7 +397,7 @@ impl<S: Spawner> Machine<S> {
 
         match (self.intent, self.phase) {
             (Intent::On, Phase::Idle) => match flags {
-                Ok(flags) => self.spawn_running(flags, pid, rose, notes, error),
+                Ok(flags) => self.spawn_running(flags, pid, announce, notes, error),
                 Err(_) => {
                     self.intent = Intent::Off;
                     *error = Some(Empty::REASON.to_string());
@@ -401,7 +408,7 @@ impl<S: Spawner> Machine<S> {
                 self.phase = Phase::Stopping {
                     again: Again::Off {
                         flags,
-                        note: !quiet,
+                        note: !suppress_off_note,
                     },
                 };
             }
@@ -430,7 +437,7 @@ impl<S: Spawner> Machine<S> {
                 self.phase = Phase::Stopping {
                     again: Again::Off {
                         flags,
-                        note: !quiet,
+                        note: !suppress_off_note,
                     },
                 };
             }
