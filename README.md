@@ -33,6 +33,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 - **Knows what you're up to:** It reacts to your open windows for context-aware chatter. **It never takes screenshots or reads screen pixels**, and it reads window titles and app names only with [your consent](#computer-use).
 - **Gets out of your way when you ask it to:** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
 - **Stays awake when you ask:** A coffee cup on the character keeps the Mac from sleeping until you turn it off or quit. The idea comes from [Caffeinate](https://github.com/LennardKittner/Caffeinate).
+- **Small and native:** A Rust core on [Tauri](https://tauri.app/), drawn in the webview your OS already has instead of a bundled copy of Chromium. The Windows installer is sub 10 MB, and the macOS disk image and the `.deb` are each sub 15 MB. The AppImage carries its own WebKitGTK, so it's larger.
 
 ## Characters
 

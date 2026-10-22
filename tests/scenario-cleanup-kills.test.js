@@ -76,6 +76,13 @@ function findLeaf(name) {
   return leaf;
 }
 
+function functionSource(script, name) {
+  const text = fs.readFileSync(findLeaf(script), "utf8");
+  const body = text.match(new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?\\n\\}`, "m"));
+  assert.ok(body, `no ${name}() in ${script}`);
+  return body[0];
+}
+
 test("every scenario leaf ends only processes the run started", () => {
   assert.ok(leaves.length >= 10, `found only ${leaves.length} scenario scripts`);
   assert.ok(
@@ -122,12 +129,19 @@ test("the check accepts a pid kill and this run's Harness marker", () => {
 
 test("capture_textedit_pid looks up the pid once after open", () => {
   for (const name of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
-    const text = fs.readFileSync(findLeaf(name), "utf8");
-    const body = text.match(/capture_textedit_pid\(\) \{([\s\S]*?)\n\}/);
-    assert.ok(body, name);
-    assert.doesNotMatch(body[1], /\bsleep\b/, name);
-    assert.equal((body[1].match(/\bpgrep\b/g) || []).length, 1, name);
+    const body = functionSource(name, "capture_textedit_pid");
+    assert.doesNotMatch(body, /\bsleep\b/, name);
+    assert.equal((body.match(/\bpgrep\b/g) || []).length, 1, name);
   }
+});
+
+test("case 7 quits through quit_textedit, which has no fixed sleep", () => {
+  const leaf = "chat-close-pill-type.sh";
+  const text = fs.readFileSync(findLeaf(leaf), "utf8");
+  const case7 = text.slice(text.indexOf("# 7."), text.indexOf("# 8."));
+  assert.match(case7, /^quit_textedit$/m);
+  assert.doesNotMatch(case7, /textedit_pid=|\bsleep\b/);
+  assert.doesNotMatch(functionSource(leaf, "quit_textedit"), /\bsleep\b/);
 });
 
 test("the check catches each way of killing by name", () => {
@@ -396,6 +410,89 @@ for (const leaf of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
     },
   );
 }
+
+// Case 8 refuses a running TextEdit, so case 7's clear has to wait out a quit
+// that is still exiting.
+test(
+  "case 7 waits for TextEdit to exit before clearing its pid",
+  {
+    skip:
+      process.platform !== "darwin" &&
+      "wait_for_exit watches the pid with caffeinate on macOS",
+  },
+  () => {
+    const box = sandbox();
+    const gone = path.join(box.dir, "textedit-gone");
+    const standin = spawn(
+      "/bin/sh",
+      [
+        "-c",
+        `trap 'kill "$sleeper" 2> /dev/null; touch ${gone}; exit 0' TERM; sleep 60 & sleeper=$!; wait`,
+      ],
+      { stdio: "ignore" },
+    );
+    try {
+      box.stub(
+        "pgrep",
+        [
+          '[ "$1" = "-x" ] && [ "$2" = "TextEdit" ] || exit 1',
+          `[ -f ${JSON.stringify(gone)} ] && exit 1`,
+          `echo ${standin.pid}`,
+          "exit 0",
+        ].join("\n"),
+      );
+      // The quit returns at once; TextEdit exits a moment later.
+      box.stub(
+        "osascript",
+        [
+          `case "$*" in *"quit saving no"*) ( sleep 1; kill -TERM ${standin.pid} ) > /dev/null 2>&1 & ;; esac`,
+          "exit 0",
+        ].join("\n"),
+      );
+
+      // Run the leaf's own functions, in the order case 7 and case 8 use them.
+      const script = path.join(box.dir, "case7.sh");
+      fs.writeFileSync(
+        script,
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          `. ${JSON.stringify(path.join(scenarios, "helpers", "wait-helpers.mac.sh"))}`,
+          'fail() { echo "FAIL: $*" >&2; exit 1; }',
+          'capped() { local seconds=$1; shift; "$@"; }',
+          `out=${JSON.stringify(box.dir)}`,
+          `textedit_pid=${standin.pid}`,
+          functionSource("chat-close-pill-type.sh", "quit_textedit"),
+          functionSource("chat-close-pill-type.sh", "refuse_running_textedit"),
+          "quit_textedit",
+          "refuse_running_textedit",
+          'echo "pid=${textedit_pid:-empty}"',
+          "",
+        ].join("\n"),
+        { mode: 0o755 },
+      );
+
+      const run = spawnSync("bash", [script], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${box.bin}:/usr/bin:/bin`,
+          TMPDIR: box.dir,
+        },
+      });
+      fs.rmSync(box.dir, { recursive: true, force: true });
+
+      assert.equal(
+        run.status,
+        0,
+        `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`,
+      );
+      assert.match(run.stdout, /^pid=empty$/m);
+    } finally {
+      standin.kill();
+    }
+  },
+);
 
 // A successful swiftc, so a leaf can get past its builds to the open below.
 function stubSwiftc(box) {
