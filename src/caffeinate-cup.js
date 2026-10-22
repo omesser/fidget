@@ -21,3 +21,26 @@ export function cupModel(field) {
     svg: CUP_SVG,
   };
 }
+
+// WebKit's DOMParser drops this SVG, so the header button was an empty square.
+// The paths are the same drawing as `CUP_SVG`.
+export function mountCup(parent) {
+  if (!parent || parent.querySelector("svg")) return;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const add = (d, body) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.4");
+    if (body) path.setAttribute("class", "cup-body");
+    else path.setAttribute("stroke-linecap", "round");
+    svg.append(path);
+  };
+  add("M7 9h8v5a3 3 0 0 1-3 3h-2a3 3 0 0 1-3-3V9z", true);
+  add("M15 10h2.2a2.2 2.2 0 0 1 0 4.4H15", false);
+  add("M9 5c.2 1.1.9 1.2 1 2.2M12 5c.2 1.1.9 1.2 1 2.2", false);
+  parent.append(svg);
+}

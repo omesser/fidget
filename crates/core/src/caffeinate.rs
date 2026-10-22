@@ -139,7 +139,7 @@ impl Note {
     }
 }
 
-/// Cup sends [`Request::Toggle`]. The tool sends [`Request::Set`]. Quit sends
+/// Chat and the menu send [`Request::Toggle`]. The tool sends [`Request::Set`]. Quit sends
 /// [`Request::Release`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Request {
