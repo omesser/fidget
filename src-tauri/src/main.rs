@@ -27,6 +27,9 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
+// `libc::kill` is unix-only, and the hold itself is macOS. Windows has no
+// `libc` dependency, so this module stays out of that build.
+#[cfg(target_os = "macos")]
 mod caffeinate_proc;
 mod chat_surface;
 mod completer;
@@ -4034,6 +4037,7 @@ fn apply_menu_action(
 /// skips that path and the window server drops the overlays with the process.
 fn quit_now() -> ! {
     eprintln!("quit");
+    #[cfg(target_os = "macos")]
     caffeinate_proc::signal_held_child();
     harness::shutdown();
     std::process::exit(0);
@@ -4143,6 +4147,10 @@ impl QuitHost for AppQuit<'_> {
     }
 
     fn exit_process(&mut self) {
+        // Ctrl+C ends here, not in `quit_now`. Signal before exit skips the
+        // hold's Drop. `-w` still covers a crash that never reaches quit.
+        #[cfg(target_os = "macos")]
+        caffeinate_proc::signal_held_child();
         std::process::exit(0);
     }
 }
@@ -5505,6 +5513,7 @@ fn main() {
         // Quit's `quit_now` aside — so the Harness child is never orphaned.
         .run(|_, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                #[cfg(target_os = "macos")]
                 caffeinate_proc::signal_held_child();
                 harness::shutdown();
             }

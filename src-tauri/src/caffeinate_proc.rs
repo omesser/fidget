@@ -1,5 +1,4 @@
 //! The one `caffeinate` child this process holds.
-#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 //!
 //! `Child::kill` is SIGKILL. A child that ignores SIGTERM keeps the assertion
 //! until `try_wait` says it left; `-w` is what releases it if this process
