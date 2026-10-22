@@ -1,6 +1,6 @@
-// The stay-awake cup. Drawn only when a frame carries the field, which macOS
-// does and the other builds omit. The SVG is ours: the project this copies
-// ships icons with no license we can vendor.
+// The caffeinate button in the Chat header. Only macOS sends it a view. The
+// SVG is drawn here because the Caffeinate project's icons carry no license
+// we can vendor.
 
 // `xmlns` is what puts the root in the SVG namespace. Without it,
 // `DOMParser` returns an element no engine draws.
@@ -10,8 +10,8 @@ export const CUP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
   <path d="M9 5c.2 1.1.9 1.2 1 2.2M12 5c.2 1.1.9 1.2 1 2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
 </svg>`;
 
-// `null` means draw nothing. A reason disables the button: an empty flag set
-// has no argv to run.
+// `null` hides the button. A `reason` disables it, which happens when every
+// flag is off.
 export function cupModel(field) {
   if (field == null) return null;
   const disabled = Boolean(field.reason);

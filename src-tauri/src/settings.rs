@@ -1614,7 +1614,7 @@ pub enum BoolField {
     /// The idle event tap, which macOS alone has a grant to ask for.
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
-    /// Stay-awake flags. The form that writes them exists on macOS only.
+    /// Caffeinate flags. Only the macOS form writes them.
     #[cfg(target_os = "macos")]
     CaffeinateDisplay,
     #[cfg(target_os = "macos")]
@@ -1919,7 +1919,7 @@ impl Settings {
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
         }
-        // An empty flag set cannot be saved. The cup would have nothing to run.
+        // An empty flag set is not saved, because caffeinate needs at least one.
         let display = patch.caffeinate_display.unwrap_or(self.caffeinate_display);
         let idle = patch.caffeinate_idle.unwrap_or(self.caffeinate_idle);
         let disk = patch.caffeinate_disk.unwrap_or(self.caffeinate_disk);
@@ -2102,7 +2102,7 @@ pub struct Settings {
     /// document round-trips on every platform.
     #[serde(default)]
     pub use_input_monitoring: bool,
-    /// `caffeinate -d`. Missing keys stay on, which is the shipped default.
+    /// `caffeinate -d`. A missing key reads as on, the default.
     #[serde(default = "default_true")]
     pub caffeinate_display: bool,
     /// `caffeinate -i`.
@@ -2483,8 +2483,8 @@ mod tests {
         assert!(settings.sound);
     }
 
-    /// The cup has nothing to run with no flags. Other fields in the same
-    /// patch still land, and a hand-edited all-false file still loads.
+    /// A patch that would clear every flag leaves the flags alone. Other fields
+    /// in it still apply, and a hand-edited all-false file still loads.
     #[test]
     fn a_patch_cannot_clear_the_last_caffeinate_flag() {
         let mut settings = Settings {

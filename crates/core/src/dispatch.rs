@@ -54,8 +54,8 @@ pub struct DispatchContext<'a, 'c> {
     pub roster: &'a [InstanceInfo],
     pub expression: Option<&'a mut dyn ExpressionHandle>,
     pub placement: PlacementQuery<'a>,
-    /// Separate from `'a` so the hold can be the frame loop's while the
-    /// window lists are this call's. `None` off macOS: the tool errors.
+    /// Its own lifetime, because the hold outlives this call's window lists.
+    /// `None` off macOS, where the tool errors.
     pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
 }
 
@@ -334,13 +334,13 @@ pub fn list_tools() -> Vec<ToolInfo> {
     #[cfg(target_os = "macos")]
     tools.push(ToolInfo {
         name: "caffeinate".to_string(),
-        description: "Keep this Mac awake until it is turned off or Fidget quits. Omit on to read the hold without changing it.".to_string(),
+        description: "Keep this Mac awake until it is turned off or Fidget quits. Returns whether it is on and, when it is, the caffeinate flags.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
                 "on": {
                     "type": "boolean",
-                    "description": "Turn the hold on or off. Omit to read it."
+                    "description": "true keeps the Mac awake and false lets it sleep. Omit it to read the state without changing it."
                 }
             }
         }),

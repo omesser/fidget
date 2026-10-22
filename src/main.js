@@ -541,11 +541,11 @@ function attachQuickMessage(view, id) {
 // Windows' region clips drawing too, so the bubble is reported as well. Only
 // the renderer knows where, because the bubble is sized by text measured here.
 //
-// ponytail: sent whenever a rectangle changes, which while a bubble or pill is
-// up and the Character is walking is once a frame. A few hundred bytes an
-// invoke and only while one of those is on screen; if that ever shows up in a
-// profile, the upgrade is to send offsets from the sprite once per line and
-// let the frame loop follow the sprite itself.
+// ponytail: sent whenever a rectangle changes, which while a bubble is up and
+// the Character is walking is once a frame. A few hundred bytes an invoke and
+// only while a bubble or pill is on screen; if that ever shows up in a profile,
+// the upgrade is to send offsets from the sprite once per line and let the
+// frame loop follow the sprite itself.
 let reportedRects = "";
 
 function reportOverlayRects() {

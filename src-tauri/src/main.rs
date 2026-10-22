@@ -27,8 +27,8 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
-// `libc::kill` is unix-only, and the hold itself is macOS. Windows has no
-// `libc` dependency, so this module stays out of that build.
+// Only macOS ships `caffeinate`, and Windows has no `libc` dependency for
+// `libc::kill`.
 #[cfg(target_os = "macos")]
 mod caffeinate_proc;
 mod chat_surface;
@@ -310,7 +310,7 @@ fn route_attach_notice(
     window_open.then_some(text)
 }
 
-/// A Chat system note, held until that window is listening. Only the macOS hold posts one.
+/// A Chat system note, held until that window is listening.
 #[cfg(target_os = "macos")]
 pub(crate) fn emit_chat_notice(app: &tauri::AppHandle, instance: &str, text: String) {
     let label = chat_label(instance);
@@ -627,7 +627,7 @@ struct SpritePlacement<'a> {
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
-/// What Chat's button and the menu tick show. Absent off macOS.
+/// What the Chat button and the menu row show. Never built off macOS.
 #[derive(Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct CaffeinateFrame {
     on: bool,
@@ -2277,8 +2277,8 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title, None);
 }
 
-/// Chat's button and the menu tick asked to flip the hold. The frame loop
-/// owns the child; this only posts the request.
+/// The Chat button asks the frame loop to flip the hold. The frame loop owns
+/// the child.
 #[tauri::command]
 fn toggle_caffeinate(toggle: tauri::State<'_, CaffeinateToggle>) {
     let _ = toggle.0.send(fidget_core::caffeinate::Request::Toggle);
@@ -4144,8 +4144,8 @@ impl QuitHost for AppQuit<'_> {
     }
 
     fn exit_process(&mut self) {
-        // Ctrl+C ends here, not in `quit_now`. Signal before exit skips the
-        // hold's Drop. `-w` still covers a crash that never reaches quit.
+        // Ctrl+C exits here, not through `quit_now`. `exit` skips the hold's
+        // Drop, so signal the child first. `-w` covers a crash.
         #[cfg(target_os = "macos")]
         caffeinate_proc::signal_held_child();
         std::process::exit(0);
@@ -4300,14 +4300,16 @@ struct FrameExtras {
     caffeinate: mpsc::Receiver<fidget_core::caffeinate::Request>,
 }
 
-/// Chat and menu presses, received on the frame loop. Managed state is keyed by type.
+/// Chat and menu presses, sent to the frame loop. A newtype, because managed
+/// state is keyed by type.
 struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
 
-/// Last hold Chat was shown. The frame loop writes it; `caffeinate_view` reads it.
+/// The hold Chat was last shown. The frame loop writes it and `caffeinate_view`
+/// reads it.
 struct CaffeinateShown(Mutex<Option<CaffeinateFrame>>);
 
-/// The menu row for the hold. None off macOS. Before the first tick the hold
-/// is off, and an empty flag set leaves the row untickable.
+/// The menu row for the hold. `None` off macOS. Before the first tick the hold
+/// is off, and an empty flag set disables the row.
 fn menu_caffeinate(
     settings: &Settings,
     frame: Option<&CaffeinateFrame>,

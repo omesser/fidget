@@ -2105,8 +2105,8 @@ body {
   white-space: nowrap;
 }
 
-/* Beats the theme's `.tb button` size. Off is the header ink; on fills the
-   cup. `[hidden]` stays none, or a later display rule would show it off macOS. */
+/* Beats the theme's `.tb button` size. `[hidden]` needs its own rule, or a
+   later display rule would show the button off macOS. */
 .chat-ui-terminal .tb button.caffeinate,
 .chat-ui-glass .tb button.caffeinate,
 .tb button.caffeinate {
@@ -2136,8 +2136,7 @@ body {
   fill: none;
 }
 
-/* The stroke stays the header ink. Only the body fills, so the cup still
-   reads on top of the header instead of disappearing into a tinted square. */
+/* Only the body fills, so the cup still reads against a tinted header. */
 .tb button.caffeinate.on .cup-body {
   fill: #c4a484;
 }

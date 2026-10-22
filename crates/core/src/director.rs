@@ -128,8 +128,8 @@ pub struct Context {
     /// `state` is read after the tick, so this is the only place the moment
     /// before the verb survives.
     pub lately: Lately,
-    /// This launch's stay-awake hold. `None` on platforms that do not offer it,
-    /// so an ordinary wake omits the line.
+    /// The caffeinate line for the prompt. `None` off macOS, which leaves the
+    /// line out.
     pub caffeinate: Option<crate::caffeinate::Fact>,
 }
 
@@ -2179,12 +2179,12 @@ mod tests {
         );
         assert!(
             !payload.contains("caffeinate:"),
-            "a platform without the hold omits the line: {payload}"
+            "a platform without caffeinate omits the line: {payload}"
         );
     }
 
     #[test]
-    fn the_prompt_names_the_caffeinate_hold_when_this_launch_offers_it() {
+    fn the_prompt_names_caffeinate_when_this_launch_offers_it() {
         let mut moment = context(working(), &[]);
         let flags =
             crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true).expect("dims");

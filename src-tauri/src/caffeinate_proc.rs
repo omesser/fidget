@@ -102,7 +102,8 @@ impl Spawner for OsSpawner {
     }
 }
 
-/// Frame-loop owner. Notes wait here until the loop has fanned them out.
+/// The frame loop's hold. Notes from tool calls wait here until the frame loop
+/// posts them to Chat.
 pub struct Hold {
     machine: fidget_core::caffeinate::Machine<OsSpawner>,
     configured: Result<AssertedFlags, Empty>,

@@ -1492,28 +1492,28 @@ fn caffeinate_section(live: &Live) -> FormSection {
                 CAFFEINATE_DISPLAY_ID,
                 "Display",
                 BoolField::CaffeinateDisplay,
-                "Keeps the display awake.",
+                "Keeps the display from sleeping.",
                 live.caffeinate_display,
             ),
             row(
                 CAFFEINATE_IDLE_ID,
                 "Idle",
                 BoolField::CaffeinateIdle,
-                "Prevents idle sleep.",
+                "Keeps the Mac from sleeping when idle.",
                 live.caffeinate_idle,
             ),
             row(
                 CAFFEINATE_DISK_ID,
                 "Disk",
                 BoolField::CaffeinateDisk,
-                "Prevents disk sleep.",
+                "Keeps the disk from sleeping when idle.",
                 live.caffeinate_disk,
             ),
             row(
                 CAFFEINATE_SYSTEM_ID,
                 "System",
                 BoolField::CaffeinateSystem,
-                "Prevents sleep on power adapter.",
+                "Keeps the Mac from sleeping while on AC power.",
                 live.caffeinate_system,
             ),
             FormRow::InspectBlock {
@@ -1766,8 +1766,8 @@ pub struct Live {
     pub characters_dir: String,
     /// This process is an installed app a login item can start.
     pub bundled: bool,
-    /// The stay-awake flags. All true freezes none of them. The last one on
-    /// freezes, so the page cannot save an empty set.
+    /// The caffeinate flags. The last one still on is frozen, so the page
+    /// cannot save an empty set.
     pub caffeinate_display: bool,
     pub caffeinate_idle: bool,
     pub caffeinate_disk: bool,
@@ -1824,8 +1824,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
             sections: privacy_sections(live),
         },
     ];
-    // The cup's flags are their own tab. Other builds omit it, and the page
-    // hides a button the form does not carry. Privacy keeps the grants.
+    // macOS only. The page hides the tab button on other builds.
     #[cfg(target_os = "macos")]
     tabs.push(FormTab {
         title: "Caffeinate".to_string(),
@@ -1871,12 +1870,12 @@ pub(crate) mod tests {
         "/Users/buddy/Library/Application Support/fidget/characters";
 
     /// The fixtures hold the macOS form. Linux freezes capturable and drops the
-    /// consent rows, and Windows drops one. Caffeinate is the macOS cup's tab.
-    /// Each tab pins where it builds the same.
+    /// consent rows, and Windows drops one. Caffeinate is macOS only. Each tab
+    /// pins where it builds the same.
     #[cfg(target_os = "linux")]
     const UNPINNED_TABS: &[&str] = &["Presence", "Privacy", "Caffeinate"];
     /// Windows builds Privacy without the Input Monitoring row: the grant is
-    /// macOS's. Caffeinate is the macOS cup's tab.
+    /// macOS's. Caffeinate is macOS only.
     #[cfg(target_os = "windows")]
     const UNPINNED_TABS: &[&str] = &["Privacy", "Caffeinate"];
     #[cfg(target_os = "macos")]
@@ -2229,8 +2228,7 @@ pub(crate) mod tests {
             "Traces",
             "What the fidget can see",
         ];
-        // Awake is the macOS cup's section. Other builds omit the rows, so the
-        // heading is not on their form and must not be required there.
+        // Awake is on the macOS form only.
         #[cfg(target_os = "macos")]
         expected.push("Awake");
         expected.sort_unstable();

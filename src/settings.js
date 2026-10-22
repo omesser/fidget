@@ -570,8 +570,8 @@ export function tabTitles(form) {
   return form.tabs.map((tab) => tab.title);
 }
 
-// The bar lists every tab this repo ships. A build that omits one, the cup's
-// tab off macOS, drops that button. Order follows the buttons that remain.
+// The bar lists every tab. Keep the buttons this build's form draws, in bar
+// order. Off macOS that drops Caffeinate.
 export function tabsTheFormDraws(buttons, form) {
   const drawn = new Set(tabTitles(form));
   return buttons.filter((title) => drawn.has(title));
@@ -716,8 +716,8 @@ if (typeof document !== "undefined") {
     }
   }
 
-  // A hidden button left in the middle would make the next click render the
-  // wrong panel: the bar's index and the form's index would no longer match.
+  // A hidden button in the middle shifts the bar's index off the form's, so
+  // tabs are matched by title.
   function applyTabBar() {
     if (!tablist || !currentForm) return;
     const buttons = [...tablist.querySelectorAll('[role="tab"]')];
@@ -792,8 +792,8 @@ if (typeof document !== "undefined") {
       const tab = tabs[i];
       tab.addEventListener("click", () => {
         feedback = null;
-        // Title, not the button's place. A hidden Caffeinate button sits
-        // between Privacy and Development on the builds that omit the tab.
+        // By title. Off macOS a hidden Caffeinate button sits between Privacy
+        // and Development.
         currentTabIndex = currentForm ? selectTab(currentForm, tab.textContent) : i;
         for (let j = 0; j < tabs.length; j++) {
           tabs[j].setAttribute("aria-selected", String(j === i));

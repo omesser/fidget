@@ -1199,8 +1199,7 @@ pub(crate) fn run_frame_loop(
                 }
                 (Some(fact), Some(drawn))
             };
-            // The macOS branch names these from the hold. Off macOS the uses
-            // below are `Option`, and `None` alone does not pick the types.
+            // Off macOS nothing below names these types, so they are spelled out.
             #[cfg(not(target_os = "macos"))]
             let (caffeinate_fact, caffeinate_drawn): (
                 Option<fidget_core::caffeinate::Fact>,

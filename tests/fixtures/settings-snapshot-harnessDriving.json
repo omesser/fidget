@@ -701,7 +701,7 @@
               "writes": "CaffeinateDisplay",
               "frozen": false,
               "batched": false,
-              "help": "Keeps the display awake.",
+              "help": "Keeps the display from sleeping.",
               "comment": null,
               "disclosure": null,
               "status": null
@@ -713,7 +713,7 @@
               "writes": "CaffeinateIdle",
               "frozen": false,
               "batched": false,
-              "help": "Prevents idle sleep.",
+              "help": "Keeps the Mac from sleeping when idle.",
               "comment": null,
               "disclosure": null,
               "status": null
@@ -725,7 +725,7 @@
               "writes": "CaffeinateDisk",
               "frozen": false,
               "batched": false,
-              "help": "Prevents disk sleep.",
+              "help": "Keeps the disk from sleeping when idle.",
               "comment": null,
               "disclosure": null,
               "status": null
@@ -737,7 +737,7 @@
               "writes": "CaffeinateSystem",
               "frozen": false,
               "batched": false,
-              "help": "Prevents sleep on power adapter.",
+              "help": "Keeps the Mac from sleeping while on AC power.",
               "comment": null,
               "disclosure": null,
               "status": null

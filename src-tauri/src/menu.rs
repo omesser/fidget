@@ -43,7 +43,7 @@ pub enum MenuAction {
     OpenSettings,
     /// Open the Chat surface. The same action a Summon performs.
     Summon,
-    /// Flip the stay-awake hold. The same request the Chat button posts.
+    /// Flip the caffeinate hold. The same request the Chat button posts.
     ToggleCaffeinate,
     /// Leave. Ours, not `PredefinedMenuItem::quit`: that calls `terminate:`
     /// from inside the tray menu and deadlocks the overlay webviews.
@@ -68,12 +68,11 @@ pub struct MenuSnapshot<'a> {
     pub hide_in_fullscreen: bool,
     /// Already in this machine's words — `settings::display_hotkey` printed it.
     pub hide_hotkey: &'a str,
-    /// None omits the row. Other platforms have no hold, so the menu does not
-    /// grow a switch that cannot take effect.
+    /// `None` leaves the row out, which every build but macOS does.
     pub caffeinate: Option<CaffeinateRow>,
 }
 
-/// The stay-awake row. `enabled` is false when no flag is left to pass.
+/// The caffeinate row. `enabled` is false when every flag is off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaffeinateRow {
     pub on: bool,
@@ -173,8 +172,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
 
-    // Off the sprite: a cup on the character crowded the art. The tick is the
-    // same hold the Chat button presses.
+    // The same hold the Chat button toggles.
     if let Some(row) = snapshot.caffeinate {
         entries.push(MenuEntry::Check {
             id: CAFFEINATE_ID.to_string(),

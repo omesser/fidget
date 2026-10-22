@@ -419,8 +419,8 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         let tools = value["result"]["tools"].as_array().expect("a list");
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        // The cup is a macOS tool. The count is the catalogue, so a hand-added
-        // row here would pass a name check and still be a ninth tool elsewhere.
+        // Caffeinate is macOS only. The count catches a tool that reaches this
+        // list without being in the core catalogue.
         #[cfg(target_os = "macos")]
         assert_eq!(names.len(), 9, "the core tools: {names:?}");
         #[cfg(not(target_os = "macos"))]
