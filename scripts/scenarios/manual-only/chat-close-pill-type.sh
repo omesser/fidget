@@ -95,6 +95,17 @@ close_textedit() {
   capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
   kill "$textedit_pid" 2> /dev/null || true
 }
+# Quit the TextEdit this run opened, then forget it only once it is gone: case 8
+# refuses a running TextEdit, so a quit still exiting would fail that refusal. A
+# timeout keeps the pid, so the EXIT trap still ends this run's TextEdit.
+quit_textedit() {
+  [ -n "$textedit_pid" ] || return 0
+  # A quit that gets no answer in 3 s gets a signal; the wait below decides.
+  capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > "$out/quit.txt" 2>&1 ||
+    kill "$textedit_pid" 2> /dev/null || true
+  wait_for_exit 3 "$textedit_pid" || fail "app-quit: TextEdit did not exit"
+  textedit_pid=
+}
 trap close_textedit EXIT
 trap 'exit 130' INT TERM
 
@@ -300,11 +311,7 @@ typing_back_in_textedit eight escape
 # 7. The remembered app quits while the pill is open: closing the pill steps
 # Fidget aside for the next app instead of keeping the keyboard.
 open_pill app-quit
-# A quit that gets no answer in 3 s ends TextEdit by signal: either way it quits.
-capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > "$out/quit.txt" 2>&1 ||
-  kill "$textedit_pid" || fail "could not quit TextEdit"
-# The pid is dead. A later failure must not tell TextEdit to close every document.
-textedit_pid=
+quit_textedit
 wait_for_next 3 "$log" "$closed" "$tools/ax" key "$pid" escape || fail "app-quit: the pill did not close; see $log"
 front_pid() { capped 3 osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true'; }
 not_front() { [ "$(front_pid)" != "$pid" ]; }
