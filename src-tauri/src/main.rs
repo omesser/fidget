@@ -629,8 +629,8 @@ struct SpritePlacement<'a> {
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
-/// What the cup draws. Absent off macOS, so the overlay creates no button.
-#[derive(Clone, serde::Serialize)]
+/// What Chat's button and the menu tick show. Absent off macOS.
+#[derive(Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct CaffeinateFrame {
     on: bool,
     flags: Option<String>,
@@ -716,9 +716,6 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
-    /// The stay-awake cup. Omitted off macOS: the overlay draws nothing then.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    caffeinate: Option<CaffeinateFrame>,
 }
 
 struct Spoken {
@@ -2301,11 +2298,39 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title, None);
 }
 
-/// The cup asked to flip the hold. The frame loop owns the child; this only
-/// posts the request.
+/// Chat's button and the menu tick asked to flip the hold. The frame loop
+/// owns the child; this only posts the request.
 #[tauri::command]
-fn overlay_toggle_caffeinate(toggle: tauri::State<'_, CaffeinateToggle>) {
+fn toggle_caffeinate(toggle: tauri::State<'_, CaffeinateToggle>) {
     let _ = toggle.0.send(fidget_core::caffeinate::Request::Toggle);
+}
+
+/// The hold as Chat last heard it. `None` off macOS, and before the first tick.
+#[tauri::command]
+fn caffeinate_view(shown: tauri::State<'_, CaffeinateShown>) -> Option<CaffeinateFrame> {
+    shown.0.lock().ok().and_then(|guard| guard.clone())
+}
+
+/// Push the hold to every open Chat when it changes, and remember it for a
+/// window that opens between ticks.
+pub(crate) fn note_caffeinate_view<'a>(
+    app: &tauri::AppHandle,
+    ids: impl IntoIterator<Item = &'a str>,
+    previous: &mut Option<CaffeinateFrame>,
+    next: Option<CaffeinateFrame>,
+) {
+    if *previous == next {
+        return;
+    }
+    *previous = next.clone();
+    if let Some(shown) = app.try_state::<CaffeinateShown>() {
+        if let Ok(mut guard) = shown.0.lock() {
+            *guard = next.clone();
+        }
+    }
+    for id in ids {
+        let _ = app.emit_to(chat_label(id), chat_surface::CAFFEINATE_EVENT, &next);
+    }
 }
 
 /// Whether this overlay is the foreground window, asked once per page blur:
@@ -4021,6 +4046,11 @@ fn apply_menu_action(
             let _ = platform::open_path(&action_log::current_path());
         }
         menu::MenuAction::OpenSettings => present_settings(app.clone()),
+        menu::MenuAction::ToggleCaffeinate => {
+            if let Some(toggle) = app.try_state::<CaffeinateToggle>() {
+                let _ = toggle.0.send(fidget_core::caffeinate::Request::Toggle);
+            }
+        }
         menu::MenuAction::Summon => {
             if let Some(instance) = roster.get(instance_id) {
                 let title = instance.name.clone();
@@ -4303,8 +4333,43 @@ struct FrameExtras {
     caffeinate: mpsc::Receiver<fidget_core::caffeinate::Request>,
 }
 
-/// Cup presses, received on the frame loop. Managed state is keyed by type.
+/// Chat and menu presses, received on the frame loop. Managed state is keyed by type.
 struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
+
+/// Last hold Chat was shown. The frame loop writes it; `caffeinate_view` reads it.
+struct CaffeinateShown(Mutex<Option<CaffeinateFrame>>);
+
+/// The menu row for the hold. None off macOS. Before the first tick the hold
+/// is off, and an empty flag set leaves the row untickable.
+fn menu_caffeinate(
+    settings: &Settings,
+    frame: Option<&CaffeinateFrame>,
+) -> Option<menu::CaffeinateRow> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (settings, frame);
+        None
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Some(match frame {
+            Some(frame) => menu::CaffeinateRow {
+                on: frame.on,
+                enabled: frame.reason.is_none(),
+            },
+            None => menu::CaffeinateRow {
+                on: false,
+                enabled: fidget_core::caffeinate::AssertedFlags::try_from_bits(
+                    settings.caffeinate_display,
+                    settings.caffeinate_idle,
+                    settings.caffeinate_disk,
+                    settings.caffeinate_system,
+                )
+                .is_ok(),
+            },
+        })
+    }
+}
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
     if let Ok(mut rows) = dest.lock() {
@@ -4337,6 +4402,7 @@ fn describe_menu(
     instance_id: &str,
     settings: &Settings,
     rules: &HideRules,
+    caffeinate: Option<menu::CaffeinateRow>,
 ) -> menu::MenuDescription {
     let instances = roster.list();
     let hide_hotkey = settings::display_hotkey(&settings.hide_hotkey);
@@ -4353,6 +4419,7 @@ fn describe_menu(
         hidden: rules.is_away(),
         hide_in_fullscreen: rules.hide_in_fullscreen(),
         hide_hotkey: &hide_hotkey,
+        caffeinate,
     })
 }
 
@@ -5024,7 +5091,8 @@ fn main() {
             overlay_traces_cadence,
             overlay_cadence,
             overlay_open_chat,
-            overlay_toggle_caffeinate,
+            toggle_caffeinate,
+            caffeinate_view,
             overlay_request_focus,
             overlay_has_foreground,
             chat_opening,
@@ -5215,6 +5283,7 @@ fn main() {
             let (mcp_tx, mcp_rx) = mpsc::channel();
             let (caffeinate_tx, caffeinate_rx) = mpsc::channel();
             app.manage(CaffeinateToggle(caffeinate_tx));
+            app.manage(CaffeinateShown(Mutex::new(None)));
             mcp_resources::publish_excluded(&settings.excluded_applications);
             mcp_http::serve(mcp_tx);
             let forward_to = app.handle().clone();
@@ -5443,6 +5512,7 @@ fn main() {
                     &id,
                     &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
+                    menu_caffeinate(&settings_now, None),
                 );
                 #[cfg(target_os = "macos")]
                 platform::seed_tray_position();

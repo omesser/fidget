@@ -193,42 +193,6 @@ body {
   }
 }
 
-/* After thinking-bounce: the expression page copies from the bubble rule
-   through these keyframes, and a transparent backdrop in that slice is overlay
-   layout. The cup is overlay chrome, so it stays out of the copied speech. */
-.caffeinate-cup {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-/* Off is the outline. A fill in the markup would leave the unpressed cup
-   looking on, and recoloring the stroke cannot empty the body. */
-.caffeinate-cup .cup-body {
-  fill: none;
-}
-
-.caffeinate-cup.on {
-  color: #c4a484;
-}
-
-.caffeinate-cup.on .cup-body {
-  fill: currentColor;
-}
-
-.caffeinate-cup:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
 /* Tails stay on Speech. Opacity only: a scale keyframe fought the exit fade. */
 .bubble.quick-message {
   display: flex;

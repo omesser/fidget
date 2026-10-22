@@ -28,13 +28,13 @@ use super::session_log;
 use super::settings::{ChatAppearance, SettingsOp};
 use super::{
     apply_menu_action, bring_roster_off_fullscreen, cancelled_caret, chat_label, close_chat,
-    completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources, menu, model,
-    note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
-    push_chat_opening, push_chat_openings, remember_instances, spawn_live, sprite_width,
-    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
-    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
-    SENSE_INTERVAL,
+    completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources, menu, menu_caffeinate,
+    model, note_caffeinate_view, note_happened, open_chat, overlay_label, paced, place_overlays,
+    platform, publish_instances, push_chat_opening, push_chat_openings, remember_instances,
+    spawn_live, sprite_width, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
+    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
+    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT,
+    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 #[cfg(target_os = "macos")]
 use super::{caffeinate_frame, emit_chat_notice};
@@ -212,9 +212,11 @@ pub(crate) fn run_frame_loop(
                 &id,
                 &settings_now,
                 rules_now.as_deref().unwrap_or(&HideRules::default()),
+                menu_caffeinate(&settings_now, None),
             );
             (description.actions.clone(), Some(description))
         };
+        let mut caffeinate_shown = None;
 
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
@@ -1221,6 +1223,12 @@ pub(crate) fn run_frame_loop(
                 while caffeinate_rx.try_recv().is_ok() {}
                 (None, None)
             };
+            note_caffeinate_view(
+                &app,
+                lives.iter().map(|live| live.id.as_str()),
+                &mut caffeinate_shown,
+                caffeinate_drawn.clone(),
+            );
 
             {
                 let installed: Vec<String> = characters.keys().cloned().collect();
@@ -1242,6 +1250,7 @@ pub(crate) fn run_frame_loop(
                     &id,
                     &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
+                    menu_caffeinate(&settings_now, caffeinate_drawn.as_ref()),
                 );
                 let notice = crate::names_hint::live();
                 if notice.armed() {
@@ -1371,6 +1380,7 @@ pub(crate) fn run_frame_loop(
                         &live.id,
                         &settings_now,
                         rules_now.as_deref().unwrap_or(&HideRules::default()),
+                        menu_caffeinate(&settings_now, caffeinate_drawn.as_ref()),
                     );
 
                     // The overlay the cursor is on, and where in it the cursor
@@ -2346,7 +2356,6 @@ pub(crate) fn run_frame_loop(
                     fade_ms: presence.fade_ms,
                     sound: sound_allowed,
                     hover_delay_ms: crate::hover_delay_ms(),
-                    caffeinate: caffeinate_drawn.clone(),
                 };
 
                 // Skip a repeated instruction (#741): Tauri emit is JS eval

@@ -231,7 +231,7 @@ pub struct ToolInfo {
 
 /// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
-    let mut tools = vec![
+    let tools = vec![
         ToolInfo {
             name: "speak".to_string(),
             description: "Make the Character speak a line of dialogue".to_string(),
@@ -327,6 +327,10 @@ pub fn list_tools() -> Vec<ToolInfo> {
             }),
         },
     ];
+    // The push is macOS-only. A `mut` binding on every OS is an unused-mut
+    // failure in the Windows and Linux clippy jobs.
+    #[cfg(target_os = "macos")]
+    let mut tools = tools;
     #[cfg(target_os = "macos")]
     tools.push(ToolInfo {
         name: "caffeinate".to_string(),

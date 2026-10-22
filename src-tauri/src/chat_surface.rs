@@ -55,6 +55,10 @@ pub(crate) const CHAT_UI_EVENT: &str = "chat-ui";
 
 pub(crate) const CHAT_APPEARANCE_EVENT: &str = "chat-appearance";
 
+/// The stay-awake hold, for the button in the Chat header. `None` means this
+/// build has no hold, and the button stays hidden.
+pub(crate) const CAFFEINATE_EVENT: &str = "caffeinate";
+
 /// Retires one forwarded request in every open Chat surface, by request id.
 /// An ask no Instance owes went to all of them and one took the click; the
 /// rest would otherwise keep offering buttons on a question already answered.

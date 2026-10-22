@@ -2104,3 +2104,63 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Beats the theme's `.tb button` size. Off is the header ink; on fills the
+   cup. `[hidden]` stays none, or a later display rule would show it off macOS. */
+.chat-ui-terminal .tb button.caffeinate,
+.chat-ui-glass .tb button.caffeinate,
+.tb button.caffeinate {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 3px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--chat-ink);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.tb button.caffeinate[hidden] {
+  display: none;
+}
+
+.tb button.caffeinate svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.tb button.caffeinate .cup-body {
+  fill: none;
+}
+
+.tb button.caffeinate.on {
+  color: #c4a484;
+  background: color-mix(in srgb, #c4a484 28%, transparent);
+}
+
+.tb button.caffeinate.on .cup-body {
+  fill: #c4a484;
+}
+
+.chat-ui-glass .tb button.caffeinate:hover,
+.chat-ui-terminal .tb button.caffeinate:hover,
+[data-chat-palette="light"].chat-ui-glass .tb button.caffeinate,
+[data-chat-palette="light"].chat-ui-glass .tb button.caffeinate:hover {
+  background: transparent;
+  color: var(--chat-ink);
+}
+
+.tb button.caffeinate.on:hover,
+[data-chat-palette="light"].chat-ui-glass .tb button.caffeinate.on,
+[data-chat-palette="light"].chat-ui-glass .tb button.caffeinate.on:hover {
+  color: #c4a484;
+  background: color-mix(in srgb, #c4a484 28%, transparent);
+}
+
+.tb button.caffeinate:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

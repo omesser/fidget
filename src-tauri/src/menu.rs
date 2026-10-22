@@ -43,6 +43,8 @@ pub enum MenuAction {
     OpenSettings,
     /// Open the Chat surface. The same action a Summon performs.
     Summon,
+    /// Flip the stay-awake hold. The same request the Chat button posts.
+    ToggleCaffeinate,
     /// Leave. Ours, not `PredefinedMenuItem::quit`: that calls `terminate:`
     /// from inside the tray menu and deadlocks the overlay webviews.
     Quit,
@@ -66,6 +68,16 @@ pub struct MenuSnapshot<'a> {
     pub hide_in_fullscreen: bool,
     /// Already in this machine's words — `settings::display_hotkey` printed it.
     pub hide_hotkey: &'a str,
+    /// None omits the row. Other platforms have no hold, so the menu does not
+    /// grow a switch that cannot take effect.
+    pub caffeinate: Option<CaffeinateRow>,
+}
+
+/// The stay-awake row. `enabled` is false when no flag is left to pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaffeinateRow {
+    pub on: bool,
+    pub enabled: bool,
 }
 
 /// One row of the menu, as data.
@@ -109,6 +121,8 @@ const HIDE_ID: &str = "hide";
 const BRING_ID: &str = "bring-to-display";
 
 const CHAT_ID: &str = "chat";
+
+const CAFFEINATE_ID: &str = "caffeinate";
 
 const DIRECTOR_ID: &str = "director";
 
@@ -158,6 +172,18 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         enabled: true,
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
+
+    // Off the sprite: a cup on the character crowded the art. The tick is the
+    // same hold the Chat button presses.
+    if let Some(row) = snapshot.caffeinate {
+        entries.push(MenuEntry::Check {
+            id: CAFFEINATE_ID.to_string(),
+            label: "Caffeinate".to_string(),
+            enabled: row.enabled,
+            checked: row.on,
+        });
+        actions.insert(CAFFEINATE_ID.to_string(), MenuAction::ToggleCaffeinate);
+    }
 
     // Omitted when nothing is installed rather than shown empty: an empty
     // submenu looks like a bug; no submenu says there is nothing to choose.
@@ -435,6 +461,7 @@ mod tests {
             hidden: false,
             hide_in_fullscreen: true,
             hide_hotkey: "Control-Option-Command-B",
+            caffeinate: None,
         }
     }
 
@@ -606,6 +633,45 @@ mod tests {
             ),
             "checked once the Engine is quiet"
         );
+    }
+
+    #[test]
+    fn caffeinate_is_a_tick_when_this_machine_has_a_hold() {
+        let mut off = snapshot(&[], "bmo", false);
+        off.caffeinate = Some(CaffeinateRow {
+            on: false,
+            enabled: true,
+        });
+        let description = describe(off);
+        assert_eq!(
+            entry_with_id(&description, "caffeinate"),
+            Some(&MenuEntry::Check {
+                id: "caffeinate".to_string(),
+                label: "Caffeinate".to_string(),
+                enabled: true,
+                checked: false,
+            })
+        );
+        assert_eq!(
+            description.actions.get("caffeinate"),
+            Some(&MenuAction::ToggleCaffeinate)
+        );
+
+        let mut on = snapshot(&[], "bmo", false);
+        on.caffeinate = Some(CaffeinateRow {
+            on: true,
+            enabled: true,
+        });
+        assert!(matches!(
+            entry_with_id(&describe(on), "caffeinate"),
+            Some(MenuEntry::Check { checked: true, .. })
+        ));
+    }
+
+    #[test]
+    fn caffeinate_is_absent_where_there_is_no_hold() {
+        let description = describe(snapshot(&[], "bmo", false));
+        assert!(entry_with_id(&description, "caffeinate").is_none());
     }
 
     /// Consent lives in settings, not here. A menu row would look like a prompt on right-click, which decision 9 refuses.
