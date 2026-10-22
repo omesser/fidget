@@ -78,7 +78,7 @@ pub struct Argv {
 }
 
 impl Argv {
-    /// One token per letter, then `-w`, then the pid.
+    /// The tokens `Command` is given.
     pub fn args(self) -> Vec<String> {
         let mut args: Vec<String> = self
             .flags
