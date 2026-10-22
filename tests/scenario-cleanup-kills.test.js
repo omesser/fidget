@@ -427,7 +427,7 @@ test(
       "/bin/sh",
       [
         "-c",
-        `trap 'touch ${gone}; exit 0' TERM; while :; do sleep 0.05; done`,
+        `trap 'kill "$sleeper" 2> /dev/null; touch ${gone}; exit 0' TERM; sleep 60 & sleeper=$!; wait`,
       ],
       { stdio: "ignore" },
     );
