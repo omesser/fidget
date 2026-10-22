@@ -210,8 +210,18 @@ body {
   cursor: pointer;
 }
 
+/* Off is the outline. A fill in the markup would leave the unpressed cup
+   looking on, and recoloring the stroke cannot empty the body. */
+.caffeinate-cup .cup-body {
+  fill: none;
+}
+
 .caffeinate-cup.on {
   color: #c4a484;
+}
+
+.caffeinate-cup.on .cup-body {
+  fill: currentColor;
 }
 
 .caffeinate-cup:disabled {

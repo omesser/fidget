@@ -13,6 +13,7 @@ test("off with flags stays a button, and an empty set is disabled", () => {
   assert.equal(off.disabled, false);
   assert.equal(off.on, false);
   assert.match(off.svg, /<svg/);
+  assert.match(off.svg, /class="cup-body"/);
 
   const on = cupModel({ on: true, flags: "-dims", reason: null });
   assert.equal(on.on, true);
