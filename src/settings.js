@@ -720,8 +720,14 @@ if (typeof document !== "undefined") {
   // wrong panel: the bar's index and the form's index would no longer match.
   function applyTabBar() {
     if (!tablist || !currentForm) return;
-    const drawn = new Set(tabTitles(currentForm));
-    for (const button of tablist.querySelectorAll('[role="tab"]')) {
+    const buttons = [...tablist.querySelectorAll('[role="tab"]')];
+    const drawn = new Set(
+      tabsTheFormDraws(
+        buttons.map((button) => button.textContent),
+        currentForm,
+      ),
+    );
+    for (const button of buttons) {
       button.hidden = !drawn.has(button.textContent);
     }
     const selected = tablist.querySelector('[role="tab"][aria-selected="true"]');
