@@ -163,6 +163,30 @@ pub trait Spawner {
     fn poll(&mut self) -> Poll;
 }
 
+/// One `caffeinate` tool answer. `error` is what the caller reports; `fact`
+/// is the hold after the call, including a failed start.
+pub struct ToolAnswer {
+    pub fact: Fact,
+    pub error: Option<String>,
+}
+
+impl ToolAnswer {
+    pub fn json(self) -> Result<serde_json::Value, String> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        Ok(match self.fact {
+            Fact::Off => serde_json::json!({ "on": false }),
+            Fact::On(flags) => serde_json::json!({ "on": true, "flags": flags.preview() }),
+        })
+    }
+}
+
+/// The frame loop's hold, as `dispatch` sees it. `None` reads.
+pub trait CaffeinateHandle {
+    fn call(&mut self, on: Option<bool>) -> ToolAnswer;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tick {
     pub fact: Fact,

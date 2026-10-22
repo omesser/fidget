@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_the_eight_from_core_and_nothing_else() {
+    fn tools_list_is_the_core_catalogue_and_nothing_else() {
         let (tx, _rx) = mpsc::channel();
         let text = handle(
             &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
@@ -419,7 +419,14 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         let tools = value["result"]["tools"].as_array().expect("a list");
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names.len(), 8, "the eight tools: {names:?}");
+        // The cup is a macOS tool. The count is the catalogue, so a hand-added
+        // row here would pass a name check and still be a ninth tool elsewhere.
+        #[cfg(target_os = "macos")]
+        assert_eq!(names.len(), 9, "the core tools: {names:?}");
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(names.len(), 8, "the core tools: {names:?}");
+        #[cfg(target_os = "macos")]
+        assert!(names.contains(&"caffeinate"));
         assert!(names.contains(&"speak"));
         assert!(names.contains(&"whereabouts"));
         assert!(

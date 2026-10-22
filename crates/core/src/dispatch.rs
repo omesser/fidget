@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
+use crate::caffeinate::CaffeinateHandle;
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -46,13 +47,16 @@ pub enum ErrorCode {
     ExecutionFailed,
 }
 
-pub struct DispatchContext<'a> {
+pub struct DispatchContext<'a, 'c> {
     pub window_source: &'a dyn WindowSource,
     pub memory_path: PathBuf,
     pub denylist: DenyList,
     pub roster: &'a [InstanceInfo],
     pub expression: Option<&'a mut dyn ExpressionHandle>,
     pub placement: PlacementQuery<'a>,
+    /// Separate from `'a` so the hold can be the frame loop's while the
+    /// window lists are this call's. `None` off macOS: the tool errors.
+    pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
 }
 
 /// Reborrow a taken handle for one call. `as_deref_mut` on `Option<&mut dyn>`
@@ -190,6 +194,27 @@ pub fn dispatch(
                 message: format!("Failed to serialize result: {}", e),
             })
         }
+        "caffeinate" => {
+            #[derive(Deserialize)]
+            struct Args {
+                #[serde(default)]
+                on: Option<bool>,
+            }
+            let args: Args = parse_args(arguments, tool_name)?;
+            let Some(handle) = context.caffeinate.as_mut() else {
+                return Err(DispatchError {
+                    code: ErrorCode::ExecutionFailed,
+                    message: "Caffeinate is only available on macOS.".to_string(),
+                });
+            };
+            handle
+                .call(args.on)
+                .json()
+                .map_err(|message| DispatchError {
+                    code: ErrorCode::ExecutionFailed,
+                    message,
+                })
+        }
         _ => Err(DispatchError {
             code: ErrorCode::UnknownTool,
             message: format!("Unknown tool: {}", tool_name),
@@ -206,7 +231,7 @@ pub struct ToolInfo {
 
 /// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
-    vec![
+    let mut tools = vec![
         ToolInfo {
             name: "speak".to_string(),
             description: "Make the Character speak a line of dialogue".to_string(),
@@ -301,7 +326,22 @@ pub fn list_tools() -> Vec<ToolInfo> {
                 "properties": {}
             }),
         },
-    ]
+    ];
+    #[cfg(target_os = "macos")]
+    tools.push(ToolInfo {
+        name: "caffeinate".to_string(),
+        description: "Keep this Mac awake until it is turned off or Fidget quits. Omit on to read the hold without changing it.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "on": {
+                    "type": "boolean",
+                    "description": "Turn the hold on or off. Omit to read it."
+                }
+            }
+        }),
+    });
+    tools
 }
 
 #[cfg(test)]
@@ -329,7 +369,7 @@ mod tests {
         temp: &tempfile::TempDir,
         source: &'a FakeWindowSource,
         roster: &'a [InstanceInfo],
-    ) -> DispatchContext<'a> {
+    ) -> DispatchContext<'a, 'a> {
         DispatchContext {
             window_source: source,
             memory_path: temp.path().join("memory.md"),
@@ -337,6 +377,7 @@ mod tests {
             roster,
             expression: None,
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         }
     }
 
@@ -477,6 +518,9 @@ mod tests {
     fn list_tools_returns_exactly_eight_tools() {
         let tools = list_tools();
 
+        #[cfg(target_os = "macos")]
+        assert_eq!(tools.len(), 9);
+        #[cfg(not(target_os = "macos"))]
         assert_eq!(tools.len(), 8);
     }
 
@@ -493,6 +537,83 @@ mod tests {
         assert!(names.contains(&"remember"));
         assert!(names.contains(&"list_instances"));
         assert!(names.contains(&"whereabouts"));
+        #[cfg(target_os = "macos")]
+        assert!(names.contains(&"caffeinate"));
+        #[cfg(not(target_os = "macos"))]
+        assert!(!names.contains(&"caffeinate"));
+    }
+
+    struct ScriptedHold {
+        fact: crate::caffeinate::Fact,
+        reads: usize,
+        sets: Vec<bool>,
+    }
+
+    impl CaffeinateHandle for ScriptedHold {
+        fn call(&mut self, on: Option<bool>) -> crate::caffeinate::ToolAnswer {
+            match on {
+                None => {
+                    self.reads += 1;
+                    crate::caffeinate::ToolAnswer {
+                        fact: self.fact,
+                        error: None,
+                    }
+                }
+                Some(value) => {
+                    self.sets.push(value);
+                    self.fact = if value {
+                        crate::caffeinate::Fact::On(
+                            crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true)
+                                .expect("four flags"),
+                        )
+                    } else {
+                        crate::caffeinate::Fact::Off
+                    };
+                    crate::caffeinate::ToolAnswer {
+                        fact: self.fact,
+                        error: None,
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn caffeinate_reads_when_on_is_omitted_and_sets_when_it_is_present() {
+        let mut hold = ScriptedHold {
+            fact: crate::caffeinate::Fact::Off,
+            reads: 0,
+            sets: Vec::new(),
+        };
+        let call = |hold: &mut ScriptedHold, args: serde_json::Value| {
+            let temp = tempfile::tempdir().expect("temp dir is creatable");
+            let source = fake_source(vec![]);
+            let mut context = test_context(&temp, &source, &[]);
+            context.caffeinate = Some(hold);
+            dispatch("caffeinate", args, &mut context).expect("dispatch")
+        };
+        let read = call(&mut hold, json!({}));
+        assert_eq!(read, json!({ "on": false }));
+        assert_eq!(hold.reads, 1);
+        assert!(hold.sets.is_empty());
+
+        let on = call(&mut hold, json!({ "on": true }));
+        let again = call(&mut hold, json!({ "on": true }));
+        let off = call(&mut hold, json!({ "on": false }));
+        assert_eq!(on, json!({ "on": true, "flags": "-dims" }));
+        assert_eq!(again, json!({ "on": true, "flags": "-dims" }));
+        assert_eq!(off, json!({ "on": false }));
+        assert_eq!(hold.sets, [true, true, false]);
+    }
+
+    #[test]
+    fn caffeinate_without_a_hold_errors() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+        let err = dispatch("caffeinate", json!({ "on": true }), &mut context).unwrap_err();
+        assert_eq!(err.code, ErrorCode::ExecutionFailed);
+        assert!(err.message.contains("macOS"));
     }
 
     #[test]
@@ -754,6 +875,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut expression),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let first = dispatch("speak", json!({"message": "First line"}), &mut context)
@@ -799,6 +921,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let args = json!({"message": "Hello, world!"});
@@ -837,6 +960,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let args = json!({"behavior": "wave"});
@@ -902,6 +1026,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let result = dispatch("play_behavior", json!({"behavior": "jump"}), &mut context)
@@ -1069,6 +1194,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut live),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
@@ -1100,6 +1226,7 @@ mod tests {
             roster: &roster_info,
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
 
         let args = json!({"behavior": "undeclared_behavior"});
@@ -1160,6 +1287,7 @@ mod tests {
                 names: &names,
                 instances: &spots,
             },
+            caffeinate: None,
         };
 
         let result = dispatch("whereabouts", json!({}), &mut context).expect("dispatch succeeds");

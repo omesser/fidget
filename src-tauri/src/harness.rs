@@ -3087,6 +3087,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
             roster: &[],
             expression: None,
             placement: PlacementQuery::empty(),
+            caffeinate: None,
         };
         let _ = call
             .reply

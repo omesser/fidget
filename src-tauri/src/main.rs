@@ -27,6 +27,7 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
+mod caffeinate_proc;
 mod chat_surface;
 mod completer;
 mod consent;
@@ -306,6 +307,40 @@ fn route_attach_notice(
 ) -> Option<String> {
     pending.hold_notice(instance, text.clone());
     window_open.then_some(text)
+}
+
+/// A system note for one Chat surface. Same door as a Harness attach notice:
+/// held until the window is listening, and not a turn.
+pub(crate) fn emit_chat_notice(app: &tauri::AppHandle, instance: &str, text: String) {
+    let label = chat_label(instance);
+    let window_open = app.get_webview_window(&label).is_some();
+    let emit =
+        if let Some(state) = app.try_state::<PendingAsks>() {
+            state.0.lock().ok().and_then(|mut pending| {
+                route_attach_notice(&mut pending, instance, text, window_open)
+            })
+        } else {
+            window_open.then_some(text)
+        };
+    if let Some(text) = emit {
+        let _ = app.emit_to(
+            &label,
+            CHAT_EVENT,
+            ChatReply {
+                said: None,
+                busy: false,
+                reacting_to: None,
+                you: false,
+                thought: false,
+                at: None,
+                error: None,
+                failure: None,
+                notice: Some(text),
+                superseded_by: None,
+                streaming: false,
+            },
+        );
+    }
 }
 
 struct PendingAsks(Mutex<Pending>);
@@ -591,6 +626,39 @@ struct SpritePlacement<'a> {
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
+/// What the cup draws. Absent off macOS, so the overlay creates no button.
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct CaffeinateFrame {
+    on: bool,
+    flags: Option<String>,
+    reason: Option<String>,
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn caffeinate_frame(
+    fact: fidget_core::caffeinate::Fact,
+    configured: Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty>,
+) -> CaffeinateFrame {
+    match configured {
+        Err(_) => CaffeinateFrame {
+            on: false,
+            flags: None,
+            reason: Some(fidget_core::caffeinate::Empty::REASON.to_string()),
+        },
+        Ok(configured) => {
+            let flags = match fact {
+                fidget_core::caffeinate::Fact::On(flags) => flags,
+                fidget_core::caffeinate::Fact::Off => configured,
+            };
+            CaffeinateFrame {
+                on: fact.on(),
+                flags: Some(flags.preview()),
+                reason: None,
+            }
+        }
+    }
+}
+
 impl<'a> SpritePlacement<'a> {
     /// One Instance as one overlay is told about it, in that overlay's own
     /// coordinates.
@@ -645,6 +713,9 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
+    /// The stay-awake cup. Omitted off macOS: the overlay draws nothing then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caffeinate: Option<CaffeinateFrame>,
 }
 
 struct Spoken {
@@ -2225,6 +2296,13 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
         })
         .unwrap_or_else(|| id.clone());
     open_chat(&app, &id, title, None);
+}
+
+/// The cup asked to flip the hold. The frame loop owns the child; this only
+/// posts the request.
+#[tauri::command]
+fn overlay_toggle_caffeinate(toggle: tauri::State<'_, CaffeinateToggle>) {
+    let _ = toggle.0.send(fidget_core::caffeinate::Request::Toggle);
 }
 
 /// Whether this overlay is the foreground window, asked once per page blur:
@@ -3956,6 +4034,7 @@ fn apply_menu_action(
 /// skips that path and the window server drops the overlays with the process.
 fn quit_now() -> ! {
     eprintln!("quit");
+    caffeinate_proc::signal_held_child();
     harness::shutdown();
     std::process::exit(0);
 }
@@ -4213,7 +4292,11 @@ struct FrameExtras {
     /// `tools/call`s from the loopback MCP server, which are dispatched on the
     /// frame-loop thread because that is where the `Roster` is (ADR-0023).
     mcp: mpsc::Receiver<mcp_http::Call>,
+    caffeinate: mpsc::Receiver<fidget_core::caffeinate::Request>,
 }
+
+/// Cup presses, received on the frame loop. Managed state is keyed by type.
+struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
     if let Ok(mut rows) = dest.lock() {
@@ -4933,6 +5016,7 @@ fn main() {
             overlay_traces_cadence,
             overlay_cadence,
             overlay_open_chat,
+            overlay_toggle_caffeinate,
             overlay_request_focus,
             overlay_has_foreground,
             chat_opening,
@@ -5121,6 +5205,8 @@ fn main() {
             // decide what to put in `session/new`'s `mcpServers` and the
             // preflight thread can reach that within a tick of this line.
             let (mcp_tx, mcp_rx) = mpsc::channel();
+            let (caffeinate_tx, caffeinate_rx) = mpsc::channel();
+            app.manage(CaffeinateToggle(caffeinate_tx));
             mcp_resources::publish_excluded(&settings.excluded_applications);
             mcp_http::serve(mcp_tx);
             let forward_to = app.handle().clone();
@@ -5408,6 +5494,7 @@ fn main() {
                     ops: ops_rx,
                     chat: chat_rx,
                     mcp: mcp_rx,
+                    caffeinate: caffeinate_rx,
                 },
             );
             Ok(())
@@ -5418,6 +5505,7 @@ fn main() {
         // Quit's `quit_now` aside — so the Harness child is never orphaned.
         .run(|_, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                caffeinate_proc::signal_held_child();
                 harness::shutdown();
             }
         });

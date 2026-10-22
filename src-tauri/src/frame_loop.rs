@@ -36,6 +36,8 @@ use super::{
     SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
     SENSE_INTERVAL,
 };
+#[cfg(target_os = "macos")]
+use super::{caffeinate_frame, emit_chat_notice};
 
 /// How long an overlay may go without being told anything.
 /// A webview that begins listening mid-silence hears nothing until the sprite
@@ -185,7 +187,10 @@ pub(crate) fn run_frame_loop(
             ops,
             chat,
             mcp,
+            caffeinate: caffeinate_rx,
         } = extras;
+        #[cfg(target_os = "macos")]
+        let mut caffeinate_hold = crate::caffeinate_proc::Hold::new();
         let mut slots = completer::Slots::new();
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
@@ -1152,13 +1157,70 @@ pub(crate) fn run_frame_loop(
             // A `tools/call` from the attached Harness. Here because this is
             // where the `Roster` and `ExpressionHandle` are — the seam #470
             // was missing. A queued proposal reaches the screen on the next tick.
+            #[cfg(target_os = "macos")]
+            let configured = settings
+                .lock()
+                .ok()
+                .map(|settings| {
+                    fidget_core::caffeinate::AssertedFlags::try_from_bits(
+                        settings.caffeinate_display,
+                        settings.caffeinate_idle,
+                        settings.caffeinate_disk,
+                        settings.caffeinate_system,
+                    )
+                })
+                .unwrap_or(Err(fidget_core::caffeinate::Empty));
+            #[cfg(target_os = "macos")]
+            caffeinate_hold.set_target(configured, std::process::id());
             while let Ok(call) = mcp.try_recv() {
                 let excluded = settings
                     .lock()
                     .map(|settings| settings.excluded_applications.clone())
                     .unwrap_or_default();
-                answer_tool_call(call, &mut roster, assembler.source(), excluded, &displays);
+                #[cfg(target_os = "macos")]
+                let hold: Option<
+                    &mut dyn fidget_core::caffeinate::CaffeinateHandle,
+                > = Some(&mut caffeinate_hold);
+                #[cfg(not(target_os = "macos"))]
+                let hold: Option<
+                    &mut dyn fidget_core::caffeinate::CaffeinateHandle,
+                > = None;
+                answer_tool_call(
+                    call,
+                    &mut roster,
+                    assembler.source(),
+                    excluded,
+                    &displays,
+                    hold,
+                );
             }
+            #[cfg(target_os = "macos")]
+            let (caffeinate_fact, caffeinate_drawn) = {
+                let mut requests = Vec::new();
+                while let Ok(request) = caffeinate_rx.try_recv() {
+                    requests.push(request);
+                }
+                caffeinate_hold.tick(&requests);
+                let fact = caffeinate_hold.fact();
+                let drawn = caffeinate_frame(fact, configured);
+                for note in caffeinate_hold.take_notes() {
+                    let text = note.text();
+                    for live in &lives {
+                        emit_chat_notice(&app, &live.id, text.clone());
+                    }
+                }
+                (Some(fact), Some(drawn))
+            };
+            // The macOS branch names these from the hold. Off macOS the uses
+            // below are `Option`, and `None` alone does not pick the types.
+            #[cfg(not(target_os = "macos"))]
+            let (caffeinate_fact, caffeinate_drawn): (
+                Option<fidget_core::caffeinate::Fact>,
+                Option<super::CaffeinateFrame>,
+            ) = {
+                while caffeinate_rx.try_recv().is_ok() {}
+                (None, None)
+            };
 
             {
                 let installed: Vec<String> = characters.keys().cloned().collect();
@@ -1678,7 +1740,7 @@ pub(crate) fn run_frame_loop(
                                 standing: String::new(),
                                 front_title: None,
                                 lately: Lately::default(),
-                                caffeinate: None,
+                                caffeinate: caffeinate_fact,
                             });
                         }
                     }
@@ -1844,7 +1906,7 @@ pub(crate) fn run_frame_loop(
                                 .frontmost_application
                                 .as_deref()
                                 .and_then(|name| assembler.front_title(name)),
-                            caffeinate: None,
+                            caffeinate: caffeinate_fact,
                         };
                         let was_addressed = live.addressed;
                         if live.addressed {
@@ -2284,6 +2346,7 @@ pub(crate) fn run_frame_loop(
                     fade_ms: presence.fade_ms,
                     sound: sound_allowed,
                     hover_delay_ms: crate::hover_delay_ms(),
+                    caffeinate: caffeinate_drawn.clone(),
                 };
 
                 // Skip a repeated instruction (#741): Tauri emit is JS eval
@@ -2899,6 +2962,7 @@ fn answer_tool_call(
     source: &dyn WindowSource,
     excluded_applications: Vec<String>,
     displays: &platform::Displays,
+    caffeinate: Option<&mut dyn fidget_core::caffeinate::CaffeinateHandle>,
 ) {
     let watched = crate::names_hint::live().watching(source);
     let live: Vec<InstanceInfo> = roster
@@ -2932,6 +2996,7 @@ fn answer_tool_call(
             names: &displays.names,
             instances: &spots,
         },
+        caffeinate,
     };
     let _ = call
         .reply
@@ -3113,6 +3178,7 @@ mod tests {
             &EmptyDesktop,
             Vec::new(),
             &platform::Displays::default(),
+            None,
         );
         let result = answers
             .recv()
@@ -3174,6 +3240,7 @@ mod tests {
             &EmptyDesktop,
             Vec::new(),
             &displays,
+            None,
         );
         let result = answers
             .recv()
