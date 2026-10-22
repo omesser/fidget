@@ -814,6 +814,10 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
         pi_mcp_dir: harness::project_dir_label(cwd),
         api_key_placeholder: view.api_key_placeholder(),
         installed: view.installed.clone(),
+        caffeinate_display: view.caffeinate_display,
+        caffeinate_idle: view.caffeinate_idle,
+        caffeinate_disk: view.caffeinate_disk,
+        caffeinate_system: view.caffeinate_system,
         ..settings::form::Live::current()
     };
     let reveal = state.reveal.take();

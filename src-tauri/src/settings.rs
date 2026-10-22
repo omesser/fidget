@@ -193,6 +193,10 @@ pub struct SettingsView {
     pub chat_appearance: ChatAppearance,
     /// A model or effort the attached Harness did not take.
     pub not_applied: Vec<crate::harness::NotAppliedNotice>,
+    pub caffeinate_display: bool,
+    pub caffeinate_idle: bool,
+    pub caffeinate_disk: bool,
+    pub caffeinate_system: bool,
 }
 
 /// One row's value, in the three shapes the page draws. Untagged, so a
@@ -612,6 +616,10 @@ impl SettingsView {
             byo_steps,
             byo_token,
             development_switches: development_switches(settings),
+            caffeinate_display: settings.caffeinate_display,
+            caffeinate_idle: settings.caffeinate_idle,
+            caffeinate_disk: settings.caffeinate_disk,
+            caffeinate_system: settings.caffeinate_system,
             variable_texts: variable_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
@@ -725,6 +733,38 @@ impl SettingsView {
                     RowValue::Text(notice.text.clone()),
                 )
             }));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            values.insert(
+                form::CAFFEINATE_DISPLAY_ID.to_string(),
+                RowValue::Bool(self.caffeinate_display),
+            );
+            values.insert(
+                form::CAFFEINATE_IDLE_ID.to_string(),
+                RowValue::Bool(self.caffeinate_idle),
+            );
+            values.insert(
+                form::CAFFEINATE_DISK_ID.to_string(),
+                RowValue::Bool(self.caffeinate_disk),
+            );
+            values.insert(
+                form::CAFFEINATE_SYSTEM_ID.to_string(),
+                RowValue::Bool(self.caffeinate_system),
+            );
+            let preview = fidget_core::caffeinate::AssertedFlags::try_from_bits(
+                self.caffeinate_display,
+                self.caffeinate_idle,
+                self.caffeinate_disk,
+                self.caffeinate_system,
+            );
+            values.insert(
+                form::CAFFEINATE_COMMAND_ID.to_string(),
+                text(&match preview {
+                    Ok(flags) => format!("caffeinate {}", flags.preview()),
+                    Err(_) => fidget_core::caffeinate::Empty::REASON.to_string(),
+                }),
+            );
         }
         values.insert(
             "chat_ui".to_string(),
@@ -1488,6 +1528,10 @@ pub struct SettingsPatch {
     #[serde(default)]
     pub use_window_names: Option<bool>,
     pub use_input_monitoring: Option<bool>,
+    pub caffeinate_display: Option<bool>,
+    pub caffeinate_idle: Option<bool>,
+    pub caffeinate_disk: Option<bool>,
+    pub caffeinate_system: Option<bool>,
     /// Throw the conversation in flight away and open a fresh one on the same
     /// Completer. Not a file field: a session boundary is a moment, not a
     /// setting.
@@ -1570,6 +1614,10 @@ pub enum BoolField {
     /// The idle event tap, which macOS alone has a grant to ask for.
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
+    CaffeinateDisplay,
+    CaffeinateIdle,
+    CaffeinateDisk,
+    CaffeinateSystem,
 }
 
 /// A text field of `SettingsPatch`, typed for the reason `BoolField` is. No
@@ -1628,6 +1676,10 @@ impl SettingsPatch {
             BoolField::UseWindowNames => self.use_window_names = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
+            BoolField::CaffeinateDisplay => self.caffeinate_display = Some(value),
+            BoolField::CaffeinateIdle => self.caffeinate_idle = Some(value),
+            BoolField::CaffeinateDisk => self.caffeinate_disk = Some(value),
+            BoolField::CaffeinateSystem => self.caffeinate_system = Some(value),
         }
     }
 
@@ -1858,6 +1910,25 @@ impl Settings {
         if let Some(value) = patch.use_input_monitoring {
             self.use_input_monitoring = value;
         }
+        // An empty flag set cannot be saved. The cup would have nothing to run.
+        let display = patch.caffeinate_display.unwrap_or(self.caffeinate_display);
+        let idle = patch.caffeinate_idle.unwrap_or(self.caffeinate_idle);
+        let disk = patch.caffeinate_disk.unwrap_or(self.caffeinate_disk);
+        let system = patch.caffeinate_system.unwrap_or(self.caffeinate_system);
+        if display || idle || disk || system {
+            if let Some(value) = patch.caffeinate_display {
+                self.caffeinate_display = value;
+            }
+            if let Some(value) = patch.caffeinate_idle {
+                self.caffeinate_idle = value;
+            }
+            if let Some(value) = patch.caffeinate_disk {
+                self.caffeinate_disk = value;
+            }
+            if let Some(value) = patch.caffeinate_system {
+                self.caffeinate_system = value;
+            }
+        }
         if let Some(value) = patch.chat_ui {
             self.chat_ui = value;
         }
@@ -1896,6 +1967,10 @@ impl Settings {
 /// from every app and B alone belongs to most. Stored in the spelling
 /// `parse_hotkey` reads everywhere.
 pub const DEFAULT_HIDE_HOTKEY: &str = "Control-Option-Command-B";
+
+fn default_true() -> bool {
+    true
+}
 
 fn default_pi_project_mcp() -> bool {
     true
@@ -2018,6 +2093,18 @@ pub struct Settings {
     /// document round-trips on every platform.
     #[serde(default)]
     pub use_input_monitoring: bool,
+    /// `caffeinate -d`. Missing keys stay on, which is the shipped default.
+    #[serde(default = "default_true")]
+    pub caffeinate_display: bool,
+    /// `caffeinate -i`.
+    #[serde(default = "default_true")]
+    pub caffeinate_idle: bool,
+    /// `caffeinate -m`.
+    #[serde(default = "default_true")]
+    pub caffeinate_disk: bool,
+    /// `caffeinate -s`.
+    #[serde(default = "default_true")]
+    pub caffeinate_system: bool,
     /// Whether the first-run gesture tour has been shown. Once only, persisted
     /// per-app rather than per-Instance: a second fidget spawned later sees
     /// this flag set.
@@ -2072,6 +2159,10 @@ impl Default for Settings {
             use_accessibility: false,
             use_window_names: false,
             use_input_monitoring: false,
+            caffeinate_display: true,
+            caffeinate_idle: true,
+            caffeinate_disk: true,
+            caffeinate_system: true,
             first_run_tour_shown: false,
             names_hint_dismissed: false,
             chat_ui: "minimal".to_string(),
@@ -2339,6 +2430,10 @@ mod tests {
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: true,
+            caffeinate_display: true,
+            caffeinate_idle: true,
+            caffeinate_disk: true,
+            caffeinate_system: true,
             first_run_tour_shown: false,
             names_hint_dismissed: false,
         };
@@ -2377,6 +2472,48 @@ mod tests {
             ..SettingsPatch::default()
         });
         assert!(settings.sound);
+    }
+
+    /// The cup has nothing to run with no flags. Other fields in the same
+    /// patch still land, and a hand-edited all-false file still loads.
+    #[test]
+    fn a_patch_cannot_clear_the_last_caffeinate_flag() {
+        let mut settings = Settings {
+            caffeinate_display: false,
+            caffeinate_idle: false,
+            caffeinate_disk: false,
+            ..Settings::default()
+        };
+        settings.apply(SettingsPatch {
+            caffeinate_system: Some(false),
+            sound: Some(false),
+            ..SettingsPatch::default()
+        });
+        assert!(settings.caffeinate_system);
+        assert!(!settings.sound);
+
+        settings.apply(SettingsPatch {
+            caffeinate_display: Some(true),
+            caffeinate_system: Some(false),
+            ..SettingsPatch::default()
+        });
+        assert!(settings.caffeinate_display);
+        assert!(!settings.caffeinate_system);
+
+        let path = temp_path();
+        fs::write(
+            &path,
+            r#"{"caffeinate_display":false,"caffeinate_idle":false,"caffeinate_disk":false,"caffeinate_system":false}"#,
+        )
+        .expect("write");
+        let loaded = Settings::load(&path);
+        assert!(
+            !loaded.caffeinate_display
+                && !loaded.caffeinate_idle
+                && !loaded.caffeinate_disk
+                && !loaded.caffeinate_system
+        );
+        let _ = fs::remove_file(&path);
     }
 
     /// The alias carries a grant over from the field's old name: reading the
@@ -2627,6 +2764,13 @@ mod tests {
         assert!(settings.director_base_url.is_empty());
         assert!(settings.director_model.is_empty());
         assert!(settings.pi_project_mcp);
+        assert!(
+            settings.caffeinate_display
+                && settings.caffeinate_idle
+                && settings.caffeinate_disk
+                && settings.caffeinate_system,
+            "a file from before the flags stays on all four"
+        );
         assert_eq!(settings.chat_appearance, ChatAppearance::System);
         let _ = fs::remove_file(&path);
     }
@@ -2796,6 +2940,10 @@ mod tests {
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: false,
+            caffeinate_display: true,
+            caffeinate_idle: true,
+            caffeinate_disk: true,
+            caffeinate_system: true,
             first_run_tour_shown: false,
             names_hint_dismissed: false,
         };

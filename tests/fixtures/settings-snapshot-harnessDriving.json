@@ -684,6 +684,71 @@
           "comment": "What your fidget remembers between runs.",
           "disclosure": "Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.",
           "status": null
+        },
+        {
+          "heading": "Awake",
+          "serves": null,
+          "rows": [
+            {
+              "type": "Checkbox",
+              "id": "caffeinate_display",
+              "label": "Display",
+              "writes": "CaffeinateDisplay",
+              "frozen": false,
+              "batched": false,
+              "help": "Keeps the display awake.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "caffeinate_idle",
+              "label": "Idle",
+              "writes": "CaffeinateIdle",
+              "frozen": false,
+              "batched": false,
+              "help": "Prevents idle sleep.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "caffeinate_disk",
+              "label": "Disk",
+              "writes": "CaffeinateDisk",
+              "frozen": false,
+              "batched": false,
+              "help": "Prevents disk sleep.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "Checkbox",
+              "id": "caffeinate_system",
+              "label": "System",
+              "writes": "CaffeinateSystem",
+              "frozen": false,
+              "batched": false,
+              "help": "Prevents sleep on power adapter.",
+              "comment": null,
+              "disclosure": null,
+              "status": null
+            },
+            {
+              "type": "InspectBlock",
+              "id": "caffeinate_command",
+              "label": "Command",
+              "help": null,
+              "disclosure": null,
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
         }
       ]
     },

@@ -145,7 +145,7 @@ const HEADINGS = {
   Presence: ["Do Not Disturb", "Hide", "Launch"],
   Character: ["Character", "Instances"],
   AI: ["AI", "AI source", "Harness", "Model / API", "BYO - Point existing Harness at Fidget", "Last user turn"],
-  Privacy: ["What the fidget can see", "Excluded applications", "Memory File"],
+  Privacy: ["What the fidget can see", "Excluded applications", "Memory File", "Awake"],
   Development: ["Traces", "Blank AI", "HTTP limits", "Harness attachment", "Quick message"],
   Chat: ["Appearance"],
 };
