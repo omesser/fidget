@@ -37,7 +37,7 @@ test("the Copy press writes the same snippet processResponse names", async () =>
 test("a copy_byo_token run writes the token already in values", async () => {
   const written = [];
   const outcome = processResponse({ action: "run", operation: "copy_byo_token" });
-  await applyEventOutcome(outcome, { byo_token: "beef" }, async (text) => {
+  await applyEventOutcome(outcome, { byo_token: "beef" }, async (text) => { // pragma: allowlist secret
     written.push(text);
   });
   assert.deepEqual(written, ["beef"]);

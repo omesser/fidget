@@ -8390,42 +8390,6 @@ mod tests {
         assert!(!past.addressed, "not addressed after passing through");
     }
 
-    /// `window_source::Rect` reaches the Engine without a field-by-field copy.
-    #[test]
-    fn window_source_rect_accepts_as_engine_rect() {
-        use crate::window_source;
-
-        fn takes_engine_rect(_rect: Rect) {}
-
-        let source_rect = window_source::Rect {
-            x: 100.0,
-            y: 200.0,
-            width: 300.0,
-            height: 400.0,
-        };
-
-        takes_engine_rect(source_rect);
-
-        let geometry = window_source::WorldGeometry {
-            usable_frames: vec![source_rect],
-            windows: vec![],
-            dock: None,
-        };
-
-        let _snapshot = WorldSnapshot {
-            displays: geometry.usable_frames, // No .map(rect) needed
-            windows: vec![],
-            cursor: Point { x: 0.0, y: 0.0 },
-            elapsed_ms: 16,
-            verbs: vec![],
-            poke_settled: false,
-            proposal: None,
-            poll_generation: 0,
-            composing: false,
-            locomotion_frozen: false,
-        };
-    }
-
     /// A jump arrives through the existing landing. No second physics and no
     /// State of its own.
     #[test]

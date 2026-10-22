@@ -53,11 +53,13 @@ jobs:
         # A fresh runner draws Fidget's first frame seconds late, past a leaf's
         # 3 s launch wait. One launch here takes that cold start, which ran past
         # 3 s itself on macOS, so this one wait gets 30 s.
+        env:
+          FIDGET_DIRECTOR_API_KEY: x
         run: |
           root=$PWD log="$RUNNER_TEMP/warmup.log"
           . scripts/scenarios/helpers/wait-helpers.mac.sh
           seed_tour_shown "$RUNNER_TEMP/warmup/home"
-          HOME="$RUNNER_TEMP/warmup/home" FIDGET_DIRECTOR_API_KEY=x FIDGET_TRACE_FRAMES=1 \
+          HOME="$RUNNER_TEMP/warmup/home" FIDGET_TRACE_FRAMES=1 \
             target/debug/fidget > "$log" 2>&1 &
           pid=$!
           drew=0

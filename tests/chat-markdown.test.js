@@ -525,7 +525,7 @@ test("the vendored parser is the file src/vendor/README.md documents", () => {
 
   assert.equal(
     createHash("sha256").update(marked).digest("hex"),
-    "2e70fea3ee49f98ab67ee395e5af51cc6bee4fafed15910da9ccb7f650df8014",
+    "2e70fea3ee49f98ab67ee395e5af51cc6bee4fafed15910da9ccb7f650df8014", // pragma: allowlist secret
     "marked@18.0.13 lib/marked.esm.js; see src/vendor/README.md to re-vendor",
   );
 });

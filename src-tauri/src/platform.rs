@@ -171,7 +171,7 @@ pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
 /// The rectangles one overlay reported, in its own coordinates.
 /// Not `cfg`'d out on macOS: the neighbour-isolation test lives here, and
 /// compiling it only on X11/Windows would skip it on the machine this is written on.
-#[allow(dead_code)]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn overlay_rects_for(label: &str) -> Vec<OverlayRect> {
     OVERLAY_RECTS.lock().map_or_else(
         |_| Vec::new(),
@@ -250,7 +250,7 @@ impl Default for Displays {
 // Only macOS ever names a source: `exact_dock` is `None` on every other lane,
 // so no variant is ever constructed there — but `Displays` carries the type on
 // all of them.
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub enum DockSource {
     /// `CoreDockGetRect`, the private SPI: exact, no grant needed.
     CoreDock,

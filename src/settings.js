@@ -538,12 +538,12 @@ export async function handleEvent(payload) {
 // Outcome::Run, so the page writes the string it already shows. #855.
 const COPY_RUN_FIELDS = Object.freeze({
   copy_byo_snippet: "byo_snippet",
-  copy_byo_token: "byo_token",
+  copy_byo_token: "byo_token", // pragma: allowlist secret
 });
 
 const COPY_PRESS_RUN = Object.freeze({
   byo_copy: "copy_byo_snippet",
-  byo_copy_token: "copy_byo_token",
+  byo_copy_token: "copy_byo_token", // pragma: allowlist secret
 });
 
 export async function writeRunClipboard(run, values, writeText) {

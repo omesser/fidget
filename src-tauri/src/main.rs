@@ -773,7 +773,7 @@ struct Placed {
     owner: Option<usize>,
     /// The open quick-message draft, carried to the bubble owner like `dialogue`.
     qm: Option<fidget_core::quick_message::QmDraft>,
-    #[allow(dead_code)]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,
 }
 
@@ -1338,7 +1338,7 @@ mod settings_event_tests {
     #[test]
     fn a_key_typed_after_clear_key_replaces_the_stored_one() {
         let mut payload = apply_after_clear_key();
-        payload["draft"]["director_api_key"] = "sk-new".into();
+        payload["draft"]["director_api_key"] = "sk-new".into(); // pragma: allowlist secret
         let mut replace = settings::SettingsPatch::default();
         replace.completer.director_api_key = Some("sk-new".into());
         assert_eq!(applied(payload), vec![replace]);

@@ -1,11 +1,11 @@
-// `tabTitles()` is the list the form description exposes, and `selectTab`
-// maps a title onto that list. An unknown title opens the first tab.
+// The form description lists the tabs, and `selectTab` maps a title onto that
+// list. An unknown title opens the first tab.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { selectTab, tabTitles, tabsTheFormDraws } from "../src/settings.js";
+import { selectTab, tabsTheFormDraws } from "../src/settings.js";
 
 // Two files per state. The description keeps the `settings-snapshot-` name and
 // the bare `FormDescription` shape that the Rust side's own fixture has, so
@@ -21,7 +21,11 @@ const html = readFileSync(new URL("../src/settings.html", import.meta.url), "utf
 
 test("the snapshot carries the tabs, in order", () => {
   for (const name of ["modelApi", "harnessDriving"]) {
-    assert.deepEqual(tabTitles(snapshot(name).form), TABS, name);
+    assert.deepEqual(
+      snapshot(name).form.tabs.map((tab) => tab.title),
+      TABS,
+      name,
+    );
   }
 });
 

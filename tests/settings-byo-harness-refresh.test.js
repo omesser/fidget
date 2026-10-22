@@ -7,7 +7,7 @@ import { foldDraft, processResponse, stageDraft } from "../src/settings.js";
 test("picking a registration Harness keeps the previous preview until the new one arrives", () => {
   const values = {
     ...JSON.parse(readFileSync(new URL("./fixtures/settings-values-modelApi.json", import.meta.url), "utf8")),
-    byo_token: "old-token",
+    byo_token: "old-token", // pragma: allowlist secret
   };
   const shown = (draft) => ({ ...values, ...draft });
   const fields = ["byo_snippet", "byo_steps", "byo_token"];

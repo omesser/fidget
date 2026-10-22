@@ -195,7 +195,7 @@ test("registration Harness previews without saving and Cancel restores the picke
     action: "preview_byo",
     snippet: "hermes mcp add fidget",
     steps: "Run the command.",
-    token: "secret-token",
+    token: "secret-token", // pragma: allowlist secret
   });
   draft = foldDraft(draft, preview, emitted[0]);
   const shown = draw({ ...MODEL_API.values, ...draft });
@@ -310,7 +310,7 @@ test("a Base URL shortcut fill is drawn after the redraw, and Cancel drops it", 
 });
 
 test("Clear key blanks the key's draft entry and stages the delete", () => {
-  const draft = { director_api_key: "sk-draft", director_model: "gpt-5" };
+  const draft = { director_api_key: "sk-draft", director_model: "gpt-5" }; // pragma: allowlist secret
   assert.deepEqual(foldDraft(draft, { clearKey: true }), { director_model: "gpt-5", clear_key: true });
   assert.deepEqual(foldDraft(draft, true), draft, "a plain refresh keeps the draft");
   assert.deepEqual(foldDraft(draft, false), draft, "a no-op answer keeps the draft");

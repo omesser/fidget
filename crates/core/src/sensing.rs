@@ -183,14 +183,6 @@ impl Activity {
             displays_asleep: false,
         }
     }
-
-    /// A desktop with `frontmost_application` set.
-    pub fn with_frontmost(name: impl Into<String>) -> Self {
-        Self {
-            frontmost_application: Some(name.into()),
-            ..Self::quiet()
-        }
-    }
 }
 
 #[cfg(test)]

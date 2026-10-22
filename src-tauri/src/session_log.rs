@@ -529,8 +529,8 @@ mod tests {
     }
 
     /// Production change that would fail this: forgetting every Instance's
-    /// turns when one Instance's session is reopened. Saving an Instance Prompt
-    /// reopens that session only; the fidget beside it is still mid-conversation.
+    /// turns when one Instance's session is replaced. A Retarget, a Character
+    /// switch or a saved Instance Prompt replaces one; the rest are mid-conversation.
     #[test]
     fn forgetting_one_instance_leaves_the_others_conversation() {
         let mut log = Log::new();
@@ -541,31 +541,6 @@ mod tests {
 
         assert!(log.replay("saved").is_empty());
         assert_eq!(log.replay("other").len(), 1);
-    }
-
-    /// Production change that would fail this: keeping turns after Retarget
-    /// replaced the Completer session. Chat is this session only.
-    #[test]
-    fn retarget_forgets_the_old_session() {
-        let mut log = Log::new();
-        log.log_you("buddy-1", "old session", UNIX_EPOCH);
-        log.forget("buddy-1");
-        assert!(log.replay("buddy-1").is_empty());
-    }
-
-    /// Production change that would fail this: emptying every fidget's log on a
-    /// Character switch, which replaces one Instance's session and leaves the
-    /// rest answering out of the conversation their windows still show.
-    #[test]
-    fn a_switched_buddy_does_not_forget_the_others() {
-        let mut log = Log::new();
-        log.log_you("switched", "before the switch", UNIX_EPOCH);
-        log.log_you("untouched", "still this session", UNIX_EPOCH);
-
-        log.forget("switched");
-
-        assert!(log.replay("switched").is_empty());
-        assert_eq!(log.replay("untouched").len(), 1);
     }
 
     /// Production change that would fail this: stamping a replayed line with

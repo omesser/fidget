@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # `actions: write` is for dispatching PR Tests at the sync branch.
+  # `actions: write` is for dispatching PR Tests and Secret Scanning at the sync branch.
   contents: write
   pull-requests: write
   actions: write
@@ -99,11 +99,11 @@ jobs:
             echo
             echo '## How to verify'
             echo
-            echo '`node --test tests/skills-layout.test.js tests/skills-ownership.test.js` ran green on this branch before this pull request opened, and the full `PR Tests` suite was dispatched at the branch straight afterwards.'
+            echo '`node --test tests/skills-layout.test.js tests/skills-ownership.test.js` ran green on this branch before this pull request opened, and the full `PR Tests` suite and `Secret Scanning` were dispatched at the branch straight afterwards.'
             echo
-            echo "That dispatched run is a standalone run, not a status check: no \`PR Tests\` tick will appear on this pull request, however green the suite came out. Read it before approving: https://github.com/$GH_REPO/actions/workflows/tests.yml?query=branch%3A${BRANCH//\//%2F}"
+            echo "Those dispatched runs are standalone runs, not status checks: no \`PR Tests\` or \`Secret Scanning\` tick will appear on this pull request, however green they came out. Read both before approving: https://github.com/$GH_REPO/actions/workflows/tests.yml?query=branch%3A${BRANCH//\//%2F} and https://github.com/$GH_REPO/actions/workflows/secret-scanning.yml?query=branch%3A${BRANCH//\//%2F}"
             echo
-            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why the suite has to be dispatched and why it cannot report here. If the dispatch itself failed, this job logged an error and the branch carries only the drift test above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
+            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why both have to be dispatched and why they cannot report here. If a dispatch failed, this job logged an error and the branch carries only the drift test above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
             echo
             echo 'Read `docs/agents/vendored-skills.md` before approving a change to a playbook this repository overrules.'
           } > /tmp/pstack-pr.md
@@ -127,14 +127,17 @@ jobs:
           AFTER: ${{ steps.push.outputs.after }}
           VERSION: ${{ steps.push.outputs.version }}
 
-      - name: Dispatch the full test suite at the sync branch
+      - name: Dispatch the test suite and secret scanning at the sync branch
         if: steps.changes.outputs.moved == 'true'
         # Last, and unable to fail the job: the pull request is worth keeping
-        # without the run, and its body says what to do when the run is missing.
+        # without the runs, and its body says what to do when one is missing.
         run: |
           gh workflow run tests.yml --ref "$BRANCH" ||
             echo "::error::Could not dispatch PR Tests for $BRANCH." \
               "The sync pull request stands, verified only by the drift test."
+          gh workflow run secret-scanning.yml --ref "$BRANCH" ||
+            echo "::error::Could not dispatch Secret Scanning for $BRANCH." \
+              "The sync pull request stands without a secret scan."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

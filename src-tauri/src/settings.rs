@@ -3661,7 +3661,7 @@ mod tests {
             let description = form::describe();
             let typed = AiDraft::drawn(
                 &description,
-                serde_json::json!({ "director_api_key": "sk-typed-then-cancelled" }),
+                serde_json::json!({ "director_api_key": "sk-typed-then-cancelled" }), // pragma: allowlist secret
             );
             assert!(
                 typed.patch(&view).is_some(),
@@ -3753,7 +3753,7 @@ mod tests {
             let description = form::describe();
             let patch = AiDraft::drawn(
                 &description,
-                serde_json::json!({ "director_api_key": "sk-typed" }),
+                serde_json::json!({ "director_api_key": "sk-typed" }), // pragma: allowlist secret
             )
             .patch(&view);
             let mut key = SettingsPatch::default();

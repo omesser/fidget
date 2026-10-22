@@ -27,7 +27,7 @@ env:
   ITCH_TARGET: omesser/fidget
   # Pinned with its checksum, from https://broth.itch.zone/butler/linux-amd64/versions.
   BUTLER_VERSION: 15.32.0
-  BUTLER_SHA256: 2335971394ef6596f95ded0833e85ee28755e13761716ef4c91d6b11f69162f5
+  BUTLER_SHA256: 2335971394ef6596f95ded0833e85ee28755e13761716ef4c91d6b11f69162f5 # pragma: allowlist secret
 
 jobs:
   push:

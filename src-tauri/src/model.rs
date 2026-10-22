@@ -276,14 +276,6 @@ pub fn key_fingerprint(key: &str) -> String {
     format!("len={n} last={last}")
 }
 
-/// Read Director config from the env. No API key means `StaticDirector`
-/// only, unless the server is on this machine or this LAN.
-/// Env-only wrapper. The overlay resolves from settings and the store.
-#[expect(dead_code)] // env-only wrapper; overlay call sites now use config_from
-pub fn config() -> DirectorConfig {
-    config_from(&resolve("", "", None))
-}
-
 /// One line for the mode, and a warning when a key was offered but unusable.
 /// Empty is almost always a `$VAR` that expanded to nothing, not a choice.
 pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
@@ -3907,7 +3899,7 @@ pub(crate) mod tests {
             "https://api.openai.com"
         );
         assert_eq!(
-            origin("https://user:sk-secret@api.x.ai/v1/responses"),
+            origin("https://user:sk-secret@api.x.ai/v1/responses"), // pragma: allowlist secret
             "https://api.x.ai"
         );
         assert_eq!(
@@ -3941,7 +3933,7 @@ pub(crate) mod tests {
         assert_eq!(host_of("http://localhost:8000"), "localhost:8000");
         assert_eq!(host_of("http://[fd00::1]:8080"), "[fd00::1]:8080");
         assert_eq!(
-            host_of("https://user:sk-secret@api.openai.com/v1"),
+            host_of("https://user:sk-secret@api.openai.com/v1"), // pragma: allowlist secret
             "api.openai.com",
             "neither half of the userinfo is drawn"
         );

@@ -219,7 +219,7 @@ export const STATES = {
       harness_state: "Not attached.",
       director_base_url: "http://localhost:11434",
       director_model: "qwen2.5:7b",
-      api_key_placeholder: "Not set",
+      api_key_placeholder: "Not set", // pragma: allowlist secret
       payload: "opening: You are BMO, a small green console…\nlast: (poke) — the user tapped you",
     },
   },
@@ -235,7 +235,7 @@ export const STATES = {
       harness_state: "claude · signed in · session 3f9c2a1e-7b44-4d0e-9a11-0c6f2e5d8b77",
       director_base_url: "http://localhost:11434",
       director_model: "qwen2.5:7b",
-      api_key_placeholder: "Set (…4f2a)",
+      api_key_placeholder: "Set (…4f2a)", // pragma: allowlist secret
       payload: "opening: You are BMO, a small green console…\nlast: (summon) hi there",
     },
   },

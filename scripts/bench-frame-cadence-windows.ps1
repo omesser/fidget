@@ -270,7 +270,7 @@ function Start-Fidget([string]$Log, [string]$TraceFrames, [string]$Characters) {
     $psi.EnvironmentVariables["LOCALAPPDATA"] = $script:Scratch
     $psi.EnvironmentVariables["USERPROFILE"] = $script:Scratch
     $psi.EnvironmentVariables["HOME"] = $script:Scratch
-    $psi.EnvironmentVariables["FIDGET_DIRECTOR_API_KEY"] = "bench-placeholder"
+    $psi.EnvironmentVariables["FIDGET_DIRECTOR_API_KEY"] = "bench-placeholder" # pragma: allowlist secret
     $psi.EnvironmentVariables["FIDGET_DIRECTOR"] = "0"
     $psi.EnvironmentVariables["FIDGET_TRACE_FRAMES"] = $TraceFrames
     $psi.EnvironmentVariables["FIDGET_TRACE_CADENCE"] = "1"
