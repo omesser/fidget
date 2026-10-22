@@ -174,8 +174,7 @@ function createView(id) {
     view.quickMachine?.setBubble(false);
     view.hotspot = null;
     view.bubbleRect = null;
-    view.cupHotspot = null;
-    if (view.cup) view.cup.hidden = true;
+    // The cup stays. This hides speech, and the character can still be on screen.
     reportOverlayRects();
     if (view.quickMachine?.visible) positionQuick(view, spriteRect());
     arm();
