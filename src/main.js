@@ -265,7 +265,10 @@ function syncCup(view, field) {
   if (!model) {
     view.cup?.remove();
     view.cup = null;
-    view.cupHotspot = null;
+    if (view.cupHotspot) {
+      view.cupHotspot = null;
+      reportOverlayRects();
+    }
     return;
   }
   if (!view.cup) {
@@ -300,7 +303,12 @@ function placeCup(view, spriteX, spriteY) {
   if (!view.cup || !view.latest) return;
   if (!view.latest.visible) {
     view.cup.hidden = true;
-    view.cupHotspot = null;
+    // The shell keeps the last rect. Clearing it here without a report
+    // leaves a clickable patch where the cup used to be.
+    if (view.cupHotspot) {
+      view.cupHotspot = null;
+      reportOverlayRects();
+    }
     return;
   }
   const x = spriteX + view.latest.width - 18;
@@ -601,11 +609,11 @@ function attachQuickMessage(view, id) {
 // Windows' region clips drawing too, so the bubble is reported as well. Only
 // the renderer knows where, because the bubble is sized by text measured here.
 //
-// ponytail: sent whenever a rectangle changes, which while a bubble is up and
-// the Character is walking is once a frame. A few hundred bytes an invoke and
-// only while a bubble or pill is on screen; if that ever shows up in a profile,
-// the upgrade is to send offsets from the sprite once per line and let the
-// frame loop follow the sprite itself.
+// ponytail: sent whenever a rectangle changes, which while a bubble, the pill,
+// or the stay-awake cup is up and the Character is walking is once a frame.
+// A few hundred bytes an invoke, and only while one of those is on screen. If
+// that ever shows up in a profile, the upgrade is to send offsets from the
+// sprite once per line and let the frame loop follow the sprite itself.
 let reportedRects = "";
 
 function reportOverlayRects() {
