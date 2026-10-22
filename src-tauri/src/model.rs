@@ -65,37 +65,18 @@ pub(crate) const BLANK: &str = "FIDGET_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 
-/// What one HTTP Completer turn is capped at when nothing else decides.
-///
-/// A safeguard against a model that will not stop, not a budget tuned to a
-/// surface. Nothing downstream needs it smaller: the Speech bubble draws six
-/// lines of whatever arrives (`src/bubble.js`) and the Chat transcript
-/// scrolls. So there is one number for every wake, the same local or hosted.
-///
-/// It replaced 80 hosted and 512 local (#606). That split was there because a
-/// local reasoning model spends a reply-sized cap thinking, which is what
-/// `THINK_CEILING` solves properly, and because 80 was cutting a typed
-/// question off mid-answer. A higher floor costs a runaway turn more tokens
-/// before the guard trips, which is the trade this number is.
+/// What one HTTP Completer turn is capped at when nothing else decides. A guard
+/// against a model that will not stop, not a reply budget: the bubble draws six
+/// lines and the transcript scrolls. Local and hosted share it, `THINK_CEILING`
+/// covers reasoning, and a higher cap costs a runaway turn more tokens.
 const TURN_CEILING: u32 = 1024;
 
-/// What a host that marks its reasoning is capped at instead (#606 §C).
-///
-/// The wire carries one number covering thought and answer together on every
-/// path we speak, and no server can be told not to count thinking, so a cap
-/// sized for an answer is one a reasoning model hits mid-thought. #598
-/// measured a median burn of 479 tokens against a 512 cap. Anything derived
-/// from `TURN_CEILING` brings that back, so this is absolute.
-///
-/// It is not a reply length. What it guards is a runaway turn on a hosted
-/// key: a model that loops instead of concluding would bill until the
-/// timeout. 8192 is an order of magnitude above the measured burn, which is
-/// the room a long reasoning turn wants, and matches what the endpoints in
-/// scope already allow reasoning by default. A turn still going at 8192 is
-/// stuck rather than thinking, and the Action Log says so.
-///
-/// `FIDGET_DIRECTOR_MAX_TOKENS` outranks it: a number the user typed is an
-/// instruction, not a default to improve on.
+/// What a host that marks its reasoning is capped at instead. The wire's one
+/// number covers thought and answer, so a reply-sized cap stops a reasoning
+/// model mid-thought (a measured median of 479 tokens against 512), and nothing
+/// derived from `TURN_CEILING` works. 8192 is an order of magnitude above that,
+/// so a turn still going is stuck, and the Action Log says so.
+/// `FIDGET_DIRECTOR_MAX_TOKENS` outranks it: a typed number is an instruction.
 const THINK_CEILING: u32 = 8192;
 
 /// The low level. Tests and a host that has not refused the field use it
@@ -103,7 +84,7 @@ const THINK_CEILING: u32 = 8192;
 #[cfg(test)]
 const DEFAULT_EFFORT: &str = "low";
 
-/// Last user turn and the config that produced it. #18 displays this.
+/// Last user turn and the config that produced it.
 #[derive(Clone, Debug, Serialize)]
 pub struct DirectorInspect {
     pub enabled: bool,
@@ -445,14 +426,13 @@ fn is_local(base: &str) -> bool {
 
 fn timeout_for() -> Duration {
     // `dev_flags` holds the value the variable or the file settled on, so the
-    // precedence is not re-decided here (#273).
+    // precedence is not re-decided here.
     crate::dev_flags::director_timeout_secs().map_or(TIMEOUT, Duration::from_secs)
 }
 
-/// The cap a turn goes out with, before `wire_budget` hands a host that
-/// marks its thinking the ceiling instead. No argument: the guard does not
-/// vary. As with the timeout, decided in `dev_flags::seed`. A zero cap is
-/// unset there: a reply with no room to answer in is not a value to keep.
+/// The cap a turn goes out with, before `wire_budget` may swap in the think
+/// ceiling. Decided in `dev_flags::seed`, like the timeout, where a zero cap
+/// counts as unset because it leaves no room to answer.
 fn max_tokens_for() -> u32 {
     crate::dev_flags::director_max_tokens().unwrap_or(TURN_CEILING)
 }
@@ -546,13 +526,9 @@ pub struct Endpoint {
     model: String,
     timeout: Duration,
     max_tokens: u32,
-    /// Did `max_tokens` come from `FIDGET_DIRECTOR_MAX_TOKENS` or the
-    /// settings row, rather than from the built-in default? A pinned cap is
-    /// the one thing `THINK_CEILING` does not overrule. Decided here, not at
-    /// the read site, for the reason `effort` and `timeout` are: the endpoint
-    /// is rebuilt on a settings change (`completer_retargets`), so this is as
-    /// fresh as they are, and `wire_budget` stays a function of the endpoint
-    /// rather than of whatever `dev_flags` holds at the moment it is called.
+    /// Whether `max_tokens` was pinned by `FIDGET_DIRECTOR_MAX_TOKENS` or the
+    /// settings row, the one cap `THINK_CEILING` does not overrule. Held on the
+    /// endpoint, rebuilt on a settings change, so `wire_budget` reads no globals.
     cap_pinned: bool,
     /// How hard to ask this host to think, verbatim. Baked in here so a
     /// settings change reaches a running Director through `completer_retargets`.
@@ -572,12 +548,9 @@ pub struct Endpoint {
     /// drops: a refusal retries with `max_completion_tokens`. Optimistic
     /// because Ollama has no such field and would silently answer with no cap.
     takes_max_tokens: AtomicBool,
-    /// Has a turn against this host ever marked its reasoning? Same
-    /// probe-then-remember shape as `streams`, with the polarity the other
-    /// way round: pessimistic, and it only ever rises. The first turn against
-    /// an unknown host therefore sends today's single combined number and
-    /// behaves exactly as it does today (#606 §C, acceptance box 5); a host
-    /// that marked once is given think room on top from the next turn on.
+    /// Has a turn against this host ever marked its reasoning? Probe then remember,
+    /// like `streams`, but pessimistic and only rising: a new host gets the single
+    /// combined number until one turn marks.
     marks_thinking: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are use-once
     /// Agents, so each wake would throw away the pooled connection.
@@ -627,10 +600,9 @@ impl Endpoint {
         }
     }
 
-    /// Send `prompt` as the next session turn and read the reply.
-    /// Takes `url` so the probe can show both xAI paths and `complete` can retry.
-    /// A fallback retries the same session snapshot; a succeeded drop latches.
-    /// `instance` is whose Chat surface a streamed thought is drawn in.
+    /// Send `prompt` as the next session turn and read the reply, drawing a
+    /// streamed thought in `instance`'s Chat. `url` lets the probe show both xAI
+    /// paths and `complete` retry the same snapshot. A succeeded drop latches.
     pub fn post(
         &self,
         url: &str,
@@ -853,10 +825,9 @@ impl Endpoint {
         }
     }
 
-    /// The one number the wire carries, in the order the three cases settle.
-    /// A cap the user pinned is sent verbatim; a host seen to mark its
-    /// reasoning is given `THINK_CEILING` instead of a reply-sized cap; every
-    /// other host sends `max_tokens`.
+    /// The one number the wire carries. A cap the user pinned goes verbatim, a host
+    /// seen to mark its reasoning gets `THINK_CEILING`, and every other host sends
+    /// `max_tokens`.
     fn wire_budget(&self) -> u32 {
         if self.cap_pinned || !self.marks_thinking.load(Ordering::SeqCst) {
             self.max_tokens
@@ -874,8 +845,8 @@ impl Endpoint {
                 "{url}: streamed reply had no text content"
             ))),
             Streamed::Truncated(what) => {
-                // Parseable is the one #606 row that is still Speech: a full
-                // Behavior / sayable line, marked. The other three are Unsent.
+                // Parseable is the one `Truncation` that is still Speech: a full Behavior
+                // / sayable line, marked. The other three are Unsent.
                 if let Truncation::Parseable(content) = what {
                     Ok(Reply::truncated(content))
                 } else {
@@ -892,7 +863,7 @@ impl Endpoint {
     }
 
     /// Action Log copy for a capped turn. Names the model, the cap, and the
-    /// setting that moves it. The four #606 rows call for different settings.
+    /// setting that moves it, which differs per `Truncation`.
     fn out_of_budget(&self, url: &str, what: &Truncation) -> String {
         // The number this turn was actually sent, which is the ceiling on a
         // host that marks and `max_tokens` on every other. Naming the field
@@ -1411,12 +1382,10 @@ enum Unsent {
     Cut(String),
     /// The model reached the token cap. Never worth a retry, because the same
     /// question at the same cap gets the same nothing. The text names the cap,
-    /// the model, and which #606 row it was.
+    /// the model, and the `Truncation`.
     Truncated(String),
-    /// Superseded while the tokens were arriving. No error is composed here,
-    /// and not because nobody is waiting: this is simply not where a waiting
-    /// caret is told. The frame loop names the wake that cancelled it, as that
-    /// wake starts (#890).
+    /// Superseded while the tokens were arriving. No error is composed here: the
+    /// frame loop tells a waiting caret, naming the wake that cancelled it.
     Abandoned,
     /// A status, a transport error, or an unreadable reply.
     Failed(String),
@@ -1450,9 +1419,9 @@ impl Unsent {
     }
 }
 
-/// What arrived when the Completer hit the token cap. One variant per #606
-/// table row, so Speech policy is a match, not a pile of emptiness checks.
-/// Marked reasoning is routed later; nothing here dumps thinking into Speech.
+/// What arrived when the Completer hit the token cap. A variant per outcome, so
+/// Speech policy is a match, not a pile of emptiness checks. Marked reasoning
+/// is routed later; nothing here dumps thinking into Speech.
 #[derive(Debug, PartialEq, Eq)]
 enum Truncation {
     /// Marked reasoning, no answer text. Action Log only. Never Speech.
@@ -1460,7 +1429,7 @@ enum Truncation {
     /// Answer text that still parses to a Behavior / sayable line. Spoken
     /// and marked. The other three rows are refused.
     Parseable(String),
-    /// Answer started but will not parse. #302: do not speak or half-parse.
+    /// Answer started but will not parse, so it is neither spoken nor half-parsed.
     MidSentence(String),
     /// Bytes in `content` with no reasoning mark. Not Speech. No v1
     /// heuristic onto the Thinking row.
@@ -1477,18 +1446,14 @@ enum Streamed {
     /// `finish_reason: "length"`, `response.incomplete`, or Anthropic
     /// `stop_reason: "max_tokens"`.
     Truncated(Truncation),
-    /// The body ended with the server never saying it was finished, so
-    /// whatever arrived is half a sentence.
+    /// The body ended with no end marker from the server, so what arrived is half
+    /// a sentence.
     ///
     /// ponytail: this trusts every OpenAI-compatible server to mark the end
-    /// — `[DONE]`, a `finish_reason`, or `response.completed`. Measured on
-    /// xAI (both paths) and oMLX, and it is what OpenAI's own stream does,
-    /// so the untested servers in the README's table are expected to follow.
-    /// One that does not still answers, because `post` retries it whole, but
-    /// it looks truncated on every wake and so pays two POSTs forever without
-    /// ever learning better; `FIDGET_TRACE_DIRECTOR` names it in one line.
-    /// The upgrade, if a real server ever turns up like this, is to keep what
-    /// arrived rather than re-ask for it (#302).
+    /// (`[DONE]`, a `finish_reason`, or `response.completed`), as xAI, oMLX and
+    /// OpenAI do. One that does not still answers, since `post` retries it whole,
+    /// but pays two POSTs every wake; `FIDGET_TRACE_DIRECTOR` names it. If one
+    /// turns up, keep what arrived rather than re-ask for it.
     Cut,
     /// The body held no `data:` frame, so it was never an event stream.
     /// A server took `stream` and ignored it. The refusal has no status of
@@ -1498,9 +1463,8 @@ enum Streamed {
     Abandoned,
 }
 
-/// Assemble an SSE reply. Takes a `Read` rather than a response so the
-/// shapes below are checked against canned bytes. `thought` is a parameter
-/// because the Shell's door is a process global that a test cannot reach.
+/// Assemble an SSE reply from a `Read`, so canned bytes can test it. `thought`
+/// is a parameter because the Shell's door is a global a test cannot reach.
 /// `said` hears the answer so far after every delta.
 fn read_stream(
     reader: impl std::io::Read,
@@ -1624,10 +1588,9 @@ struct Event {
     truncated: bool,
 }
 
-/// Read one event in either chat-completions or Responses shape.
-/// Markers distinguish a finished reply from a cut, because `/v1/responses`
-/// sends no `[DONE]`. `length`, `response.incomplete`, and Anthropic
-/// `stop_reason: "max_tokens"` mean the token cap.
+/// Read one event in either chat-completions or Responses shape. Markers tell
+/// a finished reply from a cut, as `/v1/responses` sends no `[DONE]`. `length`,
+/// `response.incomplete` and Anthropic's `max_tokens` stop mean the token cap.
 fn read_event(payload: &str) -> Event {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
         return Event::default();
@@ -1658,12 +1621,9 @@ fn read_event(payload: &str) -> Event {
                     .flatten()
             })
             .map(str::to_string),
-        // Two names for one field. `reasoning_content` (llama.cpp, oMLX,
-        // SGLang, LM Studio for R1) and `reasoning` (vLLM, Ollama, gpt-oss).
-        // Responses types reasoning apart, raw or as a summary.
-        // Anthropic types it apart too, one key along from `text_delta`. The
-        // `content_block_start` that opens the run carries no text, so the
-        // deltas are the whole of it.
+        // `reasoning_content` (llama.cpp, oMLX, SGLang, LM Studio for R1) and
+        // `reasoning` (vLLM, Ollama, gpt-oss) name one field. Responses and Anthropic
+        // type reasoning apart, and Anthropic's opening block carries no text.
         thought: chunk["reasoning_content"]
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
@@ -1734,10 +1694,9 @@ fn content_from_body(body: &str) -> Result<String, String> {
     Err("model reply had no text content".to_string())
 }
 
-/// Whether a whole body ended at the token cap.
-/// `finish_reason` on chat-completions, `incomplete_details.reason` on
-/// Responses, `stop_reason` on Anthropic. An empty cap is named as the
-/// cap, not as missing text.
+/// Whether a whole body ended at the token cap: `finish_reason` on chat
+/// completions, `incomplete_details.reason` on Responses, `stop_reason` on
+/// Anthropic. An empty cap is named as the cap, not as missing text.
 fn truncated_body(body: &str) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
@@ -1747,9 +1706,9 @@ fn truncated_body(body: &str) -> bool {
         || value["stop_reason"] == "max_tokens"
 }
 
-/// Whether the body marked reasoning apart from the answer. Used only to
-/// pick a #606 row: marked + no text is ThinkingOnly, unmarked prose is
-/// Unmarked. Not a thought-strip route.
+/// Whether the body marked reasoning apart from the answer. Used only to pick a
+/// `Truncation`: marked + no text is ThinkingOnly, unmarked prose is Unmarked.
+/// Not a thought-strip route.
 fn thought_in_body(body: &str) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
@@ -1773,7 +1732,7 @@ fn thought_in_body(body: &str) -> bool {
     false
 }
 
-/// Pick the #606 table row from what the cap-ended turn actually held.
+/// Pick the `Truncation` from what the cap-ended turn actually held.
 /// `parse_proposal` is the contract, not a thought heuristic: a first word
 /// like `Okay` still parses, and v1 does not second-guess that.
 fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
@@ -1789,18 +1748,9 @@ fn classify_truncation(content: &str, marked_thought: bool) -> Truncation {
     }
 }
 
-/// The Shell's thought door, set once at startup.
-///
-/// The Harness lane reaches the Chat surface through `Forwarded::Thought`,
-/// which it is handed when it is attached. The HTTP lane is built from
-/// settings and holds no window handle, so it is given the door instead of a
-/// route to it — and a `OnceLock` rather than a field on `Endpoint`, because a
-/// Retarget rebuilds the Completer and would drop a field (#611).
-///
-/// Unset in the probe and the tests, which have no Chat surface to draw on.
-///
-/// One door for every Instance, so each thought names its Instance: `Slots`
-/// gives every Instance its own thread and endpoint, so two can think at once.
+/// The Shell's thought door, set once at startup, unset in the probe and tests.
+/// A `OnceLock`, not an `Endpoint` field, since a Retarget rebuilds the
+/// Completer. Shared by every Instance, so each thought names its Instance.
 static THOUGHT: std::sync::OnceLock<ThoughtDoor> = std::sync::OnceLock::new();
 static THOUGHT_MORE: std::sync::OnceLock<ThoughtDoor> = std::sync::OnceLock::new();
 
@@ -2848,11 +2798,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Probe then remember, the shape `streams` and `takes_effort` already
-    /// have, with the polarity the other way round: pessimistic, and it only
-    /// ever rises. A host is given room to think only after a turn has been
-    /// seen to mark, so the first turn against an unknown host is today's wire
-    /// and #606 acceptance box 5 holds without a special case.
+    /// Probe then remember, pessimistic and only rising. A host gets think room
+    /// only after a turn is seen to mark, so a new host's first turn sends the
+    /// single combined number.
     #[test]
     fn a_host_that_marks_its_reasoning_stops_being_capped_at_a_reply_length() {
         let marked = concat!(
@@ -2999,8 +2947,8 @@ pub(crate) mod tests {
         );
     }
 
-    /// Best effort is the #606 table, not "any nonempty string". Thinking-only
-    /// and unparsable cuts stay Unsent. A parseable Behavior is spoken and
+    /// Best effort is the `Truncation` table, not "any nonempty string". Thinking
+    /// only and unparsable cuts stay Unsent. A parseable Behavior is spoken and
     /// marked. Unmarked content is not Speech and is not heuristically split.
     #[test]
     fn a_truncation_follows_the_best_effort_table() {
@@ -3065,7 +3013,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// The four #606 rows are a classification, not a content-emptiness check.
+    /// The four `Truncation` variants are a classification, not an emptiness check.
     #[test]
     fn classify_truncation_picks_the_table_row() {
         assert_eq!(
@@ -3122,10 +3070,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Anthropic `/v1/messages` names the cap `stop_reason: "max_tokens"`.
-    /// Empty text at that stop is ThinkingOnly, never Speech, and the
-    /// thinking the budget went on was on the strip while it was being spent
-    /// — the second half of #606's thinking-only row.
+    /// Anthropic `/v1/messages` names the cap `stop_reason: "max_tokens"`. Empty
+    /// text at that stop is ThinkingOnly, never Speech, and the thinking was on the
+    /// strip while it was spent.
     #[test]
     fn an_anthropic_max_tokens_stop_is_a_truncation() {
         let thinking_only = concat!(
@@ -4090,10 +4037,9 @@ pub(crate) mod tests {
         });
     }
 
-    /// The pin travels with the endpoint rather than being re-read at the
-    /// send, so a marked host built while a cap was exported still honours
-    /// it. `completer_retargets` rebuilds the endpoint when the setting
-    /// changes, which is how `effort` and `timeout` stay fresh too.
+    /// The pin travels with the endpoint, not re-read at the send, so a marked host
+    /// built while a cap was exported honours it. `completer_retargets` rebuilds
+    /// the endpoint on a settings change.
     #[test]
     fn an_exported_cap_pins_the_endpoint_against_the_ceiling() {
         with_env(None, None, None, || {
@@ -4144,12 +4090,9 @@ pub(crate) mod tests {
         });
     }
 
-    /// One guard for every wake and every host. Nothing about the surface
-    /// the reply lands on, or about where the server runs, moves this number.
-    /// `THINK_CEILING` and a pinned cap are the only two things that do, and
-    /// each has its own test above. Under the env lock because
-    /// `max_tokens_for` reads the live `dev_flags` values another test in
-    /// this binary sets and clears.
+    /// One guard for every wake and host. Only `THINK_CEILING` and a pinned cap
+    /// move it, each tested above. Under the env lock, as `max_tokens_for` reads
+    /// `dev_flags` values another test sets.
     #[test]
     fn one_runaway_guard_caps_every_wake_on_every_host() {
         with_env(None, None, None, || {
@@ -4279,14 +4222,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// The quoted sample lines a Personality Prompt offers, per #156's
-    /// convention ("It has been heard to say: …").
+    /// The quoted sample lines a Personality Prompt offers ("It has been heard to
+    /// say: …").
     ///
     /// ponytail: quote-character parity rather than the "heard to say" anchor,
-    /// which black-mage already words differently. It costs nothing and holds
-    /// for all eight shipped personalities; one unpaired quote in a future one
-    /// would invert it and the harness would report a clean zero. Anchor on
-    /// the colon if a personality ever needs a lone quote character.
+    /// which black-mage words differently. Free, and it holds for all eight
+    /// shipped personalities; one unpaired quote would invert it and report a
+    /// clean zero. Anchor on the colon if a personality needs a lone quote.
     fn sample_lines(personality: &str) -> Vec<&str> {
         personality
             .split(['"', '\u{201c}', '\u{201d}'])
@@ -4302,12 +4244,10 @@ pub(crate) mod tests {
 
     /// The sample line `reply` said back, when it said one back.
     ///
-    /// ponytail: the reply containing a whole sample line, compared over
-    /// squashed text, rather than an edit distance. It catches the line
-    /// repunctuated, recased, or wrapped in a preamble, which is what #230
-    /// saw; a model that truncates or paraphrases it reads as prose and is
-    /// not counted. So the number is a floor on quoting, never an inflated
-    /// one — reach for a similarity measure only if the paraphrases matter.
+    /// ponytail: containment over squashed text rather than an edit distance. It
+    /// catches the line repunctuated, recased, or wrapped in a preamble. A
+    /// truncation or paraphrase counts as prose, so the number is a floor on
+    /// quoting. Reach for a similarity measure only if paraphrases matter.
     fn quoted_sample_line(reply: &str, personality: &str) -> Option<String> {
         let said = squashed(reply);
         sample_lines(personality)
@@ -4473,13 +4413,9 @@ pub(crate) mod tests {
         }
     }
 
-    /// How often a live local model breaks the reply contract. Ignored because
-    /// it needs a server and spends real seconds; it is the harness, not a
-    /// check of our own code.
-    ///
-    /// The classifier is `ModelDirector::wake` itself rather than a copy, so
-    /// the measurement cannot drift from what the app does. One session
-    /// throughout, because that is how the fidget runs. #175.
+    /// How often a live local model breaks the reply contract. Ignored because it
+    /// needs a server and measures a model, not our code. The classifier is
+    /// `ModelDirector::wake` itself over one session, so it cannot drift.
     ///
     /// ```sh
     /// FIDGET_DIRECTOR_BASE_URL=http://localhost:11434 \
@@ -4487,10 +4423,9 @@ pub(crate) mod tests {
     /// cargo test -p fidget measure_the_reply_contract -- --ignored --nocapture
     /// ```
     ///
-    /// `FIDGET_BENCH_WAKES` sets the sample size; it defaults to 40.
-    /// `FIDGET_BENCH_FRAMING` picks the phrasing — `today` (the default),
-    /// `framed`, or `after` — and the run reports how much of its prose was a
-    /// personality sample line quoted back.
+    /// `FIDGET_BENCH_WAKES` sets the sample size (default 40).
+    /// `FIDGET_BENCH_FRAMING` is `today` (default), `framed`, or `after`.
+    /// The run also reports how much of its prose quoted a sample line back.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {

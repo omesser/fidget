@@ -500,6 +500,14 @@ A `workflow_dispatch` package build leaves the tap alone. To reconcile a tag tha
 
 `scripts/bump-homebrew-cask.sh` and a hand copy into the tap are for when that job cannot run. The bump reads that tag's Apple Silicon `.dmg`. The cask depends on arm64 because that is the only macOS disk image the Release ships.
 
+## itch.io
+
+A stable Release also goes to [itch.io](https://omesser.itch.io/fidget). After the packages attach, the Release workflow calls `.github/workflows/itch.yml`, which downloads that tag's four Release assets and pushes each one with [butler](https://itch.io/docs/butler/) to its own channel: `mac`, `windows`, `linux-appimage` and `linux-deb`. The channel name sets itch's platform tag, and `--userversion` is the tag without its `v`. A prerelease is not pushed.
+
+The push needs the `BUTLER_API_KEY` repo secret, an API key from [itch.io's API keys page](https://itch.io/user/settings/api-keys). Without it the job skips with a notice. An itch failure never touches the GitHub Release: no job waits on the push, and a Release run stays green with the failed job marked.
+
+To push a tag that is already published, dispatch the itch.io workflow with that tag, for example `v0.6.3`. A failure there shows red.
+
 ## Release Notes
 
 Start a Release body with a `## Highlights` bullet list, each bullet opening with

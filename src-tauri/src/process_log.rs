@@ -58,10 +58,8 @@ type RotatorHandle = Arc<Mutex<FileRotate<AppendCount>>>;
 /// Concurrent `FileRotate::new` plus rotate would race the rename cascade.
 static ROTATORS: OnceLock<Mutex<HashMap<PathBuf, RotatorHandle>>> = OnceLock::new();
 
-/// Install the panic hook and redirect stderr to the process log.
-///
-/// Safe to call more than once. Call early, before anything that might panic.
-/// After this, all stderr writes (including `eprintln!`) land in the process log.
+/// Install the panic hook and redirect stderr, `eprintln!` included, to the
+/// process log. Safe to call more than once; call it before anything can panic.
 pub fn init() {
     static STARTED: OnceLock<()> = OnceLock::new();
     STARTED.get_or_init(|| {
@@ -85,10 +83,8 @@ pub fn append(msg: &str) {
     append_to(&fidget_core::memory::data_dir(), msg);
 }
 
-/// Write to the process log always, and to stderr in debug builds.
-///
-/// Release packages have no console. Debug still wants the line in the
-/// terminal the developer launched from.
+/// Write to the process log always, and to stderr in debug builds, where the
+/// developer's terminal still wants the line. Release packages have no console.
 #[macro_export]
 macro_rules! eprintln_and_log {
     ($($arg:tt)*) => {{

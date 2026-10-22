@@ -37,7 +37,7 @@ pub struct Turn {
     /// When the line was said, not when Chat later opened. Replay stamps from this.
     pub at: SystemTime,
     /// A turn that failed: why, as `ChatReply` carries it. Kept so a Chat
-    /// opened after the failure still shows it (#1510).
+    /// opened after the failure still shows it.
     pub error: Option<String>,
     pub failure: Option<String>,
 }
@@ -54,7 +54,7 @@ struct Thinking {
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
     thinking: BTreeMap<String, Thinking>,
-    /// What a loaded session replayed (#1393), drawn above `turns`.
+    /// What a loaded session replayed, drawn above `turns`.
     restored: BTreeMap<String, Vec<Replayed>>,
 }
 
@@ -234,7 +234,7 @@ impl Log {
 
 /// A loaded session's replay as Chat draws it: a prompt's typed line as its own
 /// row ahead of the frame, and a reply as its dialogue. A reply that names only
-/// a Behavior said nothing and draws no row (#1435).
+/// a Behavior said nothing and draws no row.
 pub fn drawn(history: Vec<Replayed>, behaviors: &[String]) -> Vec<Replayed> {
     history
         .into_iter()
@@ -407,7 +407,7 @@ mod tests {
     }
 
     /// Production change that would fail this: a failed turn leaving no row,
-    /// so a Chat opened afterwards shows the typed line waiting forever (#1510).
+    /// so a Chat opened afterwards shows the typed line waiting forever.
     #[test]
     fn a_failed_turn_is_still_there_when_chat_opens_later() {
         let mut log = Log::new();
@@ -500,7 +500,7 @@ mod tests {
 
     /// Production change that would fail this: splicing a loaded session's
     /// history into this run's turns, stacking a second restore on the first,
-    /// or keeping it after the session is replaced (#1393).
+    /// or keeping it after the session is replaced.
     #[test]
     fn restored_history_stands_apart_once_until_the_session_goes() {
         let mut log = Log::new();
@@ -544,7 +544,7 @@ mod tests {
     }
 
     /// Production change that would fail this: keeping turns after Retarget
-    /// replaced the Completer session (#476: Chat is this session only).
+    /// replaced the Completer session. Chat is this session only.
     #[test]
     fn retarget_forgets_the_old_session() {
         let mut log = Log::new();
@@ -555,7 +555,7 @@ mod tests {
 
     /// Production change that would fail this: emptying every fidget's log on a
     /// Character switch, which replaces one Instance's session and leaves the
-    /// rest answering out of the conversation their windows still show. #476.
+    /// rest answering out of the conversation their windows still show.
     #[test]
     fn a_switched_buddy_does_not_forget_the_others() {
         let mut log = Log::new();

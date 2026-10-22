@@ -79,13 +79,13 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 | Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) | free (GitHub) / $5.49 (Steam) |
 | Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) | free (VRM + Workshop) |
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Distribution | GitHub releases + Homebrew cask (macOS arm64) | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
+| Distribution | GitHub releases + Homebrew cask (macOS arm64) + itch.io | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
 
 ## User-language comparison
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); no Steam/store — Homebrew cask (macOS arm64) + GitHub Releases | high for own spec/ship split |
+| fidget | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); no Steam — itch.io page + Homebrew cask (macOS arm64) + GitHub Releases | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 41 official DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,874 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -510,8 +510,9 @@ package-authored.
 
 3. **Distribution reach:** Desktop Mate, VPet, and MateEngine are on Steam;
    OpenPets has signed Windows builds and catalog. fidget ships via GitHub
-   Releases plus a Homebrew cask (macOS Apple Silicon, `omesser/homebrew-fidget`);
-   still no Steam/store presence.
+   Releases, a Homebrew cask (macOS Apple Silicon, `omesser/homebrew-fidget`),
+   and an [itch.io page](https://omesser.itch.io/fidget) (public 2026-10-22);
+   still no Steam presence.
 
 ## Evidence footer
 
@@ -546,7 +547,10 @@ config #1024; `antigravity` named+verified #1143, Google first-party ACP
 run with goose, copilot, and codex; prior ACP: cursor-agent #762, grok #587,
 codex #623, pi #628).
 The README Get It section, #1204, and #1259 record the Homebrew cask. The tap
-`omesser/homebrew-fidget` pins cask v0.1.0 for macOS arm64.
+`omesser/homebrew-fidget` cask is bumped on each Release (#1736) and pins
+v0.6.3 for macOS arm64 as of 2026-10-22. Each stable Release is pushed to
+[itch.io](https://omesser.itch.io/fidget) with butler (#1774); Windows, macOS,
+and Linux builds are listed there.
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,310, 41 DLC on the Steam `dlc` list, store copy still

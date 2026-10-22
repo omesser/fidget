@@ -23,7 +23,7 @@ pub(crate) const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// What a loaded session said before this run, as the lines the window
 /// draws above its log. Not `CHAT_EVENT`: these answer no question the window
-/// is waiting on, and are not a wake (#1393).
+/// is waiting on, and are not a wake.
 pub(crate) const CHAT_RESTORED_EVENT: &str = "chat-restored";
 
 /// Forwarded `session/request_permission` to the Chat surface of the Instance
@@ -59,10 +59,9 @@ pub(crate) const CHAT_APPEARANCE_EVENT: &str = "chat-appearance";
 /// build has no hold, and the button stays hidden.
 pub(crate) const CAFFEINATE_EVENT: &str = "caffeinate";
 
-/// Retires one forwarded request in every open Chat surface, by request id.
-/// An ask no Instance owes went to all of them and one took the click; the
-/// rest would otherwise keep offering buttons on a question already answered.
-/// A window that never drew the request ignores it.
+/// Retires one forwarded request in every open Chat surface, by request id. An
+/// ask no Instance owes went to all of them, so the rest stop offering buttons
+/// once one takes the click. A window that never drew it ignores it.
 pub(crate) const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 
 /// What retires one row in every open Chat surface.

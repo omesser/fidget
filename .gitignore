@@ -74,6 +74,10 @@ docs/superpowers/
 !.claude/agents
 !.claude/settings.json
 
+# The Ori CLI keeps its session database and logs in whatever checkout it runs
+# from. Local state, not repo content, so every clone makes its own.
+/.ori/
+
 # A dependency install is derived from a manifest, never committed, wherever it
 # lands. The pstack tools under `.agents/skills/*/scripts/` install theirs on
 # first use, and `watch-pr` alone pulls 37M the moment an agent reads a pull

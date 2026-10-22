@@ -278,3 +278,20 @@ jobs:
             gh pr create --base "$BRANCH" --head "$PR_BRANCH" \
               --title "$title" --body-file /tmp/homebrew-pr.md
           fi
+
+  # A leaf after package: no job needs it, and it never touches the Release, so
+  # an itch failure leaves the Release as published. A `uses:` job cannot take
+  # continue-on-error; itch.yml's job carries it for Release runs.
+  itch:
+    needs: package
+    if: |
+      github.event_name == 'release' &&
+      github.event.release.prerelease == false &&
+      needs.package.result == 'success'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/itch.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+    secrets:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}

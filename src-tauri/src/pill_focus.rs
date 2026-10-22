@@ -1,5 +1,5 @@
 //! Which overlay windows hold an open quick message pill. An overlay takes the
-//! keyboard only while one of its own pills is open (#1565).
+//! keyboard only while one of its own pills is open.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};

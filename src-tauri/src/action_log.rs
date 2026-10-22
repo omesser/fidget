@@ -51,7 +51,7 @@ pub fn current_path() -> PathBuf {
 /// The size bound per log file, in bytes.
 ///
 /// K=10 retention is 11 files, so the disk ceiling is ~22 MB (11 × 2 MB).
-const MAX_SIZE_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+const MAX_SIZE_BYTES: usize = 2 * 1024 * 1024;
 
 /// How many rotated files to keep (plus the current file = K+1 total).
 const RETENTION_COUNT: usize = 10;

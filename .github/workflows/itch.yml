@@ -1,0 +1,125 @@
+name: itch.io
+
+# Pushes one published Release's bundles to itch.io with butler. Runs by hand
+# for an existing tag, and from release.yml after the bundles are attached.
+
+on:
+  # checkov:skip=CKV_GHA_7:the tag reaches the shell through env and must match semver before use
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to push, such as v1.2.3'
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      BUTLER_API_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  ITCH_TARGET: omesser/fidget
+  # Pinned with its checksum, from https://broth.itch.zone/butler/linux-amd64/versions.
+  BUTLER_VERSION: 15.32.0
+  BUTLER_SHA256: 2335971394ef6596f95ded0833e85ee28755e13761716ef4c91d6b11f69162f5
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A Release run stays green when itch fails: the Release is already
+    # published and nothing needs this job. A manual run shows the failure.
+    continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
+    concurrency:
+      group: itch-${{ inputs.tag }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Require the butler key
+        id: key
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          if [ -z "$BUTLER_API_KEY" ]; then
+            echo "::notice::BUTLER_API_KEY is not set, so ${TAG} is not pushed to itch.io. Add the repo secret to enable it."
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the Release bundles
+        if: steps.key.outputs.push == 'true'
+        id: assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          version="${TAG#v}"
+          if [[ ! $version =~ $semver ]]; then
+            echo "::error::tag '$TAG' is not a release tag: expected v1.2.3"
+            exit 1
+          fi
+          # Channel, then the asset release.yml's tauri-action uploads to it. The
+          # channel name sets itch's platform tag.
+          channels=(
+            "mac Fidget_${version}_aarch64.dmg"
+            "windows Fidget_${version}_x64-setup.exe"
+            "linux-appimage Fidget_${version}_amd64.AppImage"
+            "linux-deb Fidget_${version}_amd64.deb"
+          )
+          names="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          missing=()
+          for entry in "${channels[@]}"; do
+            grep -qxF "${entry#* }" <<< "$names" || missing+=("${entry#* }")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Release $TAG lacks ${missing[*]}"
+            exit 1
+          fi
+          for entry in "${channels[@]}"; do
+            gh release download "$TAG" --dir "assets/${entry%% *}" --pattern "${entry#* }"
+          done
+          ls -lR assets
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install butler
+        if: steps.key.outputs.push == 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/butler.zip" \
+            "https://broth.itch.zone/butler/linux-amd64/${BUTLER_VERSION}/archive/default"
+          echo "${BUTLER_SHA256}  ${RUNNER_TEMP}/butler.zip" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/butler"
+          unzip -q "$RUNNER_TEMP/butler.zip" -d "$RUNNER_TEMP/butler"
+          chmod +x "$RUNNER_TEMP/butler/butler"
+          echo "$RUNNER_TEMP/butler" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/butler/butler" -V
+
+      - name: Push to itch.io
+        if: steps.key.outputs.push == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          VERSION: ${{ steps.assets.outputs.version }}
+        run: |
+          set -euo pipefail
+          # One directory per channel, holding that channel's one asset.
+          pushed=()
+          for dir in assets/*/; do
+            channel="$(basename "$dir")"
+            butler push "$dir" "${ITCH_TARGET}:${channel}" --userversion "$VERSION"
+            pushed+=("$channel")
+          done
+          {
+            echo '### itch.io'
+            echo
+            echo "Pushed \`$VERSION\` to https://${ITCH_TARGET%%/*}.itch.io/${ITCH_TARGET#*/}: ${pushed[*]}."
+          } >> "$GITHUB_STEP_SUMMARY"
