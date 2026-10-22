@@ -310,8 +310,8 @@ fn route_attach_notice(
     window_open.then_some(text)
 }
 
-/// A system note for one Chat surface. Same door as a Harness attach notice:
-/// held until the window is listening, and not a turn.
+/// A Chat system note, held until that window is listening. Only the macOS hold posts one.
+#[cfg(target_os = "macos")]
 pub(crate) fn emit_chat_notice(app: &tauri::AppHandle, instance: &str, text: String) {
     let label = chat_label(instance);
     let window_open = app.get_webview_window(&label).is_some();

@@ -1614,9 +1614,14 @@ pub enum BoolField {
     /// The idle event tap, which macOS alone has a grant to ask for.
     #[cfg(target_os = "macos")]
     UseInputMonitoring,
+    /// Stay-awake flags. The form that writes them exists on macOS only.
+    #[cfg(target_os = "macos")]
     CaffeinateDisplay,
+    #[cfg(target_os = "macos")]
     CaffeinateIdle,
+    #[cfg(target_os = "macos")]
     CaffeinateDisk,
+    #[cfg(target_os = "macos")]
     CaffeinateSystem,
 }
 
@@ -1676,9 +1681,13 @@ impl SettingsPatch {
             BoolField::UseWindowNames => self.use_window_names = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::UseInputMonitoring => self.use_input_monitoring = Some(value),
+            #[cfg(target_os = "macos")]
             BoolField::CaffeinateDisplay => self.caffeinate_display = Some(value),
+            #[cfg(target_os = "macos")]
             BoolField::CaffeinateIdle => self.caffeinate_idle = Some(value),
+            #[cfg(target_os = "macos")]
             BoolField::CaffeinateDisk => self.caffeinate_disk = Some(value),
+            #[cfg(target_os = "macos")]
             BoolField::CaffeinateSystem => self.caffeinate_system = Some(value),
         }
     }
