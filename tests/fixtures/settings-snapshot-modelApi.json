@@ -684,7 +684,12 @@
           "comment": "What your fidget remembers between runs.",
           "disclosure": "Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.",
           "status": null
-        },
+        }
+      ]
+    },
+    {
+      "title": "Caffeinate",
+      "sections": [
         {
           "heading": "Awake",
           "serves": null,

@@ -70,7 +70,7 @@ const STATES = [
 
 test("every label holds the control it names", () => {
   for (const [when, name] of STATES) {
-    for (const title of ["Presence", "Character", "AI", "Chat", "Privacy", "Development"]) {
+    for (const title of ["Presence", "Character", "AI", "Chat", "Privacy", "Caffeinate", "Development"]) {
       for (const label of page(name, title).filter((node) => node.tagName === "label")) {
         // A field's shortcut picker sits in its label too, ahead of the field
         // the label names (#1426).

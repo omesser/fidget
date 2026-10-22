@@ -1402,7 +1402,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         },
     ];
 
-    let mut sections = vec![
+    let sections = vec![
         FormSection {
             heading: "What the fidget can see".to_string(),
             serves: None,
@@ -1456,8 +1456,6 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             ],
         },
     ];
-    #[cfg(target_os = "macos")]
-    sections.push(caffeinate_section(live));
     sections
 }
 
@@ -1804,7 +1802,7 @@ pub fn describe() -> FormDescription {
 }
 
 pub fn describe_with(live: &Live) -> FormDescription {
-    let tabs = vec![
+    let mut tabs = vec![
         FormTab {
             title: "Presence".to_string(),
             sections: presence_sections(live.bundled),
@@ -1825,11 +1823,18 @@ pub fn describe_with(live: &Live) -> FormDescription {
             title: "Privacy".to_string(),
             sections: privacy_sections(live),
         },
-        FormTab {
-            title: "Development".to_string(),
-            sections: development_sections(live),
-        },
     ];
+    // The cup's flags are their own tab. Other builds omit it, and the page
+    // hides a button the form does not carry. Privacy keeps the grants.
+    #[cfg(target_os = "macos")]
+    tabs.push(FormTab {
+        title: "Caffeinate".to_string(),
+        sections: vec![caffeinate_section(live)],
+    });
+    tabs.push(FormTab {
+        title: "Development".to_string(),
+        sections: development_sections(live),
+    });
     // Only the buttons: every writing row carries the field it writes.
     let operations = HashMap::from([
         (SPAWN_ID.to_string(), RowOperation::Spawn),
@@ -1866,14 +1871,14 @@ pub(crate) mod tests {
         "/Users/buddy/Library/Application Support/fidget/characters";
 
     /// The fixtures hold the macOS form. Linux freezes capturable and drops the
-    /// consent rows, and Windows drops one. Each tab pins where it builds the
-    /// same.
+    /// consent rows, and Windows drops one. Caffeinate is the macOS cup's tab.
+    /// Each tab pins where it builds the same.
     #[cfg(target_os = "linux")]
-    const UNPINNED_TABS: &[&str] = &["Presence", "Privacy"];
+    const UNPINNED_TABS: &[&str] = &["Presence", "Privacy", "Caffeinate"];
     /// Windows builds Privacy without the Input Monitoring row: the grant is
-    /// macOS's.
+    /// macOS's. Caffeinate is the macOS cup's tab.
     #[cfg(target_os = "windows")]
-    const UNPINNED_TABS: &[&str] = &["Privacy"];
+    const UNPINNED_TABS: &[&str] = &["Privacy", "Caffeinate"];
     #[cfg(target_os = "macos")]
     const UNPINNED_TABS: &[&str] = &[];
 
@@ -1886,12 +1891,12 @@ pub(crate) mod tests {
         live.caffeinate_disk = false;
         live.caffeinate_system = true;
         let form = describe_with(&live);
-        let privacy = form
+        let caffeinate = form
             .tabs
             .iter()
-            .find(|tab| tab.title == "Privacy")
-            .expect("Privacy");
-        let awake = privacy
+            .find(|tab| tab.title == "Caffeinate")
+            .expect("Caffeinate");
+        let awake = caffeinate
             .sections
             .iter()
             .find(|section| section.heading == "Awake")
@@ -2240,17 +2245,26 @@ pub(crate) mod tests {
             .iter()
             .map(|tab| tab.title.as_str())
             .collect();
-        assert_eq!(
-            titles,
-            vec![
-                "Presence",
-                "Character",
-                "AI",
-                "Chat",
-                "Privacy",
-                "Development"
-            ]
-        );
+        #[cfg(target_os = "macos")]
+        let expected = vec![
+            "Presence",
+            "Character",
+            "AI",
+            "Chat",
+            "Privacy",
+            "Caffeinate",
+            "Development",
+        ];
+        #[cfg(not(target_os = "macos"))]
+        let expected = vec![
+            "Presence",
+            "Character",
+            "AI",
+            "Chat",
+            "Privacy",
+            "Development",
+        ];
+        assert_eq!(titles, expected);
         for tab in &description.tabs {
             assert!(!tab.sections.is_empty(), "{} has no section", tab.title);
         }

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { selectTab, tabTitles } from "../src/settings.js";
+import { selectTab, tabTitles, tabsTheFormDraws } from "../src/settings.js";
 
 // Two files per state. The description keeps the `settings-snapshot-` name and
 // the bare `FormDescription` shape that the Rust side's own fixture has, so
@@ -16,7 +16,7 @@ function snapshot(name) {
   return { form: read("snapshot"), values: read("values") };
 }
 
-const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Development"];
+const TABS = ["Presence", "Character", "AI", "Chat", "Privacy", "Caffeinate", "Development"];
 const html = readFileSync(new URL("../src/settings.html", import.meta.url), "utf8");
 
 test("the snapshot carries the tabs, in order", () => {
@@ -52,6 +52,13 @@ test("the page loads its module as a module and inlines no script", () => {
 
   const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(sheets, ["chat-ui.css", "settings.css"], "settings.css reads tokens, so it comes second");
+});
+
+test("a tab the form omits stays off the bar", () => {
+  const form = {
+    tabs: TABS.filter((title) => title !== "Caffeinate").map((title) => ({ title })),
+  };
+  assert.deepEqual(tabsTheFormDraws(TABS, form), TABS.filter((title) => title !== "Caffeinate"));
 });
 
 test("a title picks its tab, and an unknown title picks the first", () => {
