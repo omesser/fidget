@@ -403,7 +403,9 @@ def dbusmenu_find(layout, row):
 
 def cmd_tray(argv):
     """libappindicator exports the tray menu over dbusmenu, so a row is
-    clicked there, the same menu the panel draws, with no pointer."""
+    clicked there, the same menu the panel draws, with no pointer. It then
+    waits for the TITLE window, or returns at once when TITLE is -, for a row
+    that opens no window (Caffeinate, Quit)."""
     if len(argv) != 5:
         print("usage: ax-window-linux.py tray PID TITLE ROW", file=sys.stderr)
         return 2
@@ -468,6 +470,8 @@ def cmd_tray(argv):
         item[0], menu, "com.canonical.dbusmenu", "Event",
         GLib.Variant("(isvu)", (row_id, "clicked", GLib.Variant("i", 0), 0)), "()",
     )
+    if title == "-":
+        return 0
     import pyatspi
 
     for _ in range(40):

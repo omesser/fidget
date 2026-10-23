@@ -3,20 +3,29 @@
 //! `Child::kill` is SIGKILL. A child that ignores SIGTERM keeps the assertion
 //! until `try_wait` says it left; `-w` is what releases it if this process
 //! dies first. Quit signals the pid from another thread because
-//! `process::exit` skips this thread's `Drop`.
+//! `process::exit` skips this thread's `Drop`. On Linux, [`Hold`] wraps the
+//! inhibitors in `caffeinate_linux` instead.
 
+#[cfg(target_os = "macos")]
 use std::process::{Child, Command};
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(target_os = "linux")]
+use crate::caffeinate_linux::OsSpawner;
+#[cfg(target_os = "macos")]
+use fidget_core::caffeinate::{Argv, Spawner};
 use fidget_core::caffeinate::{
-    Argv, AssertedFlags, CaffeinateHandle, Empty, Fact, Machine, Note, Request, Spawner, Tick,
+    AssertedFlags, CaffeinateHandle, Empty, Fact, Machine, Note, Request, Tick,
 };
 
 /// The held child's pid, or 0. The quit paths call `process::exit`, which
 /// skips `Drop`, so they read this to SIGTERM the child.
+#[cfg(target_os = "macos")]
 static HELD_PID: AtomicU32 = AtomicU32::new(0);
 
 /// SIGTERM the child, if one is still held. Safe to call from Quit.
+#[cfg(target_os = "macos")]
 pub fn signal_held_child() {
     let pid = HELD_PID.load(Ordering::SeqCst);
     if pid > 0 {
@@ -24,6 +33,7 @@ pub fn signal_held_child() {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn signal_term(pid: u32) {
     // SAFETY: SIGTERM to a pid we spawned. A recycled pid is the kernel's
     // to reject; we only store a pid we have not yet reaped.
@@ -32,21 +42,25 @@ fn signal_term(pid: u32) {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn set_held_pid(pid: u32) {
     HELD_PID.store(pid, Ordering::SeqCst);
 }
 
 /// Clears `HELD_PID` only if it still holds `pid`, so reaping an old child
 /// never wipes the pid of the newer one a restart already stored.
+#[cfg(target_os = "macos")]
 fn clear_held_pid_if(pid: u32) {
     let _ = HELD_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
 }
 
+#[cfg(target_os = "macos")]
 pub struct OsSpawner {
     program: &'static str,
     child: Option<Child>,
 }
 
+#[cfg(target_os = "macos")]
 impl OsSpawner {
     pub fn new() -> Self {
         Self::program("/usr/bin/caffeinate")
@@ -60,6 +74,7 @@ impl OsSpawner {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl Drop for OsSpawner {
     fn drop(&mut self) {
         self.kill();
@@ -69,6 +84,7 @@ impl Drop for OsSpawner {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl Spawner for OsSpawner {
     fn spawn(&mut self, argv: &Argv) -> Result<(), String> {
         if self.child.is_some() {

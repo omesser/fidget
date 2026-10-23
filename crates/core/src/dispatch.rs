@@ -55,7 +55,7 @@ pub struct DispatchContext<'a, 'c> {
     pub expression: Option<&'a mut dyn ExpressionHandle>,
     pub placement: PlacementQuery<'a>,
     /// Its own lifetime, because the hold outlives this call's window lists.
-    /// `None` off macOS, where the tool errors.
+    /// `None` where this build has no hold, and the tool errors.
     pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
 }
 
@@ -203,7 +203,7 @@ pub fn dispatch(
             let Some(handle) = context.caffeinate.as_mut() else {
                 return Err(DispatchError {
                     code: ErrorCode::ExecutionFailed,
-                    message: "Caffeinate is only available on macOS.".to_string(),
+                    message: "Caffeinate is not available on this platform.".to_string(),
                 });
             };
             match handle.call(args.on) {
@@ -329,16 +329,16 @@ pub fn list_tools() -> Vec<ToolInfo> {
             }),
         },
     ];
-    if cfg!(target_os = "macos") {
+    if cfg!(any(target_os = "macos", target_os = "linux")) {
         tools.push(ToolInfo {
             name: "caffeinate".to_string(),
-            description: "Keep this Mac awake until it is turned off or Fidget quits. Returns whether it is on and, when it is, the caffeinate flags.".to_string(),
+            description: "Keep this computer awake until it is turned off or Fidget quits. Returns whether it is on and, when it is, the caffeinate flags.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "on": {
                         "type": "boolean",
-                        "description": "true keeps the Mac awake and false lets it sleep. Omit it to read the state without changing it."
+                        "description": "true keeps the computer awake and false lets it sleep. Omit it to read the state without changing it."
                     }
                 }
             }),
@@ -521,9 +521,9 @@ mod tests {
     fn list_tools_returns_exactly_eight_tools() {
         let tools = list_tools();
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         assert_eq!(tools.len(), 9);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         assert_eq!(tools.len(), 8);
     }
 
@@ -540,9 +540,9 @@ mod tests {
         assert!(names.contains(&"remember"));
         assert!(names.contains(&"list_instances"));
         assert!(names.contains(&"whereabouts"));
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         assert!(names.contains(&"caffeinate"));
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         assert!(!names.contains(&"caffeinate"));
     }
 
@@ -604,7 +604,7 @@ mod tests {
         let mut context = test_context(&temp, &source, &[]);
         let err = dispatch("caffeinate", json!({ "on": true }), &mut context).unwrap_err();
         assert_eq!(err.code, ErrorCode::ExecutionFailed);
-        assert!(err.message.contains("macOS"));
+        assert!(err.message.contains("not available"));
     }
 
     #[test]

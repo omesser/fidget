@@ -128,8 +128,8 @@ pub struct Context {
     /// `state` is read after the tick, so this is the only place the moment
     /// before the verb survives.
     pub lately: Lately,
-    /// The caffeinate line for the prompt. `None` off macOS, which leaves the
-    /// line out.
+    /// The caffeinate line for the prompt. `None` where this build has no
+    /// hold, which leaves the line out.
     pub caffeinate: Option<crate::caffeinate::Fact>,
 }
 

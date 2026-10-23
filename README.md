@@ -32,7 +32,7 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 - **Pitches in:** Double-click to chat with the agent you already use (Claude Code, Codex, Cursor, or any ACP [harness](#harness-support)); it acts on your machine and answers in speech and motion.
 - **Knows what you're up to:** It reacts to your open windows for context-aware chatter. **It never takes screenshots or reads screen pixels**, and it reads window titles and app names only with [your consent](#computer-use).
 - **Gets out of your way when you ask it to:** Automatically fades away when in fullscreen, hides at will on hotkey, and comes back when you want it to.
-- **Keeps your Mac awake when you ask:** On macOS, the cup in Chat's header or Caffeinate on the menu stops the Mac from sleeping until you turn it off or quit.
+- **Keeps your computer awake when you ask:** On macOS and Linux, the cup in Chat's header or Caffeinate on the menu stops the computer from sleeping until you turn it off or quit. Linux asks systemd-logind or elogind, and the desktop's screen saver. Without either, the cup is disabled and says why.
 - **Small and native:** A Rust core on [Tauri](https://tauri.app/), drawn in the webview your OS already has instead of a bundled copy of Chromium. The Windows installer is sub 10 MB, and the macOS disk image and the `.deb` are each sub 15 MB. The AppImage carries its own WebKitGTK, so it's larger.
 
 ## Characters

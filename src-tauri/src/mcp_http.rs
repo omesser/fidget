@@ -419,13 +419,13 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         let tools = value["result"]["tools"].as_array().expect("a list");
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        // Caffeinate is macOS only. The count catches a tool that reaches this
-        // list without being in the core catalogue.
-        #[cfg(target_os = "macos")]
+        // Caffeinate is macOS and Linux only. The count catches a tool that
+        // reaches this list without being in the core catalogue.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         assert_eq!(names.len(), 9, "the core tools: {names:?}");
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         assert_eq!(names.len(), 8, "the core tools: {names:?}");
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         assert!(names.contains(&"caffeinate"));
         assert!(names.contains(&"speak"));
         assert!(names.contains(&"whereabouts"));

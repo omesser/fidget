@@ -80,6 +80,11 @@ pub struct Argv {
 }
 
 impl Argv {
+    /// The flags alone, for a holder that takes no argv.
+    pub fn flags(self) -> AssertedFlags {
+        self.flags
+    }
+
     /// The tokens `Command` is given.
     pub fn args(self) -> Vec<String> {
         let flags = self.flags.letters().map(|letter| format!("-{letter}"));
@@ -125,7 +130,7 @@ impl Note {
     pub fn text(self) -> String {
         match self {
             Note::On(flags) => format!(
-                "☕ Caffeinate on: keeping your Mac awake ({})",
+                "☕ Caffeinate on: keeping your computer awake ({})",
                 flags.preview()
             ),
             Note::Off => "Caffeinate off.".to_string(),
@@ -413,7 +418,7 @@ mod tests {
         assert_eq!(Fact::On(dims()).prompt_line(), "caffeinate: on (-dims)");
         assert_eq!(
             Note::On(dims()).text(),
-            "☕ Caffeinate on: keeping your Mac awake (-dims)"
+            "☕ Caffeinate on: keeping your computer awake (-dims)"
         );
         assert_eq!(Note::Off.text(), "Caffeinate off.");
         assert_eq!(Note::Exited.text(), "Caffeinate off. It exited on its own.");

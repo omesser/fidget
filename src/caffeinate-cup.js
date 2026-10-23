@@ -1,4 +1,4 @@
-// The caffeinate button in the Chat header. Only macOS sends it a view.
+// The caffeinate button in the Chat header. Only macOS and Linux send it a view.
 
 // `null` hides the button. A `reason` disables it, which happens when every
 // flag is off, and becomes the tooltip. `label` shows only while on.

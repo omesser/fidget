@@ -437,15 +437,15 @@ pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 #[cfg(target_os = "macos")]
 pub const CONSENT_INPUT_MONITORING_ID: &str = "consent_input_monitoring";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub const CAFFEINATE_DISPLAY_ID: &str = "caffeinate_display";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub const CAFFEINATE_IDLE_ID: &str = "caffeinate_idle";
 #[cfg(target_os = "macos")]
 pub const CAFFEINATE_DISK_ID: &str = "caffeinate_disk";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub const CAFFEINATE_SYSTEM_ID: &str = "caffeinate_system";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub const CAFFEINATE_COMMAND_ID: &str = "caffeinate_command";
 #[cfg(target_os = "linux")]
 pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
@@ -1458,14 +1458,19 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     ]
 }
 
-#[cfg(target_os = "macos")]
+/// The Awake section. Linux has no disk inhibitor, so it drops the Disk row
+/// and the freeze counts only the rows it draws.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn caffeinate_section(live: &Live) -> FormSection {
-    let flags = [
+    let mac = cfg!(target_os = "macos");
+    let mut flags = vec![
         live.caffeinate_display,
         live.caffeinate_idle,
-        live.caffeinate_disk,
         live.caffeinate_system,
     ];
+    if mac {
+        flags.push(live.caffeinate_disk);
+    }
     let on = flags.iter().filter(|flag| **flag).count();
     let freeze = |flag: bool| flag && on == 1;
     let row =
@@ -1480,54 +1485,72 @@ fn caffeinate_section(live: &Live) -> FormSection {
             disclosure: None,
             status: None,
         };
+    let mut rows = vec![
+        row(
+            CAFFEINATE_DISPLAY_ID,
+            "Display",
+            BoolField::CaffeinateDisplay,
+            "Keeps the display from sleeping.",
+            live.caffeinate_display,
+        ),
+        row(
+            CAFFEINATE_IDLE_ID,
+            "Idle",
+            BoolField::CaffeinateIdle,
+            if mac {
+                "Keeps the Mac from sleeping when idle."
+            } else {
+                "Keeps the computer from sleeping when idle."
+            },
+            live.caffeinate_idle,
+        ),
+    ];
+    #[cfg(target_os = "macos")]
+    rows.push(row(
+        CAFFEINATE_DISK_ID,
+        "Disk",
+        BoolField::CaffeinateDisk,
+        "Keeps the disk from sleeping when idle.",
+        live.caffeinate_disk,
+    ));
+    rows.push(row(
+        CAFFEINATE_SYSTEM_ID,
+        "System",
+        BoolField::CaffeinateSystem,
+        if mac {
+            "Keeps the Mac from sleeping while on AC power."
+        } else {
+            "Keeps the computer from suspending or hibernating."
+        },
+        live.caffeinate_system,
+    ));
+    rows.push(FormRow::InspectBlock {
+        id: CAFFEINATE_COMMAND_ID.to_string(),
+        label: Some("Command".to_string()),
+        help: None,
+        disclosure: None,
+        status: None,
+    });
     FormSection {
         heading: "Awake".to_string(),
         serves: None,
         comment: Some(
-            "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the Chat \
-             header, or with Caffeinate in the right-click or tray menu. The flags below go to \
-             the macOS caffeinate command and pick which kinds of sleep it blocks."
-                .to_string(),
+            if mac {
+                "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the \
+                 Chat header, or with Caffeinate in the right-click or tray menu. The flags \
+                 below go to the macOS caffeinate command and pick which kinds of sleep it \
+                 blocks."
+            } else {
+                "Fidget can keep your computer from sleeping. Turn it on with the coffee cup in \
+                 the Chat header, or with Caffeinate in the right-click or tray menu. The flags \
+                 below pick what Fidget asks systemd-logind and the desktop's screen saver to \
+                 block. Without either, Caffeinate stays off and says why."
+            }
+            .to_string(),
         ),
         disclosure: None,
         status: None,
-        rows: vec![
-            row(
-                CAFFEINATE_DISPLAY_ID,
-                "Display",
-                BoolField::CaffeinateDisplay,
-                "Keeps the display from sleeping.",
-                live.caffeinate_display,
-            ),
-            row(
-                CAFFEINATE_IDLE_ID,
-                "Idle",
-                BoolField::CaffeinateIdle,
-                "Keeps the Mac from sleeping when idle.",
-                live.caffeinate_idle,
-            ),
-            row(
-                CAFFEINATE_DISK_ID,
-                "Disk",
-                BoolField::CaffeinateDisk,
-                "Keeps the disk from sleeping when idle.",
-                live.caffeinate_disk,
-            ),
-            row(
-                CAFFEINATE_SYSTEM_ID,
-                "System",
-                BoolField::CaffeinateSystem,
-                "Keeps the Mac from sleeping while on AC power.",
-                live.caffeinate_system,
-            ),
-            FormRow::InspectBlock {
-                id: CAFFEINATE_COMMAND_ID.to_string(),
-                label: Some("Command".to_string()),
-                help: None,
-                disclosure: None,
-                status: None,
-            },
-        ],
+        rows,
     }
 }
 
@@ -1828,8 +1851,8 @@ pub fn describe_with(live: &Live) -> FormDescription {
             sections: privacy_sections(live),
         },
     ];
-    // macOS only. The page hides the tab button on other builds.
-    #[cfg(target_os = "macos")]
+    // macOS and Windows. The page hides the tab button on other builds.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     tabs.push(FormTab {
         title: "Caffeinate".to_string(),
         sections: vec![caffeinate_section(live)],
@@ -1874,16 +1897,44 @@ pub(crate) mod tests {
         "/Users/buddy/Library/Application Support/fidget/characters";
 
     /// The fixtures hold the macOS form. Linux freezes capturable and drops the
-    /// consent rows, and Windows drops one. Caffeinate is macOS only. Each tab
-    /// pins where it builds the same.
+    /// consent rows, and Windows drops one. Linux draws Caffeinate without
+    /// Disk, and Windows has no Caffeinate tab. Each tab pins where it builds
+    /// the same.
     #[cfg(target_os = "linux")]
     const UNPINNED_TABS: &[&str] = &["Presence", "Privacy", "Caffeinate"];
     /// Windows builds Privacy without the Input Monitoring row: the grant is
-    /// macOS's. Caffeinate is macOS only.
+    /// macOS's. Caffeinate is macOS and Linux only.
     #[cfg(target_os = "windows")]
     const UNPINNED_TABS: &[&str] = &["Privacy", "Caffeinate"];
     #[cfg(target_os = "macos")]
     const UNPINNED_TABS: &[&str] = &[];
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn awake_checkboxes(live: &Live) -> Vec<(String, bool)> {
+        describe_with(live)
+            .tabs
+            .into_iter()
+            .find(|tab| tab.title == "Caffeinate")
+            .expect("Caffeinate")
+            .sections
+            .into_iter()
+            .find(|section| section.heading == "Awake")
+            .expect("Awake")
+            .rows
+            .into_iter()
+            .filter_map(|row| match row {
+                FormRow::Checkbox { id, frozen, .. } => Some((id, frozen)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn frozen_rows(rows: &[(&str, bool)]) -> Vec<(String, bool)> {
+        rows.iter()
+            .map(|(id, frozen)| (id.to_string(), *frozen))
+            .collect()
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -1893,33 +1944,34 @@ pub(crate) mod tests {
         live.caffeinate_idle = false;
         live.caffeinate_disk = false;
         live.caffeinate_system = true;
-        let form = describe_with(&live);
-        let caffeinate = form
-            .tabs
-            .iter()
-            .find(|tab| tab.title == "Caffeinate")
-            .expect("Caffeinate");
-        let awake = caffeinate
-            .sections
-            .iter()
-            .find(|section| section.heading == "Awake")
-            .expect("Awake");
-        let frozen: Vec<(&str, bool)> = awake
-            .rows
-            .iter()
-            .filter_map(|row| match row {
-                FormRow::Checkbox { id, frozen, .. } => Some((id.as_str(), *frozen)),
-                _ => None,
-            })
-            .collect();
         assert_eq!(
-            frozen,
-            [
+            awake_checkboxes(&live),
+            frozen_rows(&[
                 ("caffeinate_display", false),
                 ("caffeinate_idle", false),
                 ("caffeinate_disk", false),
                 ("caffeinate_system", true),
-            ]
+            ])
+        );
+    }
+
+    /// Linux has no disk inhibitor, so there is no Disk row, and a stored Disk
+    /// does not keep the last drawn flag unfrozen.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_draws_no_disk_row_and_freezes_the_last_drawn_flag() {
+        let mut live = Live::current();
+        live.caffeinate_display = false;
+        live.caffeinate_idle = false;
+        live.caffeinate_disk = true;
+        live.caffeinate_system = true;
+        assert_eq!(
+            awake_checkboxes(&live),
+            frozen_rows(&[
+                ("caffeinate_display", false),
+                ("caffeinate_idle", false),
+                ("caffeinate_system", true),
+            ])
         );
     }
 
@@ -2232,8 +2284,8 @@ pub(crate) mod tests {
             "Traces",
             "What the fidget can see",
         ];
-        // Awake is on the macOS form only.
-        #[cfg(target_os = "macos")]
+        // Awake is on the macOS and Linux forms only.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         expected.push("Awake");
         expected.sort_unstable();
         assert_eq!(headings, expected);
@@ -2247,7 +2299,7 @@ pub(crate) mod tests {
             .iter()
             .map(|tab| tab.title.as_str())
             .collect();
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         let expected = vec![
             "Presence",
             "Character",
@@ -2257,7 +2309,7 @@ pub(crate) mod tests {
             "Caffeinate",
             "Development",
         ];
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let expected = vec![
             "Presence",
             "Character",

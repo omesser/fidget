@@ -112,6 +112,9 @@ gdk-pixbuf = "0.18"
 # xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
 # tokio feature reuses the tokio already here under async-process / ACP SDK.
 ashpd = {version = "0.13", features = ["tokio", "screencast"]}
+# Caffeinate's logind and screen saver inhibitors. The zbus ashpd already
+# pulls in; `blocking-api` adds no crate.
+zbus = {version = "5", default-features = false, features = ["tokio", "blocking-api"]}
 
 [target.'cfg(windows)'.dependencies]
 # ShellExecuteW opens a file with the default application as a wide-string

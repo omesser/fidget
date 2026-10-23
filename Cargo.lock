@@ -1268,6 +1268,7 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "x11rb 0.14.0",
+ "zbus",
  "zip 9.0.5",
 ]
 

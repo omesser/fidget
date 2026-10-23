@@ -27,9 +27,11 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
-// Only macOS ships `caffeinate`, and Windows has no `libc` dependency for
-// `libc::kill`.
-#[cfg(target_os = "macos")]
+// Linux holds a logind fd and a screen saver cookie.
+#[cfg(target_os = "linux")]
+mod caffeinate_linux;
+// macOS holds a `caffeinate` child, Linux the `caffeinate_linux` inhibitors.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod caffeinate_proc;
 mod chat_surface;
 mod completer;
@@ -626,23 +628,29 @@ struct SpritePlacement<'a> {
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
 }
 
-/// What the Chat button and the menu row show. Never built off macOS.
+/// What the Chat button and the menu row show. Never built where there is no
+/// hold.
 #[derive(Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct CaffeinateFrame {
     on: bool,
     reason: Option<String>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) fn caffeinate_frame(
     fact: fidget_core::caffeinate::Fact,
     configured: Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty>,
 ) -> CaffeinateFrame {
+    let reason = configured
+        .err()
+        .map(|_| fidget_core::caffeinate::Empty::REASON.to_string());
+    // Without logind or a screen saver service there is nothing to hold, so the
+    // cup and the menu row are disabled the way an empty flag set disables them.
+    #[cfg(target_os = "linux")]
+    let reason = reason.or_else(|| caffeinate_linux::unavailable().map(str::to_string));
     CaffeinateFrame {
         on: configured.is_ok() && fact.on(),
-        reason: configured
-            .err()
-            .map(|_| fidget_core::caffeinate::Empty::REASON.to_string()),
+        reason,
     }
 }
 
@@ -4294,18 +4302,18 @@ struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
 /// reads it.
 struct CaffeinateShown(Mutex<Option<CaffeinateFrame>>);
 
-/// The menu row for the hold. `None` off macOS. Before the first tick the hold
+/// The menu row for the hold. `None` where there is no hold. Before the first tick the hold
 /// is off, and an empty flag set disables the row.
 fn menu_caffeinate(
     settings: &Settings,
     frame: Option<&CaffeinateFrame>,
 ) -> Option<menu::CaffeinateRow> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (settings, frame);
         None
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         Some(match frame {
             Some(frame) => menu::CaffeinateRow {
