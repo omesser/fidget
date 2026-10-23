@@ -1851,7 +1851,7 @@ pub fn describe_with(live: &Live) -> FormDescription {
             sections: privacy_sections(live),
         },
     ];
-    // macOS and Windows. The page hides the tab button on other builds.
+    // macOS and Linux. The page hides the tab button on other builds.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     tabs.push(FormTab {
         title: "Caffeinate".to_string(),
