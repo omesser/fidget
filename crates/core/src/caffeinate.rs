@@ -111,13 +111,11 @@ impl Note {
     }
 }
 
-/// Chat and the menu send [`Request::Toggle`]. The tool sends [`Request::Set`]. Quit sends
-/// [`Request::Release`].
+/// Chat and the menu send [`Request::Toggle`]. The tool sends [`Request::Set`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Request {
     Toggle,
     Set(bool),
-    Release,
 }
 
 /// Process boundary. `spawn` fails when a child is already held, so a second
@@ -147,11 +145,10 @@ enum Phase {
     Idle,
     Running(AssertedFlags),
     /// SIGTERM sent. The hold still reads `flags`. Once the child is gone it
-    /// spawns `flags` if `restart`, or turns off with a note unless `quiet`.
+    /// spawns `flags` if `restart`, or turns off with a note.
     Stopping {
         flags: AssertedFlags,
         restart: bool,
-        quiet: bool,
     },
 }
 
@@ -185,22 +182,16 @@ impl<S: Spawner> Machine<S> {
         let restarted = self.finish_stop(alive, &mut tick);
 
         let was = self.wanted;
-        let mut quiet = false;
         for request in requests {
             let want = match request {
                 Request::Toggle => !self.wanted,
                 Request::Set(on) => *on,
-                Request::Release => {
-                    quiet = true;
-                    false
-                }
             };
             if want && flags.is_err() {
                 tick.error = Some(Empty::REASON.to_string());
             }
             self.wanted = want && flags.is_ok();
         }
-        quiet &= !self.wanted;
         let announce = !was && self.wanted;
         let asked_on = requests
             .iter()
@@ -210,7 +201,7 @@ impl<S: Spawner> Machine<S> {
         if let (false, false, Phase::Running(spawned)) = (restarted, alive, self.phase) {
             self.phase = Phase::Idle;
             let changed = flags.is_ok_and(|next| next != spawned);
-            if !self.wanted && !quiet {
+            if !self.wanted {
                 tick.notes.push(Note::Off);
             } else if self.wanted && !changed && !asked_on {
                 tick.notes.push(Note::Exited);
@@ -229,7 +220,6 @@ impl<S: Spawner> Machine<S> {
                 self.phase = Phase::Stopping {
                     flags,
                     restart: false,
-                    quiet,
                 };
             }
             (true, Phase::Running(spawned), Ok(next)) if next != spawned => {
@@ -237,14 +227,12 @@ impl<S: Spawner> Machine<S> {
                 self.phase = Phase::Stopping {
                     flags: next,
                     restart: true,
-                    quiet,
                 };
             }
             (true, Phase::Stopping { restart: false, .. }, Ok(next)) => {
                 self.phase = Phase::Stopping {
                     flags: next,
                     restart: true,
-                    quiet,
                 };
             }
             (
@@ -259,7 +247,6 @@ impl<S: Spawner> Machine<S> {
                 self.phase = Phase::Stopping {
                     flags,
                     restart: false,
-                    quiet,
                 };
             }
             _ => {}
@@ -275,12 +262,7 @@ impl<S: Spawner> Machine<S> {
     /// Retries SIGTERM while the child is alive. Returns whether this call
     /// spawned the next child.
     fn finish_stop(&mut self, alive: bool, tick: &mut Tick) -> bool {
-        let Phase::Stopping {
-            flags,
-            restart,
-            quiet,
-        } = self.phase
-        else {
+        let Phase::Stopping { flags, restart } = self.phase else {
             return false;
         };
         if alive {
@@ -293,9 +275,7 @@ impl<S: Spawner> Machine<S> {
             return true;
         }
         self.wanted = false;
-        if !quiet {
-            tick.notes.push(Note::Off);
-        }
+        tick.notes.push(Note::Off);
         false
     }
 
@@ -545,24 +525,6 @@ mod tests {
         assert_eq!(tick.notes, vec![Note::Failed]);
         assert_eq!(tick.error.as_deref(), Some("caffeinate missing"));
         assert!(machine.spawner.spawns.is_empty());
-    }
-
-    #[test]
-    fn release_kills_and_notes_nothing() {
-        let mut machine = Machine::new(Fake::new(), 42);
-        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
-        let stopping = drive(&mut machine, Ok(dims()), &[Request::Release], true);
-        assert_eq!(stopping.fact, Fact::On(dims()));
-        assert!(stopping.notes.is_empty());
-
-        let done = drive(&mut machine, Ok(dims()), &[], false);
-        assert_eq!(done.fact, Fact::Off);
-        assert!(done.notes.is_empty());
-
-        let again = drive(&mut machine, Ok(dims()), &[Request::Release], false);
-        assert_eq!(again.fact, Fact::Off);
-        assert!(again.notes.is_empty());
-        assert_eq!(machine.spawner.spawns.len(), 1);
     }
 
     #[test]
