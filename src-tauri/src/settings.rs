@@ -754,7 +754,12 @@ impl SettingsView {
             );
             values.insert(
                 form::CAFFEINATE_COMMAND_ID.to_string(),
-                text(&match self.caffeinate_flags() {
+                text(&match caffeinate_flags(
+                    self.caffeinate_display,
+                    self.caffeinate_idle,
+                    self.caffeinate_disk,
+                    self.caffeinate_system,
+                ) {
                     Ok(flags) => format!("caffeinate {}", flags.preview()),
                     Err(_) => fidget_core::caffeinate::Empty::REASON.to_string(),
                 }),
@@ -2170,21 +2175,37 @@ impl Default for Settings {
     }
 }
 
+/// The flags the stored file and the form's view share. An empty set is `Err`.
+#[cfg(target_os = "macos")]
+fn caffeinate_flags(
+    display: bool,
+    idle: bool,
+    disk: bool,
+    system: bool,
+) -> Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty> {
+    use fidget_core::caffeinate::{AssertedFlags, Flag};
+    AssertedFlags::new(
+        [
+            (Flag::Display, display),
+            (Flag::Idle, idle),
+            (Flag::Disk, disk),
+            (Flag::System, system),
+        ]
+        .into_iter()
+        .filter_map(|(flag, on)| on.then_some(flag)),
+    )
+}
+
 impl Settings {
     #[cfg(target_os = "macos")]
     pub fn caffeinate_flags(
         &self,
     ) -> Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty> {
-        use fidget_core::caffeinate::{AssertedFlags, Flag};
-        AssertedFlags::new(
-            [
-                (Flag::Display, self.caffeinate_display),
-                (Flag::Idle, self.caffeinate_idle),
-                (Flag::Disk, self.caffeinate_disk),
-                (Flag::System, self.caffeinate_system),
-            ]
-            .into_iter()
-            .filter_map(|(flag, on)| on.then_some(flag)),
+        caffeinate_flags(
+            self.caffeinate_display,
+            self.caffeinate_idle,
+            self.caffeinate_disk,
+            self.caffeinate_system,
         )
     }
 
