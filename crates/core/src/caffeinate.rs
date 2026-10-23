@@ -182,7 +182,7 @@ impl<S: Spawner> Machine<S> {
             notes: Vec::new(),
             error: None,
         };
-        let restarted = self.finish_stop(alive, true, &mut tick);
+        let restarted = self.finish_stop(alive, &mut tick);
 
         let was = self.wanted;
         let mut quiet = false;
@@ -264,7 +264,6 @@ impl<S: Spawner> Machine<S> {
             }
             _ => {}
         }
-        self.finish_stop(alive, false, &mut tick);
 
         tick.fact = match self.phase {
             Phase::Idle => Fact::Off,
@@ -273,8 +272,9 @@ impl<S: Spawner> Machine<S> {
         tick
     }
 
-    /// Returns whether this call spawned the next child.
-    fn finish_stop(&mut self, alive: bool, retry_kill: bool, tick: &mut Tick) -> bool {
+    /// Retries SIGTERM while the child is alive. Returns whether this call
+    /// spawned the next child.
+    fn finish_stop(&mut self, alive: bool, tick: &mut Tick) -> bool {
         let Phase::Stopping {
             flags,
             restart,
@@ -284,9 +284,7 @@ impl<S: Spawner> Machine<S> {
             return false;
         };
         if alive {
-            if retry_kill {
-                self.spawner.kill();
-            }
+            self.spawner.kill();
             return false;
         }
         self.phase = Phase::Idle;
@@ -479,6 +477,51 @@ mod tests {
         assert_eq!(
             machine.spawner.spawns[1],
             vec!["-d".to_string(), "-w".to_string(), "42".to_string()]
+        );
+    }
+
+    #[test]
+    fn off_in_the_tick_a_restart_spawns_waits_for_the_new_child() {
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
+        drive(&mut machine, Ok(display), &[], true);
+
+        let off = drive(&mut machine, Ok(display), &[Request::Set(false)], false);
+        assert_eq!(off.fact, Fact::On(display));
+        assert!(off.notes.is_empty());
+        assert_eq!(machine.spawner.spawns.len(), 2);
+
+        let done = drive(&mut machine, Ok(display), &[], false);
+        assert_eq!(done.fact, Fact::Off);
+        assert_eq!(done.notes, vec![Note::Off]);
+
+        let again = drive(&mut machine, Ok(display), &[Request::Set(true)], false);
+        assert_eq!(again.fact, Fact::On(display));
+        assert_eq!(again.notes, vec![Note::On(display)]);
+        assert!(again.error.is_none());
+        assert_eq!(machine.spawner.spawns.len(), 3);
+    }
+
+    #[test]
+    fn a_flag_change_in_the_tick_a_restart_spawns_waits_for_the_new_child() {
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
+        let system = AssertedFlags::try_from_bits(false, false, false, true).unwrap();
+        drive(&mut machine, Ok(display), &[], true);
+
+        let changed = drive(&mut machine, Ok(system), &[], false);
+        assert_eq!(changed.fact, Fact::On(system));
+        assert!(changed.notes.is_empty());
+        assert!(changed.error.is_none());
+
+        let restarted = drive(&mut machine, Ok(system), &[], false);
+        assert_eq!(restarted.fact, Fact::On(system));
+        assert!(restarted.notes.is_empty());
+        assert_eq!(
+            machine.spawner.spawns[2],
+            vec!["-s".to_string(), "-w".to_string(), "42".to_string()]
         );
     }
 
