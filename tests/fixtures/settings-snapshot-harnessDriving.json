@@ -751,7 +751,7 @@
               "status": null
             }
           ],
-          "comment": null,
+          "comment": "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the Chat header, or with Caffeinate in the right-click or tray menu. The flags below go to the macOS caffeinate command and pick which kinds of sleep it blocks.",
           "disclosure": null,
           "status": null
         }

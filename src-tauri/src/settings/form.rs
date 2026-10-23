@@ -1483,7 +1483,12 @@ fn caffeinate_section(live: &Live) -> FormSection {
     FormSection {
         heading: "Awake".to_string(),
         serves: None,
-        comment: None,
+        comment: Some(
+            "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the Chat \
+             header, or with Caffeinate in the right-click or tray menu. The flags below go to \
+             the macOS caffeinate command and pick which kinds of sleep it blocks."
+                .to_string(),
+        ),
         disclosure: None,
         status: None,
         rows: vec![
