@@ -634,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn caffeinate_is_a_tick_when_this_machine_has_a_hold() {
+    fn caffeinate_is_a_tick_when_this_build_has_it() {
         let mut off = snapshot(&[], "bmo", false);
         off.caffeinate = Some(CaffeinateRow {
             on: false,
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn caffeinate_is_absent_where_there_is_no_hold() {
+    fn caffeinate_is_absent_where_the_build_has_none() {
         let description = describe(snapshot(&[], "bmo", false));
         assert!(entry_with_id(&description, "caffeinate").is_none());
     }

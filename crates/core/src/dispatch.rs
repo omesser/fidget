@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn caffeinate_without_a_hold_errors() {
+    fn caffeinate_without_a_handle_errors() {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
