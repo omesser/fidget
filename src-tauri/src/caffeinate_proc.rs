@@ -12,6 +12,8 @@ use fidget_core::caffeinate::{
     Argv, AssertedFlags, CaffeinateHandle, Empty, Fact, Machine, Note, Request, Spawner, Tick,
 };
 
+/// The held child's pid, or 0. The quit paths call `process::exit`, which
+/// skips `Drop`, so they read this to SIGTERM the child.
 static HELD_PID: AtomicU32 = AtomicU32::new(0);
 
 /// SIGTERM the child, if one is still held. Safe to call from Quit.
@@ -30,11 +32,13 @@ fn signal_term(pid: u32) {
     }
 }
 
-fn remember(pid: u32) {
+fn set_held_pid(pid: u32) {
     HELD_PID.store(pid, Ordering::SeqCst);
 }
 
-fn forget(pid: u32) {
+/// Clears `HELD_PID` only if it still holds `pid`, so reaping an old child
+/// never wipes the pid of the newer one a restart already stored.
+fn clear_held_pid_if(pid: u32) {
     let _ = HELD_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
 }
 
@@ -74,7 +78,7 @@ impl Spawner for OsSpawner {
             .args(argv.args())
             .spawn()
             .map_err(|error| error.to_string())?;
-        remember(child.id());
+        set_held_pid(child.id());
         self.child = Some(child);
         Ok(())
     }
@@ -90,7 +94,7 @@ impl Spawner for OsSpawner {
             return false;
         };
         if let Ok(Some(_)) = child.try_wait() {
-            forget(child.id());
+            clear_held_pid_if(child.id());
             self.child = None;
             return false;
         }
