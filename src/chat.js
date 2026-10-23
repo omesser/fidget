@@ -19,7 +19,7 @@ import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
-import { CUP_SVG, cupModel } from "./caffeinate-cup.js";
+import { cupModel } from "./caffeinate-cup.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 import { STALL_MS, idlePhase, phaseLine, reducePhase } from "./turn-phase.js";
 import { appendReply, drawReply, drawThought, replaceReply, stripUnsafe } from "./markdown.js";
@@ -1095,9 +1095,6 @@ function paintCaffeinate(field) {
   caffeinate.title = model.title;
   caffeinate.classList.toggle("on", model.on);
   caffeinate.setAttribute("aria-pressed", model.on ? "true" : "false");
-  if (!caffeinate.querySelector("svg")) {
-    caffeinate.prepend(new DOMParser().parseFromString(CUP_SVG, "image/svg+xml").documentElement);
-  }
   caffeinateLabel.textContent = model.label ?? "";
   caffeinateLabel.hidden = !model.label;
 }

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { CUP_SVG, cupModel } from "../src/caffeinate-cup.js";
+import { cupModel } from "../src/caffeinate-cup.js";
+
+const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
 
 test("a frame without the field draws no cup", () => {
   assert.equal(cupModel(undefined), null);
@@ -9,8 +12,9 @@ test("a frame without the field draws no cup", () => {
 });
 
 test("the cup is one SVG drawing whose body is what fills", () => {
-  assert.match(CUP_SVG, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-  assert.equal(CUP_SVG.match(/class="cup-body"/g).length, 1);
+  const button = html.match(/<button[^>]*id="caffeinate"[^>]*>([\s\S]*?)<\/button>/)[1];
+  assert.equal(button.match(/<svg /g).length, 1);
+  assert.equal(button.match(/class="cup-body"/g).length, 1);
 });
 
 test("off with flags stays a button, and an empty set is disabled with its reason", () => {
