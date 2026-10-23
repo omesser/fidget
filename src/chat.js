@@ -19,7 +19,7 @@ import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createComposerRecall } from "./chat-recall.js";
 import { createThinking } from "./chat-thinking.js";
 import { stampWhen } from "./chat-stamp.js";
-import { cupModel } from "./caffeinate-cup.js";
+import { CUP_SVG, cupModel } from "./caffeinate-cup.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 import { STALL_MS, idlePhase, phaseLine, reducePhase } from "./turn-phase.js";
 import { appendReply, drawReply, drawThought, replaceReply, stripUnsafe } from "./markdown.js";
@@ -36,6 +36,7 @@ const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
 const caffeinate = document.getElementById("caffeinate");
+const caffeinateLabel = document.getElementById("caffeinate-label");
 const recall = createComposerRecall(log);
 // New lines stay under the landing until this Harness can answer.
 let holdLogAtTop = false;
@@ -1094,11 +1095,11 @@ function paintCaffeinate(field) {
   caffeinate.title = model.title;
   caffeinate.classList.toggle("on", model.on);
   caffeinate.setAttribute("aria-pressed", model.on ? "true" : "false");
-  // One drawing, `model.svg`. A root with no namespace does not paint.
   if (!caffeinate.querySelector("svg")) {
-    const svg = new DOMParser().parseFromString(model.svg, "image/svg+xml").documentElement;
-    if (svg?.namespaceURI === "http://www.w3.org/2000/svg") caffeinate.append(svg);
+    caffeinate.prepend(new DOMParser().parseFromString(CUP_SVG, "image/svg+xml").documentElement);
   }
+  caffeinateLabel.textContent = model.label ?? "";
+  caffeinateLabel.hidden = !model.label;
 }
 
 caffeinate.addEventListener("click", () => {
