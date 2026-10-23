@@ -55,7 +55,7 @@ SETTINGS_EOF
 
 # count= gives this run's Harness a unique command line for the kill on exit.
 harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=nop count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
+[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line has a space: $harness"
 
 # logind's PropertiesChanged on each inhibitor change. dbus-monitor's first
 # lines arrive once it is subscribed, so the reader checks once before any

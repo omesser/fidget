@@ -366,6 +366,12 @@ theme the operating system supplies. The user picks one for the whole app in
 Settings. #355, #348, #1068, ADR-0036.
 _Avoid_: Look, theme, skin, style, variant, design
 
+**Caffeinate**:
+The switch, in Chat's header and the menu, that keeps the computer awake until
+it is turned off or Fidget quits. On macOS it runs a `caffeinate` process, on
+Linux it takes inhibitors, and on Windows it makes power requests. #1789.
+_Avoid_: Hold, which is the Perch Primitive; wake lock; assertion
+
 ### The published site
 
 **Generated page**:

@@ -55,7 +55,7 @@ pub struct DispatchContext<'a, 'c> {
     pub expression: Option<&'a mut dyn ExpressionHandle>,
     pub placement: PlacementQuery<'a>,
     /// Its own lifetime, because the hold outlives this call's window lists.
-    /// `None` where this build has no hold, and the tool errors.
+    /// `None` where this build has no Caffeinate, and the tool errors.
     pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
 }
 

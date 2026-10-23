@@ -1190,7 +1190,7 @@ pub(crate) fn run_frame_loop(
                 }
                 (Some(fact), Some(drawn))
             };
-            // Without a hold nothing below names these types, so they are spelled out.
+            // Without Caffeinate nothing below names these types, so they are spelled out.
             #[cfg(not(any(target_os = "macos", target_os = "linux")))]
             let (caffeinate_fact, caffeinate_drawn): (
                 Option<fidget_core::caffeinate::Fact>,

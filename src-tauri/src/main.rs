@@ -27,10 +27,10 @@
 #[cfg_attr(not(unix), allow(dead_code))]
 mod acp_wire;
 mod action_log;
-// Linux holds a logind fd and a screen saver cookie.
+// Linux keeps awake with a logind fd and a screen saver cookie.
 #[cfg(target_os = "linux")]
 mod caffeinate_linux;
-// macOS holds a `caffeinate` child, Linux the `caffeinate_linux` inhibitors.
+// macOS runs a `caffeinate` child, Linux takes the `caffeinate_linux` inhibitors.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod caffeinate_proc;
 mod chat_surface;
@@ -629,7 +629,7 @@ struct SpritePlacement<'a> {
 }
 
 /// What the Chat button and the menu row show. Never built where there is no
-/// hold.
+/// Caffeinate.
 #[derive(Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct CaffeinateFrame {
     on: bool,
@@ -644,7 +644,7 @@ pub(crate) fn caffeinate_frame(
     let reason = configured
         .err()
         .map(|_| fidget_core::caffeinate::Empty::REASON.to_string());
-    // Without logind or a screen saver service there is nothing to hold, so the
+    // Without logind or a screen saver service no inhibitor can be taken, so the
     // cup and the menu row are disabled the way an empty flag set disables them.
     #[cfg(target_os = "linux")]
     let reason = reason.or_else(|| caffeinate_linux::unavailable().map(str::to_string));
@@ -4302,8 +4302,8 @@ struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
 /// reads it.
 struct CaffeinateShown(Mutex<Option<CaffeinateFrame>>);
 
-/// The menu row for the hold. `None` where there is no hold. Before the first tick the hold
-/// is off, and an empty flag set disables the row.
+/// The menu row for Caffeinate. `None` where there is no Caffeinate. Before the
+/// first tick it is off, and an empty flag set disables the row.
 fn menu_caffeinate(
     settings: &Settings,
     frame: Option<&CaffeinateFrame>,

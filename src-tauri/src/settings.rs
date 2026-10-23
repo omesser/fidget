@@ -2209,7 +2209,7 @@ fn caffeinate_command(flags: fidget_core::caffeinate::AssertedFlags) -> String {
 /// `caffeinate_linux` takes for it.
 #[cfg(target_os = "linux")]
 fn caffeinate_command(flags: fidget_core::caffeinate::AssertedFlags) -> String {
-    flags.held()
+    flags.blocking_label()
 }
 
 impl Settings {
@@ -2584,7 +2584,10 @@ mod tests {
             caffeinate_system: Some(false),
             ..SettingsPatch::default()
         });
-        assert!(settings.caffeinate_system, "Disk cannot hold the set open");
+        assert!(
+            settings.caffeinate_system,
+            "Disk alone cannot keep the set non-empty"
+        );
         settings.caffeinate_system = false;
         assert!(settings.caffeinate_flags().is_err());
     }

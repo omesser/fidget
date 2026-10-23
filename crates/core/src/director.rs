@@ -129,7 +129,7 @@ pub struct Context {
     /// before the verb survives.
     pub lately: Lately,
     /// The caffeinate line for the prompt. `None` where this build has no
-    /// hold, which leaves the line out.
+    /// Caffeinate, which leaves the line out.
     pub caffeinate: Option<crate::caffeinate::Fact>,
 }
 
@@ -2189,7 +2189,7 @@ mod tests {
         let flags = crate::caffeinate::AssertedFlags::all();
         moment.caffeinate = Some(crate::caffeinate::Fact::On(flags));
         let on = follow_up(&moment);
-        let line = format!("state: idle\ncaffeinate: on ({})\n", flags.held());
+        let line = format!("state: idle\ncaffeinate: on ({})\n", flags.blocking_label());
         assert!(on.contains(&line), "{on}");
         moment.caffeinate = Some(crate::caffeinate::Fact::Off);
         let off = follow_up(&moment);
