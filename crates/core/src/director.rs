@@ -2189,7 +2189,8 @@ mod tests {
         let flags = crate::caffeinate::AssertedFlags::all();
         moment.caffeinate = Some(crate::caffeinate::Fact::On(flags));
         let on = follow_up(&moment);
-        assert!(on.contains("state: idle\ncaffeinate: on (-dims)\n"), "{on}");
+        let line = format!("state: idle\ncaffeinate: on ({})\n", flags.held());
+        assert!(on.contains(&line), "{on}");
         moment.caffeinate = Some(crate::caffeinate::Fact::Off);
         let off = follow_up(&moment);
         assert!(off.contains("state: idle\ncaffeinate: off\n"), "{off}");

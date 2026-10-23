@@ -2209,7 +2209,7 @@ fn caffeinate_command(flags: fidget_core::caffeinate::AssertedFlags) -> String {
 /// `caffeinate_linux` takes for it.
 #[cfg(target_os = "linux")]
 fn caffeinate_command(flags: fidget_core::caffeinate::AssertedFlags) -> String {
-    crate::caffeinate_linux::Plan::of(flags).describe()
+    flags.held()
 }
 
 impl Settings {

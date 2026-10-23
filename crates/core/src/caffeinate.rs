@@ -65,6 +65,57 @@ impl AssertedFlags {
     pub fn argv(self, pid: u32) -> Argv {
         Argv { flags: self, pid }
     }
+
+    /// What the hold is called in Chat and at the prompt: the flag cluster on
+    /// macOS, the inhibitors on Linux.
+    pub fn held(self) -> String {
+        if cfg!(target_os = "linux") {
+            LinuxPlan::of(self).describe()
+        } else {
+            self.preview()
+        }
+    }
+}
+
+/// What a flag set asks Linux to block. Pure, so every OS tests it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinuxPlan {
+    /// The logind `what`: Idle is `idle`, System is `sleep`.
+    pub logind: Option<&'static str>,
+    /// Display is a screen saver inhibit.
+    pub display: bool,
+}
+
+impl LinuxPlan {
+    /// Disk has no Linux equivalent, so it adds nothing.
+    pub fn of(flags: AssertedFlags) -> Self {
+        let logind = match (flags.contains(Flag::Idle), flags.contains(Flag::System)) {
+            (true, true) => Some("idle:sleep"),
+            (true, false) => Some("idle"),
+            (false, true) => Some("sleep"),
+            (false, false) => None,
+        };
+        Self {
+            logind,
+            display: flags.contains(Flag::Display),
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.logind.is_none() && !self.display
+    }
+
+    /// The Settings Command row, the Chat note and the prompt line.
+    pub fn describe(self) -> String {
+        let mut parts = Vec::new();
+        if let Some(what) = self.logind {
+            parts.push(format!("logind inhibit {what}"));
+        }
+        if self.display {
+            parts.push("screen saver inhibit".to_string());
+        }
+        parts.join(" + ")
+    }
 }
 
 fn bit(flag: Flag) -> u8 {
@@ -111,31 +162,34 @@ impl Fact {
     pub fn prompt_line(self) -> String {
         match self {
             Fact::Off => "caffeinate: off".to_string(),
-            Fact::On(flags) => format!("caffeinate: on ({})", flags.preview()),
+            Fact::On(flags) => format!("caffeinate: on ({})", flags.held()),
         }
     }
 }
 
 /// A Chat note. Not a tool result and not the prompt line.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Note {
     On(AssertedFlags),
     Off,
     /// The child left while the hold was still wanted and nobody killed it.
     Exited,
     Failed,
+    /// A holder that works off the caller's thread could not take the hold.
+    Lost(String),
 }
 
 impl Note {
-    pub fn text(self) -> String {
+    pub fn text(&self) -> String {
         match self {
             Note::On(flags) => format!(
                 "☕ Caffeinate on: keeping your computer awake ({})",
-                flags.preview()
+                flags.held()
             ),
             Note::Off => "Caffeinate off.".to_string(),
             Note::Exited => "Caffeinate off. It exited on its own.".to_string(),
             Note::Failed => "Caffeinate did not start.".to_string(),
+            Note::Lost(reason) => format!("Caffeinate off. Could not hold {reason}"),
         }
     }
 }
@@ -154,6 +208,11 @@ pub trait Spawner {
     fn kill(&mut self);
     /// Whether the held child is still running. Reaps one that has left.
     fn alive(&mut self) -> bool;
+    /// Why the hold `alive` just reported gone was never taken. Only a holder
+    /// whose `spawn` returns before the hold is up has one.
+    fn failure(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// The frame loop's hold, as `dispatch` sees it. `None` reads. `Err` is a
@@ -203,6 +262,7 @@ impl<S: Spawner> Machine<S> {
     /// Apply requests, then reconcile the one child to what they want.
     pub fn tick(&mut self, flags: Result<AssertedFlags, Empty>, requests: &[Request]) -> Tick {
         let alive = self.spawner.alive();
+        let failure = self.spawner.failure();
         let mut tick = Tick {
             fact: Fact::Off,
             notes: Vec::new(),
@@ -232,6 +292,9 @@ impl<S: Spawner> Machine<S> {
             let changed = flags.is_ok_and(|next| next != spawned);
             if !self.wanted {
                 tick.notes.push(Note::Off);
+            } else if let Some(reason) = failure {
+                tick.notes.push(Note::Lost(reason));
+                self.wanted = false;
             } else if self.wanted && !changed && !asked_on {
                 tick.notes.push(Note::Exited);
                 self.wanted = false;
@@ -337,6 +400,7 @@ mod tests {
         spawns: Vec<Vec<String>>,
         kills: usize,
         fail: bool,
+        failure: Option<String>,
     }
 
     impl Fake {
@@ -347,6 +411,7 @@ mod tests {
                 spawns: Vec::new(),
                 kills: 0,
                 fail: false,
+                failure: None,
             }
         }
     }
@@ -374,6 +439,10 @@ mod tests {
             let alive = self.next.take().unwrap_or(self.held);
             self.held &= alive;
             alive
+        }
+
+        fn failure(&mut self) -> Option<String> {
+            self.failure.take()
         }
     }
 
@@ -415,14 +484,110 @@ mod tests {
     #[test]
     fn prompt_and_note_text_are_the_issue_sentences() {
         assert_eq!(Fact::Off.prompt_line(), "caffeinate: off");
-        assert_eq!(Fact::On(dims()).prompt_line(), "caffeinate: on (-dims)");
-        assert_eq!(
-            Note::On(dims()).text(),
-            "☕ Caffeinate on: keeping your computer awake (-dims)"
-        );
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(Fact::On(dims()).prompt_line(), "caffeinate: on (-dims)");
+            assert_eq!(
+                Note::On(dims()).text(),
+                "☕ Caffeinate on: keeping your computer awake (-dims)"
+            );
+        }
         assert_eq!(Note::Off.text(), "Caffeinate off.");
         assert_eq!(Note::Exited.text(), "Caffeinate off. It exited on its own.");
         assert_eq!(Note::Failed.text(), "Caffeinate did not start.");
+        assert_eq!(
+            Note::Lost("logind inhibit sleep: Access denied".to_string()).text(),
+            "Caffeinate off. Could not hold logind inhibit sleep: Access denied"
+        );
+    }
+
+    /// Linux names the inhibitors, the same words as the Settings Command row.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_notes_and_prompt_name_the_inhibitors() {
+        let held = "logind inhibit idle:sleep + screen saver inhibit";
+        assert_eq!(dims().held(), held);
+        assert_eq!(
+            Fact::On(dims()).prompt_line(),
+            format!("caffeinate: on ({held})")
+        );
+        assert_eq!(
+            Note::On(dims()).text(),
+            format!("☕ Caffeinate on: keeping your computer awake ({held})")
+        );
+    }
+
+    fn flags(set: &[Flag]) -> AssertedFlags {
+        AssertedFlags::new(set.iter().copied()).expect("a flag")
+    }
+
+    #[test]
+    fn idle_and_system_are_one_logind_inhibitor_and_display_the_screen_saver() {
+        assert_eq!(
+            LinuxPlan::of(dims()),
+            LinuxPlan {
+                logind: Some("idle:sleep"),
+                display: true
+            }
+        );
+        assert_eq!(LinuxPlan::of(flags(&[Flag::Idle])).logind, Some("idle"));
+        assert_eq!(LinuxPlan::of(flags(&[Flag::System])).logind, Some("sleep"));
+        assert_eq!(
+            LinuxPlan::of(flags(&[Flag::Display])),
+            LinuxPlan {
+                logind: None,
+                display: true
+            }
+        );
+        assert!(LinuxPlan::of(flags(&[Flag::Disk])).is_empty());
+    }
+
+    #[test]
+    fn the_linux_plan_names_each_inhibitor() {
+        assert_eq!(
+            LinuxPlan::of(dims()).describe(),
+            "logind inhibit idle:sleep + screen saver inhibit"
+        );
+        assert_eq!(
+            LinuxPlan::of(flags(&[Flag::System])).describe(),
+            "logind inhibit sleep"
+        );
+        assert_eq!(
+            LinuxPlan::of(flags(&[Flag::Display])).describe(),
+            "screen saver inhibit"
+        );
+    }
+
+    /// A holder that takes its hold off the caller's thread reports a refusal
+    /// after `spawn` returned Ok. Chat hears why, and the hold stays off.
+    #[test]
+    fn a_hold_that_could_not_be_taken_says_why_and_stays_off() {
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        machine.spawner.failure = Some("logind inhibit sleep: denied".to_string());
+        let lost = drive(&mut machine, Ok(dims()), &[], false);
+        assert_eq!(lost.fact, Fact::Off);
+        assert_eq!(
+            lost.notes,
+            vec![Note::Lost("logind inhibit sleep: denied".to_string())]
+        );
+        let after = drive(&mut machine, Ok(dims()), &[], false);
+        assert_eq!(after.fact, Fact::Off);
+        assert!(after.notes.is_empty());
+        assert_eq!(machine.spawner.spawns.len(), 1);
+    }
+
+    /// A refusal that lands after the user turned it off is just Off.
+    #[test]
+    fn a_refusal_while_stopping_is_only_off() {
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        drive(&mut machine, Ok(dims()), &[Request::Set(false)], true);
+        machine.spawner.failure = Some("denied".to_string());
+        let done = drive(&mut machine, Ok(dims()), &[], false);
+        assert_eq!(done.fact, Fact::Off);
+        assert_eq!(done.notes, vec![Note::Off]);
+        assert!(machine.spawner.failure.is_none());
     }
 
     #[test]

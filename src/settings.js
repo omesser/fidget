@@ -567,7 +567,7 @@ export function copyRunForPress(payload) {
 // --- The tab shell ---------------------------------------------------------
 
 // The bar lists every tab. Keep the buttons this build's form draws, in bar
-// order. Windows drops Caffeinate.
+// order. A build without Caffeinate drops it.
 export function tabsTheFormDraws(buttons, form) {
   const drawn = new Set(form.tabs.map((tab) => tab.title));
   return buttons.filter((title) => drawn.has(title));
@@ -788,7 +788,7 @@ if (typeof document !== "undefined") {
       const tab = tabs[i];
       tab.addEventListener("click", () => {
         feedback = null;
-        // By title. On Windows a hidden Caffeinate button sits between Privacy
+        // By title. A build without Caffeinate hides its button between Privacy
         // and Development.
         currentTabIndex = currentForm ? selectTab(currentForm, tab.textContent) : i;
         for (let j = 0; j < tabs.length; j++) {

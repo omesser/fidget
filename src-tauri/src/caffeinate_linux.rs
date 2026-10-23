@@ -6,12 +6,17 @@
 //! which the screen saver drops when this connection closes. So a crash,
 //! `kill -9` or Quit's `process::exit` (which skips `Drop`) leaves nothing
 //! behind, and this side needs no `HELD_PID`.
+//!
+//! The bus calls block for up to [`TIMEOUT`] each, so a worker thread makes
+//! them. `spawn` and `kill` only send it an order, and `alive` reads what it
+//! answered, the way the macOS side reads a child's exit.
 
 use std::os::fd::OwnedFd;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use fidget_core::caffeinate::{Argv, AssertedFlags, Flag, Spawner};
+use fidget_core::caffeinate::{Argv, LinuxPlan as Plan, Spawner};
 use zbus::blocking::{connection, Connection};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -31,45 +36,8 @@ const PORTAL: &str = "org.freedesktop.portal.Desktop";
 /// `org.freedesktop.portal.Inhibit` flag for "idle", which covers blanking.
 const PORTAL_IDLE: u32 = 8;
 
-/// A bus that does not answer must not stall the frame loop for long.
+/// A bus that does not answer gives up after this, per call.
 const TIMEOUT: Duration = Duration::from_secs(2);
-
-/// What a flag set asks Linux to block.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Plan {
-    /// The logind `what`: Idle is `idle`, System is `sleep`.
-    pub logind: Option<&'static str>,
-    /// Display is a screen saver inhibit.
-    pub display: bool,
-}
-
-impl Plan {
-    /// Disk has no Linux equivalent, so it adds nothing.
-    pub fn of(flags: AssertedFlags) -> Self {
-        let logind = match (flags.contains(Flag::Idle), flags.contains(Flag::System)) {
-            (true, true) => Some("idle:sleep"),
-            (true, false) => Some("idle"),
-            (false, true) => Some("sleep"),
-            (false, false) => None,
-        };
-        Self {
-            logind,
-            display: flags.contains(Flag::Display),
-        }
-    }
-
-    /// The Command row in Settings.
-    pub fn describe(self) -> String {
-        let mut parts = Vec::new();
-        if let Some(what) = self.logind {
-            parts.push(format!("logind inhibit {what}"));
-        }
-        if self.display {
-            parts.push("screen saver inhibit".to_string());
-        }
-        parts.join(" + ")
-    }
-}
 
 /// The disabled reason, once the startup probe found neither logind nor a
 /// screen saver. `None` while the probe runs or when either answered.
@@ -225,63 +193,173 @@ impl Held {
     }
 }
 
+/// Every inhibitor the plan asks for, or none. A part that fails drops the
+/// parts already taken, and the error names the inhibitor that failed.
+fn take_all<L, S>(
+    plan: Plan,
+    logind: impl FnOnce(&str) -> Result<L, String>,
+    screen: impl FnOnce() -> Result<S, String>,
+) -> Result<(Option<L>, Option<S>), String> {
+    let held = match plan.logind {
+        Some(what) => {
+            Some(logind(what).map_err(|error| format!("logind inhibit {what}: {error}"))?)
+        }
+        None => None,
+    };
+    let shown = match plan.display {
+        true => Some(screen().map_err(|error| format!("screen saver inhibit: {error}"))?),
+        false => None,
+    };
+    Ok((held, shown))
+}
+
+/// Gives the hold back. Runs on the worker.
+type Release = Box<dyn FnOnce() + Send>;
+/// Takes a plan's hold. Runs on the worker.
+type Take = Box<dyn FnMut(Plan) -> Result<Release, String> + Send>;
+
+fn take_on_the_bus(plan: Plan) -> Result<Release, String> {
+    let (logind, screen) = take_all(
+        plan,
+        |what| inhibit_logind(what).map_err(|error| error.to_string()),
+        || Screen::inhibit().map_err(|error| error.to_string()),
+    )?;
+    Ok(Box::new(move || Held { logind, screen }.release()))
+}
+
+/// Each order carries the spawn it belongs to, so a late answer about an old
+/// hold cannot end a newer one.
+enum Order {
+    Hold(u64, Plan),
+    Release(u64),
+}
+
+enum Answer {
+    Held,
+    Refused(u64, String),
+    Released(u64),
+}
+
+fn work(mut take: Take, orders: Receiver<Order>, answers: Sender<Answer>) {
+    let mut held: Option<Release> = None;
+    for order in orders {
+        let answer = match order {
+            Order::Hold(spawn, plan) => match take(plan) {
+                Ok(release) => {
+                    held = Some(release);
+                    Answer::Held
+                }
+                Err(reason) => Answer::Refused(spawn, reason),
+            },
+            Order::Release(spawn) => {
+                if let Some(release) = held.take() {
+                    release();
+                }
+                Answer::Released(spawn)
+            }
+        };
+        if answers.send(answer).is_err() {
+            break;
+        }
+    }
+    if let Some(release) = held.take() {
+        release();
+    }
+}
+
 pub struct OsSpawner {
-    held: Option<Held>,
+    orders: Sender<Order>,
+    answers: Receiver<Answer>,
+    /// The latest spawn's number.
+    spawn: u64,
+    /// Asked for and not yet refused or released.
+    up: bool,
+    releasing: bool,
+    failure: Option<String>,
 }
 
 impl OsSpawner {
     pub fn new() -> Self {
         start_probe();
-        Self { held: None }
+        Self::with(Box::new(take_on_the_bus))
+    }
+
+    fn with(take: Take) -> Self {
+        let (orders, worker_orders) = mpsc::channel();
+        let (worker_answers, answers) = mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("caffeinate-hold".to_string())
+            .spawn(move || work(take, worker_orders, worker_answers));
+        Self {
+            orders,
+            answers,
+            spawn: 0,
+            up: false,
+            releasing: false,
+            failure: None,
+        }
+    }
+
+    fn hear(&mut self, answer: Answer) {
+        match answer {
+            Answer::Held => {}
+            Answer::Refused(spawn, reason) if spawn == self.spawn => {
+                self.up = false;
+                self.failure = Some(reason);
+            }
+            Answer::Released(spawn) if spawn == self.spawn => self.up = false,
+            Answer::Refused(..) | Answer::Released(_) => {}
+        }
     }
 }
 
 impl Drop for OsSpawner {
+    /// The worker releases when the order channel closes.
     fn drop(&mut self) {
         self.kill();
     }
 }
 
 impl Spawner for OsSpawner {
-    /// Holds what it can. One missing service is logged, not fatal; nothing
-    /// held at all is the error the tool and the Chat note report.
+    /// Returns once the worker has the order. A refusal comes back through
+    /// `alive` and `failure`.
     fn spawn(&mut self, argv: &Argv) -> Result<(), String> {
-        if self.held.is_some() {
+        if self.up {
             return Err("an inhibitor is already held".to_string());
         }
         let plan = Plan::of(argv.flags());
-        if plan.logind.is_none() && !plan.display {
+        if plan.is_empty() {
             return Err("no flag maps to a Linux inhibitor".to_string());
         }
-        let mut errors = Vec::new();
-        let logind = plan.logind.and_then(|what| {
-            inhibit_logind(what)
-                .map_err(|error| errors.push(format!("logind: {error}")))
-                .ok()
-        });
-        let screen = plan
-            .display
-            .then(|| Screen::inhibit().map_err(|error| errors.push(error.to_string())))
-            .and_then(Result::ok);
-        if logind.is_none() && screen.is_none() {
-            return Err(format!("No inhibitor could be held: {}", errors.join("; ")));
-        }
-        if !errors.is_empty() {
-            eprintln!("caffeinate: held in part: {}", errors.join("; "));
-        }
-        self.held = Some(Held { logind, screen });
+        self.spawn += 1;
+        self.orders
+            .send(Order::Hold(self.spawn, plan))
+            .map_err(|_| "the caffeinate worker stopped".to_string())?;
+        self.up = true;
+        self.releasing = false;
+        self.failure = None;
         Ok(())
     }
 
-    /// Releases at once, so the next tick reads it as gone.
+    /// Asks once. `alive` stays true until the worker says it let go.
     fn kill(&mut self) {
-        if let Some(held) = self.held.take() {
-            held.release();
+        if self.up && !self.releasing {
+            self.releasing = self.orders.send(Order::Release(self.spawn)).is_ok();
+            if !self.releasing {
+                self.up = false;
+            }
         }
     }
 
     fn alive(&mut self) -> bool {
-        self.held.is_some()
+        while let Ok(answer) = self.answers.try_recv() {
+            self.hear(answer);
+        }
+        self.up
+    }
+
+    fn failure(&mut self) -> Option<String> {
+        self.failure.take()
     }
 }
 
@@ -289,61 +367,138 @@ impl Spawner for OsSpawner {
 mod tests {
     use super::*;
 
+    use fidget_core::caffeinate::{AssertedFlags, Flag};
+    use std::sync::mpsc::SyncSender;
+
     fn flags(set: &[Flag]) -> AssertedFlags {
         AssertedFlags::new(set.iter().copied()).expect("a flag")
     }
 
-    #[test]
-    fn idle_and_system_are_one_logind_inhibitor_and_display_the_screen_saver() {
-        assert_eq!(
-            Plan::of(AssertedFlags::all()),
-            Plan {
-                logind: Some("idle:sleep"),
-                display: true
-            }
-        );
-        assert_eq!(Plan::of(flags(&[Flag::Idle])).logind, Some("idle"));
-        assert_eq!(Plan::of(flags(&[Flag::System])).logind, Some("sleep"));
-        assert_eq!(
-            Plan::of(flags(&[Flag::Display])),
-            Plan {
-                logind: None,
-                display: true
-            }
-        );
-        assert_eq!(
-            Plan::of(flags(&[Flag::Disk])),
-            Plan {
-                logind: None,
-                display: false
-            }
-        );
+    fn dims() -> Argv {
+        AssertedFlags::all().argv(std::process::id())
     }
 
-    #[test]
-    fn the_command_row_names_each_inhibitor() {
-        assert_eq!(
-            Plan::of(AssertedFlags::all()).describe(),
-            "logind inhibit idle:sleep + screen saver inhibit"
-        );
-        assert_eq!(
-            Plan::of(flags(&[Flag::System])).describe(),
-            "logind inhibit sleep"
-        );
-        assert_eq!(
-            Plan::of(flags(&[Flag::Display])).describe(),
-            "screen saver inhibit"
-        );
+    /// After `hear_next` the tests read `up`, not `alive`: `alive` would
+    /// also take answers the test has yet to wait for.
+    impl OsSpawner {
+        /// Blocks for the worker's next answer. Tests only.
+        fn hear_next(&mut self) {
+            let answer = self.answers.recv().expect("the worker answers");
+            self.hear(answer);
+        }
+    }
+
+    /// A take that holds until the test opens the gate, then reports its
+    /// release on `released`.
+    fn gated(gate: Receiver<Result<(), String>>, released: SyncSender<()>) -> Take {
+        Box::new(move |_| {
+            gate.recv().expect("the test opens the gate")?;
+            let released = released.clone();
+            Ok(Box::new(move || {
+                let _ = released.send(());
+            }) as Release)
+        })
     }
 
     #[test]
     fn disk_alone_holds_nothing() {
-        let mut spawner = OsSpawner { held: None };
+        let mut spawner = OsSpawner::with(Box::new(|_| Err("never asked".to_string())));
         let err = spawner
             .spawn(&flags(&[Flag::Disk]).argv(std::process::id()))
             .expect_err("no inhibitor");
         assert!(!err.is_empty());
         assert!(!spawner.alive());
+    }
+
+    /// The frame loop calls `spawn` and `kill`; a bus that takes its 2 s
+    /// timeout must not hold either up.
+    #[test]
+    fn spawn_and_kill_return_while_the_bus_is_still_busy() {
+        let (open, gate) = mpsc::channel();
+        let (released_tx, released) = mpsc::sync_channel(1);
+        let mut spawner = OsSpawner::with(gated(gate, released_tx));
+        spawner.spawn(&dims()).expect("ordered");
+        assert!(spawner.alive(), "up while the worker is taking it");
+        assert!(spawner.spawn(&dims()).is_err(), "one hold at a time");
+        spawner.kill();
+        assert!(spawner.alive(), "up until the worker lets go");
+        open.send(Ok(())).expect("gate");
+        spawner.hear_next();
+        assert!(spawner.up, "held, release not heard yet");
+        spawner.hear_next();
+        assert!(!spawner.up);
+        released.recv().expect("released on the worker");
+        assert_eq!(spawner.failure(), None);
+    }
+
+    #[test]
+    fn a_refused_hold_ends_and_says_which_inhibitor() {
+        let (open, gate) = mpsc::channel();
+        let (released_tx, _released) = mpsc::sync_channel(1);
+        let mut spawner = OsSpawner::with(gated(gate, released_tx));
+        spawner.spawn(&dims()).expect("ordered");
+        open.send(Err("screen saver inhibit: no service".to_string()))
+            .expect("gate");
+        spawner.hear_next();
+        assert!(!spawner.up);
+        assert_eq!(
+            spawner.failure().as_deref(),
+            Some("screen saver inhibit: no service")
+        );
+        assert_eq!(spawner.failure(), None, "said once");
+    }
+
+    /// A release answered for a refused hold must not end the hold after it.
+    #[test]
+    fn a_late_answer_about_an_old_hold_leaves_the_new_one_up() {
+        let (open, gate) = mpsc::channel();
+        let (released_tx, _released) = mpsc::sync_channel(1);
+        let mut spawner = OsSpawner::with(gated(gate, released_tx));
+        spawner.spawn(&dims()).expect("first");
+        spawner.kill();
+        open.send(Err("logind inhibit idle:sleep: denied".to_string()))
+            .expect("gate");
+        spawner.hear_next();
+        assert!(!spawner.up, "refused");
+        spawner.spawn(&dims()).expect("second");
+        spawner.hear_next();
+        assert!(spawner.up, "the first hold's release is not this one's");
+    }
+
+    /// Partial holds fail whole: the Chat note says "keeping your computer
+    /// awake", which half a hold would make untrue.
+    #[test]
+    fn a_failed_part_drops_the_part_already_taken() {
+        struct Token(SyncSender<()>);
+        impl Drop for Token {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let (dropped_tx, dropped) = mpsc::sync_channel(1);
+        let taken = take_all(
+            Plan::of(AssertedFlags::all()),
+            |what| {
+                assert_eq!(what, "idle:sleep");
+                Ok(Token(dropped_tx))
+            },
+            || Err::<(), _>("no service".to_string()),
+        );
+        assert_eq!(
+            taken.err().as_deref(),
+            Some("screen saver inhibit: no service")
+        );
+        dropped.try_recv().expect("the logind part was released");
+
+        let refused = take_all(
+            Plan::of(AssertedFlags::all()),
+            |_| Err::<(), _>("denied".to_string()),
+            || -> Result<(), String> { panic!("not asked after logind failed") },
+        );
+        assert_eq!(
+            refused.err().as_deref(),
+            Some("logind inhibit idle:sleep: denied")
+        );
     }
 
     /// Who holds a logind inhibitor now.
@@ -386,13 +541,14 @@ mod tests {
         .expect("match rule");
 
         let mut spawner = OsSpawner::new();
-        spawner
-            .spawn(&AssertedFlags::all().argv(std::process::id()))
-            .expect("held");
+        spawner.spawn(&dims()).expect("ordered");
+        spawner.hear_next();
+        assert!(spawner.alive(), "held: {:?}", spawner.failure());
         assert!(logind_holders(&conn).iter().any(|who| who == WHO));
         print_inhibitors("held");
 
         spawner.kill();
+        spawner.hear_next();
         assert!(!spawner.alive());
         changes
             .into_iter()
