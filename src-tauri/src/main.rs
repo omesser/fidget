@@ -2271,20 +2271,21 @@ async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     open_chat(&app, &id, title, None);
 }
 
-/// The Chat button asks the frame loop to flip the hold. The frame loop owns
-/// the child.
+/// The Chat button asks the frame loop to turn Caffeinate on or off. The frame
+/// loop owns the child or the inhibitors.
 #[tauri::command]
 fn toggle_caffeinate(toggle: tauri::State<'_, CaffeinateToggle>) {
     let _ = toggle.0.send(fidget_core::caffeinate::Request::Toggle);
 }
 
-/// The hold as Chat last heard it. `None` off macOS, and before the first tick.
+/// Caffeinate as Chat last heard it. `None` where there is no Caffeinate, and
+/// before the first tick.
 #[tauri::command]
 fn caffeinate_view(shown: tauri::State<'_, CaffeinateShown>) -> Option<CaffeinateFrame> {
     shown.0.lock().ok().and_then(|guard| guard.clone())
 }
 
-/// Push the hold to every open Chat when it changes, and remember it for a
+/// Push Caffeinate to every open Chat when it changes, and remember it for a
 /// window that opens between ticks.
 pub(crate) fn note_caffeinate_view<'a>(
     app: &tauri::AppHandle,
@@ -4029,7 +4030,7 @@ fn apply_menu_action(
 fn quit_now() -> ! {
     eprintln!("quit");
     #[cfg(target_os = "macos")]
-    caffeinate_proc::signal_held_child();
+    caffeinate_proc::signal_child();
     harness::shutdown();
     std::process::exit(0);
 }
@@ -4138,10 +4139,10 @@ impl QuitHost for AppQuit<'_> {
     }
 
     fn exit_process(&mut self) {
-        // Ctrl+C exits here, not through `quit_now`. `exit` skips the hold's
+        // Ctrl+C exits here, not through `quit_now`. `exit` skips Caffeinate's
         // Drop, so signal the child first. `-w` covers a crash.
         #[cfg(target_os = "macos")]
-        caffeinate_proc::signal_held_child();
+        caffeinate_proc::signal_child();
         std::process::exit(0);
     }
 }
@@ -4298,8 +4299,8 @@ struct FrameExtras {
 /// state is keyed by type.
 struct CaffeinateToggle(mpsc::Sender<fidget_core::caffeinate::Request>);
 
-/// The hold Chat was last shown. The frame loop writes it and `caffeinate_view`
-/// reads it.
+/// The Caffeinate state Chat was last shown. The frame loop writes it and
+/// `caffeinate_view` reads it.
 struct CaffeinateShown(Mutex<Option<CaffeinateFrame>>);
 
 /// The menu row for Caffeinate. `None` where there is no Caffeinate. Before the
@@ -5508,7 +5509,7 @@ fn main() {
         .run(|_, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 #[cfg(target_os = "macos")]
-                caffeinate_proc::signal_held_child();
+                caffeinate_proc::signal_child();
                 harness::shutdown();
             }
         });

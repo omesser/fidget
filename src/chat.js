@@ -1082,7 +1082,7 @@ function restored(history) {
   log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
 }
 
-// The hold lives in the shell. A click only asks, and the next event paints the
+// Caffeinate lives in the shell. A click only asks, and the next event paints the
 // button, so the menu and the button always agree.
 function paintCaffeinate(field) {
   const model = cupModel(field);
@@ -1345,7 +1345,7 @@ async function start() {
   invoke("caffeinate_view")
     .then(paintCaffeinate)
     .catch((why) => {
-      console.error("chat: the caffeinate button could not read the hold:", why);
+      console.error("chat: the caffeinate button could not read Caffeinate:", why);
     });
 
   // Both listeners are up, so the state as it stands can be asked for. The bar

@@ -43,7 +43,7 @@ pub enum MenuAction {
     OpenSettings,
     /// Open the Chat surface. The same action a Summon performs.
     Summon,
-    /// Flip the caffeinate hold. The same request the Chat button posts.
+    /// Turn Caffeinate on or off. The same request the Chat button posts.
     ToggleCaffeinate,
     /// Leave. Ours, not `PredefinedMenuItem::quit`: that calls `terminate:`
     /// from inside the tray menu and deadlocks the overlay webviews.
@@ -172,7 +172,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
 
-    // The same hold the Chat button toggles.
+    // The same Caffeinate the Chat button toggles.
     if let Some(row) = snapshot.caffeinate {
         entries.push(MenuEntry::Check {
             id: CAFFEINATE_ID.to_string(),

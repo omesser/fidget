@@ -1,10 +1,11 @@
-//! The one `caffeinate` child this process holds.
+//! The one `caffeinate` child this process runs, and the Caffeinate switch
+//! the frame loop owns.
 //!
 //! `Child::kill` is SIGKILL. A child that ignores SIGTERM keeps the assertion
 //! until `try_wait` says it left; `-w` is what releases it if this process
 //! dies first. Quit signals the pid from another thread because
-//! `process::exit` skips this thread's `Drop`. On Linux, [`Hold`] wraps the
-//! inhibitors in `caffeinate_linux` instead.
+//! `process::exit` skips this thread's `Drop`. On Linux, [`Caffeinate`] drives
+//! the inhibitors in `caffeinate_linux` instead.
 
 #[cfg(target_os = "macos")]
 use std::process::{Child, Command};
@@ -19,15 +20,15 @@ use fidget_core::caffeinate::{
     AssertedFlags, CaffeinateHandle, Empty, Fact, Machine, Note, Request, Tick,
 };
 
-/// The held child's pid, or 0. The quit paths call `process::exit`, which
+/// The running child's pid, or 0. The quit paths call `process::exit`, which
 /// skips `Drop`, so they read this to SIGTERM the child.
 #[cfg(target_os = "macos")]
-static HELD_PID: AtomicU32 = AtomicU32::new(0);
+static CHILD_PID: AtomicU32 = AtomicU32::new(0);
 
-/// SIGTERM the child, if one is still held. Safe to call from Quit.
+/// SIGTERM the child, if one is still running. Safe to call from Quit.
 #[cfg(target_os = "macos")]
-pub fn signal_held_child() {
-    let pid = HELD_PID.load(Ordering::SeqCst);
+pub fn signal_child() {
+    let pid = CHILD_PID.load(Ordering::SeqCst);
     if pid > 0 {
         signal_term(pid);
     }
@@ -43,15 +44,15 @@ fn signal_term(pid: u32) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_held_pid(pid: u32) {
-    HELD_PID.store(pid, Ordering::SeqCst);
+fn set_child_pid(pid: u32) {
+    CHILD_PID.store(pid, Ordering::SeqCst);
 }
 
-/// Clears `HELD_PID` only if it still holds `pid`, so reaping an old child
+/// Clears `CHILD_PID` only if it is still `pid`, so reaping an old child
 /// never wipes the pid of the newer one a restart already stored.
 #[cfg(target_os = "macos")]
-fn clear_held_pid_if(pid: u32) {
-    let _ = HELD_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
+fn clear_child_pid_if(pid: u32) {
+    let _ = CHILD_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
 }
 
 #[cfg(target_os = "macos")]
@@ -88,13 +89,13 @@ impl Drop for OsSpawner {
 impl Spawner for OsSpawner {
     fn spawn(&mut self, argv: &Argv) -> Result<(), String> {
         if self.child.is_some() {
-            return Err("a caffeinate child is already held".to_string());
+            return Err("a caffeinate child is already running".to_string());
         }
         let child = Command::new(self.program)
             .args(argv.args())
             .spawn()
             .map_err(|error| error.to_string())?;
-        set_held_pid(child.id());
+        set_child_pid(child.id());
         self.child = Some(child);
         Ok(())
     }
@@ -110,7 +111,7 @@ impl Spawner for OsSpawner {
             return false;
         };
         if let Ok(Some(_)) = child.try_wait() {
-            clear_held_pid_if(child.id());
+            clear_child_pid_if(child.id());
             self.child = None;
             return false;
         }
@@ -118,15 +119,15 @@ impl Spawner for OsSpawner {
     }
 }
 
-/// The frame loop's hold. Notes from tool calls wait here until the frame loop
-/// posts them to Chat.
-pub struct Hold {
+/// The frame loop's Caffeinate switch. Notes from tool calls wait here until
+/// the frame loop posts them to Chat.
+pub struct Caffeinate {
     machine: Machine<OsSpawner>,
     configured: Result<AssertedFlags, Empty>,
     pending: Vec<Note>,
 }
 
-impl Hold {
+impl Caffeinate {
     pub fn new() -> Self {
         Self {
             machine: Machine::new(OsSpawner::new(), std::process::id()),
@@ -150,7 +151,7 @@ impl Hold {
     }
 }
 
-impl CaffeinateHandle for Hold {
+impl CaffeinateHandle for Caffeinate {
     fn call(&mut self, on: Option<bool>) -> Result<Fact, String> {
         let requests: Vec<Request> = on.map(Request::Set).into_iter().collect();
         let tick = self.tick(&requests);
@@ -172,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_program_holds_nothing() {
+    fn a_missing_program_starts_nothing() {
         let mut spawner = OsSpawner::program("/no/such/caffeinate");
         let err = spawner.spawn(&dims()).expect_err("missing program");
         assert!(!err.is_empty());
@@ -191,7 +192,7 @@ mod tests {
         let text = String::from_utf8_lossy(&listed.stdout);
         assert!(
             text.contains("caffeinate"),
-            "pmset should name the hold while it is up: {text}"
+            "pmset should name caffeinate while it is on: {text}"
         );
         let again = spawner.spawn(&dims());
         assert!(again.is_err(), "a second child would hide the first");
@@ -206,6 +207,6 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
         }
         assert!(!alive);
-        assert_eq!(HELD_PID.load(Ordering::SeqCst), 0);
+        assert_eq!(CHILD_PID.load(Ordering::SeqCst), 0);
     }
 }

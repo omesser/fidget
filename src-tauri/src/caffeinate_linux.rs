@@ -5,7 +5,7 @@
 //! when the process ends. Display is an `org.freedesktop.ScreenSaver` cookie,
 //! which the screen saver drops when this connection closes. So a crash,
 //! `kill -9` or Quit's `process::exit` (which skips `Drop`) leaves nothing
-//! behind, and this side needs no `HELD_PID`.
+//! behind, and this side needs no `CHILD_PID`.
 //!
 //! The bus calls block for up to [`TIMEOUT`] each, so a worker thread makes
 //! them. `spawn` and `kill` only send it an order, and `alive` reads what it

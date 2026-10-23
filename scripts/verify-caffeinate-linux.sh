@@ -79,7 +79,7 @@ tray() { # <row>
   python3 "$root/scripts/ax-window-linux.py" tray "$pid" - "$1" >> "$out/tray.txt" 2>&1
 }
 
-listed && fail "Fidget already holds an inhibitor before this run started"
+listed && fail "Fidget already has an inhibitor before this run started"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \

@@ -54,7 +54,7 @@ pub struct DispatchContext<'a, 'c> {
     pub roster: &'a [InstanceInfo],
     pub expression: Option<&'a mut dyn ExpressionHandle>,
     pub placement: PlacementQuery<'a>,
-    /// Its own lifetime, because the hold outlives this call's window lists.
+    /// Its own lifetime, because Caffeinate outlives this call's window lists.
     /// `None` where this build has no Caffeinate, and the tool errors.
     pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
 }
@@ -546,13 +546,13 @@ mod tests {
         assert!(!names.contains(&"caffeinate"));
     }
 
-    struct ScriptedHold {
+    struct ScriptedCaffeinate {
         fact: Fact,
         reads: usize,
         sets: Vec<bool>,
     }
 
-    impl CaffeinateHandle for ScriptedHold {
+    impl CaffeinateHandle for ScriptedCaffeinate {
         fn call(&mut self, on: Option<bool>) -> Result<Fact, String> {
             match on {
                 None => self.reads += 1,
@@ -571,30 +571,30 @@ mod tests {
 
     #[test]
     fn caffeinate_reads_when_on_is_omitted_and_sets_when_it_is_present() {
-        let mut hold = ScriptedHold {
+        let mut caffeinate = ScriptedCaffeinate {
             fact: Fact::Off,
             reads: 0,
             sets: Vec::new(),
         };
-        let call = |hold: &mut ScriptedHold, args: serde_json::Value| {
+        let call = |caffeinate: &mut ScriptedCaffeinate, args: serde_json::Value| {
             let temp = tempfile::tempdir().expect("temp dir is creatable");
             let source = fake_source(vec![]);
             let mut context = test_context(&temp, &source, &[]);
-            context.caffeinate = Some(hold);
+            context.caffeinate = Some(caffeinate);
             dispatch("caffeinate", args, &mut context).expect("dispatch")
         };
-        let read = call(&mut hold, json!({}));
+        let read = call(&mut caffeinate, json!({}));
         assert_eq!(read, json!({ "on": false }));
-        assert_eq!(hold.reads, 1);
-        assert!(hold.sets.is_empty());
+        assert_eq!(caffeinate.reads, 1);
+        assert!(caffeinate.sets.is_empty());
 
-        let on = call(&mut hold, json!({ "on": true }));
-        let again = call(&mut hold, json!({ "on": true }));
-        let off = call(&mut hold, json!({ "on": false }));
+        let on = call(&mut caffeinate, json!({ "on": true }));
+        let again = call(&mut caffeinate, json!({ "on": true }));
+        let off = call(&mut caffeinate, json!({ "on": false }));
         assert_eq!(on, json!({ "on": true, "flags": "-dims" }));
         assert_eq!(again, json!({ "on": true, "flags": "-dims" }));
         assert_eq!(off, json!({ "on": false }));
-        assert_eq!(hold.sets, [true, true, false]);
+        assert_eq!(caffeinate.sets, [true, true, false]);
     }
 
     #[test]

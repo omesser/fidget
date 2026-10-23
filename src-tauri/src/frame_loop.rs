@@ -188,7 +188,7 @@ pub(crate) fn run_frame_loop(
             caffeinate: caffeinate_rx,
         } = extras;
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        let mut caffeinate_hold = crate::caffeinate_proc::Hold::new();
+        let mut caffeinate_switch = crate::caffeinate_proc::Caffeinate::new();
         let mut slots = completer::Slots::new();
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
@@ -1151,18 +1151,18 @@ pub(crate) fn run_frame_loop(
                 .map(|settings| settings.caffeinate_flags())
                 .unwrap_or(Err(fidget_core::caffeinate::Empty));
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            caffeinate_hold.set_target(caffeinate_configured);
+            caffeinate_switch.set_target(caffeinate_configured);
             while let Ok(call) = mcp.try_recv() {
                 let excluded = settings
                     .lock()
                     .map(|settings| settings.excluded_applications.clone())
                     .unwrap_or_default();
                 #[cfg(any(target_os = "macos", target_os = "linux"))]
-                let hold: Option<
+                let caffeinate_handle: Option<
                     &mut dyn fidget_core::caffeinate::CaffeinateHandle,
-                > = Some(&mut caffeinate_hold);
+                > = Some(&mut caffeinate_switch);
                 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-                let hold: Option<
+                let caffeinate_handle: Option<
                     &mut dyn fidget_core::caffeinate::CaffeinateHandle,
                 > = None;
                 answer_tool_call(
@@ -1171,7 +1171,7 @@ pub(crate) fn run_frame_loop(
                     assembler.source(),
                     excluded,
                     &displays,
-                    hold,
+                    caffeinate_handle,
                 );
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1180,9 +1180,9 @@ pub(crate) fn run_frame_loop(
                 while let Ok(request) = caffeinate_rx.try_recv() {
                     requests.push(request);
                 }
-                let fact = caffeinate_hold.tick(&requests).fact;
+                let fact = caffeinate_switch.tick(&requests).fact;
                 let drawn = caffeinate_frame(fact, caffeinate_configured);
-                for note in caffeinate_hold.take_notes() {
+                for note in caffeinate_switch.take_notes() {
                     let text = note.text();
                     for live in &lives {
                         emit_chat_notice(&app, &live.id, text.clone());
