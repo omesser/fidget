@@ -1148,18 +1148,10 @@ pub(crate) fn run_frame_loop(
             #[cfg(target_os = "macos")]
             let configured = settings
                 .lock()
-                .ok()
-                .map(|settings| {
-                    fidget_core::caffeinate::AssertedFlags::try_from_bits(
-                        settings.caffeinate_display,
-                        settings.caffeinate_idle,
-                        settings.caffeinate_disk,
-                        settings.caffeinate_system,
-                    )
-                })
+                .map(|settings| settings.caffeinate_flags())
                 .unwrap_or(Err(fidget_core::caffeinate::Empty));
             #[cfg(target_os = "macos")]
-            caffeinate_hold.set_target(configured, std::process::id());
+            caffeinate_hold.set_target(configured);
             while let Ok(call) = mcp.try_recv() {
                 let excluded = settings
                     .lock()
@@ -1188,8 +1180,7 @@ pub(crate) fn run_frame_loop(
                 while let Ok(request) = caffeinate_rx.try_recv() {
                     requests.push(request);
                 }
-                caffeinate_hold.tick(&requests);
-                let fact = caffeinate_hold.fact();
+                let fact = caffeinate_hold.tick(&requests).fact;
                 let drawn = caffeinate_frame(fact, configured);
                 for note in caffeinate_hold.take_notes() {
                     let text = note.text();

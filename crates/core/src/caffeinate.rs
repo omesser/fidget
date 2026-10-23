@@ -3,12 +3,6 @@
 //! `-w` is mandatory. A macOS child is reparented to `launchd` when fidget
 //! dies, so a crash would leave the Mac awake without it.
 
-/// Display, idle, disk, and system sleep, in `caffeinate(8)` letter order.
-const DISPLAY: u8 = 0b0001;
-const IDLE: u8 = 0b0010;
-const DISK: u8 = 0b0100;
-const SYSTEM: u8 = 0b1000;
-
 /// The empty flag set cannot be saved or spawned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Empty;
@@ -17,11 +11,9 @@ impl Empty {
     pub const REASON: &'static str = "At least one caffeinate flag has to stay on.";
 }
 
-/// A non-empty subset of `-d -i -m -s`.
+/// A non-empty subset of `-d -i -m -s`, in that order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AssertedFlags {
-    mask: std::num::NonZeroU8,
-}
+pub struct AssertedFlags([bool; 4]);
 
 impl AssertedFlags {
     pub fn try_from_bits(
@@ -30,38 +22,24 @@ impl AssertedFlags {
         disk: bool,
         system: bool,
     ) -> Result<Self, Empty> {
-        let mut mask = 0u8;
-        if display {
-            mask |= DISPLAY;
+        let bits = [display, idle, disk, system];
+        if bits.contains(&true) {
+            Ok(Self(bits))
+        } else {
+            Err(Empty)
         }
-        if idle {
-            mask |= IDLE;
-        }
-        if disk {
-            mask |= DISK;
-        }
-        if system {
-            mask |= SYSTEM;
-        }
-        std::num::NonZeroU8::new(mask)
-            .map(|mask| Self { mask })
-            .ok_or(Empty)
     }
 
-    /// Letters in canonical order, with no leading dash. `dims`.
-    pub fn letters(self) -> String {
-        let mut out = String::new();
-        for (bit, letter) in [(DISPLAY, 'd'), (IDLE, 'i'), (DISK, 'm'), (SYSTEM, 's')] {
-            if self.mask.get() & bit != 0 {
-                out.push(letter);
-            }
-        }
-        out
+    fn letters(self) -> impl Iterator<Item = char> {
+        "dims"
+            .chars()
+            .zip(self.0)
+            .filter_map(|(letter, on)| on.then_some(letter))
     }
 
     /// The flag cluster Settings shows. `-dims`.
     pub fn preview(self) -> String {
-        format!("-{}", self.letters())
+        std::iter::once('-').chain(self.letters()).collect()
     }
 
     pub fn argv(self, pid: u32) -> Argv {
@@ -80,15 +58,10 @@ pub struct Argv {
 impl Argv {
     /// The tokens `Command` is given.
     pub fn args(self) -> Vec<String> {
-        let mut args: Vec<String> = self
-            .flags
-            .letters()
-            .chars()
-            .map(|letter| format!("-{letter}"))
-            .collect();
-        args.push("-w".to_string());
-        args.push(self.pid.to_string());
-        args
+        let flags = self.flags.letters().map(|letter| format!("-{letter}"));
+        flags
+            .chain(["-w".to_string(), self.pid.to_string()])
+            .collect()
     }
 }
 
@@ -114,19 +87,18 @@ impl Fact {
     }
 }
 
-/// A chat edge. Not a tool result and not the prompt line.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A Chat note. Not a tool result and not the prompt line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Note {
     On(AssertedFlags),
     Off,
-    /// The child left while the hold was still wanted and this owner had not
-    /// started a kill.
+    /// The child left while the hold was still wanted and nobody killed it.
     Exited,
-    Failed(String),
+    Failed,
 }
 
 impl Note {
-    pub fn text(&self) -> String {
+    pub fn text(self) -> String {
         match self {
             Note::On(flags) => format!(
                 "☕ Caffeinate on: keeping your Mac awake ({})",
@@ -134,7 +106,7 @@ impl Note {
             ),
             Note::Off => "Caffeinate off.".to_string(),
             Note::Exited => "Caffeinate off. It exited on its own.".to_string(),
-            Note::Failed(_) => "Caffeinate did not start.".to_string(),
+            Note::Failed => "Caffeinate did not start.".to_string(),
         }
     }
 }
@@ -148,43 +120,19 @@ pub enum Request {
     Release,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Poll {
-    Absent,
-    Alive,
-    Exited,
-}
-
 /// Process boundary. `spawn` fails when a child is already held, so a second
 /// start cannot hide the first.
 pub trait Spawner {
     fn spawn(&mut self, argv: &Argv) -> Result<(), String>;
     fn kill(&mut self);
-    fn poll(&mut self) -> Poll;
+    /// Whether the held child is still running. Reaps one that has left.
+    fn alive(&mut self) -> bool;
 }
 
-/// One `caffeinate` tool answer. `error` is what the caller reports; `fact`
-/// is the hold after the call, including a failed start.
-pub struct ToolAnswer {
-    pub fact: Fact,
-    pub error: Option<String>,
-}
-
-impl ToolAnswer {
-    pub fn json(self) -> Result<serde_json::Value, String> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        Ok(match self.fact {
-            Fact::Off => serde_json::json!({ "on": false }),
-            Fact::On(flags) => serde_json::json!({ "on": true, "flags": flags.preview() }),
-        })
-    }
-}
-
-/// The frame loop's hold, as `dispatch` sees it. `None` reads.
+/// The frame loop's hold, as `dispatch` sees it. `None` reads. `Err` is a
+/// failed start or an empty flag set.
 pub trait CaffeinateHandle {
-    fn call(&mut self, on: Option<bool>) -> ToolAnswer;
+    fn call(&mut self, on: Option<bool>) -> Result<Fact, String>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,278 +143,178 @@ pub struct Tick {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Intent {
-    Off,
-    On,
-}
-
-/// What to do once the killed child is actually gone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Again {
-    /// User turned the hold off, or quit. `note` is false for quit.
-    Off { flags: AssertedFlags, note: bool },
-    /// Flag change. Spawn this set when the previous child has exited.
-    Restart(AssertedFlags),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Idle,
-    Running { flags: AssertedFlags },
-    Stopping { again: Again },
+    Running(AssertedFlags),
+    /// SIGTERM sent. The hold still reads `flags`. Once the child is gone it
+    /// spawns `flags` if `restart`, or turns off with a note unless `quiet`.
+    Stopping {
+        flags: AssertedFlags,
+        restart: bool,
+        quiet: bool,
+    },
 }
 
 /// The only mutator of the hold.
 pub struct Machine<S: Spawner> {
     spawner: S,
-    intent: Intent,
+    pid: u32,
+    wanted: bool,
     phase: Phase,
 }
 
 impl<S: Spawner> Machine<S> {
-    pub fn new(spawner: S) -> Self {
+    /// `pid` is the process the child waits on with `-w`.
+    pub fn new(spawner: S, pid: u32) -> Self {
         Self {
             spawner,
-            intent: Intent::Off,
+            pid,
+            wanted: false,
             phase: Phase::Idle,
         }
     }
 
-    /// Apply requests, then reconcile the one child to the resulting intent.
-    pub fn tick(
-        &mut self,
-        flags: Result<AssertedFlags, Empty>,
-        pid: u32,
-        requests: &[Request],
-    ) -> Tick {
-        let poll = self.spawner.poll();
-        let mut notes = Vec::new();
-        let mut error = None;
+    /// Apply requests, then reconcile the one child to what they want.
+    pub fn tick(&mut self, flags: Result<AssertedFlags, Empty>, requests: &[Request]) -> Tick {
+        let alive = self.spawner.alive();
+        let mut tick = Tick {
+            fact: Fact::Off,
+            notes: Vec::new(),
+            error: None,
+        };
+        let restarted = self.finish_stop(alive, true, &mut tick);
 
-        let resumed = self.finish_stop(poll, &mut notes, &mut error, pid, true);
-
-        let was = self.intent;
-        let mut suppress_off_note = false;
+        let was = self.wanted;
+        let mut quiet = false;
         for request in requests {
-            match request {
+            let want = match request {
+                Request::Toggle => !self.wanted,
+                Request::Set(on) => *on,
                 Request::Release => {
-                    self.intent = Intent::Off;
-                    suppress_off_note = true;
+                    quiet = true;
+                    false
                 }
-                Request::Set(true) => match flags {
-                    Ok(_) => self.intent = Intent::On,
-                    Err(_) => {
-                        self.intent = Intent::Off;
-                        error = Some(Empty::REASON.to_string());
-                    }
-                },
-                Request::Set(false) => self.intent = Intent::Off,
-                Request::Toggle => match self.intent {
-                    Intent::On => self.intent = Intent::Off,
-                    Intent::Off => match flags {
-                        Ok(_) => self.intent = Intent::On,
-                        Err(_) => error = Some(Empty::REASON.to_string()),
-                    },
-                },
+            };
+            if want && flags.is_err() {
+                tick.error = Some(Empty::REASON.to_string());
             }
+            self.wanted = want && flags.is_ok();
         }
-        if self.intent == Intent::On {
-            suppress_off_note = false;
-        }
-        let announce = was == Intent::Off && self.intent == Intent::On;
+        quiet &= !self.wanted;
+        let announce = !was && self.wanted;
         let asked_on = requests
             .iter()
             .any(|request| matches!(request, Request::Set(true) | Request::Toggle));
 
-        if !resumed {
-            self.classify_dead(poll, flags, suppress_off_note, asked_on, &mut notes);
+        // `alive` described the old child if a restart just spawned a new one.
+        if let (false, false, Phase::Running(spawned)) = (restarted, alive, self.phase) {
+            self.phase = Phase::Idle;
+            let changed = flags.is_ok_and(|next| next != spawned);
+            if !self.wanted && !quiet {
+                tick.notes.push(Note::Off);
+            } else if self.wanted && !changed && !asked_on {
+                tick.notes.push(Note::Exited);
+                self.wanted = false;
+            }
         }
-        self.reconcile(
-            flags,
-            pid,
-            announce,
-            suppress_off_note,
-            &mut notes,
-            &mut error,
-        );
-        self.finish_stop(poll, &mut notes, &mut error, pid, false);
 
-        Tick {
-            fact: self.fact(),
-            notes,
-            error,
+        match (self.wanted, self.phase, flags) {
+            (true, Phase::Idle, Ok(flags)) => self.spawn(flags, announce, &mut tick),
+            (true, Phase::Idle, Err(Empty)) => {
+                self.wanted = false;
+                tick.error = Some(Empty::REASON.to_string());
+            }
+            (false, Phase::Running(flags), _) => {
+                self.spawner.kill();
+                self.phase = Phase::Stopping {
+                    flags,
+                    restart: false,
+                    quiet,
+                };
+            }
+            (true, Phase::Running(spawned), Ok(next)) if next != spawned => {
+                self.spawner.kill();
+                self.phase = Phase::Stopping {
+                    flags: next,
+                    restart: true,
+                    quiet,
+                };
+            }
+            (true, Phase::Stopping { restart: false, .. }, Ok(next)) => {
+                self.phase = Phase::Stopping {
+                    flags: next,
+                    restart: true,
+                    quiet,
+                };
+            }
+            (
+                false,
+                Phase::Stopping {
+                    flags,
+                    restart: true,
+                    ..
+                },
+                _,
+            ) => {
+                self.phase = Phase::Stopping {
+                    flags,
+                    restart: false,
+                    quiet,
+                };
+            }
+            _ => {}
         }
-    }
+        self.finish_stop(alive, false, &mut tick);
 
-    fn fact(&self) -> Fact {
-        match self.phase {
+        tick.fact = match self.phase {
             Phase::Idle => Fact::Off,
-            Phase::Running { flags } => Fact::On(flags),
-            Phase::Stopping {
-                again: Again::Off { flags, .. } | Again::Restart(flags),
-            } => Fact::On(flags),
-        }
+            Phase::Running(flags) | Phase::Stopping { flags, .. } => Fact::On(flags),
+        };
+        tick
     }
 
-    /// Returns whether this call spawned the next child. That poll still
-    /// describes the child that just exited, so the caller must not treat it
-    /// as the new child's death.
-    fn finish_stop(
-        &mut self,
-        poll: Poll,
-        notes: &mut Vec<Note>,
-        error: &mut Option<String>,
-        pid: u32,
-        retry_kill: bool,
-    ) -> bool {
-        let Phase::Stopping { again } = self.phase else {
+    /// Returns whether this call spawned the next child.
+    fn finish_stop(&mut self, alive: bool, retry_kill: bool, tick: &mut Tick) -> bool {
+        let Phase::Stopping {
+            flags,
+            restart,
+            quiet,
+        } = self.phase
+        else {
             return false;
         };
-        if !matches!(poll, Poll::Exited | Poll::Absent) {
+        if alive {
             if retry_kill {
                 self.spawner.kill();
             }
             return false;
         }
         self.phase = Phase::Idle;
-        match again {
-            Again::Off { note, .. } => {
-                self.intent = Intent::Off;
-                if note {
-                    notes.push(Note::Off);
-                }
-                false
-            }
-            Again::Restart(flags) => {
-                self.spawn_running(flags, pid, false, notes, error);
-                true
-            }
+        if restart {
+            self.spawn(flags, false, tick);
+            return true;
         }
+        self.wanted = false;
+        if !quiet {
+            tick.notes.push(Note::Off);
+        }
+        false
     }
 
-    fn classify_dead(
-        &mut self,
-        poll: Poll,
-        flags: Result<AssertedFlags, Empty>,
-        suppress_off_note: bool,
-        asked_on: bool,
-        notes: &mut Vec<Note>,
-    ) {
-        let Phase::Running { flags: spawned } = self.phase else {
-            return;
-        };
-        if !matches!(poll, Poll::Exited | Poll::Absent) {
-            return;
-        }
-        self.phase = Phase::Idle;
-        if self.intent == Intent::Off {
-            if !suppress_off_note {
-                notes.push(Note::Off);
-            }
-            return;
-        }
-        let changed = matches!(flags, Ok(next) if next != spawned);
-        if changed || asked_on {
-            return;
-        }
-        notes.push(Note::Exited);
-        self.intent = Intent::Off;
-    }
-
-    fn reconcile(
-        &mut self,
-        flags: Result<AssertedFlags, Empty>,
-        pid: u32,
-        announce: bool,
-        suppress_off_note: bool,
-        notes: &mut Vec<Note>,
-        error: &mut Option<String>,
-    ) {
-        if self.intent == Intent::On {
-            if let Phase::Stopping {
-                again: Again::Off { .. },
-            } = self.phase
-            {
-                if let Ok(flags) = flags {
-                    self.phase = Phase::Stopping {
-                        again: Again::Restart(flags),
-                    };
-                }
-            }
-        }
-
-        match (self.intent, self.phase) {
-            (Intent::On, Phase::Idle) => match flags {
-                Ok(flags) => self.spawn_running(flags, pid, announce, notes, error),
-                Err(_) => {
-                    self.intent = Intent::Off;
-                    *error = Some(Empty::REASON.to_string());
-                }
-            },
-            (Intent::Off, Phase::Running { flags }) => {
-                self.spawner.kill();
-                self.phase = Phase::Stopping {
-                    again: Again::Off {
-                        flags,
-                        note: !suppress_off_note,
-                    },
-                };
-            }
-            (Intent::On, Phase::Running { flags: spawned }) => {
-                if let Ok(next) = flags {
-                    if next != spawned {
-                        self.spawner.kill();
-                        self.phase = Phase::Stopping {
-                            again: Again::Restart(next),
-                        };
-                    }
-                }
-            }
-            (
-                Intent::Off,
-                Phase::Stopping {
-                    again: Again::Restart(_),
-                },
-            ) => {
-                let flags = match self.phase {
-                    Phase::Stopping {
-                        again: Again::Restart(flags),
-                    } => flags,
-                    _ => return,
-                };
-                self.phase = Phase::Stopping {
-                    again: Again::Off {
-                        flags,
-                        note: !suppress_off_note,
-                    },
-                };
-            }
-            _ => {}
-        }
-    }
-
-    fn spawn_running(
-        &mut self,
-        flags: AssertedFlags,
-        pid: u32,
-        announce: bool,
-        notes: &mut Vec<Note>,
-        error: &mut Option<String>,
-    ) {
-        let argv = flags.argv(pid);
-        match self.spawner.spawn(&argv) {
+    fn spawn(&mut self, flags: AssertedFlags, announce: bool, tick: &mut Tick) {
+        match self.spawner.spawn(&flags.argv(self.pid)) {
             Ok(()) => {
-                self.phase = Phase::Running { flags };
-                self.intent = Intent::On;
+                self.phase = Phase::Running(flags);
+                self.wanted = true;
                 if announce {
-                    notes.push(Note::On(flags));
+                    tick.notes.push(Note::On(flags));
                 }
             }
             Err(reason) => {
                 self.phase = Phase::Idle;
-                self.intent = Intent::Off;
-                notes.push(Note::Failed(reason.clone()));
-                *error = Some(reason);
+                self.wanted = false;
+                tick.notes.push(Note::Failed);
+                tick.error = Some(reason);
             }
         }
     }
@@ -478,7 +326,7 @@ mod tests {
 
     struct Fake {
         held: bool,
-        next: Option<Poll>,
+        next: Option<bool>,
         spawns: Vec<Vec<String>>,
         kills: usize,
         fail: bool,
@@ -515,15 +363,10 @@ mod tests {
             }
         }
 
-        fn poll(&mut self) -> Poll {
-            let poll =
-                self.next
-                    .take()
-                    .unwrap_or(if self.held { Poll::Alive } else { Poll::Absent });
-            if matches!(poll, Poll::Exited | Poll::Absent) {
-                self.held = false;
-            }
-            poll
+        fn alive(&mut self) -> bool {
+            let alive = self.next.take().unwrap_or(self.held);
+            self.held &= alive;
+            alive
         }
     }
 
@@ -535,21 +378,10 @@ mod tests {
         machine: &mut Machine<Fake>,
         flags: Result<AssertedFlags, Empty>,
         requests: &[Request],
-        poll: Poll,
+        alive: bool,
     ) -> Tick {
-        machine.spawner.next = Some(poll);
-        let pid = 42;
-        machine.tick(flags, pid, requests)
-    }
-
-    #[test]
-    fn empty_flags_do_not_construct() {
-        let error = AssertedFlags::try_from_bits(false, false, false, false).unwrap_err();
-        assert_eq!(
-            Empty::REASON,
-            "At least one caffeinate flag has to stay on."
-        );
-        assert_eq!(error, Empty);
+        machine.spawner.next = Some(alive);
+        machine.tick(flags, requests)
     }
 
     #[test]
@@ -569,6 +401,10 @@ mod tests {
                 .preview(),
             "-ds"
         );
+        assert_eq!(
+            AssertedFlags::try_from_bits(false, false, false, false),
+            Err(Empty)
+        );
     }
 
     #[test]
@@ -581,26 +417,18 @@ mod tests {
         );
         assert_eq!(Note::Off.text(), "Caffeinate off.");
         assert_eq!(Note::Exited.text(), "Caffeinate off. It exited on its own.");
-        assert_eq!(
-            Note::Failed("x".to_string()).text(),
-            "Caffeinate did not start."
-        );
+        assert_eq!(Note::Failed.text(), "Caffeinate did not start.");
     }
 
     #[test]
     fn set_on_spawns_once_and_a_repeat_does_not() {
-        let mut machine = Machine::new(Fake::new());
-        let first = drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(Fake::new(), 42);
+        let first = drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
         assert_eq!(first.fact, Fact::On(dims()));
         assert_eq!(first.notes, vec![Note::On(dims())]);
         assert_eq!(machine.spawner.spawns.len(), 1);
 
-        let second = drive(&mut machine, Ok(dims()), &[Request::Set(true)], Poll::Alive);
+        let second = drive(&mut machine, Ok(dims()), &[Request::Set(true)], true);
         assert_eq!(second.fact, Fact::On(dims()));
         assert!(second.notes.is_empty());
         assert_eq!(machine.spawner.spawns.len(), 1);
@@ -609,25 +437,15 @@ mod tests {
 
     #[test]
     fn set_off_stays_on_until_the_child_exits() {
-        let mut machine = Machine::new(Fake::new());
-        drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
 
-        let stopping = drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(false)],
-            Poll::Alive,
-        );
+        let stopping = drive(&mut machine, Ok(dims()), &[Request::Set(false)], true);
         assert_eq!(stopping.fact, Fact::On(dims()));
         assert!(stopping.notes.is_empty());
         assert_eq!(machine.spawner.kills, 1);
 
-        let done = drive(&mut machine, Ok(dims()), &[], Poll::Exited);
+        let done = drive(&mut machine, Ok(dims()), &[], false);
         assert_eq!(done.fact, Fact::Off);
         assert_eq!(done.notes, vec![Note::Off]);
         assert_eq!(machine.spawner.spawns.len(), 1);
@@ -635,13 +453,8 @@ mod tests {
 
     #[test]
     fn a_second_set_off_does_nothing() {
-        let mut machine = Machine::new(Fake::new());
-        let tick = drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(false)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(Fake::new(), 42);
+        let tick = drive(&mut machine, Ok(dims()), &[Request::Set(false)], false);
         assert_eq!(tick.fact, Fact::Off);
         assert!(tick.notes.is_empty());
         assert!(machine.spawner.spawns.is_empty());
@@ -650,22 +463,17 @@ mod tests {
 
     #[test]
     fn flag_change_restarts_without_an_off_or_a_second_on() {
-        let mut machine = Machine::new(Fake::new());
-        drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
         let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
 
-        let stopping = drive(&mut machine, Ok(display), &[], Poll::Alive);
+        let stopping = drive(&mut machine, Ok(display), &[], true);
         assert_eq!(stopping.fact, Fact::On(display));
         assert!(stopping.notes.is_empty());
         assert_eq!(machine.spawner.kills, 1);
         assert_eq!(machine.spawner.spawns.len(), 1);
 
-        let restarted = drive(&mut machine, Ok(display), &[], Poll::Exited);
+        let restarted = drive(&mut machine, Ok(display), &[], false);
         assert_eq!(restarted.fact, Fact::On(display));
         assert!(restarted.notes.is_empty());
         assert_eq!(
@@ -676,14 +484,9 @@ mod tests {
 
     #[test]
     fn a_child_that_exits_on_its_own_turns_the_hold_off() {
-        let mut machine = Machine::new(Fake::new());
-        drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
-        let exited = drive(&mut machine, Ok(dims()), &[], Poll::Exited);
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        let exited = drive(&mut machine, Ok(dims()), &[], false);
         assert_eq!(exited.fact, Fact::Off);
         assert_eq!(exited.notes, vec![Note::Exited]);
         assert_eq!(machine.spawner.kills, 0);
@@ -693,40 +496,27 @@ mod tests {
     fn a_failed_spawn_stays_off() {
         let mut fake = Fake::new();
         fake.fail = true;
-        let mut machine = Machine::new(fake);
-        let tick = drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(fake, 42);
+        let tick = drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
         assert_eq!(tick.fact, Fact::Off);
-        assert_eq!(
-            tick.notes,
-            vec![Note::Failed("caffeinate missing".to_string())]
-        );
+        assert_eq!(tick.notes, vec![Note::Failed]);
         assert_eq!(tick.error.as_deref(), Some("caffeinate missing"));
         assert!(machine.spawner.spawns.is_empty());
     }
 
     #[test]
     fn release_kills_and_notes_nothing() {
-        let mut machine = Machine::new(Fake::new());
-        drive(
-            &mut machine,
-            Ok(dims()),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
-        let stopping = drive(&mut machine, Ok(dims()), &[Request::Release], Poll::Alive);
+        let mut machine = Machine::new(Fake::new(), 42);
+        drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
+        let stopping = drive(&mut machine, Ok(dims()), &[Request::Release], true);
         assert_eq!(stopping.fact, Fact::On(dims()));
         assert!(stopping.notes.is_empty());
 
-        let done = drive(&mut machine, Ok(dims()), &[], Poll::Exited);
+        let done = drive(&mut machine, Ok(dims()), &[], false);
         assert_eq!(done.fact, Fact::Off);
         assert!(done.notes.is_empty());
 
-        let again = drive(&mut machine, Ok(dims()), &[Request::Release], Poll::Absent);
+        let again = drive(&mut machine, Ok(dims()), &[Request::Release], false);
         assert_eq!(again.fact, Fact::Off);
         assert!(again.notes.is_empty());
         assert_eq!(machine.spawner.spawns.len(), 1);
@@ -734,13 +524,8 @@ mod tests {
 
     #[test]
     fn empty_flags_refuse_a_start() {
-        let mut machine = Machine::new(Fake::new());
-        let tick = drive(
-            &mut machine,
-            Err(Empty),
-            &[Request::Set(true)],
-            Poll::Absent,
-        );
+        let mut machine = Machine::new(Fake::new(), 42);
+        let tick = drive(&mut machine, Err(Empty), &[Request::Set(true)], false);
         assert_eq!(tick.fact, Fact::Off);
         assert_eq!(tick.error.as_deref(), Some(Empty::REASON));
         assert!(tick.notes.is_empty());
@@ -749,24 +534,16 @@ mod tests {
 
     #[test]
     fn toggle_tracks_set() {
-        let mut machine = Machine::new(Fake::new());
-        let on = drive(&mut machine, Ok(dims()), &[Request::Toggle], Poll::Absent);
+        let mut machine = Machine::new(Fake::new(), 42);
+        let on = drive(&mut machine, Ok(dims()), &[Request::Toggle], false);
         assert_eq!(on.fact, Fact::On(dims()));
         assert_eq!(on.notes, vec![Note::On(dims())]);
 
-        let off = drive(&mut machine, Ok(dims()), &[Request::Toggle], Poll::Alive);
+        let off = drive(&mut machine, Ok(dims()), &[Request::Toggle], true);
         assert_eq!(off.fact, Fact::On(dims()));
         assert!(off.notes.is_empty());
-        let done = drive(&mut machine, Ok(dims()), &[], Poll::Exited);
+        let done = drive(&mut machine, Ok(dims()), &[], false);
         assert_eq!(done.notes, vec![Note::Off]);
         assert_eq!(done.fact, Fact::Off);
-    }
-
-    #[test]
-    fn spawn_refuses_a_second_child() {
-        let mut fake = Fake::new();
-        fake.spawn(&dims().argv(1)).unwrap();
-        let error = fake.spawn(&dims().argv(1)).unwrap_err();
-        assert_eq!(error, "already holding a child");
     }
 }

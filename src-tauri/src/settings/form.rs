@@ -1402,7 +1402,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         },
     ];
 
-    let sections = vec![
+    vec![
         FormSection {
             heading: "What the fidget can see".to_string(),
             serves: None,
@@ -1455,8 +1455,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 },
             ],
         },
-    ];
-    sections
+    ]
 }
 
 #[cfg(target_os = "macos")]

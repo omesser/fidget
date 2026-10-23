@@ -9,8 +9,7 @@ use std::process::{Child, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use fidget_core::caffeinate::{
-    Argv, AssertedFlags, CaffeinateHandle, Empty, Fact, Note, Poll, Request, Spawner, Tick,
-    ToolAnswer,
+    Argv, AssertedFlags, CaffeinateHandle, Empty, Fact, Machine, Note, Request, Spawner, Tick,
 };
 
 static HELD_PID: AtomicU32 = AtomicU32::new(0);
@@ -86,55 +85,42 @@ impl Spawner for OsSpawner {
         }
     }
 
-    fn poll(&mut self) -> Poll {
+    fn alive(&mut self) -> bool {
         let Some(child) = self.child.as_mut() else {
-            return Poll::Absent;
+            return false;
         };
-        match child.try_wait() {
-            Ok(None) => Poll::Alive,
-            Ok(Some(_)) => {
-                forget(child.id());
-                self.child = None;
-                Poll::Exited
-            }
-            Err(_) => Poll::Alive,
+        if let Ok(Some(_)) = child.try_wait() {
+            forget(child.id());
+            self.child = None;
+            return false;
         }
+        true
     }
 }
 
 /// The frame loop's hold. Notes from tool calls wait here until the frame loop
 /// posts them to Chat.
 pub struct Hold {
-    machine: fidget_core::caffeinate::Machine<OsSpawner>,
+    machine: Machine<OsSpawner>,
     configured: Result<AssertedFlags, Empty>,
-    pid: u32,
-    fact: Fact,
     pending: Vec<Note>,
 }
 
 impl Hold {
     pub fn new() -> Self {
         Self {
-            machine: fidget_core::caffeinate::Machine::new(OsSpawner::new()),
+            machine: Machine::new(OsSpawner::new(), std::process::id()),
             configured: AssertedFlags::try_from_bits(true, true, true, true),
-            pid: std::process::id(),
-            fact: Fact::Off,
             pending: Vec::new(),
         }
     }
 
-    pub fn set_target(&mut self, configured: Result<AssertedFlags, Empty>, pid: u32) {
+    pub fn set_target(&mut self, configured: Result<AssertedFlags, Empty>) {
         self.configured = configured;
-        self.pid = pid;
-    }
-
-    pub fn fact(&self) -> Fact {
-        self.fact
     }
 
     pub fn tick(&mut self, requests: &[Request]) -> Tick {
-        let tick = self.machine.tick(self.configured, self.pid, requests);
-        self.fact = tick.fact;
+        let tick = self.machine.tick(self.configured, requests);
         self.pending.extend(tick.notes.iter().cloned());
         tick
     }
@@ -145,12 +131,12 @@ impl Hold {
 }
 
 impl CaffeinateHandle for Hold {
-    fn call(&mut self, on: Option<bool>) -> ToolAnswer {
+    fn call(&mut self, on: Option<bool>) -> Result<Fact, String> {
         let requests: Vec<Request> = on.map(Request::Set).into_iter().collect();
         let tick = self.tick(&requests);
-        ToolAnswer {
-            fact: tick.fact,
-            error: tick.error,
+        match tick.error {
+            Some(error) => Err(error),
+            None => Ok(tick.fact),
         }
     }
 }
@@ -158,7 +144,6 @@ impl CaffeinateHandle for Hold {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
-    use fidget_core::caffeinate::AssertedFlags;
     use std::thread;
     use std::time::Duration;
 
@@ -173,14 +158,14 @@ mod tests {
         let mut spawner = OsSpawner::program("/no/such/caffeinate");
         let err = spawner.spawn(&dims()).expect_err("missing program");
         assert!(!err.is_empty());
-        assert_eq!(spawner.poll(), Poll::Absent);
+        assert!(!spawner.alive());
     }
 
     #[test]
     fn a_real_caffeinate_leaves_when_signalled() {
         let mut spawner = OsSpawner::new();
         spawner.spawn(&dims()).expect("caffeinate starts");
-        assert_eq!(spawner.poll(), Poll::Alive);
+        assert!(spawner.alive());
         let listed = Command::new("pmset")
             .args(["-g", "assertions"])
             .output()
@@ -192,17 +177,17 @@ mod tests {
         );
         let again = spawner.spawn(&dims());
         assert!(again.is_err(), "a second child would hide the first");
-        assert_eq!(spawner.poll(), Poll::Alive);
+        assert!(spawner.alive());
         spawner.kill();
-        let mut saw = Poll::Alive;
+        let mut alive = true;
         for _ in 0..50 {
-            saw = spawner.poll();
-            if saw == Poll::Exited {
+            alive = spawner.alive();
+            if !alive {
                 break;
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert_eq!(saw, Poll::Exited);
+        assert!(!alive);
         assert_eq!(HELD_PID.load(Ordering::SeqCst), 0);
     }
 }

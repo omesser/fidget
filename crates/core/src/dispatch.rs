@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-use crate::caffeinate::CaffeinateHandle;
+use crate::caffeinate::{CaffeinateHandle, Fact};
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -197,7 +197,6 @@ pub fn dispatch(
         "caffeinate" => {
             #[derive(Deserialize)]
             struct Args {
-                #[serde(default)]
                 on: Option<bool>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
@@ -207,13 +206,16 @@ pub fn dispatch(
                     message: "Caffeinate is only available on macOS.".to_string(),
                 });
             };
-            handle
-                .call(args.on)
-                .json()
-                .map_err(|message| DispatchError {
+            match handle.call(args.on) {
+                Ok(Fact::Off) => Ok(serde_json::json!({ "on": false })),
+                Ok(Fact::On(flags)) => {
+                    Ok(serde_json::json!({ "on": true, "flags": flags.preview() }))
+                }
+                Err(message) => Err(DispatchError {
                     code: ErrorCode::ExecutionFailed,
                     message,
-                })
+                }),
+            }
         }
         _ => Err(DispatchError {
             code: ErrorCode::UnknownTool,
@@ -231,7 +233,7 @@ pub struct ToolInfo {
 
 /// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
-    let tools = vec![
+    let mut tools = vec![
         ToolInfo {
             name: "speak".to_string(),
             description: "Make the Character speak a line of dialogue".to_string(),
@@ -327,24 +329,21 @@ pub fn list_tools() -> Vec<ToolInfo> {
             }),
         },
     ];
-    // The push is macOS-only. A `mut` binding on every OS is an unused-mut
-    // failure in the Windows and Linux clippy jobs.
-    #[cfg(target_os = "macos")]
-    let mut tools = tools;
-    #[cfg(target_os = "macos")]
-    tools.push(ToolInfo {
-        name: "caffeinate".to_string(),
-        description: "Keep this Mac awake until it is turned off or Fidget quits. Returns whether it is on and, when it is, the caffeinate flags.".to_string(),
-        input_schema: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "on": {
-                    "type": "boolean",
-                    "description": "true keeps the Mac awake and false lets it sleep. Omit it to read the state without changing it."
+    if cfg!(target_os = "macos") {
+        tools.push(ToolInfo {
+            name: "caffeinate".to_string(),
+            description: "Keep this Mac awake until it is turned off or Fidget quits. Returns whether it is on and, when it is, the caffeinate flags.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "on": {
+                        "type": "boolean",
+                        "description": "true keeps the Mac awake and false lets it sleep. Omit it to read the state without changing it."
+                    }
                 }
-            }
-        }),
-    });
+            }),
+        });
+    }
     tools
 }
 
@@ -548,44 +547,35 @@ mod tests {
     }
 
     struct ScriptedHold {
-        fact: crate::caffeinate::Fact,
+        fact: Fact,
         reads: usize,
         sets: Vec<bool>,
     }
 
     impl CaffeinateHandle for ScriptedHold {
-        fn call(&mut self, on: Option<bool>) -> crate::caffeinate::ToolAnswer {
+        fn call(&mut self, on: Option<bool>) -> Result<Fact, String> {
             match on {
-                None => {
-                    self.reads += 1;
-                    crate::caffeinate::ToolAnswer {
-                        fact: self.fact,
-                        error: None,
-                    }
-                }
+                None => self.reads += 1,
                 Some(value) => {
                     self.sets.push(value);
                     self.fact = if value {
-                        crate::caffeinate::Fact::On(
+                        Fact::On(
                             crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true)
                                 .expect("four flags"),
                         )
                     } else {
-                        crate::caffeinate::Fact::Off
+                        Fact::Off
                     };
-                    crate::caffeinate::ToolAnswer {
-                        fact: self.fact,
-                        error: None,
-                    }
                 }
             }
+            Ok(self.fact)
         }
     }
 
     #[test]
     fn caffeinate_reads_when_on_is_omitted_and_sets_when_it_is_present() {
         let mut hold = ScriptedHold {
-            fact: crate::caffeinate::Fact::Off,
+            fact: Fact::Off,
             reads: 0,
             sets: Vec::new(),
         };

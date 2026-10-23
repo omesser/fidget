@@ -311,7 +311,6 @@ fn route_attach_notice(
 }
 
 /// A Chat system note, held until that window is listening.
-#[cfg(target_os = "macos")]
 pub(crate) fn emit_chat_notice(app: &tauri::AppHandle, instance: &str, text: String) {
     let label = chat_label(instance);
     let window_open = app.get_webview_window(&label).is_some();
@@ -631,7 +630,6 @@ struct SpritePlacement<'a> {
 #[derive(Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct CaffeinateFrame {
     on: bool,
-    flags: Option<String>,
     reason: Option<String>,
 }
 
@@ -640,23 +638,11 @@ pub(crate) fn caffeinate_frame(
     fact: fidget_core::caffeinate::Fact,
     configured: Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty>,
 ) -> CaffeinateFrame {
-    match configured {
-        Err(_) => CaffeinateFrame {
-            on: false,
-            flags: None,
-            reason: Some(fidget_core::caffeinate::Empty::REASON.to_string()),
-        },
-        Ok(configured) => {
-            let flags = match fact {
-                fidget_core::caffeinate::Fact::On(flags) => flags,
-                fidget_core::caffeinate::Fact::Off => configured,
-            };
-            CaffeinateFrame {
-                on: fact.on(),
-                flags: Some(flags.preview()),
-                reason: None,
-            }
-        }
+    CaffeinateFrame {
+        on: configured.is_ok() && fact.on(),
+        reason: configured
+            .err()
+            .map(|_| fidget_core::caffeinate::Empty::REASON.to_string()),
     }
 }
 
@@ -4328,13 +4314,7 @@ fn menu_caffeinate(
             },
             None => menu::CaffeinateRow {
                 on: false,
-                enabled: fidget_core::caffeinate::AssertedFlags::try_from_bits(
-                    settings.caffeinate_display,
-                    settings.caffeinate_idle,
-                    settings.caffeinate_disk,
-                    settings.caffeinate_system,
-                )
-                .is_ok(),
+                enabled: settings.caffeinate_flags().is_ok(),
             },
         })
     }
@@ -5292,34 +5272,7 @@ fn main() {
                         restore_not_applied(&forward_to, &failures)
                     }
                     harness::Forwarded::Notice { instance, text } => {
-                        let label = chat_label(&instance);
-                        let window_open = forward_to.get_webview_window(&label).is_some();
-                        let emit = if let Some(state) = forward_to.try_state::<PendingAsks>() {
-                            state.0.lock().ok().and_then(|mut pending| {
-                                route_attach_notice(&mut pending, &instance, text, window_open)
-                            })
-                        } else {
-                            window_open.then_some(text)
-                        };
-                        if let Some(text) = emit {
-                            let _ = forward_to.emit_to(
-                                &label,
-                                CHAT_EVENT,
-                                ChatReply {
-                                    said: None,
-                                    busy: false,
-                                    reacting_to: None,
-                                    you: false,
-                                    thought: false,
-                                    at: None,
-                                    error: None,
-                                    failure: None,
-                                    notice: Some(text),
-                                    superseded_by: None,
-                                    streaming: false,
-                                },
-                            );
-                        }
+                        emit_chat_notice(&forward_to, &instance, text)
                     }
                 }),
             );

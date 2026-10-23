@@ -1920,23 +1920,19 @@ impl Settings {
             self.use_input_monitoring = value;
         }
         // An empty flag set is not saved, because caffeinate needs at least one.
-        let display = patch.caffeinate_display.unwrap_or(self.caffeinate_display);
-        let idle = patch.caffeinate_idle.unwrap_or(self.caffeinate_idle);
-        let disk = patch.caffeinate_disk.unwrap_or(self.caffeinate_disk);
-        let system = patch.caffeinate_system.unwrap_or(self.caffeinate_system);
-        if display || idle || disk || system {
-            if let Some(value) = patch.caffeinate_display {
-                self.caffeinate_display = value;
-            }
-            if let Some(value) = patch.caffeinate_idle {
-                self.caffeinate_idle = value;
-            }
-            if let Some(value) = patch.caffeinate_disk {
-                self.caffeinate_disk = value;
-            }
-            if let Some(value) = patch.caffeinate_system {
-                self.caffeinate_system = value;
-            }
+        let next = [
+            patch.caffeinate_display.unwrap_or(self.caffeinate_display),
+            patch.caffeinate_idle.unwrap_or(self.caffeinate_idle),
+            patch.caffeinate_disk.unwrap_or(self.caffeinate_disk),
+            patch.caffeinate_system.unwrap_or(self.caffeinate_system),
+        ];
+        if next.contains(&true) {
+            [
+                self.caffeinate_display,
+                self.caffeinate_idle,
+                self.caffeinate_disk,
+                self.caffeinate_system,
+            ] = next;
         }
         if let Some(value) = patch.chat_ui {
             self.chat_ui = value;
@@ -2181,6 +2177,18 @@ impl Default for Settings {
 }
 
 impl Settings {
+    #[cfg(target_os = "macos")]
+    pub fn caffeinate_flags(
+        &self,
+    ) -> Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty> {
+        fidget_core::caffeinate::AssertedFlags::try_from_bits(
+            self.caffeinate_display,
+            self.caffeinate_idle,
+            self.caffeinate_disk,
+            self.caffeinate_system,
+        )
+    }
+
     /// Read the document at `path`. A missing or unparsable file is first-run
     /// defaults, so a typo in a hand-edit never costs the fidget its launch.
     pub fn load(path: &Path) -> Self {

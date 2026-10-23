@@ -566,14 +566,10 @@ export function copyRunForPress(payload) {
 
 // --- The tab shell ---------------------------------------------------------
 
-export function tabTitles(form) {
-  return form.tabs.map((tab) => tab.title);
-}
-
 // The bar lists every tab. Keep the buttons this build's form draws, in bar
 // order. Off macOS that drops Caffeinate.
 export function tabsTheFormDraws(buttons, form) {
-  const drawn = new Set(tabTitles(form));
+  const drawn = new Set(form.tabs.map((tab) => tab.title));
   return buttons.filter((title) => drawn.has(title));
 }
 
