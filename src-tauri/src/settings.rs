@@ -752,15 +752,9 @@ impl SettingsView {
                 form::CAFFEINATE_SYSTEM_ID.to_string(),
                 RowValue::Bool(self.caffeinate_system),
             );
-            let preview = fidget_core::caffeinate::AssertedFlags::try_from_bits(
-                self.caffeinate_display,
-                self.caffeinate_idle,
-                self.caffeinate_disk,
-                self.caffeinate_system,
-            );
             values.insert(
                 form::CAFFEINATE_COMMAND_ID.to_string(),
-                text(&match preview {
+                text(&match self.caffeinate_flags() {
                     Ok(flags) => format!("caffeinate {}", flags.preview()),
                     Err(_) => fidget_core::caffeinate::Empty::REASON.to_string(),
                 }),
@@ -2181,11 +2175,16 @@ impl Settings {
     pub fn caffeinate_flags(
         &self,
     ) -> Result<fidget_core::caffeinate::AssertedFlags, fidget_core::caffeinate::Empty> {
-        fidget_core::caffeinate::AssertedFlags::try_from_bits(
-            self.caffeinate_display,
-            self.caffeinate_idle,
-            self.caffeinate_disk,
-            self.caffeinate_system,
+        use fidget_core::caffeinate::{AssertedFlags, Flag};
+        AssertedFlags::new(
+            [
+                (Flag::Display, self.caffeinate_display),
+                (Flag::Idle, self.caffeinate_idle),
+                (Flag::Disk, self.caffeinate_disk),
+                (Flag::System, self.caffeinate_system),
+            ]
+            .into_iter()
+            .filter_map(|(flag, on)| on.then_some(flag)),
         )
     }
 

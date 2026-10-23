@@ -559,10 +559,7 @@ mod tests {
                 Some(value) => {
                     self.sets.push(value);
                     self.fact = if value {
-                        Fact::On(
-                            crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true)
-                                .expect("four flags"),
-                        )
+                        Fact::On(crate::caffeinate::AssertedFlags::all())
                     } else {
                         Fact::Off
                     };

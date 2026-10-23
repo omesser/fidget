@@ -11,30 +11,50 @@ impl Empty {
     pub const REASON: &'static str = "At least one caffeinate flag has to stay on.";
 }
 
-/// A non-empty subset of `-d -i -m -s`, in that order.
+/// One `caffeinate` assertion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AssertedFlags([bool; 4]);
+pub enum Flag {
+    Display,
+    Idle,
+    Disk,
+    System,
+}
+
+/// The one map from flag to its `caffeinate` letter, in argv order.
+const LETTERS: [(Flag, char); 4] = [
+    (Flag::Display, 'd'),
+    (Flag::Idle, 'i'),
+    (Flag::Disk, 'm'),
+    (Flag::System, 's'),
+];
+
+/// A non-empty set of flags. One bit per [`Flag`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AssertedFlags(u8);
 
 impl AssertedFlags {
-    pub fn try_from_bits(
-        display: bool,
-        idle: bool,
-        disk: bool,
-        system: bool,
-    ) -> Result<Self, Empty> {
-        let bits = [display, idle, disk, system];
-        if bits.contains(&true) {
-            Ok(Self(bits))
-        } else {
+    pub fn new(flags: impl IntoIterator<Item = Flag>) -> Result<Self, Empty> {
+        let bits = flags.into_iter().fold(0, |bits, flag| bits | bit(flag));
+        if bits == 0 {
             Err(Empty)
+        } else {
+            Ok(Self(bits))
         }
     }
 
+    /// `-dims`, the default.
+    pub fn all() -> Self {
+        Self(LETTERS.iter().fold(0, |bits, (flag, _)| bits | bit(*flag)))
+    }
+
+    pub fn contains(self, flag: Flag) -> bool {
+        self.0 & bit(flag) != 0
+    }
+
     fn letters(self) -> impl Iterator<Item = char> {
-        "dims"
-            .chars()
-            .zip(self.0)
-            .filter_map(|(letter, on)| on.then_some(letter))
+        LETTERS
+            .into_iter()
+            .filter_map(move |(flag, letter)| self.contains(flag).then_some(letter))
     }
 
     /// The flag cluster Settings shows. `-dims`.
@@ -45,6 +65,10 @@ impl AssertedFlags {
     pub fn argv(self, pid: u32) -> Argv {
         Argv { flags: self, pid }
     }
+}
+
+fn bit(flag: Flag) -> u8 {
+    1 << flag as u8
 }
 
 /// Closed argv. There is no utility slot, because `caffeinate` ignores `-w`
@@ -349,7 +373,7 @@ mod tests {
     }
 
     fn dims() -> AssertedFlags {
-        AssertedFlags::try_from_bits(true, true, true, true).unwrap()
+        AssertedFlags::all()
     }
 
     fn drive(
@@ -374,15 +398,13 @@ mod tests {
         );
         assert_eq!(dims().preview(), "-dims");
         assert_eq!(
-            AssertedFlags::try_from_bits(true, false, false, true)
+            AssertedFlags::new([Flag::System, Flag::Display])
                 .unwrap()
                 .preview(),
             "-ds"
         );
-        assert_eq!(
-            AssertedFlags::try_from_bits(false, false, false, false),
-            Err(Empty)
-        );
+        assert_eq!(AssertedFlags::new([Flag::Disk]).unwrap().preview(), "-m");
+        assert_eq!(AssertedFlags::new([]), Err(Empty));
     }
 
     #[test]
@@ -443,7 +465,7 @@ mod tests {
     fn flag_change_restarts_without_an_off_or_a_second_on() {
         let mut machine = Machine::new(Fake::new(), 42);
         drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
-        let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
+        let display = AssertedFlags::new([Flag::Display]).unwrap();
 
         let stopping = drive(&mut machine, Ok(display), &[], true);
         assert_eq!(stopping.fact, Fact::On(display));
@@ -464,7 +486,7 @@ mod tests {
     fn off_in_the_tick_a_restart_spawns_waits_for_the_new_child() {
         let mut machine = Machine::new(Fake::new(), 42);
         drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
-        let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
+        let display = AssertedFlags::new([Flag::Display]).unwrap();
         drive(&mut machine, Ok(display), &[], true);
 
         let off = drive(&mut machine, Ok(display), &[Request::Set(false)], false);
@@ -487,8 +509,8 @@ mod tests {
     fn a_flag_change_in_the_tick_a_restart_spawns_waits_for_the_new_child() {
         let mut machine = Machine::new(Fake::new(), 42);
         drive(&mut machine, Ok(dims()), &[Request::Set(true)], false);
-        let display = AssertedFlags::try_from_bits(true, false, false, false).unwrap();
-        let system = AssertedFlags::try_from_bits(false, false, false, true).unwrap();
+        let display = AssertedFlags::new([Flag::Display]).unwrap();
+        let system = AssertedFlags::new([Flag::System]).unwrap();
         drive(&mut machine, Ok(display), &[], true);
 
         let changed = drive(&mut machine, Ok(system), &[], false);

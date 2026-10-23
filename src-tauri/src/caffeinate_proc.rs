@@ -110,7 +110,7 @@ impl Hold {
     pub fn new() -> Self {
         Self {
             machine: Machine::new(OsSpawner::new(), std::process::id()),
-            configured: AssertedFlags::try_from_bits(true, true, true, true),
+            configured: Ok(AssertedFlags::all()),
             pending: Vec::new(),
         }
     }
@@ -148,9 +148,7 @@ mod tests {
     use std::time::Duration;
 
     fn dims() -> Argv {
-        AssertedFlags::try_from_bits(true, true, true, true)
-            .expect("four flags")
-            .argv(std::process::id())
+        AssertedFlags::all().argv(std::process::id())
     }
 
     #[test]

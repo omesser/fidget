@@ -2186,8 +2186,7 @@ mod tests {
     #[test]
     fn the_prompt_names_caffeinate_when_this_launch_offers_it() {
         let mut moment = context(working(), &[]);
-        let flags =
-            crate::caffeinate::AssertedFlags::try_from_bits(true, true, true, true).expect("dims");
+        let flags = crate::caffeinate::AssertedFlags::all();
         moment.caffeinate = Some(crate::caffeinate::Fact::On(flags));
         let on = follow_up(&moment);
         assert!(on.contains("state: idle\ncaffeinate: on (-dims)\n"), "{on}");
