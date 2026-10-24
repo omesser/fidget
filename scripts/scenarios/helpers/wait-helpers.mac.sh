@@ -56,3 +56,49 @@ seed_tour_shown() { # <home>
   mkdir -p "$1/Library/Application Support/fidget"
   echo '{"first_run_tour_shown": true}' > "$1/Library/Application Support/fidget/settings.json"
 }
+
+# The leaf bounds every Apple event at 3s. A direct call would hold the trap.
+textedit_osascript() {
+  if declare -F capped > /dev/null; then
+    capped 3 osascript "$@"
+  else
+    osascript "$@"
+  fi
+}
+
+# Quit and signal pid only when TextEdit reports zero documents after these
+# paths close. A failed count leaves TextEdit running: another document may
+# still be open. Returns 0 clear, 1 blocked, 2 unknown.
+close_run_documents() { # <pid> <path>...
+  [ -n "${1:-}" ] || return 0
+  local pid=$1 path escaped count status=0
+  shift
+  for path in "$@"; do
+    escaped=$path
+    escaped=${escaped//\\/\\\\}
+    escaped=${escaped//\"/\\\"}
+    textedit_osascript -e "tell application \"TextEdit\" to close (every document whose path is \"$escaped\") saving no" > /dev/null 2>&1 || true
+  done
+  # local count=$(...) would look successful when the count failed.
+  count=$(textedit_osascript -e 'tell application "TextEdit" to count every document') || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "TextEdit's documents could not be listed, so this run left it running." >&2
+    return 2
+  fi
+  if [ "$count" != 0 ]; then
+    echo "TextEdit has another document open, so this run left it running." >&2
+    return 1
+  fi
+  textedit_osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
+  kill "$pid" 2> /dev/null || true
+}
+
+# bash 3.2 with set -u rejects "${array[@]}" when the array is empty.
+close_opened_documents() { # <pid>
+  # shellcheck disable=SC2154 # the leaf owns textedit_opened
+  if [ "${#textedit_opened[@]}" -gt 0 ]; then
+    close_run_documents "$1" "${textedit_opened[@]}"
+  else
+    close_run_documents "$1"
+  fi
+}

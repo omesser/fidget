@@ -78,6 +78,7 @@ build_tool() { # <name> <source>
 # Case 7 quits TextEdit, which would take unsaved work with it, so refuse
 # before doing any work and end only the TextEdit this run starts, by pid.
 textedit_pid=
+textedit_opened=()
 # open has already returned. One lookup; a miss fails here instead of polling.
 # pgrep exits 1 when nothing matches, which under pipefail would hide that.
 capture_textedit_pid() {
@@ -90,19 +91,19 @@ refuse_running_textedit() {
 }
 refuse_running_textedit
 close_textedit() {
-  [ -n "$textedit_pid" ] || return 0
-  capped 3 osascript -e 'tell application "TextEdit" to close every document saving no' > /dev/null 2>&1 || true
-  capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > /dev/null 2>&1 || true
-  kill "$textedit_pid" 2> /dev/null || true
+  [ -n "${textedit_pid:-}" ] || return 0
+  close_opened_documents "$textedit_pid" || true
 }
-# Quit the TextEdit this run opened, then forget it only once it is gone: case 8
-# refuses a running TextEdit, so a quit still exiting would fail that refusal. A
-# timeout keeps the pid, so the EXIT trap still ends this run's TextEdit.
+# Forget this run's TextEdit only once it has exited. Case 8 refuses a running
+# TextEdit, so a quit that is still exiting would fail that refusal. Another
+# open document keeps the pid, and the EXIT trap does not end TextEdit.
 quit_textedit() {
-  [ -n "$textedit_pid" ] || return 0
-  # A quit that gets no answer in 3 s gets a signal; the wait below decides.
-  capped 3 osascript -e 'tell application "TextEdit" to quit saving no' > "$out/quit.txt" 2>&1 ||
-    kill "$textedit_pid" 2> /dev/null || true
+  [ -n "${textedit_pid:-}" ] || return 0
+  local rc=0
+  close_opened_documents "$textedit_pid" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "TextEdit has another document open. This run will not quit it."
+  fi
   wait_for_exit 3 "$textedit_pid" || fail "app-quit: TextEdit did not exit"
   textedit_pid=
 }
@@ -131,6 +132,7 @@ printf abc > "$out/$two"
 # The builds and the preflight are long enough for the user to open TextEdit.
 refuse_running_textedit
 capped 3 open -g -a TextEdit "$out/$one" || fail "could not open $one in TextEdit"
+textedit_opened+=("$out/$one")
 capture_textedit_pid
 for probe in "TextEdit:count documents" "System Events:count processes"; do
   app=${probe%%:*}
@@ -324,6 +326,7 @@ echo "ok: app-quit: Fidget stepped aside"
 # The user may have opened TextEdit since case 7 quit it.
 refuse_running_textedit
 capped 3 open -a TextEdit "$out/$two" > "$out/textedit2.txt" 2>&1 || fail "could not reopen TextEdit"
+textedit_opened+=("$out/$two")
 capture_textedit_pid
 wait_textedit_front click-away "$two"
 open_pill click-away
