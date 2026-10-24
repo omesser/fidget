@@ -64,6 +64,11 @@ REPO = "https://github.com/omesser/fidget"
 COUNTER = '<script data-goatcounter="https://fidget.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>'
 # The README names Buddy Bot as the default Character; the hero is that one.
 HERO = "buddy-bot"
+# The twist toy's lines; its prompts come from the README's Instance Prompt table.
+TWISTS = ROOT / "docs" / "design" / "twists.json"
+# What every README Instance Prompt example assumes, and the page's small print says.
+TWIST_SETUP = ("[Harness]", "its own tools", "**Window and application names** consent")
+TWIST_NEEDS = "Needs an attached Harness that may use its tools, and window names consent."
 # GitHub renders an attachment URL alone on its line as a video player.
 ATTACHMENT = re.compile(r"^(https://github\.com/user-attachments/assets/[0-9a-f-]+)[ \t]*$", re.M)
 LATEST = f"{REPO}/releases/latest"
@@ -259,7 +264,27 @@ def read_readme(text):
         "brew": brew.group(0) if brew else "",
         "how": read_how(text, found),
         "faq": read_faq(found),
+        "prompts": instance_prompts(text),
     }
+
+
+def instance_prompts(text):
+    """The Give It an Instance Prompt table's prompts, word for word.
+
+    The page's small print names the setup the README says every example
+    assumes, so the build stops when the README stops asking for it.
+    """
+    if "### Give It an Instance Prompt" not in text:
+        raise Malformed("README.md has no 'Give It an Instance Prompt' section")
+    body = re.split(r"^#{1,3} ", text.split("### Give It an Instance Prompt", 1)[1], maxsplit=1, flags=re.M)[0]
+    for needed in TWIST_SETUP:
+        if needed not in body:
+            raise Malformed(f"README.md Give It an Instance Prompt no longer asks for {needed!r}, "
+                            "which the page's small print names")
+    prompts = re.findall(r"^\| `([^`]+)` \|", body, re.M)
+    if not prompts:
+        raise Malformed("README.md Give It an Instance Prompt has no `prompt` rows")
+    return prompts
 
 
 def read_faq(found):
@@ -596,6 +621,97 @@ def sprite(loop_, alt, extra=""):
             f'data-frames="{frames}" data-fps="{loop_["fps"]}"{extra}>')
 
 
+def read_twists(data, prompts, characters_root, default_fps):
+    """The twist toy: each authored prompt matched to one README prompt, and
+    each Character's before line and its after line for every prompt.
+
+    A line plays its Behavior's first animation when it names one, else idle
+    before the prompt and talk after it.
+    """
+    picked = []
+    for prompt in data.get("prompts") or []:
+        found = [text for text in prompts if prompt["match"] in text]
+        if len(found) != 1:
+            raise Malformed(f"twists.json: {prompt['match']!r} matches {len(found)} README Instance Prompts, not one")
+        picked.append({"name": prompt["name"], "text": found[0]})
+    if not picked:
+        raise Malformed("twists.json names no prompts")
+    cast = []
+    for one in data.get("characters") or []:
+        name = one.get("character")
+        package = characters_root / str(name)
+        if not (package / "character.manifest").is_file() or name in gallery.WITHHELD:
+            raise Malformed(f"twists.json names {name!r}, which characters/ does not ship")
+        declared = manifest(package)
+
+        def spoken(written, animation, label):
+            if not written.get("line"):
+                raise Malformed(f"twists.json gives {name} no {label} line")
+            behavior = written.get("behavior")
+            if behavior is not None:
+                play = declared.get("behaviors", {}).get(behavior, {}).get("play")
+                if not play:
+                    raise Malformed(f"twists.json: {name} declares no {behavior!r} Behavior")
+                animation = play[0]
+            return {"line": written["line"], "loop": loop(package, declared, animation, default_fps)}
+
+        answers = one.get("after") or {}
+        if set(answers) != {p["name"] for p in data["prompts"]}:
+            raise Malformed(f"twists.json gives {name} after lines for {sorted(answers)}, not one per prompt")
+        after = []
+        for prompt in data["prompts"]:
+            written = answers[prompt["name"]]
+            when = written.get("when") or prompt.get("when")
+            if not when:
+                raise Malformed(f"twists.json says nothing of when {name} answers {prompt['name']}")
+            after.append({**spoken(written, "talk", f"{prompt['name']} after"), "when": when})
+        cast.append({"character": name, "name": declared.get("name") or name,
+                     "pixel": declared.get("render_mode") != "smooth",
+                     "before": spoken(one.get("before") or {}, "idle", "before"), "after": after})
+    if not cast:
+        raise Malformed("twists.json names no Characters")
+    return {"prompts": picked, "characters": cast}
+
+
+def twist_html(twist):
+    """The toy as it stands without JavaScript: the first Character on the
+    first prompt, the pickers hidden, and every line in #twist-data."""
+    first, prompt = twist["characters"][0], twist["prompts"][0]
+    answer = first["after"][0]
+    pixel = ' class="pixel"' if first["pixel"] else ""
+
+    def art(side, loop_):
+        return (f'<div class="twist-art"><img id="twist-{side}-sprite" src="{loop_["frames"][0]}" '
+                f'alt="{html.escape(first["name"])}"{pixel}></div>')
+
+    characters = "".join(
+        f'<button type="button" data-character="{c["character"]}" aria-pressed="{str(i == 0).lower()}">'
+        f'{html.escape(c["name"])}</button>' for i, c in enumerate(twist["characters"]))
+    prompts = "".join(
+        f'<button type="button" data-prompt="{i}" aria-pressed="{str(i == 0).lower()}">{html.escape(p["name"])}</button>'
+        for i, p in enumerate(twist["prompts"]))
+    return "\n".join([
+        '<div class="twist-pick" id="twist-pick" hidden>',
+        f'<div role="group" aria-label="Character"><span>Character</span>{characters}</div>',
+        f'<div role="group" aria-label="Prompt"><span>Prompt</span>{prompts}</div>',
+        "</div>",
+        f'<div class="twist-layer"><span>Your own layer</span><p class="twist-prompt" id="twist-prompt">'
+        f'{html.escape(prompt["text"])}</p></div>',
+        f'<p class="twist-needs">{TWIST_NEEDS}</p>',
+        '<div class="twist-pair">',
+        f'<figure><figcaption>Before</figcaption><p class="twist-when">Personality only.</p>'
+        f'<div class="say" id="twist-before-say">{html.escape(first["before"]["line"])}</div>'
+        + art("before", first["before"]["loop"]) + "</figure>",
+        '<span class="twist-arrow" aria-hidden="true">→</span>',
+        f'<figure><figcaption>After</figcaption><p class="twist-when" id="twist-when">{html.escape(answer["when"])}</p>'
+        f'<div class="say" id="twist-after-say">{html.escape(answer["line"])}</div>'
+        + art("after", answer["loop"]) + "</figure>",
+        "</div>",
+        # Escaped so the JSON can never close the <script> element it sits in.
+        f'<script type="application/json" id="twist-data">{json.dumps(twist).replace("<", "\\u003c")}</script>',
+    ])
+
+
 def downloads(release):
     """Each button's URL and version: its asset and the release tag, or the Latest page and None."""
     assets = release.get("assets", []) if release else []
@@ -723,6 +839,10 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
             + "".join(f"<p>{inline(p)}</p>" for p in answer) + "</details>"
             for q, answer in words["faq"]
         ),
+        # The lines name shipped Characters, so they check against characters/
+        # even when a fixture cast fills the rest of the page.
+        "twist": twist_html(read_twists(json.loads(TWISTS.read_text(encoding="utf-8")), words["prompts"],
+                                        CHARACTERS, defaults["fps"])),
         "count": (COUNT[len(players)] if len(players) < len(COUNT) else str(len(players)))
         + (" character ships" if len(players) == 1 else " characters ship"),
         "cast": figures,
@@ -1066,6 +1186,36 @@ def self_check():
             pass
         else:
             raise AssertionError("a page with no </head> took no visit counter and passed")
+
+    authored = json.loads(TWISTS.read_text(encoding="utf-8"))
+    fps = gallery.from_rust(rust)[1]["fps"]
+    twist = read_twists(authored, words["prompts"], CHARACTERS, fps)
+    assert len(twist["characters"]) == 4 and all(len(c["after"]) == 3 for c in twist["characters"]), \
+        "the twist toy lost a Character or a prompt"
+    assert all(p["text"] in readme for p in twist["prompts"]), "a twist prompt is not the README's, word for word"
+
+    def twist_fails(change, text=readme):
+        data = json.loads(json.dumps(authored))
+        change(data)
+        try:
+            read_twists(data, instance_prompts(text), CHARACTERS, fps)
+        except Malformed as caught:
+            return str(caught)
+        return None
+
+    for change, wanted in (
+        (lambda d: d["prompts"][0].update(match="rubber chicken"), "matches 0 README"),
+        (lambda d: d["prompts"][0].update(match="you"), "not one"),
+        (lambda d: d["characters"][0].update(character="garfield"), "does not ship"),
+        (lambda d: d["characters"][2]["after"]["Theatre critic"].update(behavior="conquer"), "declares no 'conquer'"),
+        (lambda d: d["characters"][1]["after"].pop("Machine check"), "not one per prompt"),
+        (lambda d: d["characters"][3]["before"].update(line=""), "no before line"),
+        (lambda d: d["characters"][0]["after"]["Theatre critic"].pop("when"), "says nothing of when"),
+    ):
+        assert wanted in (twist_fails(change) or ""), f"a broken twists.json passed, wanting {wanted!r}"
+    unset = readme.replace("**Window and application names** consent", "**Window names** setting")
+    assert "no longer asks for" in (twist_fails(lambda d: None, unset) or ""), \
+        "a README that dropped the consent kept the page's small print"
 
     print(f"self-check: {len(words['features'])} features, {len(words['harnesses'])} Harnesses, "
           f"{len(words['faq'])} questions, checks passed")

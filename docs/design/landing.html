@@ -176,6 +176,38 @@
   .faq summary { cursor: pointer; font-weight: 600; }
   .faq p { margin: .5rem 0 0; color: var(--ink-2); max-width: 44rem; }
 
+  .twist-pick { display: grid; gap: .5rem; margin-bottom: 1.25rem; }
+  .twist-pick[hidden] { display: none; }
+  .twist-pick > div { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+  .twist-pick span { min-width: 5.5rem; font-size: .88rem; color: var(--ink-2); }
+  .twist-pick button { font: inherit; font-size: .88rem; padding: .3rem .8rem; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--win); color: var(--ink); cursor: pointer; }
+  .twist-pick button:hover { border-color: var(--accent); }
+  .twist-pick button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .twist-pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The app's Prompt tab "Your own layer" box, read-only here. */
+  .twist-layer span { display: block; margin-bottom: .35rem; font-size: .88rem; font-weight: 600; }
+  .twist-prompt { margin: 0; min-height: calc(1.5em * 2 + 20px); padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--win); font-size: 13px; line-height: 1.5; }
+  .twist-needs { margin: .45rem 0 1.5rem; font-size: .8rem; color: var(--ink-3); }
+  .twist-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 1rem; }
+  .twist-pair figure { margin: 0; display: flex; flex-direction: column; align-items: center; }
+  .twist-pair figcaption { align-self: flex-start; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3); }
+  .twist-when { align-self: flex-start; margin: .15rem 0 .6rem; font-size: .85rem; font-style: italic; color: var(--ink-2); }
+  /* The hero's bubble, set in the column instead of on the desk. */
+  .twist-pair .say { position: relative; left: auto; bottom: auto; max-width: none; align-self: stretch;
+    min-height: calc(1.55em * 2 + 20px); margin-bottom: 16px; }
+  .twist-pair .say::before, .twist-pair .say::after { right: auto; left: calc(50% - 10px); }
+  .twist-pair .say::after { margin: 0 0 0 2px; }
+  .twist-art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
+  .twist-art img { max-height: 96px; max-width: 100%; }
+  .twist-art img.pixel { image-rendering: pixelated; height: 96px; }
+  .twist-arrow { font-size: 1.5rem; color: var(--ink-3); }
+  .twist-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem;
+    margin-top: 1.5rem; }
+  .twist-label { margin: 0; font-size: .8rem; color: var(--ink-3); }
+
   footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--ink-3);
     font-size: .9rem; display: flex; flex-wrap: wrap; gap: 1.25rem; }
   footer a { color: inherit; }
@@ -319,6 +351,8 @@
 {{bubble_css}}
 {{chat_css}}
   @media (max-width: 760px) {
+    .twist-pair { grid-template-columns: 1fr; }
+    .twist-arrow { transform: rotate(90deg); justify-self: center; }
     .play-tiles { grid-template-columns: repeat(3, 1fr); }
     .play-win { width: 62%; }
     .play-win.dark { width: 56%; }
@@ -547,6 +581,18 @@
   </div>
 </section>
 
+<section id="twist">
+  <div class="wrap">
+    <h2>Give it your own twist</h2>
+    <p class="sub">An Instance Prompt is your own text for one fidget, on top of its personality.</p>
+    {{twist}}
+    <div class="twist-foot">
+      <p class="twist-label">Authored samples. The site never calls a model.</p>
+      <a href="https://github.com/omesser/fidget#give-it-an-instance-prompt">Write your own: how →</a>
+    </div>
+  </div>
+</section>
+
 <section id="faq">
   <div class="wrap faq">
     <h2>Questions</h2>
@@ -617,6 +663,69 @@
       obs.disconnect();
     }, { threshold: 0.35 });
     io.observe(how);
+  }
+
+  // The twist toy swaps lines and sprite loops for the picked Character and
+  // prompt; the after line types in, whole under reduced motion. Without
+  // JavaScript the first Character on the first prompt shows, pickers hidden.
+  const twistData = document.getElementById("twist-data");
+  if (twistData) {
+    const twist = JSON.parse(twistData.textContent);
+    const byId = (id) => document.getElementById(id);
+    const sprites = [byId("twist-before-sprite"), byId("twist-after-sprite")].map((img) => ({ img, loop: null, timer: 0 }));
+    const pick = { character: twist.characters[0].character, prompt: 0 };
+    let typing = 0;
+    function animate(sprite) {
+      clearInterval(sprite.timer);
+      sprite.img.src = sprite.loop.frames[0];
+      if (still || document.hidden) return;
+      let i = 0;
+      sprite.timer = setInterval(() => {
+        i = (i + 1) % sprite.loop.frames.length;
+        sprite.img.src = sprite.loop.frames[i];
+      }, 1000 / sprite.loop.fps);
+    }
+    function show() {
+      const one = twist.characters.find((c) => c.character === pick.character);
+      const answer = one.after[pick.prompt];
+      byId("twist-prompt").textContent = twist.prompts[pick.prompt].text;
+      byId("twist-before-say").textContent = one.before.line;
+      byId("twist-when").textContent = answer.when;
+      [one.before.loop, answer.loop].forEach((loop, i) => {
+        sprites[i].loop = loop;
+        sprites[i].img.alt = one.name;
+        sprites[i].img.classList.toggle("pixel", one.pixel);
+        animate(sprites[i]);
+      });
+      for (const button of document.querySelectorAll("#twist-pick button")) {
+        const on = button.dataset.character === pick.character || Number(button.dataset.prompt) === pick.prompt;
+        button.setAttribute("aria-pressed", String(on));
+      }
+      const say = byId("twist-after-say");
+      clearInterval(typing);
+      say.textContent = still ? answer.line : "";
+      if (still) return;
+      let shown = 0;
+      typing = setInterval(() => {
+        shown += 1;
+        say.textContent = answer.line.slice(0, shown);
+        if (shown >= answer.line.length) clearInterval(typing);
+      }, 18);
+    }
+    byId("twist-pick").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (button.dataset.character) pick.character = button.dataset.character;
+      else pick.prompt = Number(button.dataset.prompt);
+      show();
+    });
+    document.addEventListener("visibilitychange", () => sprites.forEach(animate));
+    byId("twist-pick").hidden = false;
+    sprites.forEach((sprite, i) => {
+      const one = twist.characters[0];
+      sprite.loop = i ? one.after[0].loop : one.before.loop;
+      animate(sprite);
+    });
   }
 </script>
 <script>

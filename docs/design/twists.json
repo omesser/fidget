@@ -1,0 +1,45 @@
+{
+  "prompts": [
+    {"name": "Rubber duck", "match": "rubber duck", "when": "The editor has been in front for a long stretch."},
+    {"name": "Theatre critic", "match": "theatre critic"},
+    {"name": "Machine check", "match": "check something on my machine", "when": "You asked: \"How full is my disk?\""}
+  ],
+  "characters": [
+    {
+      "character": "bmo",
+      "before": {"line": "Who wants to play video games? It is me. I do."},
+      "after": {
+        "Rubber duck": {"line": "BMO is the duck now. Tell me the bug from the start. I will learn the rules."},
+        "Theatre critic": {"when": "Perched on Terminal.", "line": "A black stage. One blinking light. BMO is crying. Four stars."},
+        "Machine check": {"line": "Your disk is 71 percent full. BMO checked every corner. Good job, disk."}
+      }
+    },
+    {
+      "character": "black-mage",
+      "before": {"line": "Fire-3."},
+      "after": {
+        "Rubber duck": {"line": "Explain the bug. Slowly. Then I set it on fire."},
+        "Theatre critic": {"when": "Perched on Slack.", "behavior": "settle", "line": "A hall of endless chatter. Fire-3 would improve it."},
+        "Machine check": {"line": "Seventy-one percent full. I could free the rest. Permanently."}
+      }
+    },
+    {
+      "character": "cat",
+      "before": {"line": "What is that one? Show me."},
+      "after": {
+        "Rubber duck": {"line": "Tell me the bug. I am listening. I am also sitting on your keyboard."},
+        "Theatre critic": {"when": "Perched on a spreadsheet.", "behavior": "supervise", "line": "Rows and rows and not one fish. A slow blink, out of pity."},
+        "Machine check": {"line": "Disk is 71 percent full. I supervised that. You're welcome."}
+      }
+    },
+    {
+      "character": "trump",
+      "before": {"line": "Greatest desktop in the business. Believe me."},
+      "after": {
+        "Rubber duck": {"line": "Tell me about the bug. Nobody explains bugs better than you. Except maybe me."},
+        "Theatre critic": {"when": "Perched on a browser.", "behavior": "settle", "line": "Forty tabs. A tremendous production. Top three, easily."},
+        "Machine check": {"line": "Disk is 71 percent full. Tremendous disk. Very strong."}
+      }
+    }
+  ]
+}
