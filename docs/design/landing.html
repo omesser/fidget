@@ -162,6 +162,33 @@
   .cast img.pixel { image-rendering: pixelated; height: 96px; }
   .cast figcaption { font-size: .88rem; color: var(--ink-2); margin-top: .4rem; }
 
+  .moment[hidden] { display: none; }
+  .moment-scene { margin: 0 0 1.5rem; padding: .9rem 1.1rem; background: var(--win); border: 1px solid var(--line);
+    border-radius: 12px; }
+  .moment-scene span, .moment blockquote span { display: block; margin-bottom: .2rem; font-size: .72rem;
+    font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .moment-cast { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
+  .moment-cast figure { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  /* The hero's bubble, set in the column instead of on the desk. */
+  .moment-cast .say { position: relative; left: auto; bottom: auto; max-width: none; align-self: stretch;
+    margin-bottom: 16px; text-align: left; }
+  .moment-cast .say::before, .moment-cast .say::after { right: auto; left: calc(50% - 10px); }
+  .moment-cast .say::after { margin: 0 0 0 2px; }
+  .moment-art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
+  .moment-art img { max-height: 96px; max-width: 100%; }
+  .moment-art img.pixel { image-rendering: pixelated; height: 96px; }
+  .moment-cast figcaption { margin: .5rem 0 .7rem; font-size: .88rem; color: var(--ink-2); }
+  .moment-cast blockquote { margin: 0; padding-top: .6rem; align-self: stretch; border-top: 1px dashed var(--line);
+    font-size: .85rem; font-style: italic; color: var(--ink-2); }
+  .moment-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem;
+    margin-top: 1.5rem; }
+  .moment-label { margin: 0; font-size: .8rem; color: var(--ink-3); }
+  .moment-next { font: inherit; font-size: .9rem; padding: .4rem .9rem; border-radius: 999px;
+    border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  .moment-next:hover { background: var(--paper-2); }
+  .moment-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .moment-next[hidden] { display: none; }
+
   .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; }
   .features div { background: var(--win); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.2rem; }
   .features b { display: block; margin-bottom: .3rem; }
@@ -330,6 +357,7 @@
     .perched { width: 96px; height: 96px; }
     .say { left: 6%; bottom: calc(44% + 106px); }
     .how-lanes { grid-template-columns: 1fr; }
+    .moment-cast { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -535,6 +563,20 @@
   </div>
 </section>
 
+<section id="same-moment">
+  <div class="wrap">
+    <h2>The same moment. Three personalities.</h2>
+    <p class="sub">Each fidget reads its own personality file and decides for itself.</p>
+    <div class="moments" aria-live="polite">
+      {{moments}}
+    </div>
+    <div class="moment-foot">
+      <p class="moment-label">Authored samples, written by us to show the idea. The site never calls a model.</p>
+      <button type="button" class="moment-next" id="moment-next" hidden>Try another moment ▸</button>
+    </div>
+  </div>
+</section>
+
 <section id="your-own">
   <div class="wrap">
     <h2>Easily add your own Fidgets</h2>
@@ -604,6 +646,19 @@
     clip.removeAttribute("autoplay");
     clip.pause();
     clip.controls = true;
+  }
+
+  // Without JavaScript the first moment shows and the button stays hidden.
+  const moments = [...document.querySelectorAll("#same-moment .moment")];
+  const nextMoment = document.getElementById("moment-next");
+  if (moments.length > 1) {
+    let shown = 0;
+    nextMoment.hidden = false;
+    nextMoment.addEventListener("click", () => {
+      moments[shown].hidden = true;
+      shown = (shown + 1) % moments.length;
+      moments[shown].hidden = false;
+    });
   }
 
   const how = document.getElementById("how-diagram");

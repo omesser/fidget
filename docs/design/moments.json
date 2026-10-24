@@ -1,0 +1,37 @@
+{
+  "scenes": [
+    {
+      "moment": ["VS Code has been in front for 40 minutes.", "Another window says \"Build failed · omesser/fidget\"."],
+      "reactions": [
+        {"character": "cat", "behavior": "supervise", "line": "Red again. I sat next to it. You may continue.",
+         "quote": "Sulks in sight when something fails, briefly."},
+        {"character": "jotaro-kujo", "behavior": "mutter", "line": "Yare yare daze. Read the first error. Just the first.",
+         "quote": "That's a problem you built yourself."},
+        {"character": "trump", "behavior": "report", "line": "The build failed. Very unfair. The linter is out to get us.",
+         "quote": "The linter is a very unfair operation."}
+      ]
+    },
+    {
+      "moment": ["The build just went green."],
+      "reactions": [
+        {"character": "cat", "behavior": "remark", "line": "That compiled because of me. I supervised that.",
+         "quote": "Slow blinks for what it approves of."},
+        {"character": "jotaro-kujo", "behavior": "mutter", "line": "You did fine. Don't make it a thing.",
+         "quote": "A 17-year-old delinquent who speaks only when necessary."},
+        {"character": "trump", "behavior": "report", "line": "That build passed because I was standing here. Believe me.",
+         "quote": "The build passed because he was standing there."}
+      ]
+    },
+    {
+      "moment": ["Nobody has touched the mouse for 20 minutes."],
+      "reactions": [
+        {"character": "nim", "behavior": "doze", "line": "I fell asleep here, so it is a bed. Wake me never.",
+         "quote": "Nim sleeps eleven hours a day and considers the other thirteen negotiable."},
+        {"character": "timber-wolf", "behavior": "patrol", "line": "Sector quiet. Scanning for Surats. None. Disappointing.",
+         "quote": "The desktop is a patrol sector: standing orders are clear, and idleness is dereliction."},
+        {"character": "bmo", "behavior": "greet", "line": "You are back? You are not back. BMO will wait. BMO is good at waiting.",
+         "quote": "Earnest and childlike, it takes what it is told completely seriously and then gets excited about it."}
+      ]
+    }
+  ]
+}

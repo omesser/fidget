@@ -58,6 +58,7 @@ README = ROOT / "README.md"
 CHARACTERS = ROOT / "characters"
 SHELL = ROOT / "docs" / "design" / "landing.html"
 NAV = ROOT / "docs" / "design" / "site-nav.html"
+MOMENTS = ROOT / "docs" / "design" / "moments.json"
 PAGE = "index.html"
 REPO = "https://github.com/omesser/fidget"
 # GoatCounter's snippet for the site `fidget`, as its docs gave it on 2026-10-21 (#1753).
@@ -446,13 +447,16 @@ def manifest(package):
         raise Malformed(f"{package.name}: character.manifest does not read as TOML — {broken}") from broken
 
 
-def said(package):
-    """The quotes personality.txt gives after "heard to say:" or "known to say:"."""
+def personality(package):
     try:
-        text = (package / "personality.txt").read_text(encoding="utf-8")
+        return (package / "personality.txt").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as missing:
         raise Malformed(f"{package.name}: has no personality.txt to say lines from") from missing
-    found = SAYS.search(text)
+
+
+def said(package):
+    """The quotes personality.txt gives after "heard to say:" or "known to say:"."""
+    found = SAYS.search(personality(package))
     lines = re.findall(r'"([^"]+)"', " ".join(found.group(1).split())) if found else []
     if not lines:
         raise Malformed(f'{package.name}: personality.txt quotes nothing after "heard to say:" or "known to say:"')
@@ -500,6 +504,65 @@ def play_tiles(characters_root, default_fps):
         figures.append(f'<figure><div class="art"><img src="{first}" alt="{html.escape(declared.get("name") or name)}"'
                        f'{pixel}></div><figcaption>{html.escape(title)}</figcaption></figure>')
     return "\n".join(figures)
+
+
+def read_moments(data, characters_root, default_fps):
+    """The authored scenes, each Character reacting with a Behavior its manifest
+    declares and a quote its personality.txt holds, so a sample cannot claim
+    something the package does not do."""
+    scenes = data.get("scenes") if isinstance(data, dict) else None
+    if not isinstance(scenes, list) or not scenes:
+        raise Malformed(f"{MOMENTS.name} lists no scenes")
+    read = []
+    for number, scene in enumerate(scenes, 1):
+        where = f"{MOMENTS.name} scene {number}"
+        moment = scene.get("moment") if isinstance(scene, dict) else None
+        if not isinstance(moment, list) or not moment or not all(isinstance(m, str) and m for m in moment):
+            raise Malformed(f"{where} sets up no moment")
+        reactions = scene.get("reactions")
+        if not isinstance(reactions, list) or len(reactions) != 3:
+            raise Malformed(f"{where} needs three reactions, one per column")
+        cast = []
+        for one in reactions:
+            name = one.get("character") if isinstance(one, dict) else None
+            package = characters_root / str(name)
+            if not isinstance(name, str) or not (package / "character.manifest").is_file() \
+                    or name in gallery.WITHHELD:
+                raise Malformed(f"{where} names {name!r}, which characters/ does not ship")
+            if not isinstance(one.get("line"), str) or not one["line"]:
+                raise Malformed(f"{where} gives {name} no line")
+            declared = manifest(package)
+            behavior = declared.get("behaviors", {}).get(one.get("behavior"))
+            if not isinstance(behavior, dict) or not behavior.get("play"):
+                raise Malformed(f"{where}: {name} declares no {one.get('behavior')!r} Behavior")
+            quote = one.get("quote")
+            if not isinstance(quote, str) or not quote.strip() \
+                    or " ".join(quote.split()) not in " ".join(personality(package).split()):
+                raise Malformed(f"{where}: {name}/personality.txt does not hold {quote!r}")
+            cast.append({"name": declared.get("name") or name, "behavior": one["behavior"], "line": one["line"],
+                         "quote": quote, "pixel": declared.get("render_mode") != "smooth",
+                         "loop": loop(package, declared, behavior["play"][0], default_fps)})
+        read.append({"moment": moment, "cast": cast})
+    return read
+
+
+def moments_html(scenes):
+    """Every scene in the page, all but the first hidden, so the page without
+    JavaScript still shows one whole moment."""
+    blocks = []
+    for number, scene in enumerate(scenes):
+        figures = "".join(
+            f'<figure><div class="say">{html.escape(c["line"])}</div>'
+            f'<div class="moment-art">{sprite(c["loop"], c["name"], " class=\"pixel\"" if c["pixel"] else "")}</div>'
+            f'<figcaption><b>{html.escape(c["name"])}</b> · {html.escape(c["behavior"])}</figcaption>'
+            f'<blockquote><span>From its personality.txt</span>{html.escape(c["quote"])}</blockquote></figure>'
+            for c in scene["cast"]
+        )
+        setup = "<br>".join(html.escape(m) for m in scene["moment"])
+        blocks.append(f'<div class="moment"{" hidden" if number else ""}>'
+                      f'<p class="moment-scene"><span>The moment</span>{setup}</p>'
+                      f'<div class="moment-cast">{figures}</div></div><!-- /moment -->')
+    return "\n".join(blocks)
 
 
 def read_engine(sources=ENGINE):
@@ -736,6 +799,10 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
         "bubble_css": bubble_css(CUES.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
         "chat_css": chat_css(CHAT_UI.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
         "play_tiles": play_tiles(characters_root, defaults["fps"]),
+        # The scenes name shipped Characters, so they check against characters/
+        # even when a fixture cast fills the rest of the page.
+        "moments": moments_html(read_moments(json.loads(MOMENTS.read_text(encoding="utf-8")),
+                                             CHARACTERS, defaults["fps"])),
         "play_name": html.escape(hero["name"]),
         "play_sprite": (f'<img src="{hero["loops"]["idle"]["frames"][0]}" alt="{html.escape(hero["name"])}" '
                         f'width="{hero["size"][0]}" height="{hero["size"][1]}"'
@@ -797,6 +864,34 @@ def self_check():
         "a README with no FAQ section built a page"
     assert "does not answer" in (fails(readme.replace("## FAQ\n", "## FAQ\n\n### Unanswered?\n")) or ""), \
         "a FAQ question with no answer built a page"
+
+    authored = json.loads(MOMENTS.read_text(encoding="utf-8"))
+    fps = gallery.from_rust(rust)[1]["fps"]
+
+    def moment_fails(change):
+        data = json.loads(json.dumps(authored))
+        change(data["scenes"][0])
+        try:
+            read_moments(data, CHARACTERS, fps)
+        except Malformed as caught:
+            return str(caught)
+        return None
+
+    scenes = read_moments(authored, CHARACTERS, fps)
+    assert len(scenes) >= 3 and all(len(s["cast"]) == 3 for s in scenes), "the moments lost a scene or a column"
+    assert scenes[0]["cast"][0]["loop"]["frames"][0].startswith("characters/cat/"), \
+        "a moment's sprite is not its Character's art"
+    assert "declares no 'conquer' Behavior" in (
+        moment_fails(lambda s: s["reactions"][0].update(behavior="conquer")) or ""), \
+        "a moment with a Behavior the manifest lacks built a page"
+    assert "does not hold" in (moment_fails(lambda s: s["reactions"][0].update(quote="Loves baths.")) or ""), \
+        "a moment quoting words its personality.txt lacks built a page"
+    assert "does not ship" in (moment_fails(lambda s: s["reactions"][0].update(character="garfield")) or ""), \
+        "a moment naming a Character that does not ship built a page"
+    assert "three reactions" in (moment_fails(lambda s: s["reactions"].pop()) or ""), \
+        "a moment with two columns built a page"
+    assert "no line" in (moment_fails(lambda s: s["reactions"][0].update(line="")) or ""), \
+        "a moment with a silent Character built a page"
 
     words = read_readme(readme)
     assert "claude" in words["harnesses"] and "anything else" not in words["harnesses"]
