@@ -386,7 +386,7 @@ pub(crate) mod tests {
     fn retarget_drops_an_in_flight_wake_and_installs_the_new_completer() {
         with_env(None, None, None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let config = config_from(&settings);
+            let config = config_from(&settings, crate::harness::test_attached());
             let mut slots = Slots::new();
             let id = "fidget".to_string();
             let saw = Arc::new(AtomicBool::new(false));
@@ -432,7 +432,7 @@ pub(crate) mod tests {
     fn retarget_to_a_remote_without_a_key_leaves_static() {
         with_env(None, None, None, || {
             let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
-            let config = config_from(&settings);
+            let config = config_from(&settings, crate::harness::test_attached());
             let mut slots = Slots::new();
             let mut model = None;
             retarget_model(
@@ -452,7 +452,7 @@ pub(crate) mod tests {
     fn retarget_installs_when_configured_even_if_director_is_off() {
         with_env(None, None, None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             config.enabled = false;
             assert!(config.configured, "local needs no key");
             let mut slots = Slots::new();

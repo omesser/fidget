@@ -549,6 +549,8 @@ struct SettingsState {
     /// Taken by the next snapshot. A window that is still loading has no
     /// listeners, so an event aimed at it would be gone.
     reveal: RevealSlot,
+    /// Proves `harness::attach` ran.
+    attached: harness::Attached,
     /// Generation of the Settings window. `settings_loaded` matches it once
     /// navigation finishes. MoveFocus while they differ hangs WebView2.
     settings_built: AtomicU64,
@@ -828,6 +830,7 @@ fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSe
         on_rebind: bind_hide_hotkey,
         secrets: Arc::clone(&state.secrets),
         key_cache: Mutex::new(None),
+        attached: state.attached,
     }
 }
 
@@ -5231,10 +5234,7 @@ fn main() {
             #[cfg(windows)]
             drop(spawned_ctrl_c);
             quit_harness_on_interrupt(app.handle().clone());
-            // The Harness attaches before `director_settings` and `config_from`, which
-            // both ask whether one is attached, so a launch never prompts for a key it
-            // would not send.
-            harness::attach(
+            let attached = harness::attach(
                 harness::Target::from_settings(
                     settings.harness_source().as_deref(),
                     &settings.harness_cwd,
@@ -5285,14 +5285,15 @@ fn main() {
             model::on_thought_more(Box::new(move |instance, addition| {
                 show_more_thought(&more_to, instance, addition)
             }));
-            let director = match settings::director_settings(&settings, secrets.as_ref()) {
+            let director = match settings::director_settings(&settings, secrets.as_ref(), attached)
+            {
                 Ok(director) => director,
                 Err(why) => {
                     eprintln!("director: secret store: {why}");
                     model::resolve(&settings.director_base_url, &settings.director_model, None)
                 }
             };
-            let mut config = model::config_from(&director);
+            let mut config = model::config_from(&director, attached);
             config.apply_switch(settings.director_enabled);
             config.proactive_allowed = settings.proactive_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect(&director)));
@@ -5379,6 +5380,7 @@ fn main() {
                 rules: Arc::clone(&rules),
                 secrets: Arc::clone(&secrets),
                 reveal: RevealSlot::default(),
+                attached,
                 settings_built: AtomicU64::new(0),
                 settings_loaded: AtomicU64::new(0),
                 loading_since: Mutex::new(None),

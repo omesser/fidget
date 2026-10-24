@@ -223,7 +223,7 @@ pub(crate) fn env_or_file(var: &str, file: &str) -> String {
 }
 
 /// Build Director on/off from already-resolved settings.
-pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
+pub fn config_from(settings: &DirectorSettings, _: crate::harness::Attached) -> DirectorConfig {
     let configured = crate::harness::attached().is_some()
         || !settings.api_key.is_empty()
         || is_local(&settings.base_url);
@@ -1921,7 +1921,7 @@ pub(crate) mod tests {
     fn a_remote_url_without_a_key_is_not_configured() {
         with_env(None, None, None, || {
             let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
-            let config = config_from(&settings);
+            let config = config_from(&settings, crate::harness::test_attached());
             assert!(!config.configured);
             assert!(endpoint_from(&settings).is_none());
         });
@@ -1987,7 +1987,7 @@ pub(crate) mod tests {
     fn an_exported_switch_decides_either_way() {
         with_vars(None, None, None, Some("on"), None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             config.apply_switch(false);
             assert!(config.enabled, "the file said off, the process said on");
         });
@@ -1998,7 +1998,7 @@ pub(crate) mod tests {
     fn an_exported_on_cannot_conjure_a_completer() {
         with_vars(None, None, None, Some("on"), None, || {
             let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             assert!(!config.configured, "a remote host with no key");
             config.apply_switch(true);
             assert!(!config.enabled);
@@ -2009,7 +2009,7 @@ pub(crate) mod tests {
     fn an_unreadable_switch_value_leaves_the_file_deciding() {
         with_vars(None, None, None, Some("banana"), None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             config.apply_switch(true);
             assert!(config.enabled, "the file said on");
             config.apply_switch(false);
@@ -2023,7 +2023,7 @@ pub(crate) mod tests {
     fn the_env_switch_vetoes_a_director_the_file_would_allow() {
         with_env_switch("off", || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             assert!(config.configured, "a local host needs no key");
             config.apply_switch(true);
             assert!(!config.enabled, "the file said on, the env vetoed it");
@@ -2034,7 +2034,7 @@ pub(crate) mod tests {
     fn the_saved_switch_decides_when_the_process_says_nothing() {
         with_env(None, None, None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&settings);
+            let mut config = config_from(&settings, crate::harness::test_attached());
             config.apply_switch(true);
             assert!(config.enabled);
             config.apply_switch(false);
@@ -2046,7 +2046,7 @@ pub(crate) mod tests {
     fn a_local_url_without_a_key_is_configured() {
         with_env(None, None, None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
-            let config = config_from(&settings);
+            let config = config_from(&settings, crate::harness::test_attached());
             assert!(config.configured);
             let endpoint = endpoint_from(&settings).expect("local needs no key");
             assert!(endpoint.url().contains("11434"));

@@ -837,6 +837,7 @@ pub(crate) fn run_frame_loop(
                         enabled,
                         proactive_allowed,
                         configured,
+                        attached,
                     } => {
                         // What every live `Pace` was built from, and the only
                         // way to tell an edited wake interval from a Retarget
@@ -848,7 +849,7 @@ pub(crate) fn run_frame_loop(
                         let first_connection = !config.configured && configured;
                         let lost_configuration = config.configured && !configured;
                         director = settings;
-                        config = model::config_from(&director);
+                        config = model::config_from(&director, attached);
                         config.enabled = enabled;
                         config.proactive_allowed = proactive_allowed;
                         config.configured = configured;

@@ -3489,6 +3489,11 @@ struct Attachment {
     switch_gen: u64,
 }
 
+/// Witness that `attach` was called.
+/// A Harness launch must not read a key it never sends.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Attached(());
+
 static ATTACHED: Mutex<Attachment> = Mutex::new(Attachment {
     session: None,
     forward: None,
@@ -3504,15 +3509,15 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 /// Read the source, the variable, else `saved` from Settings, and hold the
 /// Session until the row moves it or the process exits. Process-global because
 /// the session is one per app and a Retarget rebuilds `DirectorSettings`.
-pub(crate) fn attach(target: Option<Target>, forward: Forward) -> Option<Arc<Session>> {
+pub(crate) fn attach(target: Option<Target>, forward: Forward) -> Attached {
     let mut slot = attachment();
     if slot.forward.is_some() {
-        return slot.session.clone();
+        return Attached(());
     }
     let forward = Arc::new(forward);
     slot.forward = Some(Arc::clone(&forward));
     slot.session = open(target, forward);
-    slot.session.clone()
+    Attached(())
 }
 
 fn open(target: Option<Target>, forward: Arc<Forward>) -> Option<Arc<Session>> {
@@ -3639,6 +3644,11 @@ fn finish_switch(old: Arc<Session>, spawn_after: Option<Arc<Session>>, switch_ge
 
 pub fn attached() -> Option<Arc<Session>> {
     attachment().session.clone()
+}
+
+#[cfg(test)]
+pub(crate) fn test_attached() -> Attached {
+    Attached(())
 }
 
 /// Agent sign-in buttons for the attached session, or nothing when login is
