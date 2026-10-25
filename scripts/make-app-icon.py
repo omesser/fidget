@@ -140,6 +140,8 @@ def field():
     """
     art = Image.open(SOURCE).convert("RGB")
     box = head_box(art)
+    if box is None:
+        raise SystemExit("logo-512.png has no head to find")
     # 512 is the largest the art has ever existed at, so the grid render is an
     # upscale however it is cut. Lanczos over the whole canvas once, rather
     # than per output size, keeps every size derived from it consistent.
