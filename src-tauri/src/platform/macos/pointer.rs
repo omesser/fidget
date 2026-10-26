@@ -175,9 +175,10 @@ impl Button {
     }
 
     /// Whether a counted press is still under way: the down counter moved
-    /// past the last sample, or the last tick left the button held.
+    /// past the last sample, or the last tick left the button held or owed
+    /// a press to the next tick.
     fn pending(&self, downs: u32) -> bool {
-        downs != self.last.downs || self.press == Press::Held
+        downs != self.last.downs || matches!(self.press, Press::Held | Press::Owed)
     }
 
     fn step(&mut self, now: ButtonSample) -> bool {
@@ -566,6 +567,25 @@ mod tests {
                 PointerDown(5, false),
                 Tick(sample(true, 6, 5), true),
                 Tick(sample(false, 6, 6), true),
+            ]),
+            vec![Verb::Poke, Verb::Menu]
+        );
+    }
+
+    /// A release and a new Control-press inside one tick leave the new press
+    /// owed to the next tick. Its pointerdown must still settle it, so the
+    /// click stays a Menu after Control is let go.
+    #[test]
+    fn a_pointerdown_for_a_press_owed_to_the_next_tick_settles_a_control_click() {
+        use Step::{PointerDown, Tick};
+        assert_eq!(
+            session(&[
+                Tick(sample(false, 4, 4), false),
+                Tick(sample(true, 5, 4), false),
+                Tick(sample(true, 6, 5), true),
+                PointerDown(6, true),
+                Tick(sample(true, 6, 5), false),
+                Tick(sample(false, 6, 6), false),
             ]),
             vec![Verb::Poke, Verb::Menu]
         );
