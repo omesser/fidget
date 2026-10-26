@@ -76,10 +76,30 @@ fn control_click(raw: ButtonsDown) -> ButtonsDown {
 
 /// The overlay felt a primary press. Settle what it means now, while Control
 /// is still held: an idle frame loop can tick up to a second later. Whether
-/// there was a press at all is still the counters' call.
+/// there was a press at all is still the counters' call, so a pointerdown
+/// with no counted press pending is ignored.
 pub fn primary_press_began() {
+    let downs = CGEventSource::counter_for_event_type(
+        CGEventSourceStateID::CombinedSessionState,
+        CGEventType::LeftMouseDown,
+    );
+    let pending = SESSION
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .is_some_and(|session| session.left.pending(downs));
     let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
-    *press = press.seen(control_key_down());
+    *press = press_began(*press, pending, control_key_down());
+}
+
+/// A pointerdown can trail its press by about 220 ms (#1795). One that lands
+/// after the tick that saw the press end would settle the next click instead.
+fn press_began(press: PrimaryPress, pending: bool, control: bool) -> PrimaryPress {
+    if pending {
+        press.seen(control)
+    } else {
+        press
+    }
 }
 
 /// One button at one tick, as the session reports it. `downs` and `ups` are
@@ -152,6 +172,12 @@ impl Button {
             last: first,
             press: Press::Up,
         }
+    }
+
+    /// Whether a counted press is still under way: the down counter moved
+    /// past the last sample, or the last tick left the button held.
+    fn pending(&self, downs: u32) -> bool {
+        downs != self.last.downs || self.press == Press::Held
     }
 
     fn step(&mut self, now: ButtonSample) -> bool {
@@ -464,6 +490,101 @@ mod tests {
             .map(|primary| (primary, false, true))
             .collect();
         assert_eq!(verbs(&ticks), vec![Verb::Menu, Verb::Menu]);
+    }
+
+    /// One step of a session: a frame loop tick, or the overlay's pointerdown
+    /// landing between ticks with the down counter where it then stood.
+    enum Step {
+        Tick(ButtonSample, bool),
+        PointerDown(u32, bool),
+    }
+
+    /// Runs the left button through the counters, the overlay's pointerdown
+    /// and the Control fold, with the cursor still on the sprite, and
+    /// collects every verb. The first tick is the baseline.
+    fn session(steps: &[Step]) -> Vec<Verb> {
+        let Step::Tick(first, _) = steps[0] else {
+            panic!("a session starts with a tick")
+        };
+        let mut left = Button::new(first);
+        let mut press = PrimaryPress::Up;
+        let mut pointer = Pointer::default();
+        let at = Point { x: 100.0, y: 100.0 };
+        let mut verbs = Vec::new();
+        for step in &steps[1..] {
+            match *step {
+                Step::Tick(now, control) => {
+                    let primary = left.step(now);
+                    let buttons;
+                    (press, buttons) = fold(
+                        press,
+                        ButtonsDown {
+                            primary,
+                            secondary: false,
+                        },
+                        control,
+                    );
+                    verbs.extend(pointer.update(true, buttons.primary, buttons.secondary, at, 400));
+                }
+                Step::PointerDown(downs, control) => {
+                    press = press_began(press, left.pending(downs), control);
+                }
+            }
+        }
+        verbs
+    }
+
+    /// The overlay's pointerdown can trail the press by about 220 ms (#1795).
+    /// A Control-tap's pointerdown that lands after the tick that saw it come
+    /// up must not make the next plain click a Menu.
+    #[test]
+    fn a_late_pointerdown_after_a_control_tap_leaves_the_next_click_a_poke() {
+        use Step::{PointerDown, Tick};
+        assert_eq!(
+            session(&[
+                Tick(sample(false, 4, 4), false),
+                Tick(sample(false, 5, 5), true),
+                Tick(sample(false, 5, 5), true),
+                PointerDown(5, true),
+                Tick(sample(true, 6, 5), false),
+                Tick(sample(false, 6, 6), false),
+            ]),
+            vec![Verb::Menu, Verb::Poke]
+        );
+    }
+
+    /// The same late pointerdown after a plain tap must not turn the next
+    /// Control-click into a Poke.
+    #[test]
+    fn a_late_pointerdown_after_a_plain_tap_leaves_the_next_control_click_a_menu() {
+        use Step::{PointerDown, Tick};
+        assert_eq!(
+            session(&[
+                Tick(sample(false, 4, 4), false),
+                Tick(sample(false, 5, 5), false),
+                Tick(sample(false, 5, 5), false),
+                PointerDown(5, false),
+                Tick(sample(true, 6, 5), true),
+                Tick(sample(false, 6, 6), true),
+            ]),
+            vec![Verb::Poke, Verb::Menu]
+        );
+    }
+
+    /// A pointerdown that beats the tick still settles the press while
+    /// Control is held, even if Control is let go before the tick reads it.
+    #[test]
+    fn a_pointerdown_before_the_tick_settles_a_control_click() {
+        use Step::{PointerDown, Tick};
+        assert_eq!(
+            session(&[
+                Tick(sample(false, 4, 4), false),
+                PointerDown(5, true),
+                Tick(sample(true, 5, 4), false),
+                Tick(sample(false, 5, 5), false),
+            ]),
+            vec![Verb::Menu]
+        );
     }
 
     #[test]
