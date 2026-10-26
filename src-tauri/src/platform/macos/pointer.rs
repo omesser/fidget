@@ -213,7 +213,6 @@ pub fn buttons_down() -> ButtonsDown {
         CGEventType::RightMouseUp,
     );
     let at = Instant::now();
-    let tracing = crate::dev_flags::TRACE_CLICKS.is_on();
     let mut session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(state) = session.as_mut() else {
         *session = Some(Session {
@@ -221,16 +220,7 @@ pub fn buttons_down() -> ButtonsDown {
             left: Button::new(left),
             right: Button::new(right),
         });
-        if tracing {
-            eprintln!(
-                "click-trace: start t={:.1} left_downs={} left_ups={} right_downs={} right_ups={}",
-                trace_ms(),
-                left.downs,
-                left.ups,
-                right.downs,
-                right.ups
-            );
-        }
+        trace_start(left, right);
         return ButtonsDown::default();
     };
     let (left_before, right_before) = (state.left.last, state.right.last);
@@ -241,14 +231,27 @@ pub fn buttons_down() -> ButtonsDown {
         secondary: state.right.step(right),
     });
     drop(session);
-    if tracing {
-        trace_tick(
-            gap_ms,
-            [("left", left_before, left), ("right", right_before, right)],
-            buttons,
-        );
-    }
+    trace_tick(
+        gap_ms,
+        [("left", left_before, left), ("right", right_before, right)],
+        buttons,
+    );
     buttons
+}
+
+/// Logs the session's counters when the first tick seeds them, for #1858.
+fn trace_start(left: ButtonSample, right: ButtonSample) {
+    if !crate::dev_flags::TRACE_CLICKS.is_on() {
+        return;
+    }
+    eprintln!(
+        "click-trace: start t={:.1} left_downs={} left_ups={} right_downs={} right_ups={}",
+        trace_ms(),
+        left.downs,
+        left.ups,
+        right.downs,
+        right.ups
+    );
 }
 
 /// The `click-trace: tick` fields for a button that changed since `prev`, or
@@ -277,6 +280,9 @@ const SLOW_TICK_MS: f64 = 50.0;
 /// Logs what the session reported this tick and what the frame loop was told,
 /// for #1858.
 fn trace_tick(gap_ms: f64, changes: [(&str, ButtonSample, ButtonSample); 2], out: ButtonsDown) {
+    if !crate::dev_flags::TRACE_CLICKS.is_on() {
+        return;
+    }
     let t = trace_ms();
     let mut quiet = true;
     for (name, before, now) in changes {

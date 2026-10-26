@@ -223,7 +223,8 @@ pub fn set_overlay_secondary(down: bool) {
 #[cfg(not(target_os = "macos"))]
 pub fn overlay_passes_clicks_through() {
     for (button, witness) in [("left", &OVERLAY_PRIMARY), ("right", &OVERLAY_SECONDARY)] {
-        if witness.forget() && crate::dev_flags::TRACE_CLICKS.is_on() {
+        let held = witness.forget();
+        if held && crate::dev_flags::TRACE_CLICKS.is_on() {
             eprintln!(
                 "click-trace: witness t={:.1} button={button} edge=forget",
                 trace_ms()
