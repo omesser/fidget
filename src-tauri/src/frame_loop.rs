@@ -2325,11 +2325,21 @@ pub(crate) fn run_frame_loop(
 
                 // Hidden sprites always idle. Track visibility for XI2 wake policy.
                 if index == 0 {
-                    schedule_mode = if !presence.visible || !any_needs_active {
+                    let next_mode = if !presence.visible || !any_needs_active {
                         scheduler::ScheduleMode::Idle
                     } else {
                         scheduler::ScheduleMode::Active
                     };
+                    // Once per switch, for #1858: a bare tick line only shows
+                    // an idle wait after it ends.
+                    if next_mode != schedule_mode && dev_flags::TRACE_CLICKS.is_on() {
+                        let name = match next_mode {
+                            scheduler::ScheduleMode::Idle => "idle",
+                            scheduler::ScheduleMode::Active => "active",
+                        };
+                        eprintln!("click-trace: {name} t={:.1}", platform::trace_ms());
+                    }
+                    schedule_mode = next_mode;
                     moving = any_moving;
                     was_visible = presence.visible;
                 }

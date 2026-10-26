@@ -26,9 +26,12 @@ const LOG = [
   "click-trace: witness t=1300.0 button=left edge=up",
   tick(1306.0, 16.0, "left", "session=0 session_edge=up down_delta=0 up_delta=1 witness=0"),
   // A tap between two idle ticks: only the counter and the witness saw it.
+  // The schedule lines around it are context the analyzer skips.
+  "click-trace: idle t=1400.0",
   "click-trace: witness t=1500.0 button=left edge=down",
   "click-trace: witness t=1540.0 button=left edge=up",
   tick(1600.0, 100.0, "left", "session=0 session_edge=- down_delta=1 up_delta=1 witness=1"),
+  "click-trace: active t=1610.0",
   // The witness alone, with fast unlogged ticks after it: the #1858 flag.
   "click-trace: witness t=2000.0 button=left edge=down",
   "click-trace: witness t=2060.0 button=left edge=up",
