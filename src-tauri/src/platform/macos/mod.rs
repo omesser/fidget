@@ -22,7 +22,7 @@ pub use minimize::{observe_minimize, MinimizeObserver};
 pub use overlay_panel::{configure_overlay, hand_back_keyboard, remember_front_app};
 pub use pointer::{
     control_click, double_click_interval_ms, primary_button_down, primary_press_began,
-    secondary_button_down,
+    secondary_button_down, trace_tick,
 };
 pub(crate) use precise_sleep::sleep_precisely;
 pub use sensing::MacosActivitySource;

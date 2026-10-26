@@ -62,6 +62,9 @@ pub static TRACE_BUBBLE: Flag = Flag::new("FIDGET_TRACE_BUBBLE");
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
+/// One line per tick for each click source on macOS, and every overlay witness
+/// edge on all platforms (#1858). Off by default, with no Settings row.
+pub static TRACE_CLICKS: Flag = Flag::new("FIDGET_CLICK_TRACE");
 /// File-based debug IPC for test automation. Off by default, with no Settings row.
 pub static DEBUG_IPC: Flag = Flag::new("FIDGET_DEBUG_IPC");
 /// Capture exclusion setting. macOS and Windows support it via platform APIs;
@@ -158,6 +161,7 @@ fn flag_vars() -> Vec<&'static str> {
         #[cfg(windows)]
         DEBUG_REINFORCE.var(),
         DEBUG_IPC.var(),
+        TRACE_CLICKS.var(),
         CAPTURABLE.var(),
         DIRECTOR_BLANK.var(),
     ]
@@ -202,6 +206,7 @@ pub fn seed(settings: &Settings) {
     #[cfg(windows)]
     DEBUG_REINFORCE.seed(false);
     DEBUG_IPC.seed(false);
+    TRACE_CLICKS.seed(false);
     CAPTURABLE.seed(settings.capturable);
     DIRECTOR_BLANK.seed(settings.director_blank);
     TIMEOUT_SECS.store(

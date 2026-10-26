@@ -58,9 +58,9 @@ impl Witness {
     }
 
     /// The overlay is no longer a witness, so nothing it holds can be trusted.
-    fn forget(&self) {
-        self.down.store(false, Ordering::SeqCst);
-        self.pressed.store(false, Ordering::SeqCst);
+    /// Returns whether it was holding anything.
+    fn forget(&self) -> bool {
+        self.down.swap(false, Ordering::SeqCst) | self.pressed.swap(false, Ordering::SeqCst)
     }
 }
 
@@ -112,8 +112,27 @@ pub struct ButtonsDown {
     pub secondary: bool,
 }
 
+/// Milliseconds since the Unix epoch, so `FIDGET_CLICK_TRACE` lines from the
+/// frame loop, the overlay commands and a test script's markers sort together.
+pub fn trace_ms() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |since| since.as_secs_f64() * 1000.0)
+}
+
+fn trace_witness(button: &str, down: bool) {
+    if crate::dev_flags::TRACE_CLICKS.is_on() {
+        let edge = if down { "down" } else { "up" };
+        eprintln!(
+            "click-trace: witness t={:.1} button={button} edge={edge}",
+            trace_ms()
+        );
+    }
+}
+
 /// The overlay heard the primary button go down or up.
 pub fn set_overlay_primary(down: bool) {
+    trace_witness("left", down);
     OVERLAY_PRIMARY.report(down);
     #[cfg(target_os = "macos")]
     if down {
@@ -187,6 +206,7 @@ pub fn overlay_rects_for(label: &str) -> Vec<OverlayRect> {
 /// The overlay heard the secondary button go down or up. Same miss as the
 /// primary: `CGEventSource` has been seen to skip a right-click on our window.
 pub fn set_overlay_secondary(down: bool) {
+    trace_witness("right", down);
     OVERLAY_SECONDARY.report(down);
 }
 
@@ -194,8 +214,14 @@ pub fn set_overlay_secondary(down: bool) {
 /// press. Must not consult the session poll: that poll misses a press our
 /// own window swallowed, which is when this witness is the only one.
 pub fn overlay_passes_clicks_through() {
-    OVERLAY_PRIMARY.forget();
-    OVERLAY_SECONDARY.forget();
+    for (button, witness) in [("left", &OVERLAY_PRIMARY), ("right", &OVERLAY_SECONDARY)] {
+        if witness.forget() && crate::dev_flags::TRACE_CLICKS.is_on() {
+            eprintln!(
+                "click-trace: witness t={:.1} button={button} edge=forget",
+                trace_ms()
+            );
+        }
+    }
 }
 
 fn overlay_primary_down() -> bool {
@@ -1058,10 +1084,22 @@ fn os_double_click_interval_ms() -> Option<u32> {
 /// once per tick, so "since the last call" means "since the last tick".
 #[cfg(target_os = "macos")]
 pub fn buttons_down() -> ButtonsDown {
-    macos::control_click(ButtonsDown {
-        primary: overlay_primary_down() || macos::primary_button_down(),
-        secondary: overlay_secondary_down() || macos::secondary_button_down(),
-    })
+    let witness = ButtonsDown {
+        primary: overlay_primary_down(),
+        secondary: overlay_secondary_down(),
+    };
+    let session = ButtonsDown {
+        primary: macos::primary_button_down(),
+        secondary: macos::secondary_button_down(),
+    };
+    let buttons = macos::control_click(ButtonsDown {
+        primary: witness.primary || session.primary,
+        secondary: witness.secondary || session.secondary,
+    });
+    if crate::dev_flags::TRACE_CLICKS.is_on() {
+        macos::trace_tick(session, witness, buttons);
+    }
+    buttons
 }
 
 /// X11 on Linux: one XQueryPointer for both buttons, or the overlay latch.
