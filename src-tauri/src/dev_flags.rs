@@ -62,8 +62,9 @@ pub static TRACE_BUBBLE: Flag = Flag::new("FIDGET_TRACE_BUBBLE");
 /// Windows overlay reinforce debug logging. Windows only.
 #[cfg(windows)]
 pub static DEBUG_REINFORCE: Flag = Flag::new("FIDGET_DEBUG_REINFORCE");
-/// One line per tick for each click source on macOS, and every overlay witness
-/// edge on all platforms (#1858). Off by default, with no Settings row.
+/// On macOS, one line per tick whenever a button's level or event counters
+/// moved; every overlay pointer edge on all platforms (#1858). Off by default,
+/// with no Settings row.
 pub static TRACE_CLICKS: Flag = Flag::new("FIDGET_CLICK_TRACE");
 /// File-based debug IPC for test automation. Off by default, with no Settings row.
 pub static DEBUG_IPC: Flag = Flag::new("FIDGET_DEBUG_IPC");

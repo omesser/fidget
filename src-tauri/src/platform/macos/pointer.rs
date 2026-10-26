@@ -1,16 +1,18 @@
 //! Whether the user is pressing the mouse.
 //!
-//! `CGEventSourceButtonState` asks the window server what the button is doing
-//! right now. It is a state query and not an event tap, so it needs no
-//! Accessibility permission — the same trade `sensing` makes to read how long
-//! ago the last input was without reading the input itself.
+//! `CGEventSource` asks the window server about the buttons. It is a state
+//! query and not an event tap, so it needs no Accessibility permission — the
+//! same trade `sensing` makes to read how long ago the last input was without
+//! reading the input itself.
 //!
-//! The Shell polls this beside the cursor position it already reads each tick.
+//! The Shell reads it beside the cursor position it already reads each tick.
 //! A drag that outruns the art still has to be seen, and the overlay is
 //! click-through wherever the sprite is not drawn, so the webview alone would
-//! drop the button the moment the cursor left the pixels. The overlay still
-//! reports the press that landed on it: this query has been seen to stay
-//! false for a click our own window swallowed.
+//! drop the button the moment the cursor left the pixels. Each button's down
+//! and up event counters say when a press began and ended, so a click between
+//! two ticks still counts; the button level only says whether a counted press
+//! is still held. In the #1858 trace the counters saw every press the overlay
+//! saw, and presses it missed, so the overlay is not a second source here.
 
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
@@ -21,24 +23,6 @@ use objc2_core_graphics::{
 };
 
 use crate::platform::{trace_ms, ButtonsDown};
-
-/// Whether the primary mouse button is down.
-/// `CombinedSessionState` rather than HID, so a trackpad, mouse, and tablet
-/// all count, including a hold while another app is frontmost.
-pub fn primary_button_down() -> bool {
-    CGEventSource::button_state(
-        CGEventSourceStateID::CombinedSessionState,
-        CGMouseButton::Left,
-    )
-}
-
-/// Whether the secondary mouse button (right-click) is down.
-pub fn secondary_button_down() -> bool {
-    CGEventSource::button_state(
-        CGEventSourceStateID::CombinedSessionState,
-        CGMouseButton::Right,
-    )
-}
 
 /// Whether Control is held. The same state query as the buttons: no event tap.
 fn control_key_down() -> bool {
@@ -83,104 +67,192 @@ fn fold(press: PrimaryPress, raw: ButtonsDown, control: bool) -> (PrimaryPress, 
 }
 
 /// The buttons as macOS means them: a Control-click is a secondary click.
-pub fn control_click(raw: ButtonsDown) -> ButtonsDown {
+fn control_click(raw: ButtonsDown) -> ButtonsDown {
     let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
     let (next, buttons) = fold(*press, raw, control_key_down());
     *press = next;
     buttons
 }
 
-/// The overlay felt a primary press. Settle it now, while Control is still
-/// held: an idle frame loop can tick up to a second later.
+/// The overlay felt a primary press. Settle what it means now, while Control
+/// is still held: an idle frame loop can tick up to a second later. Whether
+/// there was a press at all is still the counters' call.
 pub fn primary_press_began() {
     let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
     *press = press.seen(control_key_down());
 }
 
-/// One button at one tick, as each source saw it. `downs` and `ups` are the
-/// session's running event counters, which a click between two ticks still bumps.
+/// One button at one tick, as the session reports it. `downs` and `ups` are
+/// the session's running event counters, which a click between two ticks
+/// still bumps.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ButtonSample {
-    session: bool,
-    /// The overlay witness's consuming read: down now, or pressed since the last tick.
-    witness: bool,
+    level: bool,
     downs: u32,
     ups: u32,
 }
 
 impl ButtonSample {
-    fn read(session: bool, witness: bool, down: CGEventType, up: CGEventType) -> Self {
+    fn read(button: CGMouseButton, down: CGEventType, up: CGEventType) -> Self {
         let state = CGEventSourceStateID::CombinedSessionState;
         Self {
-            session,
-            witness,
+            level: CGEventSource::button_state(state, button),
             downs: CGEventSource::counter_for_event_type(state, down),
             ups: CGEventSource::counter_for_event_type(state, up),
         }
     }
 }
 
+/// One button as the frame loop is told it, one level per tick. The counters
+/// say a press began or ended; the level only says a counted press is still
+/// held. `Tapped` and `Owed` report a level the button no longer has, so a
+/// press or a release that fit between two ticks still gets a tick of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Press {
+    Up,
+    /// Pressed, and the level says still held.
+    Held,
+    /// Pressed and let go since the last tick: down now, up next tick.
+    Tapped,
+    /// Let go and pressed again since the last tick: up now, down next tick.
+    Owed,
+}
+
+impl Press {
+    fn step(self, downs: u32, ups: u32, level: bool) -> Self {
+        let pressed = if level { Self::Held } else { Self::Tapped };
+        let let_go = if downs > 0 { Self::Owed } else { Self::Up };
+        match self {
+            Self::Up if downs > 0 => pressed,
+            Self::Up => Self::Up,
+            Self::Held if ups > 0 || !level => let_go,
+            Self::Held => Self::Held,
+            Self::Tapped => let_go,
+            Self::Owed => pressed,
+        }
+    }
+
+    fn down(self) -> bool {
+        matches!(self, Self::Held | Self::Tapped)
+    }
+}
+
+/// One button's last sample and where its press stands.
+#[derive(Clone, Copy, Debug)]
+struct Button {
+    last: ButtonSample,
+    press: Press,
+}
+
+impl Button {
+    /// The first sample is the baseline: a button already held when Fidget
+    /// starts has no counted press, so it is not one.
+    fn new(first: ButtonSample) -> Self {
+        Self {
+            last: first,
+            press: Press::Up,
+        }
+    }
+
+    fn step(&mut self, now: ButtonSample) -> bool {
+        let downs = now.downs.wrapping_sub(self.last.downs);
+        let ups = now.ups.wrapping_sub(self.last.ups);
+        self.press = self.press.step(downs, ups, now.level);
+        self.last = now;
+        self.press.down()
+    }
+}
+
+struct Session {
+    at: Instant,
+    left: Button,
+    right: Button,
+}
+
+static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+
+/// Which buttons count as down this tick, a Control-click as secondary. The
+/// frame loop asks once per tick: a second call would take the next tick's
+/// edges.
+pub fn buttons_down() -> ButtonsDown {
+    let left = ButtonSample::read(
+        CGMouseButton::Left,
+        CGEventType::LeftMouseDown,
+        CGEventType::LeftMouseUp,
+    );
+    let right = ButtonSample::read(
+        CGMouseButton::Right,
+        CGEventType::RightMouseDown,
+        CGEventType::RightMouseUp,
+    );
+    let at = Instant::now();
+    let tracing = crate::dev_flags::TRACE_CLICKS.is_on();
+    let mut session = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some(state) = session.as_mut() else {
+        *session = Some(Session {
+            at,
+            left: Button::new(left),
+            right: Button::new(right),
+        });
+        if tracing {
+            eprintln!(
+                "click-trace: start t={:.1} left_downs={} left_ups={} right_downs={} right_ups={}",
+                trace_ms(),
+                left.downs,
+                left.ups,
+                right.downs,
+                right.ups
+            );
+        }
+        return ButtonsDown::default();
+    };
+    let (left_before, right_before) = (state.left.last, state.right.last);
+    let gap_ms = at.duration_since(state.at).as_secs_f64() * 1000.0;
+    state.at = at;
+    let buttons = control_click(ButtonsDown {
+        primary: state.left.step(left),
+        secondary: state.right.step(right),
+    });
+    drop(session);
+    if tracing {
+        trace_tick(
+            gap_ms,
+            [("left", left_before, left), ("right", right_before, right)],
+            buttons,
+        );
+    }
+    buttons
+}
+
 /// The `click-trace: tick` fields for a button that changed since `prev`, or
-/// `None` when no source moved.
+/// `None` when nothing moved.
 fn button_change(prev: ButtonSample, now: ButtonSample) -> Option<String> {
-    let edge = match (prev.session, now.session) {
+    let edge = match (prev.level, now.level) {
         (false, true) => "down",
         (true, false) => "up",
         _ => "-",
     };
     let down_delta = now.downs.wrapping_sub(prev.downs);
     let up_delta = now.ups.wrapping_sub(prev.ups);
-    if edge == "-" && down_delta == 0 && up_delta == 0 && prev.witness == now.witness {
+    if edge == "-" && down_delta == 0 && up_delta == 0 {
         return None;
     }
     Some(format!(
-        "session={} session_edge={edge} down_delta={down_delta} up_delta={up_delta} witness={}",
-        u8::from(now.session),
-        u8::from(now.witness),
+        "session={} session_edge={edge} down_delta={down_delta} up_delta={up_delta}",
+        u8::from(now.level),
     ))
 }
-
-struct TraceState {
-    at: Instant,
-    left: ButtonSample,
-    right: ButtonSample,
-}
-
-static TRACE: Mutex<Option<TraceState>> = Mutex::new(None);
 
 /// A tick this far behind the last one is logged even when nothing moved, so
 /// idle and stalled ticks show up between presses.
 const SLOW_TICK_MS: f64 = 50.0;
 
-/// Logs what each click source saw this tick, for #1858. The frame loop reads
-/// the buttons once per tick, so the gap since the last call is the tick gap.
-/// `session` is the poll this tick already made, not a second read.
-pub fn trace_tick(session: ButtonsDown, witness: ButtonsDown, out: ButtonsDown) {
-    let left = ButtonSample::read(
-        session.primary,
-        witness.primary,
-        CGEventType::LeftMouseDown,
-        CGEventType::LeftMouseUp,
-    );
-    let right = ButtonSample::read(
-        session.secondary,
-        witness.secondary,
-        CGEventType::RightMouseDown,
-        CGEventType::RightMouseUp,
-    );
-    let at = Instant::now();
+/// Logs what the session reported this tick and what the frame loop was told,
+/// for #1858.
+fn trace_tick(gap_ms: f64, changes: [(&str, ButtonSample, ButtonSample); 2], out: ButtonsDown) {
     let t = trace_ms();
-    let mut trace = TRACE.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(prev) = trace.replace(TraceState { at, left, right }) else {
-        eprintln!(
-            "click-trace: start t={t:.1} left_downs={} left_ups={} right_downs={} right_ups={}",
-            left.downs, left.ups, right.downs, right.ups
-        );
-        return;
-    };
-    let gap_ms = at.duration_since(prev.at).as_secs_f64() * 1000.0;
     let mut quiet = true;
-    for (name, before, now) in [("left", prev.left, left), ("right", prev.right, right)] {
+    for (name, before, now) in changes {
         if let Some(fields) = button_change(before, now) {
             quiet = false;
             eprintln!(
@@ -292,26 +364,119 @@ mod tests {
         assert_eq!((buttons.primary, buttons.secondary), (true, false));
     }
 
-    fn sample(session: bool, witness: bool, downs: u32, ups: u32) -> ButtonSample {
-        ButtonSample {
-            session,
-            witness,
-            downs,
-            ups,
-        }
+    fn sample(level: bool, downs: u32, ups: u32) -> ButtonSample {
+        ButtonSample { level, downs, ups }
+    }
+
+    /// The level the frame loop is told at each sample after the first.
+    fn levels(samples: &[ButtonSample]) -> Vec<bool> {
+        let mut button = Button::new(samples[0]);
+        samples[1..].iter().map(|&now| button.step(now)).collect()
+    }
+
+    #[test]
+    fn a_held_press_is_down_from_its_count_until_its_release() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+                sample(false, 5, 5),
+            ]),
+            vec![true, true, false]
+        );
+    }
+
+    /// The level never showed it, but the counters did: down one tick, up the next.
+    #[test]
+    fn a_tap_between_two_ticks_is_down_for_one_tick() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(false, 5, 5),
+                sample(false, 5, 5)
+            ]),
+            vec![true, false]
+        );
+    }
+
+    /// The #1858 trace's 1546.7 ms Control-click tick: the level stayed down
+    /// across a release and a new press, and only the counters moved.
+    #[test]
+    fn a_release_and_press_inside_one_tick_is_up_then_down_again() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 4),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, false]
+        );
+    }
+
+    /// A tap is owed its up tick even when the next press is already held.
+    #[test]
+    fn a_press_right_after_a_tap_gets_its_own_down_edge() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(false, 5, 5),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+            ]),
+            vec![true, false, true]
+        );
+    }
+
+    /// Only a counted press starts one, so a button held before the first
+    /// sample, or a level the counters never backed, is not a click.
+    #[test]
+    fn the_level_alone_never_starts_a_press() {
+        assert_eq!(
+            levels(&[sample(true, 4, 3), sample(true, 4, 3), sample(false, 4, 4)]),
+            vec![false, false]
+        );
+    }
+
+    #[test]
+    fn a_counter_that_wraps_still_counts_one_press() {
+        assert_eq!(
+            levels(&[sample(false, u32::MAX, u32::MAX), sample(true, 0, u32::MAX)]),
+            vec![true]
+        );
+    }
+
+    /// Both Control-clicks of the 1546.7 ms tick open the menu, through the
+    /// counters and the Control fold together.
+    #[test]
+    fn two_control_clicks_inside_one_tick_open_two_menus() {
+        let samples = [
+            sample(false, 4, 4),
+            sample(true, 5, 4),
+            sample(true, 6, 5),
+            sample(true, 6, 5),
+            sample(false, 6, 6),
+        ];
+        let ticks: Vec<_> = levels(&samples)
+            .into_iter()
+            .map(|primary| (primary, false, true))
+            .collect();
+        assert_eq!(verbs(&ticks), vec![Verb::Menu, Verb::Menu]);
     }
 
     #[test]
     fn a_still_button_logs_nothing() {
-        let held = sample(true, true, 7, 6);
+        let held = sample(true, 7, 6);
         assert_eq!(button_change(held, held), None);
     }
 
     #[test]
-    fn a_press_seen_by_the_poll_logs_its_edge_and_counter() {
+    fn a_press_seen_by_the_level_logs_its_edge_and_counter() {
         assert_eq!(
-            button_change(sample(false, false, 7, 7), sample(true, true, 8, 7)).as_deref(),
-            Some("session=1 session_edge=down down_delta=1 up_delta=0 witness=1")
+            button_change(sample(false, 7, 7), sample(true, 8, 7)).as_deref(),
+            Some("session=1 session_edge=down down_delta=1 up_delta=0")
         );
     }
 
@@ -319,20 +484,8 @@ mod tests {
     #[test]
     fn a_tap_between_ticks_logs_the_counter_deltas() {
         assert_eq!(
-            button_change(sample(false, false, 7, 7), sample(false, false, 9, 9)).as_deref(),
-            Some("session=0 session_edge=- down_delta=2 up_delta=2 witness=0")
-        );
-    }
-
-    #[test]
-    fn a_counter_that_wraps_still_logs_one_press() {
-        assert_eq!(
-            button_change(
-                sample(false, false, u32::MAX, 0),
-                sample(false, false, 0, 0)
-            )
-            .as_deref(),
-            Some("session=0 session_edge=- down_delta=1 up_delta=0 witness=0")
+            button_change(sample(false, 7, 7), sample(false, 9, 9)).as_deref(),
+            Some("session=0 session_edge=- down_delta=2 up_delta=2")
         );
     }
 

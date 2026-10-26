@@ -633,10 +633,11 @@ pub(crate) fn run_frame_loop(
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
             // Last tick's click-through decided whether the overlay could
-            // hear this press. Passing through drops a lost pointerup. Must
-            // not consult the session poll: that poll misses a swallowed press.
+            // hear this press. Passing through drops a lost pointerup. macOS
+            // has no overlay witness to drop.
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
+            #[cfg(not(target_os = "macos"))]
             if !visible {
                 platform::overlay_passes_clicks_through();
             } else if let Some(index) = on_overlay {

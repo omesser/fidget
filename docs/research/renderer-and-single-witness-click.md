@@ -16,6 +16,8 @@ The original input design is one source: poll the OS. Every tick, Rust asks wher
 
 When click-through is off (cursor over the art), our window swallows the click so the app underneath does not get it. On macOS, `CGEventSource` has been seen to stay false for that swallowed press. #171 added a second witness: while the overlay is listening, the webview gets `pointerdown`/`pointerup` and JS latches that into Rust via `overlay_primary` invoke (`src/main.js`, lines 347–392). Either source counts.
 
+**Update (#1858).** Two traces on macOS 27 showed the opposite. The session's down/up event counters saw every press (left 20 of 20 in one run and 46 of 46 in the other, right 14 of 14), including many the overlay missed; the overlay saw no press the counters missed. The presses the level poll dropped were a release and a new press inside one tick, not swallowed clicks. macOS now takes press edges from the counters alone and keeps the overlay only to read Control early. The two-witness reasoning below still holds for X11 and Windows.
+
 They are not two algorithms. They cover disjoint regimes the click-through toggle creates:
 
 | | Overlay listening (over art) | Overlay click-through (everywhere else) |

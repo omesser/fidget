@@ -8,6 +8,9 @@ Three sources can see a click on macOS (#1858):
   ticks still bumps (`down_delta=N`).
 - witness: the overlay webview's pointerdown (`witness ... edge=down`).
 
+Since #1858 the counter alone decides presses on macOS. The level and the
+witness stay in the trace so a new log can be checked the same way.
+
 A press is one counter or poll down, or one witness down nothing else matched.
 The question for #1858 is whether the witness ever sees a press that both the
 poll and the counter missed while the loop was ticking normally. Each such

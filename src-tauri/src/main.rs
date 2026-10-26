@@ -2094,8 +2094,8 @@ fn roster_specs(roster: &Roster) -> Vec<InstanceSpec> {
         .collect()
 }
 
-/// The overlay heard the primary button. The frame loop polls a session
-/// query that can miss a click on this window; this is the other witness.
+/// The overlay heard the primary button. A second witness beside the session
+/// poll on X11 and Windows; on macOS it only settles what a Control-click means.
 #[tauri::command]
 fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
@@ -2164,8 +2164,8 @@ fn overlay_report_qm_draft(
     platform::set_qm_draft(instance, payload);
 }
 
-/// Same witness for the right button. Without it a right-click on the sprite
-/// is swallowed by the webview and the session poll never sees a Menu.
+/// The overlay heard the right button: the same witness on X11 and Windows,
+/// a trace line on macOS.
 #[tauri::command]
 fn overlay_secondary(down: bool) {
     platform::set_overlay_secondary(down);
