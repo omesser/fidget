@@ -80,11 +80,35 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
     })
 }
 
+fn unknown_instance(id: &str, roster: &[InstanceInfo]) -> String {
+    if roster.is_empty() {
+        return format!("No Character Instance has id {id}. No Character Instance is running.");
+    }
+    let running = roster
+        .iter()
+        .map(|info| format!("{} ({})", info.id, info.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "No Character Instance has id {id}. Running: {running}. \
+         Pass your own instance_id from your opening prompt."
+    )
+}
+
 pub fn dispatch(
     tool_name: &str,
     arguments: Value,
     context: &mut DispatchContext,
 ) -> Result<Value, DispatchError> {
+    // One gate for every tool, so a tool added later refuses a stray id too.
+    if let Some(id) = arguments.get("instance_id").and_then(Value::as_str) {
+        if !context.roster.iter().any(|info| info.id == id) {
+            return Err(DispatchError {
+                code: ErrorCode::InvalidArguments,
+                message: unknown_instance(id, context.roster),
+            });
+        }
+    }
     match tool_name {
         "speak" => {
             #[derive(Deserialize)]
@@ -233,7 +257,7 @@ pub struct ToolInfo {
 
 /// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
-    vec![
+    let mut tools = vec![
         ToolInfo {
             name: "speak".to_string(),
             description: "Make the Character speak a line of dialogue".to_string(),
@@ -243,10 +267,6 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "message": {
                         "type": "string",
                         "description": "The message to speak"
-                    },
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["message"]
@@ -261,10 +281,6 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "behavior": {
                         "type": "string",
                         "description": "The name of the Behavior to play"
-                    },
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["behavior"]
@@ -341,7 +357,14 @@ pub fn list_tools() -> Vec<ToolInfo> {
                 }
             }),
         },
-    ]
+    ];
+    for tool in &mut tools {
+        tool.input_schema["properties"]["instance_id"] = serde_json::json!({
+            "type": "string",
+            "description": "Your Character Instance id, named in your opening prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
+        });
+    }
+    tools
 }
 
 #[cfg(test)]
@@ -1059,25 +1082,92 @@ mod tests {
         );
     }
 
+    /// Every tool, not only the Expression ones, refuses an id no Instance
+    /// carries, and the refusal names the ids that would work.
     #[test]
-    fn unknown_instance_id_is_failure() {
+    fn every_tool_refuses_an_unknown_instance_id_and_names_the_running_ones() {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
+        let infos = [
+            InstanceInfo {
+                id: "pip".to_string(),
+                name: "Pip".to_string(),
+            },
+            InstanceInfo {
+                id: "rex".to_string(),
+                name: "Rex".to_string(),
+            },
+        ];
+        let mut context = test_context(&temp, &source, &infos);
+
+        for tool in list_tools() {
+            let refused = dispatch(
+                &tool.name,
+                json!({"message": "hi", "behavior": "wave", "instance_id": "nope"}),
+                &mut context,
+            )
+            .expect_err(&format!("{} accepted an unknown instance_id", tool.name));
+            assert_eq!(refused.code, ErrorCode::InvalidArguments, "{}", tool.name);
+            assert_eq!(
+                refused.message,
+                "No Character Instance has id nope. Running: pip (Pip), rex (Rex). \
+                 Pass your own instance_id from your opening prompt.",
+                "{}",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn an_instance_id_with_nothing_running_says_so() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+
+        let refused = dispatch("recall", json!({"instance_id": "nope"}), &mut context)
+            .expect_err("an id is refused when no Instance runs");
+
+        assert_eq!(
+            refused.message,
+            "No Character Instance has id nope. No Character Instance is running."
+        );
+    }
+
+    /// A known id is accepted by a tool that does not target anything.
+    #[test]
+    fn a_known_instance_id_passes_through_a_sensing_tool() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![window("Terminal", 0.0, 0.0, 10.0, 10.0)]);
         let infos = [InstanceInfo {
-            id: "known-instance".to_string(),
-            name: "Known".to_string(),
+            id: "pip".to_string(),
+            name: "Pip".to_string(),
         }];
         let mut context = test_context(&temp, &source, &infos);
 
-        let args = json!({"message": "Hello", "instance_id": "unknown-instance"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+        let result = dispatch("list_windows", json!({"instance_id": "pip"}), &mut context)
+            .expect("a known id is accepted");
 
-        assert_eq!(result["success"], false);
-        assert_eq!(result["message"], "Hello");
-        assert_eq!(
-            result["reason"],
-            "No Character Instance has id unknown-instance"
-        );
+        assert_eq!(result["windows"][0]["owner"], "Terminal");
+    }
+
+    /// Optional, so the stdio shim in the user's own sessions keeps working
+    /// with one Instance (ADR-0026).
+    #[test]
+    fn every_tool_advertises_an_optional_instance_id() {
+        for tool in list_tools() {
+            let schema = &tool.input_schema;
+            assert_eq!(
+                schema["properties"]["instance_id"]["type"], "string",
+                "{}",
+                tool.name
+            );
+            let required = schema["required"].as_array().cloned().unwrap_or_default();
+            assert!(
+                !required.contains(&json!("instance_id")),
+                "{} requires instance_id",
+                tool.name
+            );
+        }
     }
 
     /// Break: success on an empty roster lets a stdio verification pass

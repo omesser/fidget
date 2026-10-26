@@ -252,9 +252,6 @@ mod helpers {
                     "No Character Instance is running, so nothing changed on screen".to_string(),
                 );
             }
-            TargetResolution::UnknownInstance(id) => {
-                return Err(format!("No Character Instance has id {id}"));
-            }
             TargetResolution::AmbiguousTarget => {
                 return Err(
                     "Several Character Instances are running; name one with instance_id"
@@ -288,24 +285,17 @@ mod helpers {
     enum TargetResolution {
         Resolved(String),
         NoInstances,
-        /// The caller named an id no Instance in the roster carries.
-        UnknownInstance(String),
         AmbiguousTarget,
     }
 
     /// Target resolution against roster for both speak and play_behavior.
+    /// `dispatch` already refused an id the roster does not carry.
     fn resolve_target_instance(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
     ) -> TargetResolution {
         match instance_id {
-            Some(id) => {
-                if roster.iter().any(|info| info.id == id) {
-                    TargetResolution::Resolved(id.to_string())
-                } else {
-                    TargetResolution::UnknownInstance(id.to_string())
-                }
-            }
+            Some(id) => TargetResolution::Resolved(id.to_string()),
             None => match roster.len() {
                 0 => TargetResolution::NoInstances,
                 1 => TargetResolution::Resolved(roster[0].id.clone()),
