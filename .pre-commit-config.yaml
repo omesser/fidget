@@ -55,7 +55,7 @@ repos:
   # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
   # skipped: the valid/invalid verdict is the whole assertion.
   - repo: https://github.com/boidolr/ast-grep-pre-commit
-    rev: 0.45.3
+    rev: 0.51.0
     hooks:
       - id: ast-grep
         exclude: *vendored
