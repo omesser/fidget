@@ -83,7 +83,7 @@ while :; do
 
   # Hold the Control-down while the menu is read: a release before the menu
   # tracks lands on the overlay as a Poke. Escape closes it, then the release.
-  if swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT'
+  if swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT'; then
 import AppKit
 import ApplicationServices
 
@@ -240,7 +240,6 @@ if items.isEmpty { exit(rect == nil ? 3 : 1) }
 items.forEach { print($0) }
 exit(0)
 SWIFT
-  then
     break
   else
     code=$?
