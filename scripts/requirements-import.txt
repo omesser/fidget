@@ -1,2 +1,2 @@
-pillow>=9.1
+pillow>=13.0.0
 defusedxml
