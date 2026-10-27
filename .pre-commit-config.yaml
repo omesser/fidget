@@ -63,7 +63,7 @@ repos:
         args: [--skip-snapshot-tests]
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-    rev: v2.14.0
+    rev: v2.16.0
     hooks:
       # Pinned: floating toml-sort and tomlkit versions disagree on
       # inline-table spacing, so CI reformats files a local env passes.
