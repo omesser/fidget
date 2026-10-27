@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "marked": "18.0.13"
+    "marked": "18.1.1"
   }
 }
