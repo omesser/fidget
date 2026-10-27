@@ -1,7 +1,7 @@
 # Run `pre-commit install` once after cloning.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     # Git style
       - id: check-merge-conflict
@@ -34,7 +34,7 @@ repos:
   # block so an edit to the excludes above cannot reach them.
   # `tests/pre-commit-scans-everything.test.js` holds the line.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: detect-private-key
       - id: detect-aws-credentials
