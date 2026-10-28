@@ -160,7 +160,7 @@ done
 [ -n "$poked" ] || fail "no Poke landed mid-climb over the $side edge; see $out/input.txt"
 
 # The quick-message pill holds a climb while the pointer rests on the sprite.
-# Move further into the display than the click landed, but stay on it.
+# Move further into the display than the click landed, without leaving that display.
 away=$((px + into * 4 * size))
 read -r x0 x1 < <(awk -v c="$px" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
 if [ -n "${x1:-}" ]; then
