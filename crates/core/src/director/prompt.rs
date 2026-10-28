@@ -11,7 +11,7 @@ pub(crate) fn character_prompt(
     blank: bool,
 ) -> String {
     // Every tool takes this id, and blank mode keeps it: it routes calls to
-    // this Instance, which is plumbing rather than voice (#1700).
+    // this Instance, which is plumbing rather than voice.
     let moment = format!(
         "Your instance_id is {instance}. Pass it to every tool you call.\n\n{}",
         follow_up(context)

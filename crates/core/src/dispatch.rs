@@ -101,11 +101,17 @@ pub fn dispatch(
     context: &mut DispatchContext,
 ) -> Result<Value, DispatchError> {
     // One gate for every tool, so a tool added later refuses a stray id too.
-    if let Some(id) = arguments.get("instance_id").and_then(Value::as_str) {
+    if let Some(given) = arguments
+        .get("instance_id")
+        .filter(|given| !given.is_null())
+    {
+        let id = given
+            .as_str()
+            .map_or_else(|| given.to_string(), str::to_string);
         if !context.roster.iter().any(|info| info.id == id) {
             return Err(DispatchError {
                 code: ErrorCode::InvalidArguments,
-                message: unknown_instance(id, context.roster),
+                message: unknown_instance(&id, context.roster),
             });
         }
     }
@@ -1148,6 +1154,10 @@ mod tests {
             .expect("a known id is accepted");
 
         assert_eq!(result["windows"][0]["owner"], "Terminal");
+        assert!(
+            dispatch("list_windows", json!({"instance_id": 5}), &mut context).is_err(),
+            "an id that is not a string slipped past the check"
+        );
     }
 
     /// Optional, so the stdio shim in the user's own sessions keeps working

@@ -38,7 +38,8 @@ _Avoid_: System prompt — that is the Character Prompt, which carries this and 
 
 **Character Prompt**:
 The opening turn of the Director session: Personality Prompt, Instance Prompt,
-the Behaviors it may propose, and this moment. Later wakes send a short
+the Behaviors it may propose, the Instance's own id for its tool calls, and this
+moment. Later wakes send a short
 follow-up (what just happened, recent Behaviors, time of day, State, what the
 user is doing) in the same conversation. Assembled rather than written: two of its
 layers are authored, the whole is never hand-authored. The Prompt tab shows
@@ -58,7 +59,8 @@ The Director mode that empties the built-in prompt layers — the package
 Personality Prompt and the app-level instructions (voice rules, Behavior roster,
 reply contract) — and still sends an Instance Prompt the user wrote. Off by
 default. The Prompt tab shows those emptied fields as Empty: what you see is
-what is sent. With no contract the reply is prose, so the character talks and plays
+what is sent, apart from the Instance id line, which stays so tool calls still
+reach this Instance. With no contract the reply is prose, so the character talks and plays
 no Behavior unless the Instance Prompt asks for one. That is the control run
 for telling a model's misbehaviour apart from the shipped prompt, and for
 iterating a prompt under Fidget's conditions. #657, #680.

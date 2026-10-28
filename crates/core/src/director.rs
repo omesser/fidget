@@ -2364,7 +2364,7 @@ mod tests {
     }
 
     /// Each session's opening names its own Instance, so a tool call made
-    /// from it lands there and not on another Instance (#1700).
+    /// from it lands there and not on another Instance.
     #[test]
     fn the_opening_names_this_instance_and_later_turns_do_not() {
         let moment = context(working(), &["nap"]);
