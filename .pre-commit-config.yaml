@@ -66,11 +66,11 @@ repos:
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.16.0
     hooks:
-      # Pinned: floating toml-sort and tomlkit versions disagree on
+      # Pinned: floating toml-sort and tomlrt versions disagree on
       # inline-table spacing, so CI reformats files a local env passes.
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
-        additional_dependencies: ["toml-sort==0.25.0", "tomlkit==0.15.2"]
+        additional_dependencies: ["toml-sort==0.25.0", "tomlrt==2.3.2"]
         exclude: (^|/)Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
