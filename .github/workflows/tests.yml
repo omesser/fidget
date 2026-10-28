@@ -252,13 +252,17 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: time google-chrome --headless=new --disable-gpu --no-sandbox --dump-dom about:blank > /dev/null
 
+      - name: Importer self-test
+        if: steps.changes.outputs.code == 'true'
+        # Pillow also supports the renderer's GIF and app-icon checks below.
+        run: |
+          pip install -r scripts/requirements-import.txt
+          python scripts/import-pet.py --self-test
+
       - name: Renderer tests
         if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
-        # Pillow is for tests/readme-gifs.test.js and tests/app-icon.test.js.
-        run: |
-          pip install pillow
-          node --test tests/*.test.js
+        run: node --test tests/*.test.js
 
   # Own job: Windows cannot run the shellcheck/apt path `checks` uses.
   # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
