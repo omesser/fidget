@@ -353,7 +353,7 @@ impl<C: Completer> ModelDirector<C> {
         if self.opened.load(Ordering::SeqCst) {
             follow_up(context)
         } else {
-            character_prompt(context, self.behaviors.iter(), self.blank)
+            character_prompt(context, &self.instance, self.behaviors.iter(), self.blank)
         }
     }
 
@@ -1844,7 +1844,7 @@ mod tests {
     fn the_completer_is_sent_the_character_prompt() {
         let director = directing(Scripted::says("wave"), ["wave"]);
         let moment = context(working(), &["nap"]);
-        let expected = character_prompt(&moment, ["wave"], false);
+        let expected = character_prompt(&moment, "buddy-1", ["wave"], false);
 
         director.wake(&moment);
 
@@ -2145,7 +2145,7 @@ mod tests {
             caffeinate: None,
         };
 
-        let payload = character_prompt(&moment, ["greet", "stroll", "wave"], false);
+        let payload = character_prompt(&moment, "buddy-1", ["greet", "stroll", "wave"], false);
 
         assert!(
             payload.contains("Blip is cheerful."),
@@ -2208,7 +2208,7 @@ mod tests {
     fn an_empty_instance_prompt_assembles_the_payload_it_always_did() {
         let moment = context(working(), &["nap"]);
 
-        let payload = character_prompt(&moment, ["wave"], false);
+        let payload = character_prompt(&moment, "buddy-1", ["wave"], false);
 
         assert!(
             payload.starts_with("a shy robot.\n\nYou may propose one of these behaviors: wave"),
@@ -2226,7 +2226,7 @@ mod tests {
             ..context(working(), &["nap"])
         };
 
-        let payload = character_prompt(&moment, ["wave"], false);
+        let payload = character_prompt(&moment, "buddy-1", ["wave"], false);
 
         let personality = payload.find("a shy robot.").expect("the author's layer");
         let instance = payload.find("Answer in haiku.").expect("the user's layer");
@@ -2250,12 +2250,15 @@ mod tests {
             ..context(working(), &["nap"])
         };
 
-        let shaped = character_prompt(&moment, ["wave"], false);
-        let blank = character_prompt(&moment, ["wave"], true);
+        let shaped = character_prompt(&moment, "buddy-1", ["wave"], false);
+        let blank = character_prompt(&moment, "buddy-1", ["wave"], true);
 
         assert!(
-            blank.starts_with("Answer in haiku.\n\nwhat just happened:"),
-            "the Instance Prompt is still in front of the moment: {blank}"
+            blank.starts_with(
+                "Answer in haiku.\n\nYour instance_id is buddy-1. \
+                 Pass it to every tool you call.\n\nwhat just happened:"
+            ),
+            "the Instance Prompt and the id are still in front of the moment: {blank}"
         );
         assert!(
             !blank.contains("a shy robot."),
@@ -2298,7 +2301,7 @@ mod tests {
     #[test]
     fn a_request_invites_the_tools_without_naming_them() {
         let moment = context(working(), &["nap"]);
-        let opening = character_prompt(&moment, ["wave"], false);
+        let opening = character_prompt(&moment, "buddy-1", ["wave"], false);
 
         assert!(
             opening.contains(
@@ -2348,10 +2351,34 @@ mod tests {
     }
 
     #[test]
-    fn blank_mode_without_an_instance_prompt_is_the_moment() {
+    fn blank_mode_without_an_instance_prompt_is_the_id_and_the_moment() {
         let moment = context(working(), &["nap"]);
-        let blank = character_prompt(&moment, ["wave"], true);
-        assert_eq!(blank, follow_up(&moment));
+        let blank = character_prompt(&moment, "buddy-1", ["wave"], true);
+        assert_eq!(
+            blank,
+            format!(
+                "Your instance_id is buddy-1. Pass it to every tool you call.\n\n{}",
+                follow_up(&moment)
+            )
+        );
+    }
+
+    /// Each session's opening names its own Instance, so a tool call made
+    /// from it lands there and not on another Instance (#1700).
+    #[test]
+    fn the_opening_names_this_instance_and_later_turns_do_not() {
+        let moment = context(working(), &["nap"]);
+        let pip = character_prompt(&moment, "pip", ["wave"], false);
+        let rex = character_prompt(&moment, "rex", ["wave"], false);
+
+        assert!(pip.contains("Your instance_id is pip."), "{pip}");
+        assert!(rex.contains("Your instance_id is rex."), "{rex}");
+        assert!(!pip.contains("rex"), "{pip}");
+        assert!(
+            !follow_up(&moment).contains("instance_id"),
+            "the id is the opening's only: {}",
+            follow_up(&moment)
+        );
     }
 
     /// Each rule the opening turn must carry, and that later wakes do not
@@ -2359,7 +2386,7 @@ mod tests {
     #[test]
     fn the_character_prompt_carries_the_voice_rules_once() {
         let moment = context(working(), &["nap"]);
-        let payload = character_prompt(&moment, ["wave"], false);
+        let payload = character_prompt(&moment, "buddy-1", ["wave"], false);
 
         assert!(
             payload.contains("always in character"),
@@ -2517,7 +2544,7 @@ mod tests {
                 Some(line),
                 "follow-up: {line:?}"
             );
-            let opening = character_prompt(&moment, ["wave"], false);
+            let opening = character_prompt(&moment, "buddy-1", ["wave"], false);
             assert_eq!(typed_line(&opening), Some(line), "opening: {line:?}");
         }
     }
@@ -2531,7 +2558,7 @@ mod tests {
         };
         assert_eq!(typed_line(&follow_up(&ambient)), None);
         assert_eq!(
-            typed_line(&character_prompt(&ambient, ["wave"], false)),
+            typed_line(&character_prompt(&ambient, "buddy-1", ["wave"], false)),
             None
         );
         assert_eq!(typed_line("an ordinary prompt"), None);
@@ -2546,7 +2573,7 @@ mod tests {
             ..typed("hello?")
         };
         assert_eq!(
-            typed_line(&character_prompt(&moment, ["wave"], false)),
+            typed_line(&character_prompt(&moment, "buddy-1", ["wave"], false)),
             Some("hello?")
         );
     }
