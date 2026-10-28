@@ -70,7 +70,7 @@ repos:
       # inline-table spacing, so CI reformats files a local env passes.
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
-        additional_dependencies: ["toml-sort==0.24.4", "tomlkit==0.15.2"]
+        additional_dependencies: ["toml-sort==0.25.0", "tomlkit==0.15.2"]
         exclude: (^|/)Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
