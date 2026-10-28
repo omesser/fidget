@@ -841,7 +841,7 @@ impl Endpoint {
         }
     }
 
-    /// What a finished stream is worth. Apart from the socket, so all five
+    /// What a finished stream is worth. Apart from the socket, so all six
     /// endings are checked without one.
     fn reply_from(&self, url: &str, streamed: Streamed) -> Result<Reply, Unsent> {
         match streamed {
@@ -864,6 +864,7 @@ impl Endpoint {
                 format!("{url}: answered 200 with no event stream in it"),
             )),
             Streamed::Abandoned => Err(Unsent::Abandoned),
+            Streamed::Failed(why) => Err(Unsent::Failed(format!("{url}: {why}"))),
         }
     }
 
@@ -1469,6 +1470,9 @@ enum Streamed {
     NotEventStream,
     /// Superseded, so the reader is dropped mid-generation.
     Abandoned,
+    /// The server sent an `error` object in a frame, as OpenRouter does
+    /// mid-stream under a 200. Text before it is not a reply.
+    Failed(String),
 }
 
 /// Assemble an SSE reply from a `Read`, so canned bytes can test it. `thought`
@@ -1550,6 +1554,9 @@ fn read_frames(
             return Ok(ended(content, truncated, thinking));
         }
         let event = read_event(payload);
+        if let Some(why) = event.error {
+            return Ok(Streamed::Failed(why));
+        }
         finished |= event.finished;
         truncated |= event.truncated;
         let mut chunk = event.thought.unwrap_or_default();
@@ -1594,6 +1601,8 @@ struct Event {
     /// The reason it is done is the token cap, not the model having said
     /// what it had to say.
     truncated: bool,
+    /// The `error.message` this frame carries.
+    error: Option<String>,
 }
 
 /// Read one event in either chat-completions or Responses shape. Markers tell
@@ -1655,11 +1664,30 @@ fn read_event(payload: &str) -> Event {
         truncated: finish == Some("length")
             || kind == Some("response.incomplete")
             || stop == Some("max_tokens"),
+        error: in_band_error(&value),
     }
+}
+
+/// Failure text in a 200 body or frame. OpenRouter and Anthropic use
+/// `error.message`. A Responses `error` event uses the top-level `message`,
+/// and `response.failed` uses `response.error.message`.
+fn in_band_error(value: &serde_json::Value) -> Option<String> {
+    value["error"]["message"]
+        .as_str()
+        .or_else(|| {
+            (value["type"] == "error")
+                .then(|| value["message"].as_str())
+                .flatten()
+        })
+        .or_else(|| value["response"]["error"]["message"].as_str())
+        .map(str::to_string)
 }
 
 fn content_from_body(body: &str) -> Result<String, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|error| error.to_string())?;
+    if let Some(why) = in_band_error(&value) {
+        return Err(why);
+    }
     if let Some(text) = value["choices"][0]["message"]["content"].as_str() {
         // A tagged thought is dropped, as Anthropic's `thinking` below is.
         let mut answer = crate::acp_wire::Answer::default();
@@ -2883,6 +2911,60 @@ pub(crate) mod tests {
             why.contains("spent all 8192 tokens thinking"),
             "the ceiling is what it burned, not the 1024 it was never sent: {why}"
         );
+    }
+
+    /// OpenRouter reports a mid-stream failure as HTTP 200, an `error` object,
+    /// and `finish_reason: "error"`. The partial text before it is not a reply.
+    #[test]
+    fn an_in_band_stream_error_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey\"}}]}\n\n",
+            "data: {\"error\":{\"code\":429,\"message\":\"Rate limit exceeded\"},",
+            "\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"error\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let url = "https://openrouter.ai/api/v1/chat/completions";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("an in-band error is a failed turn");
+        };
+        assert!(why.contains("Rate limit exceeded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_responses_error_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"server overloaded\"}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("a Responses error event is a failed turn, not Complete(\"stroll\")");
+        };
+        assert!(why.contains("server overloaded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_response_failed_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"The model failed to generate a response.\"}}}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("response.failed is a failed turn, not the partial text");
+        };
+        assert!(
+            why.contains("The model failed to generate a response."),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn an_in_band_body_error_fails_with_its_message() {
+        let body = r#"{"error":{"code":429,"message":"Rate limit exceeded"},
+            "choices":[{"message":{"content":"stroll"},"finish_reason":"error"}]}"#;
+        let why = content_from_body(body).unwrap_err();
+        assert!(why.contains("Rate limit exceeded"), "{why}");
     }
 
     /// xAI's `/v1/responses` ends the body with no `[DONE]`, so the end
