@@ -72,8 +72,13 @@ export function createChatTurns() {
         return { action: "notice", turn: null, note: payload.notice };
       }
       // A `speak` line is its own row. The turn it was said in still owes
-      // its reply, so it must not be popped here.
+      // its reply, so it must not be popped here. The line is speech that
+      // turn already said, so a later empty reply stays quiet.
       if (payload.aside) {
+        const turn = waiting.at(-1);
+        if (turn) {
+          turn.alreadyHasSpeechAhead = true;
+        }
         return { action: "orphan", turn: null, said: payload.said ?? "" };
       }
       if (payload.streaming) {

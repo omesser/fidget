@@ -174,3 +174,17 @@ test("a speak line after typed() is its own row and leaves the turn for the repl
   assert.equal(reply.action, "speech");
   assert.ok(reply.turn, "the typed turn must still be waiting for its reply");
 });
+
+// An aside is speech the typed turn already said. An empty reply must stay
+// quiet, not look like a turn that never spoke.
+test("a speak line after typed() makes a later empty reply silent", () => {
+  const turns = createChatTurns();
+  turns.typed();
+
+  const spoke = turns.settle({ said: "Tests pass!", aside: true });
+  assert.equal(spoke.action, "orphan");
+  assert.equal(spoke.turn, null);
+
+  const reply = turns.settle({ said: null });
+  assert.equal(reply.action, "silent");
+});
