@@ -1652,10 +1652,19 @@ fn read_event(payload: &str) -> Event {
     }
 }
 
-/// `error.message` in a 200 body or frame: OpenRouter's mid-stream failure,
-/// and Anthropic's `error` event.
+/// Failure text in a 200 body or frame. OpenRouter and Anthropic use
+/// `error.message`. A Responses `error` event uses the top-level `message`,
+/// and `response.failed` uses `response.error.message`.
 fn in_band_error(value: &serde_json::Value) -> Option<String> {
-    value["error"]["message"].as_str().map(str::to_string)
+    value["error"]["message"]
+        .as_str()
+        .or_else(|| {
+            (value["type"] == "error")
+                .then(|| value["message"].as_str())
+                .flatten()
+        })
+        .or_else(|| value["response"]["error"]["message"].as_str())
+        .map(str::to_string)
 }
 
 fn content_from_body(body: &str) -> Result<String, String> {
@@ -2903,6 +2912,35 @@ pub(crate) mod tests {
             panic!("an in-band error is a failed turn");
         };
         assert!(why.contains("Rate limit exceeded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_responses_error_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"server overloaded\"}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("a Responses error event is a failed turn, not Complete(\"stroll\")");
+        };
+        assert!(why.contains("server overloaded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_response_failed_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"The model failed to generate a response.\"}}}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("response.failed is a failed turn, not the partial text");
+        };
+        assert!(
+            why.contains("The model failed to generate a response."),
+            "{why}"
+        );
     }
 
     #[test]
