@@ -184,7 +184,7 @@
   .row { display: grid; }
   .row .said { white-space: pre-wrap; }
   /* Sibling of .who-label: that node letter-spaces, which would pull the digits
-     apart. Colour is per variant, with the WHO label.. */
+     apart. Colour is per variant, with the WHO label. */
   .row .who { display: flex; align-items: baseline; gap: 7px; }
   .when { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
   .tool { display: flex; align-items: baseline; min-width: 0; }
@@ -213,11 +213,7 @@
   .prompt textarea { font: inherit; resize: none; width: 100%; }
   .prompt .why { margin: 0; }
 
-  /* Every logged node carries the elapsed seconds of its turn. Only the
-     terminal variant draws it; the other two keep the attribute unused. */
-
-  /* Modern minimal. Soft dark surfaces. The elapsed-time attribute stays on the node and this
-     variant does not draw it. */
+  /* Modern minimal. Soft dark surfaces, and no elapsed-time gutter. */
   .v-min .win {
     background: #14171E; color: #E8EBF2;
     border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
@@ -940,7 +936,7 @@ function reset() {
   return gen;
 }
 
-// ---- The fake Harness. A script and a timer; no ACP client exists yet.
+// ---- The fake Harness. A script and a timer stand in for an ACP client.
 async function slowTurn() {
   const mine = reset();
   const check = guard(mine);

@@ -177,7 +177,7 @@
   }
   .who-label { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #8A90A0; font-weight: 700; }
   /* Sibling of .who-label, not inside it: that node uppercases and letter-spaces
-     its text, which would pull the digits apart.. */
+     its text, which would pull the digits apart. */
   .row .who { display: flex; align-items: baseline; gap: 7px; }
   .when {
     font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 700;
@@ -590,7 +590,7 @@ function reset() {
   return gen;
 }
 
-// ---- The fake Harness. A script and a timer; no ACP client exists yet.
+// ---- The fake Harness. A script and a timer stand in for an ACP client.
 async function slowTurn() {
   const mine = reset();
   const check = guard(mine);
