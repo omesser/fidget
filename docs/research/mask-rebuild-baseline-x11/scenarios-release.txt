@@ -1,0 +1,36 @@
+# scripts/measure-mask-rebuild-x11.sh, release build at b893e92c, Xvfb :1 1920x1200x24,
+# Debian 13, 8 cores, load average 0.3-1.0. Three interleaved rounds of every scenario.
+# Round 1 of walk was lost: the script was edited while that run read it.
+round 1 idle: scenario=idle updates=0 seconds=10.000 rate=0.00 ms_per_s=0.0000
+round 1 fast: scenario=fast updates=100 seconds=10.187 rate=9.82 ms_per_s=1.2663
+  full: n=100 median 0.129 ms, range 0.103 to 0.559 ms, mean 0.179 ms
+round 1 large: scenario=large updates=100 seconds=10.189 rate=9.81 ms_per_s=1.3789
+  full: n=100 median 0.141 ms, range 0.097 to 0.621 ms, mean 0.188 ms
+round 1 small: scenario=small updates=100 seconds=8.298 rate=12.05 ms_per_s=0.3736
+  full: n=100 median 0.031 ms, range 0.023 to 0.060 ms, mean 0.032 ms
+round 1 small --scale 1: scenario=small updates=100 seconds=8.365 rate=11.95 ms_per_s=0.3467
+  full: n=100 median 0.029 ms, range 0.023 to 0.055 ms, mean 0.030 ms
+round 2 idle: scenario=idle updates=0 seconds=10.000 rate=0.00 ms_per_s=0.0000
+round 2 walk: scenario=walk updates=300 seconds=4.796 rate=62.55 ms_per_s=1.3021
+  position-only: n=262 median 0.011 ms, range 0.007 to 0.026 ms, mean 0.011 ms
+  full: n=38 median 0.088 ms, range 0.078 to 0.164 ms, mean 0.096 ms
+round 2 fast: scenario=fast updates=100 seconds=10.193 rate=9.81 ms_per_s=1.3048
+  full: n=100 median 0.133 ms, range 0.094 to 0.597 ms, mean 0.177 ms
+round 2 large: scenario=large updates=100 seconds=10.210 rate=9.79 ms_per_s=1.3222
+  full: n=100 median 0.135 ms, range 0.102 to 1.295 ms, mean 0.196 ms
+round 2 small: scenario=small updates=100 seconds=8.174 rate=12.23 ms_per_s=0.3303
+  full: n=100 median 0.027 ms, range 0.018 to 0.082 ms, mean 0.028 ms
+round 2 small --scale 1: scenario=small updates=100 seconds=8.364 rate=11.96 ms_per_s=0.3348
+  full: n=100 median 0.028 ms, range 0.023 to 0.095 ms, mean 0.029 ms
+round 3 idle: scenario=idle updates=0 seconds=10.000 rate=0.00 ms_per_s=0.0000
+round 3 walk: scenario=walk updates=300 seconds=4.787 rate=62.67 ms_per_s=1.2536
+  position-only: n=263 median 0.011 ms, range 0.007 to 0.059 ms, mean 0.012 ms
+  full: n=37 median 0.084 ms, range 0.073 to 0.160 ms, mean 0.089 ms
+round 3 fast: scenario=fast updates=100 seconds=10.175 rate=9.83 ms_per_s=1.3219
+  full: n=100 median 0.135 ms, range 0.099 to 0.511 ms, mean 0.194 ms
+round 3 large: scenario=large updates=100 seconds=10.167 rate=9.84 ms_per_s=1.3967
+  full: n=100 median 0.142 ms, range 0.103 to 2.227 ms, mean 0.246 ms
+round 3 small: scenario=small updates=100 seconds=8.289 rate=12.06 ms_per_s=0.3378
+  full: n=100 median 0.028 ms, range 0.023 to 0.054 ms, mean 0.029 ms
+round 3 small --scale 1: scenario=small updates=100 seconds=8.205 rate=12.19 ms_per_s=0.3534
+  full: n=100 median 0.029 ms, range 0.022 to 0.063 ms, mean 0.031 ms

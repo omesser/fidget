@@ -9,10 +9,11 @@ repos:
       - id: forbid-new-submodules
 
     # Common errors. `*vendored` keeps fixers off byte-identical upstream files
-    # (vendored skills, marked.esm.js's pinned hash) and generated or binary
-    # paths. The lookahead keeps our own `verify-fidget` linted.
+    # (vendored skills, marked.esm.js's pinned hash, UIforETW's WPA profile) and
+    # generated or binary paths. The lookahead keeps our own `verify-fidget`
+    # linted.
       - id: end-of-file-fixer
-        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
+        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|scripts/wpa/.*\.wpaProfile|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored

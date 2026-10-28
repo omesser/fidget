@@ -1,91 +1,71 @@
 #!/usr/bin/env bash
-# Repeatable measurement of X11 mask rebuild frequency and cost. Stops after N
-# mask updates; the deadline is only a failure guard.
+# Mask update rate and cost on X11, per scenario (#428). Launches fidget with
+# a bench copy of a shipped character, holds the pointer on the sprite so the
+# cursor-over gate stays open, and times the mask_rebuild trace lines that
+# land while the scenario's animation plays.
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-bin="target/debug/fidget"
+bin="target/release/fidget"
 scenario="idle"
 target_updates=100
 deadline_sec=60
+scale=""
+startup_sec=60
 
 usage() {
-  cat << 'EOF'
-Usage: measure-mask-rebuild-x11.sh [--bin PATH] [SCENARIO] [TARGET_UPDATES] [DEADLINE]
+  cat << 'EOF_USAGE'
+Usage: measure-mask-rebuild-x11.sh [--bin PATH] [--scale N] [SCENARIO] [TARGET_UPDATES] [DEADLINE]
 
-Measure X11 mask rebuild frequency and cost across scenarios.
-Stops after N mask updates (event-driven), with deadline as failure guard.
+Runs fidget on $DISPLAY and stops after TARGET_UPDATES mask updates (default
+100) or DEADLINE seconds (default 60) of the scenario's animation.
 
 Scenarios:
-  idle       Sprite perched, cursor away (expect 0 updates)
-  walk       Sprite walking under cursor (tests position-only optimization)
-  fast       Fast animation (BMO react at 10fps) under cursor
-  large      Black Mage at scale=3 (fewer opaque pixels, tests scale cost)
+  idle    BMO 126x128@1x, pointer parked in the corner (expect 0 updates)
+  walk    BMO 126x128@1x walking, pointer on the sprite
+  fast    BMO 126x128@1x looping react, its fastest art (10 fps), pointer on it
+  large   BMO at 4x (504x512 on screen) looping react, pointer on it
+  small   Nim 32x32 at its shipped 4x looping react (12 fps), pointer on it;
+          --scale 1 for Nim at 1x
 
-Target updates: Number of mask updates to capture (default: 100)
-Deadline: Maximum seconds to wait for target updates (default: 60)
+The bench copy keeps the shipped art, fps, and size (unless --scale says
+otherwise) and replaces the Behaviors with one that repeats the scenario's
+animation, so the Static Director keeps playing it. Its cursor reactions are
+the default, indifferent.
 
-Environment:
-  Linux VM under X11 (Xvfb or physical X server)
-  Compositor optional but recommended for production parity
+The rate counts only updates that land while the scenario's animation is on
+screen, over the time it was on screen. Each update is "full" (the pixmap is
+rebuilt) or "position-only" (the cached pixmap moves).
 
-Output:
-  - Full rebuilds vs position-only rebuilds
-  - Full rebuild ratio (full_rebuilds / total_updates, lower is better)
-  - Average CPU time per rebuild
-  - Peak rebuild time
-  - Opaque pixel count histogram
-
-Numbers from a VM are labeled indicative. Physical hardware timing differs.
-
-Examples:
-  # Idle baseline (stops immediately, expect 0 updates)
-  ./scripts/measure-mask-rebuild-x11.sh idle 0 10
-
-  # Walking under cursor (100 updates, position-only should dominate)
-  ./scripts/measure-mask-rebuild-x11.sh walk 100 60
-
-  # Fast animation
-  ./scripts/measure-mask-rebuild-x11.sh fast 100 60
-
-  # Large scaled sprite
-  ./scripts/measure-mask-rebuild-x11.sh large 100 60
-EOF
+Build with: cargo build --release -p fidget
+Needs xdotool for every scenario but idle.
+EOF_USAGE
   exit 0
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --bin)
-      bin="$2"
-      shift 2
-      ;;
+    --bin) bin="$2" && shift 2 ;;
+    --scale) scale="$2" && shift 2 ;;
     --help | -h) usage ;;
     --) shift && break ;;
-    --*)
-      echo "Unknown option: $1" >&2
-      exit 2
-      ;;
+    --*) echo "Unknown option: $1" >&2 && exit 2 ;;
     *) break ;;
   esac
 done
+[ $# -gt 0 ] && scenario="$1" && shift
+[ $# -gt 0 ] && target_updates="$1" && shift
+[ $# -gt 0 ] && deadline_sec="$1" && shift
 
-if [ $# -gt 0 ]; then
-  scenario="$1"
-  shift
-fi
-if [ $# -gt 0 ]; then
-  target_updates="$1"
-  shift
-fi
-if [ $# -gt 0 ]; then
-  deadline_sec="$1"
-  shift
-fi
-
+# The shipped package, its scale (empty keeps the manifest's), and the
+# animation the scenario times (empty for idle: every update counts).
 case "$scenario" in
-  idle | walk | fast | large) ;;
+  idle) package="bmo" steady="" ;;
+  walk) package="bmo" steady="walk" ;;
+  fast) package="bmo" steady="react" ;;
+  large) package="bmo" steady="react" scale="${scale:-4}" ;;
+  small) package="nim" steady="react" ;;
   *)
     echo "Unknown scenario: $scenario" >&2
     echo "Run with --help for usage" >&2
@@ -95,18 +75,49 @@ esac
 
 [ -x "$bin" ] || {
   echo "Binary not found: $bin" >&2
-  echo "Build with: (cd src-tauri && cargo build --bin fidget)" >&2
+  echo "Build with: cargo build --release -p fidget" >&2
   exit 2
 }
-
-log=$(mktemp -t fidget-mask-measure-XXXXXX.log)
-parsed="$log.parsed"
-cleanup() {
-  if [ -n "${app_pid:-}" ]; then
-    kill -TERM "$app_pid" 2> /dev/null || true
-    wait "$app_pid" 2> /dev/null || true
+follow=0
+if [ -n "$steady" ]; then
+  if [ -n "${DISPLAY:-}" ] && command -v xdotool > /dev/null; then
+    follow=1
+  else
+    echo "No DISPLAY or xdotool: the pointer stays put, so the gate may stay shut." >&2
   fi
-  rm -f "$log" "$parsed"
+fi
+
+here=$(dirname "${BASH_SOURCE[0]}")
+follower="$here/lib/follow-sprite.sh"
+out=$(mktemp -d -t fidget-mask-measure-XXXXXX)
+characters="$out/characters"
+mkdir -p "$characters" "$out/home" "$out/data"
+cp -R "$here/../characters/$package" "$characters/$package"
+# One Behavior that plays the steady animation many times over, the scale
+# when given, and no [cursor] table. The steady animation loops, so a
+# once-only one (react) cycles its frames at its fps.
+manifest="$characters/$package/character.manifest"
+awk -v scale="$scale" -v steady="${steady:-idle}" '
+  BEGIN { if (scale != "") print "scale = " scale }
+  /^\[/ { skip = ($0 ~ /^\[(cursor|behaviors\.[^]]*)\]$/); section = $0 }
+  skip { next }
+  section == "[animations." steady "]" && /^loop *=/ { next }
+  scale != "" && /^scale *=/ { next }
+  { print }
+  END {
+    printf "\n[behaviors.bench]\nplay = ["
+    for (i = 1; i <= 50; i++) printf "%s\"%s\"", (i > 1 ? ", " : ""), steady
+    print "]"
+  }' "$here/../characters/$package/character.manifest" > "$manifest"
+log="$out/data/process.log"
+: > "$log"
+updates="$out/updates.log"
+: > "$updates"
+
+pids=()
+cleanup() {
+  for pid in "${pids[@]}"; do kill -- "-$pid" "$pid" 2> /dev/null || true; done
+  wait 2> /dev/null || true
 }
 trap cleanup EXIT
 # A signal has to end the run; cleanup is the EXIT trap's job.
@@ -120,248 +131,195 @@ in_background() {
   wait "$!"
 }
 
-# Sets log_lines and log_matches (lines matching glob $1), using builtins.
-scan_log() {
-  log_lines=0
-  log_matches=0
-  [ -f "$log" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    log_lines=$((log_lines + 1))
-    # shellcheck disable=SC2254 # $1 is a glob on purpose.
-    case "$line" in
-      $1) log_matches=$((log_matches + 1)) ;;
-    esac
-  done < "$log"
-}
-
 echo "=== X11 Mask Rebuild Measurement ==="
-echo "Scenario: $scenario"
+echo "Scenario: $scenario ($package${scale:+ at ${scale}x}${steady:+, timing $steady})"
 echo "Target updates: $target_updates"
 echo "Deadline: ${deadline_sec}s"
 echo "Binary: $bin"
+echo "Run folder: $out"
 echo ""
 
-export FIDGET_TRACE_MASK_REBUILD=1
-case "$scenario" in
-  large)
-    export FIDGET_INSTANCES="Black Mage"
-    echo "Character: Black Mage (37×33@3x, ~500 opaque pixels)"
-    ;;
-  *)
-    export FIDGET_INSTANCES="BMO"
-    echo "Character: BMO (126×128@1x, ~6300 opaque pixels)"
-    ;;
-esac
+# Idle parks the pointer where the sprite never goes.
+[ -z "$steady" ] && [ -n "${DISPLAY:-}" ] && command -v xdotool > /dev/null &&
+  in_background xdotool mousemove 0 0
 
-"$bin" > "$log" 2>&1 &
-app_pid=$!
+# The app writes stderr, traces included, to the process log in its data
+# folder, so that file is the log to read. A pointer resting on the sprite
+# shows the hover bubble after 1.5 s, and the bubble stops a walk; the
+# hour-long hover delay keeps the sprite walking under the pointer.
+env -u FIDGET_DIRECTOR_API_KEY -u XAI_API_KEY -u XDG_DATA_HOME \
+  HOME="$out/home" FIDGET_DATA_DIR="$out/data" FIDGET_DIRECTOR=0 \
+  FIDGET_HOVER_DELAY_MS=3600000 \
+  FIDGET_TRACE_MASK_REBUILD=1 FIDGET_TRACE_FRAMES=1 \
+  FIDGET_CHARACTERS="$characters" FIDGET_INSTANCES="$package" \
+  "$bin" > "$out/stdout.log" 2>&1 &
+pids+=("$!")
 
-ready_glob='*overlay: [0-9]* display*'
-trace_glob='*mask_rebuild:*'
+# One reader over the log, from its first line. Every wait below is a read
+# on it, so each step returns on the line it waits for.
+exec {feed}< <(exec tail -n +1 -F "$log" 2> /dev/null)
+pids+=("$!")
+
+now_us() { now=${EPOCHREALTIME/./}; }
+# Reads the next line into $line, or fails once $1 (microseconds) passes.
+next_line() {
+  now_us
+  local left=$(($1 - now))
+  [ "$left" -gt 0 ] || return 1
+  printf -v left '%d.%06d' $((left / 1000000)) $((left % 1000000))
+  IFS= read -r -t "$left" -u "$feed" line
+}
 
 echo -n "Waiting for overlay ready..."
-last_lines=0
-stall_count=0
-for ((i = 0; i < 120; i++)); do
-  scan_log "$ready_glob"
-  if [ "$log_matches" -gt 0 ]; then
-    echo " ready"
+now_us
+until_us=$((now + startup_sec * 1000000))
+ready=""
+while next_line "$until_us"; do
+  case "$line" in *'overlay: '*' display'*)
+    ready=$line
     break
-  fi
-  if [ "$log_lines" -eq "$last_lines" ]; then
-    stall_count=$((stall_count + 1))
-    if [ "$stall_count" -gt 10 ]; then
-      echo " STALLED"
-      echo "App stalled during startup. Log tail:"
-      in_background tail -20 "$log"
-      exit 1
-    fi
-  else
-    stall_count=0
-  fi
-  last_lines=$log_lines
-  in_background sleep 0.25
+    ;;
+  esac
 done
-
-scan_log "$ready_glob"
-if [ "$log_matches" -eq 0 ]; then
+[ -n "$ready" ] || {
   echo " TIMEOUT"
-  echo "App failed to start. Log tail:"
+  echo "No overlay line within ${startup_sec}s. Log tail:"
   in_background tail -20 "$log"
   exit 1
+}
+echo " ready"
+
+# The pointer rides the middle of the sprite box wherever the sprite goes.
+# The follower runs in its own process group so cleanup stops its tail too.
+if [ "$follow" -eq 1 ] && [[ "$ready" =~ sprite\ ([0-9]+)x([0-9]+) ]]; then
+  setsid "$follower" "$log" "$((BASH_REMATCH[1] / 2))" "$((BASH_REMATCH[2] / 2))" &
+  pids+=("$!")
 fi
 
-echo -n "Waiting for mask trace..."
-for ((i = 0; i < 40; i++)); do
-  scan_log "$trace_glob"
-  if [ "$log_matches" -gt 0 ]; then
-    echo " trace active"
-    break
-  fi
-  in_background sleep 0.25
-done
-
-scan_log "$trace_glob"
-if [ "$log_matches" -eq 0 ]; then
-  echo " FAILED"
-  echo "No mask_rebuild trace appeared. Check FIDGET_TRACE_MASK_REBUILD."
-  in_background tail -20 "$log"
-  exit 1
-fi
-
-case "$scenario" in
-  walk | fast)
-    echo ""
-    echo "Note: This scenario requires cursor over sprite during measurement."
-    echo "      Starting measurement immediately..."
-    ;;
-  idle)
-    if [ "$target_updates" -eq 0 ]; then
-      echo "Idle scenario with target 0: measurement complete (no updates expected)"
-    else
-      echo "Starting measurement..."
-    fi
-    ;;
-  large)
-    echo "Starting measurement..."
-    ;;
-esac
-
-measure_start=$SECONDS
-echo "Waiting for $target_updates mask updates (deadline: ${deadline_sec}s)..."
-
-while true; do
-  scan_log "$trace_glob"
-  update_count=$log_matches
-
-  if [ "$update_count" -ge "$target_updates" ]; then
-    measure_end=$SECONDS
-    measure_elapsed=$((measure_end - measure_start))
-    echo "Captured $update_count mask updates in ${measure_elapsed}s"
-    break
-  fi
-
-  now=$SECONDS
-  elapsed=$((now - measure_start))
-  if [ "$elapsed" -ge "$deadline_sec" ]; then
-    echo "DEADLINE EXCEEDED: Only $update_count updates in ${deadline_sec}s"
-    echo "Expected $target_updates updates. Stopping measurement."
-    measure_end=$now
-    measure_elapsed=$elapsed
-    break
-  fi
-
-  in_background sleep 0.1
-done
-
-kill -TERM "$app_pid" 2> /dev/null || true
-wait "$app_pid" 2> /dev/null || true
-app_pid=""
-
-echo ""
-echo "=== Results ($update_count mask updates in ${measure_elapsed}s) ==="
-echo ""
-
-if [ "$update_count" -eq 0 ]; then
-  echo "Total mask updates: 0"
-  echo ""
-  case "$scenario" in
-    idle)
-      echo "✓ Expected: idle with cursor away shows no updates"
-      ;;
-    *)
-      echo "⚠ Unexpected: this scenario should show updates if cursor was over sprite"
-      echo "  Check that cursor was positioned over the sprite during measurement"
+# The clock runs while the steady animation is on screen: from a frame line
+# that names it to the next frame line that names another. Idle has no
+# steady animation, so its clock runs from the first grounded frame on.
+echo -n "Waiting for the ${steady:-grounded} animation..."
+settle=" ${steady}#"
+[ -n "$steady" ] || settle=" Grounded "
+settled=0
+while next_line "$until_us"; do
+  case "$line" in
+    *' frame: '*"$settle"*)
+      settled=1
+      break
       ;;
   esac
-  echo ""
-  echo "Log: $log (kept for inspection)"
-  trap - EXIT INT TERM
-  exit 0
-fi
+done
+[ "$settled" -eq 1 ] || {
+  echo " TIMEOUT"
+  echo "The ${steady:-grounded} animation did not start within ${startup_sec}s. Log tail:"
+  in_background tail -20 "$log"
+  exit 1
+}
+echo " playing"
 
-in_background sed -n 's/.*mask_rebuild: \([0-9]*\)x\([0-9]*\) @\([0-9]*\)x scale, \([0-9]*\) opaque pixels, \([0-9.]*\) ms\(.*\)/\1 \2 \3 \4 \5 \6/p' \
-  "$log" > "$parsed"
+echo "Waiting for $target_updates mask updates (deadline: ${deadline_sec}s)..."
+now_us
+start=$now
+until_us=$((start + deadline_sec * 1000000))
+on=1
+since=$start
+clock=0
+count=0
+# A target of 0 runs out the deadline, for idle.
+while { [ "$target_updates" -eq 0 ] || [ "$count" -lt "$target_updates" ]; } && next_line "$until_us"; do
+  case "$line" in
+    *' frame: '*)
+      now_us
+      case "$line" in
+        *" ${steady}#"*) [ "$on" -eq 1 ] || { on=1 && since=$now; } ;;
+        *) [ -z "$steady" ] || [ "$on" -eq 0 ] || { on=0 && clock=$((clock + now - since)); } ;;
+      esac
+      ;;
+    *'mask_rebuild:'*)
+      [ "$on" -eq 1 ] || continue
+      count=$((count + 1))
+      printf '%s\n' "$line" >> "$updates"
+      ;;
+  esac
+done
+now_us
+[ "$on" -eq 0 ] || clock=$((clock + now - since))
 
+for pid in "${pids[@]}"; do kill -- "-$pid" "$pid" 2> /dev/null || true; done
+wait 2> /dev/null || true
+pids=()
+
+printf -v seconds '%d.%03d' $((clock / 1000000)) $((clock % 1000000 / 1000))
+echo ""
+echo "=== Results ($count mask updates in ${seconds}s of ${steady:-the run}) ==="
+echo ""
 position_only=0
 while IFS= read -r line; do
-  case "$line" in
-    *'(position-only)'*) position_only=$((position_only + 1)) ;;
-  esac
-done < "$parsed"
-full_rebuilds=$((update_count - position_only))
-
-echo "Total mask updates: $update_count"
+  case "$line" in *'(position-only)'*) position_only=$((position_only + 1)) ;; esac
+done < "$updates"
+full_rebuilds=$((count - position_only))
+echo "Total mask updates: $count"
 echo "  Full rebuilds: $full_rebuilds (mask/facing/scale changed, pixmap regenerated)"
 echo "  Position-only: $position_only (reused cached pixmap)"
 echo ""
-
-in_background awk -v full="$full_rebuilds" -v total="$update_count" -v secs="$measure_elapsed" 'BEGIN {
+[ "$count" -eq 0 ] || in_background awk -v full="$full_rebuilds" -v total="$count" 'BEGIN {
   printf "Full rebuild ratio: %.2f (lower is better; 0.00 = all reuse)\n", full / total
-  if (secs > 0) printf "Rate: %.1f updates/sec\n", total / secs
 }'
-echo ""
 
-# shellcheck disable=SC2016 # The $5 is awk's.
-in_background awk '{
-  time = $5
-  sum += time
-  if (NR == 1 || time > max) max = time
-  if (NR == 1 || time < min) min = time
-  count++
-} END {
-  if (count > 0) {
-    printf "Rebuild time:\n"
-    printf "  Average: %.3f ms\n", sum/count
-    printf "  Min: %.3f ms\n", min
-    printf "  Max: %.3f ms\n", max
-  }
-}' "$parsed"
+# Per kind: n, median, min-max, mean. Rate is updates per second of the
+# steady animation. The trace is wall time, so a rebuild the scheduler
+# preempts reads long; CPU per second is the rate at each kind's median.
+sed -n 's/.*mask_rebuild: .*, \([0-9.]*\) ms\( (position-only)\)\{0,1\}$/\1\2/p' "$updates" |
+  awk '{ print ($2 == "" ? "full" : "position-only"), $1 }' | sort -k1,1 -k2,2n > "$out/times.txt"
+# shellcheck disable=SC2016 # The $1 and $2 are awk's.
+in_background awk -v secs="$seconds" -v total="$count" -v scenario="$scenario" '
+  { k = $1; n[k]++; v[k, n[k]] = $2; sum[k] += $2 }
+  END {
+    rate = secs > 0 ? total / secs : 0
+    printf "Rate: %.1f updates/sec\n", rate
+    for (k in n) {
+      m = n[k] % 2 ? v[k, (n[k] + 1) / 2] : (v[k, n[k] / 2] + v[k, n[k] / 2 + 1]) / 2
+      typical += n[k] * m
+      printf "%s: n=%d median %.3f ms, range %.3f to %.3f ms, mean %.3f ms\n", k, n[k], m, v[k, 1], v[k, n[k]], sum[k] / n[k]
+    }
+    cpu = secs > 0 ? typical / secs : 0
+    printf "Mask time per second, at the medians: %.3f ms\n", cpu
+    printf "summary: scenario=%s updates=%d seconds=%s rate=%.2f ms_per_s=%.4f\n", scenario, total, secs, rate, cpu
+  }' "$out/times.txt"
 
 echo ""
 echo "Opaque pixel count:"
-# shellcheck disable=SC2016 # The $4 is awk's.
-in_background awk '!($4 in n) { order[++k] = $4 } { n[$4]++ } END {
-  if (k == 0) { print "  (no opaque pixel counts parsed)"; exit 1 }
-  for (i = 1; i <= k; i++) printf "  %d pixels: %d update(s)\n", order[i], n[order[i]]
-}' "$parsed"
-
-in_background rm -f "$parsed"
-
+# shellcheck disable=SC2016 # The $1 is awk's.
+in_background awk 'match($0, /[0-9]+ opaque pixels/) {
+    c = substr($0, RSTART, RLENGTH - 14)
+    if (!(c in n)) order[++k] = c
+    n[c]++
+  } END {
+    if (k == 0) print "  (none)"
+    for (i = 1; i <= k; i++) printf "  %d pixels: %d update(s)\n", order[i], n[order[i]]
+  }' "$updates"
 echo ""
-echo "--- Interpretation ---"
+
 case "$scenario" in
   idle)
-    if [ "$update_count" -eq 0 ]; then
-      echo "✓ Idle scenario: 0 updates confirms cursor-over gating works"
+    if [ "$count" -eq 0 ]; then
+      echo "Idle: 0 updates, the cursor-over gate held."
     else
-      echo "⚠ Idle scenario: unexpected updates (cursor may have crossed sprite)"
+      echo "Idle: unexpected updates; the pointer may have crossed the sprite."
     fi
     ;;
   walk)
-    if [ "$full_rebuilds" -gt 0 ]; then
-      pct=$(((200 * full_rebuilds + update_count) / (2 * update_count)))
-      echo "Full rebuilds: ${pct}% of updates"
-      if [ "$pct" -lt 20 ]; then
-        echo "✓ Optimization working: majority reuse cached pixmap"
-      else
-        echo "⚠ Higher than expected rebuild ratio"
-        echo "  Walking with consistent animation should show mostly position-only"
-      fi
-    fi
-    echo ""
-    echo "Walking under cursor triggers updates at motion rate."
-    echo "With optimization, most should be position-only (cheap)."
+    [ "$count" -eq 0 ] || echo "Full rebuilds: $(((200 * full_rebuilds + count) / (2 * count)))% of updates"
+    echo "Walking moves the sprite every tick, so updates follow the motion;"
+    echo "position-only ones reuse the pixmap until the walk frame changes."
     ;;
-  fast | large)
-    echo "Fast/large scenarios test rebuild cost at different opaque counts and FPS."
-    echo "Full rebuild ratio depends on how often animation frames repeat."
+  *)
+    echo "The sprite stands still, so each update is a frame change: the rate"
+    echo "is bounded by the animation's fps."
     ;;
 esac
-
 echo ""
-echo "Environment: Linux VM under Xvfb (numbers are indicative)"
-echo "Full log: $log (kept for inspection)"
-echo ""
-
-trap - EXIT INT TERM
+echo "Log: $log"
+[ "$count" -ge "$target_updates" ] || echo "Deadline: $count of $target_updates updates"
