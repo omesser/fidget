@@ -9,11 +9,10 @@ repos:
       - id: forbid-new-submodules
 
     # Common errors. `*vendored` keeps fixers off byte-identical upstream files
-    # (vendored skills, marked.esm.js's pinned hash, UIforETW's WPA profile) and
-    # generated or binary paths. The lookahead keeps our own `verify-fidget`
-    # linted.
+    # (vendored skills, marked.esm.js's pinned hash) and generated or binary
+    # paths. The lookahead keeps our own `verify-fidget` linted.
       - id: end-of-file-fixer
-        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|scripts/wpa/.*\.wpaProfile|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
+        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-fidget/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored
@@ -51,7 +50,8 @@ repos:
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         # "sigit" is an agent id in the ACP registry, not a misspelling of "digit".
         # "ine" is the tail of the `[Nn]ine` pattern the chat-close-pill-type scenarios grep for.
-        args: ["--ignore-words-list=crate,crates,static,statics,sigit,ine"]
+        # "pard" is an RTF control word, in the help text of scripts/wpa/'s WPA profile.
+        args: ["--ignore-words-list=crate,crates,static,statics,sigit,ine,pard"]
         exclude: *vendored
 
   # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
