@@ -125,3 +125,19 @@ test("opaque pixel count histogram groups by pixel count", async (t) => {
   assert.match(r.out, /  6300 pixels: 2 update\(s\)/);
   assert.match(r.out, /  500 pixels: 2 update\(s\)/);
 });
+
+test("updates that land while another animation plays are left out", async (t) => {
+  const lines = [
+    ready,
+    walking,
+    "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.5 ms",
+    standing,
+    "mask_rebuild: 126x128 @1x scale, 999 opaque pixels, 9.0 ms",
+    walking,
+    "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.7 ms",
+  ];
+  const r = await measure(t, { lines, args: ["walk", "2", "2"] });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /^summary: scenario=walk updates=2 /m);
+  assert.doesNotMatch(r.out, /999 pixels/);
+});
