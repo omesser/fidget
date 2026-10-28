@@ -77,11 +77,19 @@ pub struct RememberResult {
     pub recorded: String,
 }
 
-/// Tool result for the `list_instances` tool.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Tool result for the `list_instances` tool. The three prompts are the
+/// Character Prompt layers the Prompt tab shows, so a session that never
+/// heard its opening can read them back (ADR-0012).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceInfo {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub app_instructions: String,
+    #[serde(default)]
+    pub personality_prompt: String,
+    #[serde(default)]
+    pub instance_prompt: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

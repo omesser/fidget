@@ -336,7 +336,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "list_instances".to_string(),
-            description: "List Character Instances and their names".to_string(),
+            description: "List Character Instances: each one's instance_id, name, and the three layers of its Character Prompt (app_instructions, personality_prompt, instance_prompt). Read it when your session did not open with your instance_id or prompt.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -496,10 +496,14 @@ mod tests {
             InstanceInfo {
                 id: "inst-1".to_string(),
                 name: "Clippy".to_string(),
+                app_instructions: "Reply with behavior: <name>".to_string(),
+                personality_prompt: "a paperclip".to_string(),
+                instance_prompt: "Answer in haiku.".to_string(),
             },
             InstanceInfo {
                 id: "inst-2".to_string(),
                 name: "Ferris".to_string(),
+                ..Default::default()
             },
         ];
         let source = fake_source(vec![]);
@@ -512,6 +516,13 @@ mod tests {
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[0]["id"], "inst-1");
         assert_eq!(instances[0]["name"], "Clippy");
+        assert_eq!(
+            instances[0]["app_instructions"],
+            "Reply with behavior: <name>"
+        );
+        assert_eq!(instances[0]["personality_prompt"], "a paperclip");
+        assert_eq!(instances[0]["instance_prompt"], "Answer in haiku.");
+        assert_eq!(instances[1]["instance_prompt"], "");
     }
 
     #[test]
@@ -876,7 +887,11 @@ mod tests {
             .borrow()
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut expression = SharedRoster(Rc::clone(&shared));
@@ -923,7 +938,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -962,7 +981,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -1027,7 +1050,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -1069,10 +1096,12 @@ mod tests {
             InstanceInfo {
                 id: "instance-1".to_string(),
                 name: "First".to_string(),
+                ..Default::default()
             },
             InstanceInfo {
                 id: "instance-2".to_string(),
                 name: "Second".to_string(),
+                ..Default::default()
             },
         ];
         let mut context = test_context(&temp, &source, &infos);
@@ -1098,10 +1127,12 @@ mod tests {
             InstanceInfo {
                 id: "pip".to_string(),
                 name: "Pip".to_string(),
+                ..Default::default()
             },
             InstanceInfo {
                 id: "rex".to_string(),
                 name: "Rex".to_string(),
+                ..Default::default()
             },
         ];
         let mut context = test_context(&temp, &source, &infos);
@@ -1147,6 +1178,7 @@ mod tests {
         let infos = [InstanceInfo {
             id: "pip".to_string(),
             name: "Pip".to_string(),
+            ..Default::default()
         }];
         let mut context = test_context(&temp, &source, &infos);
 
@@ -1237,6 +1269,7 @@ mod tests {
         let infos = [InstanceInfo {
             id: "instance-1".to_string(),
             name: "Buddy".to_string(),
+            ..Default::default()
         }];
         // `test_context` carries `expression: None`, which is the shipped
         // stdio shape.
@@ -1267,6 +1300,7 @@ mod tests {
         let roster_info = [InstanceInfo {
             id: "retired-instance".to_string(),
             name: "Gone".to_string(),
+            ..Default::default()
         }];
         let mut live = crate::roster::Roster::new();
 
@@ -1299,7 +1333,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
