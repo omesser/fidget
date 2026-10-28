@@ -138,6 +138,7 @@ test("updates that land while another animation plays are left out", async (t) =
   ];
   const r = await measure(t, { lines, args: ["walk", "2", "2"] });
   assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /^Total mask updates: 2$/m);
   assert.match(r.out, /^summary: scenario=walk updates=2 /m);
   assert.doesNotMatch(r.out, /999 pixels/);
 });
