@@ -260,12 +260,6 @@ mod helpers {
                     "No Character Instance is running, so nothing changed on screen".to_string(),
                 );
             }
-            TargetResolution::AmbiguousTarget => {
-                return Err(
-                    "Several Character Instances are running; name one with instance_id"
-                        .to_string(),
-                );
-            }
         };
 
         // No handle is no way to reach the Instance the roster just named, so
@@ -293,7 +287,6 @@ mod helpers {
     enum TargetResolution {
         Resolved(String),
         NoInstances,
-        AmbiguousTarget,
     }
 
     /// Target resolution against roster for both speak and play_behavior.
@@ -304,10 +297,11 @@ mod helpers {
     ) -> TargetResolution {
         match instance_id {
             Some(id) => TargetResolution::Resolved(id.to_string()),
-            None => match roster.len() {
-                0 => TargetResolution::NoInstances,
-                1 => TargetResolution::Resolved(roster[0].id.clone()),
-                _ => TargetResolution::AmbiguousTarget,
+            // Optional, so a missing id never fails the call. The Shell
+            // warns when several run and this picks the first.
+            None => match roster.first() {
+                None => TargetResolution::NoInstances,
+                Some(first) => TargetResolution::Resolved(first.id.clone()),
             },
         }
     }
