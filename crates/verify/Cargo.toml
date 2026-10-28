@@ -11,8 +11,8 @@ name = "fidget-verify"
 path = "src/main.rs"
 
 [dependencies]
-clap = {version = "4", features = ["derive"]}
-fidget-core = {path = "../core"}
+clap = { version = "4", features = ["derive"] }
+fidget-core = { path = "../core" }
 # `--json` is a contract other tools parse, so the object is serialised rather
 # than formatted: a Windows evidence path or a quoted detail string must not be
 # able to produce something that does not parse.

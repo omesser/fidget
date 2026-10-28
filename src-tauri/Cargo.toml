@@ -15,17 +15,17 @@ name = "fidget"
 path = "src/main.rs"
 
 [build-dependencies]
-tauri-build = {version = "2", features = []}
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"
 # OS login item. `login_item::sync` skips a checkout, which has no app to start.
 tauri-plugin-autostart = "2"
-fidget-core = {path = "../crates/core"}
-fidget-mcp-server = {path = "../crates/mcp-server"}
-serde = {version = "1", features = ["derive"]}
+fidget-core = { path = "../crates/core" }
+fidget-mcp-server = { path = "../crates/mcp-server" }
+serde = { version = "1", features = ["derive"] }
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says
 # why.
 base64 = "0.23"
@@ -34,7 +34,7 @@ base64 = "0.23"
 # untrusted input is not something to hand-roll. `deflate-flate2` rather than
 # the umbrella `deflate` feature: it reuses the flate2 already here under `png`,
 # where the umbrella also drags in zopfli, a compressor only a writer needs.
-zip = {version = "9", default-features = false, features = ["deflate-flate2"]}
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # The hotkey that hides and shows the Character. Tauri has no global shortcut
 # of its own — this is its first-party plugin — and the alternative is an
 # AppKit global event monitor, which needs Accessibility consent that DESIGN.md
@@ -43,7 +43,7 @@ zip = {version = "9", default-features = false, features = ["deflate-flate2"]}
 tauri-plugin-global-shortcut = "2"
 # Sync HTTP for the model Director. A worker thread posts; the frame loop
 # does not wait. ureq instead of reqwest: no tokio.
-ureq = {version = "3", features = ["json"]}
+ureq = { version = "3", features = ["json"] }
 serde_json = "1"
 # Reading a base URL: whether it is served from this machine decides whether a
 # key is optional, so the host is a security question and not a string to split
@@ -60,7 +60,7 @@ agent-client-protocol = "3.1"
 # (10 rotated + 1 current), 2 MB per file, ~22 MB ceiling. BytesSurpassed
 # keeps a line whole.
 file-rotate = "0.8"
-tokio = {version = "1", features = ["rt", "sync", "macros", "time"]}
+tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
 # How the SDK reads a child's pipes. Spawned by us rather than by the SDK's
 # `AcpAgent`, which has no working-directory knob; attach cwd is a setting
 # (#782). The data folder holds the session file and Action Log.
@@ -75,18 +75,18 @@ futures-io = "0.3"
 ctrlc = "3"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
-keyring = {version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"]}
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
 # PNG decoding for the tray icon.
-image = {version = "0.25", default-features = false, features = ["png"]}
+image = { version = "0.25", default-features = false, features = ["png"] }
 # The bearer token for the loopback MCP server (ADR-0023). The OS CSPRNG and
 # nothing else: already in the tree under keyring and tokio, and a token minted
 # from a clock is a token an attacker can guess.
 getrandom = "0.4"
 # Counting the lines a tool call's diff added and removed, as git does. A line
 # diff is not worth hand-rolling, and `text` is the only feature used.
-similar = {version = "3.2", default-features = false, features = ["text"]}
+similar = { version = "3.2", default-features = false, features = ["text"] }
 # Project-layer Codex config under the data dir (#1497). Same pin as core.
-toml_edit = {version = "0.25", default-features = false, features = ["parse", "display"]}
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
 
 [target.'cfg(unix)'.dependencies]
 # Process-group teardown for an `npx` Harness: `getpgid` / `killpg`.
@@ -96,7 +96,7 @@ libc = "0.2"
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.
 # x11rb is pure Rust, maintained, and wraps the protocol at a level that
 # gives both raw access and type-safe helpers.
-x11rb = {version = "0.14", features = ["allow-unsafe-code", "shape", "dpms", "screensaver", "xinput"]}
+x11rb = { version = "0.14", features = ["allow-unsafe-code", "shape", "dpms", "screensaver", "xinput"] }
 # Raw window handle for getting the X11 window id from Tauri.
 raw-window-handle = "0.6"
 # Cast atom arrays to bytes for X11 property changes.
@@ -111,10 +111,10 @@ gdk-pixbuf = "0.18"
 [target.'cfg(target_os = "linux")'.dependencies]
 # xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
 # tokio feature reuses the tokio already here under async-process / ACP SDK.
-ashpd = {version = "0.13", features = ["tokio", "screencast"]}
+ashpd = { version = "0.13", features = ["tokio", "screencast"] }
 # Caffeinate's logind and screen saver inhibitors. The zbus ashpd already
 # pulls in; `blocking-api` adds no crate.
-zbus = {version = "5", default-features = false, features = ["tokio", "blocking-api"]}
+zbus = { version = "5", default-features = false, features = ["tokio", "blocking-api"] }
 
 [target.'cfg(windows)'.dependencies]
 # ShellExecuteW opens a file with the default application as a wide-string
@@ -122,7 +122,7 @@ zbus = {version = "5", default-features = false, features = ["tokio", "blocking-
 # Job Object for Harness process tree teardown: grandchildren die with us.
 # Extended startup info for create-time job association (#517).
 # GetModuleHandleW names the module that owns the taskbar anchor window class.
-windows-sys = {version = "0.61", features = [
+windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
@@ -141,7 +141,7 @@ windows-sys = {version = "0.61", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging"
-]}
+] }
 # Raw window handle for getting the HWND from Tauri.
 raw-window-handle = "0.6"
 
@@ -150,7 +150,7 @@ raw-window-handle = "0.6"
 # library Tauri ships with, so naming it again would put a second copy of it in
 # the tree — and on Linux the copy is what dragged in libxdo.
 objc2 = "0.6"
-objc2-app-kit = {version = "0.3", features = [
+objc2-app-kit = { version = "0.3", features = [
   "NSWindow",
   "NSPanel",
   "NSResponder",
@@ -163,7 +163,7 @@ objc2-app-kit = {version = "0.3", features = [
   "NSStatusItem",
   "NSStatusBarButton",
   "NSEvent"
-]}
+] }
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
 # directly rather than pulling anything new in. The alternative is hand-written
@@ -175,13 +175,13 @@ objc2-app-kit = {version = "0.3", features = [
 # `extern "C"` declarations these replace typed the return as Rust `bool`;
 # ApplicationServices returns a one-byte `Boolean`, so the crate's `!= 0` is a
 # correctness fix, not only one fewer declaration. #696.
-objc2-application-services = {version = "0.3", default-features = false, features = [
+objc2-application-services = { version = "0.3", default-features = false, features = [
   "std",
   "objc2",
   "HIServices",
   "AXUIElement"
-]}
-objc2-core-foundation = {version = "0.3", default-features = false, features = [
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
   "std",
   "CFCGTypes",
   "CFDictionary",
@@ -192,8 +192,8 @@ objc2-core-foundation = {version = "0.3", default-features = false, features = [
   # only delivers while a run loop owns its source (#721).
   "CFMachPort",
   "CFRunLoop"
-]}
-objc2-core-graphics = {version = "0.3", default-features = false, features = [
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
   "std",
   "objc2",
   "CGDirectDisplay",
@@ -207,8 +207,8 @@ objc2-core-graphics = {version = "0.3", default-features = false, features = [
   # (#721). Reading the events themselves is what the grant buys.
   "CGEvent",
   "CGEventTypes"
-]}
-objc2-foundation = {version = "0.3", default-features = false, features = [
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
   "NSArray",
   "NSDictionary",
@@ -221,10 +221,10 @@ objc2-foundation = {version = "0.3", default-features = false, features = [
   "NSNotification",
   "NSOperation",
   "block2"
-]}
+] }
 # The notification observer's callback. Already in the tree under objc2-foundation.
 block2 = "0.6"
 
 [dev-dependencies]
 tempfile = "3"
-uuid = {version = "1.11", features = ["v4"]}
+uuid = { version = "1.11", features = ["v4"] }
