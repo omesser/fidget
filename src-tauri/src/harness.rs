@@ -2,7 +2,7 @@
 //! Spawns the Harness in ACP mode; every wake is one `session/prompt`
 //! (ADR-0008, ADR-0018). Auth is the Harness's own. Protocol in `acp_wire.rs`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -1096,6 +1096,9 @@ pub struct Session {
     /// `authenticate` is in flight. A second click is refused, and the flag
     /// clears on the way out so a panic cannot leave the landing stuck.
     signing_in: AtomicBool,
+    /// Turn beats the frame loop has not played yet. The wire thread pushes,
+    /// the frame loop drains, so the two never share the roster.
+    plays: Arc<Mutex<VecDeque<(String, fidget_core::turn_motion::Moment)>>>,
     /// What the first attach wrote into `cursor-agent`'s config, for
     /// `shutdown` to take back. The first record is kept across respawns:
     /// it is the one that knows what did not exist before us.
@@ -1357,7 +1360,16 @@ impl Session {
             wanted: AtomicBool::new(true),
             signing_in: AtomicBool::new(false),
             cursor: Mutex::new(None),
+            plays: Arc::default(),
         }
+    }
+
+    /// Turn beats waiting for the frame loop, oldest first.
+    pub fn take_plays(&self) -> Vec<(String, fidget_core::turn_motion::Moment)> {
+        self.plays
+            .lock()
+            .map(|mut plays| plays.drain(..).collect())
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -2233,6 +2245,7 @@ impl Session {
         let asked = Arc::clone(&self.asked);
         let owners = Arc::clone(&self.owners);
         let serving = Arc::clone(&self.serving_instance);
+        let plays = Arc::clone(&self.plays);
         let mut command = self.launch.command(cwd, mcp_stdio().is_some());
         if self.launch.name == "codex" {
             let inputs = self.open_inputs();
@@ -2246,7 +2259,17 @@ impl Session {
         let spawned = Wire::spawn(
             command,
             self.attach_timeout(),
-            Box::new(move |event| note_event(&data, &forward, &asked, &owners, &serving, event)),
+            Box::new(move |event| {
+                note_event(
+                    &data,
+                    &forward,
+                    &asked,
+                    &owners,
+                    &serving,
+                    Some(&plays),
+                    event,
+                )
+            }),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
         // old `missing` on the failing edge too, or Settings keeps telling the
@@ -3113,6 +3136,7 @@ fn note_event(
     asked: &Mutex<HashMap<String, Asker>>,
     owners: &Mutex<HashMap<String, String>>,
     serving: &Mutex<Option<String>>,
+    plays: Option<&Mutex<VecDeque<(String, fidget_core::turn_motion::Moment)>>>,
     event: Event,
 ) {
     let instance_of = |session: &str| owners.lock().ok()?.get(session).cloned();
@@ -3226,6 +3250,16 @@ fn note_event(
                     instance,
                     line: text,
                 });
+            }
+        }
+        Event::Moment { session, moment } => {
+            let Some(plays) = plays else {
+                return;
+            };
+            if let Some(instance) = instance_of(&session) {
+                if let Ok(mut queued) = plays.lock() {
+                    queued.push_back((instance, moment));
+                }
             }
         }
     }
@@ -5654,6 +5688,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &Mutex::default(),
+            None,
             Event::Thought {
                 session: "session-b".to_string(),
                 text: "Reading the roster".to_string(),
@@ -5689,6 +5724,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
+            None,
             Event::ToolCall {
                 session: "session-b".to_string(),
                 id: "t1".to_string(),
@@ -5742,6 +5778,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
+            None,
             Event::ToolCall {
                 session: "session-b".to_string(),
                 id: "t1".to_string(),
@@ -5810,6 +5847,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
+            None,
             Event::Usage {
                 session: "session-b".to_string(),
                 used: 1,
@@ -5846,6 +5884,7 @@ mod tests {
                 "buddy-a".to_string(),
             )])),
             &Mutex::default(),
+            None,
             Event::Plan {
                 session: "session-a".to_string(),
                 steps: vec![PlanStep {
@@ -5898,6 +5937,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &serving,
+            None,
             sign_in("1"),
         );
         *serving.lock().unwrap() = None;
@@ -5907,6 +5947,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &serving,
+            None,
             sign_in("2"),
         );
 
@@ -5948,6 +5989,7 @@ mod tests {
                 "buddy-a".to_string(),
             )])),
             &Mutex::default(),
+            None,
             Event::Plan {
                 session: "session-a".to_string(),
                 steps: Vec::new(),

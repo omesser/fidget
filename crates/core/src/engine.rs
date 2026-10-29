@@ -8,6 +8,7 @@
 use crate::character::{Behavior, CursorReaction, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
+use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -407,6 +408,9 @@ pub struct Engine {
     /// dialogue is not spoken, while Poke/Grab/Throw still work and the
     /// Character stays visible.
     do_not_disturb: bool,
+    /// A Harness turn beat for the next tick. Not a proposal: `play` leaves
+    /// it unnamed, which is what keeps a Character from replacing it.
+    pending_moment: Option<Moment>,
 
     near_reaction: CursorReaction,
     rush_reaction: CursorReaction,
@@ -640,6 +644,7 @@ impl Engine {
             yank_reference: Point::default(),
             since_yank_ref_s: 0.0,
             do_not_disturb: false,
+            pending_moment: None,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             cursor_near: false,
@@ -717,6 +722,12 @@ impl Engine {
 
     pub fn do_not_disturb(&self) -> bool {
         self.do_not_disturb
+    }
+
+    /// Play `moment` on the next tick. The Engine owns it: the frame names
+    /// no Behavior, so a Character cannot replace the beat.
+    pub fn cue_moment(&mut self, moment: Moment) {
+        self.pending_moment = Some(moment);
     }
 
     /// Where the sprite's feet are.
@@ -1163,6 +1174,16 @@ impl Engine {
                 {
                     started = true;
                 }
+            }
+        }
+
+        // After a proposal, so a turn beat is what shows when both land on
+        // one tick. Before a Poke, so the hand still wins. `play` drops the
+        // Behavior name: this moment is the Engine's.
+        if let Some(moment) = self.pending_moment.take() {
+            if self.play(&[moment.primitive()]) {
+                started = true;
+                self.idle_ms = 0;
             }
         }
 
@@ -2595,6 +2616,29 @@ mod tests {
         });
         assert_eq!(poked.playing_primitive, Some(Primitive::React));
         assert_eq!(poked.playing_behavior, None);
+    }
+
+    /// A Harness turn beat is the same kind of moment: the Engine plays the
+    /// Primitive and reports no Behavior a Character could have replaced.
+    #[test]
+    fn a_turn_moment_plays_its_primitive_and_reports_no_behavior() {
+        let mut engine = a_resting_sprite();
+        engine.cue_moment(crate::turn_motion::Moment::Working);
+        let working = engine.tick(&snapshot(16));
+        assert_eq!(working.animation, "talk");
+        assert_eq!(working.playing_primitive, Some(Primitive::Talk));
+        assert_eq!(working.playing_behavior, None);
+
+        engine.cue_moment(crate::turn_motion::Moment::Failed);
+        let failed = engine.tick(&snapshot(16));
+        assert_eq!(failed.animation, "sit");
+        assert_eq!(failed.playing_primitive, Some(Primitive::Sit));
+        assert_eq!(failed.playing_behavior, None);
+
+        engine.cue_moment(crate::turn_motion::Moment::Succeeded);
+        let succeeded = engine.tick(&snapshot(16));
+        assert_eq!(succeeded.animation, "react");
+        assert_eq!(succeeded.playing_behavior, None);
     }
 
     #[test]

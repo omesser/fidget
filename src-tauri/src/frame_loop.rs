@@ -1,3 +1,4 @@
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -321,6 +322,8 @@ pub(crate) fn run_frame_loop(
 
         let mut last_cursor: Option<(f64, f64)> = None;
         let mut last_sprite_rects: Vec<(i32, i32, i32, i32)> = Vec::new();
+        let mut turn_plays: HashMap<String, VecDeque<fidget_core::turn_motion::Moment>> =
+            HashMap::new();
 
         loop {
             // The tap follows the setting: checked and granted, it starts here and the
@@ -1530,6 +1533,8 @@ pub(crate) fn run_frame_loop(
 
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
             last_sprite_rects.clear();
+            turn_plays
+                .retain(|id, queued| !queued.is_empty() && lives.iter().any(|live| live.id == *id));
 
             // The window list is re-read at the frame rate while any Instance is
             // riding a moving window. One riding character is reason enough: the
@@ -1546,10 +1551,23 @@ pub(crate) fn run_frame_loop(
             // is then routed to that one Instance.
             let mut over_sprite = false;
 
+            if let Some(session) = harness::attached() {
+                for (id, moment) in session.take_plays() {
+                    turn_plays.entry(id).or_default().push_back(moment);
+                }
+            }
+
             for live in lives.iter_mut() {
                 let Some(instance) = roster.get_mut(&live.id) else {
                     continue;
                 };
+
+                if let Some(moment) = turn_plays
+                    .get_mut(&live.id)
+                    .and_then(|queued| queued.pop_front())
+                {
+                    instance.play_moment(moment);
+                }
 
                 live.since_wake += elapsed;
                 live.since_state += elapsed;

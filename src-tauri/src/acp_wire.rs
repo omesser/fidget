@@ -32,6 +32,9 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 use fidget_core::director::Reply;
+#[cfg(test)]
+use fidget_core::turn_motion::Beat;
+use fidget_core::turn_motion::{Moment, ToolChange, TurnMotion};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
@@ -338,6 +341,9 @@ pub enum Event {
     /// Between-turn agent text accumulated in a session's `Stream` and flushed
     /// when a session transitions (Ask, Elicit, Prompt, or Close).
     InboundWake { session: String, speech: String },
+    /// A Harness turn beat for the character. Not speech, and not a Behavior
+    /// the Director named.
+    Moment { session: String, moment: Moment },
     /// A forwarded ask that can no longer be answered. Every Chat surface
     /// that drew the ask has to hear this.
     PermissionSettled {
@@ -1318,6 +1324,9 @@ enum Job<'a> {
         blocked: bool,
         /// Set by our cancel and pushed back by every frame after it.
         quiet_until: Option<Instant>,
+        /// Tool-call beats for this turn, on `started`'s clock.
+        motion: TurnMotion,
+        started: Instant,
     },
 }
 
@@ -1353,6 +1362,7 @@ async fn serve(
             SignedIn(Result<(), String>),
             Opened(Result<OpenedSession, OpenError>),
             Turned(Result<PromptResponse, Error>),
+            Working,
             Silent,
             Closed,
         }
@@ -1374,6 +1384,13 @@ async fn serve(
             Job::Turn { quiet_until, .. } => *quiet_until,
             _ => None,
         };
+        // Copied out before the futures borrow `job`, same as `quiet`.
+        let working_at = match &job {
+            Job::Turn {
+                motion, started, ..
+            } => motion.next_working().map(|due| *started + due),
+            _ => None,
+        };
         let auth_fut = async { auth.as_mut().expect("signing in").0.as_mut().await };
         let job_fut = async {
             match &mut job {
@@ -1383,6 +1400,7 @@ async fn serve(
             }
         };
         let silence = async { tokio::time::sleep_until(quiet.expect("quiet").into()).await };
+        let working = async { tokio::time::sleep_until(working_at.expect("working").into()).await };
         // `biased`: what waited on an open first, then the Harness. A turn's
         // chunks are read before its response, and an open's stay queued so its
         // replay can be told from what came after.
@@ -1396,6 +1414,7 @@ async fn serve(
             outcome = auth_fut, if signing_in && !opening => Step::SignedIn(outcome),
             done = job_fut => done,
             () = silence, if quiet.is_some() => Step::Silent,
+            () = working, if working_at.is_some() => Step::Working,
             () = cx.incoming_closed() => Step::Closed,
         };
         match step {
@@ -1415,10 +1434,19 @@ async fn serve(
                         session,
                         reply,
                         stream,
+                        motion,
+                        started,
                         ..
                     } if incoming_session(&message).is_none_or(|other| other == *session) => {
                         match message {
                             Incoming::Update(update) => {
+                                let at = started.elapsed();
+                                let due = motion.poll(at);
+                                emit_moments(session, due, on_event);
+                                if let Some((id, change)) = tool_change(&update.update) {
+                                    let played = motion.update(at, id, change);
+                                    emit_moments(session, played, on_event);
+                                }
                                 let heard = hear(&update.update);
                                 let answered = matches!(heard, Heard::Said { .. });
                                 show(heard, session, stream, on_event);
@@ -1490,11 +1518,16 @@ async fn serve(
                     session,
                     reply,
                     stream,
+                    motion,
+                    started,
                     ..
                 } = &mut job
                 else {
                     continue;
                 };
+                let at = started.elapsed();
+                let payoff = motion.end(at);
+                emit_moments(session, payoff, on_event);
                 held.end_turn(session, &mut stream.thought);
                 let said = std::mem::take(&mut stream.said).finish();
                 let outcome = match response {
@@ -1508,6 +1541,19 @@ async fn serve(
                 job = Job::Idle;
                 if lost {
                     break TurnError::Lost;
+                }
+            }
+            Step::Working => {
+                if let Job::Turn {
+                    session,
+                    motion,
+                    started,
+                    ..
+                } = &mut job
+                {
+                    let at = started.elapsed();
+                    let due = motion.poll(at);
+                    emit_moments(session, due, on_event);
                 }
             }
             Step::Silent => break TurnError::Silent,
@@ -1621,6 +1667,8 @@ async fn serve(
                         stream: Stream::default(),
                         blocked: false,
                         quiet_until: None,
+                        motion: TurnMotion::default(),
+                        started: Instant::now(),
                     };
                 }
                 (
@@ -1663,11 +1711,17 @@ async fn serve(
             session,
             reply,
             mut stream,
+            mut motion,
+            started,
             ..
         } => {
             if gone == TurnError::Lost {
                 let _ = cx.send_notification(CancelNotification::new(session.clone()));
             }
+            // No prompt response arrived, so the closing beat plays here.
+            let at = started.elapsed();
+            let payoff = motion.end(at);
+            emit_moments(&session, payoff, on_event);
             held.end_turn(&session, &mut stream.thought);
             let _ = reply.send(Progress::Done(Err(gone)));
         }
@@ -1962,6 +2016,52 @@ impl Tool<'_> {
             *content = pieces(changed);
         }
     }
+}
+
+fn emit_moments(session: &SessionId, moments: Vec<Moment>, on_event: &OnEvent) {
+    for moment in moments {
+        on_event(Event::Moment {
+            session: session.0.to_string(),
+            moment,
+        });
+    }
+}
+
+/// `in_progress` starts the working clock. `completed` and `failed` are the
+/// only outcomes. `pending` has not started, and a missing status changed
+/// nothing.
+fn tool_change(update: &SessionUpdate) -> Option<(&str, ToolChange)> {
+    let tool = match hear(update) {
+        Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => tool,
+        _ => return None,
+    };
+    let change = match tool.status.as_deref() {
+        Some("in_progress") => ToolChange::Running,
+        Some("completed") => ToolChange::Completed,
+        Some("failed") => ToolChange::Failed,
+        _ => return None,
+    };
+    Some((tool.id, change))
+}
+
+/// What `session/update`s ask the character to play. `end` is the turn
+/// closing. The same `TurnMotion` the live turn polls.
+#[cfg(test)]
+fn plays_from(
+    stamped: &[(Duration, SessionUpdate)],
+    end: Option<Duration>,
+) -> Vec<(Duration, Moment)> {
+    let beats: Vec<Beat<'_>> = stamped
+        .iter()
+        .filter_map(|(at, update)| {
+            tool_change(update).map(|(id, change)| Beat {
+                at: *at,
+                id,
+                change,
+            })
+        })
+        .collect();
+    fidget_core::turn_motion::replay(&beats, end)
 }
 
 fn hear(update: &SessionUpdate) -> Heard<'_> {
@@ -4154,6 +4254,90 @@ mod tests {
 
         let unparsed = linked("not a url");
         assert_eq!(unparsed.url.as_deref(), Some("not a url"));
+    }
+
+    /// A long call plays working after the debounce, then the outcome the
+    /// wire named, and the turn's payoff. Pending then in-progress is the
+    /// other order; a call that arrives finished does not play working.
+    #[test]
+    fn a_fixture_stream_plays_the_turn_and_a_burst_plays_working_once() {
+        let long = [
+            (ms(0), call("t1", "in_progress")),
+            (ms(5_000), update_status("t1", "completed")),
+        ];
+        assert_eq!(
+            plays_from(&long, Some(ms(5_000))),
+            vec![
+                (ms(2_000), Moment::Working),
+                (ms(5_000), Moment::Succeeded),
+                (ms(5_000), Moment::Payoff),
+            ]
+        );
+
+        let failed = [
+            (ms(0), call("t1", "pending")),
+            (ms(100), update_status("t1", "in_progress")),
+            (ms(4_000), update_status("t1", "failed")),
+        ];
+        assert_eq!(
+            plays_from(&failed, Some(ms(4_000))),
+            vec![
+                (ms(2_100), Moment::Working),
+                (ms(4_000), Moment::Failed),
+                (ms(4_000), Moment::Payoff),
+            ]
+        );
+
+        let burst = [
+            (ms(0), call("a", "in_progress")),
+            (ms(400), call("b", "in_progress")),
+            (ms(800), call("c", "in_progress")),
+            (ms(5_000), update_status("a", "completed")),
+            (ms(5_100), update_status("b", "completed")),
+            (ms(5_200), update_status("c", "failed")),
+        ];
+        let plays = plays_from(&burst, Some(ms(5_200)));
+        assert_eq!(
+            plays
+                .iter()
+                .filter(|(_, moment)| *moment == Moment::Working)
+                .count(),
+            1
+        );
+        assert!(plays.iter().any(|(_, moment)| *moment == Moment::Failed));
+        assert_eq!(
+            plays.last().map(|(_, moment)| *moment),
+            Some(Moment::Payoff)
+        );
+
+        // Reported only when it is over: nothing was in progress for the window.
+        let done = [(ms(0), call("t1", "completed"))];
+        assert_eq!(
+            plays_from(&done, Some(ms(0))),
+            vec![(ms(0), Moment::Succeeded), (ms(0), Moment::Payoff)]
+        );
+    }
+
+    fn ms(millis: u64) -> Duration {
+        Duration::from_millis(millis)
+    }
+
+    fn call(id: &str, status: &str) -> SessionUpdate {
+        wire(serde_json::json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": id,
+            "title": id,
+            "kind": "execute",
+            "status": status,
+        }))
+    }
+
+    fn update_status(id: &str, status: &str) -> SessionUpdate {
+        wire(serde_json::json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": id,
+            "status": status,
+        }))
     }
 }
 
