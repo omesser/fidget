@@ -8,7 +8,7 @@
 //! share is the window server's: the overlay is marked never-captured instead
 //! (`platform::macos::overlay_panel`), since macOS cannot say when a share is on.
 
-use crate::window_source::Rect;
+use crate::window_source::{Rect, STRIP_FRACTION};
 
 /// How long a rule takes to take the Character away, and to give it back. Long
 /// enough to read as leaving rather than a dropped frame, short enough not to
@@ -19,11 +19,6 @@ pub const FADE_MS: u32 = 500;
 /// it, in points. Under a fractional scale factor the two need not divide back
 /// onto the same number; a point of slack still tells fullscreen from zoomed.
 const EDGE_TOLERANCE: f64 = 1.0;
-
-/// Thickness at or below which a window can be the Dock or the menu bar,
-/// as a fraction of the display. A zoomed window is most of the display.
-/// Same third as `plausible_dock`.
-const STRIP_FRACTION: f64 = 0.3;
 
 /// A Dock or menu bar spans most of the edge it sits on. A short window on that
 /// edge is still the frontmost app; skipping it would treat the fullscreen
