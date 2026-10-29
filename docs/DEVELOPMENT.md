@@ -196,7 +196,7 @@ Search paths, in order. An earlier directory wins when two packages share a name
 
 The user directory is the same per-platform data directory as `settings.json`, with `characters` under it. The Settings window's Character picker shows that path.
 
-Nine characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump.
+Ten characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux.
 
 ### Writing a Character
 
@@ -485,6 +485,36 @@ to establish standing scale, and keep `--stand`, the manifest's `scale`, and its
 render mode consistent with the existing package. Unselected frames stay intact.
 New strips are written with a warning until the manifest references them.
 Do not use `--force` for this pass: it replaces the whole package.
+
+### Tux row map
+
+Tux uses all nine rows of the `cozy-tux` sheet. The manifest tunes timing and
+behaviors after import. Row numbers below start at zero.
+
+| Row | Animation | Motion |
+| --- | --- | --- |
+| 0 | `idle` | Seated foot taps and salute |
+| 1 | `walk` | Waddle right |
+| 2 | `walk-left` | Waddle left |
+| 3 | `talk` | Present a terminal card |
+| 4 | `jump` | Crouch, hop, and land |
+| 5 | `recover-card` | Drop and recover the card |
+| 6 | `look-around` | Seated glances, blink, and wink |
+| 7 | `waddle-in-place` | Waddle toward the viewer |
+| 8 | `checking-work` | One loop of balance steps and checking the card |
+
+To recut Tux's 57 source frames while keeping its authored manifest and prompt:
+
+```sh
+uv run scripts/import-pet.py ~/.codex/pets/cozy-tux --format petscodex -o characters/tux \
+  --frames-only --only-mapped --stand 105 \
+  --map idle=0 --map walk=1 --map walk-left=2 --map talk=3 --map jump=4 \
+  --map recover-card=5 --map look-around=6 --map waddle-in-place=7 --map checking-work=8
+```
+
+The `fall`, `land`, and `hold` animations reuse hop poses. `react` reuses the
+salute. `sit` and `sleep` reuse the seated and closed-eye poses from row 6;
+the source has no dedicated sleep loop.
 
 ### Shimeji Shop
 

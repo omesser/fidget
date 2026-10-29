@@ -525,6 +525,7 @@ mod tests {
             ("rubber-duck", "Rubber Duck", "listen", 50, "nap"),
             ("timber-wolf", "Timber Wolf", "patrol", 30, "power_down"),
             ("trump", "Trump", "report", 40, "doze"),
+            ("tux", "Tux", "keep-company", 50, "rest"),
         ];
 
         for (directory, name, behavior, weight, alone) in shipped {
