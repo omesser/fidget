@@ -1,7 +1,7 @@
 # Record a WPR CPU trace, with stacks, while fidget rebuilds its click-through
 # region (#428). Windows only, from an elevated PowerShell: WPR needs admin.
 # Usage: scripts\bench-mask-rebuild-windows-flame.ps1 -Bin PATH\fidget.exe [-Out DIR] [-Target N] [-Seconds N]
-#          [-HalfWidth N -HalfHeight N] [-Instances NAME] [-Scale N]
+#          [-HalfWidth N -HalfHeight N] [-Instances NAME] [-Scale N] [-Check]
 #   FIDGET_BENCH_GREEN_LIGHT=1: the operator agreed to fidget on the desktop
 #   and to this script moving the pointer. Hands off the mouse while it runs.
 #
@@ -11,7 +11,12 @@
 # the rate seen on X11 (#428). The pointer goes to the sprite's top-left from
 # each frame line plus half the sprite size from the "overlay: ... sprite WxH"
 # line. HalfWidth and HalfHeight override that, and BMO's 63x64 is the
-# fallback when the line is missing.
+# fallback when the line is missing. The pointer moves once a display refresh,
+# to the newest frame line (scripts\bench-mask-rebuild-windows-steer.cs says why).
+#
+# Check steers without WPR or admin, for Seconds (default 20), and reports how
+# old each frame line was when the pointer moved and how many rebuilds landed.
+# Rebuilds near the frame rate mean the pointer stayed on the sprite.
 #
 # Open trace.etl in WPA: CPU Usage (Sampled), process fidget.exe, Flame by
 # Stack, and search for SetWindowRgn. Release builds can inline
@@ -38,7 +43,8 @@ param(
     [int]$HalfHeight = 0,
     [string]$Instances = "BMO",
     # 0: the manifest's scale.
-    [int]$Scale = 0
+    [int]$Scale = 0,
+    [switch]$Check
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,14 +58,16 @@ if ($env:OS -ne 'Windows_NT') {
     [Console]::Error.WriteLine("WPR is Windows only. OS is '$env:OS', not Windows_NT.")
     exit 2
 }
-$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    [Console]::Error.WriteLine("WPR needs an elevated PowerShell. Run this again as administrator.")
-    exit 2
-}
-if (-not (Get-Command wpr.exe -ErrorAction SilentlyContinue)) {
-    [Console]::Error.WriteLine("wpr.exe is not on PATH; it ships with Windows 10 and later in System32.")
-    exit 2
+if (-not $Check) {
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        [Console]::Error.WriteLine("WPR needs an elevated PowerShell. Run this again as administrator.")
+        exit 2
+    }
+    if (-not (Get-Command wpr.exe -ErrorAction SilentlyContinue)) {
+        [Console]::Error.WriteLine("wpr.exe is not on PATH; it ships with Windows 10 and later in System32.")
+        exit 2
+    }
 }
 if (-not (Test-Path -LiteralPath $Bin)) {
     [Console]::Error.WriteLine("no $Bin - build: `$env:CARGO_PROFILE_RELEASE_DEBUG='line-tables-only'; cargo build --release -p fidget")
@@ -72,13 +80,18 @@ if (-not (Test-Path -LiteralPath $pdb)) {
 }
 
 # A WPR session already running is someone else's; this script does not cancel it.
-& wpr.exe -status | Out-String | Set-Variable status
-if ($status -match 'WPR is recording') {
-    [Console]::Error.WriteLine("WPR is already recording. Stop that session first (wpr -cancel or wpr -stop).")
-    exit 2
+if (-not $Check) {
+    & wpr.exe -status | Out-String | Set-Variable status
+    if ($status -match 'WPR is recording') {
+        [Console]::Error.WriteLine("WPR is already recording. Stop that session first (wpr -cancel or wpr -stop).")
+        exit 2
+    }
 }
 
-if ($Seconds -le 0) { $Seconds = [int][math]::Ceiling($Target / 2) + 15 }
+if ($Seconds -le 0) { $Seconds = if ($Check) { 20 } else { [int][math]::Ceiling($Target / 2) + 15 } }
+if (-not ('FidgetBench.LogFollower' -as [type])) {
+    Add-Type -Path (Join-Path $PSScriptRoot "bench-mask-rebuild-windows-steer.cs")
+}
 
 if (-not $Out) {
     $Out = Join-Path "E:\workspace\fidget-428-flame" (Get-Date -Format "yyyyMMdd-HHmmss")
@@ -144,50 +157,51 @@ function Stop-All {
 }
 trap { Stop-All; break }
 
-# Tails process.log, waiting for it to appear. Lines stamped before $Since are
-# skipped. With $Steer, each frame line moves the pointer to the sprite centre
-# and region rebuild lines are passed on; without it, the first frame line is.
-$tail = {
-    param([string]$Path, [long]$Since, [bool]$Steer, [int]$Hw, [int]$Hh, [int]$Take)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        $watcher = New-Object System.IO.FileSystemWatcher (Split-Path -Parent $Path), (Split-Path -Leaf $Path)
-        try {
-            Register-ObjectEvent $watcher Created -SourceIdentifier created | Out-Null
-            $watcher.EnableRaisingEvents = $true
-            if (-not (Test-Path -LiteralPath $Path)) { $null = Wait-Event -SourceIdentifier created -Timeout 60 }
-        } finally { $watcher.Dispose() }
-    }
-    if ($Steer) {
-        Add-Type -Namespace Bench -Name Cursor -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);'
-    }
-    Get-Content -LiteralPath $Path -Wait | ForEach-Object {
-        if ($_ -notmatch '^(\d+) ') { return }
-        if ([long]$Matches[1] -lt $Since) { return }
-        if ($_ -match 'frame: .* sprite\((-?\d+),(-?\d+)\)') {
-            if ($Steer) { [void][Bench.Cursor]::SetCursorPos([int]$Matches[1] + $Hw, [int]$Matches[2] + $Hh) }
-            else { $_ }
-        } elseif ($Steer -and $_ -match 'region rebuild') { $_ }
-    } | Select-Object -First $Take
+# Each pass waits for the next display refresh, then reads what fidget logged
+# since the last one. Returns the follower once it has seen Frames frame lines
+# and Rebuilds rebuild lines, or when Seconds pass or fidget exits.
+function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Scale, [int]$Frames, [int]$Rebuilds, [int]$Seconds, [bool]$Steer) {
+    $follower = New-Object FidgetBench.LogFollower $processLog, $Since, $Hw, $Hh, $Scale
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        while ($follower.Frames -lt $Frames -or $follower.Rebuilds.Count -lt $Rebuilds) {
+            if ($clock.Elapsed.TotalSeconds -ge $Seconds) { break }
+            if ($app.HasExited) { [Console]::Error.WriteLine("fidget exited; see $processLog"); break }
+            [FidgetBench.Refresh]::Wait()
+            if ($follower.Step() -and $Steer) { [void][FidgetBench.Screen]::MoveTo($follower.AimX, $follower.AimY) }
+        }
+    } finally { $follower.Dispose() }
+    return $follower
 }
 
-$exited = Start-Job -ScriptBlock { param([int]$Id) Wait-Process -Id $Id -ErrorAction SilentlyContinue } -ArgumentList $app.Id
-
-function Wait-Tail($Job, [int]$Timeout) {
-    $done = Wait-Job -Job @($Job, $exited) -Any -Timeout $Timeout
-    if ($done -eq $Job) { return @(Receive-Job -Job $Job) }
-    if ($done -eq $exited) { [Console]::Error.WriteLine("fidget exited; see $processLog") }
-    return @()
+# fidget creates process.log early in startup. Created is an event the watcher
+# can wait on; appends to the open file are not, so from there the wait for the
+# first frame line reads on each refresh, as steering does.
+if (-not (Test-Path -LiteralPath $processLog)) {
+    $watcher = New-Object System.IO.FileSystemWatcher $dataDir, (Split-Path -Leaf $processLog)
+    try {
+        Register-ObjectEvent $watcher Created -SourceIdentifier created | Out-Null
+        $watcher.EnableRaisingEvents = $true
+        if (-not (Test-Path -LiteralPath $processLog)) { $null = Wait-Event -SourceIdentifier created -Timeout 60 }
+    } finally {
+        Unregister-Event -SourceIdentifier created -ErrorAction SilentlyContinue
+        Remove-Event -SourceIdentifier created -ErrorAction SilentlyContinue
+        $watcher.Dispose()
+    }
 }
-
-$first = Start-Job -ScriptBlock $tail -ArgumentList $processLog, 0, $false, 0, 0, 1
-if ((Wait-Tail $first 60).Count -eq 0) {
+if (-not (Test-Path -LiteralPath $processLog)) {
+    Stop-All
+    [Console]::Error.WriteLine("no $processLog within 60s; see $Out\stderr.log")
+    exit 1
+}
+if ((Read-Log 0 0 0 1 1 0 60 $false).Frames -eq 0) {
     Stop-All
     [Console]::Error.WriteLine("no frame line within 60s; see $processLog")
     exit 1
 }
 
 # The overlay line comes before the first frame line. Select-String reads the
-# log the app still has open, as Get-Content -Wait does.
+# log the app still has open.
 if ($HalfWidth -le 0 -or $HalfHeight -le 0) {
     $overlay = Select-String -LiteralPath $processLog -Pattern 'overlay: \d+ display\(s\); sprite (\d+)x(\d+)' | Select-Object -Last 1
     if ($overlay -and [int]$overlay.Matches[0].Groups[1].Value -gt 0) {
@@ -201,42 +215,59 @@ if ($HalfWidth -le 0 -or $HalfHeight -le 0) {
         if ($HalfHeight -le 0) { $HalfHeight = 64 }
     }
 }
+$scale = [FidgetBench.Screen]::PrimaryScale()
+if ($scale -le 0) { Stop-All; [Console]::Error.WriteLine("no DPI for the primary display"); exit 1 }
 
-& wpr.exe -start CPU -filemode
-if ($LASTEXITCODE -ne 0) { Stop-All; [Console]::Error.WriteLine("wpr -start CPU failed ($LASTEXITCODE)"); exit 1 }
-$recording = $true
+if (-not $Check) {
+    & wpr.exe -start CPU -filemode
+    if ($LASTEXITCODE -ne 0) { Stop-All; [Console]::Error.WriteLine("wpr -start CPU failed ($LASTEXITCODE)"); exit 1 }
+    $recording = $true
+}
 $since = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $drawn = if ($Scale -gt 0) { "$Instances at ${Scale}x" } else { $Instances }
-Write-Host "recording; holding the pointer at sprite + ($HalfWidth,$HalfHeight) on $drawn until $Target region rebuilds or ${Seconds}s"
+$doing = if ($Check) { "checking" } else { "recording" }
+Write-Host "$doing; holding the pointer at sprite + ($HalfWidth,$HalfHeight) points x $scale on $drawn until $Target region rebuilds or ${Seconds}s"
 
-$steer = Start-Job -ScriptBlock $tail -ArgumentList $processLog, $since, $true, $HalfWidth, $HalfHeight, $Target
-$lines = Wait-Tail $steer $Seconds
+$followed = Read-Log $since $HalfWidth $HalfHeight $scale 0 $Target $Seconds $true
 $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $since
-Stop-Job -Job $steer -ErrorAction SilentlyContinue
-if ($lines.Count -lt $Target) { $lines = @(Receive-Job -Job $steer -ErrorAction SilentlyContinue) + $lines }
+$lines = @($followed.Rebuilds)
 
-Write-Host "stopping WPR (merging the trace takes a while)"
-& wpr.exe -stop $etl "fidget #428 mask rebuild"
-$stopCode = $LASTEXITCODE
-$recording = $false
+$stopCode = 0
+if (-not $Check) {
+    Write-Host "stopping WPR (merging the trace takes a while)"
+    & wpr.exe -stop $etl "fidget #428 mask rebuild"
+    $stopCode = $LASTEXITCODE
+    $recording = $false
+}
 Stop-All
-Remove-Job -Job @($first, $steer, $exited) -Force
 
-# Next to the trace so WPA finds fidget's symbols with the ETL alone.
-Copy-Item -LiteralPath $Bin -Destination $Out
-if (Test-Path -LiteralPath $pdb) { Copy-Item -LiteralPath $pdb -Destination $Out }
+if (-not $Check) {
+    # Next to the trace so WPA finds fidget's symbols with the ETL alone.
+    Copy-Item -LiteralPath $Bin -Destination $Out
+    if (Test-Path -LiteralPath $pdb) { Copy-Item -LiteralPath $pdb -Destination $Out }
+}
 
 $ms = @($lines | ForEach-Object { if ($_ -match ', ([\d.]+) ms$') { [double]$Matches[1] } } | Sort-Object)
 $rects = @($lines | ForEach-Object { if ($_ -match 'region rebuild (\d+) rects') { [int]$Matches[1] } } | Sort-Object)
-$summary = "character: $drawn`nrebuilds: $($ms.Count) in ${elapsed}s (target $Target)"
+$lags = @($followed.LagsMs | Sort-Object)
+$summary = "character: $drawn`nrebuilds: $($ms.Count) in ${elapsed}s (target $Target)`nframes: $($followed.Frames)"
+if ($lags.Count -gt 0) {
+    $summary += "`nframe line age when the pointer moved, ms: median $($lags[[math]::Floor($lags.Count / 2)]) max $($lags[-1])"
+}
 if ($ms.Count -gt 0) {
     $summary += "`nrebuild ms: min $($ms[0]) median $($ms[[math]::Floor($ms.Count / 2)]) max $($ms[-1])"
     $summary += "`nrects: min $($rects[0]) median $($rects[[math]::Floor($rects.Count / 2)]) max $($rects[-1])"
 }
-$summary += "`nwpr -stop exit: $stopCode`ntrace: $etl`nsymbols: $Out (fidget), srv*E:\workspace\symbols*https://msdl.microsoft.com/download/symbols (Windows)"
+if (-not $Check) {
+    $summary += "`nwpr -stop exit: $stopCode`ntrace: $etl`nsymbols: $Out (fidget), srv*E:\workspace\symbols*https://msdl.microsoft.com/download/symbols (Windows)"
+}
 $summary | Set-Content -LiteralPath (Join-Path $Out "summary.txt") -Encoding UTF8
 $lines | Set-Content -LiteralPath (Join-Path $Out "rebuilds.log") -Encoding UTF8
 Write-Host $summary
+if ($Check) {
+    Write-Host "output: $Out (summary.txt, rebuilds.log, process log in data\)"
+    exit 0
+}
 Write-Host "output: $Out (summary.txt, rebuilds.log, trace.etl, process log in data\)"
 Write-Host "flamegraph, from a non-elevated PowerShell: scripts\export-mask-flame-windows.ps1 -Etl $etl"
 if ($stopCode -ne 0 -or $ms.Count -eq 0) { exit 1 }
