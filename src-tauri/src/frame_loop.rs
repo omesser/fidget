@@ -1721,6 +1721,7 @@ pub(crate) fn run_frame_loop(
                 world.composing =
                     platform::overlay_composing().as_deref() == Some(live.id.as_str());
                 world.verbs = std::mem::take(&mut live.verbs);
+                world.pressed_at = live.pointer.pressed_at();
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);

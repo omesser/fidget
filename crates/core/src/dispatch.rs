@@ -832,6 +832,7 @@ mod tests {
             }],
             windows: vec![],
             cursor: Point { x: 100.0, y: 100.0 },
+            pressed_at: None,
             verbs: vec![],
             poke_settled: false,
             elapsed_ms: 16,
