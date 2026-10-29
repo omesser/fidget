@@ -50,7 +50,8 @@ repos:
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         # "sigit" is an agent id in the ACP registry, not a misspelling of "digit".
         # "ine" is the tail of the `[Nn]ine` pattern the chat-close-pill-type scenarios grep for.
-        args: ["--ignore-words-list=crate,crates,static,statics,sigit,ine"]
+        # "pard" is an RTF control word, in the help text of scripts/wpa/'s WPA profile.
+        args: ["--ignore-words-list=crate,crates,static,statics,sigit,ine,pard"]
         exclude: *vendored
 
   # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
