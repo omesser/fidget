@@ -1,7 +1,7 @@
 use super::{Context, Doing, Happened, Lately, State, Step, CHAT_LIMIT};
 
 /// The opening turn: Personality Prompt, Instance Prompt (ADR-0012), roster,
-/// the Instance's own id and moment; later wakes send `follow_up`. `blank`
+/// the Instance's own id and moment; later wakes send `named_moment`. `blank`
 /// empties the built-in layers for the control run, keeping the rest; its
 /// reply is prose.
 pub(crate) fn character_prompt(
