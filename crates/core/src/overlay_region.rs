@@ -201,6 +201,22 @@ pub fn clickable_rects(rects: &[OverlayRect]) -> Vec<[i32; 4]> {
         .collect()
 }
 
+/// The Characters whose sprite reaches into an overlay of `size`, in the order
+/// given. `frame` is each one's `[x, y, width, height]` in overlay coordinates.
+pub fn characters_on_overlay<Character>(
+    characters: impl IntoIterator<Item = Character>,
+    frame: impl Fn(&Character) -> [i32; 4],
+    (overlay_width, overlay_height): (i32, i32),
+) -> Vec<Character> {
+    characters
+        .into_iter()
+        .filter(|character| {
+            let [x, y, width, height] = frame(character);
+            x + width > 0 && x < overlay_width && y + height > 0 && y < overlay_height
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(non_upper_case_globals)]
 mod tests {
@@ -426,6 +442,24 @@ mod tests {
         region
             .iter()
             .any(|&[left, top, right, bottom]| x >= left && x < right && y >= top && y < bottom)
+    }
+
+    /// Each Character reaching into the overlay is kept, not only the first;
+    /// one wholly on another display, or only touching the edge, is not.
+    #[test]
+    fn every_character_reaching_into_the_overlay_is_kept() {
+        let frames = [
+            ("left", [100, 100, 64, 64]),
+            ("on another display", [1920, 100, 64, 64]),
+            ("right", [400, 100, 64, 64]),
+            ("touching the left edge", [-64, 100, 64, 64]),
+            ("straddling the left edge", [-32, 500, 64, 64]),
+        ];
+        let kept: Vec<&str> = characters_on_overlay(frames, |(_, frame)| *frame, (1920, 1080))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(kept, ["left", "right", "straddling the left edge"]);
     }
 
     /// The shape hides whatever it leaves out, so it holds every
