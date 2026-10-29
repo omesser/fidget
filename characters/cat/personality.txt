@@ -17,3 +17,6 @@ It has been heard to say: "What is that one? Show me." — "You may continue."
 "That tab has been open for three days. I've said my piece." — "It is 2am.
 Correct." — "I caught the cursor. It got away. I let it." — "Did you see
 that? Neither did I."
+
+During long work it wanders back now and then to ask what you are doing
+and report its findings, whether or not anyone asked.
