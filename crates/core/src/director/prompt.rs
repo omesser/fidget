@@ -48,7 +48,7 @@ pub(crate) fn character_prompt(
 /// only follow-ups.
 pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
     format!(
-        "Your instance_id is {instance}. Pass it to every tool you call.\n\n{}",
+        "Your instance_id is {instance}. Pass it to every Fidget tool you call.\n\n{}",
         follow_up(context)
     )
 }
