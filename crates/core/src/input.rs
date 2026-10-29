@@ -227,7 +227,7 @@ impl Pointer {
     }
 
     /// Where the press under way landed, or `None` with no press under way.
-    /// The first Grab is reported only after the cursor has moved off it.
+    /// The first Grab can arrive after the cursor has already moved off it.
     pub fn pressed_at(&self) -> Option<Point> {
         self.gesturing().then_some(self.pressed_at)
     }
