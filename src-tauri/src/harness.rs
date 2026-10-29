@@ -2260,15 +2260,7 @@ impl Session {
             command,
             self.attach_timeout(),
             Box::new(move |event| {
-                note_event(
-                    &data,
-                    &forward,
-                    &asked,
-                    &owners,
-                    &serving,
-                    Some(&plays),
-                    event,
-                )
+                note_event(&data, &forward, &asked, &owners, &serving, &plays, event)
             }),
         );
         // Anything but `Missing` means `PATH` had the file to run. Clear the
@@ -3136,7 +3128,7 @@ fn note_event(
     asked: &Mutex<HashMap<String, Asker>>,
     owners: &Mutex<HashMap<String, String>>,
     serving: &Mutex<Option<String>>,
-    plays: Option<&Mutex<VecDeque<(String, fidget_core::turn_motion::Moment)>>>,
+    plays: &Mutex<VecDeque<(String, fidget_core::turn_motion::Moment)>>,
     event: Event,
 ) {
     let instance_of = |session: &str| owners.lock().ok()?.get(session).cloned();
@@ -3253,9 +3245,6 @@ fn note_event(
             }
         }
         Event::Moment { session, moment } => {
-            let Some(plays) = plays else {
-                return;
-            };
             if let Some(instance) = instance_of(&session) {
                 if let Ok(mut queued) = plays.lock() {
                     queued.push_back((instance, moment));
@@ -5688,7 +5677,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::Thought {
                 session: "session-b".to_string(),
                 text: "Reading the roster".to_string(),
@@ -5724,7 +5713,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::ToolCall {
                 session: "session-b".to_string(),
                 id: "t1".to_string(),
@@ -5778,7 +5767,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::ToolCall {
                 session: "session-b".to_string(),
                 id: "t1".to_string(),
@@ -5847,7 +5836,7 @@ mod tests {
                 "buddy-b".to_string(),
             )])),
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::Usage {
                 session: "session-b".to_string(),
                 used: 1,
@@ -5884,7 +5873,7 @@ mod tests {
                 "buddy-a".to_string(),
             )])),
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::Plan {
                 session: "session-a".to_string(),
                 steps: vec![PlanStep {
@@ -5937,7 +5926,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &serving,
-            None,
+            &Mutex::default(),
             sign_in("1"),
         );
         *serving.lock().unwrap() = None;
@@ -5947,7 +5936,7 @@ mod tests {
             &Mutex::default(),
             &owners,
             &serving,
-            None,
+            &Mutex::default(),
             sign_in("2"),
         );
 
@@ -5989,7 +5978,7 @@ mod tests {
                 "buddy-a".to_string(),
             )])),
             &Mutex::default(),
-            None,
+            &Mutex::default(),
             Event::Plan {
                 session: "session-a".to_string(),
                 steps: Vec::new(),

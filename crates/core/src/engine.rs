@@ -11,7 +11,7 @@ use crate::overlay::{display_index_for, stands_on};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod geometry;
 mod transition;
@@ -408,9 +408,12 @@ pub struct Engine {
     /// dialogue is not spoken, while Poke/Grab/Throw still work and the
     /// Character stays visible.
     do_not_disturb: bool,
-    /// A Harness turn beat for the next tick. Not a proposal: `play` leaves
-    /// it unnamed, which is what keeps a Character from replacing it.
-    pending_moment: Option<Moment>,
+    /// Harness turn beats waiting out the one on screen. `play` leaves each
+    /// unnamed, so a Character cannot replace it, and the next waits until
+    /// that one-shot ends so a payoff cannot erase a failed beat.
+    moment_queue: VecDeque<Moment>,
+    /// True while a turn beat's Primitive is still on screen.
+    moment_holding: bool,
 
     near_reaction: CursorReaction,
     rush_reaction: CursorReaction,
@@ -644,7 +647,8 @@ impl Engine {
             yank_reference: Point::default(),
             since_yank_ref_s: 0.0,
             do_not_disturb: false,
-            pending_moment: None,
+            moment_queue: VecDeque::new(),
+            moment_holding: false,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             cursor_near: false,
@@ -724,10 +728,11 @@ impl Engine {
         self.do_not_disturb
     }
 
-    /// Play `moment` on the next tick. The Engine owns it: the frame names
-    /// no Behavior, so a Character cannot replace the beat.
+    /// Queue `moment`. The Engine owns it: the frame names no Behavior, so a
+    /// Character cannot replace the beat. It starts once the one on screen
+    /// has finished, so a same-instant payoff cannot erase a failed beat.
     pub fn cue_moment(&mut self, moment: Moment) {
-        self.pending_moment = Some(moment);
+        self.moment_queue.push_back(moment);
     }
 
     /// Where the sprite's feet are.
@@ -1177,13 +1182,17 @@ impl Engine {
             }
         }
 
-        // After a proposal, so a turn beat is what shows when both land on
-        // one tick. Before a Poke, so the hand still wins. `play` drops the
-        // Behavior name: this moment is the Engine's.
-        if let Some(moment) = self.pending_moment.take() {
-            if self.play(&[moment.primitive()]) {
-                started = true;
-                self.idle_ms = 0;
+        // After a proposal, so a turn beat wins that tick, and before a
+        // Poke, so the hand still wins. The one on screen finishes before
+        // the next starts, so a payoff cannot erase a failed beat.
+        if !self.moment_holding {
+            if let Some(moment) = self.moment_queue.front().copied() {
+                if self.play(&[moment.primitive()]) {
+                    self.moment_queue.pop_front();
+                    self.moment_holding = true;
+                    started = true;
+                    self.idle_ms = 0;
+                }
             }
         }
 
@@ -1636,6 +1645,7 @@ impl Engine {
             // `stop_playing` like every other clear site.
             self.primitive_ms = 0;
             self.playing_behavior = None;
+            self.moment_holding = false;
         } else {
             self.primitive_ms -= left;
         }
@@ -1649,6 +1659,7 @@ impl Engine {
         self.playing.clear();
         self.playing_behavior = None;
         self.primitive_ms = 0;
+        self.moment_holding = false;
     }
 
     /// Start `primitives` unless the State forbids any of them. True when it
@@ -2630,15 +2641,37 @@ mod tests {
         assert_eq!(working.playing_behavior, None);
 
         engine.cue_moment(crate::turn_motion::Moment::Failed);
-        let failed = engine.tick(&snapshot(16));
+        let still_working = engine.tick(&snapshot(16));
+        assert_eq!(still_working.playing_primitive, Some(Primitive::Talk));
+
+        let failed = engine.tick(&snapshot(PRIMITIVE_MS));
         assert_eq!(failed.animation, "sit");
         assert_eq!(failed.playing_primitive, Some(Primitive::Sit));
         assert_eq!(failed.playing_behavior, None);
 
         engine.cue_moment(crate::turn_motion::Moment::Succeeded);
-        let succeeded = engine.tick(&snapshot(16));
+        let succeeded = engine.tick(&snapshot(PRIMITIVE_MS));
         assert_eq!(succeeded.animation, "react");
         assert_eq!(succeeded.playing_behavior, None);
+    }
+
+    /// Failed and the payoff can be queued on one tick. Sit plays out, and
+    /// react starts only after that one-shot ends.
+    #[test]
+    fn a_payoff_waits_until_the_failed_beat_finishes() {
+        let mut engine = a_resting_sprite();
+        engine.cue_moment(crate::turn_motion::Moment::Failed);
+        engine.cue_moment(crate::turn_motion::Moment::Payoff);
+
+        let failed = engine.tick(&snapshot(16));
+        assert_eq!(failed.playing_primitive, Some(Primitive::Sit));
+
+        let still = engine.tick(&snapshot(16));
+        assert_eq!(still.playing_primitive, Some(Primitive::Sit));
+
+        let payoff = engine.tick(&snapshot(PRIMITIVE_MS));
+        assert_eq!(payoff.playing_primitive, Some(Primitive::React));
+        assert_eq!(payoff.playing_behavior, None);
     }
 
     #[test]
