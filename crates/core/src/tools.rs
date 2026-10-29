@@ -262,7 +262,8 @@ mod helpers {
             }
             TargetResolution::AmbiguousTarget => {
                 return Err(
-                    "Several Character Instances are running; name one with instance_id"
+                    "Several Character Instances are running; name one with instance_id. \
+                     Call list_instances to find each one's instance_id."
                         .to_string(),
                 );
             }

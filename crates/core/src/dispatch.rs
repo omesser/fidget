@@ -91,7 +91,7 @@ fn unknown_instance(id: &str, roster: &[InstanceInfo]) -> String {
         .join(", ");
     format!(
         "No Character Instance has id {id}. Running: {running}. \
-         Pass your own instance_id from your opening prompt."
+         Pass your own instance_id from your prompt, or call list_instances to find it."
     )
 }
 
@@ -370,7 +370,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     for tool in &mut tools {
         tool.input_schema["properties"]["instance_id"] = serde_json::json!({
             "type": "string",
-            "description": "Your Character Instance id, named in your opening prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
+            "description": "Your Character Instance id, named in your prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
         });
     }
     tools
@@ -1116,7 +1116,8 @@ mod tests {
         assert_eq!(result["message"], "Hello");
         assert_eq!(
             result["reason"],
-            "Several Character Instances are running; name one with instance_id"
+            "Several Character Instances are running; name one with instance_id. \
+             Call list_instances to find each one's instance_id."
         );
     }
 
@@ -1151,7 +1152,7 @@ mod tests {
             assert_eq!(
                 refused.message,
                 "No Character Instance has id nope. Running: pip (Pip), rex (Rex). \
-                 Pass your own instance_id from your opening prompt.",
+                 Pass your own instance_id from your prompt, or call list_instances to find it.",
                 "{}",
                 tool.name
             );

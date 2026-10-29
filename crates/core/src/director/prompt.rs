@@ -10,12 +10,7 @@ pub(crate) fn character_prompt(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
 ) -> String {
-    // Every tool takes this id, and blank mode keeps it: it routes calls to
-    // this Instance, which is plumbing rather than voice.
-    let moment = format!(
-        "Your instance_id is {instance}. Pass it to every tool you call.\n\n{}",
-        follow_up(context)
-    );
+    let moment = named_moment(context, instance);
 
     // Empty, not `(no personality)`: that placeholder is a Character with an
     // empty file, which still gets the voice rules. Blank AI is the emptied
@@ -45,6 +40,17 @@ pub(crate) fn character_prompt(
         (true, false) => format!("{instructions}\n\n{moment}"),
         (false, false) => format!("{authored}\n\n{instructions}\n\n{moment}"),
     }
+}
+
+/// The moment, led by this Instance's id. Every turn carries the id, and
+/// blank mode keeps it: it routes tool calls to this Instance, which is
+/// plumbing rather than voice, and a session the Harness opened mid-run hears
+/// only follow-ups.
+pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
+    format!(
+        "Your instance_id is {instance}. Pass it to every tool you call.\n\n{}",
+        follow_up(context)
+    )
 }
 
 /// The app layer of the Character Prompt: voice rules, roster, reply contract.

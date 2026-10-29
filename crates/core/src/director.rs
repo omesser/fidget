@@ -26,8 +26,10 @@ use crate::sensing::Activity;
 
 mod prompt;
 mod recency;
+#[cfg(test)]
+use prompt::follow_up;
 pub use prompt::{app_instructions, happened_word, typed_line};
-pub(crate) use prompt::{character_prompt, follow_up};
+pub(crate) use prompt::{character_prompt, named_moment};
 pub use recency::{Doing, Lately, Recency, Step};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
@@ -351,7 +353,7 @@ impl<C: Completer> ModelDirector<C> {
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
         if self.opened.load(Ordering::SeqCst) {
-            follow_up(context)
+            named_moment(context, &self.instance)
         } else {
             character_prompt(context, &self.instance, self.behaviors.iter(), self.blank)
         }
@@ -2366,7 +2368,7 @@ mod tests {
     /// Each session's opening names its own Instance, so a tool call made
     /// from it lands there and not on another Instance.
     #[test]
-    fn the_opening_names_this_instance_and_later_turns_do_not() {
+    fn every_turn_names_this_instance() {
         let moment = context(working(), &["nap"]);
         let pip = character_prompt(&moment, "pip", ["wave"], false);
         let rex = character_prompt(&moment, "rex", ["wave"], false);
@@ -2374,11 +2376,17 @@ mod tests {
         assert!(pip.contains("Your instance_id is pip."), "{pip}");
         assert!(rex.contains("Your instance_id is rex."), "{rex}");
         assert!(!pip.contains("rex"), "{pip}");
+
+        // A session the Harness opened mid-run hears only follow-ups, so they
+        // carry the id too.
+        let director = directing(Scripted::says("wave"), ["wave"]);
+        director.wake(&moment);
+        let later = director.prompt(&moment);
         assert!(
-            !follow_up(&moment).contains("instance_id"),
-            "the id is the opening's only: {}",
-            follow_up(&moment)
+            later.starts_with("Your instance_id is buddy-1. Pass it to every tool you call.\n\n"),
+            "{later}"
         );
+        assert!(!later.contains("always in character"), "{later}");
     }
 
     /// Each rule the opening turn must carry, and that later wakes do not
@@ -2432,7 +2440,7 @@ mod tests {
             .completer
             .seen_prompt()
             .expect("a follow-up was sent");
-        assert_eq!(sent, follow_up(&later));
+        assert_eq!(sent, named_moment(&later, "buddy-1"));
         assert!(
             !sent.contains("a shy robot."),
             "personality is the opening only: {sent}"
@@ -2936,7 +2944,7 @@ mod tests {
             .completer
             .seen_prompt()
             .expect("a follow-up was sent");
-        assert_eq!(sent, follow_up(&asked));
+        assert_eq!(sent, named_moment(&asked, "buddy-1"));
         assert!(
             !sent.contains("a shy robot."),
             "personality is the opening only: {sent}"
