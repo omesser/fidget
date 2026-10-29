@@ -230,6 +230,10 @@ unconfirmed issue.
 It sets `FIDGET_HOVER_DELAY_MS=300`, so each hover opens the pill in 0.3 s
 instead of 1.5 s, still longer than a press on the sprite takes.
 
+`speak-repeat` has only an `.x11.sh` leaf. It opens Chat from the tray, so it
+needs a tray host, and types a turn whose fixture Harness calls `speak` over
+Fidget's MCP server and then replies with the same line.
+
 To check an assertion without a desktop, point the leaf at fixture dumps and
 skip the launch:
 

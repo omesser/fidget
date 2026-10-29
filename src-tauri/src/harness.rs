@@ -4090,6 +4090,34 @@ mod tests {
         );
     }
 
+    /// The line `scenario-speak-repeat` both speaks and replies.
+    const SPOKEN: &str = "I said this one already.";
+
+    /// One `speak` call to the MCP server `session/new` handed over, the way
+    /// an Agent's own MCP client reaches it. Returns the tool's answer.
+    fn speak_over_mcp(server: Option<&Value>, line: &str) -> Value {
+        let server = server.expect("session/new handed over an MCP server");
+        let url = server["url"].as_str().expect("an http MCP server");
+        let mut request = ureq::post(url);
+        for header in server["headers"].as_array().into_iter().flatten() {
+            request = request.header(
+                header["name"].as_str().unwrap_or_default(),
+                header["value"].as_str().unwrap_or_default(),
+            );
+        }
+        request
+            .send_json(
+                json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+                    "name": "speak", "arguments": {"message": line},
+                }}),
+            )
+            .expect("the MCP server answered")
+            .body_mut()
+            .read_json::<Value>()
+            .expect("a JSON-RPC answer")["result"]
+            .take()
+    }
+
     fn stop(id: &Value, reason: &str) {
         say(json!({"jsonrpc": "2.0", "id": id, "result": {"stopReason": reason}}));
     }
@@ -4181,6 +4209,7 @@ mod tests {
         let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
         let mut pending_auth: Option<Value> = None;
+        let mut mcp: Option<Value> = None;
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
@@ -4213,6 +4242,7 @@ mod tests {
                 Some("session/new") => {
                     record(count, "new");
                     record_open(count, &message);
+                    mcp = message.pointer("/params/mcpServers/0").cloned();
                     if script == "die-opening" {
                         std::process::exit(3);
                     }
@@ -4573,6 +4603,27 @@ mod tests {
                             }
                             record(count, "spoken");
                             stop(&id, "end_turn");
+                        }
+                        // `scripts/scenarios/ci/speak-repeat.x11.sh`. The typed
+                        // turn calls `speak` and then repeats the line as its
+                        // reply. A second typed turn answers once Chat has
+                        // settled the first. Other wakes move and say nothing.
+                        "scenario-speak-repeat" => {
+                            let typed = message
+                                .pointer("/params/prompt")
+                                .map(Value::to_string)
+                                .unwrap_or_default();
+                            if typed.contains("and now") {
+                                chunk(&session, "fidget\nAll done.");
+                            } else if typed.contains("say it twice") {
+                                let answer = speak_over_mcp(mcp.as_ref(), SPOKEN);
+                                record(count, &format!("speak {answer}"));
+                                chunk(&session, &format!("fidget\n{SPOKEN}"));
+                            } else {
+                                chunk(&session, "fidget");
+                            }
+                            stop(&id, "end_turn");
+                            record(count, "replied");
                         }
                         // Hands over a picture and a link and says no text.
                         "resource-only" => {
