@@ -9,7 +9,9 @@ and X11?
 
 **Anchor.** The tree read is `main` at `2f9ad5c4`. The live runs are the
 throwaway probe branch `spike/1920-drive-focus-probe` at `e34dcf28`, which is
-`2f9ad5c4` plus the probe and nothing else.
+`2f9ad5c4` plus the probe and nothing else. One macOS run is at `65b4043c`, the
+probe's second commit, whose macOS leaf and helpers match `e34dcf28`. Written
+2026-10-29. This document does not follow `main`.
 
 **Answer.** Yes on all three. Every item in #1920 is proven on a CI runner of
 each OS, with no change to the focus path. The pill's `overlay_request_focus`
@@ -76,15 +78,17 @@ at `e34dcf28`.
 | Click on the overlay takes the keyboard back | proven | `Focused(true)`, `pointerdown sprite=true`, `request click ok`, `keydown key=ArrowLeft` |
 
 At launch the overlay logs `Focused(true)`, `Focused(false)`, `Focused(true)`
-inside one second as `SetForegroundWindow` runs under `AttachThreadInput`. A
-pause handler must not treat that first `Focused(false)` as the user clicking
-away.
+within about a second (the trace has one-second resolution) as
+`SetForegroundWindow` runs under `AttachThreadInput`. The same
+`Focused(false)`, `Focused(true)` pair follows `request click ok` on the
+resume. A pause handler must not treat a `Focused(false)` that is followed at
+once by `Focused(true)` as the user clicking away, at launch or on any resume.
 
 ## X11
 
 Run [40843057277](https://github.com/omesser/fidget/actions/runs/40843057277)
-at `e34dcf28`, attempt 2. Attempt 1 failed before any leaf ran: the workflow's
-own Xvfb did not start in 3 s.
+at `e34dcf28`, attempt 2. Attempt 1 of the same run failed before any leaf
+ran: the workflow's own Xvfb did not start in 3 s.
 
 | Item | Verdict | Trace |
 |---|---|---|
@@ -110,13 +114,21 @@ manager is not tested.
   `platform::hand_back_keyboard` runs only from there. A drive release must do
   both itself. Until it does, every later sprite click on macOS or X11 takes
   the keyboard from the user's app, which is the regression #1699 fixed.
-- **Focus arrives after the invoke returns:** `request launch ok` reports
-  `hasFocus=false` on macOS and X11 and `true` on Windows. Drive should treat
-  `Focused(true)` or the DOM `focus` event as the moment it holds the keyboard.
+- **DOM focus lags the invoke:** the native `Focused(true)` landed before
+  `request launch ok` in the final runs and after it in an earlier X11 run, so
+  its order against the invoke varies. `request launch ok` reports
+  `hasFocus=false` on macOS and X11 and `true` on Windows, and the DOM `focus`
+  event follows. Drive should treat the DOM `focus` event, or `Focused(true)`
+  on the Rust side, as the moment it holds the keyboard, never the invoke's
+  return.
 - **A press needs the pointer to arrive first:** on X11 and Windows a
   synthetic move and press in the same instant reached the window below. The
   frame loop makes the art clickable on the tick after the pointer arrives, so
-  the press passed through and the webview saw no `pointerdown` (runs
+  the press passed through and the webview saw no `pointerdown`, even where
+  the frame loop's own hit test logged `click: down hits=[true]`: that test
+  reads the pointer against the drawn sprite, while the window's input region
+  or input shape is what decides where the press is delivered, and it lagged
+  (runs
   [40842574888](https://github.com/omesser/fidget/actions/runs/40842574888) and
   [40842578998](https://github.com/omesser/fidget/actions/runs/40842578998)).
   A hand always gives that tick. The drive scenarios in #1655 step 8 must wait
@@ -158,9 +170,12 @@ displays closed, because one remembered app serves every overlay. #1694 hands
 back only when the last pill in the process closes. Drive calls
 `overlay_request_focus`, which calls `remember_front_app` on macOS and
 `remember_foreground` on Windows and X11. That memory is the same one the pills
-use. A pill opened mid-drive finds an overlay in front, which all three skip,
-so the app remembered at drive start survives. But a pill
-closing mid-drive is a close that empties `OpenPills`, because drive is not in
-it, and it hands the keyboard back mid-drive. That is the case #1655's
+use. A pill opened mid-drive finds an overlay in front, and each of those
+remember functions skips an overlay, so the app remembered at drive start
+survives. But a pill closing mid-drive is a close that empties `OpenPills`,
+because drive is not in it, and it hands the keyboard back mid-drive. The same
+close flip also sets `focusable(false)` on that overlay, on macOS and X11, even
+when another display's pill keeps the process from emptying. That breaks the
+sprite-click resume until drive asks for focus again. That is the case #1655's
 "keyboard bookkeeping" bullet names. Drive has to count in `OpenPills`, or the
 hand-back has to ask whether drive holds the overlay.
