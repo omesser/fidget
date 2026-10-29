@@ -1150,6 +1150,16 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
     ))
 }
 
+/// The preflight failure line. `why` may already quote `models_endpoint`.
+fn preflight_failure_line(models_endpoint: &str, why: &str) -> String {
+    let reason = if why.contains(models_endpoint) {
+        why.to_string()
+    } else {
+        format!("{models_endpoint} {why}")
+    };
+    format!("director: {reason}; staying on StaticDirector until it answers")
+}
+
 /// Say once, in the background, whether the configured server is there.
 /// Diagnostic only, because a failed wake already falls to `StaticDirector`.
 /// Spawned rather than awaited so a stopped server cannot hold up startup. ADR-0004.
@@ -3786,6 +3796,29 @@ pub(crate) mod tests {
             let models_origin = url::Url::parse(&got).unwrap().origin();
             assert_eq!(models_origin, inference_origin, "{inference} -> {got}");
         }
+    }
+
+    #[test]
+    fn a_preflight_failure_hides_url_secrets() {
+        let url = "https://user:pass@api.openai.com/v1/models?api_key=sek#frag";
+        let line = preflight_failure_line(url, "answered 404");
+        assert_eq!(
+            line,
+            "director: https://api.openai.com/v1/models answered 404; staying on StaticDirector until it answers"
+        );
+        assert!(!line.contains("user:pass"), "{line}");
+        assert!(!line.contains("api_key"), "{line}");
+        assert!(!line.contains("sek"), "{line}");
+
+        let transport = format!("unreachable: bad uri: {url}");
+        let line = preflight_failure_line(url, &transport);
+        assert_eq!(
+            line,
+            "director: unreachable: bad uri: https://api.openai.com/v1/models; staying on StaticDirector until it answers"
+        );
+        assert!(!line.contains("user:pass"), "{line}");
+        assert!(!line.contains("api_key"), "{line}");
+        assert!(!line.contains("sek"), "{line}");
     }
 
     #[test]
