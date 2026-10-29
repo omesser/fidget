@@ -947,8 +947,57 @@ async function start() {
   });
 }
 
-start().catch((err) => {
-  // No art or no frames means nothing to draw and nothing to hit-test, so say
-  // so loudly rather than showing an empty overlay that looks like a hung app.
-  console.error("fidget could not draw the Character:", err);
-});
+// Throwaway #1920 probe: with FIDGET_PROBE_DRIVE_FOCUS set, the first overlay
+// takes the keyboard on its first frame with no pill open, a sprite click takes
+// it back, and every key edge and focus change is traced as `drive-probe:`.
+async function probeDriveFocus() {
+  const invoke = window.__TAURI__.core.invoke;
+  const mode = await invoke("probe_drive_focus").catch(() => null);
+  if (!mode) return;
+  const overlay = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+  const line = (text) => invoke("probe_drive_line", { line: text }).catch(() => {});
+  const take = async (why) => {
+    try {
+      await invoke("overlay_request_focus");
+    } catch (err) {
+      line(`request ${why} failed ${err}`);
+      return;
+    }
+    if (mode === "element") {
+      document.body.tabIndex = -1;
+      document.body.focus();
+    }
+    line(`request ${why} ok hasFocus=${document.hasFocus()}`);
+  };
+  for (const type of ["keydown", "keyup"]) {
+    window.addEventListener(type, (e) => line(`${type} key=${e.key} repeat=${e.repeat}`), true);
+  }
+  window.addEventListener("focus", () => line("dom focus"));
+  window.addEventListener("blur", () => line("dom blur"));
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.target.closest?.(".sprite")) take("click");
+    },
+    true,
+  );
+  if (overlay.label !== "overlay-0") return;
+  let taken = false;
+  await window.__TAURI__.event.listen(
+    "frame",
+    ({ payload }) => {
+      if (taken || !payload.sprites.length) return;
+      taken = true;
+      take("launch");
+    },
+    { target: overlay.label },
+  );
+}
+
+start()
+  .then(probeDriveFocus)
+  .catch((err) => {
+    // No art or no frames means nothing to draw and nothing to hit-test, so say
+    // so loudly rather than showing an empty overlay that looks like a hung app.
+    console.error("fidget could not draw the Character:", err);
+  });

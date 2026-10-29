@@ -2343,6 +2343,19 @@ fn overlay_has_foreground(window: tauri::Window) -> bool {
     }
 }
 
+/// Throwaway #1920 probe: `FIDGET_PROBE_DRIVE_FOCUS` makes the overlay take
+/// the keyboard with no pill open and trace what reaches it.
+#[tauri::command]
+fn probe_drive_focus() -> Option<String> {
+    std::env::var("FIDGET_PROBE_DRIVE_FOCUS").ok()
+}
+
+/// Throwaway #1920 probe: one `drive-probe:` line from the overlay.
+#[tauri::command]
+fn probe_drive_line(window: tauri::Window, line: String) {
+    eprintln!("drive-probe: {} {line}", window.label());
+}
+
 /// The pill reopening on a new owner takes the caret. Windows refuses
 /// SetForegroundWindow to a background thread, so the overlay borrows the
 /// foreground thread's input for the call.
@@ -2511,6 +2524,15 @@ fn build_overlay(
                 platform::cleanup_overlay_window(&watched);
             }
             _ => {}
+        });
+    }
+
+    if std::env::var_os("FIDGET_PROBE_DRIVE_FOCUS").is_some() {
+        let owner = label.to_string();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Focused(on) = event {
+                eprintln!("drive-probe: {owner} Focused({on})");
+            }
         });
     }
 
@@ -5108,6 +5130,8 @@ fn main() {
             toggle_caffeinate,
             caffeinate_view,
             overlay_request_focus,
+            probe_drive_focus,
+            probe_drive_line,
             overlay_has_foreground,
             chat_opening,
             chat_send,
