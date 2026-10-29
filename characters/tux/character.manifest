@@ -28,7 +28,7 @@ frames = [
   "frames/idle-5.png",
 ]
 fps = 4
-weight = 10
+weight = 40
 
 [animations.look-around]
 frames = [
@@ -41,7 +41,7 @@ frames = [
 ]
 fps = 3
 variant_of = "idle"
-weight = 5
+weight = 10
 
 [animations.checking-work]
 frames = [
@@ -69,7 +69,7 @@ frames = [
 ]
 fps = 5
 variant_of = "idle"
-weight = 2
+weight = 4
 
 [animations.waddle-in-place]
 frames = [
@@ -82,7 +82,7 @@ frames = [
 ]
 fps = 6
 variant_of = "idle"
-weight = 2
+weight = 3
 
 [animations.walk]
 frames = [
