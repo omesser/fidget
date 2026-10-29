@@ -8,7 +8,7 @@ on a click, and still pass clicks outside the art through, on macOS, Windows
 and X11?
 
 **Anchor.** The tree read is `main` at `2f9ad5c4`. The live runs are the
-throwaway probe branch `spike/1920-drive-focus-probe` at `e34dcf28`, which is
+throwaway probe at tag `probe-1920-drive-focus` (`e34dcf28`), which is
 `2f9ad5c4` plus the probe and nothing else. One macOS run is at `65b4043c`, the
 probe's second commit, whose macOS leaf and helpers match `e34dcf28`. Written
 2026-10-29. This document does not follow `main`.
