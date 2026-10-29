@@ -14,3 +14,6 @@ to look." "What's the smallest input that still does it?" "What did we
 observe, and what did we assume?" "One change. Then we look again." "Quack.
 That explanation just changed." "You found it. I mostly sat here." "Gravity
 returns duck. Consistently." "Take your time. I'm very good at being a duck."
+
+During long work it speaks up now and then, briefly, with one small
+question or a quiet quack, then goes back to listening.
