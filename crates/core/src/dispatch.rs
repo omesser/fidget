@@ -80,11 +80,44 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
     })
 }
 
+fn unknown_instance(id: &str, roster: &[InstanceInfo]) -> String {
+    if roster.is_empty() {
+        return format!("No Character Instance has id {id}. No Character Instance is running.");
+    }
+    let running = roster
+        .iter()
+        .map(|info| format!("{} ({})", info.id, info.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "No Character Instance has id {id}. Running: {running}. \
+         Pass your own instance_id from your prompt, or call list_instances to find it."
+    )
+}
+
 pub fn dispatch(
     tool_name: &str,
     arguments: Value,
     context: &mut DispatchContext,
 ) -> Result<Value, DispatchError> {
+    // One gate for every tool, so a tool added later refuses a stray id too.
+    if let Some(given) = arguments
+        .get("instance_id")
+        .filter(|given| !given.is_null())
+    {
+        let Some(id) = given.as_str() else {
+            return Err(DispatchError {
+                code: ErrorCode::InvalidArguments,
+                message: "instance_id must be a string".to_string(),
+            });
+        };
+        if !context.roster.iter().any(|info| info.id == id) {
+            return Err(DispatchError {
+                code: ErrorCode::InvalidArguments,
+                message: unknown_instance(id, context.roster),
+            });
+        }
+    }
     match tool_name {
         "speak" => {
             #[derive(Deserialize)]
@@ -233,7 +266,7 @@ pub struct ToolInfo {
 
 /// The tools in `tools`, and none that post input events.
 pub fn list_tools() -> Vec<ToolInfo> {
-    vec![
+    let mut tools = vec![
         ToolInfo {
             name: "speak".to_string(),
             description: "Make the Character speak a line of dialogue".to_string(),
@@ -243,10 +276,6 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "message": {
                         "type": "string",
                         "description": "The message to speak"
-                    },
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["message"]
@@ -261,10 +290,6 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "behavior": {
                         "type": "string",
                         "description": "The name of the Behavior to play"
-                    },
-                    "instance_id": {
-                        "type": "string",
-                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["behavior"]
@@ -314,7 +339,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "list_instances".to_string(),
-            description: "List Character Instances and their names".to_string(),
+            description: "List Character Instances: each one's instance_id, name, and the three layers of its Character Prompt (app_instructions, personality_prompt, instance_prompt). Read it when your session did not open with your instance_id or prompt.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -341,7 +366,14 @@ pub fn list_tools() -> Vec<ToolInfo> {
                 }
             }),
         },
-    ]
+    ];
+    for tool in &mut tools {
+        tool.input_schema["properties"]["instance_id"] = serde_json::json!({
+            "type": "string",
+            "description": "Your Character Instance id, named in your prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
+        });
+    }
+    tools
 }
 
 #[cfg(test)]
@@ -467,10 +499,14 @@ mod tests {
             InstanceInfo {
                 id: "inst-1".to_string(),
                 name: "Clippy".to_string(),
+                app_instructions: "Reply with behavior: <name>".to_string(),
+                personality_prompt: "a paperclip".to_string(),
+                instance_prompt: "Answer in haiku.".to_string(),
             },
             InstanceInfo {
                 id: "inst-2".to_string(),
                 name: "Ferris".to_string(),
+                ..Default::default()
             },
         ];
         let source = fake_source(vec![]);
@@ -483,6 +519,13 @@ mod tests {
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[0]["id"], "inst-1");
         assert_eq!(instances[0]["name"], "Clippy");
+        assert_eq!(
+            instances[0]["app_instructions"],
+            "Reply with behavior: <name>"
+        );
+        assert_eq!(instances[0]["personality_prompt"], "a paperclip");
+        assert_eq!(instances[0]["instance_prompt"], "Answer in haiku.");
+        assert_eq!(instances[1]["instance_prompt"], "");
     }
 
     #[test]
@@ -847,7 +890,11 @@ mod tests {
             .borrow()
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut expression = SharedRoster(Rc::clone(&shared));
@@ -894,7 +941,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -933,7 +984,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -998,7 +1053,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {
@@ -1040,10 +1099,12 @@ mod tests {
             InstanceInfo {
                 id: "instance-1".to_string(),
                 name: "First".to_string(),
+                ..Default::default()
             },
             InstanceInfo {
                 id: "instance-2".to_string(),
                 name: "Second".to_string(),
+                ..Default::default()
             },
         ];
         let mut context = test_context(&temp, &source, &infos);
@@ -1055,29 +1116,104 @@ mod tests {
         assert_eq!(result["message"], "Hello");
         assert_eq!(
             result["reason"],
-            "Several Character Instances are running; name one with instance_id"
+            "Several Character Instances are running; name one with instance_id. \
+             Call list_instances to find each one's instance_id."
         );
     }
 
+    /// Every tool, not only the Expression ones, refuses an id no Instance
+    /// carries, and the refusal names the ids that would work.
     #[test]
-    fn unknown_instance_id_is_failure() {
+    fn every_tool_refuses_an_unknown_instance_id_and_names_the_running_ones() {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
+        let infos = [
+            InstanceInfo {
+                id: "pip".to_string(),
+                name: "Pip".to_string(),
+                ..Default::default()
+            },
+            InstanceInfo {
+                id: "rex".to_string(),
+                name: "Rex".to_string(),
+                ..Default::default()
+            },
+        ];
+        let mut context = test_context(&temp, &source, &infos);
+
+        for tool in list_tools() {
+            let refused = dispatch(
+                &tool.name,
+                json!({"message": "hi", "behavior": "wave", "instance_id": "nope"}),
+                &mut context,
+            )
+            .expect_err(&format!("{} accepted an unknown instance_id", tool.name));
+            assert_eq!(refused.code, ErrorCode::InvalidArguments, "{}", tool.name);
+            assert_eq!(
+                refused.message,
+                "No Character Instance has id nope. Running: pip (Pip), rex (Rex). \
+                 Pass your own instance_id from your prompt, or call list_instances to find it.",
+                "{}",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn an_instance_id_with_nothing_running_says_so() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+
+        let refused = dispatch("recall", json!({"instance_id": "nope"}), &mut context)
+            .expect_err("an id is refused when no Instance runs");
+
+        assert_eq!(
+            refused.message,
+            "No Character Instance has id nope. No Character Instance is running."
+        );
+    }
+
+    /// A known id is accepted by a tool that does not target anything.
+    #[test]
+    fn a_known_instance_id_passes_through_a_sensing_tool() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![window("Terminal", 0.0, 0.0, 10.0, 10.0)]);
         let infos = [InstanceInfo {
-            id: "known-instance".to_string(),
-            name: "Known".to_string(),
+            id: "pip".to_string(),
+            name: "Pip".to_string(),
+            ..Default::default()
         }];
         let mut context = test_context(&temp, &source, &infos);
 
-        let args = json!({"message": "Hello", "instance_id": "unknown-instance"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+        let result = dispatch("list_windows", json!({"instance_id": "pip"}), &mut context)
+            .expect("a known id is accepted");
 
-        assert_eq!(result["success"], false);
-        assert_eq!(result["message"], "Hello");
-        assert_eq!(
-            result["reason"],
-            "No Character Instance has id unknown-instance"
-        );
+        assert_eq!(result["windows"][0]["owner"], "Terminal");
+        let refused = dispatch("list_windows", json!({"instance_id": 5}), &mut context)
+            .expect_err("an id that is not a string slipped past the check");
+        assert_eq!(refused.code, ErrorCode::InvalidArguments);
+        assert_eq!(refused.message, "instance_id must be a string");
+    }
+
+    /// Optional, so the stdio shim in the user's own sessions keeps working
+    /// with one Instance (ADR-0026).
+    #[test]
+    fn every_tool_advertises_an_optional_instance_id() {
+        for tool in list_tools() {
+            let schema = &tool.input_schema;
+            assert_eq!(
+                schema["properties"]["instance_id"]["type"], "string",
+                "{}",
+                tool.name
+            );
+            let required = schema["required"].as_array().cloned().unwrap_or_default();
+            assert!(
+                !required.contains(&json!("instance_id")),
+                "{} requires instance_id",
+                tool.name
+            );
+        }
     }
 
     /// Break: success on an empty roster lets a stdio verification pass
@@ -1137,6 +1273,7 @@ mod tests {
         let infos = [InstanceInfo {
             id: "instance-1".to_string(),
             name: "Buddy".to_string(),
+            ..Default::default()
         }];
         // `test_context` carries `expression: None`, which is the shipped
         // stdio shape.
@@ -1167,6 +1304,7 @@ mod tests {
         let roster_info = [InstanceInfo {
             id: "retired-instance".to_string(),
             name: "Gone".to_string(),
+            ..Default::default()
         }];
         let mut live = crate::roster::Roster::new();
 
@@ -1199,7 +1337,11 @@ mod tests {
         let roster_info = roster
             .list()
             .into_iter()
-            .map(|(id, name)| InstanceInfo { id, name })
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
             .collect::<Vec<_>>();
 
         let mut context = DispatchContext {

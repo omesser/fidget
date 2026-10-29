@@ -1,5 +1,5 @@
-# Source rows start at one. import-rubber-duck.py selects all eleven rows;
-# shared import-pet.py scales, registers, and aligns the solid foot baseline.
+# Source row notes start at one; import-pet.py --map uses zero-based rows.
+# Shared import-pet.py scales, registers, and aligns the solid foot baseline.
 # Standing height is 105px, reduced 12.5% from the default import.
 
 name = "Rubber Duck"
@@ -7,7 +7,7 @@ render_mode = "smooth"
 scale = 1
 
 [source]
-art = "Rubber Duck Debugger, cut from the petscodex (petdex) pet `rubber-duck-debugger` by scripts/import-rubber-duck.py. A companion inspired by rubber duck debugging: patient listening that helps developers explain code, expose assumptions, and discover solutions."
+art = "Rubber Duck Debugger, cut from the petscodex (petdex) pet `rubber-duck-debugger` by scripts/import-pet.py. A companion inspired by rubber duck debugging: patient listening that helps developers explain code, expose assumptions, and discover solutions."
 url = "https://petscodex.com/pets/rubber-duck-debugger"
 license = "MIT for these frames as cut and arranged here, along with the personality prose and the manifest. The art those frames adapt is not: it declares no license anywhere in the source ecosystem, and the importer warned so."
 

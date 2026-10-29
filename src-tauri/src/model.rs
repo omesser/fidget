@@ -484,6 +484,19 @@ fn completions_url(base: &str) -> String {
     }
 }
 
+/// Derive the model-list endpoint from the URL used for inference. Providers
+/// may serve the OpenAI-compatible API below a path such as `/api/v1`.
+fn models_url(inference_url: &str) -> String {
+    let trimmed = inference_url.trim_end_matches('/');
+    if let Some(prefix) = trimmed.strip_suffix("/chat/completions") {
+        return format!("{prefix}/models");
+    }
+    if let Some(prefix) = trimmed.strip_suffix("/responses") {
+        return format!("{prefix}/models");
+    }
+    format!("{}/v1/models", origin(trimmed))
+}
+
 /// Whether this URL is served by xAI, which decides the inference path below.
 fn host_is_xai(url: &str) -> bool {
     url_of(url)
@@ -828,7 +841,7 @@ impl Endpoint {
         }
     }
 
-    /// What a finished stream is worth. Apart from the socket, so all five
+    /// What a finished stream is worth. Apart from the socket, so all six
     /// endings are checked without one.
     fn reply_from(&self, url: &str, streamed: Streamed) -> Result<Reply, Unsent> {
         match streamed {
@@ -851,6 +864,7 @@ impl Endpoint {
                 format!("{url}: answered 200 with no event stream in it"),
             )),
             Streamed::Abandoned => Err(Unsent::Abandoned),
+            Streamed::Failed(why) => Err(Unsent::Failed(format!("{url}: {why}"))),
         }
     }
 
@@ -991,8 +1005,7 @@ impl Completer for Endpoint {
     }
 }
 
-/// Scheme, host, and port. The pre-flight probe hangs `/v1/models` off this,
-/// and a trace line names the endpoint by it.
+/// Scheme, host, and port of a URL.
 fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
@@ -1080,13 +1093,13 @@ fn model_matches(served: &str, wanted: &str) -> bool {
     served == wanted || served.trim_end_matches(":latest") == wanted.trim_end_matches(":latest")
 }
 
-/// Read a `/v1/models` answer. An unreadable body gets the benefit of the
+/// Read a model list answer. An unreadable body gets the benefit of the
 /// doubt, because MLX and some llama.cpp builds omit `data`. An empty `data`
 /// list means the server serves nothing, which is worth hearing.
 fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Result<(), String> {
     let (code, body) = models.map_err(|error| format!("unreachable: {error}"))?;
     if !(200..300).contains(&code) {
-        return Err(format!("/v1/models answered {code}"));
+        return Err(format!("answered {code}"));
     }
     let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
     let Some(items) = parsed.as_ref().and_then(|value| value["data"].as_array()) else {
@@ -1120,21 +1133,24 @@ pub fn spawn_preflight(settings: &DirectorSettings) {
         return;
     };
     thread::spawn(move || {
-        let origin = endpoint.origin();
-        let models = endpoint.get(&format!("{origin}/v1/models"));
+        let models_endpoint = models_url(endpoint.url());
+        let models = endpoint.get(&models_endpoint);
         match preflight_verdict(models, endpoint.model()) {
             Ok(()) => {
                 if tracing() {
-                    eprintln!("director: {origin} answered, model {}", endpoint.model());
+                    eprintln!(
+                        "director: {models_endpoint} answered, model {}",
+                        endpoint.model()
+                    );
                 }
             }
             // A transport error already quotes the URL it failed to reach;
-            // naming the origin again would say it twice.
+            // naming the models URL again would say it twice.
             Err(why) => {
-                let reason = if why.contains(&origin) {
+                let reason = if why.contains(&models_endpoint) {
                     why
                 } else {
-                    format!("{origin} {why}")
+                    format!("{models_endpoint} {why}")
                 };
                 eprintln!("director: {reason}; staying on StaticDirector until it answers");
             }
@@ -1168,15 +1184,16 @@ pub fn run_probe() -> i32 {
     }
     println!();
 
-    let origin = endpoint.origin();
-    let models = endpoint.get(&format!("{origin}/v1/models"));
-    probe_result(&format!("{origin}/v1/models"), &models);
+    let models_endpoint = models_url(endpoint.url());
+    let models = endpoint.get(&models_endpoint);
+    probe_result(&models_endpoint, &models);
     match preflight_verdict(models, endpoint.model()) {
         Ok(()) => println!("  model {} is served", endpoint.model()),
         Err(why) => println!("  {why}"),
     }
     println!();
     if endpoint.is_xai() {
+        let origin = endpoint.origin();
         probe_get(&endpoint, &format!("{origin}/v1/api-key"));
     }
 
@@ -1453,6 +1470,9 @@ enum Streamed {
     NotEventStream,
     /// Superseded, so the reader is dropped mid-generation.
     Abandoned,
+    /// The server sent an `error` object in a frame, as OpenRouter does
+    /// mid-stream under a 200. Text before it is not a reply.
+    Failed(String),
 }
 
 /// Assemble an SSE reply from a `Read`, so canned bytes can test it. `thought`
@@ -1534,6 +1554,9 @@ fn read_frames(
             return Ok(ended(content, truncated, thinking));
         }
         let event = read_event(payload);
+        if let Some(why) = event.error {
+            return Ok(Streamed::Failed(why));
+        }
         finished |= event.finished;
         truncated |= event.truncated;
         let mut chunk = event.thought.unwrap_or_default();
@@ -1578,6 +1601,8 @@ struct Event {
     /// The reason it is done is the token cap, not the model having said
     /// what it had to say.
     truncated: bool,
+    /// The `error.message` this frame carries.
+    error: Option<String>,
 }
 
 /// Read one event in either chat-completions or Responses shape. Markers tell
@@ -1639,11 +1664,30 @@ fn read_event(payload: &str) -> Event {
         truncated: finish == Some("length")
             || kind == Some("response.incomplete")
             || stop == Some("max_tokens"),
+        error: in_band_error(&value),
     }
+}
+
+/// Failure text in a 200 body or frame. OpenRouter and Anthropic use
+/// `error.message`. A Responses `error` event uses the top-level `message`,
+/// and `response.failed` uses `response.error.message`.
+fn in_band_error(value: &serde_json::Value) -> Option<String> {
+    value["error"]["message"]
+        .as_str()
+        .or_else(|| {
+            (value["type"] == "error")
+                .then(|| value["message"].as_str())
+                .flatten()
+        })
+        .or_else(|| value["response"]["error"]["message"].as_str())
+        .map(str::to_string)
 }
 
 fn content_from_body(body: &str) -> Result<String, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|error| error.to_string())?;
+    if let Some(why) = in_band_error(&value) {
+        return Err(why);
+    }
     if let Some(text) = value["choices"][0]["message"]["content"].as_str() {
         // A tagged thought is dropped, as Anthropic's `thinking` below is.
         let mut answer = crate::acp_wire::Answer::default();
@@ -2869,6 +2913,60 @@ pub(crate) mod tests {
         );
     }
 
+    /// OpenRouter reports a mid-stream failure as HTTP 200, an `error` object,
+    /// and `finish_reason: "error"`. The partial text before it is not a reply.
+    #[test]
+    fn an_in_band_stream_error_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey\"}}]}\n\n",
+            "data: {\"error\":{\"code\":429,\"message\":\"Rate limit exceeded\"},",
+            "\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"error\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let url = "https://openrouter.ai/api/v1/chat/completions";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("an in-band error is a failed turn");
+        };
+        assert!(why.contains("Rate limit exceeded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_responses_error_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"server overloaded\"}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("a Responses error event is a failed turn, not Complete(\"stroll\")");
+        };
+        assert!(why.contains("server overloaded"), "{why}");
+    }
+
+    #[test]
+    fn an_in_band_response_failed_event_fails_the_turn_with_its_message() {
+        let sse = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"The model failed to generate a response.\"}}}\n\n",
+        );
+        let url = "https://api.openai.com/v1/responses";
+        let Err(Unsent::Failed(why)) = local_endpoint().reply_from(url, streamed(sse)) else {
+            panic!("response.failed is a failed turn, not the partial text");
+        };
+        assert!(
+            why.contains("The model failed to generate a response."),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn an_in_band_body_error_fails_with_its_message() {
+        let body = r#"{"error":{"code":429,"message":"Rate limit exceeded"},
+            "choices":[{"message":{"content":"stroll"},"finish_reason":"error"}]}"#;
+        let why = content_from_body(body).unwrap_err();
+        assert!(why.contains("Rate limit exceeded"), "{why}");
+    }
+
     /// xAI's `/v1/responses` ends the body with no `[DONE]`, so the end
     /// marker has to be enough on its own. A body that stops with no marker
     /// is half a sentence and must not reach the Speech bubble or the session.
@@ -3591,6 +3689,31 @@ pub(crate) mod tests {
         assert_eq!(
             completions_url("https://mtls.api.x.ai"),
             "https://mtls.api.x.ai/v1/responses"
+        );
+    }
+
+    #[test]
+    fn the_models_url_keeps_the_provider_path() {
+        assert_eq!(
+            models_url(&completions_url("https://openrouter.ai/api")),
+            "https://openrouter.ai/api/v1/models",
+            "the Base URL in settings keeps its path"
+        );
+        assert_eq!(
+            models_url("https://openrouter.ai/api/v1/chat/completions"),
+            "https://openrouter.ai/api/v1/models"
+        );
+        assert_eq!(
+            models_url("https://api.x.ai/v1/responses"),
+            "https://api.x.ai/v1/models"
+        );
+        assert_eq!(
+            models_url("http://localhost:11434/v1/chat/completions"),
+            "http://localhost:11434/v1/models"
+        );
+        assert_eq!(
+            models_url("https://api.openai.com"),
+            "https://api.openai.com/v1/models"
         );
     }
 

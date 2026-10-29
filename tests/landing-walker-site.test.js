@@ -262,6 +262,56 @@ const midway = `
   });
 </script>`;
 
+// The twist section shows a Character of its own, so the page's sinks away
+// once the section fills most of the screen and walks back once it is gone.
+const twist = `
+<script>${helpers}
+  window.addEventListener("load", async () => {
+    console.log("__PROBE_READY__");
+    const at = document.getElementById("fidget-at");
+    const sprite = document.getElementById("fidget-sprite");
+    const section = document.getElementById("twist");
+    const seen = async (what, check) => { try { await until(what, check, 2000); return true; } catch { return false; } };
+    try {
+      document.getElementById("characters").scrollIntoView({ block: "start" });
+      let lastSpot = null;
+      const onPage = () => {
+        const spot = at.style.transform;
+        const still = spot === lastSpot;
+        lastSpot = spot;
+        return !at.hidden && still && Math.abs(sprite.getBoundingClientRect().bottom - innerHeight) < 1;
+      };
+      await until("the walk onto the page", onPage, 2000);
+      // The probe's observer reports in the same update as the page's, and a
+      // sink shows within two frames of that: the page draws each frame it ticks.
+      const sighted = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("no report of the twist section in sight")), 2000);
+        new IntersectionObserver((entries, observer) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve();
+        }).observe(section);
+      });
+      // Its top 30% up the screen: in sight, but not most of it.
+      window.scrollTo(0, scrollY + section.getBoundingClientRect().top - innerHeight * 0.7);
+      await sighted;
+      await frame(); await frame();
+      const sank = at.hidden || sprite.getBoundingClientRect().bottom > innerHeight + 0.5;
+      section.scrollIntoView({ block: "end" });
+      // Too tall for most of itself to fit, so only most of the screen can count.
+      const taller = section.offsetHeight > innerHeight / 0.6;
+      const left = await seen("the sink for the twist section", () => at.hidden);
+      // Just past its end, none of it in sight.
+      window.scrollTo(0, scrollY + section.getBoundingClientRect().bottom + 2);
+      const back = await seen("the walk back on past it", onPage);
+      done({ sliverKept: !sank, taller, left, back });
+    } catch (err) {
+      done({ errors: [...errors, String(err)] });
+    }
+  });
+</script>`;
+
 // Hide and Bring back pressed with real keys, which the page asks for by name.
 const keys = `
 <script>${helpers}
@@ -465,3 +515,13 @@ test("on a phone a press moved across the page character pokes it rather than gr
   const result = await play(phone, [], { width: 390, height: 844 });
   assert.deepEqual(result, { errors: [], narrow: true, lifted: 0, touchAction: "auto" });
 });
+
+// On a short landscape screen the section is taller than the screen / 0.6.
+for (const [name, viewport, taller] of [["a desktop", null, false], ["a phone", { width: 412, height: 915 }, false],
+  ["a landscape phone", { width: 915, height: 412 }, true]]) {
+  test(`on ${name} the page character leaves while the twist section fills most of the screen, and comes back after`, { skip: chromeSkip }, async () => {
+    const result = await play(twist, [], viewport);
+    assert.equal(result.taller, taller, `the section is ${taller ? "" : "not "}taller than the screen / 0.6`);
+    assert.deepEqual(result, { errors: [], sliverKept: true, taller, left: true, back: true });
+  });
+}

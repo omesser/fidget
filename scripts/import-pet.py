@@ -19,6 +19,7 @@ output passes
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -119,9 +120,8 @@ ATLAS_COLUMNS = 8
 ATLAS_CELL = (192, 208)
 ATLAS_LAYOUTS = ((1, 9), (2, 11))
 
-# Row semantics from petdex's src/lib/pet-states.ts: (row, frames, duration
-# ms). Rows 9-10 of the v2 layout carry no semantics in petdex's own code
-# yet, so the importer reads only these nine.
+# Default semantics from petdex's src/lib/pet-states.ts: (row, frames, duration
+# ms). Extra v2 rows have no upstream names; --map assigns their reviewed roles.
 PETSCODEX_ROWS = {
     "idle": (0, 6, 1100),
     "running-right": (1, 8, 1060),
@@ -149,11 +149,11 @@ PETSCODEX_MAP = (
     ("sit", "review", None, "forever", None),
 )
 
-# Row number to (frame count, loop duration), for --map overrides that name
-# rows by the number a person counts on the sheet.
+# --map keeps petdex's zero-based row numbers, including the extra v2 strips.
 PETSCODEX_ROW_TABLE = {
     row: (count, duration) for row, count, duration in PETSCODEX_ROWS.values()
 }
+PETSCODEX_ROW_TABLE.update({9: (8, 1100), 10: (8, 1100)})
 
 
 def parse_mapping(text):
@@ -163,21 +163,19 @@ def parse_mapping(text):
     reviewer remaps animations to the rows this pet actually drew."""
     animation, eq, source = text.partition("=")
     row_text, _, index_text = source.partition(":")
-    allowed = {name for name, *_ in PETSCODEX_MAP} | {"sleep"}
-    if not eq or animation not in allowed:
-        sys.exit(f"--map {text}: the animation is one of {', '.join(sorted(allowed))}")
+    if not eq or not re.fullmatch(r"[a-z][a-z0-9-]*", animation):
+        sys.exit(f"--map {text}: animation names use lowercase letters, digits and hyphens")
     if not row_text.isdigit() or int(row_text) not in PETSCODEX_ROW_TABLE:
-        sys.exit(f"--map {text}: the source is a sheet row, 0-8")
+        sys.exit(f"--map {text}: the source is a zero-based sheet row, 0-10")
     row = int(row_text)
     indices = None
-    if index_text:
+    if ":" in source:
         try:
             indices = tuple(int(i) for i in index_text.split(","))
         except ValueError:
             sys.exit(f"--map {text}: frame indices are integers, comma-separated")
-        count = PETSCODEX_ROW_TABLE[row][0]
-        if any(i < 0 or i >= count for i in indices):
-            sys.exit(f"--map {text}: row {row} declares frames 0-{count - 1}")
+        if any(i < 0 or i >= ATLAS_COLUMNS for i in indices):
+            sys.exit(f"--map {text}: frame indices are 0-{ATLAS_COLUMNS - 1}")
     return animation, row, indices
 
 
@@ -601,7 +599,7 @@ def manifest_text(name, mode, scale, notes, source, animations):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
+def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None, only_mapped=False):
     """A petscodex pet directory (`npx petscodex install <id>` lands one at
     ~/.codex/pets/<id>/) into the importer's common shape.
 
@@ -619,35 +617,40 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
     atlas = detect_atlas(*sheet.size)
     if atlas is None:
         sys.exit(f"{sheet.size[0]}x{sheet.size[1]} matches no petscodex atlas layout")
-    version, rows, cell_w, cell_h = atlas
-    if rows > 9:
-        print("atlas v2: rows 9-10 carry no petdex semantics yet, ignoring them")
+    _, rows, cell_w, cell_h = atlas
 
-    def row_frames(row, count):
+    def row_frames(row, indices):
         return [
             strip_edge_bleed(
                 sheet.crop(
                     (c * cell_w, row * cell_h, (c + 1) * cell_w, (row + 1) * cell_h)
                 )
             )
-            for c in range(count)
+            for c in indices
         ]
 
     overrides = overrides or {}
     walk_state = "running-right" if walk_row == 1 else "running-left"
-    animations = {}
+    mappings = {}
+    settings = {}
     for animation, state, indices, loop, variant_of in PETSCODEX_MAP:
         if animation == "walk":
             state = walk_state
-        row, count, duration = PETSCODEX_ROWS[state]
-        if animation in overrides:
-            row, indices = overrides[animation]
-            count, duration = PETSCODEX_ROW_TABLE[row]
-        frames = row_frames(row, count)
-        if indices:
-            frames = [frames[i] for i in indices]
+        if not only_mapped:
+            mappings[animation] = (PETSCODEX_ROWS[state][0], indices)
+        settings[animation] = (loop, variant_of)
+    mappings.update(overrides)
+    if "idle" not in mappings:
+        sys.exit("--only-mapped requires --map idle=ROW[:I,J,...] to set standing scale")
+    animations = {}
+    for animation, (row, indices) in mappings.items():
+        if row >= rows:
+            sys.exit(f"--map {animation}={row}: this atlas has rows 0-{rows - 1}")
+        count, duration = PETSCODEX_ROW_TABLE[row]
+        frames = row_frames(row, indices if indices is not None else range(count))
         if animation == "walk" and mirror_walk:
             frames = [ImageOps.mirror(frame) for frame in frames]
+        loop, variant_of = settings.get(animation, ("forever", None))
         animations[animation] = {
             "frames": frames,
             "fps": fps_for(count, duration),
@@ -656,16 +659,8 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
         }
 
     if "sleep" in overrides:
-        row, indices = overrides["sleep"]
-        count, duration = PETSCODEX_ROW_TABLE[row]
-        frames = row_frames(row, count)
-        animations["sleep"] = {
-            "frames": [frames[i] for i in indices] if indices else frames,
-            "fps": 1,
-            "loop": "forever",
-            "variant_of": None,
-        }
-    else:
+        animations["sleep"]["fps"] = 1
+    elif not only_mapped:
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
     mirrored = ", mirrored to head right" if mirror_walk else ""
@@ -678,6 +673,8 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
         "with a one-pixel breath. The other walk row (the engine mirrors",
         "instead) and row 7 (running in place) go unused.",
     ]
+    if only_mapped:
+        notes = ["Explicit source mappings; review animation timing and behavior in the manifest."]
     if overrides:
         remapped = ", ".join(
             f"{animation}<-row {row}"
@@ -818,9 +815,8 @@ def read_shimeji(source, name=None):
 FORMATS = ("petscodex", "shimeji")
 
 
-def emit(pet, out, validate=True, stand=None):
-    """Write the Character Package: frames aligned per animation, manifest,
-    personality — then prove it with `character::load`."""
+def emit(pet, out, validate=True, stand=None, frames_only=False):
+    """Write aligned frames and an optional baseline manifest, then validate the package."""
     from PIL import Image
 
     animations = pet["animations"]
@@ -901,8 +897,30 @@ def emit(pet, out, validate=True, stand=None):
         max(width for *_, width, _, _ in metrics.values()),
         max(height for *_, height in metrics.values()),
     )
+    if frames_only:
+        authored = tomllib.loads((out / "character.manifest").read_text())
+        referenced = {frame for animation in authored["animations"].values()
+                      for frame in animation["frames"]}
+        for animation, spec in animations.items():
+            expected = {frame for frame in referenced
+                        if re.fullmatch(rf"frames/{re.escape(animation)}-\d+\.png", frame)}
+            selected = {f"frames/{animation}-{i}.png" for i in range(len(spec["frames"]))}
+            if (expected and selected != expected) or (not expected and animation in authored["animations"]):
+                sys.exit(f"{animation}: recut frame files differ from the authored manifest "
+                         f"({len(selected)} selected, {len(expected)} referenced); "
+                         "edit the manifest first or import a new baseline package")
+            if not expected:
+                print(f"warning: new strip {animation!r} is not referenced by the manifest; "
+                      "edit the manifest to use these frames", file=sys.stderr)
+        reference = out / authored["animations"]["idle"]["frames"][0]
+        with Image.open(reference) as image:
+            existing_canvas = image.size
+        if canvas[0] > existing_canvas[0] or canvas[1] > existing_canvas[1]:
+            sys.exit(f"selected frames need {canvas}, exceeding existing canvas {existing_canvas}; "
+                     "import a new baseline package to change its canvas")
+        canvas = existing_canvas
     frames_dir = out / "frames"
-    frames_dir.mkdir(parents=True)
+    frames_dir.mkdir(parents=True, exist_ok=frames_only)
     for animation, spec in animations.items():
         boxes, offsets, lifts, width, left, _ = metrics[animation]
         centering = (canvas[0] - width) // 2 - left
@@ -913,9 +931,10 @@ def emit(pet, out, validate=True, stand=None):
             page.paste(frame, (dx, dy))
             page.save(frames_dir / f"{animation}-{i}.png")
 
-    source = dict(pet["source"], license=license_prose(pet["license"]))
-    manifest = manifest_text(pet["name"], mode, scale, pet["notes"], source, animations)
-    (out / "character.manifest").write_text(manifest)
+    if not frames_only:
+        source = dict(pet["source"], license=license_prose(pet["license"]))
+        manifest = manifest_text(pet["name"], mode, scale, pet["notes"], source, animations)
+        (out / "character.manifest").write_text(manifest)
 
     print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values())} "
           f"frames on a {canvas[0]}x{canvas[1]} canvas, {mode} at scale {scale}")
@@ -926,7 +945,7 @@ def emit(pet, out, validate=True, stand=None):
             cwd=REPO,
         )
         if done.returncode != 0:
-            sys.exit("character::load rejected the output; kept for inspection")
+            sys.exit("character::load rejected the output")
 
 
 def require_pillow():
@@ -957,10 +976,15 @@ def main():
                              "whose only clean walk heads left")
     parser.add_argument("--map", action="append", default=[], dest="mappings",
                         metavar="ANIM=ROW[:I,J,...]",
-                        help="petscodex: cut an animation from another sheet "
-                             "row (optionally naming its frames), for the pet "
-                             "whose art strays from petdex's row semantics — "
-                             "e.g. --map sleep=6:3 --map react=7")
+                        help="petscodex: map any animation name to a zero-based "
+                             "row and optional frame indices, e.g. --map "
+                             "thinking=7 --map look-left=10:0,1,2,1")
+    parser.add_argument("--only-mapped", action="store_true",
+                        help="petscodex: import exactly the --map strips, "
+                             "including idle for standing scale, without default mappings")
+    parser.add_argument("--frames-only", action="store_true",
+                        help="recut frames in an existing package; preserve the "
+                             "manifest, personality, and other files")
     parser.add_argument("--stand", type=int,
                         help="how tall the sprite stands on screen, in "
                              "logical pixels (default: the shimeji band, "
@@ -974,6 +998,13 @@ def main():
         return self_test()
     if not (args.source and args.ecosystem and args.out):
         parser.error("source, --format and -o are required")
+    if args.ecosystem != "petscodex" and (args.mappings or args.only_mapped):
+        parser.error("--map and --only-mapped require --format petscodex")
+    if args.frames_only:
+        if args.force:
+            parser.error("--frames-only preserves the package; do not combine it with --force")
+        if not (args.out / "character.manifest").is_file():
+            parser.error("--frames-only requires an existing character.manifest in -o")
 
     source = pathlib.Path(args.source).expanduser()
     if zipfile.is_zipfile(source):
@@ -985,7 +1016,7 @@ def main():
         for text in args.mappings:
             animation, row, indices = parse_mapping(text)
             overrides[animation] = (row, indices)
-        pet = read_petscodex(source, args.walk_row, args.mirror_walk, overrides)
+        pet = read_petscodex(source, args.walk_row, args.mirror_walk, overrides, args.only_mapped)
     else:
         # A zip unpacks to a temp directory, so the pack's own name comes
         # from the path the user gave, not from where it landed.
@@ -996,10 +1027,23 @@ def main():
     if warning:
         print(warning, file=sys.stderr)
 
-    if args.out.exists():
+    if args.out.exists() and not args.frames_only:
         if not args.force:
             sys.exit(f"{args.out} exists; --force replaces it")
         shutil.rmtree(args.out)
+    if args.frames_only:
+        # Validate the whole package before touching the author's existing assets.
+        with tempfile.TemporaryDirectory(prefix="fidget-recut-") as scratch:
+            staged = pathlib.Path(scratch) / "package"
+            shutil.copytree(args.out, staged)
+            emit(pet, staged, stand=args.stand, frames_only=True)
+            for animation, spec in pet["animations"].items():
+                for index in range(len(spec["frames"])):
+                    name = f"{animation}-{index}.png"
+                    shutil.copy2(staged / "frames" / name, args.out / "frames" / name)
+        print("frames recut; authored manifest, personality and other files preserved. "
+              "Review the existing scale, render mode, animation timing and behaviors.")
+        return
     emit(pet, args.out, stand=args.stand)
     if args.ecosystem == "petscodex":
         print("review the output before shipping it: walk must head right "
@@ -1063,6 +1107,15 @@ def self_test():
 
     assert parse_mapping("sleep=6:3") == ("sleep", 6, (3,))
     assert parse_mapping("react=7") == ("react", 7, None)
+    assert parse_mapping("look-left=10") == ("look-left", 10, None)
+    assert parse_mapping("idle=0:0,1,2,3,4,5,6") == ("idle", 0, tuple(range(7)))
+    for invalid in ("../idle=0", "idle=11", "idle=-1", "idle=0:8", "idle=0:"):
+        try:
+            parse_mapping(invalid)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError(f"accepted invalid mapping: {invalid}")
 
     # Defringe: a red square wearing a green halo — the halo adopts the
     # body's red, a far green wisp survives, hidden matte is cleared.
@@ -1218,6 +1271,92 @@ def self_test():
         hold = remapped["animations"]["hold"]["frames"][0]
         assert (200, 15, 10, 255) in {color for _, color in hold.getcolors()}
         assert len(remapped["animations"]["hold"]["frames"]) == 2
+
+        # An agent can recut reviewed strips without resetting authored behavior.
+        manifest_before = (out / "character.manifest").read_bytes()
+        (out / "personality.txt").write_text("An authored prompt.")
+        (out / "frames" / "hand-edited.png").write_bytes(b"untouched")
+        emit(read_petscodex(source), out, validate=False, frames_only=True)
+        assert (out / "character.manifest").read_bytes() == manifest_before
+        assert (out / "personality.txt").read_text() == "An authored prompt."
+        assert (out / "frames" / "hand-edited.png").read_bytes() == b"untouched"
+        with Image.open(out / "frames" / "idle-0.png") as image:
+            original_canvas = image.size
+        original_idle = (out / "frames" / "idle-0.png").read_bytes()
+        idle_only = read_petscodex(source, overrides={"idle": (0, None)}, only_mapped=True)
+        emit(idle_only, out, validate=False, frames_only=True)
+        with Image.open(out / "frames" / "idle-0.png") as image:
+            assert image.size == original_canvas, "partial recuts retain the package canvas"
+        assert (out / "frames" / "idle-0.png").read_bytes() == original_idle
+        before_recut = {path: path.read_bytes() for path in out.rglob("*") if path.is_file()}
+        for indices in ((0, 1, 2), (*range(6), 0)):
+            mismatched = read_petscodex(source, overrides={"idle": (0, indices)}, only_mapped=True)
+            try:
+                emit(mismatched, out, validate=False, frames_only=True)
+            except SystemExit as error:
+                assert "recut frame files differ" in str(error)
+            else:
+                raise AssertionError("a recut must agree with the authored strip's frame files")
+            assert {path: path.read_bytes() for path in out.rglob("*") if path.is_file()} == before_recut
+        repeated = manifest_before.decode().replace('"frames/idle-1.png"',
+                                                   '"frames/idle-1.png", "frames/idle-1.png"')
+        (out / "character.manifest").write_text(repeated)
+        emit(read_petscodex(source, overrides={"idle": (0, None)}, only_mapped=True),
+             out, validate=False, frames_only=True)
+        assert (out / "character.manifest").read_text() == repeated
+        (out / "character.manifest").write_bytes(manifest_before)
+        from contextlib import redirect_stderr
+        from io import StringIO
+        warning = StringIO()
+        added = read_petscodex(source, overrides={"idle": (0, None), "extra": (6, None)},
+                              only_mapped=True)
+        with redirect_stderr(warning):
+            emit(added, out, validate=False, frames_only=True)
+        assert "new strip 'extra' is not referenced" in warning.getvalue()
+        assert len(list((out / "frames").glob("extra-*.png"))) == 6
+        assert (out / "character.manifest").read_bytes() == manifest_before
+
+        extended = Image.new("RGBA", (ATLAS_COLUMNS * 192, 11 * 208))
+        for row in range(11):
+            for col in range(ATLAS_COLUMNS):
+                extended.paste((30 + row, 80 + col, 100, 255),
+                               (col * 192 + 20, row * 208 + 20,
+                                col * 192 + 40, row * 208 + 50))
+        extended.save(source / "sheet.png")
+        mappings = {}
+        for text in ("idle=0:0,1,2,3,4,5,6", "thinking=7", "look-left=10:0,1,2,1"):
+            animation, row, indices = parse_mapping(text)
+            mappings[animation] = (row, indices)
+        selected = read_petscodex(source, overrides=mappings, only_mapped=True)
+        assert set(selected["animations"]) == {"idle", "thinking", "look-left"}
+        assert len(selected["animations"]["idle"]["frames"]) == 7
+        looks = selected["animations"]["look-left"]["frames"]
+        assert len(looks) == 4
+        assert looks[1].tobytes() == looks[3].tobytes(), "explicit playback order survives"
+        assert (40, 82, 100, 255) in {color for _, color in looks[2].getcolors()}
+        extra = read_petscodex(source, overrides={"thinking": (7, None)})
+        assert {"walk", "sleep", "thinking"} <= set(extra["animations"])
+        try:
+            read_petscodex(source, overrides={"thinking": (7, None)}, only_mapped=True)
+        except SystemExit as error:
+            assert "requires --map idle" in str(error)
+        else:
+            raise AssertionError("explicit strips need an idle standing reference")
+        missing = tmp / "missing-package"
+        rejected = subprocess.run(
+            [sys.executable, __file__, str(source), "--format", "petscodex",
+             "-o", str(missing), "--frames-only"],
+            capture_output=True, text=True,
+        )
+        assert rejected.returncode != 0 and "existing character.manifest" in rejected.stderr
+        assert not missing.exists(), "a rejected recut must not create output"
+        tall.save(source / "sheet.png")
+        try:
+            read_petscodex(source, overrides={"look-left": (10, None)})
+        except SystemExit as error:
+            assert "this atlas has rows 0-8" in str(error)
+        else:
+            raise AssertionError("a v1 sheet cannot supply a v2 row")
 
     # A synthetic shimeji pack: three 8x8 frames with one marker pixel near
     # the left edge, and an actions.xml with no lie-down and no wave, so the

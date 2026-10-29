@@ -77,11 +77,19 @@ pub struct RememberResult {
     pub recorded: String,
 }
 
-/// Tool result for the `list_instances` tool.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Tool result for the `list_instances` tool. The three prompts are the
+/// Character Prompt layers the Prompt tab shows, so a session that never
+/// heard its opening can read them back (ADR-0012).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceInfo {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub app_instructions: String,
+    #[serde(default)]
+    pub personality_prompt: String,
+    #[serde(default)]
+    pub instance_prompt: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,12 +260,10 @@ mod helpers {
                     "No Character Instance is running, so nothing changed on screen".to_string(),
                 );
             }
-            TargetResolution::UnknownInstance(id) => {
-                return Err(format!("No Character Instance has id {id}"));
-            }
             TargetResolution::AmbiguousTarget => {
                 return Err(
-                    "Several Character Instances are running; name one with instance_id"
+                    "Several Character Instances are running; name one with instance_id. \
+                     Call list_instances to find each one's instance_id."
                         .to_string(),
                 );
             }
@@ -288,24 +294,17 @@ mod helpers {
     enum TargetResolution {
         Resolved(String),
         NoInstances,
-        /// The caller named an id no Instance in the roster carries.
-        UnknownInstance(String),
         AmbiguousTarget,
     }
 
     /// Target resolution against roster for both speak and play_behavior.
+    /// `dispatch` already refused an id the roster does not carry.
     fn resolve_target_instance(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
     ) -> TargetResolution {
         match instance_id {
-            Some(id) => {
-                if roster.iter().any(|info| info.id == id) {
-                    TargetResolution::Resolved(id.to_string())
-                } else {
-                    TargetResolution::UnknownInstance(id.to_string())
-                }
-            }
+            Some(id) => TargetResolution::Resolved(id.to_string()),
             None => match roster.len() {
                 0 => TargetResolution::NoInstances,
                 1 => TargetResolution::Resolved(roster[0].id.clone()),

@@ -17,7 +17,7 @@ func die(_ message: String) -> Never {
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
     die(
-        "usage: ax-settings <open|tab|pick|dump|frame|popup-frame|open-popup|type-select|move|size|key|type|value|role|focused|focus-window|menus|press-button> <pid> [args]"
+        "usage: ax-settings <open|tab|pick|dump|minimize|frame|popup-frame|open-popup|type-select|move|size|key|type|value|role|focused|focus-window|menus|press-button> <pid> [args]"
     )
 }
 

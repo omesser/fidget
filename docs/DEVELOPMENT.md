@@ -457,11 +457,34 @@ uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characte
 
 `[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Also check every animation reads as its name, and that walk heads right. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
 
-Rubber Duck uses a dedicated cutter for all eleven source rows and grounded feet:
+Inspect the sheet row by row before choosing mappings. A person or coding agent
+can construct an import command for the art instead of adding a character-specific
+importer. Repeat `--map ANIMATION=ROW[:FRAME,FRAME,...]` to replace a default or
+add a named strip. Rows and frame indices start at **zero**. All eleven v2 rows
+are available; explicit indices can include extra drawn cells or repeat poses.
 
 ```sh
-uv run scripts/import-rubber-duck.py ~/.codex/pets/rubber-duck-debugger
+uv run scripts/import-pet.py ~/.codex/pets/my-pet --format petscodex -o characters/my-pet \
+  --map idle=0:0,1,2,3,4,5,6 --map thinking=7 --map look-left=10:0,1,2,3,4,5,6,7,6,5,4,3,2,1
 ```
+
+Omit frame indices to use the row's standard frame count (eight on the two
+extra v2 rows). The importer supplies initial timing; review the result visually
+and edit animation timing, idle variants, behaviors, and the prompt in the package.
+Names on a source sheet are hints; the rendered motion determines its role.
+
+To recut frames after those edits, use `--frames-only`. It requires an existing
+manifest, keeps the manifest, personality, and other files, and validates the
+package in a temporary copy before replacing the selected frames. It retains
+the existing canvas and rejects strips that would exceed it. Existing strips must
+produce the exact frame files referenced by the manifest; edit the manifest first
+to change a strip's frame count. Repeated references for timing do not add source
+frames. Add `--only-mapped` to skip the
+default mappings and write exactly the named strips. Include an `idle` mapping
+to establish standing scale, and keep `--stand`, the manifest's `scale`, and its
+render mode consistent with the existing package. Unselected frames stay intact.
+New strips are written with a warning until the manifest references them.
+Do not use `--force` for this pass: it replaces the whole package.
 
 ### Shimeji Shop
 
