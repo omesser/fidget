@@ -1,7 +1,7 @@
 # Fidget ships no Executor; the Harness owns desktop control
 
 fidget does not post synthetic mouse or keyboard events. It ships an MCP server
-exposing fidget-side tools — speak, play a Behavior, list windows, describe the screen,
+exposing fidget-side tools — play a Behavior, list windows, describe the screen,
 read and write Memory — and attaches a Harness the user supplies. Clicking is the
 Harness's job; the character is ours. A future reader will find an app about operating
 your computer that deliberately cannot operate your computer, so the reasoning matters.

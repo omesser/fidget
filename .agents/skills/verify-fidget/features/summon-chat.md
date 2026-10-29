@@ -1,6 +1,6 @@
 # Summon / chat
 
-Double-clicking the fidget opens its Chat surface: the same conversation that drives desktop Behavior, so answers show as bubble speech and as a Behavior, not only as text.
+Double-clicking the fidget opens its Chat surface: the same conversation that drives desktop Behavior, so answers show as Dialogue in the bubble and as a Behavior, not only as text.
 
 ## Sub-features
 
@@ -11,7 +11,7 @@ Double-clicking the fidget opens its Chat surface: the same conversation that dr
 ## How to get to it (user POV)
 
 - Double-click the sprite body. (Only this path emits the `verbs:.*Summon` trace; other paths open Chat without the verb.)
-- Or choose the speech bubble's **Open chat** control when speech is truncated.
+- Or choose the bubble's **Open chat** control when the Dialogue is truncated.
 - Or select **Chat…** from the tray icon menu.
 
 ## Driving it with verify-overlay helpers

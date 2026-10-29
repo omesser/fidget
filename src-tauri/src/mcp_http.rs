@@ -446,9 +446,9 @@ mod tests {
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         // The count catches a tool that reaches this list without being in the
         // core catalogue.
-        assert_eq!(names.len(), 9, "the core tools: {names:?}");
+        assert_eq!(names.len(), 8, "the core tools: {names:?}");
         assert!(names.contains(&"caffeinate"));
-        assert!(names.contains(&"speak"));
+        assert!(names.contains(&"play_behavior"));
         assert!(names.contains(&"whereabouts"));
         assert!(
             tools[0]["inputSchema"].is_object(),
@@ -458,11 +458,11 @@ mod tests {
 
     #[test]
     fn a_tool_call_reaches_the_frame_loop_with_its_arguments() {
-        let (tx, handle_thread) = answering(json!({"success": true, "message": "hi"}));
+        let (tx, handle_thread) = answering(json!({"success": true, "behavior": "wave"}));
         let text = handle(
             &json!({
                 "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                "params": {"name": "speak", "arguments": {"message": "hi"}},
+                "params": {"name": "play_behavior", "arguments": {"behavior": "wave"}},
             }),
             &tx,
         )
@@ -470,8 +470,8 @@ mod tests {
         let value: Value = serde_json::from_str(&text).expect("valid JSON");
         assert_eq!(value["result"]["structuredContent"]["success"], json!(true));
         let call = handle_thread.join().expect("the loop ran").expect("a call");
-        assert_eq!(call.tool, "speak");
-        assert_eq!(call.arguments["message"], json!("hi"));
+        assert_eq!(call.tool, "play_behavior");
+        assert_eq!(call.arguments["behavior"], json!("wave"));
     }
 
     #[test]
@@ -487,7 +487,7 @@ mod tests {
         let text = handle(
             &json!({
                 "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                "params": {"name": "speak", "arguments": {"message": "hi", "instance_id": "nope"}},
+                "params": {"name": "play_behavior", "arguments": {"behavior": "wave", "instance_id": "nope"}},
             }),
             &tx,
         )
@@ -669,14 +669,14 @@ mod tests {
     /// End to end over a real socket: header parse, framing, and keep-alive.
     #[test]
     fn a_real_socket_serves_a_tool_call() {
-        let (tx, loop_thread) = answering(json!({"success": true, "message": "on screen"}));
+        let (tx, loop_thread) = answering(json!({"success": true, "behavior": "wave"}));
         let endpoint = start(tx).expect("bound loopback");
         let address = endpoint
             .url
             .trim_start_matches("http://")
             .trim_end_matches("/mcp");
         let mut stream = TcpStream::connect(address).expect("connected");
-        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"speak","arguments":{"message":"on screen"}}}"#;
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"play_behavior","arguments":{"behavior":"wave"}}}"#;
         let request = format!(
             "POST /mcp HTTP/1.1\r\nHost: {address}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
             endpoint.authorization().expose_to_code(),
@@ -703,6 +703,6 @@ mod tests {
         let value: Value = serde_json::from_slice(&payload).expect("valid JSON");
         assert_eq!(value["result"]["structuredContent"]["success"], json!(true));
         let call = loop_thread.join().expect("the loop ran").expect("a call");
-        assert_eq!(call.tool, "speak");
+        assert_eq!(call.tool, "play_behavior");
     }
 }

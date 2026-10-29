@@ -2946,7 +2946,7 @@ fn replace_session(
 }
 
 /// Dispatch one `tools/call` against the live Instances, not stubs, and answer
-/// it, so a `speak` changes what the bubble draws.
+/// it, so a `play_behavior` changes what the sprite plays.
 fn answer_tool_call(
     call: mcp_http::Call,
     roster: &mut Roster,
@@ -3189,9 +3189,9 @@ mod tests {
     }
 
     /// `answer_tool_call` builds context from the running app's Instances rather
-    /// than stubs, so a `speak` from a Harness ends up on the Frame the bubble draws.
+    /// than stubs, so a `play_behavior` from a Harness ends up on the next Frame.
     #[test]
-    fn a_tool_call_speaks_through_the_live_roster_onto_the_next_frame() {
+    fn a_tool_call_plays_through_the_live_roster_onto_the_next_frame() {
         let dir = std::env::temp_dir().join(format!("fidget-mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("a temp dir");
         let mut roster = Roster::new();
@@ -3200,8 +3200,8 @@ mod tests {
         let (reply, answers) = mpsc::channel();
         answer_tool_call(
             mcp_http::Call {
-                tool: "speak".to_string(),
-                arguments: json!({"message": "hello from a Harness"}),
+                tool: "play_behavior".to_string(),
+                arguments: json!({"behavior": "wave"}),
                 reply,
             },
             &mut roster,
@@ -3220,11 +3220,7 @@ mod tests {
         let snapshot =
             SnapshotAssembler::new(EmptyDesktop).assemble(16, Point { x: 0.0, y: 0.0 }, Vec::new());
         let frame = roster.get_mut(&id).expect("still there").tick(&snapshot);
-        assert_eq!(
-            frame.dialogue.as_deref(),
-            Some("hello from a Harness"),
-            "the Speech bubble draws Frame::dialogue"
-        );
+        assert_eq!(frame.behavior.as_deref(), Some("wave"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

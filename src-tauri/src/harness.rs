@@ -3096,7 +3096,7 @@ fn or_unset(value: &str) -> &str {
 }
 
 /// Answer the Harness's tool calls through the frame loop's `dispatch`,
-/// against an empty desktop and no Instances. `speak` reports that it
+/// against an empty desktop and no Instances. `play_behavior` reports that it
 /// reached nobody rather than a success nothing shows.
 fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
     use fidget_core::dispatch::{dispatch, DenyList, DispatchContext, PlacementQuery};
@@ -5619,12 +5619,14 @@ mod tests {
             );
         }
         assert!(config["permission"].get("fidget_*").is_none());
-        assert!(config["permission"].get("fidget_extra_speak").is_none());
+        assert!(config["permission"]
+            .get("fidget_extra_play_behavior")
+            .is_none());
 
         let global = opencode_fidget_permissions(Some(r#"{"permission":"ask"}"#)).unwrap();
         let global: Value = serde_json::from_str(&global).unwrap();
         assert_eq!(global["permission"]["*"], "ask");
-        assert_eq!(global["permission"]["fidget_speak"], "allow");
+        assert_eq!(global["permission"]["fidget_play_behavior"], "allow");
 
         let explicit =
             opencode_fidget_permissions(Some(r#"{"permission":{"fidget_*":"ask"}}"#)).unwrap();

@@ -518,7 +518,7 @@
             }
           ],
           "comment": "For a Harness you start in your own terminal.",
-          "disclosure": "Registering Fidget as an MCP server there lets it speak, move and emote the fidget on your screen. Nothing here changes which mind the Director uses.",
+          "disclosure": "Registering Fidget as an MCP server there lets it move and emote the fidget on your screen. Nothing here changes which mind the Director uses.",
           "status": null
         },
         {

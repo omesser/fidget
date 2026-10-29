@@ -55,7 +55,7 @@ runs in the frame loop and never drives animation directly. See
 │                                                             │
 │  ┌───────────────────────┐                                  │
 │  │ MCP server (ours)     │                                  │
-│  │ speak / play_behavior │                                  │
+│  │ play_behavior         │                                  │
 │  │ list_windows          │                                  │
 │  │ describe_screen       │                                  │
 │  │ recall / remember     │                                  │
@@ -354,7 +354,7 @@ and malware.
 
 Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character
 stays visible and starts no wakes of its own. Behavior proposals are refused.
-Quick messages, Chat replies, the speech bubble, Poke, Grab, and Throw still
+Quick messages, Chat replies, the bubble, Poke, Grab, and Throw still
 work. That is #84, and #1404 settled the wording. Screen capture is not a hide rule either: capturable is a window-level
 on/off switch, visible by default ([ADR-0024](./docs/adr/0024-capturable-by-default.md)),
 so there is nothing to fade.
@@ -400,7 +400,7 @@ or attach an MCP server like cua-driver.
 ### 10. No Executor
 
 Fidget does not post synthetic mouse or keyboard events. It ships an **MCP
-server** exposing fidget-side tools — speak, play a Behavior, list windows,
+server** exposing fidget-side tools — play a Behavior, list windows,
 describe the screen, read and write Memory — and attaches a user-configured
 Harness. Clicking is the Harness's job. The character is Fidget's.
 

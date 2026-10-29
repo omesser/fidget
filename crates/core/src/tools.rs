@@ -1,4 +1,4 @@
-//! Tool types and shared logic for the MCP server: Expression (speak, play a
+//! Tool types and shared logic for the MCP server: Expression (play a
 //! Behavior), Sensing (list windows), Memory (recall, remember) and Identity
 //! (list Instances). No tool posts input events (ADR-0003); a denylist filters sensing.
 
@@ -10,24 +10,14 @@ use crate::engine::{BehaviorProposal, Point};
 use crate::memory::MemoryManifest;
 use crate::window_source::Rect;
 
-/// Tool result for the `speak` tool.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SpeakResult {
-    pub success: bool,
-    pub message: String,
-    /// Why the Expression did not land, when `success` is false: the bool alone
-    /// cannot tell "I said it" from "there was nobody to say it to", and a stdio
-    /// Harness runs against an empty roster. Absent on success, keeping the old shape.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
 /// Tool result for the `play_behavior` tool.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayBehaviorResult {
     pub success: bool,
     pub behavior: String,
-    /// Why the Expression did not land; see [`SpeakResult::reason`].
+    /// Why the Expression did not land, when `success` is false: the bool alone
+    /// cannot tell "it played" from "there was nobody to play it", and a stdio
+    /// Harness runs against an empty roster.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -244,7 +234,7 @@ mod helpers {
             .collect()
     }
 
-    /// Resolve the target Instance and enqueue, for `speak` and `play_behavior`.
+    /// Resolve the target Instance and enqueue, for `play_behavior`.
     /// The `Err` is the whole answer a Harness gets about why the Expression
     /// landed nowhere, so it names the reason rather than a code.
     pub fn enqueue_expression(
@@ -297,7 +287,7 @@ mod helpers {
         AmbiguousTarget,
     }
 
-    /// Target resolution against roster for both speak and play_behavior.
+    /// Target resolution against roster for play_behavior.
     /// `dispatch` already refused an id the roster does not carry.
     fn resolve_target_instance(
         instance_id: Option<&str>,
@@ -311,35 +301,6 @@ mod helpers {
                 _ => TargetResolution::AmbiguousTarget,
             },
         }
-    }
-}
-
-/// Make the Character speak a line of dialogue.
-pub(crate) fn speak(
-    message: &str,
-    instance_id: Option<&str>,
-    roster: &[InstanceInfo],
-    expression: Option<&mut dyn ExpressionHandle>,
-) -> SpeakResult {
-    if message.is_empty() {
-        return SpeakResult {
-            success: false,
-            message: message.to_string(),
-            reason: Some("The message is empty".to_string()),
-        };
-    }
-
-    let proposal = BehaviorProposal {
-        behavior: String::new(),
-        dialogue: Some(message.to_string()),
-    };
-
-    let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();
-
-    SpeakResult {
-        success: reason.is_none(),
-        message: message.to_string(),
-        reason,
     }
 }
 

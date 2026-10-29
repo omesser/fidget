@@ -1039,8 +1039,8 @@ fn byo_section() -> FormSection {
         serves: None,
         comment: Some("For a Harness you start in your own terminal.".to_string()),
         disclosure: Some(
-            "Registering Fidget as an MCP server there lets it speak, move and \
-             emote the fidget on your screen. Nothing here changes which mind the \
+            "Registering Fidget as an MCP server there lets it move and emote \
+             the fidget on your screen. Nothing here changes which mind the \
              Director uses."
                 .to_string(),
         ),

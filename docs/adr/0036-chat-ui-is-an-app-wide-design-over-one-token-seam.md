@@ -23,7 +23,7 @@ The seam is class and token based. A root class names the design, and tokens
 hold every colour, font family and radius. The Chat surface reads tokens only. A
 literal outside a design's token block breaks the seam.
 
-A Chat UI repaints the Chat surface and nothing the overlay draws. The Speech bubble shares only opaque panel tokens with the default
+A Chat UI repaints the Chat surface and nothing the overlay draws. The bubble shares only opaque panel tokens with the default
 design. Changing the Chat UI never changes a Character's expression.
 
 ## Consequences

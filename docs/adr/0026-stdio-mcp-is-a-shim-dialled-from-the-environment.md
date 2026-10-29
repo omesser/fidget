@@ -10,7 +10,7 @@ statement about the handshake and nothing else: hermes is itself an MCP client
 that speaks Streamable HTTP and SSE through its own `mcp_servers` config, and
 a Harness that starts setting the bit would take ADR-0023's path with no change
 here. That binary
-answered from stubs: no window sensing, no Instances, no expression. A `speak`
+answered from stubs: no window sensing, no Instances, no expression. An Expression
 there returned success and nothing appeared on screen, which is
 indistinguishable from working (#470, #501).
 
@@ -101,5 +101,5 @@ directory the user already controls is the worse trade.
 What remains is real and is not engineered around: while a session is attached
 to a user-set Working directory, a live token sits in that project's
 `.cursor/mcp.json`. It is the length of one session, it is owner-only, and it
-authorises the eight tools and nothing else. The shim and the two environment
+authorises fidget's tools and nothing else. The shim and the two environment
 variables are untouched; `cursor-agent` no longer uses either.
