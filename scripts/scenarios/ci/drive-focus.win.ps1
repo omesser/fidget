@@ -45,6 +45,7 @@ public static class DriveInput {
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint f, UIntPtr e);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+    public static void Move(int x, int y) { SetCursorPos(x, y); }
     public static void Click(int x, int y) {
         SetCursorPos(x, y);
         mouse_event(2, 0, 0, 0, UIntPtr.Zero);
@@ -155,7 +156,13 @@ try {
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
     $before = Count $traceFile "${probe}Focused\(true\)"
+    # The region takes the click one frame after the pointer arrives, as a
+    # real hand gives it; then the pointer leaves so hover opens no pill.
+    $frames = Count $traceFile '^\S+ frame: '
+    [DriveInput]::Move($rest.X + [int]($w / 2), $rest.Y + [int]($h / 2))
+    if (-not (Wait-ForCount 3 $traceFile '^\S+ frame: ' ($frames + 1))) { Missed "resume: no frame after the pointer reached the sprite" }
     [DriveInput]::Click($rest.X + [int]($w / 2), $rest.Y + [int]($h / 2))
+    [DriveInput]::Move(900, 100)
     if (-not (Wait-ForTrace 3 $traceFile "${probe}request click ok")) { Missed "resume: no 'request click ok'; see $traceFile" }
     # 0x25 is Left Arrow.
     if ((Wait-ForCount 3 $traceFile "${probe}Focused\(true\)" $before) -and
