@@ -6618,25 +6618,29 @@ mod tests {
     }
 
     /// Two Character Instances never share an ACP session, even when they
-    /// are the same Character. One Harness child throughout.
+    /// are the same Character, and turns that alternate between them each go
+    /// back to their own. One Harness child throughout.
     #[test]
     fn two_character_instances_do_not_share_an_acp_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(
-            session.complete(&asking_as("buddy-1", "bmo", "hi"), &|_| {}),
-            Ok(Reply::whole("Hello"))
-        );
-        assert_eq!(
-            session.complete(&asking_as("buddy-2", "bmo", "hi"), &|_| {}),
-            Ok(Reply::whole("Hello"))
-        );
+        for instance in ["buddy-1", "buddy-2", "buddy-1", "buddy-2"] {
+            assert_eq!(
+                session.complete(&asking_as(instance, "bmo", "hi"), &|_| {}),
+                Ok(Reply::whole("Hello"))
+            );
+        }
         session.shutdown();
 
-        let prompts = fx.events("prompt");
-        assert_eq!(prompts.len(), 2, "{prompts:?}");
-        assert_ne!(
-            prompts[0]["session_id"], prompts[1]["session_id"],
-            "Instance B continued Instance A's session: {prompts:?}"
+        let sessions = prompt_sessions(&fx);
+        assert_eq!(
+            sessions,
+            [
+                json!("fresh-id"),
+                json!("fresh-id-2"),
+                json!("fresh-id"),
+                json!("fresh-id-2")
+            ],
+            "a turn went to another Instance's session"
         );
         assert_eq!(fx.count("spawn"), 1, "a second Completer was spawned");
         let saved: SavedSession =

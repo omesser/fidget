@@ -333,8 +333,10 @@ Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP,
 | `describe_screen` | Sensing | Describe screen (v1: window metadata only) |
 | `recall` | Memory | Read everything Memory holds |
 | `remember` | Memory | Write one fact under a heading |
-| `list_instances` | Identity | List Character Instances and their names |
+| `list_instances` | Identity | List Character Instances: id, name, and the three Character Prompt layers |
 | `whereabouts` | Placement | Which display each Instance is on, the other displays, and its feet in that display. Each display includes its name when the platform has one, its origin, and its size, in logical points |
+
+Every tool takes an optional `instance_id`. Each Character Instance has its own Harness session, and that session's opening turn names its id, so `speak` and `play_behavior` land on the Instance whose session called them. An id no running Instance has is refused.
 
 **Three readonly resources** (`resources/list`, `resources/read`; no write, no subscribe):
 
