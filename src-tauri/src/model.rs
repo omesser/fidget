@@ -678,7 +678,7 @@ impl Endpoint {
                 // the only place that says which value cost it.
                 eprintln!(
                     "director: {}; retrying without {}",
-                    unsent.why(),
+                    redact_url_in(unsent.why(), url),
                     dropped_field(field, self.effort.as_deref().unwrap_or(""))
                 );
             }
@@ -1039,6 +1039,26 @@ fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
 
+/// URL safe to print. Userinfo, query, and fragment can hold a key.
+fn redacted_url(url: &str) -> String {
+    let Some(mut parsed) = url_of(url) else {
+        return "<redacted-url>".to_string();
+    };
+    let _ = parsed.set_password(None);
+    let _ = parsed.set_username("");
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    parsed.to_string()
+}
+
+/// `text`, with `url` passed through [`redacted_url`] when it appears.
+fn redact_url_in(text: &str, url: &str) -> String {
+    if url.is_empty() {
+        return text.to_string();
+    }
+    text.replace(url, &redacted_url(url))
+}
+
 fn alternate_url(url: &str) -> Option<String> {
     if !host_is_xai(url) {
         return None;
@@ -1150,12 +1170,15 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
     ))
 }
 
-/// The preflight failure line. `why` may already quote `models_endpoint`.
+/// Preflight failure for stderr. Userinfo and the query never appear.
+/// A transport error may already quote the models URL, so it is not named twice.
 fn preflight_failure_line(models_endpoint: &str, why: &str) -> String {
-    let reason = if why.contains(models_endpoint) {
-        why.to_string()
+    let shown = redacted_url(models_endpoint);
+    let why = redact_url_in(why, models_endpoint);
+    let reason = if why.contains(&shown) {
+        why
     } else {
-        format!("{models_endpoint} {why}")
+        format!("{shown} {why}")
     };
     format!("director: {reason}; staying on StaticDirector until it answers")
 }
@@ -1178,21 +1201,13 @@ pub fn spawn_preflight(settings: &DirectorSettings) {
             Ok(()) => {
                 if tracing() {
                     eprintln!(
-                        "director: {models_endpoint} answered, model {}",
+                        "director: {} answered, model {}",
+                        redacted_url(&models_endpoint),
                         endpoint.model()
                     );
                 }
             }
-            // A transport error already quotes the URL it failed to reach;
-            // naming the models URL again would say it twice.
-            Err(why) => {
-                let reason = if why.contains(&models_endpoint) {
-                    why
-                } else {
-                    format!("{models_endpoint} {why}")
-                };
-                eprintln!("director: {reason}; staying on StaticDirector until it answers");
-            }
+            Err(why) => eprintln!("{}", preflight_failure_line(&models_endpoint, &why)),
         }
     });
 }
@@ -1214,7 +1229,7 @@ pub fn run_probe() -> i32 {
     };
 
     println!("probe-model");
-    println!("  url    {}", endpoint.url());
+    println!("  url    {}", redacted_url(endpoint.url()));
     println!("  model  {}", endpoint.model());
     if endpoint.api_key.is_empty() {
         println!("  key    none (local server)");
@@ -1228,7 +1243,7 @@ pub fn run_probe() -> i32 {
     probe_result(&models_endpoint, &models);
     match preflight_verdict(models, endpoint.model()) {
         Ok(()) => println!("  model {} is served", endpoint.model()),
-        Err(why) => println!("  {why}"),
+        Err(why) => println!("  {}", redact_url_in(&why, &models_endpoint)),
     }
     println!();
     if endpoint.is_xai() {
@@ -1261,15 +1276,15 @@ fn probe_get(endpoint: &Endpoint, url: &str) {
 }
 
 fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
-    println!("GET {url}");
+    println!("GET {}", redacted_url(url));
     match answer {
         Ok((code, body)) => println!("  {code} {}", clip_body(body)),
-        Err(error) => println!("  transport {error}"),
+        Err(error) => println!("  transport {}", clip_body(&redact_url_in(error, url))),
     }
 }
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
-    println!("POST {url}");
+    println!("POST {}", redacted_url(url));
     match endpoint.post(url, PING, "probe", &|_| {}) {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
@@ -1277,7 +1292,7 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
             true
         }
         Err(error) => {
-            println!("  {}", clip_body(&error));
+            println!("  {}", clip_body(&redact_url_in(&error, url)));
             println!();
             false
         }
