@@ -6129,6 +6129,19 @@ mod tests {
         });
     }
 
+    /// Why the test above builds its kept path from `temp_dir`: a rooted path
+    /// with no drive, like `/tmp/kept`, is relative on Windows, so it is refused.
+    #[cfg(windows)]
+    #[test]
+    fn attach_cwd_refuses_a_rooted_path_without_a_drive_on_windows() {
+        let rooted_without_drive = "/tmp/kept";
+        assert!(!Path::new(rooted_without_drive).is_absolute());
+        assert_eq!(
+            AttachCwd::resolve(rooted_without_drive),
+            Err(CwdError::Relative(PathBuf::from(rooted_without_drive)))
+        );
+    }
+
     /// The Working directory row shows this path instead of naming the data
     /// folder in words. A placeholder that stopped resolving would put a path
     /// on screen that the attach does not use.
