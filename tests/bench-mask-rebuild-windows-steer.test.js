@@ -1,6 +1,6 @@
 // scripts/bench-mask-rebuild-windows-steer.cs reads what fidget appended to
 // process.log since the last display refresh and says where the pointer goes.
-// The Windows calls (SetCursorPos, the vblank wait) are not exercised here;
+// The Windows calls (SetCursorPos, the refresh wait) are not exercised here;
 // the reading and aiming are, on any OS pwsh runs on.
 
 import assert from "node:assert/strict";

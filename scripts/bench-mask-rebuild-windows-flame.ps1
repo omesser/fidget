@@ -147,13 +147,11 @@ try {
 }
 
 $recording = $false
-$vblank = $null
 function Stop-All {
     if ($script:recording) {
         & wpr.exe -cancel 2>$null | Out-Null
         $script:recording = $false
     }
-    if ($script:vblank) { $script:vblank.Dispose(); $script:vblank = $null }
     # taskkill /T also stops the WebView2 processes this fidget spawned.
     & taskkill.exe /PID $app.Id /T /F 2>$null | Out-Null
 }
@@ -162,7 +160,6 @@ trap { Stop-All; break }
 # Each pass waits for the next display refresh, then reads what fidget logged
 # since the last one. Returns the follower once it has seen Frames frame lines
 # and Rebuilds rebuild lines, or when Seconds pass or fidget exits.
-$vblank = New-Object FidgetBench.VBlank
 function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Scale, [int]$Frames, [int]$Rebuilds, [int]$Seconds, [bool]$Steer) {
     $follower = New-Object FidgetBench.LogFollower $processLog, $Since, $Hw, $Hh, $Scale
     $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -170,7 +167,7 @@ function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Scale, [int]$Frames
         while ($follower.Frames -lt $Frames -or $follower.Rebuilds.Count -lt $Rebuilds) {
             if ($clock.Elapsed.TotalSeconds -ge $Seconds) { break }
             if ($app.HasExited) { [Console]::Error.WriteLine("fidget exited; see $processLog"); break }
-            $script:vblank.Wait()
+            [FidgetBench.Refresh]::Wait()
             if ($follower.Step() -and $Steer) { [void][FidgetBench.Screen]::MoveTo($follower.AimX, $follower.AimY) }
         }
     } finally { $follower.Dispose() }

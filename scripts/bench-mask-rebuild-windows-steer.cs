@@ -5,7 +5,7 @@
 // open. NTFS does not raise a change notification for those appends until the
 // handle closes, so neither FileSystemWatcher nor Get-Content -Wait (which
 // re-reads once a second) sees them in time. The script instead wakes on each
-// display refresh (VBlank), reads what was appended (LogFollower), and puts
+// display refresh (Refresh), reads what was appended (LogFollower), and puts
 // the pointer on the newest frame's sprite centre (Screen).
 
 using System;
@@ -146,16 +146,14 @@ namespace FidgetBench
     // display refresh: fidget's frames follow the same refresh, so one read
     // per wake keeps up with them. DwmFlush needs no adapter handle, so it
     // works whatever the display setup.
-    public sealed class VBlank : IDisposable
+    public static class Refresh
     {
         [DllImport("dwmapi.dll")] static extern int DwmFlush();
 
-        public void Wait()
+        public static void Wait()
         {
             int status = DwmFlush();
             if (status != 0) throw new InvalidOperationException("DwmFlush failed: 0x" + status.ToString("x8"));
         }
-
-        public void Dispose() { }
     }
 }
