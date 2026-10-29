@@ -73,9 +73,10 @@ wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 
 python3 "$root/scripts/ax-window-linux.py" tray "$pid" BMO Chat > "$out/tray.txt" 2>&1 ||
   fail "the tray's Chat row opened no Chat; see $out/tray.txt"
-# The mind line names a session once Chat has its opening, which then focuses
-# the input.
-wait_for_ax_dump 5 "$pid" BMO ' · session ' || fail "Chat never named a session; see $log"
+# The mind line shows a live Harness once Chat has its opening, which then
+# focuses the input. The session opens with the first turn.
+wait_for_ax_dump 5 "$pid" BMO ' · (no session yet|session )' "$out/opened.ax.txt" ||
+  fail "Chat never showed a live Harness; see $log"
 chat=$(xdotool search --onlyvisible --name '^BMO$' | head -1) || true
 [ -n "$chat" ] || fail "no visible X11 window titled BMO"
 xdotool windowactivate --sync "$chat"
