@@ -1159,6 +1159,7 @@ pub(crate) fn run_frame_loop(
                 answer_tool_call(
                     call,
                     &mut roster,
+                    &characters,
                     assembler.source(),
                     excluded,
                     &displays,
@@ -2929,16 +2930,43 @@ fn replace_session(
 fn answer_tool_call(
     call: mcp_http::Call,
     roster: &mut Roster,
+    characters: &std::collections::BTreeMap<String, Arc<fidget_core::character::Character>>,
     source: &dyn WindowSource,
     excluded_applications: Vec<String>,
     displays: &platform::Displays,
     caffeinate: Option<&mut dyn fidget_core::caffeinate::CaffeinateHandle>,
 ) {
     let watched = crate::names_hint::live().watching(source);
+    // The layers the Prompt tab shows, so a session opened mid-run can read
+    // what its opening turn would have told it. Only list_instances returns
+    // them, so no other call pays for building them.
+    let with_prompts = call.tool == "list_instances";
+    let blank = model::blank();
     let live: Vec<InstanceInfo> = roster
         .list()
         .into_iter()
-        .map(|(id, name)| InstanceInfo { id, name })
+        .map(|(id, name)| {
+            let Some(instance) = roster.get(&id).filter(|_| with_prompts) else {
+                return InstanceInfo {
+                    id,
+                    name,
+                    ..Default::default()
+                };
+            };
+            InstanceInfo {
+                app_instructions: director::app_instructions(
+                    super::behavior_names_of(characters, instance),
+                    blank,
+                ),
+                personality_prompt: match blank {
+                    true => String::new(),
+                    false => super::personality_of(characters, instance),
+                },
+                instance_prompt: instance.prompt().to_string(),
+                id,
+                name,
+            }
+        })
         .collect();
     let spots: Vec<FeetAt> = live
         .iter()
@@ -3157,6 +3185,7 @@ mod tests {
                 reply,
             },
             &mut roster,
+            &std::collections::BTreeMap::new(),
             &EmptyDesktop,
             Vec::new(),
             &platform::Displays::default(),
@@ -3177,6 +3206,53 @@ mod tests {
             "the Speech bubble draws Frame::dialogue"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A session the Harness opened mid-run never heard its opening turn. It
+    /// reads its id and the three prompt layers back from the live Instance.
+    #[test]
+    fn a_list_instances_call_carries_the_live_prompt_layers() {
+        let mut roster = Roster::new();
+        let id = roster.spawn(&character(), "Pip".to_string(), Point { x: 0.0, y: 0.0 });
+        roster
+            .get_mut(&id)
+            .expect("just spawned")
+            .set_prompt("Answer in haiku.".to_string());
+        let characters = std::collections::BTreeMap::from([(
+            "Buddy".to_string(),
+            Arc::new(Character {
+                personality: "a shy robot.".to_string(),
+                ..character()
+            }),
+        )]);
+
+        let (reply, answers) = mpsc::channel();
+        answer_tool_call(
+            mcp_http::Call {
+                tool: "list_instances".to_string(),
+                arguments: json!({}),
+                reply,
+            },
+            &mut roster,
+            &characters,
+            &EmptyDesktop,
+            Vec::new(),
+            &platform::Displays::default(),
+            None,
+        );
+        let result = answers
+            .recv()
+            .expect("the call is answered")
+            .expect("dispatch succeeds");
+
+        let pip = &result["instances"][0];
+        assert_eq!(pip["id"], json!(id));
+        assert_eq!(
+            pip["app_instructions"],
+            json!(director::app_instructions(["wave"], false))
+        );
+        assert_eq!(pip["personality_prompt"], json!("a shy robot."));
+        assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));
     }
 
     /// The Harness reads placement from the live Instances and the displays
@@ -3219,6 +3295,7 @@ mod tests {
                 reply,
             },
             &mut roster,
+            &std::collections::BTreeMap::new(),
             &EmptyDesktop,
             Vec::new(),
             &displays,

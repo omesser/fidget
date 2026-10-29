@@ -976,6 +976,7 @@ mod tests {
                 instance_prompt: instance.prompt().to_string(),
                 ..crate::director::Context::quiet()
             },
+            &id,
             wolf.behaviors.keys(),
             false,
         );
