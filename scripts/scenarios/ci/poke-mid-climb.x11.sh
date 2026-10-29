@@ -160,9 +160,16 @@ done
 [ -n "$poked" ] || fail "no Poke landed mid-climb over the $side edge; see $out/input.txt"
 
 # The quick-message pill holds a climb while the pointer rests on the sprite.
-# Move further into the display than the click landed.
+# Move further into the display than the click landed, without leaving that display.
 away=$((px + into * 4 * size))
-xdotool mousemove "$((away < 0 ? 0 : away))" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
+read -r x0 x1 < <(awk -v c="$px" '$1 <= c && c < $2 { print; exit }' <<< "$displays") || true
+if [ -n "${x1:-}" ]; then
+  if [ "$away" -lt "$x0" ]; then away=$x0; fi
+  if [ "$away" -ge "$x1" ]; then away=$((x1 - 1)); fi
+elif [ "$away" -lt 0 ]; then
+  away=0
+fi
+xdotool mousemove "$away" "$sy" >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
 
 wait_for_trace 3 "$trace" 'frame: .* Climbing .* react#[0-9]' || fail "sprite did not hold react during cooldown; see $trace"
 # The checker passes once the trace runs past the Poke's 2.5 s cooldown;
