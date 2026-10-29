@@ -16,7 +16,8 @@ pub enum Key {
     Escape,
 }
 
-/// How long Space takes to fill the bar, in milliseconds.
+/// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
+/// jump by feel, short enough that a full one does not stall the play.
 const FULL_CHARGE_MS: u32 = 1_000;
 
 /// How full the jump bar is, from 0 for a tap to 1 for a second's hold.
@@ -51,7 +52,7 @@ pub struct Intent {
     /// Space came up since the last tick: jump with this charge.
     pub launch: Option<Charge>,
     /// Escape was pressed: end the possession.
-    pub release: bool,
+    pub end_possession: bool,
 }
 
 /// Held keys, between key edges and ticks.
@@ -65,7 +66,7 @@ pub struct Drive {
     /// A Space keyup the next tick launches. Apart from `space_ms` so a press
     /// straight after a keyup, inside one tick, still launches the first.
     launch: Option<Charge>,
-    release: bool,
+    end_possession: bool,
 }
 
 impl Drive {
@@ -81,7 +82,7 @@ impl Drive {
             }
             (Key::Escape, true) => {
                 self.pause();
-                self.release = true;
+                self.end_possession = true;
             }
             _ => {}
         }
@@ -91,7 +92,7 @@ impl Drive {
     /// key counts as let go, and a jump would launch a sprite that should stand.
     pub fn pause(&mut self) {
         *self = Self {
-            release: self.release,
+            end_possession: self.end_possession,
             ..Self::default()
         };
     }
@@ -105,7 +106,7 @@ impl Drive {
             walk: self.arrows.last().copied(),
             charging: self.space_ms.map(Charge::held),
             launch: self.launch.take(),
-            release: std::mem::take(&mut self.release),
+            end_possession: std::mem::take(&mut self.end_possession),
         }
     }
 }
@@ -225,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_asks_once_to_be_released_and_lets_go_of_every_key() {
+    fn escape_asks_once_to_end_possession_and_lets_go_of_every_key() {
         let mut drive = Drive::default();
         drive.key(Key::Arrow(Arrow::Right), true);
         drive.key(Key::Space, true);
@@ -234,7 +235,7 @@ mod tests {
         assert_eq!(
             drive.tick(FRAME_MS),
             Intent {
-                release: true,
+                end_possession: true,
                 ..Intent::default()
             }
         );
@@ -251,10 +252,10 @@ mod tests {
     /// Escape hands the keyboard back, so the pause that follows can land
     /// before the next tick.
     #[test]
-    fn a_pause_after_escape_still_releases() {
+    fn a_pause_after_escape_still_ends_possession() {
         let mut drive = Drive::default();
         drive.key(Key::Escape, true);
         drive.pause();
-        assert!(drive.tick(FRAME_MS).release);
+        assert!(drive.tick(FRAME_MS).end_possession);
     }
 }
