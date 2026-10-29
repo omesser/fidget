@@ -2,7 +2,7 @@
 
 A comment says why. It stays short. It earns every line.
 
-The default ceiling is 3 lines per block. A public item keeps a one-line summary, so `cargo doc` and an IDE hover still say what the item is. A Rust `//!` module header is exempt. It documents the module. A `///` item doc is not exempt.
+The default ceiling is 3 lines per block. A public item keeps a one-line summary, so `cargo doc` and an IDE hover still say what the item is. A Rust `//!` module header is exempt. It documents the module. A `///` item doc is not exempt. A block a script prints as its takeover prompt is exempt too. It is operator output, and `docs/agents/gui-takeover.md` has the agent read a scenario's screen, input and duration out of it.
 
 Code comments are not audit logs or decision logs. Keep a longer record only when the implementation is weird and the record is what makes that implementation defensible.
 
@@ -16,7 +16,7 @@ Code comments are not audit logs or decision logs. Keep a longer record only whe
 
 Stop when you do not understand the comment. Leave it alone.
 
-A block may run past 3 lines in four cases.
+A remaining why may run past 3 lines in four cases.
 
 - The implementation is weird, and the comment is what makes it defensible.
 - The block is a `ponytail:` marker. It names the ceiling, the cost, and the condition that changes it.
@@ -98,7 +98,7 @@ The ceiling, the cost, and the condition under which it changes. Without all thr
 
 ## The lint
 
-The bar on this page is 3 lines. `pre-commit` runs [ast-grep](https://ast-grep.github.io/) and rejects a comment block over 20 lines (`scripts/ast-grep/rules/comment-blocks.yml`). The rule file says the 20 is what the tree passes today, and that tightening it is a separate pull request. A green lint does not mean a block meets the 3-line bar. Module docs and `ponytail:` markers sit over 3 lines on purpose.
+The bar on this page is 3 lines. `pre-commit` runs [ast-grep](https://ast-grep.github.io/) and rejects a comment block over 20 lines (`scripts/ast-grep/rules/comment-blocks.yml`). The rule file says the 20 is what the tree passes today, and that tightening it is a separate pull request. A green lint does not mean a block meets the 3-line bar. Module docs, printed takeover headers and `ponytail:` markers sit over 3 lines on purpose.
 
 Each language has its own rule in that file. Adding a language means adding the rule.
 
