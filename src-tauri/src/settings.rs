@@ -5573,8 +5573,7 @@ mod tests {
     }
 
     /// Every snippet carries the URL, and Copilot removes before it adds. Codex
-    /// exports the raw token, and Hermes shows it for pasting. Claude's remove
-    /// order lives in `the_claude_snippet_removes_before_it_adds`.
+    /// exports the raw token, and Hermes shows it for pasting.
     #[test]
     fn every_byo_snippet_carries_the_url_and_the_raw_token() {
         for harness in form::HARNESS_PRESETS {
