@@ -118,6 +118,11 @@ impl Instance {
         self.pending = Some(proposal);
     }
 
+    /// Play a Harness turn beat on the next tick. The Engine owns it.
+    pub fn play_moment(&mut self, moment: crate::turn_motion::Moment) {
+        self.engine.cue_moment(moment);
+    }
+
     /// The Character this Instance is running.
     pub fn character_name(&self) -> &str {
         &self.character_name

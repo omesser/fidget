@@ -20,6 +20,7 @@ pub mod scheduler;
 pub mod sensing;
 pub mod snapshot;
 pub mod speech;
+pub mod turn_motion;
 pub mod visibility;
 pub mod window_source;
 
