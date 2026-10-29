@@ -393,7 +393,7 @@ pub struct Engine {
     /// How far along that Perch the sprite stands, so a snap back onto a
     /// fresh sample keeps the place it was holding.
     hold_offset_x: f64,
-    /// Feet minus the press point when a grab began, so that point stays put.
+    /// Feet minus the press point when a Grab began, so that point stays put.
     grab_offset: Point,
     /// The Drop or Throw cue this fall earned at release. Set when leaving
     /// Dragged, played and cleared on the first contact. None for falls with
@@ -839,7 +839,8 @@ impl Engine {
                 self.release_cue = None;
                 // The press lands on the art, not the feet. That point stays
                 // under the pointer; snapping the feet to it hangs the cursor
-                // below the sprite.
+                // below the sprite. No press point means a Grab that never
+                // moved before it began, so the cursor is that point.
                 let pressed = snapshot.pressed_at.unwrap_or(snapshot.cursor);
                 self.grab_offset = Point {
                     x: self.position.x - pressed.x,
