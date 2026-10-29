@@ -478,7 +478,7 @@ mod tests {
     /// window is a Dock the visibility rules skip; just over it, it is the
     /// frontmost app and not a Dock.
     #[test]
-    fn a_window_just_under_a_third_of_the_display_is_a_dock_and_just_over_is_not() {
+    fn a_window_just_under_three_tenths_of_the_display_is_a_dock_and_just_over_is_not() {
         let frame = rect(0.0, 0.0, 1000.0, 1000.0);
         // Both sit in the same reserved margin, so thickness is the only change.
         let usable = rect(0.0, 0.0, 1000.0, 700.0);
@@ -487,7 +487,7 @@ mod tests {
         let under = rect(100.0, 701.0, 800.0, 299.0);
         assert!(
             plausible_dock(&under, frame, usable),
-            "299 of 1000 is under a third, so the claim is a Dock"
+            "299 of 1000 is under three tenths, so the claim is a Dock"
         );
         assert_eq!(
             fullscreen_displays(&[under, fullscreen], &[frame]),
@@ -498,7 +498,7 @@ mod tests {
         let over = rect(100.0, 699.0, 800.0, 301.0);
         assert!(
             !plausible_dock(&over, frame, usable),
-            "301 of 1000 is over a third, so the claim is not a Dock"
+            "301 of 1000 is over three tenths, so the claim is not a Dock"
         );
         assert_eq!(
             fullscreen_displays(&[over, fullscreen], &[frame]),
