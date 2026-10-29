@@ -2934,13 +2934,15 @@ fn answer_tool_call(
 ) {
     let watched = crate::names_hint::live().watching(source);
     // The layers the Prompt tab shows, so a session opened mid-run can read
-    // what its opening turn would have told it.
+    // what its opening turn would have told it. Only list_instances returns
+    // them, so no other call pays for building them.
+    let with_prompts = call.tool == "list_instances";
     let blank = model::blank();
     let live: Vec<InstanceInfo> = roster
         .list()
         .into_iter()
         .map(|(id, name)| {
-            let Some(instance) = roster.get(&id) else {
+            let Some(instance) = roster.get(&id).filter(|_| with_prompts) else {
                 return InstanceInfo {
                     id,
                     name,
