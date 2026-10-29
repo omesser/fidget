@@ -3717,6 +3717,48 @@ pub(crate) mod tests {
         );
     }
 
+    /// A suffix cut on the raw string can retarget the host. The preflight
+    /// GET carries the API key, so the models URL has to keep the inference
+    /// origin. Query and fragment are not part of that URL.
+    #[test]
+    fn the_models_url_stays_on_the_inference_origin() {
+        let cases = [
+            ("https://chat/completions", "https://chat/v1/models"),
+            ("https://responses", "https://responses/v1/models"),
+            (
+                "https://openrouter.ai/api/v1/chat/completions?api_key=secret#frag",
+                "https://openrouter.ai/api/v1/models",
+            ),
+            (
+                "https://api.x.ai/v1/responses?api_key=secret",
+                "https://api.x.ai/v1/models",
+            ),
+            (
+                "https://api.openai.com/v1/chat/completions?api_key=secret#frag",
+                "https://api.openai.com/v1/models",
+            ),
+            (
+                "https://api.anthropic.com/v1/chat/completions",
+                "https://api.anthropic.com/v1/models",
+            ),
+            (
+                "https://user:pass@api.openai.com/v1/chat/completions?api_key=secret",
+                "https://user:pass@api.openai.com/v1/models",
+            ),
+            (
+                "http://127.0.0.1:11434/v1/chat/completions",
+                "http://127.0.0.1:11434/v1/models",
+            ),
+        ];
+        for (inference, models) in cases {
+            let got = models_url(inference);
+            assert_eq!(got, models, "{inference}");
+            let inference_origin = url::Url::parse(inference).unwrap().origin();
+            let models_origin = url::Url::parse(&got).unwrap().origin();
+            assert_eq!(models_origin, inference_origin, "{inference} -> {got}");
+        }
+    }
+
     #[test]
     fn a_quoted_key_is_trimmed() {
         assert_eq!(trim_key("  sk-abc\n").as_deref(), Some("sk-abc"));
