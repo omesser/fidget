@@ -35,9 +35,9 @@ function liveAdrs() {
   return numbers;
 }
 
-function citedStale(live) {
+function citedStale(live, paths = tracked()) {
   const counts = {};
-  for (const path of tracked()) {
+  for (const path of paths) {
     const exempt =
       path.endsWith(".md") ||
       path.startsWith("docs/") ||
@@ -47,8 +47,11 @@ function citedStale(live) {
     let text;
     try {
       text = readFileSync(new URL(path, repo), "utf8");
-    } catch {
-      continue; // unreadable as text, so it holds no citation
+    } catch (error) {
+      // A file deleted but not staged, or a tracked symlink to a directory.
+      // Neither has text of its own to cite from.
+      if (error.code === "ENOENT" || error.code === "EISDIR") continue;
+      throw error;
     }
     const hits = text.match(/ADR[- ]?\d{4}|adr\/\d{4}-/g) ?? [];
     const stale = hits.filter(
@@ -67,4 +70,17 @@ test("no code cites a superseded or removed ADR", () => {
     KNOWN_STALE,
     "a count that rose is a new stale citation; one that fell means KNOWN_STALE is behind",
   );
+});
+
+test("a missing file or a directory symlink holds no citation", () => {
+  assert.deepEqual(
+    citedStale(new Set(), ["no-such-file.js", ".claude/skills"]),
+    {},
+  );
+});
+
+test("any other read error fails the run", () => {
+  assert.throws(() => citedStale(new Set(), ["AGENTS.md/child"]), {
+    code: "ENOTDIR",
+  });
 });
