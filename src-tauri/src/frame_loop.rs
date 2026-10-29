@@ -1688,6 +1688,7 @@ pub(crate) fn run_frame_loop(
                         live.previous_idle,
                         live.since_state,
                         instance.do_not_disturb(),
+                        false,
                     );
                     live.previous_idle = activity.idle;
 
@@ -1709,6 +1710,7 @@ pub(crate) fn run_frame_loop(
                                 front_title: None,
                                 lately: Lately::default(),
                                 caffeinate: caffeinate_fact,
+                                possessed: false,
                             });
                         }
                     }
@@ -1854,6 +1856,7 @@ pub(crate) fn run_frame_loop(
                         activity.displays_asleep,
                         instance.do_not_disturb(),
                         config.proactive_allowed,
+                        false,
                     ) && config.enabled
                     {
                         let context = Context {
@@ -1873,6 +1876,7 @@ pub(crate) fn run_frame_loop(
                                 .as_deref()
                                 .and_then(|name| assembler.front_title(name)),
                             caffeinate: caffeinate_fact,
+                            possessed: false,
                         };
                         let was_addressed = live.addressed;
                         if live.addressed {

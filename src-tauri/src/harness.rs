@@ -8625,11 +8625,14 @@ mod tests {
             Perch,
             Chat("and another thing".into()),
             Proactive,
+            PossessionStart,
+            PossessionEnd,
         ];
         // No wildcard, so a new variant does not compile until it is listed above.
         for happened in &every {
             match happened {
-                Poke | Throw | Summon | Grab | Perch | Chat(_) | Proactive => {}
+                Poke | Throw | Summon | Grab | Perch | Chat(_) | Proactive | PossessionStart
+                | PossessionEnd => {}
             }
         }
         for happened in every {
