@@ -105,6 +105,8 @@ pub fn happened_word(happened: &Happened) -> &'static str {
         Happened::Perch => "placed on a perch",
         Happened::Chat(_) => "spoken to",
         Happened::Proactive => "time passed",
+        Happened::PossessionStart => "possessed",
+        Happened::PossessionEnd => "released from possession",
     }
 }
 
@@ -140,6 +142,11 @@ pub(crate) fn follow_up(context: &Context) -> String {
         Some(fact) => format!("{}\n", fact.prompt_line()),
         None => String::new(),
     };
+    let possessed = if context.possessed {
+        "possessed: yes\n"
+    } else {
+        ""
+    };
     let weekday = WEEKDAYS[usize::from(context.activity.weekday % 7)];
     let desktop = desktop_lines(context);
     let (streak, was, lately) = lately_lines(context);
@@ -158,6 +165,7 @@ pub(crate) fn follow_up(context: &Context) -> String {
          recent: {recent}\n\
          time: {weekday} {clock}\n\
          state: {state}\n\
+         {possessed}\
          {caffeinate}\
          {lately}\
          standing on: {standing}\n\

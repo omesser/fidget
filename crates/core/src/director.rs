@@ -69,6 +69,10 @@ pub enum Happened {
     /// line, or hang a line off a Proactive wake. Costs `Copy`.
     Chat(String),
     Proactive,
+    /// The user took the wheel through Manual drive.
+    PossessionStart,
+    /// Manual drive ended: Escape, the menu, or the fidget going away.
+    PossessionEnd,
 }
 
 /// The Chat surface's row label. Derived from `happened_cell` so the row and
@@ -99,6 +103,8 @@ pub fn happened_cell(happened: &Happened) -> &'static str {
         Happened::Perch => "perched",
         Happened::Chat(_) => "spoken to",
         Happened::Proactive => "proactive",
+        Happened::PossessionStart => "possessed",
+        Happened::PossessionEnd => "released",
     }
 }
 
@@ -132,6 +138,9 @@ pub struct Context {
     /// The caffeinate line for the prompt. `None` where this build has no
     /// Caffeinate, which leaves the line out.
     pub caffeinate: Option<crate::caffeinate::Fact>,
+    /// The user is driving this fidget, paused or not. Pause is the Shell's
+    /// concern: the Director hears the same thing either way.
+    pub possessed: bool,
 }
 
 impl Context {
@@ -149,6 +158,7 @@ impl Context {
             front_title: None,
             lately: Lately::default(),
             caffeinate: None,
+            possessed: false,
         }
     }
 }
@@ -194,6 +204,7 @@ pub enum Claim {
 pub fn claim(happened: &Happened) -> Claim {
     match happened {
         Happened::Poke | Happened::Throw | Happened::Grab | Happened::Perch => Claim::Interaction,
+        Happened::PossessionStart | Happened::PossessionEnd => Claim::Interaction,
         Happened::Summon => Claim::Opener,
         Happened::Chat(_) => Claim::Line,
         Happened::Proactive => Claim::Ambient,
@@ -848,8 +859,8 @@ impl Default for Pace {
 }
 
 /// Whether to wake the Static Director.
-/// Free, so it may be chatty. Quiet under Do Not Disturb: no Director wakes
-/// cost less than refused proposals.
+/// Free, so it may be chatty. Quiet under Do Not Disturb or while possessed:
+/// no Director wakes cost less than refused proposals.
 pub fn due(
     since_wake: Duration,
     every: Duration,
@@ -857,8 +868,9 @@ pub fn due(
     previous_idle: Duration,
     since_state: Duration,
     do_not_disturb: bool,
+    possessed: bool,
 ) -> bool {
-    if do_not_disturb {
+    if do_not_disturb || possessed {
         return false;
     }
     activity.switched
@@ -877,6 +889,7 @@ pub fn session_due(
     displays_asleep: bool,
     do_not_disturb: bool,
     proactive_allowed: bool,
+    possessed: bool,
 ) -> bool {
     if displays_asleep {
         return false;
@@ -884,7 +897,7 @@ pub fn session_due(
     if addressed {
         return true;
     }
-    if do_not_disturb {
+    if do_not_disturb || possessed {
         return false;
     }
     proactive_allowed && since_proactive >= pace.wait()
@@ -1176,6 +1189,7 @@ mod tests {
             front_title: None,
             lately: Default::default(),
             caffeinate: None,
+            possessed: false,
         }
     }
 
@@ -1416,6 +1430,7 @@ mod tests {
             Duration::MAX,
             Duration::ZERO,
             false,
+            false,
         )
     }
 
@@ -1456,6 +1471,7 @@ mod tests {
                 &away,
                 Duration::ZERO,
                 Duration::ZERO,
+                false,
                 false
             ),
             "idle crossed IDLE_OVER"
@@ -1467,6 +1483,7 @@ mod tests {
                 &still,
                 IDLE_OVER,
                 Duration::ZERO,
+                false,
                 false
             ),
             "staying away is not another event"
@@ -1478,6 +1495,7 @@ mod tests {
                 &working(),
                 Duration::ZERO,
                 Duration::ZERO,
+                false,
                 false
             ),
             "still at the machine is not a crossing"
@@ -1493,6 +1511,7 @@ mod tests {
                 &working(),
                 Duration::MAX,
                 STATE_BOUND,
+                false,
                 false
             ),
             "since_state reached STATE_BOUND"
@@ -1503,6 +1522,7 @@ mod tests {
             &working(),
             Duration::MAX,
             STATE_BOUND - Duration::from_millis(1),
+            false,
             false
         ));
     }
@@ -1516,6 +1536,7 @@ mod tests {
             &working(),
             Duration::MAX,
             Duration::ZERO,
+            false,
             false
         ));
         assert!(due(
@@ -1524,6 +1545,7 @@ mod tests {
             &working(),
             Duration::MAX,
             Duration::ZERO,
+            false,
             false
         ));
     }
@@ -1533,23 +1555,23 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, true),
+            session_due(true, Duration::ZERO, &pace, false, false, true, false),
             "the user addressed the character"
         );
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, false, true),
+            !session_due(false, Duration::ZERO, &pace, false, false, true, false),
             "nothing happened and the wait has not elapsed"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false, false, true),
+            session_due(false, Pace::FIRST, &pace, false, false, true, false),
             "the first ambient wait has elapsed"
         );
         assert!(
-            !session_due(true, Duration::ZERO, &pace, true, false, true),
+            !session_due(true, Duration::ZERO, &pace, true, false, true, false),
             "asleep: not even a Poke spends tokens"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, true, false, true),
+            !session_due(false, Pace::FIRST, &pace, true, false, true, false),
             "asleep: proactive stays quiet"
         );
     }
@@ -2145,6 +2167,7 @@ mod tests {
             front_title: None,
             lately: Default::default(),
             caffeinate: None,
+            possessed: false,
         };
 
         let payload = character_prompt(&moment, "buddy-1", ["greet", "stroll", "wave"], false);
@@ -2496,6 +2519,58 @@ mod tests {
         let sent = follow_up(&placed);
         assert!(sent.contains("what just happened: placed on a perch"));
         assert!(sent.contains("standing on: a Cursor window"), "{sent}");
+    }
+
+    #[test]
+    fn possession_has_a_word_and_a_cell() {
+        assert_eq!(happened_word(&Happened::PossessionStart), "possessed");
+        assert_eq!(
+            happened_word(&Happened::PossessionEnd),
+            "released from possession"
+        );
+        assert_eq!(reacting_to(&Happened::PossessionStart), "when possessed");
+        assert_eq!(reacting_to(&Happened::PossessionEnd), "when released");
+    }
+
+    #[test]
+    fn possession_is_an_interaction() {
+        for happened in [Happened::PossessionStart, Happened::PossessionEnd] {
+            assert_eq!(claim(&happened), Claim::Interaction, "{happened:?}");
+            assert!(reactive(&happened), "{happened:?}");
+        }
+    }
+
+    #[test]
+    fn a_possessed_wake_says_so() {
+        let driven = Context {
+            possessed: true,
+            ..context(working(), &[])
+        };
+        let sent = follow_up(&driven);
+        assert!(
+            sent.contains("state: idle\npossessed: yes\n"),
+            "the line sits under state: {sent}"
+        );
+
+        let free = follow_up(&context(working(), &[]));
+        assert!(!free.contains("possessed"), "{free}");
+    }
+
+    /// A fidget nobody drives sends the moment it sent before Possession.
+    #[test]
+    fn an_undriven_wake_sends_the_same_bytes() {
+        let moment = "what just happened: poked\n\
+                      recent: stroll, nap, wave\n\
+                      time: Tue 14:52\n\
+                      state: idle\n\
+                      standing on: a Slack window\n\
+                      front: Visual Studio Code \"main.rs — fidget — a muc…\" 41m\n\
+                      before: Google Chrome 12m, iTerm2 3m, Slack 1m\n\
+                      idle: 4m\n";
+
+        assert_eq!(follow_up(&busy()), moment);
+        let opening = character_prompt(&busy(), "buddy-1", ["nap"], false);
+        assert!(opening.ends_with(&format!("\n\n{moment}")), "{opening}");
     }
 
     fn typed(line: &str) -> Context {
@@ -3010,11 +3085,11 @@ mod tests {
         // Ambient off is not Director off: a Poke still spends a session turn,
         // and an elapsed idle wait does not. Static weights keep the life.
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, false),
+            session_due(true, Duration::ZERO, &pace, false, false, false, false),
             "a Poke still wakes the Director when ambient is off"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, false, false, false),
+            !session_due(false, Pace::FIRST, &pace, false, false, false, false),
             "an elapsed ambient wait does not wake when ambient is off"
         );
     }
@@ -3028,7 +3103,8 @@ mod tests {
                 &working(),
                 Duration::MAX,
                 Duration::ZERO,
-                true
+                true,
+                false
             ),
             "timer elapsed but Do Not Disturb is on"
         );
@@ -3044,7 +3120,8 @@ mod tests {
                 &switched,
                 Duration::MAX,
                 Duration::ZERO,
-                true
+                true,
+                false
             ),
             "frontmost switched but Do Not Disturb is on"
         );
@@ -3185,11 +3262,59 @@ mod tests {
         }
     }
 
+    /// The Director cannot tell a paused drive from a live one: the Shell
+    /// keeps `possessed` set through a pause, so this covers both.
+    #[test]
+    fn a_driven_fidget_wakes_only_when_the_user_does_something() {
+        let pace = Pace::new();
+        assert!(
+            session_due(true, Duration::ZERO, &pace, false, false, true, true),
+            "a Poke or a Chat line while driving still gets a reply"
+        );
+        assert!(
+            !session_due(false, Pace::FIRST, &pace, false, false, true, true),
+            "an elapsed ambient wait does not wake a driven fidget"
+        );
+        assert!(
+            session_due(false, Pace::FIRST, &pace, false, false, true, false),
+            "the same wait wakes it once released"
+        );
+
+        let switched = Activity {
+            switched: true,
+            ..working()
+        };
+        assert!(
+            !due(
+                WAKE_EVERY,
+                WAKE_EVERY,
+                &switched,
+                Duration::MAX,
+                Duration::ZERO,
+                false,
+                true
+            ),
+            "Static weights stay off while driving"
+        );
+        assert!(
+            due(
+                WAKE_EVERY,
+                WAKE_EVERY,
+                &switched,
+                Duration::MAX,
+                Duration::ZERO,
+                false,
+                false
+            ),
+            "and come back on release"
+        );
+    }
+
     #[test]
     fn session_due_allows_addressed_wakes_under_dnd() {
         let pace = Pace::new();
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, true, true),
+            session_due(true, Duration::ZERO, &pace, false, true, true, false),
             "addressed wake proceeds even under DND"
         );
     }
@@ -3198,7 +3323,15 @@ mod tests {
     fn session_due_blocks_proactive_wakes_under_dnd() {
         let pace = Pace::new();
         assert!(
-            !session_due(false, Duration::from_secs(120), &pace, false, true, true),
+            !session_due(
+                false,
+                Duration::from_secs(120),
+                &pace,
+                false,
+                true,
+                true,
+                false
+            ),
             "proactive wake blocked under DND"
         );
     }
@@ -3207,7 +3340,15 @@ mod tests {
     fn session_due_allows_proactive_wakes_when_not_dnd() {
         let pace = Pace::new();
         assert!(
-            session_due(false, Duration::from_secs(120), &pace, false, false, true),
+            session_due(
+                false,
+                Duration::from_secs(120),
+                &pace,
+                false,
+                false,
+                true,
+                false
+            ),
             "proactive wake allowed when not under DND"
         );
     }
@@ -3221,12 +3362,20 @@ mod tests {
         assert_ne!(line, Happened::Proactive);
         for (dnd, proactive_allowed) in [(true, true), (true, false), (false, false)] {
             assert!(
-                session_due(true, Duration::ZERO, &pace, false, dnd, proactive_allowed),
+                session_due(
+                    true,
+                    Duration::ZERO,
+                    &pace,
+                    false,
+                    dnd,
+                    proactive_allowed,
+                    false
+                ),
                 "dnd={dnd} proactive_allowed={proactive_allowed}"
             );
         }
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, true, true),
+            !session_due(false, Duration::ZERO, &pace, false, true, true, false),
             "the same moment without a line stays quiet"
         );
     }
