@@ -49,14 +49,16 @@ test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
 out="${TMPDIR:-/tmp}/fidget-scenario-speak-repeat-$(date +%Y%m%d-%H%M%S)"
 data="$out/home/.local/share/fidget"
 mkdir -p "$data"
-log="$out/app.log" marks="$out/harness.log" actions="$data/action-log.jsonl"
+log="$out/app.log" marks="$out/harness.log" actions="$data/action-log.jsonl" hold="$out/hold"
 : > "$marks"
+mkfifo "$hold"
 echo '{"first_run_tour_shown": true}' > "$data/settings.json"
-# The fixture's line, from `SPOKEN` in src-tauri/src/harness.rs.
+# The fixture's line, from `SPOKEN` in src-tauri/src/harness.rs. Its
+# `scenario-speak-repeat` keys on the typed words and answers "All done." too.
 spoken='I said this one already.'
 
-harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=scenario-speak-repeat count=$marks"
-[ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
+harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=scenario-speak-repeat count=$marks hold=$hold"
+[ "$(wc -w <<< "$harness")" -eq 5 ] || fail "a path in the Harness line holds a space: $harness"
 
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
@@ -92,6 +94,10 @@ played=$(line_count "$log" "$settled")
 send 'say it twice'
 wait_for_marks 5 "$marks" '^speak ' || fail "the typed turn never called speak; see $marks"
 grep -m1 '^speak ' "$marks" | grep -qF '"success":true' || fail "speak did not succeed: $(grep -m1 '^speak ' "$marks")"
+# The Harness holds its reply, so this bubble can only be the spoken line.
+wait_for_count 5 "$log" "$bubble" "$bubbles" || fail "bubble: the spoken line never showed; see $log"
+# Read-write never blocks, even if the Harness is gone.
+exec 3<> "$hold"
 wait_for_count 5 "$marks" '^replied$' "$replies" || fail "the Harness never replied; see $marks"
 # The reply after the settle: the Behavior plays and the line is dropped.
 wait_for_count 5 "$log" "$settled" "$played" ||
@@ -100,6 +106,7 @@ wait_for_count 5 "$log" "$settled" "$played" ||
 # 2. A second turn. Its answer in Chat means the first reply landed there too.
 send 'and now'
 wait_for_ax_dump 5 "$pid" BMO 'All done\.' "$out/chat.ax.txt" || fail "the second reply never reached Chat; see $log"
+wait_for_count 5 "$log" "$bubble" "$((bubbles + 1))" || fail "bubble: All done. never showed; see $log"
 
 shown=$(($(line_count "$log" "$bubble") - bubbles))
 [ "$shown" -eq 2 ] || fail "bubble: $shown bubbles for two turns, want 2 (the spoken line and All done.); see $log"

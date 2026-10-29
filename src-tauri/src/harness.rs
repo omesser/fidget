@@ -4608,16 +4608,24 @@ mod tests {
                         // turn calls `speak` and then repeats the line as its
                         // reply. A second typed turn answers once Chat has
                         // settled the first. Other wakes move and say nothing.
+                        // The leaf types the words this matches on.
                         "scenario-speak-repeat" => {
-                            let typed = message
+                            let prompt = message
                                 .pointer("/params/prompt")
                                 .map(Value::to_string)
                                 .unwrap_or_default();
-                            if typed.contains("and now") {
+                            if prompt.contains("and now") {
                                 chunk(&session, "fidget\nAll done.");
-                            } else if typed.contains("say it twice") {
+                            } else if prompt.contains("say it twice") {
                                 let answer = speak_over_mcp(mcp.as_ref(), SPOKEN);
                                 record(count, &format!("speak {answer}"));
+                                // `hold=` keeps the reply back until the leaf
+                                // has seen the spoken line's bubble.
+                                if let Some(fifo) = std::env::args()
+                                    .find_map(|arg| arg.strip_prefix("hold=").map(PathBuf::from))
+                                {
+                                    hold(&fifo, Duration::from_secs(10));
+                                }
                                 chunk(&session, &format!("fidget\n{SPOKEN}"));
                             } else {
                                 chunk(&session, "fidget");
