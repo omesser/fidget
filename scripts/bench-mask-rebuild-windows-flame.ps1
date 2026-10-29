@@ -67,7 +67,7 @@ if (-not $Check) {
     if (-not (Get-Command wpr.exe -ErrorAction SilentlyContinue)) {
         [Console]::Error.WriteLine("wpr.exe is not on PATH; it ships with Windows 10 and later in System32.")
         exit 2
-}
+    }
 }
 if (-not (Test-Path -LiteralPath $Bin)) {
     [Console]::Error.WriteLine("no $Bin - build: `$env:CARGO_PROFILE_RELEASE_DEBUG='line-tables-only'; cargo build --release -p fidget")
@@ -177,6 +177,21 @@ function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Scale, [int]$Frames
     return $follower
 }
 
+# fidget creates process.log early in startup. Created is an event the watcher
+# can wait on; appends to the open file are not, so from there the wait for the
+# first frame line reads on each refresh, as steering does.
+if (-not (Test-Path -LiteralPath $processLog)) {
+    $watcher = New-Object System.IO.FileSystemWatcher $dataDir, (Split-Path -Leaf $processLog)
+    try {
+        Register-ObjectEvent $watcher Created -SourceIdentifier created | Out-Null
+        $watcher.EnableRaisingEvents = $true
+        if (-not (Test-Path -LiteralPath $processLog)) { $null = Wait-Event -SourceIdentifier created -Timeout 60 }
+    } finally {
+        Unregister-Event -SourceIdentifier created -ErrorAction SilentlyContinue
+        Remove-Event -SourceIdentifier created -ErrorAction SilentlyContinue
+        $watcher.Dispose()
+    }
+}
 if ((Read-Log 0 0 0 1 1 0 60 $false).Frames -eq 0) {
     Stop-All
     [Console]::Error.WriteLine("no frame line within 60s; see $processLog")
