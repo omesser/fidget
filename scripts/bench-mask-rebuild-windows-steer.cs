@@ -142,52 +142,20 @@ namespace FidgetBench
         }
     }
 
-    // Blocks until the primary display's next vertical blank: fidget's frames
-    // follow the same refresh, so one read per wake keeps up with them.
+    // Blocks until the desktop compositor presents its next frame, once per
+    // display refresh: fidget's frames follow the same refresh, so one read
+    // per wake keeps up with them. DwmFlush needs no adapter handle, so it
+    // works whatever the display setup.
     public sealed class VBlank : IDisposable
     {
-        [StructLayout(LayoutKind.Sequential)]
-        struct OpenAdapterFromHdc { public IntPtr Hdc; public uint Adapter; public uint LuidLow; public int LuidHigh; public uint Source; }
-        [StructLayout(LayoutKind.Sequential)]
-        struct WaitForVerticalBlankEvent { public uint Adapter; public uint Device; public uint Source; }
-        [StructLayout(LayoutKind.Sequential)]
-        struct CloseAdapter { public uint Adapter; }
-
-        [DllImport("gdi32.dll")] static extern int D3DKMTOpenAdapterFromHdc(ref OpenAdapterFromHdc open);
-        [DllImport("gdi32.dll")] static extern int D3DKMTWaitForVerticalBlankEvent(ref WaitForVerticalBlankEvent wait);
-        [DllImport("gdi32.dll")] static extern int D3DKMTCloseAdapter(ref CloseAdapter close);
-        [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr window);
-        [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr window, IntPtr dc);
-
-        WaitForVerticalBlankEvent wait;
-        bool open;
-
-        public VBlank()
-        {
-            IntPtr dc = GetDC(IntPtr.Zero);
-            OpenAdapterFromHdc request = new OpenAdapterFromHdc();
-            request.Hdc = dc;
-            int status = D3DKMTOpenAdapterFromHdc(ref request);
-            ReleaseDC(IntPtr.Zero, dc);
-            if (status != 0) throw new InvalidOperationException("D3DKMTOpenAdapterFromHdc failed: 0x" + status.ToString("x8"));
-            wait.Adapter = request.Adapter;
-            wait.Source = request.Source;
-            open = true;
-        }
+        [DllImport("dwmapi.dll")] static extern int DwmFlush();
 
         public void Wait()
         {
-            int status = D3DKMTWaitForVerticalBlankEvent(ref wait);
-            if (status != 0) throw new InvalidOperationException("D3DKMTWaitForVerticalBlankEvent failed: 0x" + status.ToString("x8"));
+            int status = DwmFlush();
+            if (status != 0) throw new InvalidOperationException("DwmFlush failed: 0x" + status.ToString("x8"));
         }
 
-        public void Dispose()
-        {
-            if (!open) return;
-            CloseAdapter close = new CloseAdapter();
-            close.Adapter = wait.Adapter;
-            D3DKMTCloseAdapter(ref close);
-            open = false;
-        }
+        public void Dispose() { }
     }
 }
