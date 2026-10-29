@@ -2875,25 +2875,16 @@ fn restore_history(app: &tauri::AppHandle, restored: harness::Restored) {
 /// Show the agent's plan in the Chat surface of the Instance whose session
 /// planned, as a thought is shown.
 fn show_plan(app: &tauri::AppHandle, instance: &str, steps: &[harness::PlanStep]) {
-    let _ = app.emit_to(chat_label(instance), CHAT_PLAN_EVENT, steps);
+    session_log::plan(app, instance, steps, || {
+        let _ = app.emit_to(chat_label(instance), CHAT_PLAN_EVENT, steps);
+    });
 }
 
 fn show_tool(app: &tauri::AppHandle, instance: &str, call: harness::LiveCall) {
-    let _ = app.emit_to(
-        chat_label(instance),
-        CHAT_TOOL_EVENT,
-        &serde_json::json!({
-            "id": call.id,
-            "title": call.title,
-            "name": call.name,
-            "kind": call.kind,
-            "status": call.status,
-            "rawInput": call.raw_input,
-            "rawOutput": call.raw_output,
-            "locations": call.locations,
-            "content": call.content,
-        }),
-    );
+    let label = chat_label(instance);
+    session_log::tool(app, instance, call.clone(), || {
+        let _ = app.emit_to(label, CHAT_TOOL_EVENT, &call);
+    });
 }
 
 fn show_heard(app: &tauri::AppHandle, instance: &str) {
@@ -3616,13 +3607,21 @@ fn chat_ready(
         for form in forms {
             let _ = app.emit_to(&label, CHAT_ELICITATION_EVENT, form);
         }
-        // A Chat that an ask opened mid-turn missed the thoughts emitted
-        // before it listened. A thought is the whole text, so a repeat is
-        // harmless.
-        session_log::replay_thinking(&app, &instance, |text, over| {
-            let _ = app.emit_to(&label, CHAT_THOUGHT_EVENT, text);
-            if over {
-                let _ = app.emit_to(&label, CHAT_THOUGHT_EVENT, "");
+        // A Chat that an ask opened mid-turn missed what the turn sent before
+        // it listened. A thought is the whole text, a plan replaces the last,
+        // and a call update merges by id, so a repeat is harmless.
+        session_log::replay_turn(&app, &instance, |thought, plan, calls| {
+            if let Some((text, over)) = thought {
+                let _ = app.emit_to(&label, CHAT_THOUGHT_EVENT, text);
+                if over {
+                    let _ = app.emit_to(&label, CHAT_THOUGHT_EVENT, "");
+                }
+            }
+            if !plan.is_empty() {
+                let _ = app.emit_to(&label, CHAT_PLAN_EVENT, plan);
+            }
+            for call in calls {
+                let _ = app.emit_to(&label, CHAT_TOOL_EVENT, call);
             }
         });
     }
