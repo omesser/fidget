@@ -200,7 +200,11 @@ fi
 at=$(grep -E "$frame" "$log" | tail -1 | sed -E 's/.* sprite\((-?[0-9]+),(-?[0-9]+)\).*/\1 \2/')
 read -r sx sy <<< "$at"
 before=$(line_count "$log" "${probe}Focused\\(true\\)")
-xdotool mousemove "$((sx + sw / 2))" "$((sy + sh / 2))" click 1 mousemove 900 700
+# Fidget samples the buttons each frame: the release waits for its press trace.
+clicks=$(line_count "$log" '^[0-9.]+ click: down ')
+xdotool mousemove "$((sx + sw / 2))" "$((sy + sh / 2))" mousedown 1
+wait_for_count 3 "$log" '^[0-9.]+ click: down ' "$clicks" || missed "resume: Fidget saw no press on the sprite"
+xdotool mouseup 1 mousemove 900 700
 wait_for_trace 3 "$log" "${probe}request click ok" || missed "resume: no 'request click ok'; see $log"
 if wait_for_count 3 "$log" "${probe}Focused\\(true\\)" "$before" &&
   wait_for_next "${probe}keydown key=ArrowLeft" xdotool key Left; then

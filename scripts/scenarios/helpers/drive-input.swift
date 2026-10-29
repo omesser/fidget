@@ -9,6 +9,7 @@ func key(_ code: Int, down: Bool, repeating: Bool = false) {
   let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: down)
   if repeating { event?.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
   event?.post(tap: .cghidEventTap)
+  usleep(50_000)
 }
 switch args[1] {
 case "click":

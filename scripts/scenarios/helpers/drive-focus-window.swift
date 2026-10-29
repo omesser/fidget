@@ -10,6 +10,7 @@ func say(_ line: String) {
 
 final class Typing: NSView {
   override var acceptsFirstResponder: Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
   override func keyDown(with event: NSEvent) {
     say("window: keydown \(event.charactersIgnoringModifiers ?? "")")
   }

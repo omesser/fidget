@@ -977,7 +977,9 @@ async function probeDriveFocus() {
   document.addEventListener(
     "pointerdown",
     (e) => {
-      if (e.target.closest?.(".sprite")) take("click");
+      const sprite = e.target.closest?.(".sprite");
+      line(`pointerdown sprite=${Boolean(sprite)} target=${e.target.className}`);
+      if (sprite) take("click");
     },
     true,
   );
