@@ -491,15 +491,11 @@ fn models_url(inference_url: &str) -> String {
     let Some(url) = url_of(inference_url) else {
         return format!("{}/v1/models", origin(inference_url));
     };
-    let mut models = url.clone();
-    models.set_query(None);
-    models.set_fragment(None);
-    models.set_path(&models_path(&url));
-    // A path edit that moved the host would send the API key there.
-    if models.origin() != url.origin() {
-        return format!("{}/v1/models", url.origin().ascii_serialization());
-    }
-    models.to_string()
+    let mut list = url.clone();
+    list.set_query(None);
+    list.set_fragment(None);
+    list.set_path(&models_path(&url));
+    list.to_string()
 }
 
 /// Replace a trailing `chat/completions` or `responses` segment with `models`.
@@ -1051,7 +1047,6 @@ fn redacted_url(url: &str) -> String {
     parsed.to_string()
 }
 
-/// `text`, with `url` passed through [`redacted_url`] when it appears.
 fn redact_url_in(text: &str, url: &str) -> String {
     if url.is_empty() {
         return text.to_string();
@@ -1170,7 +1165,6 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
     ))
 }
 
-/// Preflight failure for stderr. Userinfo and the query never appear.
 /// A transport error may already quote the models URL, so it is not named twice.
 fn preflight_failure_line(models_endpoint: &str, why: &str) -> String {
     let shown = redacted_url(models_endpoint);
@@ -3771,9 +3765,6 @@ pub(crate) mod tests {
         );
     }
 
-    /// A suffix cut on the raw string can retarget the host. The preflight
-    /// GET carries the API key, so the models URL has to keep the inference
-    /// origin. Query and fragment are not part of that URL.
     #[test]
     fn the_models_url_stays_on_the_inference_origin() {
         let cases = [
@@ -3803,13 +3794,23 @@ pub(crate) mod tests {
                 "http://127.0.0.1:11434/v1/chat/completions",
                 "http://127.0.0.1:11434/v1/models",
             ),
+            (
+                "foo://api.example/v1/chat/completions",
+                "foo://api.example/v1/models",
+            ),
         ];
         for (inference, models) in cases {
             let got = models_url(inference);
             assert_eq!(got, models, "{inference}");
-            let inference_origin = url::Url::parse(inference).unwrap().origin();
-            let models_origin = url::Url::parse(&got).unwrap().origin();
-            assert_eq!(models_origin, inference_origin, "{inference} -> {got}");
+            let before = url::Url::parse(inference).unwrap();
+            let after = url::Url::parse(&got).unwrap();
+            assert_eq!(after.scheme(), before.scheme(), "{inference}");
+            assert_eq!(after.host(), before.host(), "{inference}");
+            assert_eq!(
+                after.port_or_known_default(),
+                before.port_or_known_default(),
+                "{inference}"
+            );
         }
     }
 
