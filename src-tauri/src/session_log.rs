@@ -52,6 +52,8 @@ struct Thinking {
 
 /// The plan and tool calls of an Instance's turn on the wire, as Chat was
 /// sent them. Every call update is kept, since one names only what changed.
+/// ponytail: a long turn holds every update until its wake is filed. Merge
+/// by id here, as `hearTool` does, if a turn's updates ever grow large.
 #[derive(Default)]
 struct Work {
     plan: Vec<PlanStep>,
@@ -144,6 +146,7 @@ impl Log {
         self.work.entry(instance.to_string()).or_default().plan = steps.to_vec();
     }
 
+    /// One tool-call update of the turn, kept in the order Chat was sent it.
     pub fn tool(&mut self, instance: &str, call: LiveCall) {
         self.work
             .entry(instance.to_string())
@@ -153,7 +156,7 @@ impl Log {
     }
 
     /// The plan and tool calls of a turn still on the wire.
-    pub fn at_work(&self, instance: &str) -> (&[PlanStep], &[LiveCall]) {
+    pub fn in_flight(&self, instance: &str) -> (&[PlanStep], &[LiveCall]) {
         self.work
             .get(instance)
             .map_or((&[], &[]), |work| (&work.plan, &work.calls))
@@ -327,6 +330,7 @@ fn keep_and_show(app: &tauri::AppHandle, keep: impl FnOnce(&mut Log), show: impl
     }
 }
 
+/// Keep the thought and `show` it, as `keep_and_show` does.
 pub fn think(
     app: &tauri::AppHandle,
     instance: &str,
@@ -337,10 +341,12 @@ pub fn think(
     keep_and_show(app, |log| log.think(instance, text, at), show);
 }
 
+/// Keep the plan and `show` it, as `keep_and_show` does.
 pub fn plan(app: &tauri::AppHandle, instance: &str, steps: &[PlanStep], show: impl FnOnce()) {
     keep_and_show(app, |log| log.plan(instance, steps), show);
 }
 
+/// Keep the tool-call update and `show` it, as `keep_and_show` does.
 pub fn tool(app: &tauri::AppHandle, instance: &str, call: LiveCall, show: impl FnOnce()) {
     keep_and_show(app, |log| log.tool(instance, call), show);
 }
@@ -413,7 +419,7 @@ pub fn replay_turn(
     replay: impl FnOnce(Option<(&str, bool)>, &[PlanStep], &[LiveCall]),
 ) {
     with_log(app, |log| {
-        let (plan, calls) = log.at_work(instance);
+        let (plan, calls) = log.in_flight(instance);
         replay(log.thinking(instance), plan, calls);
     });
 }
@@ -799,13 +805,13 @@ mod tests {
         log.tool("buddy-1", call("pending"));
         log.tool("buddy-1", call("completed"));
 
-        let (plan, calls) = log.at_work("buddy-1");
+        let (plan, calls) = log.in_flight("buddy-1");
         assert_eq!(plan, [step]);
         let statuses: Vec<_> = calls.iter().map(|c| c.status.as_deref()).collect();
         assert_eq!(statuses, [Some("pending"), Some("completed")]);
 
         log.log_them("buddy-1", Some("done".into()), None, UNIX_EPOCH);
-        let (plan, calls) = log.at_work("buddy-1");
+        let (plan, calls) = log.in_flight("buddy-1");
         assert!(plan.is_empty() && calls.is_empty());
     }
 
