@@ -4747,6 +4747,7 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session");
         let request = WakeRequest {
             prompt: "hi".into(),
+            session_opening: None,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
@@ -4780,6 +4781,7 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session-cut");
         let request = WakeRequest {
             prompt: "hi".into(),
+            session_opening: None,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
@@ -4814,6 +4816,7 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session-err");
         let request = WakeRequest {
             prompt: "hi".into(),
+            session_opening: None,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: false,

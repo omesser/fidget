@@ -29,7 +29,7 @@ mod recency;
 #[cfg(test)]
 use prompt::follow_up;
 pub use prompt::{app_instructions, happened_word, typed_line};
-pub(crate) use prompt::{character_prompt, named_moment};
+pub(crate) use prompt::{character_layers, character_prompt, named_moment};
 pub use recency::{Doing, Lately, Recency, Step};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
@@ -159,6 +159,9 @@ impl Context {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WakeRequest {
     pub prompt: String,
+    /// Opening layers to prepend if the Completer replaces a conversation
+    /// after this follow-up was built. None when `prompt` is already an opening.
+    pub session_opening: Option<String>,
     /// Which Character Instance woke. One `ModelDirector` per Instance, so
     /// this is known before the prompt is built.
     pub instance: InstanceId,
@@ -361,8 +364,18 @@ impl<C: Completer> ModelDirector<C> {
 
     /// This wake as the Completer receives it.
     pub fn request(&self, context: &Context) -> WakeRequest {
+        let session_opening = self
+            .opened
+            .load(Ordering::SeqCst)
+            .then(|| character_layers(context, self.behaviors.iter(), self.blank));
+        let prompt = if session_opening.is_some() {
+            named_moment(context, &self.instance)
+        } else {
+            character_prompt(context, &self.instance, self.behaviors.iter(), self.blank)
+        };
         WakeRequest {
-            prompt: self.prompt(context),
+            prompt,
+            session_opening,
             instance: self.instance.clone(),
             character: self.character.clone(),
             reactive: reactive(&context.happened),
