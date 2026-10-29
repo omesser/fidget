@@ -55,9 +55,9 @@ function say(state, now, rand, env) {
   return { ...state, speech: { line, until }, nextLine: until + span(LINES.gap, rand) };
 }
 
-// Each tick walks the Character toward where it is wanted. Off the page while the playground
-// or the hero stage is in view, on it otherwise. The page hands it over only once it is out of
-// sight.
+// Each tick walks the Character toward where it is wanted: off the page while the hero stage
+// shows or the playground or twist section takes over, on it otherwise. The page hands it over
+// only once it is out of sight.
 function tick(state, event, env) {
   const { now, rand } = event;
   const move = (sprite, extra) => step(sprite, { now, still: state.still, ...extra }, env.world, env.tuning).state;

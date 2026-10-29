@@ -525,9 +525,8 @@ mod tests {
         list.into_iter().map(|(_, who, ..)| who).collect()
     }
 
-    /// Against a real logind, so it is opt-in: `cargo test -p fidget
-    /// caffeinate::linux -- --ignored`, as a user logind lets inhibit.
-    /// Releasing is asynchronous on logind's side, so it waits for the
+    /// Opt-in: `cargo test -p fidget caffeinate::linux -- --ignored`, as a user
+    /// logind lets inhibit. Logind releases asynchronously, so it waits for the
     /// `BlockInhibited` change rather than polling.
     #[test]
     #[ignore = "needs a system bus with logind"]
