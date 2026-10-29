@@ -71,7 +71,8 @@ pub struct Drive {
 
 impl Drive {
     /// One key edge, `down` for a press and not for a release. A keydown for a
-    /// key already down is auto-repeat, and changes nothing.
+    /// key already down is auto-repeat and changes nothing, bar Escape, whose
+    /// repeat only asks again to end a possession that is already ending.
     pub fn key(&mut self, key: Key, down: bool) {
         match (key, down) {
             (Key::Arrow(arrow), true) if !self.arrows.contains(&arrow) => self.arrows.push(arrow),
