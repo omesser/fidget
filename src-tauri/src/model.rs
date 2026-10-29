@@ -484,17 +484,46 @@ fn completions_url(base: &str) -> String {
     }
 }
 
-/// Derive the model-list endpoint from the URL used for inference. Providers
-/// may serve the OpenAI-compatible API below a path such as `/api/v1`.
+/// Model-list URL for an inference URL. The path may sit below `/api/v1`.
+/// Scheme, host, and port stay on the inference origin, so the preflight
+/// cannot send the API key to a different host.
 fn models_url(inference_url: &str) -> String {
-    let trimmed = inference_url.trim_end_matches('/');
-    if let Some(prefix) = trimmed.strip_suffix("/chat/completions") {
-        return format!("{prefix}/models");
+    let Some(url) = url_of(inference_url) else {
+        return format!("{}/v1/models", origin(inference_url));
+    };
+    let mut models = url.clone();
+    models.set_query(None);
+    models.set_fragment(None);
+    models.set_path(&models_path(&url));
+    // A path edit that moved the host would send the API key there.
+    if models.origin() != url.origin() {
+        return format!("{}/v1/models", url.origin().ascii_serialization());
     }
-    if let Some(prefix) = trimmed.strip_suffix("/responses") {
-        return format!("{prefix}/models");
+    models.to_string()
+}
+
+/// Replace a trailing `chat/completions` or `responses` segment with `models`.
+/// Segments, not a raw suffix, so `https://chat/completions` stays on host
+/// `chat` instead of becoming host `models`.
+fn models_path(url: &Url) -> String {
+    let mut parts: Vec<&str> = url
+        .path_segments()
+        .map(|segments| segments.collect())
+        .unwrap_or_default();
+    if parts.last().is_some_and(|segment| segment.is_empty()) {
+        parts.pop();
     }
-    format!("{}/v1/models", origin(trimmed))
+    let len = parts.len();
+    if len >= 2 && parts[len - 2] == "chat" && parts[len - 1] == "completions" {
+        parts.truncate(len - 2);
+        parts.push("models");
+    } else if parts.last() == Some(&"responses") {
+        parts.pop();
+        parts.push("models");
+    } else {
+        return "/v1/models".to_string();
+    }
+    format!("/{}", parts.join("/"))
 }
 
 /// Whether this URL is served by xAI, which decides the inference path below.
