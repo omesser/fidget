@@ -148,11 +148,15 @@ pub(crate) fn centered_in(dock: &Rect, frame: Rect) -> bool {
         && center.1 <= frame.y + frame.height
 }
 
+/// Thickness at or below which a window can be the Dock or the menu bar,
+/// as a fraction of the display. A zoomed window is most of the display.
+pub(crate) const STRIP_FRACTION: f64 = 0.3;
+
 /// Whether a rectangle claiming to be the Dock can be believed against one
 /// display. The claim comes from a private SPI or an Accessibility read, so it is
 /// trusted only when shaped like a bottom Dock: thin, horizontal, in the reserved margin.
 pub fn plausible_dock(dock: &Rect, frame: Rect, usable: Rect) -> bool {
-    let thin = dock.height > 0.0 && dock.height <= frame.height * 0.3;
+    let thin = dock.height > 0.0 && dock.height <= frame.height * STRIP_FRACTION;
     let horizontal = dock.width > dock.height;
     let in_reserved_margin = dock.y + dock.height / 2.0 > usable.y + usable.height;
     thin && horizontal && centered_in(dock, frame) && in_reserved_margin
@@ -231,6 +235,7 @@ impl WindowSource for FakeWindowSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::visibility::fullscreen_displays;
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
         Rect {
@@ -467,6 +472,39 @@ mod tests {
             frame,
             flush
         ));
+    }
+
+    /// One fraction of the display decides both gates. Just under it, the
+    /// window is a Dock the visibility rules skip; just over it, it is the
+    /// frontmost app and not a Dock.
+    #[test]
+    fn a_window_just_under_a_third_of_the_display_is_a_dock_and_just_over_is_not() {
+        let frame = rect(0.0, 0.0, 1000.0, 1000.0);
+        // Both sit in the same reserved margin, so thickness is the only change.
+        let usable = rect(0.0, 0.0, 1000.0, 700.0);
+        let fullscreen = rect(0.0, 0.0, 1000.0, 1000.0);
+
+        let under = rect(100.0, 701.0, 800.0, 299.0);
+        assert!(
+            plausible_dock(&under, frame, usable),
+            "299 of 1000 is under a third, so the claim is a Dock"
+        );
+        assert_eq!(
+            fullscreen_displays(&[under, fullscreen], &[frame]),
+            [true],
+            "that Dock is skipped and the fullscreen window behind it counts"
+        );
+
+        let over = rect(100.0, 699.0, 800.0, 301.0);
+        assert!(
+            !plausible_dock(&over, frame, usable),
+            "301 of 1000 is over a third, so the claim is not a Dock"
+        );
+        assert_eq!(
+            fullscreen_displays(&[over, fullscreen], &[frame]),
+            [false],
+            "it is the frontmost window, and it does not cover the display"
+        );
     }
 
     /// The Wayland case: displays are known, windows are not.
