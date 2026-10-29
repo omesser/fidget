@@ -2569,7 +2569,7 @@ mod tests {
                       idle: 4m\n";
 
         assert_eq!(follow_up(&busy()), moment);
-        let opening = character_prompt(&busy(), ["nap"], false);
+        let opening = character_prompt(&busy(), "buddy-1", ["nap"], false);
         assert!(opening.ends_with(&format!("\n\n{moment}")), "{opening}");
     }
 
