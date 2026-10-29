@@ -558,17 +558,11 @@ mod tests {
     }
 
     #[test]
-    fn list_tools_returns_exactly_nine_tools() {
-        let tools = list_tools();
-
-        assert_eq!(tools.len(), 9);
-    }
-
-    #[test]
     fn list_tools_includes_all_handler_tools() {
         let tools = list_tools();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
+        assert_eq!(names.len(), 9);
         assert!(names.contains(&"speak"));
         assert!(names.contains(&"play_behavior"));
         assert!(names.contains(&"list_windows"));

@@ -310,9 +310,9 @@ const NEAR_RADIUS: f64 = 150.0;
 /// immediate.
 const DWELL_MS: u32 = 400;
 
-/// Minimum cursor speed toward the sprite to count as a Rush, in points per
-/// second. Fast enough to read as a startle, slow enough that ordinary travel
-/// near the sprite does not trigger it.
+/// Minimum cursor speed to count as a Rush, in points per second. A flick
+/// past startles the same as a flick at it. Fast enough to read as a startle,
+/// slow enough that ordinary travel near the sprite does not trigger it.
 const RUSH_VELOCITY: f64 = 800.0;
 
 /// How long the chase Primitive pursues the cursor before giving up, in ms.
@@ -928,10 +928,8 @@ impl Engine {
         // radius retriggers every tick.
         if self.cursor_near && !self.rush_reported {
             let velocity_magnitude = self.cursor_velocity.x.hypot(self.cursor_velocity.y);
-            // Speed while already Near is the whole test; direction is not
-            // measured, so a flick past startles the same as a flick at it.
-            let toward = cursor_distance < NEAR_RADIUS * 1.2 && velocity_magnitude > RUSH_VELOCITY;
-            if toward {
+            let rushing = velocity_magnitude > RUSH_VELOCITY;
+            if rushing {
                 self.rush_reported = true;
                 match self.rush_reaction {
                     CursorReaction::Indifferent => {}

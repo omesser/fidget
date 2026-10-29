@@ -145,11 +145,6 @@ function Invoke-PickSource {
             if ($n -like 'Harness*' -and $n -like ("*" + $token)) { $item = $li; break }
         }
     }
-    if ($null -eq $item -and $SourceTitle -eq 'Model API') {
-        foreach ($li in $items) {
-            if ($li.Current.Name -eq 'Model API') { $item = $li; break }
-        }
-    }
     if ($null -eq $item) {
         $names = @(); foreach ($li in $items) { $names += $li.Current.Name }
         Write-Host ("ERROR: ListItem matching '{0}' not found (have: {1})" -f $SourceTitle, ($names -join ', '))
