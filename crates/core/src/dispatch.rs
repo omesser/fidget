@@ -370,7 +370,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     for tool in &mut tools {
         tool.input_schema["properties"]["instance_id"] = serde_json::json!({
             "type": "string",
-            "description": "Your Character Instance id, named in your opening prompt. speak and play_behavior act on that Instance. Optional: without it, the call goes to the first running Instance."
+            "description": "Your Character Instance id, named in your opening prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
         });
     }
     tools
@@ -1091,18 +1091,8 @@ mod tests {
         );
     }
 
-    /// `instance_id` is optional, so leaving it out never fails the call: it
-    /// goes to the first Instance in the roster.
     #[test]
-    fn omitted_instance_id_with_several_instances_goes_to_the_first() {
-        struct Recorded(Vec<String>);
-        impl crate::tools::ExpressionHandle for Recorded {
-            fn enqueue(&mut self, instance_id: &str, _: crate::engine::BehaviorProposal) -> bool {
-                self.0.push(instance_id.to_string());
-                true
-            }
-        }
-
+    fn omitted_instance_id_with_several_instances_is_failure() {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let infos = [
@@ -1117,18 +1107,17 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let mut recorded = Recorded(Vec::new());
-        let mut context = DispatchContext {
-            expression: Some(&mut recorded),
-            ..test_context(&temp, &source, &infos)
-        };
+        let mut context = test_context(&temp, &source, &infos);
 
-        let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
-            .expect("dispatch succeeds");
+        let args = json!({"message": "Hello"});
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
 
-        assert_eq!(result["success"], true, "{result}");
-        drop(context);
-        assert_eq!(recorded.0, ["instance-1"]);
+        assert_eq!(result["success"], false);
+        assert_eq!(result["message"], "Hello");
+        assert_eq!(
+            result["reason"],
+            "Several Character Instances are running; name one with instance_id"
+        );
     }
 
     /// Every tool, not only the Expression ones, refuses an id no Instance

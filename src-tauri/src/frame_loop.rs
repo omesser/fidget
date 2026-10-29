@@ -2992,19 +2992,6 @@ fn answer_tool_call(
         },
         caffeinate,
     };
-    let targets = matches!(call.tool.as_str(), "speak" | "play_behavior");
-    let named = call
-        .arguments
-        .get("instance_id")
-        .is_some_and(|id| !id.is_null());
-    if let (true, false, [first, _, ..]) = (targets, named, live.as_slice()) {
-        eprintln!(
-            "mcp: {} named no instance_id while {} Instances run; using the first, {}",
-            call.tool,
-            live.len(),
-            first.id
-        );
-    }
     let _ = call
         .reply
         .send(dispatch(&call.tool, call.arguments, &mut context));
