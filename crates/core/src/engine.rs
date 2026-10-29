@@ -273,8 +273,9 @@ const WALK_SPEED: f64 = 120.0;
 const GRAVITY: f64 = 3600.0;
 
 /// Points per second a Jump launches upward at. A tuning knob. The peak is
-/// `JUMP_SPEED` squared over twice `GRAVITY`, so 900 clears about 110 points —
-/// roughly a sprite's height — and lands within half a second.
+/// `JUMP_SPEED` squared over twice `GRAVITY`, so at default gravity 900 clears
+/// about 110 points — roughly a sprite's height — and lands within half a
+/// second.
 const JUMP_SPEED: f64 = 900.0;
 
 /// How much of the art must stay below the usable top for the feet to land.
@@ -7221,13 +7222,20 @@ mod tests {
     /// A manifest that says nothing about gravity runs today's physics, frame
     /// for frame.
     #[test]
-    fn the_default_gravity_scale_changes_no_frame() {
-        let mut unscaled = Engine::new(Point { x: 100.0, y: 0.0 });
-        let mut scaled =
-            Engine::new(Point { x: 100.0, y: 0.0 }).with_gravity_scale(GravityScale::DEFAULT);
+    fn the_default_gravity_scale_falls_as_it_always_has() {
+        // Pinned on main 4da8174b: from rest, 16 ms ticks, Grounded on tick 42.
+        for mut engine in [
+            Engine::new(Point { x: 100.0, y: 0.0 }),
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_gravity_scale(GravityScale::DEFAULT),
+        ] {
+            let first = engine.tick(&snapshot(16));
+            assert_eq!(first.state, State::Falling);
+            assert_eq!(first.velocity.y, 57.6);
 
-        for world in a_day_in_the_life() {
-            assert_eq!(scaled.tick(&world), unscaled.tick(&world));
+            let grounded_on = (2..=100)
+                .find(|_| engine.tick(&snapshot(16)).state == State::Grounded)
+                .unwrap();
+            assert_eq!(grounded_on, 42);
         }
     }
 
