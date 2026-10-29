@@ -226,6 +226,12 @@ impl Pointer {
         self.phase != Phase::Idle
     }
 
+    /// Where the press under way landed, for the Engine's grab offset: the
+    /// first Grab is reported only after the cursor has moved off it.
+    pub fn pressed_at(&self) -> Option<Point> {
+        self.gesturing().then_some(self.pressed_at)
+    }
+
     fn dragging_yet(&self) -> bool {
         let travelled = self.cursor.is_some_and(|cursor| {
             (cursor.x - self.pressed_at.x).hypot(cursor.y - self.pressed_at.y) >= DRAG_THRESHOLD
@@ -491,6 +497,22 @@ mod tests {
             "the drag outran the sprite and still holds it"
         );
         assert!(pointer.grabbing());
+    }
+
+    /// A flick's first Grab arrives 20 points past the press, and the press
+    /// point is still what the Engine is handed, until the release.
+    #[test]
+    fn a_grab_reports_where_the_press_landed() {
+        let mut pointer = Pointer::default();
+        assert_eq!(pointer.pressed_at(), None);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        assert_eq!(
+            pointer.update(true, true, false, at(120.0, 100.0), TICK),
+            vec![Verb::Grab]
+        );
+        assert_eq!(pointer.pressed_at(), Some(at(100.0, 100.0)));
+        pointer.update(false, false, false, at(130.0, 100.0), TICK);
+        assert_eq!(pointer.pressed_at(), None);
     }
 
     #[test]

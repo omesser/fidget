@@ -148,6 +148,9 @@ pub struct WorldSnapshot {
     /// Visible windows in descending z-order.
     pub windows: Vec<Window>,
     pub cursor: Point,
+    /// Where the press under way landed (`Pointer::pressed_at`). A Grab begins
+    /// a few points past it, and this is the point that stays under the pointer.
+    pub pressed_at: Option<Point>,
     /// Interaction verbs pending since the previous tick: what the user did.
     pub verbs: Vec<Verb>,
     /// A Poke settled into one the Director hears (`Pointer::poke_settled`).
@@ -390,7 +393,7 @@ pub struct Engine {
     /// How far along that Perch the sprite stands, so a snap back onto a
     /// fresh sample keeps the place it was holding.
     hold_offset_x: f64,
-    /// Feet minus the cursor when a grab began, so the pressed point stays put.
+    /// Feet minus the press point when a grab began, so that point stays put.
     grab_offset: Point,
     /// The Drop or Throw cue this fall earned at release. Set when leaving
     /// Dragged, played and cleared on the first contact. None for falls with
@@ -837,9 +840,10 @@ impl Engine {
                 // The press lands on the art, not the feet. That point stays
                 // under the pointer; snapping the feet to it hangs the cursor
                 // below the sprite.
+                let pressed = snapshot.pressed_at.unwrap_or(snapshot.cursor);
                 self.grab_offset = Point {
-                    x: self.position.x - snapshot.cursor.x,
-                    y: self.position.y - snapshot.cursor.y,
+                    x: self.position.x - pressed.x,
+                    y: self.position.y - pressed.y,
                 };
             }
             self.position.x = snapshot.cursor.x + self.grab_offset.x;
@@ -6667,6 +6671,31 @@ mod tests {
 
         let dragged = engine.tick(&WorldSnapshot {
             cursor: Point { x: 460.0, y: 180.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(dragged.position, Point { x: 430.0, y: 240.0 });
+    }
+
+    /// A flick: pressed at (210, 440) with the feet at (180, 500), and the
+    /// first Grab tick already sees the cursor at (240, 440). The pressed point
+    /// stays under the pointer, so (460, 180) still puts the feet at (430, 240).
+    #[test]
+    fn a_flick_keeps_the_pressed_point_under_the_cursor() {
+        let mut engine = Engine::new(Point { x: 180.0, y: 500.0 });
+        let pressed_at = Some(Point { x: 210.0, y: 440.0 });
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 240.0, y: 440.0 },
+            pressed_at,
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        assert_eq!(grabbed.position, Point { x: 210.0, y: 500.0 });
+
+        let dragged = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 460.0, y: 180.0 },
+            pressed_at,
             verbs: vec![Verb::Grab],
             ..snapshot(16)
         });
