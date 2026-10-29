@@ -1025,7 +1025,8 @@ pub enum Forwarded {
 }
 
 /// One tool-call update for Chat. Absent content or locations were not in it.
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LiveCall {
     pub id: String,
     pub title: Option<String>,

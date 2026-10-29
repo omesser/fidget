@@ -11,7 +11,7 @@ use tauri::{Emitter, Manager};
 
 use fidget_core::director::{dialogue_of, typed_line};
 
-use crate::harness::Replayed;
+use crate::harness::{LiveCall, PlanStep, Replayed};
 
 /// Whose row a logged turn is.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,10 +50,21 @@ struct Thinking {
     over: bool,
 }
 
+/// The plan and tool calls of an Instance's turn on the wire, as Chat was
+/// sent them. Every call update is kept, since one names only what changed.
+/// ponytail: a long turn holds every update until its wake is filed. Merge
+/// by id here, as `hearTool` does, if a turn's updates ever grow large.
+#[derive(Default)]
+struct Work {
+    plan: Vec<PlanStep>,
+    calls: Vec<LiveCall>,
+}
+
 #[derive(Default)]
 pub struct Log {
     turns: BTreeMap<String, Vec<Turn>>,
     thinking: BTreeMap<String, Thinking>,
+    work: BTreeMap<String, Work>,
     /// What a loaded session replayed, drawn above `turns`.
     restored: BTreeMap<String, Vec<Replayed>>,
 }
@@ -63,11 +74,12 @@ impl Log {
         Self::default()
     }
 
-    /// Thinking still waiting here belongs to a turn nothing filed: one that
-    /// was cancelled, or one this line cuts off mid-thought. Either way the
-    /// typed line drops it.
+    /// Thinking and work still waiting here belong to a turn nothing filed:
+    /// one that was cancelled, or one this line cuts off mid-thought. Either
+    /// way the typed line drops them.
     pub fn log_you(&mut self, instance: &str, text: impl Into<String>, at: SystemTime) {
         self.thinking.remove(instance);
+        self.work.remove(instance);
         self.turns
             .entry(instance.to_string())
             .or_default()
@@ -129,9 +141,37 @@ impl Log {
         whole
     }
 
+    /// The turn's latest plan. An empty one is `end_turn` clearing it.
+    pub fn plan(&mut self, instance: &str, steps: &[PlanStep]) {
+        self.work.entry(instance.to_string()).or_default().plan = steps.to_vec();
+    }
+
+    /// One tool-call update of the turn, kept in the order Chat was sent it.
+    pub fn tool(&mut self, instance: &str, call: LiveCall) {
+        self.work
+            .entry(instance.to_string())
+            .or_default()
+            .calls
+            .push(call);
+    }
+
+    /// The plan and tool calls of a turn still on the wire.
+    pub fn in_flight(&self, instance: &str) -> (&[PlanStep], &[LiveCall]) {
+        self.work
+            .get(instance)
+            .map_or((&[], &[]), |work| (&work.plan, &work.calls))
+    }
+
+    /// A new call starts, which cancels the turn on the wire (ADR-0016).
+    /// That turn is never filed, so its plan and tool calls end here.
+    pub fn begin_turn(&mut self, instance: &str) {
+        self.work.remove(instance);
+    }
+
     /// File this Instance's waiting thinking under the wake that just
-    /// arrived, spoken or not.
+    /// arrived, spoken or not. The turn's plan and tool calls end with it.
     pub fn log_thinking(&mut self, instance: &str) {
+        self.work.remove(instance);
         if let Some(thinking) = self.thinking.remove(instance) {
             self.turns
                 .entry(instance.to_string())
@@ -235,6 +275,7 @@ impl Log {
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
         self.thinking.remove(instance);
+        self.work.remove(instance);
         self.restored.remove(instance);
     }
 }
@@ -279,18 +320,13 @@ pub fn log_you(app: &tauri::AppHandle, instance: &str, text: impl Into<String>, 
     with_log(app, |log| log.log_you(instance, text, at));
 }
 
-/// Keep the thought and `show` it under one lock, so a Chat that opens
-/// mid-turn replays this thought or a later one, never an earlier one.
-pub fn think(
-    app: &tauri::AppHandle,
-    instance: &str,
-    text: &str,
-    at: SystemTime,
-    show: impl FnOnce(),
-) {
+/// `keep` and `show` under one lock, so a Chat that opens mid-turn replays
+/// this state or a later one, never an earlier one. `show` alone when no log
+/// is managed.
+fn keep_and_show(app: &tauri::AppHandle, keep: impl FnOnce(&mut Log), show: impl FnOnce()) {
     let mut show = Some(show);
     with_log(app, |log| {
-        log.think(instance, text, at);
+        keep(log);
         if let Some(show) = show.take() {
             show();
         }
@@ -298,6 +334,27 @@ pub fn think(
     if let Some(show) = show {
         show();
     }
+}
+
+/// Keep the thought and `show` it, as `keep_and_show` does.
+pub fn think(
+    app: &tauri::AppHandle,
+    instance: &str,
+    text: &str,
+    at: SystemTime,
+    show: impl FnOnce(),
+) {
+    keep_and_show(app, |log| log.think(instance, text, at), show);
+}
+
+/// Keep the plan and `show` it, as `keep_and_show` does.
+pub fn plan(app: &tauri::AppHandle, instance: &str, steps: &[PlanStep], show: impl FnOnce()) {
+    keep_and_show(app, |log| log.plan(instance, steps), show);
+}
+
+/// Keep the tool-call update and `show` it, as `keep_and_show` does.
+pub fn tool(app: &tauri::AppHandle, instance: &str, call: LiveCall, show: impl FnOnce()) {
+    keep_and_show(app, |log| log.tool(instance, call), show);
 }
 
 /// Peeled planning joined to the turn's thought so far. The addition alone
@@ -360,13 +417,22 @@ pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
         .unwrap_or_default()
 }
 
-/// Replay the thought still on the wire, under the lock `think` shows under.
-pub fn replay_thinking(app: &tauri::AppHandle, instance: &str, replay: impl FnOnce(&str, bool)) {
+/// Replay the thought, plan and tool calls of a turn still on the wire, under
+/// the lock `think`, `plan` and `tool` show under.
+pub fn replay_turn(
+    app: &tauri::AppHandle,
+    instance: &str,
+    replay: impl FnOnce(Option<(&str, bool)>, &[PlanStep], &[LiveCall]),
+) {
     with_log(app, |log| {
-        if let Some((text, over)) = log.thinking(instance) {
-            replay(text, over);
-        }
+        let (plan, calls) = log.in_flight(instance);
+        replay(log.thinking(instance), plan, calls);
     });
+}
+
+/// A new call on `instance` started; see `Log::begin_turn`.
+pub fn begin_turn(app: &tauri::AppHandle, instance: &str) {
+    with_log(app, |log| log.begin_turn(instance));
 }
 
 /// A dismissed Instance's turns go with it.
@@ -722,6 +788,77 @@ mod tests {
         assert_eq!(log.thinking("buddy-1"), Some(("Thought 1 of four.", true)));
         log.log_them("buddy-1", Some("ok".into()), None, UNIX_EPOCH);
         assert_eq!(log.thinking("buddy-1"), None);
+    }
+
+    /// Production change that would fail this: a Chat that an ask opens
+    /// mid-turn missing the plan and tool rows sent before it listened, or
+    /// drawing a finished turn's as if still running.
+    #[test]
+    fn a_chat_opened_mid_turn_reads_the_plan_and_tool_calls_on_the_wire() {
+        let step = PlanStep {
+            content: "read the roster".into(),
+            priority: "high".into(),
+            status: "in_progress".into(),
+        };
+        let call = |status: &str| LiveCall {
+            id: "call-1".into(),
+            title: Some("Read roster".into()),
+            name: None,
+            kind: None,
+            status: Some(status.into()),
+            raw_input: None,
+            raw_output: None,
+            locations: None,
+            content: None,
+        };
+        let mut log = Log::new();
+        log.plan("buddy-1", std::slice::from_ref(&step));
+        log.tool("buddy-1", call("pending"));
+        log.tool("buddy-1", call("completed"));
+
+        let (plan, calls) = log.in_flight("buddy-1");
+        assert_eq!(plan, [step]);
+        let statuses: Vec<_> = calls.iter().map(|c| c.status.as_deref()).collect();
+        assert_eq!(statuses, [Some("pending"), Some("completed")]);
+
+        log.log_them("buddy-1", Some("done".into()), None, UNIX_EPOCH);
+        let (plan, calls) = log.in_flight("buddy-1");
+        assert!(plan.is_empty() && calls.is_empty());
+    }
+
+    /// A newer call cancels the turn on the wire (ADR-0016), and that turn
+    /// is never filed. Its rows must not replay as still running beside the
+    /// new turn's.
+    #[test]
+    fn a_new_turn_drops_the_cancelled_turns_plan_and_tool_calls() {
+        let mut log = Log::new();
+        log.plan(
+            "buddy-1",
+            &[PlanStep {
+                content: "old plan".into(),
+                priority: "high".into(),
+                status: "in_progress".into(),
+            }],
+        );
+        log.tool(
+            "buddy-1",
+            LiveCall {
+                id: "old-call".into(),
+                title: None,
+                name: None,
+                kind: None,
+                status: Some("in_progress".into()),
+                raw_input: None,
+                raw_output: None,
+                locations: None,
+                content: None,
+            },
+        );
+
+        log.begin_turn("buddy-1");
+
+        let (plan, calls) = log.in_flight("buddy-1");
+        assert!(plan.is_empty() && calls.is_empty(), "{plan:?} {calls:?}");
     }
 
     /// Production change that would fail this: the old session's thinking
