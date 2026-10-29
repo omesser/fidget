@@ -304,7 +304,7 @@ Static never says anything — and is whatever the parser does not sort out of
 that reply as Thinking prose, a startup banner, or the Behavior line. There is
 no MCP tool for it (ADR-0040).
 _Avoid_: Speech (reserved for a future audio speech engine), talk (the Required
-Animation), message, utterance, speak
+Animation), message, utterance
 
 **Bubble**:
 A bubble above the sprite showing Dialogue, held for reading time (900ms
