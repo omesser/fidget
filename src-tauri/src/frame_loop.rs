@@ -3048,8 +3048,8 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
 mod tests {
     use super::*;
     use fidget_core::character::{
-        Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
-        DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
+        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
+        DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
     use fidget_core::engine::Point;
     use fidget_core::window_source::{Capabilities, WorldGeometry};
@@ -3161,6 +3161,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            gravity_scale: GravityScale::DEFAULT,
             source: None,
         }
     }

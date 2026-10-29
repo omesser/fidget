@@ -5930,8 +5930,8 @@ mod tests {
     }
 
     use fidget_core::character::{
-        Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
-        DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
+        Character, CursorReaction, GravityScale, PackageBytes, CHARACTER_MANIFEST_FILE,
+        DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
 
     fn stub_character(name: &str) -> Character {
@@ -5947,6 +5947,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            gravity_scale: GravityScale::DEFAULT,
             source: None,
         }
     }
