@@ -8,6 +8,7 @@ pub mod debug;
 pub mod director;
 pub mod dispatch;
 pub mod display;
+pub mod drive;
 pub mod engine;
 pub mod input;
 pub mod memory;
