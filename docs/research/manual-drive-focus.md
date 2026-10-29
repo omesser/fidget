@@ -23,6 +23,13 @@ and the focusable flag the request sets is never cleared when no pill closes.
 
 ## The probe
 
+The probe is not in this pull request, so that throwaway instrumentation stays
+out of `main`. Read it at the tag:
+
+- **Code:** [`probe-1920-drive-focus`](https://github.com/omesser/fidget/tree/probe-1920-drive-focus)
+- **Diff against its base:** [`2f9ad5c4...probe-1920-drive-focus`](https://github.com/omesser/fidget/compare/2f9ad5c4...probe-1920-drive-focus),
+  8 files: three leaves, three helpers, `src-tauri/src/main.rs` and `src/main.js`.
+
 The probe adds no product behavior unless `FIDGET_PROBE_DRIVE_FOCUS` is set.
 
 - **Trigger:** on its first frame, `overlay-0` calls `overlay_request_focus`
