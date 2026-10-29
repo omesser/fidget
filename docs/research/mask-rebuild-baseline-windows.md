@@ -66,8 +66,8 @@ wpr -stop exit: 0
 - **Rebuild time:** median 2.42 ms, range 1.47–4.75 ms over 100 rebuilds. The X11 release build at `2355abcb` has a pooled median of 0.148 ms per full BMO rebuild (see [`mask-rebuild-baseline-x11.md`](./mask-rebuild-baseline-x11.md#release-build-2026-10-26)), so Windows is about 16 times slower per rebuild. The two hosts and builds differ, so treat that ratio as rough.
 - **Rects:** 260–322 rectangles per region, median 304. These are the swept art rects plus every overlay rect, which the trace line counts as hotspots and painted rects. They are not opaque cells, so they are far fewer than BMO's 6219–7888 opaque cells.
 - **Rate:** rebuilds came about every 20 ms (about 50 per second) with the pointer held on the sprite, so the target was reached in 2 s.
-- **Trace length:** 100 rebuilds is a short trace. `-Target 1000` would give WPA ten times the samples.
-- **Flamegraph:** not exported yet. The trace has the stacks, but nothing has turned it into an image (no `xperf` or `wpaexporter` step). To read it by hand, open `trace.etl` in WPA: CPU Usage (Sampled), process `fidget.exe`, Flame by Stack, and search for `SetWindowRgn`.
+- **Trace length:** 100 rebuilds is a short trace. The pending runs use `-Target 1000`, for Nim and BMO.
+- **Flamegraph:** pending. `scripts/export-mask-flame-windows.ps1` runs `wpaexporter` on `trace.etl` without admin and folds the CPU Usage (Sampled) stacks into `folded.txt`, `mask-folded.txt` and, with `inferno-flamegraph`, `flame.svg`. To read the trace by hand instead, open it in WPA: CPU Usage (Sampled), process `fidget.exe`, Flame by Stack, and search for `SetWindowRgn`.
 
 ## Results
 
@@ -131,28 +131,30 @@ By animation: idle 4 rebuilds (avg 2.55 ms, opaque 570–579); react 2 rebuilds 
 
 ### Small Sprite
 
-**Status:** Not measured. No shipped character package has a genuinely smaller sprite than the available options at scale=1. Black Mage is smaller in source dimensions but tested at scale=3. Dropped from the scenario matrix.
+**Status:** Pending. Nim (`characters/nim`, 32×32 source, `scale = 4`, 344–350 opaque cells) is the smallest shipped sprite. On X11 it costs 0.028 ms per rebuild at 4x and at 1x; see the [X11 per-scenario table](./mask-rebuild-baseline-x11.md#per-scenario-rates-2026-10-28). The Windows run is `scripts/bench-mask-rebuild-windows-flame.ps1 -Instances Nim -Target 1000`, with `-Scale 1` for Nim at 1x.
 
 ## Comparison to X11 Baseline
 
 X11 baseline: `docs/research/mask-rebuild-baseline-x11.md` (issue #428, shipped in PR #968).
 
-| Metric | Windows (DESKTOP-UQIE144) | X11 (Grok Bot desktop) |
+The Windows numbers are from the debug build at `a38ba3b` unless marked release. The X11 numbers are from the release build at `b893e92c`, with the pointer held on the sprite.
+
+| Scenario | Windows (DESKTOP-UQIE144) | X11 (Grok Bot box, release) |
 |--------|---------------------------|------------------------|
-| **Idle** (cursor away) | 0 rebuilds / 12s = **0.0/s** | 0 rebuilds / 15s = **0.0/s** |
-| **Walk** (BMO, cursor over) | 223 / ~5.0s = **~44/s**, avg **14.5 ms** | 14 / ~0.52s = **~27/s**, avg **15.0 ms** |
-| **Fast** (BMO react) | 68 / 12.1s = **5.6/s**, avg **21.8 ms** | 3 samples, avg **~9.6 ms** |
-| **Large** (Black Mage @3x) | 6 / 12.1s = **0.5/s**, avg **2.5 ms** | 3 samples, avg **~1.4 ms** |
-| **Opaque** (BMO walk) | 6231–6298 | 6231–6298 (identical) |
-| **Opaque** (Black Mage) | 570–630 | 477–579 |
+| **Idle** (cursor away) | 0 rebuilds / 12s = **0.0/s** | **0/s** |
+| **Walk** (BMO, cursor over) | 223 / ~5.0s = **~44/s**, avg **14.5 ms** | **62.6/s**; 13% full at 0.086 ms, the rest position-only at 0.011 ms |
+| **Fast** (BMO react) | 68 / 12.1s = **5.6/s**, avg **21.8 ms** | **9.8/s**, 0.13 ms |
+| **Pointer held on BMO** (release) | about **50/s**, median **2.42 ms** (`759205a6`) | see Fast |
+| **Large** (Black Mage @3x) | 6 / 12.1s = **0.5/s**, avg **2.5 ms** | 0.040 ms (2026-10-26 release run) |
+| **Large** (BMO @4x) | pending | **9.8/s**, 0.14 ms |
+| **Small** (Nim @4x) | pending | **12.1/s**, 0.028 ms |
 
 **Key observations:**
 
-1. **Idle cursor-away is 0 rebuilds/sec on both** — The cursor-over gate is effective; idle animation does not trigger rebuilds when the pointer is elsewhere.
-2. **Walk per-rebuild time is similar** — Windows ~14.5 ms vs X11 ~15.0 ms for the same opaque counts (6231–6298). Walk rate difference (~44/s vs ~27/s) reflects measurement session mechanics (Windows cursor-follow tracked longer or more granular motion), not per-rebuild cost.
-3. **Fast (react) is slower on Windows** — Windows ~22 ms vs X11 ~10 ms. This may reflect DWM region update cost vs XShapeCombineMask, or the Windows sample included more 7888-opaque frames (react's mouth-open sprite).
-4. **Large sprite (Black Mage) is cheap on both** — Windows ~2.5 ms, X11 ~1.4 ms. Both are much faster than BMO because Black Mage has far fewer opaque pixels (~570–630 vs ~6231–7888).
-5. **Cost is driven by opaque pixel count, not scale** — Black Mage at 3× scale is faster than BMO at 1× because the source opaque count is lower.
+1. **Idle cursor-away is 0 rebuilds/sec on both.** The cursor-over gate is effective; idle animation does not trigger rebuilds when the pointer is elsewhere.
+2. **Release Windows is about 16–18 times slower per BMO rebuild than release X11:** 2.42 ms against 0.13–0.15 ms. The hosts differ, so treat the ratio as rough.
+3. **Rates follow the same limits on both:** the frame-loop tick while walking, the animation's fps while standing. The debug Windows rates were measured with ad hoc pointer moves, so they are lower bounds.
+4. **Cost is driven by opaque pixel count, not scale.** Black Mage at 3× scale is faster than BMO at 1× because the source opaque count is lower. On X11, BMO at 4x costs the same as at 1x.
 
 ## Findings
 

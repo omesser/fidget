@@ -63,6 +63,7 @@ done
 [ -n "${DISPLAY:-}" ] || { echo "DISPLAY is not set" >&2 && exit 2; }
 [ -x "$bin" ] || { echo "Binary not found: $bin" >&2 && exit 2; }
 
+follower="$(dirname "${BASH_SOURCE[0]}")/lib/follow-sprite.sh"
 out=${out:-$(mktemp -d -t fidget-mask-flame-XXXXXX)}
 # The app sends stderr, traces included, to the process log in its data
 # folder, so that file is the log to read.
@@ -103,14 +104,7 @@ ready=$(timeout 60 tail -n +1 -F "$log" 2> /dev/null | grep -m 1 -o 'overlay: [0
 }
 half_w=$((BASH_REMATCH[1] / 2))
 half_h=$((BASH_REMATCH[2] / 2))
-# shellcheck disable=SC2016 # the inner script expands its own $1..$3
-setsid bash -c 'tail -n +1 -F "$1" 2> /dev/null \
-  | awk -v dx="$2" -v dy="$3" '"'"'/ frame: / && match($0, /sprite\(-?[0-9]+,-?[0-9]+\)/) {
-      split(substr($0, RSTART + 7, RLENGTH - 8), p, ",")
-      at = (p[1] + dx) " " (p[2] + dy)
-      if (at != last) { print at; fflush(); last = at }
-    }'"'"' \
-  | while read -r x y; do xdotool mousemove -- "$x" "$y"; done' follow "$log" "$half_w" "$half_h" &
+setsid "$follower" "$log" "$half_w" "$half_h" &
 pids+=("$!")
 
 first=$(count_new 'mask_rebuild:' 1 60)

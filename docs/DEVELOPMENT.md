@@ -121,8 +121,10 @@ scripts/verify-anchor-taskbar-win.ps1               # Windows: no auto-open Sett
 scripts/bench-rss-macos.sh                          # macOS: resident set over a run, per process
 scripts/bench-rss-linux.sh                          # Linux: RSS baseline (needs a working display)
 scripts/bench-rss-windows.ps1                       # Windows: RSS baseline
+scripts/measure-mask-rebuild-x11.sh                 # Linux: mask updates per second and ms per update, per scenario (#428)
 scripts/flame-mask-rebuild-x11.sh                   # Linux: mask update timings and perf flamegraph (#428)
-scripts/bench-mask-rebuild-windows-flame.ps1        # Windows: WPR CPU trace of the region rebuild (#428)
+scripts/bench-mask-rebuild-windows-flame.ps1        # Windows: WPR CPU trace of the region rebuild, Nim or BMO (#428)
+scripts/export-mask-flame-windows.ps1               # Windows: trace.etl to folded stacks and flamegraph, no admin (#428)
 scripts/bench-frame-cadence-macos.sh                # macOS and Linux: display-frame cadence and Engine tick rate
 scripts/bench-wakeups-linux.sh                      # Linux: CPU% and wakeups per process, X11 or Wayland
 ```

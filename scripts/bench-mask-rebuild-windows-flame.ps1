@@ -1,7 +1,7 @@
 # Record a WPR CPU trace, with stacks, while fidget rebuilds its click-through
 # region (#428). Windows only, from an elevated PowerShell: WPR needs admin.
 # Usage: scripts\bench-mask-rebuild-windows-flame.ps1 -Bin PATH\fidget.exe [-Out DIR] [-Target N] [-Seconds N]
-#          [-HalfWidth N -HalfHeight N] [-Instances NAME]
+#          [-HalfWidth N -HalfHeight N] [-Instances NAME] [-Scale N]
 #   FIDGET_BENCH_GREEN_LIGHT=1: the operator agreed to fidget on the desktop
 #   and to this script moving the pointer. Hands off the mouse while it runs.
 #
@@ -19,6 +19,12 @@
 # the frame_loop closure that calls it, so read the frames above SetWindowRgn
 # and CombineRgn rather than looking for apply_input_mask by name.
 # Build with CARGO_PROFILE_RELEASE_DEBUG=line-tables-only so the PDB has frames.
+# scripts\export-mask-flame-windows.ps1 turns trace.etl into a flamegraph
+# without WPA's UI or admin.
+#
+# Instances names a shipped package under characters\ (BMO, the large one at
+# 126x128; Nim, the small one at 32x32 drawn 4x). Scale draws a copy of it at
+# that scale instead, with the copy under Out\characters.
 
 param(
     [Parameter(Mandatory = $true)]
@@ -30,7 +36,9 @@ param(
     # 0: half the size on the overlay line.
     [int]$HalfWidth = 0,
     [int]$HalfHeight = 0,
-    [string]$Instances = "BMO"
+    [string]$Instances = "BMO",
+    # 0: the manifest's scale.
+    [int]$Scale = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,6 +91,24 @@ $null = New-Item -ItemType Directory -Force -Path $scratch, $dataDir
 $processLog = Join-Path $dataDir "process.log"
 $etl = Join-Path $Out "trace.etl"
 
+$characters = Join-Path (Get-Location).Path "characters"
+if ($Scale -gt 0) {
+    $source = Join-Path $characters $Instances.ToLowerInvariant()
+    $manifest = Join-Path $source "character.manifest"
+    if (-not (Test-Path -LiteralPath $manifest)) {
+        [Console]::Error.WriteLine("no $manifest to draw at ${Scale}x")
+        exit 2
+    }
+    $characters = Join-Path $Out "characters"
+    $copy = Join-Path $characters (Split-Path -Leaf $source)
+    $null = New-Item -ItemType Directory -Force -Path $characters
+    Copy-Item -Recurse -LiteralPath $source -Destination $copy
+    # scale is a top-level key, so it goes above the first table.
+    $body = @(Get-Content -Encoding UTF8 -LiteralPath (Join-Path $copy "character.manifest") | Where-Object { $_ -notmatch '^scale\s*=' })
+    # WriteAllLines leaves out the BOM that Windows PowerShell 5.1 adds.
+    [System.IO.File]::WriteAllLines((Join-Path $copy "character.manifest"), [string[]](@("scale = $Scale") + $body))
+}
+
 # Scratch profile, as scripts\bench-frame-cadence-windows.ps1 does, plus
 # FIDGET_DATA_DIR so release's process.log lands where this script reads it.
 $launchEnv = @{
@@ -93,7 +119,7 @@ $launchEnv = @{
     FIDGET_TRACE_FRAMES = "1"
     FIDGET_TRACE_MASK_REBUILD = "1"
     FIDGET_INSTANCES = $Instances
-    FIDGET_CHARACTERS = (Join-Path (Get-Location).Path "characters")
+    FIDGET_CHARACTERS = $characters
 }
 $saved = @{}
 foreach ($k in $launchEnv.Keys) {
@@ -180,7 +206,8 @@ if ($HalfWidth -le 0 -or $HalfHeight -le 0) {
 if ($LASTEXITCODE -ne 0) { Stop-All; [Console]::Error.WriteLine("wpr -start CPU failed ($LASTEXITCODE)"); exit 1 }
 $recording = $true
 $since = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-Write-Host "recording; holding the pointer at sprite + ($HalfWidth,$HalfHeight) on $Instances until $Target region rebuilds or ${Seconds}s"
+$drawn = if ($Scale -gt 0) { "$Instances at ${Scale}x" } else { $Instances }
+Write-Host "recording; holding the pointer at sprite + ($HalfWidth,$HalfHeight) on $drawn until $Target region rebuilds or ${Seconds}s"
 
 $steer = Start-Job -ScriptBlock $tail -ArgumentList $processLog, $since, $true, $HalfWidth, $HalfHeight, $Target
 $lines = Wait-Tail $steer $Seconds
@@ -201,7 +228,7 @@ if (Test-Path -LiteralPath $pdb) { Copy-Item -LiteralPath $pdb -Destination $Out
 
 $ms = @($lines | ForEach-Object { if ($_ -match ', ([\d.]+) ms$') { [double]$Matches[1] } } | Sort-Object)
 $rects = @($lines | ForEach-Object { if ($_ -match 'region rebuild (\d+) rects') { [int]$Matches[1] } } | Sort-Object)
-$summary = "rebuilds: $($ms.Count) in ${elapsed}s (target $Target)"
+$summary = "character: $drawn`nrebuilds: $($ms.Count) in ${elapsed}s (target $Target)"
 if ($ms.Count -gt 0) {
     $summary += "`nrebuild ms: min $($ms[0]) median $($ms[[math]::Floor($ms.Count / 2)]) max $($ms[-1])"
     $summary += "`nrects: min $($rects[0]) median $($rects[[math]::Floor($rects.Count / 2)]) max $($rects[-1])"
@@ -210,4 +237,6 @@ $summary += "`nwpr -stop exit: $stopCode`ntrace: $etl`nsymbols: $Out (fidget), s
 $summary | Set-Content -LiteralPath (Join-Path $Out "summary.txt") -Encoding UTF8
 $lines | Set-Content -LiteralPath (Join-Path $Out "rebuilds.log") -Encoding UTF8
 Write-Host $summary
+Write-Host "output: $Out (summary.txt, rebuilds.log, trace.etl, process log in data\)"
+Write-Host "flamegraph, from a non-elevated PowerShell: scripts\export-mask-flame-windows.ps1 -Etl $etl"
 if ($stopCode -ne 0 -or $ms.Count -eq 0) { exit 1 }

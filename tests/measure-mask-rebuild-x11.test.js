@@ -1,5 +1,7 @@
 // The X11 mask rebuild measurement must end when it is interrupted, with its
-// app gone and no results printed. A fake Fidget stands in, so nothing shows.
+// app gone and no results printed. A fake Fidget stands in, so nothing shows:
+// it writes its lines to the process log, as the app does, and DISPLAY is
+// unset so the pointer stays put.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -10,10 +12,12 @@ import { tempDir } from "./temp-path.js";
 const script = path.join(import.meta.dirname, "..", "scripts", "measure-mask-rebuild-x11.sh");
 const ready = "overlay: 1 display";
 const trace = "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.5 ms";
+const walking = "frame: 1 Grounded pos(0,0) sprite(0,0) walk#0 id";
+const standing = "frame: 1 Grounded pos(0,0) sprite(0,0) idle#0 id";
 
 function fakeFidget(dir, lines) {
   const bin = path.join(dir, "fidget");
-  const prints = lines.map((line) => `echo "${line}"\n`).join("");
+  const prints = lines.map((line) => `echo "1 ${line}" >> "$FIDGET_DATA_DIR/process.log"\n`).join("");
   fs.writeFileSync(bin, `#!/usr/bin/env bash\necho $$ > "${dir}/pid.tmp" && mv "${dir}/pid.tmp" "${dir}/app.pid"\n${prints}exec sleep 30\n`, {
     mode: 0o755,
   });
@@ -38,7 +42,7 @@ async function measure(t, { lines, args, signal, cue }) {
   const dir = tempDir(t, "mask-measure-");
   const pidFile = path.join(dir, "app.pid");
   const child = spawn("bash", [script, "--bin", fakeFidget(dir, lines), ...args], {
-    env: { ...process.env, TMPDIR: dir },
+    env: { ...process.env, TMPDIR: dir, DISPLAY: "" },
   });
   let out = "";
   let afterSignal = "";
@@ -88,7 +92,7 @@ function assertInterrupted(r) {
 for (const signal of ["SIGINT", "SIGTERM"]) {
   test(`${signal} ends the measurement with status 130 and stops the app`, async (t) => {
     const cue = "Waiting for 100 mask updates";
-    assertInterrupted(await measure(t, { lines: [ready, trace], args: ["idle", "100", "2"], signal, cue }));
+    assertInterrupted(await measure(t, { lines: [ready, standing, trace], args: ["idle", "100", "2"], signal, cue }));
   });
 
   test(`${signal} during startup ends the run with status 130 and stops the app`, async (t) => {
@@ -98,7 +102,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 test("updates with none position-only report every one as a full rebuild", async (t) => {
-  const r = await measure(t, { lines: [ready, trace], args: ["walk", "1", "2"] });
+  const r = await measure(t, { lines: [ready, walking, trace], args: ["walk", "1", "2"] });
   assert.strictEqual(r.code, 0, r.out);
   assert.match(r.out, /Full rebuilds: 1 /);
   assert.match(r.out, /Position-only: 0 /);
@@ -109,6 +113,7 @@ test("updates with none position-only report every one as a full rebuild", async
 test("opaque pixel count histogram groups by pixel count", async (t) => {
   const mixedLines = [
     ready,
+    walking,
     "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.5 ms",
     "mask_rebuild: 37x33 @3x scale, 500 opaque pixels, 0.3 ms",
     "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.6 ms (position-only)",
@@ -119,4 +124,21 @@ test("opaque pixel count histogram groups by pixel count", async (t) => {
   assert.match(r.out, /Opaque pixel count:/);
   assert.match(r.out, /  6300 pixels: 2 update\(s\)/);
   assert.match(r.out, /  500 pixels: 2 update\(s\)/);
+});
+
+test("updates that land while another animation plays are left out", async (t) => {
+  const lines = [
+    ready,
+    walking,
+    "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.5 ms",
+    standing,
+    "mask_rebuild: 126x128 @1x scale, 999 opaque pixels, 9.0 ms",
+    walking,
+    "mask_rebuild: 126x128 @1x scale, 6300 opaque pixels, 0.7 ms",
+  ];
+  const r = await measure(t, { lines, args: ["walk", "2", "2"] });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /^Total mask updates: 2$/m);
+  assert.match(r.out, /^summary: scenario=walk updates=2 /m);
+  assert.doesNotMatch(r.out, /999 pixels/);
 });

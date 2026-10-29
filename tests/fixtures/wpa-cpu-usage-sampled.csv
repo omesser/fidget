@@ -1,0 +1,7 @@
+Process,Thread ID,Stack
+fidget.exe (4242),100,[Root]/ntdll.dll!RtlUserThreadStart/kernel32.dll!BaseThreadInitThunk/fidget.exe!fidget::frame_loop::run/fidget.exe!fidget::platform::windows::overlay::update_input_region/user32.dll!SetWindowRgn
+fidget.exe (4242),100,[Root]/ntdll.dll!RtlUserThreadStart/kernel32.dll!BaseThreadInitThunk/fidget.exe!fidget::frame_loop::run/fidget.exe!fidget::platform::windows::overlay::update_input_region/user32.dll!SetWindowRgn
+fidget.exe (4242),100,[Root]/ntdll.dll!RtlUserThreadStart/kernel32.dll!BaseThreadInitThunk/fidget.exe!fidget::frame_loop::run/fidget.exe!fidget::platform::windows::overlay::update_input_region/gdi32.dll!CombineRgn
+fidget.exe (4242),101,"[Root]/ntdll.dll!RtlUserThreadStart/fidget.exe!core::ptr::drop_in_place<alloc::vec::Vec<u8, alloc::alloc::Global>>/fidget.exe!a;b"
+fidget.exe (4242),102,n/a
+msedgewebview2.exe (5151),200,[Root]/ntdll.dll!RtlUserThreadStart/msedge.dll!Render
