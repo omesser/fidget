@@ -5572,9 +5572,8 @@ mod tests {
         assert_eq!(command_line_debug("   "), "");
     }
 
-    /// Every snippet carries the URL, and Claude Code's the remove, since a
-    /// re-add keeps the old URL and exits 0. Codex exports the raw token;
-    /// Hermes shows it for pasting.
+    /// Every snippet carries the URL, and Copilot removes before it adds. Codex
+    /// exports the raw token, and Hermes shows it for pasting.
     #[test]
     fn every_byo_snippet_carries_the_url_and_the_raw_token() {
         for harness in form::HARNESS_PRESETS {
@@ -5589,6 +5588,16 @@ mod tests {
                     || steps.contains("http://127.0.0.1:5051/mcp"),
                 "{harness} must carry the URL in snippet or steps, got snippet: {snippet:?}, steps: {steps:?}"
             );
+
+            if harness == "copilot" {
+                let remove_at = snippet.find("mcp remove fidget");
+                let add_at = snippet.find("mcp add");
+                assert!(
+                    remove_at
+                        .is_some_and(|remove_at| add_at.is_some_and(|add_at| remove_at < add_at)),
+                    "{harness} must run `mcp remove fidget` before the add, got {snippet:?}"
+                );
+            }
 
             match harness {
                 "codex" => {
