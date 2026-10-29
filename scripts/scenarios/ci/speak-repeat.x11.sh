@@ -119,7 +119,8 @@ grep -qF '"declined":null' <<< "$rows" || fail "Action Log: the speak row was de
 grep -qF '"turn_open":true' <<< "$rows" || fail "Action Log: the speak row is outside the turn: $rows"
 echo "ok: Action Log: $rows"
 
-said=$(grep -cF "$spoken" "$out/chat.ax.txt" || true)
+# A section's own text joins its rows, so count the rows that draw the line.
+said=$(grep -cxF "paragraph|$spoken" "$out/chat.ax.txt" || true)
 [ "$said" -eq 1 ] || fail "Chat: \"$spoken\" shows $said times, want 1; see $out/chat.ax.txt"
 ! grep -qF 'No answer came back.' "$out/chat.ax.txt" || fail "Chat: a missing-answer note; see $out/chat.ax.txt"
 echo "ok: Chat: \"$spoken\" shows once and no missing-answer note"
