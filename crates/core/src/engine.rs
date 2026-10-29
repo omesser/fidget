@@ -839,8 +839,8 @@ impl Engine {
                 self.release_cue = None;
                 // The press lands on the art, not the feet. That point stays
                 // under the pointer; snapping the feet to it hangs the cursor
-                // below the sprite. No press point means a Grab that never
-                // moved before it began, so the cursor is that point.
+                // below the sprite. A snapshot with no press point falls back to
+                // the cursor.
                 let pressed = snapshot.pressed_at.unwrap_or(snapshot.cursor);
                 self.grab_offset = Point {
                     x: self.position.x - pressed.x,

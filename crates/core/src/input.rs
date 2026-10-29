@@ -226,8 +226,8 @@ impl Pointer {
         self.phase != Phase::Idle
     }
 
-    /// Where the press under way landed, for the Engine's grab offset: the
-    /// first Grab is reported only after the cursor has moved off it.
+    /// Where the press under way landed, or `None` with no press under way.
+    /// The first Grab is reported only after the cursor has moved off it.
     pub fn pressed_at(&self) -> Option<Point> {
         self.gesturing().then_some(self.pressed_at)
     }
