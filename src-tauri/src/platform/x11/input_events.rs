@@ -51,10 +51,11 @@ fn setup_xi2(
         return Err("XI2 not available".into());
     }
 
+    // One mask word with every bit set; a word per event is BadValue.
     let mask = vec![
-        xinput::XIEventMask::RAW_BUTTON_PRESS,
-        xinput::XIEventMask::RAW_BUTTON_RELEASE,
-        xinput::XIEventMask::RAW_MOTION,
+        xinput::XIEventMask::RAW_BUTTON_PRESS
+            | xinput::XIEventMask::RAW_BUTTON_RELEASE
+            | xinput::XIEventMask::RAW_MOTION,
     ];
 
     display.xinput_xi_select_events(
@@ -102,5 +103,35 @@ fn classify_event(
             None
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use x11rb::protocol::xtest::ConnectionExt as _;
+
+    /// Run with: Xvfb :77 & DISPLAY=:77 cargo test --bin fidget input_events -- --include-ignored
+    #[test]
+    #[ignore = "needs an X server with XI2 and XTEST, such as Xvfb"]
+    fn pointer_motion_reaches_the_channel_the_idle_frame_loop_waits_on() {
+        let events = spawn_listener().expect("XI2 on $DISPLAY");
+        let (conn, screen) = x11rb::connect(None).expect("an X server on $DISPLAY");
+        let root = conn.setup().roots[screen].root;
+        conn.xtest_fake_input(
+            xproto::MOTION_NOTIFY_EVENT,
+            0,
+            x11rb::CURRENT_TIME,
+            root,
+            41,
+            43,
+            0,
+        )
+        .unwrap();
+        conn.flush().unwrap();
+        // The idle frame loop blocks on this same `recv_timeout`.
+        let woken = events.recv_timeout(Duration::from_secs(3));
+        assert!(matches!(woken, Ok(InputEvent::Motion)), "got {woken:?}");
     }
 }
