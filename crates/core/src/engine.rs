@@ -729,8 +729,8 @@ impl Engine {
     }
 
     /// Queue `moment`. One pending outcome: failed wins over succeeded, and
-    /// the payoff replaces a pending succeeded. A beat that cannot play yet
-    /// does not block one behind it that can.
+    /// the payoff replaces a pending succeeded. A beat that cannot play is
+    /// dropped when a later one can, so it does not return after that one.
     pub fn cue_moment(&mut self, moment: Moment) {
         match moment {
             Moment::Working => {
@@ -1218,21 +1218,22 @@ impl Engine {
             }
         }
 
-        // After a proposal, so a turn beat wins that tick, and before a
-        // Poke, so the hand still wins. The one-shot on screen finishes
-        // before the next, and a beat that cannot play does not block one.
+        // After a proposal and before a Poke. A one-shot finishes before the
+        // next beat. One that cannot play is dropped, so it cannot return
+        // after the payoff.
         if !self.moment_holding {
             let playable = self
                 .moment_queue
                 .iter()
                 .position(|moment| self.permitted(&[moment.primitive()]));
             if let Some(index) = playable {
-                if let Some(moment) = self.moment_queue.remove(index) {
+                self.moment_queue.drain(0..index);
+                if let Some(moment) = self.moment_queue.pop_front() {
                     if self.play(&[moment.primitive()]) {
                         started = true;
                         self.idle_ms = 0;
                     } else {
-                        self.moment_queue.insert(index, moment);
+                        self.moment_queue.push_front(moment);
                     }
                 }
             }
@@ -2748,8 +2749,24 @@ mod tests {
         assert_eq!(finished.playing_primitive, None);
     }
 
-    /// Sit is refused in the air. The payoff behind it still plays, and sit
-    /// remains queued for when the sprite is on its feet.
+    /// A burst of completions with no payoff yet. The payoff is not what
+    /// drops the extras: one succeeded plays, and the rest never were queued.
+    #[test]
+    fn a_burst_of_succeeded_beats_plays_once_when_no_payoff_has_arrived() {
+        let mut engine = a_resting_sprite();
+        for _ in 0..20 {
+            engine.cue_moment(crate::turn_motion::Moment::Succeeded);
+        }
+        let once = engine.tick(&snapshot(16));
+        assert_eq!(once.playing_primitive, Some(Primitive::React));
+        let still = engine.tick(&snapshot(16));
+        assert_eq!(still.playing_primitive, Some(Primitive::React));
+        let done = engine.tick(&snapshot(PRIMITIVE_MS));
+        assert_eq!(done.playing_primitive, None);
+    }
+
+    /// Sit is refused in the air. The payoff behind it still plays, and the
+    /// skipped sit is dropped rather than returning after the landing.
     #[test]
     fn a_failed_beat_in_the_air_does_not_block_the_payoff() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -2760,16 +2777,14 @@ mod tests {
         assert_eq!(falling.state, State::Falling);
         assert_eq!(falling.playing_primitive, Some(Primitive::React));
 
-        let mut saw_sit = false;
         for _ in 0..40 {
             let frame = engine.tick(&snapshot(100));
-            if frame.playing_primitive == Some(Primitive::Sit) {
-                assert_ne!(frame.state, State::Falling);
-                saw_sit = true;
-                break;
-            }
+            assert_ne!(
+                frame.playing_primitive,
+                Some(Primitive::Sit),
+                "a sit that could not play does not return after the payoff"
+            );
         }
-        assert!(saw_sit, "sit plays once the sprite is on its feet");
     }
 
     /// A Behavior that cuts off a beat is not the beat. The queued payoff
