@@ -192,6 +192,11 @@ if (-not (Test-Path -LiteralPath $processLog)) {
         $watcher.Dispose()
     }
 }
+if (-not (Test-Path -LiteralPath $processLog)) {
+    Stop-All
+    [Console]::Error.WriteLine("no $processLog within 60s; see $Out\stderr.log")
+    exit 1
+}
 if ((Read-Log 0 0 0 1 1 0 60 $false).Frames -eq 0) {
     Stop-All
     [Console]::Error.WriteLine("no frame line within 60s; see $processLog")
