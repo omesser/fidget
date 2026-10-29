@@ -2258,7 +2258,7 @@ mod tests {
         assert!(
             blank.starts_with(
                 "Answer in haiku.\n\nYour instance_id is buddy-1. \
-                 Pass it to every tool you call.\n\nwhat just happened:"
+                 Pass it to every Fidget tool you call.\n\nwhat just happened:"
             ),
             "the Instance Prompt and the id are still in front of the moment: {blank}"
         );
@@ -2359,7 +2359,7 @@ mod tests {
         assert_eq!(
             blank,
             format!(
-                "Your instance_id is buddy-1. Pass it to every tool you call.\n\n{}",
+                "Your instance_id is buddy-1. Pass it to every Fidget tool you call.\n\n{}",
                 follow_up(&moment)
             )
         );
@@ -2383,7 +2383,9 @@ mod tests {
         director.wake(&moment);
         let later = director.prompt(&moment);
         assert!(
-            later.starts_with("Your instance_id is buddy-1. Pass it to every tool you call.\n\n"),
+            later.starts_with(
+                "Your instance_id is buddy-1. Pass it to every Fidget tool you call.\n\n"
+            ),
             "{later}"
         );
         assert!(!later.contains("always in character"), "{later}");
