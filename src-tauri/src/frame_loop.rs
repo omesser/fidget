@@ -1926,6 +1926,7 @@ pub(crate) fn run_frame_loop(
                                 if let Some(note) = caret {
                                     let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
                                 }
+                                session_log::begin_turn(&app, &live.id);
                                 live.chat_turn = chat_turn;
                                 live.happened_last = Some(cell);
                                 // The first successful wake after first connection proves

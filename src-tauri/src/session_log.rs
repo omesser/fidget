@@ -162,6 +162,12 @@ impl Log {
             .map_or((&[], &[]), |work| (&work.plan, &work.calls))
     }
 
+    /// A new call starts, which cancels the turn on the wire (ADR-0016).
+    /// That turn is never filed, so its plan and tool calls end here.
+    pub fn begin_turn(&mut self, instance: &str) {
+        self.work.remove(instance);
+    }
+
     /// File this Instance's waiting thinking under the wake that just
     /// arrived, spoken or not. The turn's plan and tool calls end with it.
     pub fn log_thinking(&mut self, instance: &str) {
@@ -422,6 +428,11 @@ pub fn replay_turn(
         let (plan, calls) = log.in_flight(instance);
         replay(log.thinking(instance), plan, calls);
     });
+}
+
+/// A new call on `instance` started; see `Log::begin_turn`.
+pub fn begin_turn(app: &tauri::AppHandle, instance: &str) {
+    with_log(app, |log| log.begin_turn(instance));
 }
 
 /// A dismissed Instance's turns go with it.
@@ -813,6 +824,41 @@ mod tests {
         log.log_them("buddy-1", Some("done".into()), None, UNIX_EPOCH);
         let (plan, calls) = log.in_flight("buddy-1");
         assert!(plan.is_empty() && calls.is_empty());
+    }
+
+    /// A newer call cancels the turn on the wire (ADR-0016), and that turn
+    /// is never filed. Its rows must not replay as still running beside the
+    /// new turn's.
+    #[test]
+    fn a_new_turn_drops_the_cancelled_turns_plan_and_tool_calls() {
+        let mut log = Log::new();
+        log.plan(
+            "buddy-1",
+            &[PlanStep {
+                content: "old plan".into(),
+                priority: "high".into(),
+                status: "in_progress".into(),
+            }],
+        );
+        log.tool(
+            "buddy-1",
+            LiveCall {
+                id: "old-call".into(),
+                title: None,
+                name: None,
+                kind: None,
+                status: Some("in_progress".into()),
+                raw_input: None,
+                raw_output: None,
+                locations: None,
+                content: None,
+            },
+        );
+
+        log.begin_turn("buddy-1");
+
+        let (plan, calls) = log.in_flight("buddy-1");
+        assert!(plan.is_empty() && calls.is_empty(), "{plan:?} {calls:?}");
     }
 
     /// Production change that would fail this: the old session's thinking
