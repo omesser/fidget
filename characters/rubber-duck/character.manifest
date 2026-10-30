@@ -5,6 +5,7 @@
 name = "Rubber Duck"
 render_mode = "smooth"
 scale = 1
+gravity = 0.8
 
 [source]
 art = "Rubber Duck Debugger, cut from the petscodex (petdex) pet `rubber-duck-debugger` by scripts/import-pet.py. A companion inspired by rubber duck debugging: patient listening that helps developers explain code, expose assumptions, and discover solutions."
