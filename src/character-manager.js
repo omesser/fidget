@@ -3,7 +3,7 @@
 // receives read/write access to arbitrary files.
 
 export function importMessage(name) {
-  return `${name} installed. Quit and reopen Fidget to select it in the Character menu.`;
+  return `${name} installed. Restart Fidget to use it in the Character menu.`;
 }
 
 export function removeMessage(name) {
@@ -20,7 +20,10 @@ export function mountCharacterManager(panel) {
   heading.textContent = "Character Manager";
   const intro = document.createElement("p");
   intro.className = "set-help";
-  intro.textContent = "Install a Character Package from a ZIP. No extraction or environment variables needed.";
+  intro.textContent = "Install a Character Package from a local ZIP. No extraction or environment variables needed.";
+  const warning = document.createElement("p");
+  warning.className = "set-help set-character-warning";
+  warning.textContent = "Characters include a personality the AI reads. Only import ones from people you trust.";
   const importButton = document.createElement("button");
   importButton.type = "button";
   importButton.textContent = "Import character ZIP…";
@@ -30,12 +33,15 @@ export function mountCharacterManager(panel) {
   message.setAttribute("aria-live", "polite");
   const list = document.createElement("ul");
   list.className = "set-character-list";
-  wrap.append(heading, intro, importButton, message, list);
+  wrap.append(heading, intro, warning, importButton, message, list);
   section.append(wrap);
 
   const invoke = (command, args = {}) => window.__TAURI_INTERNALS__.invoke(command, args);
   const busy = (on) => { importButton.disabled = on; };
-  const showError = (error) => { message.textContent = String(error); };
+  const showError = (error) => {
+    const detail = typeof error === "string" ? error : (error?.message || String(error));
+    message.textContent = `Character Manager: ${detail}`;
+  };
 
   async function refresh() {
     try {
@@ -76,11 +82,13 @@ export function mountCharacterManager(panel) {
   }
 
   importButton.addEventListener("click", async () => {
+    if (!window.confirm("Characters include a personality the AI reads. Only import ones from people you trust. Continue?")) return;
     busy(true);
     try {
       const name = await invoke("character_manager_import");
       if (name) {
         message.textContent = importMessage(name);
+        window.alert("Restart Fidget to use it.");
         await refresh();
       }
     } catch (error) {
