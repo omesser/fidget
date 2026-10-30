@@ -673,7 +673,7 @@ mod tests {
             PathBuf::from("/external/hero-bot"),
             PathBuf::from("/user/incomplete.zip"),
         ];
-        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot", "Buddy Bot\\u{200b}"] {
+        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot", "Buddy Bot\u{200b}"] {
             assert!(
                 import_name_conflict(name, &paths).unwrap().is_some(),
                 "{name:?} must not shadow the default"
@@ -683,9 +683,7 @@ mod tests {
         assert!(import_name_conflict("Incomplete", &paths).unwrap().is_some());
         assert!(import_name_conflict("Completely New", &paths).unwrap().is_none());
         // Protect the built-in even when the resource folder is not accessible.
-        assert!(
-            import_name_conflict("Buddy Bot", &[]).unwrap().is_some()
-        );
+        assert!(import_name_conflict("Buddy Bot", &[]).unwrap().is_some());
     }
 
     #[test]
@@ -693,12 +691,8 @@ mod tests {
         let dir = TempDir::new("name-collision");
         let path = dir.join("different-file-stem.zip");
         write_archive(&path, "blip", false); // Valid Character named Blip.
-        assert!(
-            import_name_conflict("BLIP", &[path.clone()]).unwrap().is_some()
-        );
-        assert!(
-            import_name_conflict("Blip!", &[path]).unwrap().is_some()
-        );
+        assert!(import_name_conflict("BLIP", &[path.clone()]).unwrap().is_some());
+        assert!(import_name_conflict("Blip!", &[path]).unwrap().is_some());
     }
 
     #[test]
