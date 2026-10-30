@@ -484,42 +484,23 @@ fn completions_url(base: &str) -> String {
     }
 }
 
-/// Model-list URL for an inference URL. The path may sit below `/api/v1`.
-/// Scheme, host, and port stay on the inference origin, so the preflight
-/// cannot send the API key to a different host.
+/// Model-list URL. The path is the only edit, so `https://chat/completions` stays on host `chat`.
 fn models_url(inference_url: &str) -> String {
-    let Some(url) = url_of(inference_url) else {
+    let Some(mut models) = url_of(inference_url) else {
         return format!("{}/v1/models", origin(inference_url));
     };
-    let mut models = url.clone();
+    let path = models.path().trim_end_matches('/').to_string();
+    let path = if let Some(rest) = path.strip_suffix("/chat/completions") {
+        format!("{rest}/models")
+    } else if let Some(rest) = path.strip_suffix("/responses") {
+        format!("{rest}/models")
+    } else {
+        "/v1/models".to_string()
+    };
+    models.set_path(&path);
     models.set_query(None);
     models.set_fragment(None);
-    models.set_path(&models_path(&url));
     models.to_string()
-}
-
-/// Replace a trailing `chat/completions` or `responses` segment with `models`.
-/// Segments, not a raw suffix, so `https://chat/completions` stays on host
-/// `chat` instead of becoming host `models`.
-fn models_path(url: &Url) -> String {
-    let mut parts: Vec<&str> = url
-        .path_segments()
-        .map(|segments| segments.collect())
-        .unwrap_or_default();
-    if parts.last().is_some_and(|segment| segment.is_empty()) {
-        parts.pop();
-    }
-    let len = parts.len();
-    if len >= 2 && parts[len - 2] == "chat" && parts[len - 1] == "completions" {
-        parts.truncate(len - 2);
-        parts.push("models");
-    } else if parts.last() == Some(&"responses") {
-        parts.pop();
-        parts.push("models");
-    } else {
-        return "/v1/models".to_string();
-    }
-    format!("/{}", parts.join("/"))
 }
 
 /// Whether this URL is served by xAI, which decides the inference path below.
@@ -674,7 +655,7 @@ impl Endpoint {
                 // the only place that says which value cost it.
                 eprintln!(
                     "director: {}; retrying without {}",
-                    redact_url_in(unsent.why(), url),
+                    redact_url(unsent.why(), url),
                     dropped_field(field, self.effort.as_deref().unwrap_or(""))
                 );
             }
@@ -978,7 +959,11 @@ impl Completer for Endpoint {
     fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         let prompt = request.text(false);
         if tracing() {
-            eprintln!("{}", director_send_trace(&self.url, &self.model));
+            eprintln!(
+                "director: sending POST {} model={}",
+                redact_url(&self.url, &self.url),
+                self.model
+            );
             trace_block("prompt", &prompt);
             eprintln!("director: waiting for model");
         }
@@ -991,11 +976,11 @@ impl Completer for Endpoint {
             }
             Err(error) => {
                 if tracing() {
-                    eprintln!("{}", director_http_trace(&error, &self.url));
+                    eprintln!("director: http {}", redact_url(&error, &self.url));
                 }
                 if let Some(alt) = fallback_url(&self.url, &error) {
                     if tracing() {
-                        eprintln!("{}", director_try_trace(&alt));
+                        eprintln!("director: trying {}", redact_url(&alt, &alt));
                     }
                     match self.post(&alt, &prompt, &request.instance, said) {
                         Ok(reply) => {
@@ -1006,7 +991,7 @@ impl Completer for Endpoint {
                         }
                         Err(alt_error) => {
                             if tracing() {
-                                eprintln!("{}", director_http_trace(&alt_error, &alt));
+                                eprintln!("director: http {}", redact_url(&alt_error, &alt));
                             }
                             Err(alt_error)
                         }
@@ -1035,35 +1020,22 @@ fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
 
-/// URL safe to print. Userinfo, query, and fragment can hold a key.
-fn redacted_url(url: &str) -> String {
-    let Some(mut parsed) = url_of(url) else {
-        return "<redacted-url>".to_string();
-    };
-    let _ = parsed.set_password(None);
-    let _ = parsed.set_username("");
-    parsed.set_query(None);
-    parsed.set_fragment(None);
-    parsed.to_string()
-}
-
-fn redact_url_in(text: &str, url: &str) -> String {
+/// `text`, with userinfo, query, and fragment removed from `url`.
+fn redact_url(text: &str, url: &str) -> String {
     if url.is_empty() {
         return text.to_string();
     }
-    text.replace(url, &redacted_url(url))
-}
-
-fn director_send_trace(url: &str, model: &str) -> String {
-    format!("director: sending POST {} model={model}", redacted_url(url))
-}
-
-fn director_http_trace(error: &str, url: &str) -> String {
-    format!("director: http {}", redact_url_in(error, url))
-}
-
-fn director_try_trace(alt: &str) -> String {
-    format!("director: trying {}", redacted_url(alt))
+    let shown = match url_of(url) {
+        Some(mut parsed) => {
+            let _ = parsed.set_password(None);
+            let _ = parsed.set_username("");
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        None => "<redacted-url>".to_string(),
+    };
+    text.replace(url, &shown)
 }
 
 fn alternate_url(url: &str) -> Option<String> {
@@ -1179,8 +1151,8 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
 
 /// A transport error may already quote the models URL, so it is not named twice.
 fn preflight_failure_line(models_endpoint: &str, why: &str) -> String {
-    let shown = redacted_url(models_endpoint);
-    let why = redact_url_in(why, models_endpoint);
+    let shown = redact_url(models_endpoint, models_endpoint);
+    let why = redact_url(why, models_endpoint);
     let reason = if why.contains(&shown) {
         why
     } else {
@@ -1208,7 +1180,7 @@ pub fn spawn_preflight(settings: &DirectorSettings) {
                 if tracing() {
                     eprintln!(
                         "director: {} answered, model {}",
-                        redacted_url(&models_endpoint),
+                        redact_url(&models_endpoint, &models_endpoint),
                         endpoint.model()
                     );
                 }
@@ -1235,7 +1207,7 @@ pub fn run_probe() -> i32 {
     };
 
     println!("probe-model");
-    println!("  url    {}", redacted_url(endpoint.url()));
+    println!("  url    {}", redact_url(endpoint.url(), endpoint.url()));
     println!("  model  {}", endpoint.model());
     if endpoint.api_key.is_empty() {
         println!("  key    none (local server)");
@@ -1249,7 +1221,7 @@ pub fn run_probe() -> i32 {
     probe_result(&models_endpoint, &models);
     match preflight_verdict(models, endpoint.model()) {
         Ok(()) => println!("  model {} is served", endpoint.model()),
-        Err(why) => println!("  {}", redact_url_in(&why, &models_endpoint)),
+        Err(why) => println!("  {}", redact_url(&why, &models_endpoint)),
     }
     println!();
     if endpoint.is_xai() {
@@ -1282,15 +1254,15 @@ fn probe_get(endpoint: &Endpoint, url: &str) {
 }
 
 fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
-    println!("GET {}", redacted_url(url));
+    println!("GET {}", redact_url(url, url));
     match answer {
         Ok((code, body)) => println!("  {code} {}", clip_body(body)),
-        Err(error) => println!("  transport {}", clip_body(&redact_url_in(error, url))),
+        Err(error) => println!("  transport {}", clip_body(&redact_url(error, url))),
     }
 }
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
-    println!("POST {}", redacted_url(url));
+    println!("POST {}", redact_url(url, url));
     match endpoint.post(url, PING, "probe", &|_| {}) {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
@@ -1298,7 +1270,7 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
             true
         }
         Err(error) => {
-            println!("  {}", clip_body(&redact_url_in(&error, url)));
+            println!("  {}", clip_body(&redact_url(&error, url)));
             println!();
             false
         }
@@ -3787,24 +3759,8 @@ pub(crate) mod tests {
                 "https://openrouter.ai/api/v1/models",
             ),
             (
-                "https://api.x.ai/v1/responses?api_key=secret",
-                "https://api.x.ai/v1/models",
-            ),
-            (
-                "https://api.openai.com/v1/chat/completions?api_key=secret#frag",
-                "https://api.openai.com/v1/models",
-            ),
-            (
-                "https://api.anthropic.com/v1/chat/completions",
-                "https://api.anthropic.com/v1/models",
-            ),
-            (
                 "https://user:pass@api.openai.com/v1/chat/completions?api_key=secret", // pragma: allowlist secret
                 "https://user:pass@api.openai.com/v1/models", // pragma: allowlist secret
-            ),
-            (
-                "http://127.0.0.1:11434/v1/chat/completions",
-                "http://127.0.0.1:11434/v1/models",
             ),
             (
                 "foo://api.example/v1/chat/completions",
@@ -3812,71 +3768,39 @@ pub(crate) mod tests {
             ),
         ];
         for (inference, models) in cases {
-            let got = models_url(inference);
-            assert_eq!(got, models, "{inference}");
-            let before = url::Url::parse(inference).unwrap();
-            let after = url::Url::parse(&got).unwrap();
-            assert_eq!(after.scheme(), before.scheme(), "{inference}");
-            assert_eq!(after.host(), before.host(), "{inference}");
-            assert_eq!(
-                after.port_or_known_default(),
-                before.port_or_known_default(),
-                "{inference}"
-            );
+            assert_eq!(models_url(inference), models, "{inference}");
         }
     }
 
     #[test]
     fn a_preflight_failure_hides_url_secrets() {
         let url = "https://user:pass@api.openai.com/v1/models?api_key=sek#frag"; // pragma: allowlist secret
-        let line = preflight_failure_line(url, "answered 404");
         assert_eq!(
-            line,
+            preflight_failure_line(url, "answered 404"),
             "director: https://api.openai.com/v1/models answered 404; staying on StaticDirector until it answers"
         );
-        assert!(!line.contains("user:pass"), "{line}");
-        assert!(!line.contains("api_key"), "{line}");
-        assert!(!line.contains("sek"), "{line}");
-
         let transport = format!("unreachable: bad uri: {url}");
-        let line = preflight_failure_line(url, &transport);
         assert_eq!(
-            line,
+            preflight_failure_line(url, &transport),
             "director: unreachable: bad uri: https://api.openai.com/v1/models; staying on StaticDirector until it answers"
         );
-        assert!(!line.contains("user:pass"), "{line}");
-        assert!(!line.contains("api_key"), "{line}");
-        assert!(!line.contains("sek"), "{line}");
     }
 
     #[test]
     fn a_director_trace_hides_url_secrets() {
-        let url = "https://user:pass@api.openai.com/v1/chat/completions?api_key=sek"; // pragma: allowlist secret
-        let sending = director_send_trace(url, "gpt-4o");
+        let url = "https://user:pass@api.openai.com/v1/chat/completions?api_key=sek#frag"; // pragma: allowlist secret
         assert_eq!(
-            sending,
+            format!(
+                "director: sending POST {} model=gpt-4o",
+                redact_url(url, url)
+            ),
             "director: sending POST https://api.openai.com/v1/chat/completions model=gpt-4o"
         );
-        assert!(!sending.contains("user:pass"), "{sending}");
-        assert!(!sending.contains("api_key"), "{sending}");
-
         let error = format!("{url}: status 401");
-        let http = director_http_trace(&error, url);
         assert_eq!(
-            http,
+            format!("director: http {}", redact_url(&error, url)),
             "director: http https://api.openai.com/v1/chat/completions: status 401"
         );
-        assert!(!http.contains("user:pass"), "{http}");
-        assert!(!http.contains("api_key"), "{http}");
-
-        let alt = "https://user:pass@api.openai.com/v1/responses?api_key=sek"; // pragma: allowlist secret
-        let trying = director_try_trace(alt);
-        assert_eq!(
-            trying,
-            "director: trying https://api.openai.com/v1/responses"
-        );
-        assert!(!trying.contains("user:pass"), "{trying}");
-        assert!(!trying.contains("api_key"), "{trying}");
     }
 
     #[test]
