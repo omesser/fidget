@@ -65,7 +65,7 @@ pub struct Place {
 pub(crate) fn pieces(content: &[ToolCallContent]) -> Vec<ToolPiece> {
     content
         .iter()
-        .map(|content| match piece(content) {
+        .map(|sent| match piece(sent) {
             Piece::Text(text) => ToolPiece::Text {
                 text: text.to_string(),
             },
