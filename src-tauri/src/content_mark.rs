@@ -24,6 +24,11 @@ pub(crate) fn mark(block: &ContentBlock) -> String {
     }
 }
 
+/// A terminal as the replayed tool row names it, escaped for Markdown.
+pub(crate) fn terminal(id: &str) -> String {
+    format!("Terminal {}", escaped(id))
+}
+
 /// What one chunk adds to the text so far. Text is itself. Any other block is
 /// its mark as a paragraph of its own: Markdown joins single lines, and two
 /// marks, or a mark and the words around it, must not run together.

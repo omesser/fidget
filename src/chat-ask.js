@@ -1,8 +1,8 @@
 import { emptyJsonBlock, onlyEmptyJson, stripUnsafe } from "./markdown.js";
 
 // What a permission ask says, as parts the consent row draws. `title`,
-// `content`, `input`, and `locations` are untrusted Harness text. This file
-// produces no markup.
+// `content`, `marks`, `input`, and `locations` are untrusted Harness text. This
+// file produces no markup.
 
 // Said as a sentence, so the absence reads as the Harness's, not as detail
 // this window dropped.
@@ -20,9 +20,12 @@ export function askSays(ask) {
   const visible = content.filter((text) => !onlyEmptyJson(text));
   // Content first, the arguments as the fallback, never both. A tool that
   // sends its question as content usually repeats it in `input`.
-  const details = content.length > 0
-    ? visible.map((text) => ({ kind: "markdown", text }))
-    : inputMarkdown(ask?.input);
+  // A mark is not words, so it never stops `input` standing in.
+  const marks = (ask?.marks ?? []).map((text) => String(text ?? "")).filter((text) => text.length > 0);
+  const details = [
+    ...(content.length > 0 ? visible.map((text) => ({ kind: "markdown", text })) : inputMarkdown(ask?.input)),
+    ...marks.map((text) => ({ kind: "markdown", text })),
+  ];
   // `other` only means the Harness declined to classify the call. Every other
   // kind separates reading, writing, and running, so it rides at the end.
   const about = [kind === "other" ? "" : kind, paths.join(", ")].filter(Boolean).join(" · ");

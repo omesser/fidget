@@ -106,6 +106,26 @@ test("content wins over the arguments rather than joining them", () => {
   assert.ok(!says.includes("question:"), says);
 });
 
+test("a mark is not words, so the arguments still stand in beside it", () => {
+  assert.deepEqual(
+    askSays({ ...ask, title: null, marks: ["[image image/png]"], input: { path: "/tmp/a.png" } }),
+    [
+      { kind: "markdown", text: '```json\n{\n  "path": "/tmp/a.png"\n}\n```' },
+      { kind: "markdown", text: "[image image/png]" },
+    ],
+  );
+});
+
+test("an ask of only marks is not a silent ask", () => {
+  assert.deepEqual(
+    askSays({ ...ask, title: null, marks: ["[audio audio/wav]", "Terminal t1"] }),
+    [
+      { kind: "markdown", text: "[audio audio/wav]" },
+      { kind: "markdown", text: "Terminal t1" },
+    ],
+  );
+});
+
 test("content is stripped by the renderer, not before it", () => {
   const text = "read\u202E/etc";
   const says = askSays({ ...ask, content: [text] });
