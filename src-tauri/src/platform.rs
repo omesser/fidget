@@ -268,12 +268,12 @@ pub fn overlay_passes_clicks_through() {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 fn overlay_primary_down() -> bool {
     OVERLAY_PRIMARY.take()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 fn overlay_secondary_down() -> bool {
     OVERLAY_SECONDARY.take()
 }
@@ -1139,13 +1139,28 @@ pub fn buttons_down() -> ButtonsDown {
 /// latches so both consuming reads still happen exactly once each.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn buttons_down() -> ButtonsDown {
-    let session = x11::buttons_down();
-    let now = Instant::now();
-    OVERLAY_PRIMARY.polled(session.primary, now);
-    OVERLAY_SECONDARY.polled(session.secondary, now);
+    merge_x11_poll_with_overlay_witnesses(
+        x11::buttons_down(),
+        &OVERLAY_PRIMARY,
+        &OVERLAY_SECONDARY,
+        Instant::now(),
+    )
+}
+
+/// The X11 tick's merge, apart from the globals so a test can drive it. The
+/// poll is fed to each witness first, so a late replayed press is dropped.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn merge_x11_poll_with_overlay_witnesses(
+    session: ButtonsDown,
+    primary_witness: &Witness,
+    secondary_witness: &Witness,
+    now: Instant,
+) -> ButtonsDown {
+    primary_witness.polled(session.primary, now);
+    secondary_witness.polled(session.secondary, now);
     ButtonsDown {
-        primary: overlay_primary_down() || session.primary,
-        secondary: overlay_secondary_down() || session.secondary,
+        primary: primary_witness.take() || session.primary,
+        secondary: secondary_witness.take() || session.secondary,
     }
 }
 
@@ -1796,6 +1811,38 @@ mod tests {
         assert!(
             button.take(),
             "a fresh press after that release still counts"
+        );
+    }
+
+    /// The X11 tick must feed its poll to the witnesses. Without that, the
+    /// late replay of a click the poll saw come and go reads as a new press.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn the_x11_tick_drops_a_late_overlay_press_its_poll_saw_released() {
+        let primary_witness = Witness::new();
+        let secondary_witness = Witness::new();
+        let start = Instant::now();
+        let ms = |n| start + Duration::from_millis(n);
+        let session = |primary| ButtonsDown {
+            primary,
+            secondary: false,
+        };
+        let tick = |primary, at| {
+            merge_x11_poll_with_overlay_witnesses(
+                session(primary),
+                &primary_witness,
+                &secondary_witness,
+                at,
+            )
+        };
+        assert!(tick(true, ms(16)).primary, "the poll sees the press");
+        assert!(!tick(false, ms(48)).primary, "and then its release");
+        // The overlay's events for that click, delivered only now.
+        primary_witness.report(true, ms(10));
+        primary_witness.report(false, ms(40));
+        assert!(
+            !tick(false, ms(64)).primary,
+            "a press stamped before the release the tick polled must not be a third click"
         );
     }
 
