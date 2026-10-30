@@ -839,12 +839,10 @@ async function start() {
   const reporter = (command) => {
     let inflight = false;
     let queued = null;
-    const send = ({ down, stamp }) => {
+    const send = (down) => {
       inflight = true;
-      // The age lets X11 tell a press the webview delivered late from a new one.
-      const ageMs = Math.max(0, performance.now() - stamp);
       window.__TAURI__.core
-        .invoke(command, { down, ageMs })
+        .invoke(command, { down })
         .catch((err) => {
           console.error(command, err);
         })
@@ -857,13 +855,12 @@ async function start() {
           }
         });
     };
-    return (down, event) => {
-      const report = { down, stamp: event ? event.timeStamp : performance.now() };
+    return (down) => {
       if (inflight) {
-        queued = report;
+        queued = down;
         return;
       }
-      send(report);
+      send(down);
     };
   };
   const reportPrimary = reporter("overlay_primary");
@@ -917,9 +914,9 @@ async function start() {
     if (!reachPet) return;
     if (event.button === 0) {
       event.target.setPointerCapture?.(event.pointerId);
-      reportPrimary(true, event);
+      reportPrimary(true);
     } else if (event.button === 2) {
-      reportSecondary(true, event);
+      reportSecondary(true);
     }
   });
   document.addEventListener("pointermove", (event) => {
@@ -937,9 +934,9 @@ async function start() {
     if (event.button === 0) {
       petDrag = null;
       gestureActive = false;
-      reportPrimary(false, event);
+      reportPrimary(false);
     } else if (event.button === 2) {
-      reportSecondary(false, event);
+      reportSecondary(false);
     }
   });
   document.addEventListener("pointercancel", () => {

@@ -296,8 +296,9 @@ pub(crate) fn run_frame_loop(
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
 
-        // An XI2 listener lets the frame loop block when idle instead of polling at
-        // 16ms.
+        // An XI2 listener is X11's only button source, and lets the frame loop
+        // block when idle instead of polling at 16ms. It runs as long as the
+        // loop does, latching button edges while the loop is active or hidden too.
         #[cfg(all(unix, not(target_os = "macos")))]
         let mut input_events = platform::spawn_xi2_listener();
         // macOS: the same channel, fed by a mouse event tap once Input Monitoring is
@@ -616,53 +617,16 @@ pub(crate) fn run_frame_loop(
             // can see is not there to press, so the click reaches the window underneath.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
-            // Hover is told to the overlays and outlasts a frame that
-            // drops the pixel under a still cursor. A press needs the pixel.
-            let pressed: Vec<bool> = lives
-                .iter_mut()
-                .map(|live| {
-                    let (x, y) = cursor_at;
-                    let (hit, hovering) = live
-                        .drawn_last
-                        .as_ref()
-                        .filter(|_| visible)
-                        .and_then(|last| {
-                            let art = live.character.draw(
-                                last.animation,
-                                last.animation_ms,
-                                last.variant_draw,
-                                last.facing,
-                            )?;
-                            Some((
-                                art.mask.hit(&last.rect, x, y, art.mirrored),
-                                art.mask
-                                    .hovers(&last.rect, x, y, art.mirrored, live.hovering),
-                            ))
-                        })
-                        .unwrap_or_default();
-                    live.hovering = hovering;
-                    hit
-                })
-                .collect();
-
-            // One cursor, several sprites, at most one gesture. Decided
-            // across every Instance first: two overlapping sprites would
-            // both be picked up by one press.
-            let gesturing = lives.iter().position(|live| live.pointer.gesturing());
-            let target = press_target(&pressed, gesturing);
             // Last tick's click-through decided whether the overlay could
             // hear this press. Passing through drops a lost pointerup. macOS
             // has no overlay witness to drop.
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             #[cfg(not(target_os = "macos"))]
-            if !visible {
-                platform::overlay_passes_clicks_through();
-            } else if let Some(index) = on_overlay {
-                if ignoring.get(index).copied().flatten() == Some(true) {
-                    platform::overlay_passes_clicks_through();
-                }
-            } else {
+            if !visible
+                || on_overlay
+                    .is_none_or(|index| ignoring.get(index).copied().flatten() == Some(true))
+            {
                 platform::overlay_passes_clicks_through();
             }
             // A consuming read, once per tick and nowhere else. A second read eats the
@@ -676,6 +640,56 @@ pub(crate) fn run_frame_loop(
                 _ => None,
             };
             button_was_down = held;
+            // A press is hit-tested where it began: a drag started within
+            // a tick has moved the cursor off the sprite by now.
+            let press_at = platform::press_point()
+                .filter(|_| button_edge == Some("down") || buttons.secondary)
+                .map_or(cursor_at, |(x, y)| {
+                    (
+                        (f64::from(x) / cursor_scale).round() as i32,
+                        (f64::from(y) / cursor_scale).round() as i32,
+                    )
+                });
+
+            // Hover is told to the overlays and outlasts a frame that
+            // drops the pixel under a still cursor. A press needs the pixel.
+            let pressed: Vec<bool> = lives
+                .iter_mut()
+                .map(|live| {
+                    let (hit, hovering) = live
+                        .drawn_last
+                        .as_ref()
+                        .filter(|_| visible)
+                        .and_then(|last| {
+                            let art = live.character.draw(
+                                last.animation,
+                                last.animation_ms,
+                                last.variant_draw,
+                                last.facing,
+                            )?;
+                            Some((
+                                art.mask
+                                    .hit(&last.rect, press_at.0, press_at.1, art.mirrored),
+                                art.mask.hovers(
+                                    &last.rect,
+                                    cursor_at.0,
+                                    cursor_at.1,
+                                    art.mirrored,
+                                    live.hovering,
+                                ),
+                            ))
+                        })
+                        .unwrap_or_default();
+                    live.hovering = hovering;
+                    hit
+                })
+                .collect();
+
+            // One cursor, several sprites, at most one gesture. Decided
+            // across every Instance first: two overlapping sprites would
+            // both be picked up by one press.
+            let gesturing = lives.iter().position(|live| live.pointer.gesturing());
+            let target = press_target(&pressed, gesturing);
             if tracing_clicks {
                 if let Some(edge) = button_edge {
                     let sprite = target
@@ -692,9 +706,15 @@ pub(crate) fn run_frame_loop(
                         .unwrap_or_else(|| "none".to_string());
                     eprintln!(
                         "click: {edge} hits={pressed:?} target={target:?} \
-                         cursor=({:.0},{:.0})->({},{}) scale={:.1} \
+                         cursor=({:.0},{:.0})->({},{}) press=({},{}) scale={:.1} \
                          visible={visible} sprite={sprite}",
-                        cursor.x, cursor.y, cursor_at.0, cursor_at.1, cursor_scale,
+                        cursor.x,
+                        cursor.y,
+                        cursor_at.0,
+                        cursor_at.1,
+                        press_at.0,
+                        press_at.1,
+                        cursor_scale,
                     );
                 }
             }

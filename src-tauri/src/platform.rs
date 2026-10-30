@@ -25,20 +25,16 @@ use fidget_core::sensing::ActivitySource;
 use fidget_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
-/// One button as the overlay webview witnesses it, beside the session poll on
-/// X11 and Windows. Two bits: a click can begin and end between polls, and the
-/// edge keeps it until a read consumes it. macOS counts the session's button
-/// events instead, so it has no witness.
+/// One button as one source reports its edges: XI2 raw events on X11, the
+/// overlay webview on Wayland and Windows. Two bits: a click can begin and end
+/// between ticks, and the edge keeps it until a read consumes it. macOS counts
+/// the session's button events instead, so it has no witness.
 #[cfg(not(target_os = "macos"))]
 struct Witness {
-    /// What the webview last reported: true from pointerdown to pointerup.
+    /// What the source last reported: true from press to release.
     down: AtomicBool,
-    /// Set on every pointerdown, cleared by the read that consumes it.
+    /// Set on every press, cleared by the read that consumes it.
     pressed: AtomicBool,
-    /// The session poll's level at its last read. Only X11 feeds it.
-    polled_down: AtomicBool,
-    /// When the session poll last saw this button go up.
-    released: Mutex<Option<Instant>>,
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -47,31 +43,11 @@ impl Witness {
         Self {
             down: AtomicBool::new(false),
             pressed: AtomicBool::new(false),
-            polled_down: AtomicBool::new(false),
-            released: Mutex::new(None),
         }
     }
 
-    /// The session poll read the button's level at `now`. A down-to-up
-    /// change is a release the poll saw for itself.
-    #[cfg_attr(not(unix), allow(dead_code))]
-    fn polled(&self, down: bool, now: Instant) {
-        let was_down = self.polled_down.swap(down, Ordering::SeqCst);
-        if was_down && !down {
-            if let Ok(mut released) = self.released.lock() {
-                *released = Some(now);
-            }
-        }
-    }
-
-    /// The webview heard the button go down or up, in an event stamped `at`.
-    /// A down from before the poll's last release is a late replay of a
-    /// click already counted, not a new one.
-    fn report(&self, down: bool, at: Instant) {
-        let released = self.released.lock().ok().and_then(|released| *released);
-        if down && released.is_some_and(|released| at < released) {
-            return;
-        }
+    /// The source saw the button go down or up.
+    fn report(&self, down: bool) {
         self.down.store(down, Ordering::SeqCst);
         if down {
             self.pressed.store(true, Ordering::SeqCst);
@@ -133,9 +109,9 @@ pub fn qm_draft(instance: &str) -> Option<QmDraft> {
         .and_then(|drafts| drafts.get(instance).cloned())
 }
 
-/// Which mouse buttons one tick found down. One type so X11 pays one
-/// XQueryPointer instead of two, and so both consuming reads live in one place.
-#[derive(Clone, Copy, Debug, Default)]
+/// Which mouse buttons one tick found down. One type so both consuming reads
+/// live in one place.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ButtonsDown {
     pub primary: bool,
     pub secondary: bool,
@@ -149,32 +125,23 @@ pub fn trace_ms() -> f64 {
         .map_or(0.0, |since| since.as_secs_f64() * 1000.0)
 }
 
-fn trace_witness(button: &str, down: bool) {
+/// A `FIDGET_CLICK_TRACE` line for one button edge `source` saw.
+fn trace_edge(source: &str, button: &str, down: bool) {
     if crate::dev_flags::TRACE_CLICKS.is_on() {
         let edge = if down { "down" } else { "up" };
         eprintln!(
-            "click-trace: witness t={:.1} button={button} edge={edge}",
+            "click-trace: {source} t={:.1} button={button} edge={edge}",
             trace_ms()
         );
     }
 }
 
-/// When an overlay event happened, from its age in ms when JS sent it.
-/// No age, or a nonsense one, is now.
-#[cfg(not(target_os = "macos"))]
-fn witnessed_at(age_ms: Option<f64>) -> Instant {
-    let now = Instant::now();
-    let age = age_ms.and_then(|ms| Duration::try_from_secs_f64(ms.max(0.0) / 1000.0).ok());
-    age.and_then(|age| now.checked_sub(age)).unwrap_or(now)
-}
-
 /// The overlay heard the primary button go down or up. On macOS that is not
 /// a press source, only the earliest moment to read Control.
-#[cfg_attr(target_os = "macos", allow(unused_variables))]
-pub fn set_overlay_primary(down: bool, age_ms: Option<f64>) {
-    trace_witness("left", down);
+pub fn set_overlay_primary(down: bool) {
+    trace_edge("witness", "left", down);
     #[cfg(not(target_os = "macos"))]
-    OVERLAY_PRIMARY.report(down, witnessed_at(age_ms));
+    OVERLAY_PRIMARY.report(down);
     #[cfg(target_os = "macos")]
     if down {
         macos::primary_press_began();
@@ -245,16 +212,15 @@ pub fn overlay_rects_for(label: &str) -> Vec<OverlayRect> {
 }
 
 /// The overlay heard the secondary button go down or up.
-#[cfg_attr(target_os = "macos", allow(unused_variables))]
-pub fn set_overlay_secondary(down: bool, age_ms: Option<f64>) {
-    trace_witness("right", down);
+pub fn set_overlay_secondary(down: bool) {
+    trace_edge("witness", "right", down);
     #[cfg(not(target_os = "macos"))]
-    OVERLAY_SECONDARY.report(down, witnessed_at(age_ms));
+    OVERLAY_SECONDARY.report(down);
 }
 
 /// The overlay is passing clicks through, so it cannot still be holding a
-/// press. Drops both bits without asking the session poll, which answers for
-/// itself in `buttons_down`.
+/// press. Drops both bits; the session sources answer for themselves in
+/// `buttons_down`.
 #[cfg(not(target_os = "macos"))]
 pub fn overlay_passes_clicks_through() {
     for (button, witness) in [("left", &OVERLAY_PRIMARY), ("right", &OVERLAY_SECONDARY)] {
@@ -268,14 +234,12 @@ pub fn overlay_passes_clicks_through() {
     }
 }
 
-#[cfg(not(unix))]
-fn overlay_primary_down() -> bool {
-    OVERLAY_PRIMARY.take()
-}
-
-#[cfg(not(unix))]
-fn overlay_secondary_down() -> bool {
-    OVERLAY_SECONDARY.take()
+#[cfg(not(target_os = "macos"))]
+fn overlay_buttons_down() -> ButtonsDown {
+    ButtonsDown {
+        primary: OVERLAY_PRIMARY.take(),
+        secondary: OVERLAY_SECONDARY.take(),
+    }
 }
 
 /// The displays as the frame loop needs to see them, from one read.
@@ -1124,43 +1088,38 @@ pub fn buttons_down() -> ButtonsDown {
     macos::buttons_down()
 }
 
-/// X11 on Linux: one XQueryPointer for both buttons, or the overlay latch.
-/// Wayland has only the overlay latch (no global pointer). Poll before the
-/// latches so both consuming reads still happen exactly once each.
+/// X11 on Linux: XI2's raw button edges alone. Wayland has no global pointer,
+/// so there, and on X11 without XI2, only the overlay latch. The latch is read
+/// every call, so if XI2 stops, its fallback holds no press from before.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn buttons_down() -> ButtonsDown {
-    merge_x11_poll_with_overlay_witnesses(
-        x11::buttons_down(),
-        &OVERLAY_PRIMARY,
-        &OVERLAY_SECONDARY,
-        Instant::now(),
-    )
+    let overlay = overlay_buttons_down();
+    x11::buttons_down().unwrap_or(overlay)
 }
 
-/// The X11 tick's merge, apart from the globals so a test can drive it. The
-/// poll is fed to each witness first, so a late replayed press is dropped.
+/// Where the latest press began, in the cursor's pixels, when the source
+/// knows: XI2 on X11. A press dragged away before the tick is hit-tested here,
+/// not where the tick finds the cursor.
 #[cfg(all(unix, not(target_os = "macos")))]
-fn merge_x11_poll_with_overlay_witnesses(
-    session: ButtonsDown,
-    primary_witness: &Witness,
-    secondary_witness: &Witness,
-    now: Instant,
-) -> ButtonsDown {
-    primary_witness.polled(session.primary, now);
-    secondary_witness.polled(session.secondary, now);
-    ButtonsDown {
-        primary: primary_witness.take() || session.primary,
-        secondary: secondary_witness.take() || session.secondary,
-    }
+pub fn press_point() -> Option<(i32, i32)> {
+    x11::press_point()
 }
 
-/// Windows: GetAsyncKeyState for both buttons, or the overlay latch.
+/// Elsewhere the tick's cursor stands in for where the press began.
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+pub fn press_point() -> Option<(i32, i32)> {
+    None
+}
+
+/// Windows: GetAsyncKeyState for both buttons, or the overlay latch. Both
+/// reads run every call, so each latch is consumed exactly once.
 #[cfg(not(unix))]
 pub fn buttons_down() -> ButtonsDown {
     let session = windows::buttons_down();
+    let overlay = overlay_buttons_down();
     ButtonsDown {
-        primary: overlay_primary_down() || session.primary,
-        secondary: overlay_secondary_down() || session.secondary,
+        primary: overlay.primary || session.primary,
+        secondary: overlay.secondary || session.secondary,
     }
 }
 
@@ -1190,8 +1149,8 @@ pub enum LinuxActivitySource {
     Wayland,
 }
 
-/// Spawn an XI2 input event listener thread on X11. Returns `None` on other
-/// platforms or when XI2 is unavailable.
+/// Spawn the XI2 listener thread on X11, which feeds `buttons_down` and wakes
+/// the idle frame loop. Returns `None` when XI2 is unavailable.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn spawn_xi2_listener() -> Option<std::sync::mpsc::Receiver<x11::InputEvent>> {
     x11::spawn_listener()
@@ -1684,20 +1643,19 @@ mod tests {
         );
     }
 
-    /// On X11 and Windows the overlay's own pointer events are the other half
-    /// of `buttons_down`, beside the session poll.
+    /// On Wayland and Windows the overlay's own pointer events are a source
+    /// of `buttons_down`. Read directly: on X11 the XI2 listener answers
+    /// instead, and an Xvfb test in this process may have started one.
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn overlay_primary_is_enough_for_a_press() {
-        set_overlay_primary(false, None);
-        set_overlay_primary(true, None);
+        set_overlay_primary(false);
+        set_overlay_primary(true);
         assert!(
-            buttons_down().primary,
+            overlay_buttons_down().primary,
             "a click the overlay felt must count as the button down"
         );
-        set_overlay_primary(false, None);
-        // The session poll may still be true if a real button is held during
-        // the test; only the overlay half is under this test's control.
+        set_overlay_primary(false);
     }
 
     #[test]
@@ -1748,14 +1706,14 @@ mod tests {
         set_overlay_rects("overlay-test-b", vec![]);
     }
 
-    /// A click can begin and end between two polls. The level alone reads
+    /// A click can begin and end between two ticks. The level alone reads
     /// false at both; the edge keeps the down until it has been read once.
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_click_shorter_than_one_tick_is_still_seen_once() {
         let button = Witness::new();
-        button.report(true, Instant::now());
-        button.report(false, Instant::now());
+        button.report(true);
+        button.report(false);
         assert!(
             button.take(),
             "a press that came and went before anyone looked is still a press"
@@ -1770,70 +1728,12 @@ mod tests {
     #[test]
     fn a_held_button_reads_true_every_tick_and_nothing_after_release() {
         let button = Witness::new();
-        button.report(true, Instant::now());
+        button.report(true);
         assert!(button.take());
         assert!(button.take(), "still held: the level carries it");
-        button.report(false, Instant::now());
+        button.report(false);
         assert!(!button.take(), "released");
         assert!(!button.take(), "and no phantom press follows the release");
-    }
-
-    /// The webview can deliver a press hundreds of ms late, after the
-    /// poll saw it come and go. That replay is the click already counted.
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn a_late_replay_of_a_press_the_poll_saw_released_is_no_new_press() {
-        let button = Witness::new();
-        let start = Instant::now();
-        let ms = |n| start + Duration::from_millis(n);
-        button.polled(true, ms(16));
-        button.polled(false, ms(48));
-        // The overlay's events for that click, delivered only now.
-        button.report(true, ms(10));
-        button.report(false, ms(40));
-        assert!(
-            !button.take(),
-            "a press stamped before the release the poll saw must not be a third click"
-        );
-        // A real click after the release, too short for the poll to see.
-        button.report(true, ms(60));
-        button.report(false, ms(70));
-        assert!(
-            button.take(),
-            "a fresh press after that release still counts"
-        );
-    }
-
-    /// The X11 tick must feed its poll to the witnesses. Without that, the
-    /// late replay of a click the poll saw come and go reads as a new press.
-    #[cfg(all(unix, not(target_os = "macos")))]
-    #[test]
-    fn the_x11_tick_drops_a_late_overlay_press_its_poll_saw_released() {
-        let primary_witness = Witness::new();
-        let secondary_witness = Witness::new();
-        let start = Instant::now();
-        let ms = |n| start + Duration::from_millis(n);
-        let session = |primary| ButtonsDown {
-            primary,
-            secondary: false,
-        };
-        let tick = |primary, at| {
-            merge_x11_poll_with_overlay_witnesses(
-                session(primary),
-                &primary_witness,
-                &secondary_witness,
-                at,
-            )
-        };
-        assert!(tick(true, ms(16)).primary, "the poll sees the press");
-        assert!(!tick(false, ms(48)).primary, "and then its release");
-        // The overlay's events for that click, delivered only now.
-        primary_witness.report(true, ms(10));
-        primary_witness.report(false, ms(40));
-        assert!(
-            !tick(false, ms(64)).primary,
-            "a press stamped before the release the tick polled must not be a third click"
-        );
     }
 
     /// A pointerup the webview never delivered would leave the level set.
@@ -1843,7 +1743,7 @@ mod tests {
     #[test]
     fn passing_clicks_through_forgets_a_press_the_overlay_never_released() {
         let button = Witness::new();
-        button.report(true, Instant::now());
+        button.report(true);
         button.forget();
         assert!(
             !button.take(),
@@ -1967,13 +1867,13 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn overlay_secondary_is_enough_for_a_press() {
-        set_overlay_secondary(false, None);
-        set_overlay_secondary(true, None);
+        set_overlay_secondary(false);
+        set_overlay_secondary(true);
         assert!(
-            buttons_down().secondary,
+            overlay_buttons_down().secondary,
             "a right-click the overlay felt must count as the button down"
         );
-        set_overlay_secondary(false, None);
+        set_overlay_secondary(false);
     }
 
     #[test]
