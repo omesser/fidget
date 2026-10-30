@@ -38,6 +38,7 @@ mod dev_flags;
 mod frame_loop;
 mod glass;
 mod harness;
+mod i18n;
 mod login_item;
 #[cfg(unix)]
 mod login_path;
@@ -2462,6 +2463,7 @@ fn build_overlay(
     // arrives after the quit handler is already installed.
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
+        .initialization_script(i18n::init_script())
         .title("Fidget")
         .transparent(true)
         .decorations(false)
@@ -2557,6 +2559,7 @@ fn build_chat(
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+        .initialization_script(i18n::init_script())
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
         .min_inner_size(320.0, 320.0)
@@ -2647,7 +2650,8 @@ fn build_settings(
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let handle = app.clone();
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Settings")
+        .initialization_script(i18n::init_script())
+        .title(&i18n::tr("Settings"))
         .inner_size(600.0, 520.0)
         .min_inner_size(480.0, 400.0)
         // Settings wears the Chat UI, whose rules assume Chat's see-through window.
@@ -5133,6 +5137,8 @@ fn main() {
             // Before anything reads a development switch: the frame loop and
             // the overlay panel load them from `dev_flags`, not the env.
             dev_flags::seed(&settings);
+            // Before the first menu or window: both are drawn in this language.
+            i18n::apply(&settings.language);
             // The WebKitGTK this process loaded, which an AppImage bundles.
             #[cfg(target_os = "linux")]
             if let Ok(version) = tauri::webview_version() {

@@ -73,6 +73,25 @@ pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
     )
 }
 
+static REPLY_LANGUAGE: std::sync::RwLock<Option<&'static str>> = std::sync::RwLock::new(None);
+
+/// The language every spoken line is asked for, by its English name, or `None`
+/// for English. The interface language: a reply should match the menus.
+pub fn set_reply_language(language: Option<&'static str>) {
+    if let Ok(mut held) = REPLY_LANGUAGE.write() {
+        *held = language;
+    }
+}
+
+fn reply_language_rule() -> String {
+    match REPLY_LANGUAGE.read().ok().and_then(|held| *held) {
+        Some(language) => format!(
+            "\n\nWrite every spoken line in {language}. Behavior names stay exactly as listed."
+        ),
+        None => String::new(),
+    }
+}
+
 /// The app layer of the Character Prompt: voice rules, roster, reply contract.
 /// Empty under Blank AI, which the Prompt tab shows frozen. Paid every wake,
 /// so the tools describe themselves over MCP; a copy here would drift.
@@ -111,7 +130,8 @@ pub fn app_instructions(
          happened to you, and what you are standing on.\n\
          \n\
          When you are asked for something, use the tools you have. Then \
-         reply as above."
+         reply as above.{}",
+        reply_language_rule()
     )
 }
 

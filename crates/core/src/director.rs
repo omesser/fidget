@@ -30,7 +30,7 @@ mod recency;
 pub(crate) use prompt::character_prompt;
 #[cfg(test)]
 use prompt::follow_up;
-pub use prompt::{app_instructions, happened_word, typed_line};
+pub use prompt::{app_instructions, happened_word, set_reply_language, typed_line};
 pub(crate) use prompt::{character_layers, named_moment, with_layers};
 pub use recency::{Doing, Lately, Recency, Step};
 

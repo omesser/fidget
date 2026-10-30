@@ -964,6 +964,11 @@ pub(crate) fn run_frame_loop(
                             );
                         }
                     }
+                    // Every webview, overlays included: the quick message and
+                    // the bubble's prompts are in the interface language too.
+                    SettingsOp::LanguageChanged => {
+                        let _ = app.emit(crate::i18n::EVENT, crate::i18n::payload());
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }

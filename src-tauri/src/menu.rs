@@ -18,6 +18,8 @@
 
 use std::collections::HashMap;
 
+use crate::i18n::{tr, trf};
+
 /// What a menu item does when it is chosen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenuAction {
@@ -166,7 +168,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
     entries.push(MenuEntry::Item {
         id: CHAT_ID.to_string(),
-        label: "Chat…".to_string(),
+        label: tr("Chat…"),
         enabled: true,
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
@@ -174,7 +176,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     // The same Caffeinate the Chat button toggles.
     entries.push(MenuEntry::Check {
         id: CAFFEINATE_ID.to_string(),
-        label: "Caffeinate".to_string(),
+        label: tr("Caffeinate"),
         enabled: snapshot.caffeinate.enabled,
         checked: snapshot.caffeinate.on,
     });
@@ -199,7 +201,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
             .collect();
 
         entries.push(MenuEntry::Submenu {
-            label: "Character".to_string(),
+            label: tr("Character"),
             items,
         });
     }
@@ -219,12 +221,12 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
             .collect();
         items.push(MenuEntry::Item {
             id: SPAWN_ID.to_string(),
-            label: "New…".to_string(),
+            label: tr("New…"),
             enabled: true,
         });
         actions.insert(SPAWN_ID.to_string(), MenuAction::SpawnInstance);
         entries.push(MenuEntry::Submenu {
-            label: "Instances".to_string(),
+            label: tr("Instances"),
             items,
         });
     }
@@ -234,8 +236,8 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     entries.push(MenuEntry::Check {
         id: DIRECTOR_ID.to_string(),
         label: match snapshot.director_env_owned {
-            true => format!("AI (set by {})", crate::model::ENABLED),
-            false => "AI".to_string(),
+            true => trf("AI (set by {var})", &[("var", crate::model::ENABLED)]),
+            false => tr("AI"),
         },
         enabled: !snapshot.director_env_owned,
         checked: snapshot.director_enabled,
@@ -244,7 +246,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
     entries.push(MenuEntry::Check {
         id: DND_ID.to_string(),
-        label: "Do Not Disturb".to_string(),
+        label: tr("Do Not Disturb"),
         enabled: true,
         checked: snapshot.do_not_disturb,
     });
@@ -255,9 +257,9 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     entries.push(MenuEntry::Item {
         id: HIDE_ID.to_string(),
         label: if snapshot.hidden {
-            "Come back".to_string()
+            tr("Come back")
         } else {
-            "Go away".to_string()
+            tr("Go away")
         },
         enabled: true,
     });
@@ -266,23 +268,23 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     // Next to Go away: both say where the Character is, not how it behaves.
     entries.push(MenuEntry::Item {
         id: BRING_ID.to_string(),
-        label: "Bring to this display".to_string(),
+        label: tr("Bring to this display"),
         enabled: true,
     });
     actions.insert(BRING_ID.to_string(), MenuAction::BringToThisDisplay);
 
     entries.push(MenuEntry::Submenu {
-        label: "Hide rules".to_string(),
+        label: tr("Hide rules"),
         items: vec![
             MenuEntry::Check {
                 id: FULLSCREEN_ID.to_string(),
-                label: "Hide in fullscreen apps".to_string(),
+                label: tr("Hide in fullscreen apps"),
                 enabled: true,
                 checked: snapshot.hide_in_fullscreen,
             },
             MenuEntry::Item {
                 id: HOTKEY_ID.to_string(),
-                label: format!("Hotkey: {}", snapshot.hide_hotkey),
+                label: trf("Hotkey: {key}", &[("key", snapshot.hide_hotkey)]),
                 enabled: true,
             },
         ],
@@ -292,21 +294,21 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
     entries.push(MenuEntry::Item {
         id: MEMORY_ID.to_string(),
-        label: "Memory…".to_string(),
+        label: tr("Memory…"),
         enabled: true,
     });
     actions.insert(MEMORY_ID.to_string(), MenuAction::OpenMemory);
 
     entries.push(MenuEntry::Item {
         id: ACTION_LOG_ID.to_string(),
-        label: "Action Log…".to_string(),
+        label: tr("Action Log…"),
         enabled: true,
     });
     actions.insert(ACTION_LOG_ID.to_string(), MenuAction::OpenActionLog);
 
     entries.push(MenuEntry::Item {
         id: SETTINGS_ID.to_string(),
-        label: "Settings…".to_string(),
+        label: tr("Settings…"),
         enabled: true,
     });
     actions.insert(SETTINGS_ID.to_string(), MenuAction::OpenSettings);
@@ -316,7 +318,7 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
 
     entries.push(MenuEntry::Item {
         id: QUIT_ID.to_string(),
-        label: "Quit".to_string(),
+        label: tr("Quit"),
         enabled: true,
     });
     actions.insert(QUIT_ID.to_string(), MenuAction::Quit);
