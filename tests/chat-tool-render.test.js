@@ -97,7 +97,7 @@ const CALL = {
   ],
   content: [
     { type: "diff", path: "/Users/oded/src/main.rs", added: 3, removed: 1, approximate: false },
-    { type: "terminal", id: "term-7" },
+    { type: "terminal", label: "Terminal term-7" },
     { type: "text", text: "wrote [x](https://evil.example) and **2** hunks" },
     { type: "mark", markdown: "[spec](https://example.com/spec.md)" },
   ],

@@ -24,11 +24,6 @@ pub(crate) fn mark(block: &ContentBlock) -> String {
     }
 }
 
-/// A terminal as the replayed tool row names it, escaped for Markdown.
-pub(crate) fn terminal(id: &str) -> String {
-    format!("Terminal {}", escaped(id))
-}
-
 /// What one chunk adds to the text so far. Text is itself. Any other block is
 /// its mark as a paragraph of its own: Markdown joins single lines, and two
 /// marks, or a mark and the words around it, must not run together.
@@ -108,7 +103,7 @@ fn resource_mark(resource: &EmbeddedResourceResource) -> String {
 /// One line of text that Markdown reads back as itself: a control character is
 /// a space, and every character that means something to Markdown has its
 /// backslash.
-fn escaped(text: &str) -> String {
+pub(crate) fn escaped(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
         match c {

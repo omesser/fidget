@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use crate::content_mark::{self, chunk_text};
 use crate::mcp_http::SecretString;
-use crate::tool_content::{pieces, places, Place, ToolPiece};
+use crate::tool_content::{piece, pieces, places, Piece, Place, ToolPiece};
 use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
@@ -2404,25 +2404,20 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
         .collect();
     let mut content = Vec::new();
     let mut marks = Vec::new();
-    for piece in fields.content.iter().flatten() {
-        match piece {
-            ToolCallContent::Content(block) => match &block.content {
-                ContentBlock::Text(text) => content.push(text.text.clone()),
-                other => marks.push(content_mark::mark(other)),
-            },
+    for sent in fields.content.iter().flatten() {
+        match piece(sent) {
+            Piece::Text(text) => content.push(text.to_string()),
+            Piece::Mark(mark) => marks.push(mark),
             // A diff is a file the call would rewrite, and the path is the
             // part a consent row can use. Its text is a whole new file.
             // The same path can arrive both ways and is still one path.
-            ToolCallContent::Diff(diff) => {
+            Piece::Diff(diff) => {
                 let path = diff.path.display().to_string();
                 if !locations.contains(&path) {
                     locations.push(path);
                 }
             }
-            ToolCallContent::Terminal(terminal) => {
-                marks.push(content_mark::terminal(&terminal.terminal_id.0))
-            }
-            _ => marks.push(content_mark::UNKNOWN.to_string()),
+            Piece::Terminal(label) => marks.push(content_mark::escaped(&label)),
         }
     }
     PermissionAsk {
