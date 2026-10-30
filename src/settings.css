@@ -113,6 +113,11 @@
   color: var(--chat-ink);
 }
 
+/* Advice, not a failure: the notice strip in a neutral ink instead of red. */
+.set-notice.set-caution {
+  border-left-color: var(--chat-ink-3);
+}
+
 .set-row {
   display: grid;
   gap: 4px;

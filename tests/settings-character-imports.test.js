@@ -1,6 +1,6 @@
 // Character Imports drawn on the real Settings page: its button is the same
-// size as the other Settings buttons, the trust warning is a notice under it,
-// and an empty status draws nothing.
+// size as the other Settings buttons, the trust warning is a neutral notice
+// under it, not a red error strip, and an empty status draws nothing.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -47,7 +47,14 @@ test("Import from zip matches the New button, warns below it, and an empty statu
       newHeight: box(newButton).height,
       status: box(imports.querySelector(".set-status")),
       order: [...imports.children].map((node) => node.className || node.tagName),
-      warning: imports.querySelector(".set-notice").textContent,
+      warning: imports.querySelector(".set-caution").textContent,
+      cautionBar: getComputedStyle(imports.querySelector(".set-caution")).borderLeftColor,
+      errorBar: (() => {
+        const error = imports.appendChild(Object.assign(document.createElement("p"), { className: "set-notice" }));
+        const color = getComputedStyle(error).borderLeftColor;
+        error.remove();
+        return color;
+      })(),
     }));
   }
   window.addEventListener("load", () => run().catch((why) => {
@@ -60,7 +67,8 @@ test("Import from zip matches the New button, warns below it, and an empty statu
   assert.equal(seen.heading, "Character Imports");
   assert.equal(seen.label, "Import from zip");
   assert.equal(seen.importHeight, seen.newHeight, "same height as the New button");
-  assert.deepEqual(seen.order, ["H3", "set-help", "set-controls", "set-notice", "set-status", "set-list"], "the trust warning sits under the button");
+  assert.deepEqual(seen.order, ["H3", "set-help", "set-controls", "set-notice set-caution", "set-status", "set-list"], "the trust warning sits under the button");
   assert.match(seen.warning, /Only import ones from people you trust/);
+  assert.notEqual(seen.cautionBar, seen.errorBar, "the trust warning is not drawn as an error");
   assert.deepEqual(seen.status, { width: seen.status.width, height: 0 }, "empty status draws no strip");
 });

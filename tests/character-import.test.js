@@ -23,23 +23,19 @@ class Element {
   click() { return this.listeners.get("click")?.(); }
 }
 
-function setup(invoke, { confirm = () => true } = {}) {
+function setup(invoke) {
   const oldWindow = globalThis.window;
   const oldDocument = globalThis.document;
-  const prompts = [];
-  const alerts = [];
-  globalThis.window = {
-    __TAURI_INTERNALS__: { invoke },
-    confirm: (message) => { prompts.push(message); return confirm(message); },
-    alert: (message) => { alerts.push(message); },
-  };
+  // No confirm or alert: the dialog plugin makes them async and Settings may
+  // not call them, so a call here throws.
+  globalThis.window = { __TAURI_INTERNALS__: { invoke } };
   globalThis.document = { createElement: (tag) => new Element(tag) };
   const section = new Element();
   mountCharacterImports({ querySelector: () => section });
   const [, intro, controls, warning, status, list] = section.children[0].children;
   const [importButton] = controls.children;
   return {
-    intro, warning, importButton, status, list, prompts, alerts,
+    intro, warning, importButton, status, list,
     restore() {
       globalThis.window = oldWindow;
       globalThis.document = oldDocument;
@@ -52,7 +48,7 @@ async function settle() {
   await Promise.resolve();
 }
 
-test("initial listing, import, restart prompt, and remove use native commands", async () => {
+test("import and remove run straight through native commands and say to restart", async () => {
   const calls = [];
   let characters = [];
   const ui = setup(async (command, args) => {
@@ -74,21 +70,17 @@ test("initial listing, import, restart prompt, and remove use native commands", 
     assert.match(ui.warning.textContent, /Only import ones from people you trust/);
     assert.equal(ui.intro.textContent, "Add a Character from a ZIP file.");
     assert.equal(ui.importButton.textContent, "Import from zip");
-    assert.equal(ui.warning.className, "set-notice");
+    assert.equal(ui.warning.className, "set-notice set-caution");
     assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
 
     await ui.importButton.click();
-    assert.match(ui.status.textContent, /Dosidicus Squid installed/);
-    assert.equal(ui.status.textContent, "Dosidicus Squid installed.");
-    assert.deepEqual(ui.alerts, ["Restart Fidget to use it."]);
-    assert.match(ui.prompts[0], /personality the AI reads/);
+    assert.equal(ui.status.textContent, "Dosidicus Squid installed. Restart Fidget to use it.");
     assert.equal(ui.list.children.length, 1);
     const [label, removeButton] = ui.list.children[0].children;
     assert.equal(label.textContent, "Dosidicus Squid");
     assert.equal(removeButton.disabled, false);
 
     await removeButton.click();
-    assert.match(ui.prompts[1], /Remove Dosidicus Squid/);
     assert.match(ui.status.textContent, /removed/);
     assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
     assert.deepEqual(calls.map(([name]) => name), [
@@ -123,22 +115,6 @@ test("selected or running Characters cannot be removed from Character Imports", 
   }
 });
 
-test("the user can cancel the trust warning without opening a file picker", async () => {
-  const calls = [];
-  const ui = setup(async (command) => {
-    calls.push(command);
-    return [];
-  }, { confirm: () => false });
-  try {
-    await settle();
-    await ui.importButton.click();
-    assert.deepEqual(calls, ["character_import_list"]);
-    assert.equal(ui.alerts.length, 0);
-  } finally {
-    ui.restore();
-  }
-});
-
 test("invalid packages present the actual error and do not show a restart prompt", async () => {
   const ui = setup(async (command) => {
     if (command === "character_import_list") return [];
@@ -148,7 +124,7 @@ test("invalid packages present the actual error and do not show a restart prompt
     await settle();
     await ui.importButton.click();
     assert.equal(ui.status.textContent, "Character Imports: Character package is invalid: missing frame idle-0.png");
-    assert.equal(ui.alerts.length, 0);
+    assert.doesNotMatch(ui.status.textContent, /Restart/);
     assert.equal(ui.importButton.disabled, false);
   } finally {
     ui.restore();

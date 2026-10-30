@@ -3,7 +3,7 @@
 // receives read/write access to arbitrary files.
 
 export function importMessage(name) {
-  return `${name} installed.`;
+  return `${name} installed. Restart Fidget to use it.`;
 }
 
 export function removeMessage(name) {
@@ -22,7 +22,7 @@ export function mountCharacterImports(panel) {
   intro.className = "set-help";
   intro.textContent = "Add a Character from a ZIP file.";
   const warning = document.createElement("p");
-  warning.className = "set-notice";
+  warning.className = "set-notice set-caution";
   warning.textContent = "Characters include a personality the AI reads. Only import ones from people you trust.";
   const importButton = document.createElement("button");
   importButton.type = "button";
@@ -67,7 +67,6 @@ export function mountCharacterImports(panel) {
         remove.disabled = !character.removable;
         if (!character.removable) remove.title = "Selected or running; switch Character and restart Fidget first";
         remove.addEventListener("click", async () => {
-          if (!window.confirm(`Remove ${character.name} from Fidget?`)) return;
           remove.disabled = true;
           try {
             await window.__TAURI_INTERNALS__.invoke("character_import_remove", { id: character.id });
@@ -86,13 +85,11 @@ export function mountCharacterImports(panel) {
   }
 
   importButton.addEventListener("click", async () => {
-    if (!window.confirm("Characters include a personality the AI reads. Only import ones from people you trust. Continue?")) return;
     busy(true);
     try {
       const name = await window.__TAURI_INTERNALS__.invoke("character_import_zip");
       if (name) {
         message.textContent = importMessage(name);
-        window.alert("Restart Fidget to use it.");
         await refresh();
       }
     } catch (error) {
