@@ -296,8 +296,9 @@ pub(crate) fn run_frame_loop(
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
 
-        // An XI2 listener lets the frame loop block when idle instead of polling at
-        // 16ms.
+        // An XI2 listener is X11's only button source, and lets the frame loop
+        // block when idle instead of polling at 16ms. It runs as long as the
+        // loop does, latching button edges while the loop is active or hidden too.
         #[cfg(all(unix, not(target_os = "macos")))]
         let mut input_events = platform::spawn_xi2_listener();
         // macOS: the same channel, fed by a mouse event tap once Input Monitoring is
@@ -652,7 +653,7 @@ pub(crate) fn run_frame_loop(
             let target = press_target(&pressed, gesturing);
             // Last tick's click-through decided whether the overlay could
             // hear this press. Passing through drops a lost pointerup. macOS
-            // has no overlay witness to drop.
+            // has no overlay witness to drop, and X11 does not read it.
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             #[cfg(not(target_os = "macos"))]

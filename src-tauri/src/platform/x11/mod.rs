@@ -16,14 +16,14 @@ mod sensing;
 mod settings_raise;
 mod window_source;
 
-pub use input_events::{spawn_listener, InputEvent};
+pub use input_events::{buttons_down, spawn_listener, InputEvent};
 #[cfg(test)]
 pub use overlay::set_composited_for_test;
 pub use overlay::{
     change_bounding_shape, cleanup_overlay_window, composited, composited_now, configure_overlay,
     update_input_region, SpriteMask,
 };
-pub use pointer::{buttons_down, double_click_interval_ms};
+pub use pointer::double_click_interval_ms;
 pub use sensing::X11ActivitySource;
 
 pub(super) use connection::connection;
