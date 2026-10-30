@@ -147,10 +147,14 @@ fn decide_overlay_action<Shape: PartialEq>(
     }
 }
 
-/// Records what a main-thread callback learned about one overlay.
+/// Records what a main-thread callback learned about one overlay. A display can
+/// go between queueing and running, and the tick that shrank the list reset its
+/// state to resend on return, so a result for a gone overlay is dropped.
 #[cfg(any(test, not(target_os = "macos")))]
 fn record_for_overlay<T>(per_overlay: &Mutex<Vec<T>>, index: usize, value: T) {
-    per_overlay.lock().unwrap()[index] = value;
+    if let Some(slot) = per_overlay.lock().unwrap().get_mut(index) {
+        *slot = value;
+    }
 }
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
