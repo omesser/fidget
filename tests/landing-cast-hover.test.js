@@ -15,13 +15,22 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PROBE_MS = 5000;
 
 // Hovers a card with a mouse and reads its sprite at once, then leaves and
-// reads it again past the 600ms the card waits before resting again.
+// reads the first frame it shows that is not its gesture's. Waiting on that
+// frame change, not a clock, keeps the read off the resting loop's own timer.
 const landingProbe = `
 <script>
   window.addEventListener("load", async () => {
     console.log("__PROBE_READY__");
-    const wait = (ms) => new Promise((done) => setTimeout(done, ms));
     const file = (img) => img.getAttribute("src").split("/").pop();
+    const restsAgain = (img) => new Promise((done) => {
+      const gesture = JSON.parse(img.dataset.gestureFrames);
+      const seen = new MutationObserver(() => {
+        if (gesture.includes(img.getAttribute("src"))) return;
+        seen.disconnect();
+        done(file(img));
+      });
+      seen.observe(img, { attributes: true, attributeFilter: ["src"] });
+    });
     const cards = {};
     for (const card of document.querySelectorAll("#characters .cast > a")) {
       const img = card.querySelector("img");
@@ -29,10 +38,9 @@ const landingProbe = `
       const resting = rest.includes(img.getAttribute("src"));
       card.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "mouse" }));
       const hovered = file(img);
-      await wait(50);
+      const after = restsAgain(img);
       card.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
-      await wait(700);
-      cards[img.alt] = { href: card.getAttribute("href"), resting, hovered, after: file(img) };
+      cards[img.alt] = { href: card.getAttribute("href"), resting, hovered, after: await after };
     }
     console.log("__PROBE_RESULT__" + JSON.stringify(cards));
   });
@@ -70,14 +78,17 @@ const sizeProbe = `
 const restProbe = `
 <script>
   const shown = [];
+  let played;
+  const all = new Promise((done) => { played = done; });
   new MutationObserver(() => {
     const img = document.querySelector('img[alt="Rubber Duck"]');
     const src = img && img.getAttribute("src").split("/").pop();
     if (src && src !== shown.at(-1)) shown.push(src);
+    if (shown.length === 38) played();
   }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
   window.addEventListener("load", async () => {
     console.log("__PROBE_READY__");
-    while (shown.length < 38) await new Promise((done) => setTimeout(done, 100));
+    await all;
     console.log("__PROBE_RESULT__" + JSON.stringify(shown));
   });
 </script>`;
