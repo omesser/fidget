@@ -562,7 +562,9 @@ fn package_id(name: &str) -> Result<String, String> {
                     | '\u{feff}'
             )
     }) {
-        return Err("Character name contains hidden or bidirectional control characters".to_string());
+        return Err(
+            "Character name contains hidden or bidirectional control characters".to_string(),
+        );
     }
     let mut id = String::new();
     for ch in name.chars() {
@@ -650,7 +652,6 @@ pub fn save_user_archive(files: &PackageBytes, name: &str) -> Result<PathBuf, St
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn repository_wrapped_character_zip_loads_without_manual_extraction() {
         let dir = TempDir::new("repo-archive");
