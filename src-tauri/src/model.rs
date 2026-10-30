@@ -491,11 +491,11 @@ fn models_url(inference_url: &str) -> String {
     let Some(url) = url_of(inference_url) else {
         return format!("{}/v1/models", origin(inference_url));
     };
-    let mut list = url.clone();
-    list.set_query(None);
-    list.set_fragment(None);
-    list.set_path(&models_path(&url));
-    list.to_string()
+    let mut models = url.clone();
+    models.set_query(None);
+    models.set_fragment(None);
+    models.set_path(&models_path(&url));
+    models.to_string()
 }
 
 /// Replace a trailing `chat/completions` or `responses` segment with `models`.
