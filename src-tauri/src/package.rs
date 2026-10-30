@@ -550,6 +550,20 @@ pub fn safe_package_id(id: &str) -> bool {
 }
 
 fn package_id(name: &str) -> Result<String, String> {
+    // A Character name is shown next to trusted built-in names. Invisible
+    // format controls and bidi overrides may spoof that display identity.
+    if name.chars().any(|ch| {
+        ch.is_control()
+            || matches!(
+                ch,
+                '\u{200b}'..='\u{200f}'
+                    | '\u{202a}'..='\u{202e}'
+                    | '\u{2060}'..='\u{206f}'
+                    | '\u{feff}'
+            )
+    }) {
+        return Err("Character name contains hidden or bidirectional control characters".to_string());
+    }
     let mut id = String::new();
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -673,11 +687,15 @@ mod tests {
             PathBuf::from("/external/hero-bot"),
             PathBuf::from("/user/incomplete.zip"),
         ];
-        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot", "Buddy Bot\u{200b}"] {
+        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot"] {
             assert!(
                 import_name_conflict(name, &paths).unwrap().is_some(),
                 "{name:?} must not shadow the default"
             );
+        }
+        for spoofed in ["Buddy Bot\u{200b}", "Buddy\u{202e} Bot", "Good\u{2066} Name"] {
+            let error = import_name_conflict(spoofed, &paths).unwrap_err();
+            assert!(error.contains("control characters"), "{error}");
         }
         assert!(import_name_conflict("Hero Bot", &paths).unwrap().is_some());
         assert!(import_name_conflict("Incomplete", &paths).unwrap().is_some());
