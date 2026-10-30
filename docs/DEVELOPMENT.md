@@ -236,6 +236,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 | `name` | Yes | The Character's name, as the UI shows it. Not empty. | |
 | `render_mode` | No | `"pixelated"` keeps hard pixels when scaling; `"smooth"` filters drawn art. | `"pixelated"` |
 | `scale` | No | Whole number from 1 to 4: the factor the art is drawn at. | 4 |
+| `gravity` | No | Number from 0.25 to 2: how hard the Character falls, as a multiple of the default. Below 1, falls are slower and Jumps and Throws go higher. | 1 |
 | `[source]` | No | Where the art came from. See [Declaring where the art came from](#declaring-where-the-art-came-from). | |
 | `[director]` | No | How proactive model calls space themselves. | |
 | `[cursor]` | No | How the Character reacts to the cursor. | |

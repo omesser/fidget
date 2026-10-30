@@ -763,8 +763,8 @@ mod tests {
 
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
-            Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
-            DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
+            Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
+            DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
         };
         use std::collections::BTreeMap;
 
@@ -810,6 +810,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            gravity_scale: GravityScale::DEFAULT,
             source: None,
         }
     }
