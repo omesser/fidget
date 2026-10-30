@@ -119,29 +119,6 @@ pub fn dispatch(
         }
     }
     match tool_name {
-        "speak" => {
-            #[derive(Deserialize)]
-            struct Args {
-                message: String,
-                #[serde(default)]
-                instance_id: Option<String>,
-            }
-            let args: Args = parse_args(arguments, tool_name)?;
-
-            let mut expression = context.expression.take();
-            let result = tools::speak(
-                &args.message,
-                args.instance_id.as_deref(),
-                context.roster,
-                as_expression_handle(&mut expression),
-            );
-            context.expression = expression;
-
-            serde_json::to_value(&result).map_err(|e| DispatchError {
-                code: ErrorCode::ExecutionFailed,
-                message: format!("Failed to serialize result: {}", e),
-            })
-        }
         "play_behavior" => {
             #[derive(Deserialize)]
             struct Args {
@@ -268,20 +245,6 @@ pub struct ToolInfo {
 pub fn list_tools() -> Vec<ToolInfo> {
     let mut tools = vec![
         ToolInfo {
-            name: "speak".to_string(),
-            description: "Make the Character speak a line of dialogue".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "The message to speak"
-                    }
-                },
-                "required": ["message"]
-            }),
-        },
-        ToolInfo {
             name: "play_behavior".to_string(),
             description: "Play a named Behavior".to_string(),
             input_schema: serde_json::json!({
@@ -370,7 +333,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     for tool in &mut tools {
         tool.input_schema["properties"]["instance_id"] = serde_json::json!({
             "type": "string",
-            "description": "Your Character Instance id, named in your prompt. speak and play_behavior act on that Instance. Optional while only one Instance runs."
+            "description": "Your Character Instance id, named in your prompt. play_behavior acts on that Instance. Optional while only one Instance runs."
         });
     }
     tools
@@ -550,7 +513,7 @@ mod tests {
         let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"wrong_field": 42});
-        let result = dispatch("speak", args, &mut context);
+        let result = dispatch("play_behavior", args, &mut context);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -562,8 +525,11 @@ mod tests {
         let tools = list_tools();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
-        assert_eq!(names.len(), 9);
-        assert!(names.contains(&"speak"));
+        assert_eq!(names.len(), 8);
+        assert!(
+            !names.contains(&"speak"),
+            "a Character says things only in its reply"
+        );
         assert!(names.contains(&"play_behavior"));
         assert!(names.contains(&"list_windows"));
         assert!(names.contains(&"describe_screen"));
@@ -879,7 +845,7 @@ mod tests {
 
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
-        let (roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
+        let (roster, _) = test_roster_with_grounded_instance("TestBuddy");
 
         let shared = Rc::new(RefCell::new(roster));
         let roster_info = shared
@@ -904,71 +870,11 @@ mod tests {
             caffeinate: None,
         };
 
-        let first = dispatch("speak", json!({"message": "First line"}), &mut context)
-            .expect("dispatch succeeds");
-        assert_eq!(first["success"], true);
-
-        let snapshot = test_snapshot();
-        let first_frame = shared
-            .borrow_mut()
-            .get_mut(&instance_id)
-            .expect("instance still in roster")
-            .tick(&snapshot);
-        assert_eq!(first_frame.dialogue.as_deref(), Some("First line"));
-
-        let second = dispatch("speak", json!({"message": "Second line"}), &mut context)
-            .expect("dispatch succeeds");
-        assert_eq!(second["success"], true);
-
-        let second_frame = shared
-            .borrow_mut()
-            .get_mut(&instance_id)
-            .expect("instance still in roster")
-            .tick(&snapshot);
-        assert_eq!(second_frame.dialogue.as_deref(), Some("Second line"));
-    }
-
-    #[test]
-    fn speak_with_one_instance_enqueues_dialogue_and_plays_talk() {
-        let temp = tempfile::tempdir().expect("temp dir is creatable");
-        let source = fake_source(vec![]);
-        let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
-
-        let roster_info = roster
-            .list()
-            .into_iter()
-            .map(|(id, name)| InstanceInfo {
-                id,
-                name,
-                ..Default::default()
-            })
-            .collect::<Vec<_>>();
-
-        let mut context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.path().join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &roster_info,
-            expression: Some(&mut roster),
-            placement: PlacementQuery::empty(),
-            caffeinate: None,
-        };
-
-        let args = json!({"message": "Hello, world!"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["message"], "Hello, world!");
-        drop(context);
-
-        let snapshot = test_snapshot();
-        let instance = roster
-            .get_mut(&instance_id)
-            .expect("instance still in roster");
-        let frame = instance.tick(&snapshot);
-        assert!(frame.dialogue.is_some(), "Frame should carry dialogue");
-        assert_eq!(frame.dialogue.as_ref().unwrap(), "Hello, world!");
-        assert_eq!(frame.animation, "talk");
+        for behavior in ["wave", "spin"] {
+            let played = dispatch("play_behavior", json!({"behavior": behavior}), &mut context)
+                .expect("dispatch succeeds");
+            assert_eq!(played["success"], true, "{behavior}: {played}");
+        }
     }
 
     #[test]
@@ -1105,11 +1011,11 @@ mod tests {
         ];
         let mut context = test_context(&temp, &source, &infos);
 
-        let args = json!({"message": "Hello"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+        let args = json!({"behavior": "wave"});
+        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
 
         assert_eq!(result["success"], false);
-        assert_eq!(result["message"], "Hello");
+        assert_eq!(result["behavior"], "wave");
         assert_eq!(
             result["reason"],
             "Several Character Instances are running; name one with instance_id. \
@@ -1140,7 +1046,7 @@ mod tests {
         for tool in list_tools() {
             let refused = dispatch(
                 &tool.name,
-                json!({"message": "hi", "behavior": "wave", "instance_id": "nope"}),
+                json!({"behavior": "wave", "instance_id": "nope"}),
                 &mut context,
             )
             .expect_err(&format!("{} accepted an unknown instance_id", tool.name));
@@ -1220,37 +1126,24 @@ mod tests {
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
-        let args = json!({"message": "Hello, world"});
-        let spoke = dispatch("speak", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(spoke["success"], false);
-        assert_eq!(spoke["message"], "Hello, world");
-        assert_eq!(
-            spoke["reason"],
-            "No Character Instance is running, so nothing changed on screen"
-        );
-
         let args = json!({"behavior": "wave"});
         let played = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
 
         assert_eq!(played["success"], false);
         assert_eq!(played["behavior"], "wave");
-        assert_eq!(played["reason"], spoke["reason"]);
+        assert_eq!(
+            played["reason"],
+            "No Character Instance is running, so nothing changed on screen"
+        );
     }
 
-    /// Fails if an empty message or behavior reports success, or stops being
-    /// a DispatchError.
+    /// Fails if an empty behavior reports success, or stops being a
+    /// DispatchError.
     #[test]
-    fn empty_message_and_empty_behavior_keep_the_existing_failure_shape() {
+    fn an_empty_behavior_keeps_the_existing_failure_shape() {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
-
-        let speak_args = json!({"message": ""});
-        let speak_result = dispatch("speak", speak_args, &mut context).expect("dispatch succeeds");
-        assert_eq!(speak_result["success"], false);
-        assert_eq!(speak_result["message"], "");
-        assert_eq!(speak_result["reason"], "The message is empty");
 
         let behavior_args = json!({"behavior": ""});
         let behavior_result =
@@ -1275,18 +1168,13 @@ mod tests {
         // stdio shape.
         let mut context = test_context(&temp, &source, &infos);
 
-        let spoke = dispatch("speak", json!({"message": "Hello"}), &mut context)
-            .expect("dispatch succeeds");
-        assert_eq!(spoke["success"], false);
-        assert_eq!(
-            spoke["reason"],
-            "No live connection to the running app, so nothing changed on screen"
-        );
-
         let played = dispatch("play_behavior", json!({"behavior": "wave"}), &mut context)
             .expect("dispatch succeeds");
         assert_eq!(played["success"], false);
-        assert_eq!(played["reason"], spoke["reason"]);
+        assert_eq!(
+            played["reason"],
+            "No live connection to the running app, so nothing changed on screen"
+        );
     }
 
     /// Break: success on a stale roster entry. The caller's roster is a
@@ -1314,7 +1202,7 @@ mod tests {
             caffeinate: None,
         };
 
-        let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
+        let result = dispatch("play_behavior", json!({"behavior": "wave"}), &mut context)
             .expect("dispatch succeeds");
 
         assert_eq!(result["success"], false);

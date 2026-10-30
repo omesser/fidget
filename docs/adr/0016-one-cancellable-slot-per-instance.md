@@ -16,7 +16,7 @@ The bug that argues for it is one the user can feel. Grab the sprite, a wake
 goes out saying `what just happened: picked up`, throw it, it flies and lands —
 and fifteen seconds later the character says "hey, put me down!" from the floor. The
 Engine already refuses a Behavior that no longer fits, because `permitted`
-requires `on_feet`; Speech had no such guard, and a Poke arriving a millisecond
+requires `on_feet`; Dialogue had no such guard, and a Poke arriving a millisecond
 after a proactive wake waited out the whole of `timeout_global` — 20s hosted,
 120s on a local server — before its prompt was even sent.
 

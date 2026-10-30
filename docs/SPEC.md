@@ -203,8 +203,8 @@ that adding a character is drawing, not programming.
     tell something is happening.
 62. As a user, I want the Harness to be able to read what the fidget can see, so that I can
     ask about what is on my screen.
-63. As a user, I want the Harness to be able to make the character speak and act, so that
-    answers arrive through the character.
+63. As a user, I want the Harness to be able to make the character act, and to answer
+    in its reply, so that answers arrive through the character.
 64. As a user, I want Fidget not to add a second confirmation on top of the Harness's
     own, so that approving an action takes one decision, not two.
 65. As a user, I want a visible log of what the Harness did, so that I can review actions
@@ -468,7 +468,8 @@ no relevance ranking and every read and write appears in the tool log.
 
 Fidget exposes an MCP server. Tool surface, by responsibility:
 
-- **Expression** — make the character speak; play a named Behavior.
+- **Expression** — play a named Behavior. The character says things only in its
+  reply (ADR-0040).
 - **Sensing** — list visible windows with bounds and owning application; describe what is
   on screen (window metadata only; Capture is dropped per
   [ADR-0031](./adr/0031-drop-capture-tiers.md)).

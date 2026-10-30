@@ -137,9 +137,9 @@ data in a Character Package. The unit the Director proposes and the engine plays
 _Avoid_: Routine, script, macro
 
 **Director**:
-The role that proposes a Behavior, and Speech when the session is on. Static
-weights fill Behaviors and never speak; an attached Harness is that role and
-proposes Speech by calling speak. Never runs in the frame loop and never
+The role that proposes a Behavior, and Dialogue when the session is on. Static
+weights fill Behaviors and never say anything; an attached Harness is that role
+and proposes Dialogue in its reply. Never runs in the frame loop and never
 drives animation directly. Covers both Static Director and AI Director (ModelDirector).
 The environment variables `FIDGET_DIRECTOR_*` configure the HTTP Completer,
 which is one fill of this role (#466). `DirectorSettings` and `DirectorConfig`
@@ -161,7 +161,7 @@ _Avoid_: Unused model call, unused wake, active prompting
 **Near Miss**:
 A Behavior name the Director proposed that the Character declares none of —
 `prowll` for `prowl`. Reported, never corrected: it reaches the user as
-Speech like any other unparsed reply, and the Shell traces it so the miss is
+Dialogue like any other unparsed reply, and the Shell traces it so the miss is
 not invisible.
 _Avoid_: Typo, hallucination, invalid behavior
 
@@ -183,7 +183,7 @@ _Avoid_: Squat, cling, grab (Grab is the verb that picks the sprite up)
 
 **Talk**:
 The Primitive and Required Animation of a talking mouth. Art, not words —
-Speech may play it; a silent reaction may too.
+Dialogue may play it; a silent reaction may too.
 _Avoid_: speak
 
 **Surface**:
@@ -298,20 +298,18 @@ _Avoid_: Invoke, activate, wake
 
 ### Expression
 
-**Speech**:
-The line the character says. The session Director proposes it on a wake — Static
-never speaks — and an attached Harness proposes it by calling speak.
-_Avoid_: talk (the Required Animation), message, utterance
-
-**speak**:
-The MCP tool by which a Harness proposes Speech. Until then the session
-Director proposes the same Speech without this tool.
-_Avoid_: talk, say
+**Dialogue**:
+What the character says. It comes only from the session Director's reply —
+Static never says anything — and is whatever the parser does not sort out of
+that reply as Thinking prose, a startup banner, or the Behavior line. There is
+no MCP tool for it (ADR-0040).
+_Avoid_: Speech (reserved for a future audio speech engine), talk (the Required
+Animation), message, utterance
 
 **Speech bubble**:
-A bubble above the sprite showing Speech, held for reading time (900ms
+A bubble above the sprite showing Dialogue, held for reading time (900ms
 + 55ms per character, clamped to 2–8 s). A new line replaces the old one.
-While a reply streams, the bubble grows with its Speech and `talk` plays; the
+While a reply streams, the bubble grows with its Dialogue and `talk` plays; the
 Behavior name line is held back and never shown. Implemented in #119.
 _Avoid_: Chat bubble, message, tooltip
 
@@ -328,7 +326,7 @@ _Avoid_: Effect, feedback, animation (the Character's art), SFX
 A switch that keeps the fidget visible and stops it starting anything. It makes
 no proactive wakes. Prompted wakes (quick message, Chat) and the Speech bubble
 work as normal. Behavior proposals are refused, so a prompted reply shows its
-Speech but plays no authored Behavior. Permission asks and forms wait until it
+Dialogue but plays no authored Behavior. Permission asks and forms wait until it
 is off instead of opening Chat. It silences the Cue sound and keeps the visual.
 _Avoid_: Quiet mode, mute
 

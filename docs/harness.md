@@ -197,7 +197,7 @@ turn
   - `(kept, NO SET SENT: …)` means nothing changed on the conversation, for example because an exported variable won.
 
   The probe exits 1 on the last three, because none proved a set. An exported `FIDGET_DIRECTOR_MODEL` or `FIDGET_DIRECTOR_REASONING_EFFORT` wins over the Apply, so leave unset the one you change.
-- `mcp listed` is whether the Harness asked for `tools/list`. A tool it calls is answered through the app's `dispatch` against an empty desktop and no Instances, so `speak` fails and `list_windows` is empty. Each call prints as `mcp call`.
+- `mcp listed` is whether the Harness asked for `tools/list`. A tool it calls is answered through the app's `dispatch` against an empty desktop and no Instances, so `play_behavior` fails and `list_windows` is empty. Each call prints as `mcp call`.
 - Exit code: 2 means never asked (nothing configured, no binary, not signed in), 1 means asked and not answered, 0 means `end_turn`, a completed turn.
 - The `probe` folder keeps the session file and the Action Log away from a real install. Memory is not isolated: a `remember` during a probe writes the real `memory.md`.
 
@@ -292,11 +292,11 @@ A Harness can work between Fidget's `session/prompt` calls: Claude Code `/loop` 
 
 #### What counts as inbound wake
 
-Between-turn `session/update` carrying agent text that is flushed to the user. Only agent speech triggers an inbound wake and resets Pace; between-turn thought and tool activity are visible (#1370) but do not count as a wake. Not attribution metadata: usage and latency stay internal.
+Between-turn `session/update` carrying agent text that is flushed to the user. Only agent text triggers an inbound wake and resets Pace; between-turn thought and tool activity are visible (#1370) but do not count as a wake. Not attribution metadata: usage and latency stay internal.
 
 **Load replay is not a wake.** `session/load` replays the conversation before it answers. Chat places that replay above the live log, under "Earlier in this session" (#1393).
 
-A prompt is a folded Prompt row. Text the user typed is also their row above that fold. Thinking is a folded Thinking row. Speech in a turn is one reply under the Instance's name. A new `messageId` starts a new paragraph. The next user prompt starts the next reply.
+A prompt is a folded Prompt row. Text the user typed is also their row above that fold. Thinking is a folded Thinking row. Dialogue in a turn is one reply under the Instance's name. A new `messageId` starts a new paragraph. The next user prompt starts the next reply.
 
 A tool call is a folded row titled `title · status`. Live Chat draws that row and updates it when the same call id arrives again. Opening it shows the locations and the content. Replay uses the same row. Prompts are replay only. Chat draws no live terminal (#1449). A plan is steps in the log, not the plan above the composer.
 
@@ -315,8 +315,8 @@ Inbound wakes are still the one Director session per Character Instance. A Harne
 #### Visibility
 
 - **Chat surface:** Agent text accumulated in between-turn updates is emitted as a Chat row when a flush boundary arrives, labeled `unprompted (AI)`: the row reads `Name · unprompted (AI)`, in the same row form as `unprompted` and `when poked`.
-- **Bubble and Behaviors:** The inbound wake marks the Instance `addressed`, triggering a Director wake. Speech reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
-- **Director wake and Pace participation:** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven speech from leaving the character silent for the full proactive interval.
+- **Bubble and Behaviors:** The inbound wake marks the Instance `addressed`, triggering a Director wake. Dialogue reaches the bubble and Behaviors the same way a Poke or chat wake does — through the Director call that follows.
+- **Director wake and Pace participation:** An inbound wake behaves like a reactive wake: it marks the Instance `addressed`, and the Director wake that follows calls `pace.after_reactive()`, resetting the exponential backoff to the first wait interval. This keeps cron-scheduled or `/loop`-driven text from leaving the character silent for the full proactive interval.
 
 #### Flush boundaries
 
@@ -356,7 +356,7 @@ Unzip the `antigravity-acp` archive from the [ACP registry](https://cdn.agentcli
 Two transports, not to be conflated:
 
 1. **ACP** (Fidget ↔ Harness): always stdio. Fidget spawns the Harness and prompts it over newline-delimited JSON-RPC.
-2. **MCP** (Harness → Fidget): the Harness calls back so `speak`, sensing, and Memory reach the fidget.
+2. **MCP** (Harness → Fidget): the Harness calls back so Behaviors, sensing, and Memory reach the fidget. It says things only in its reply (ADR-0040).
 
 The README lists the [tools and resources](../README.md#harness--mcp).
 
@@ -423,9 +423,9 @@ The port is OS-assigned and the token is minted in memory at every launch (ADR-0
 | `pi` | `mcpServers` JSON fragment for `.mcp.json` or `~/.pi/agent/mcp.json` | the project, or the agent directory | **verified by hand** ‡ |
 | `copilot` | `copilot mcp remove` then `copilot mcp add --transport http …` with a header | `~/.copilot/mcp-config.json`, token in the file | **config generated, unverified** |
 
-**Verified by hand** means the box's output was run as given and that Harness's `speak` was recorded in the bubble on a real Mac (2026-09-21/22). **Config generated, unverified** means the shape was checked against the CLI (`copilot` 1.0.88; `remove` comes first because a second `add` fails) but no `speak` is recorded (#1016). A Harness the popup does not list (`custom`) gets the bare URL and token.
+**Verified by hand** means the box's output was run as given and that Harness's call to `speak`, a tool since removed (ADR-0040), was recorded in the bubble on a real Mac (2026-09-21/22). **Config generated, unverified** means the shape was checked against the CLI (`copilot` 1.0.88; `remove` comes first because a second `add` fails) but no tool call is recorded (#1016). A Harness the popup does not list (`custom`) gets the bare URL and token.
 
-‡ `pi` has no MCP client of its own; it needs an adapter plugin such as `pi-mcp-adapter` (verified on pi 0.85.1 with pi-mcp-adapter 2.36.0). The adapter connects lazily: a headless `pi -p` run must call `mcp({"connect": "fidget"})` first, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. The tool is reached through Pi's `mcp` proxy as `fidget_speak`. Whether an attached `pi-acp` session lists Fidget's tools is unmeasured (#984).
+‡ `pi` has no MCP client of its own; it needs an adapter plugin such as `pi-mcp-adapter` (verified on pi 0.85.1 with pi-mcp-adapter 2.36.0). The adapter connects lazily: a headless `pi -p` run must call `mcp({"connect": "fidget"})` first, and an interactive session wants `/mcp connect` or `/mcp reconnect fidget`. Fidget's tools are reached through Pi's `mcp` proxy with a `fidget_` prefix, as in `fidget_play_behavior`. Whether an attached `pi-acp` session lists Fidget's tools is unmeasured (#984).
 
 **Traps:**
 
