@@ -23,9 +23,7 @@ pub enum InputEvent {
 /// uses. x11rb `Sync` allows that; if event processing stalls, look here.
 pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     let display = super::connection::connection()?;
-    // One slot, as on macOS: a full one is a wake already pending, and an
-    // unbounded queue grows while the loop is active or hidden and not reading.
-    let (sender, receiver) = mpsc::sync_channel(1);
+    let (sender, receiver) = wake_channel();
 
     let screen = display.setup().roots.first()?;
     let root = screen.root;
@@ -40,6 +38,12 @@ pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
         .ok()?;
 
     Some(receiver)
+}
+
+/// One slot, as on macOS: a full one is a wake already pending, and an
+/// unbounded queue grows while the loop is active or hidden and not reading.
+fn wake_channel() -> (SyncSender<InputEvent>, mpsc::Receiver<InputEvent>) {
+    mpsc::sync_channel(1)
 }
 
 fn setup_xi2(
@@ -76,11 +80,16 @@ fn listen_loop(sender: SyncSender<InputEvent>) {
         return;
     };
 
-    while let Ok(event) = display.wait_for_event() {
-        let Some(input_event) = classify_event(display, &event) else {
-            continue;
-        };
+    let events = std::iter::from_fn(|| display.wait_for_event().ok());
+    forward_wakes(
+        events.filter_map(|event| classify_event(display, &event)),
+        &sender,
+    );
+}
 
+/// Offer each event to the frame loop; drop it when a wake is already pending.
+fn forward_wakes(events: impl IntoIterator<Item = InputEvent>, sender: &SyncSender<InputEvent>) {
+    for input_event in events {
         match sender.try_send(input_event) {
             Ok(()) | Err(TrySendError::Full(_)) => {}
             Err(TrySendError::Disconnected(_)) => break,
@@ -111,40 +120,52 @@ fn classify_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
     use x11rb::protocol::xtest::ConnectionExt as _;
     use x11rb::wrapper::ConnectionExt as _;
 
+    #[test]
+    fn a_burst_of_motion_with_no_reader_leaves_one_wake_waiting() {
+        let (sender, receiver) = wake_channel();
+        forward_wakes(std::iter::repeat_n(InputEvent::Motion, 1000), &sender);
+        assert!(matches!(receiver.try_recv(), Ok(InputEvent::Motion)));
+        assert_eq!(receiver.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    #[test]
+    fn forwarding_stops_once_the_frame_loop_is_gone() {
+        let (sender, receiver) = wake_channel();
+        drop(receiver);
+        let mut offered = 0;
+        let events = std::iter::repeat_with(|| {
+            offered += 1;
+            InputEvent::Motion
+        });
+        forward_wakes(events.take(1000), &sender);
+        assert_eq!(offered, 1);
+    }
+
     /// Run with: Xvfb :77 & DISPLAY=:77 cargo test --bin fidget input_events -- --include-ignored
     #[test]
     #[ignore = "needs an X server with XI2 and XTEST, such as Xvfb"]
-    fn a_burst_of_pointer_motion_with_no_reader_leaves_one_wake_waiting() {
+    fn pointer_motion_wakes_the_frame_loop() {
         let events = spawn_listener().expect("XI2 on $DISPLAY");
         let (conn, screen) = x11rb::connect(None).expect("an X server on $DISPLAY");
         let root = conn.setup().roots[screen].root;
-        for step in 0..1000 {
-            let (x, y) = (step % 200, step / 5);
-            conn.xtest_fake_input(
-                xproto::MOTION_NOTIFY_EVENT,
-                0,
-                x11rb::CURRENT_TIME,
-                root,
-                x,
-                y,
-                0,
-            )
-            .unwrap();
-        }
+        conn.xtest_fake_input(
+            xproto::MOTION_NOTIFY_EVENT,
+            0,
+            x11rb::CURRENT_TIME,
+            root,
+            40,
+            30,
+            0,
+        )
+        .unwrap();
         conn.sync().unwrap();
-        // The round trip reads the whole burst into the listener connection's
-        // queue; once it is empty, nothing is left for the listener to offer.
-        let listener_conn = super::super::connection::connection().unwrap();
-        listener_conn.sync().unwrap();
-        while listener_conn.poll_for_event().unwrap().is_some() {}
         // The idle frame loop blocks on this same `recv_timeout`.
-        let woken = events.recv_timeout(Duration::from_secs(3));
+        let woken = events.recv_timeout(Duration::from_secs(2));
         assert!(matches!(woken, Ok(InputEvent::Motion)), "got {woken:?}");
-        let behind = events.recv_timeout(Duration::from_millis(200));
-        assert!(behind.is_err(), "a second wake was queued behind the first");
     }
 }
