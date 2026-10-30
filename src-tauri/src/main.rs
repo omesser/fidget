@@ -28,6 +28,7 @@
 mod acp_wire;
 mod action_log;
 mod caffeinate;
+mod character_manager;
 mod chat_surface;
 mod completer;
 mod consent;
@@ -5093,6 +5094,7 @@ fn main() {
     login_path::adopt();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             character,
             overlay_primary,
@@ -5122,7 +5124,10 @@ fn main() {
             show_settings,
             show_ai_source,
             settings_snapshot,
-            settings_event
+            settings_event,
+            character_manager::character_manager_list,
+            character_manager::character_manager_import,
+            character_manager::character_manager_remove
         ])
         .setup(|app| {
             // No Character means no overlay. Reported and exited rather than

@@ -41,6 +41,10 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # decision 9 refuses to ask for. Carbon's `RegisterEventHotKey` underneath
 # prompts for nothing.
 tauri-plugin-global-shortcut = "2"
+# Native file picker for installing Character Packages from Settings.
+tauri-plugin-dialog = "2"
+# Stage imported ZIPs atomically without replacing existing installations.
+tempfile = "3"
 # Sync HTTP for the model Director. A worker thread posts; the frame loop
 # does not wait. ureq instead of reqwest: no tokio.
 ureq = { version = "3", features = ["json"] }

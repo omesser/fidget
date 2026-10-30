@@ -350,3 +350,42 @@
   line-height: 1.45;
   color: var(--chat-ink-2);
 }
+
+/* Imported ZIPs are managed here, beside the existing Character picker. */
+.set-character-manager {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--chat-rule);
+}
+
+.set-character-manager h3 {
+  font-size: 12.5px;
+  margin: 0 0 8px;
+}
+
+.set-character-manager button {
+  padding: 6px 10px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  color: var(--chat-ink);
+  background: var(--chat-fill-soft);
+  cursor: pointer;
+}
+
+.set-character-manager button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.set-character-list {
+  padding: 0;
+  list-style: none;
+}
+
+.set-character-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}

@@ -468,8 +468,185 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
         .collect::<BTreeMap<_, _>>()
 }
 
+/// An archive downloaded from a character author's repository may wrap the
+/// Character Package in documentation or a repository folder. The runtime
+/// loader expects the manifest at the package root; the importer finds exactly
+/// one nested manifest and retains only that subtree before validating it.
+pub fn read_import_archive(path: &Path) -> Result<PackageBytes, String> {
+    // Reject hostile paths and duplicate entries before the existing archive
+    // reader normalizes names into a map, where a duplicate would disappear.
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
+    if archive.len() > MAX_PACKAGE_FILES {
+        return Err(format!("ZIP has more than {MAX_PACKAGE_FILES} entries"));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|e| format!("ZIP entry {index}: {e}"))?;
+        if !entry.is_file() {
+            continue;
+        }
+        let path = entry
+            .enclosed_name()
+            .ok_or_else(|| format!("ZIP entry {index} has an unsafe path"))?;
+        let name = path
+            .to_str()
+            .ok_or_else(|| format!("ZIP entry {index} has a non-Unicode path"))?
+            .replace('\\', "/");
+        if is_macos_litter(&name) {
+            continue;
+        }
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err(format!("ZIP entry {name} is a symlink"));
+        }
+        if name.split('/').count() > MAX_PACKAGE_DEPTH + 4 {
+            return Err(format!("ZIP entry {name} exceeds the nesting limit"));
+        }
+        if !seen.insert(name.clone()) {
+            return Err(format!("ZIP contains a duplicate entry: {name}"));
+        }
+    }
+    let files = read_archive(path)?;
+    let manifests: Vec<&str> = files
+        .keys()
+        .filter(|name| {
+            name.as_str() == CHARACTER_MANIFEST_FILE || name.ends_with("/character.manifest")
+        })
+        .map(String::as_str)
+        .collect();
+    if manifests.len() != 1 {
+        return Err(format!(
+            "Expected exactly one character.manifest, found {}",
+            manifests.len()
+        ));
+    }
+    let prefix = manifests[0]
+        .strip_suffix(CHARACTER_MANIFEST_FILE)
+        .expect("matched a Character Manifest name")
+        .to_string();
+    Ok(files
+        .into_iter()
+        .filter_map(|(name, content)| {
+            name.strip_prefix(&prefix)
+                .filter(|relative| !relative.is_empty())
+                .map(|relative| (relative.to_string(), content))
+        })
+        .collect())
+}
+
+/// IDs are used strictly as flat package stems. Never accept a path from a
+/// settings webview, even though the frontend only sends our own IDs.
+pub fn safe_package_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+        })
+}
+
+fn package_id(name: &str) -> Result<String, String> {
+    let mut id = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            id.push(ch.to_ascii_lowercase());
+        } else if !id.is_empty() && !id.ends_with('-') {
+            id.push('-');
+        }
+    }
+    let id = id.trim_matches('-').to_string();
+    if !safe_package_id(&id) {
+        return Err("Character name does not form a safe package filename".to_string());
+    }
+    Ok(id)
+}
+
+/// Persist one validated package as a flat .zip in the same user directory
+/// that ordinary discovery already searches. tempfile's noclobber persistence
+/// refuses simultaneous imports and never exposes a half-written archive.
+pub fn save_user_archive(files: &PackageBytes, name: &str) -> Result<PathBuf, String> {
+    use std::io::Write;
+    let directory = user_characters_dir();
+    fs::create_dir_all(&directory)
+        .map_err(|e| format!("Cannot create character directory: {e}"))?;
+    let destination = directory.join(format!("{}.zip", package_id(name)?));
+    let temp = tempfile::NamedTempFile::new_in(&directory)
+        .map_err(|e| format!("Cannot start character import: {e}"))?;
+    let mut zip = zip::ZipWriter::new(temp);
+    let stored: zip::write::FileOptions<'_, '_, ()> =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, bytes) in files {
+        zip.start_file(name, stored)
+            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
+        zip.write_all(bytes)
+            .map_err(|e| format!("Cannot write {name}: {e}"))?;
+    }
+    let temp = zip
+        .finish()
+        .map_err(|e| format!("Cannot finish character ZIP: {e}"))?;
+    temp.persist_noclobber(&destination).map_err(|e| {
+        format!(
+            "Cannot install {} (already exists or inaccessible): {}",
+            destination.display(),
+            e.error
+        )
+    })?;
+    Ok(destination)
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn repository_wrapped_character_zip_loads_without_manual_extraction() {
+        let dir = TempDir::new("repo-archive");
+        let archive = dir.join("repository.zip");
+        write_archive(&archive, "fidget-branch/dosidicus-squid", false);
+        let files = read_import_archive(&archive).expect("locates the nested manifest");
+        let character = character::load(&files).expect("a normalized package is valid");
+        assert_eq!(character.name, "Blip");
+        assert!(files.contains_key(CHARACTER_MANIFEST_FILE));
+        assert!(files.contains_key("frames/idle-0.png"));
+    }
+
+    #[test]
+    fn importing_two_characters_at_once_is_not_an_ambiguous_choice() {
+        let dir = TempDir::new("two-manifests");
+        let archive = dir.join("bundle.zip");
+        let file = fs::File::create(&archive).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let stored: zip::write::FileOptions<'_, '_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for name in ["one/character.manifest", "two/character.manifest"] {
+            zip.start_file(name, stored).unwrap();
+            zip.write_all(b"name = \"Blip\"\n").unwrap();
+        }
+        zip.finish().unwrap();
+        let error = read_import_archive(&archive).unwrap_err();
+        assert!(error.contains("exactly one"), "{error}");
+    }
+
+    #[test]
+    fn only_flat_package_ids_are_accepted() {
+        for bad in [
+            "",
+            "../other",
+            ".",
+            "nested/pack",
+            "C:\\foo",
+            "a.zip",
+            "Upper",
+        ] {
+            assert!(!safe_package_id(bad), "{bad:?}");
+        }
+        assert!(safe_package_id("dosidicus-squid"));
+        assert_eq!(package_id("Dosidicus Squid").unwrap(), "dosidicus-squid");
+    }
+
     use super::*;
     use std::collections::BTreeSet;
     use std::io::Write;

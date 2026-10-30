@@ -198,6 +198,8 @@ Search paths, in order. An earlier directory wins when two packages share a name
 
 The user directory is the same per-platform data directory as `settings.json`, with `characters` under it. The Settings window's Character picker shows that path.
 
+For ordinary use, open **Settings > Character > Character Manager** and select **Import character ZIP…**. The native picker accepts a Character Package ZIP, even if it is wrapped in a downloaded repository ZIP with a single nested `character.manifest`. Fidget validates it, then keeps a clean ZIP in the user directory. Restart Fidget to select the new Character; imported ZIPs can also be removed here when no running or selected Instance uses them. No environment variables are required.
+
 Ten characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux.
 
 ### Writing a Character
