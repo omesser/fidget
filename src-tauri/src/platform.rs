@@ -901,7 +901,9 @@ pub fn set_overlay_click_through(
     }
     #[cfg(not(unix))]
     {
-        windows::set_click_through(window, ignore)
+        // `update_input_region` decides click-through on Windows.
+        let _ = ignore;
+        windows::set_click_through(window)
     }
 }
 
