@@ -551,13 +551,16 @@ pub fn safe_package_id(id: &str) -> bool {
 
 fn package_id(name: &str) -> Result<String, String> {
     // A Character name is shown next to trusted built-in names. Invisible
-    // format controls and bidi overrides may spoof that display identity.
+    // format controls, line separators and bidi overrides may spoof that
+    // display identity.
     if name.chars().any(|ch| {
         ch.is_control()
             || matches!(
                 ch,
-                '\u{200b}'..='\u{200f}'
-                    | '\u{202a}'..='\u{202e}'
+                '\u{00ad}'
+                    | '\u{061c}'
+                    | '\u{200b}'..='\u{200f}'
+                    | '\u{2028}'..='\u{202e}'
                     | '\u{2060}'..='\u{206f}'
                     | '\u{feff}'
             )
@@ -691,21 +694,25 @@ mod tests {
                 "{name:?} must not shadow the default"
             );
         }
-        for spoofed in ["Buddy Bot\u{200b}", "Buddy\u{202e} Bot", "Good\u{2066} Name"] {
+        for spoofed in [
+            "Buddy Bot\u{200b}",
+            "Buddy\u{202e} Bot",
+            "Good\u{2066} Name",
+            "Bud\u{00ad}dy Bot",
+            "Buddy\u{061c} Bot",
+            "Buddy\u{2028}Bot",
+            "Buddy\u{2029}Bot",
+        ] {
             let error = import_name_conflict(spoofed, &paths).unwrap_err();
             assert!(error.contains("control characters"), "{error}");
         }
         assert!(import_name_conflict("Hero Bot", &paths).unwrap().is_some());
-        assert!(
-            import_name_conflict("Incomplete", &paths)
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            import_name_conflict("Completely New", &paths)
-                .unwrap()
-                .is_none()
-        );
+        assert!(import_name_conflict("Incomplete", &paths)
+            .unwrap()
+            .is_some());
+        assert!(import_name_conflict("Completely New", &paths)
+            .unwrap()
+            .is_none());
         // Protect the built-in even when the resource folder is not accessible.
         assert!(import_name_conflict("Buddy Bot", &[]).unwrap().is_some());
     }
@@ -715,11 +722,9 @@ mod tests {
         let dir = TempDir::new("name-collision");
         let path = dir.join("different-file-stem.zip");
         write_archive(&path, "blip", false); // Valid Character named Blip.
-        assert!(
-            import_name_conflict("BLIP", std::slice::from_ref(&path))
-                .unwrap()
-                .is_some()
-        );
+        assert!(import_name_conflict("BLIP", std::slice::from_ref(&path))
+            .unwrap()
+            .is_some());
         assert!(import_name_conflict("Blip!", &[path]).unwrap().is_some());
     }
 
