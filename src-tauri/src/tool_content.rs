@@ -31,8 +31,9 @@ pub enum ToolPiece {
     },
 }
 
-/// A piece as both Chat rows read it, the consent row and the replayed row.
-/// A diff stays uncounted here, because the consent row only wants its path.
+/// A piece as the consent row and the replayed row both read it. Unlike a
+/// `ToolPiece`, a diff is not yet counted, since the consent row wants only
+/// its path, and a terminal's label is plain text that each row escapes.
 pub(crate) enum Piece<'a> {
     Text(&'a str),
     Mark(String),
