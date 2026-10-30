@@ -20,8 +20,8 @@ interface Events {
 // Command name -> [args, result]. main.rs generate_handler! owns the list.
 interface Commands {
   character: [undefined, ArtUrls];
-  overlay_primary: [{ down: boolean }, void];
-  overlay_secondary: [{ down: boolean }, void];
+  overlay_primary: [{ down: boolean; ageMs?: number }, void];
+  overlay_secondary: [{ down: boolean; ageMs?: number }, void];
   overlay_hotspots: [{ rects: number[][] }, void];
   overlay_hit_tests_hotspots: [undefined, boolean];
   overlay_open_chat: [{ id: string }, void];
