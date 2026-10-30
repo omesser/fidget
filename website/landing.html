@@ -167,6 +167,24 @@
      contain letterboxes the art instead of stretching it. */
   .cast img.pixel { image-rendering: pixelated; height: 96px; object-fit: contain; object-position: bottom; }
   .cast figcaption { font-size: .88rem; color: var(--ink-2); margin-top: .4rem; }
+  /* A Packaged Fidgets card links its gallery section and plays its gesture
+     while hovered or focused. Touch has no hover, so a tap just navigates. */
+  .cast a.card { display: block; color: inherit; text-decoration: none; border-radius: 12px; }
+  .cast a.card:focus-visible { outline: none; }
+  .cast a.card figure { transition: transform 160ms cubic-bezier(.2, .7, .3, 1),
+    border-color 160ms cubic-bezier(.2, .7, .3, 1), box-shadow 160ms cubic-bezier(.2, .7, .3, 1); }
+  .cast a.card:focus-visible figure { outline: 2px solid var(--accent); outline-offset: 2px;
+    border-color: var(--accent); transform: translateY(-2px);
+    box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .cast a.card:focus-visible figcaption { color: var(--ink); }
+  @media (hover: hover) {
+    .cast a.card:hover figure { border-color: var(--accent); transform: translateY(-2px);
+      box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 45%, transparent); }
+    .cast a.card:hover figcaption { color: var(--ink); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cast a.card figure { transform: none !important; }
+  }
 
   .moment[hidden] { display: none; }
   .moment-scene { margin: 0 0 1.5rem; padding: .9rem 1.1rem; background: var(--win); border: 1px solid var(--line);
@@ -676,23 +694,72 @@
   // Every sprite carries its manifest loop. Reduced motion keeps the first
   // frame, and a hidden tab stops every timer until it is shown again.
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const loops = still ? [] : [...document.querySelectorAll("img[data-frames]")].map((img) => {
-    const frames = JSON.parse(img.dataset.frames);
-    frames.forEach((src) => { new Image().src = src; });
-    return { img, frames, fps: Number(img.dataset.fps), i: 0, timer: 0 };
+  const reel = (frames, fps, once) => ({ frames, once, ms: frames.map((_, n) => 1000 / (fps[n] ?? fps)) });
+  const loops = [...document.querySelectorAll("img[data-frames]")].map((img) => {
+    const walk = reel(JSON.parse(img.dataset.frames), Number(img.dataset.fps), false);
+    if (!still) walk.frames.forEach((src) => { new Image().src = src; });
+    const gesture = img.dataset.gestureFrames && reel(JSON.parse(img.dataset.gestureFrames),
+      JSON.parse(img.dataset.gestureFps), "gestureOnce" in img.dataset);
+    return { img, walk, gesture, now: walk, i: 0, timer: 0, leaving: 0 };
   });
+  function showFrame(loop, now, i) {
+    loop.now = now;
+    loop.i = i;
+    loop.img.src = now.frames[i];
+  }
+  // A once clip holds its last frame. Leaving lets the gesture finish its
+  // cycle, then walks again.
+  function stepLoop(loop) {
+    clearTimeout(loop.timer);
+    const { now, i } = loop;
+    const last = now.frames.length - 1;
+    if (still || document.hidden || (now.once && i === last && !loop.leaving)) return;
+    loop.timer = setTimeout(() => {
+      if (loop.leaving && i === last) return walkAgain(loop);
+      showFrame(loop, now, (i + 1) % now.frames.length);
+      stepLoop(loop);
+    }, now.ms[i]);
+  }
+  function walkAgain(loop) {
+    clearTimeout(loop.leaving);
+    loop.leaving = 0;
+    showFrame(loop, loop.walk, 0);
+    stepLoop(loop);
+  }
   function run() {
-    for (const loop of loops) {
-      clearInterval(loop.timer);
-      if (document.hidden) continue;
-      loop.timer = setInterval(() => {
-        loop.i = (loop.i + 1) % loop.frames.length;
-        loop.img.src = loop.frames[loop.i];
-      }, 1000 / loop.fps);
-    }
+    for (const loop of loops) stepLoop(loop);
   }
   document.addEventListener("visibilitychange", run);
   run();
+
+  // Hover or keyboard focus plays a cast card's gesture from its first frame,
+  // or under reduced motion shows one still of it. Leaving waits at most
+  // 600ms for the cycle to end, and coming back meanwhile keeps it playing.
+  for (const loop of loops.filter((one) => one.gesture)) {
+    const card = loop.img.closest("a.card");
+    let over = false;
+    let focused = false;
+    const update = () => {
+      const lit = over || focused;
+      if (lit && loop.leaving) {
+        clearTimeout(loop.leaving);
+        loop.leaving = 0;
+      } else if (lit && loop.now === loop.walk) {
+        showFrame(loop, loop.gesture, still && loop.gesture.once ? loop.gesture.frames.length - 1 : 0);
+        stepLoop(loop);
+      } else if (!lit && loop.now === loop.gesture && !loop.leaving) {
+        if (still || (loop.gesture.once && loop.i === loop.gesture.frames.length - 1)) walkAgain(loop);
+        else loop.leaving = setTimeout(() => walkAgain(loop), 600);
+      }
+    };
+    card.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") { over = true; update(); } });
+    card.addEventListener("pointerleave", () => { over = false; update(); });
+    card.addEventListener("focus", () => { focused = card.matches(":focus-visible"); update(); });
+    card.addEventListener("blur", () => { focused = false; update(); });
+  }
+  addEventListener("load", () => {
+    for (const loop of loops) if (loop.gesture) loop.gesture.frames.forEach((src) => { new Image().src = src; });
+  });
 
   // Reduced motion hands the hero video to the visitor, paused, with controls.
   const clip = document.querySelector("video.clip");

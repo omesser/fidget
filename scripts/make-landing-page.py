@@ -470,6 +470,31 @@ def loop(package, declared, name, default_fps):
     return {"frames": frames, "fps": fps, "once": animation.get("loop") == "once"}
 
 
+def gesture_names(declared):
+    """What a cast card plays while hovered: wave, else the greet Behavior's
+    Animations when it does more than talk, else react."""
+    animations = declared.get("animations", {})
+    if "wave" in animations:
+        return ["wave"]
+    greet = declared.get("behaviors", {}).get("greet", {})
+    steps = greet.get("play") if isinstance(greet, dict) else None
+    if isinstance(steps, list) and steps and all(isinstance(s, str) and s in animations for s in steps) \
+            and set(steps) != {"talk"}:
+        return steps
+    return ["react"]
+
+
+def gesture(package, declared, default_fps):
+    """The hover gesture as data attributes: each frame's fps, as a greet's
+    Animations may differ, and once when it holds its last frame."""
+    parts = [loop(package, declared, name, default_fps) for name in gesture_names(declared)]
+    frames = [f for part in parts for f in part["frames"]]
+    fps = [part["fps"] for part in parts for _ in part["frames"]]
+    once = " data-gesture-once" if len(parts) > 1 or parts[0]["once"] else ""
+    return (f' data-gesture-frames="{html.escape(json.dumps(frames))}"'
+            f' data-gesture-fps="{html.escape(json.dumps(fps))}"{once}')
+
+
 def manifest(package):
     try:
         return tomllib.loads((package / "character.manifest").read_text(encoding="utf-8"))
@@ -917,10 +942,11 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
     desk = {"cast": players, "hero": HERO, "tuning": play_tuning(engine or read_engine())}
 
     figures = "\n".join(
-        f'<figure><div class="art">'
-        + sprite(c["loops"]["walk"], c["name"], ' class="pixel"' if c["pixel"] else "")
-        + f'</div><figcaption>{html.escape(c["name"])}</figcaption></figure>'
-        for c in players.values()
+        f'<a class="card" href="characters.html#{name}"><figure><div class="art">'
+        + sprite(c["loops"]["walk"], c["name"], (' class="pixel"' if c["pixel"] else "")
+                 + gesture(characters_root / name, manifest(characters_root / name), defaults["fps"]))
+        + f'</div><figcaption>{html.escape(c["name"])}</figcaption></figure></a>'
+        for name, c in players.items()
     )
     slots = {
         "headline": html.escape(words["headline"], quote=False),
@@ -1090,6 +1116,12 @@ def self_check():
     fenced = sections("## Get It\nClone and run:\n\n```sh\ncargo run\n```\n\nIt works offline.\n")
     assert sentence(fenced["Get It"], "offline") \
         == "It works offline.", "an install note ran across a code fence into the paragraph before it"
+    greets = {"animations": {"react": {}, "talk": {}}, "behaviors": {"greet": {"play": ["talk"]}}}
+    assert gesture_names(greets) == ["react"], "a greet that only talks became the hover gesture"
+    greets["behaviors"]["greet"]["play"] = ["react", "talk"]
+    assert gesture_names(greets) == ["react", "talk"], "the hover gesture is not the greet's Animations"
+    greets["animations"]["wave"] = {}
+    assert gesture_names(greets) == ["wave"], "a wave Animation is not the hover gesture"
     assert inline("[a](./docs/x.md#y) `b` **c**") == (
         f'<a href="{REPO}/blob/main/docs/x.md#y">a</a> <code>b</code> <b>c</b>')
     assert inline("[a](#harness-support) <i>") == f'<a href="{REPO}#harness-support">a</a> &lt;i&gt;'
@@ -1124,6 +1156,7 @@ def self_check():
 
         (package / "frames" / "walk-0.png").write_bytes(art)
         page = render(readme, scratch, rust, shell)
+        assert f'<a class="card" href="characters.html#{HERO}">' in page, "a cast card does not link its gallery section"
         engine = read_engine()
         heavy = dict(engine)
         heavy["engine.rs"] = re.sub(r"const GRAVITY: f64 = [\d_.]+;", "const GRAVITY: f64 = 1234.0;", engine["engine.rs"])

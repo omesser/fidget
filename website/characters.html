@@ -67,9 +67,25 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
   .hint { color: var(--ink-3); font-size: .85rem; }
+  .back { font-size: .9rem; color: var(--ink-2); text-decoration: none; border-radius: 4px; }
+  .back:hover { color: var(--ink); }
+  .back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .divider { width: 1px; height: 1.2em; background: var(--line); margin: 0 .2rem; }
   .scale { display: flex; gap: .35rem; align-items: center; }
 
-  section.character { margin-top: 2.4rem; }
+  section.character { margin-top: 2.4rem; border-radius: 12px; outline: 2px solid transparent; outline-offset: .6rem;
+    scroll-margin-top: calc(var(--site-nav-h, 0px) + var(--controls-h, 0px) + .75rem); }
+  /* A landing card links here: the scroll-margin clears both sticky bars, so
+     the nav's own scroll-padding would count the nav twice. */
+  :root { scroll-padding-top: 0; }
+  section.character:target { animation: arrived 1.8s linear both; }
+  @keyframes arrived {
+    0%, 33.3% { outline-color: var(--accent); }
+    100% { outline-color: transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    section.character:target { animation: none; outline-color: var(--accent); }
+  }
   h2 { font-size: 1.15rem; margin: 0; color: var(--accent); }
   .meta { color: var(--ink-2); font-size: .87rem; margin-top: .2rem; }
   .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -116,7 +132,9 @@
           border-radius: 9px; padding: .55rem; display: flex;
           flex-direction: column; gap: .45rem; }
   .ring .tile { background: var(--paper); }
-  .stage { position: relative; align-self: center; cursor: pointer; }
+  .stage { position: relative; align-self: center; }
+  /* Only a once Animation visibly replays on a click. */
+  .stage.once { cursor: pointer; }
   .stage img { position: absolute; bottom: 0; display: none;
                -webkit-user-drag: none; }
   .stage img.on { display: block; }
@@ -130,7 +148,7 @@
   .label span { display: block; color: var(--ink-3); font-size: .93em; }
   .tile.missing { border-style: dashed; border-color: var(--warn); }
   .tile.missing .stage { display: flex; align-items: center;
-                         justify-content: center; cursor: default; }
+                         justify-content: center; }
   .tile.missing .label { color: var(--warn); }
   .absent { color: var(--warn); font-size: 1.6rem; line-height: 1; }
   .empty { color: var(--warn); font-size: .78rem; text-align: center;
@@ -152,6 +170,8 @@
     declared scale; nearest-neighbour is the point a README still cannot show.</p>
 
   <div class="controls">
+    <a class="back" href="./#characters">← Packaged Fidgets</a>
+    <span class="divider" aria-hidden="true"></span>
     <button id="toggle" type="button">Pause</button>
     <button id="replay" type="button">Replay all</button>
     <span class="scale" role="group" aria-label="Preview of declared scale">
@@ -160,9 +180,8 @@
       <button type="button" class="preview" data-times="2" aria-pressed="false">2×</button>
       <button type="button" class="preview" data-times="3" aria-pressed="false">3×</button>
     </span>
-    <span class="hint">Click any Animation to replay it. The ones that
-      <code>loop = "once"</code> hold their last frame, the way the Engine
-      holds it.</span>
+    <span class="hint">Click a <code>loop = "once"</code> Animation to replay
+      it. It holds its last frame, the way the Engine holds it.</span>
   </div>
 
   <div id="gallery-root"></div>
@@ -203,6 +222,7 @@
     }
     for (const character of data.characters) {
       const section = el("section", "character" + (character.smooth ? " smooth" : ""));
+      section.id = character.dir;
       section.append(el("h2", null, character.name));
 
       const declared = character.animations.filter((a) =>
@@ -303,10 +323,15 @@
 
     const state = { images, fps: animation.fps, looping: animation.loop, start: 0, shown: 0 };
     stages.push(state);
-    stage.addEventListener("click", () => {
-      state.start = performance.now();
-      if (!playing) draw(state, 0);
-    });
+    // Paused, a click plays just this tile once.
+    if (!animation.loop) {
+      stage.classList.add("once");
+      stage.addEventListener("click", () => {
+        state.start = performance.now();
+        state.solo = !playing;
+        draw(state, 0);
+      });
+    }
     tile.append(stage);
 
     const label = el("div", "label");
@@ -345,14 +370,15 @@
   }
 
   function tick(now) {
-    if (playing) {
-      for (const state of stages) {
+    for (const state of stages) {
+      if (playing || state.solo) {
         const last = state.images.length - 1;
         // A rAF timestamp can predate the start captured just before it, and a negative step indexes
         // past the end of the ring. One throw here would freeze every Animation on the page, because
         // the loop is rescheduled only at the bottom.
         const step = Math.max(0, Math.floor((now - state.start) * state.fps / 1000));
         draw(state, state.looping ? step % state.images.length : Math.min(step, last));
+        if (state.shown === last) state.solo = false;
       }
     }
     requestAnimationFrame(tick);
@@ -362,6 +388,12 @@
   function label() { toggle.textContent = playing ? "Pause" : "Play"; }
 
   build();
+  // A landing card's link lands its section under both sticky bars.
+  const controls = document.querySelector(".controls");
+  const clear = () => document.documentElement.style.setProperty("--controls-h", controls.offsetHeight + "px");
+  clear();
+  new ResizeObserver(clear).observe(controls);
+  if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
   toggle.addEventListener("click", () => {
     playing = !playing;
     // Playing again starts every Animation over, which is the only way to see
