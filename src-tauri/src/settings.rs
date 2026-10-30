@@ -799,7 +799,7 @@ impl SettingsView {
                 self.caffeinate_system,
             ) {
                 Ok(flags) => flags.command_label(),
-                Err(_) => fidget_core::caffeinate::Empty::REASON.to_string(),
+                Err(_) => tr(fidget_core::caffeinate::Empty::REASON),
             }),
         );
         values.insert(

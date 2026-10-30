@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 // Silence this long replaces the phase line until the next update.
 // Tests read this, not a copied number.
 export const STALL_MS = 30_000;
@@ -41,7 +43,7 @@ export function phaseLine(state, now) {
     return "";
   }
   if (now - state.lastAt >= STALL_MS) {
-    return `No news for ${STALL_MS / 1000}s`;
+    return t("No news for {secs}s", { secs: STALL_MS / 1000 });
   }
   let running = null;
   for (const id of state.order) {
@@ -51,7 +53,7 @@ export function phaseLine(state, now) {
     }
   }
   if (running) {
-    return `Running: ${running.title || "tool"}`;
+    return t("Running: {tool}", { tool: running.title || t("tool") });
   }
-  return "Waiting";
+  return t("Waiting");
 }

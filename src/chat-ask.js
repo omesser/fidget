@@ -1,4 +1,5 @@
 import { emptyJsonBlock, onlyEmptyJson, stripUnsafe } from "./markdown.js";
+import { t } from "./i18n.js";
 
 // What a permission ask says, as parts the consent row draws. `title`,
 // `content`, `input`, and `locations` are untrusted Harness text. This file
@@ -30,7 +31,7 @@ export function askSays(ask) {
   // A kind on its own is not an answer to "what am I approving". A path on
   // its own is a fact worth drawing.
   if (!title && details.length === 0 && paths.length === 0) {
-    return [{ kind: "prose", text: SILENT }];
+    return [{ kind: "prose", text: t(SILENT) }];
   }
   return [
     { kind: "title", text: title },
@@ -56,14 +57,14 @@ export function inputMarkdown(input) {
 // drops what could hide or reverse text.
 export function elicitSays(form) {
   const message = stripUnsafe(form?.message ?? "");
-  return message.trim() ? message : "The Harness asked a question without saying what for.";
+  return message.trim() ? message : t("The Harness asked a question without saying what for.");
 }
 
 // Answers in order, Decline last, because the protocol treats it as a valid
 // answer. A URL form's one yes opens its link. A null `value` is Decline.
 export function elicitChoices(form) {
   const choices = form?.url
-    ? [{ name: "Open", value: "open", url: form.url }]
+    ? [{ name: t("Open"), value: "open", url: form.url }]
     : (form?.options ?? []).map((option) => ({ name: option.name || option.value, value: option.value }));
-  return [...choices, { name: "Decline", value: null }];
+  return [...choices, { name: t("Decline"), value: null }];
 }

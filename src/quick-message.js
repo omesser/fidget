@@ -3,6 +3,7 @@
 // when the composer is up and whether a press still belongs to the pet.
 import { placeBubble } from "./bubble.js";
 import { canAnswer, composerPlaceholder } from "./chat-connect.js";
+import { t } from "./i18n.js";
 
 const CONNECT_PROMPT = "Connect an AI to talk to me";
 // Shorter than the prompt, so the hint and Open chat fit on one line.
@@ -15,8 +16,8 @@ export function quickMessageConnects(opening) {
 }
 
 export function quickMessagePrompt(opening) {
-  if (canAnswer(opening)) return "talk to me";
-  if (quickMessageConnects(opening)) return CONNECT_PROMPT;
+  if (canAnswer(opening)) return t("talk to me");
+  if (quickMessageConnects(opening)) return t(CONNECT_PROMPT);
   return composerPlaceholder(opening);
 }
 
@@ -30,7 +31,7 @@ export function applyQuickMessageGate({ field, send, link, machine }, opening) {
   field.disabled = !ready;
   send.disabled = !ready;
   field.placeholder = quickMessagePrompt(opening);
-  field.setAttribute("aria-label", ready ? "Quick message" : field.placeholder);
+  field.setAttribute("aria-label", ready ? t("Quick message") : field.placeholder);
   if (link) link.hidden = !quickMessageConnects(opening);
   // A disabled Send beside the link would read as a second, dead control.
   send.hidden = Boolean(link) && !link.hidden;

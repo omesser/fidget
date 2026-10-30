@@ -1,5 +1,6 @@
 import { mountChatAppearance } from "./chat-appearance.js";
 import { applyChatUiClass, applyPlatform } from "./chat-ui-class.js";
+import { localize, onLocaleChange, t } from "./i18n.js";
 
 // One interpreter of `form::describe()`, in two halves. `controls()` is pure,
 // the rows the accessibility dump reads, so tests need no window. `render()`
@@ -18,8 +19,8 @@ const MODEL_API = "Model API";
 // Apply and Cancel sit in the Model / API section but commit the whole tab.
 const FOOTER_ROW = "director_actions";
 const OFF_NOTE = Object.freeze({
-  harness: "Not in use: the AI source is Model API.",
-  model_api: "Not in use: the AI source is a Harness.",
+  harness: () => t("Not in use: the AI source is Model API."),
+  model_api: () => t("Not in use: the AI source is a Harness."),
 });
 
 // A section serving the source the picker does not name is off, and its rows
@@ -122,7 +123,7 @@ function el(tag, attrs = {}, ...children) {
 // state reserves no space, and a reader announces it as a disclosure.
 function disclosure(text) {
   return text
-    ? el("details", { class: "set-disclosure" }, el("summary", { text: "What is this?" }), el("p", { text }))
+    ? el("details", { class: "set-disclosure" }, el("summary", { text: t("What is this?") }), el("p", { text }))
     : null;
 }
 
@@ -165,7 +166,8 @@ function popup(row, values, frozen) {
   const select = el("select", { disabled: frozen });
   const value = values[row.id];
   for (const option of row.options) {
-    select.append(el("option", { value: option, selected: option === value, text: option }));
+    // The value is the form's title, which Rust reads back; only the text is translated.
+    select.append(el("option", { value: option, selected: option === value, text: t(option) }));
   }
   select.dataset.id = row.id;
   return select;
@@ -417,7 +419,7 @@ export function render(root, tab, values, emit = () => {}, stage = () => {}) {
     if (section.status) node.append(status(section.status));
     if (section.disclosure) node.append(disclosure(section.disclosure));
     const off = offSource(section, values);
-    if (off) node.append(status(OFF_NOTE[off]));
+    if (off) node.append(status(OFF_NOTE[off]()));
     const shortcuts = new Map(
       rowsOf(section, values).filter(shortcutOf).map((row) => [shortcutOf(row).fills.row, row]),
     );
@@ -507,7 +509,7 @@ export function stageDraft(draft, id, value) {
 // Apply and Cancel report only a draft that differs from the store.
 export function pressFeedback(press, draft, values) {
   if (Object.keys(pruneDraft(draft, values)).length === 0) return null;
-  return press === "director_cancel" ? "Changes discarded." : "Changes applied.";
+  return press === "director_cancel" ? t("Changes discarded.") : t("Changes applied.");
 }
 
 export async function handleEvent(payload) {
@@ -550,6 +552,12 @@ export function copyRunForPress(payload) {
 export function tabsTheFormDraws(buttons, form) {
   const drawn = new Set(form.tabs.map((tab) => tab.title));
   return buttons.filter((title) => drawn.has(title));
+}
+
+// A tab button's English title, which the form's tabs carry. Its text is in
+// the language in force, so it is no identity.
+function titleOf(button) {
+  return button.dataset?.title ?? button.textContent;
 }
 
 // Which tab a title selects. A title the form does not carry selects the first
@@ -598,7 +606,7 @@ export function showError(message, onRetry) {
 
   if (onRetry) {
     const retryButton = document.createElement("button");
-    retryButton.textContent = "Retry";
+    retryButton.textContent = t("Retry");
     retryButton.type = "button";
     retryButton.addEventListener("click", onRetry);
     errorDiv.appendChild(retryButton);
@@ -615,6 +623,7 @@ if (typeof document !== "undefined") {
 
   const tablist = document.querySelector('[role="tablist"]');
   const panel = document.querySelector('[role="tabpanel"]');
+  localize();
 
   let currentForm = null;
   let currentValues = null;
@@ -654,7 +663,7 @@ if (typeof document !== "undefined") {
         }
       } catch (err) {
         if (lastSnapshotPromise === currentLoad) {
-          showError("Could not load settings. Check that the app is running.", () => loadSnapshot());
+          showError(t("Could not load settings. Check that the app is running."), () => loadSnapshot());
         }
       }
     })();
@@ -682,7 +691,7 @@ if (typeof document !== "undefined") {
         await loadSnapshot();
       }
     } catch (err) {
-      showError("Could not save changes. Check your connection.", () => {
+      showError(t("Could not save changes. Check your connection."), () => {
         emitEvent(payload);
       });
     }
@@ -695,16 +704,16 @@ if (typeof document !== "undefined") {
     const buttons = [...tablist.querySelectorAll('[role="tab"]')];
     const drawn = new Set(
       tabsTheFormDraws(
-        buttons.map((button) => button.textContent),
+        buttons.map((button) => titleOf(button)),
         currentForm,
       ),
     );
     for (const button of buttons) {
-      button.hidden = !drawn.has(button.textContent);
+      button.hidden = !drawn.has(titleOf(button));
     }
     const selected = tablist.querySelector('[role="tab"][aria-selected="true"]');
     if (selected && !selected.hidden) {
-      currentTabIndex = selectTab(currentForm, selected.textContent);
+      currentTabIndex = selectTab(currentForm, titleOf(selected));
       return;
     }
     currentTabIndex = 0;
@@ -736,7 +745,7 @@ if (typeof document !== "undefined") {
     const tablist = document.querySelector('[role="tablist"]');
     const tabs = tablist ? Array.from(tablist.querySelectorAll('[role="tab"]')) : [];
     currentTabIndex = selectTab(currentForm, reveal.tab);
-    const chosen = tabs.find((button) => button.textContent === reveal.tab);
+    const chosen = tabs.find((button) => titleOf(button) === reveal.tab);
     for (const button of tabs) {
       button.setAttribute("aria-selected", String(button === chosen));
     }
@@ -766,7 +775,7 @@ if (typeof document !== "undefined") {
         feedback = null;
         // By title. A build without Caffeinate hides its button between Privacy
         // and Development.
-        currentTabIndex = currentForm ? selectTab(currentForm, tab.textContent) : i;
+        currentTabIndex = currentForm ? selectTab(currentForm, titleOf(tab)) : i;
         for (let j = 0; j < tabs.length; j++) {
           tabs[j].setAttribute("aria-selected", String(j === i));
         }
@@ -824,6 +833,9 @@ if (typeof document !== "undefined") {
       }
     });
 
+    // The form's words come from Rust, so a new language is a new snapshot.
+    onLocaleChange(() => loadSnapshot());
+
     loadSnapshot();
   }
 
@@ -836,9 +848,9 @@ if (typeof document !== "undefined") {
       panel.style.padding = "2rem";
       panel.style.color = "var(--txt)";
       const p = document.createElement("p");
-      p.textContent =
-        "Settings could not initialize: Tauri API is not available. " +
-        "This is a packaging or WebView2 issue. Please restart the application.";
+      p.textContent = t(
+        "Settings could not initialize: Tauri API is not available. This is a packaging or WebView2 issue. Please restart the application.",
+      );
       panel.appendChild(p);
     }
   }

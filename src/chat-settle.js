@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 
 // What a `chat` payload does to a waiting caret. Split from chat.js, which
 // reads `window.__TAURI__` at import, so node can load this.
@@ -20,8 +21,8 @@ const PREEMPTED_BY = {
 };
 
 export function preemptedNote(cause) {
-  const clause = PREEMPTED_BY[cause] ?? "Something else started";
-  return `${clause} before that answer landed, so I dropped it.`;
+  const clause = t(PREEMPTED_BY[cause] ?? "Something else started");
+  return t("{clause} before that answer landed, so I dropped it.", { clause });
 }
 
 export function createChatTurns() {
@@ -112,7 +113,7 @@ export function createChatTurns() {
       if (turn.alreadyHasSpeechAhead) {
         return { action: "silent", turn };
       }
-      return { action: "missing", turn, note: MISSING_ANSWER };
+      return { action: "missing", turn, note: t(MISSING_ANSWER) };
     },
   };
 }

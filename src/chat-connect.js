@@ -1,6 +1,8 @@
 
 // Connect-landing copy and the ready gate. One module so `attached` and the
 // composer cannot disagree about whether a named Harness can answer.
+import { t } from "./i18n.js";
+
 const DISPLAY_NAMES = {
   claude: "Claude Code",
   codex: "Codex",
@@ -19,7 +21,7 @@ const BUTTONS_ONLY = new Set(["antigravity"]);
 
 export function harnessDisplayName(opening) {
   const key = opening?.harness_name || opening?.harness?.name;
-  return DISPLAY_NAMES[key] || key || "The Harness";
+  return DISPLAY_NAMES[key] || key || t("The Harness");
 }
 
 // No login means no actions, even if `sign_in` is still on the opening.
@@ -58,14 +60,14 @@ export function canAnswer(opening) {
 
 export function composerPlaceholder(opening) {
   if (canAnswer(opening)) {
-    return `Ask ${opening.name}…`;
+    return t("Ask {name}…", { name: opening.name });
   }
   // The composer is the one surface a user types into, so a wait that ends
   // on its own says so rather than reading as a dead end.
   if (opening?.harness?.initializing) {
-    return `Starting ${harnessDisplayName(opening)}…`;
+    return t("Starting {name}…", { name: harnessDisplayName(opening) });
   }
-  return "Nothing can answer yet";
+  return t("Nothing can answer yet");
 }
 
 // Strings the landing paints. Facts come from the opening. This file owns
@@ -82,20 +84,23 @@ export function landingCopy(opening) {
     const buttons = signIn.length > 0;
     const terminal = !BUTTONS_ONLY.has(opening.harness_name);
     return {
-      title: `${name} needs login`,
+      title: t("{name} needs login", { name }),
       lede: terminal
-        ? `${name} is running but not signed in. Sign in, then press Retry, or pick a different Harness below.`
-        : `${name} is running but not signed in. Sign in, or pick a different Harness below.`,
+        ? t("{name} is running but not signed in. Sign in, then press Retry, or pick a different Harness below.", { name })
+        : t("{name} is running but not signed in. Sign in, or pick a different Harness below.", { name }),
       // Retry re-asks the Harness already picked. The buttons stay for a
       // different one.
       retry: true,
       command: terminal ? opening.login : null,
-      signInLabel: buttons ? "Login using:" : null,
-      hint: buttons ? "Or run this in a terminal:" : "Run this in a terminal:",
+      signInLabel: buttons ? t("Login using:") : null,
+      hint: buttons ? t("Or run this in a terminal:") : t("Run this in a terminal:"),
       // The Harness opens the browser itself and may prefill a code that never
       // reaches us. The click is what the user vouches for.
       signInWaiting: buttons
-        ? `Finish signing in in your browser. Any code on that page came from ${name}, so continue only if you just clicked this button.`
+        ? t(
+            "Finish signing in in your browser. Any code on that page came from {name}, so continue only if you just clicked this button.",
+            { name },
+          )
         : null,
       signIn,
     };
@@ -103,8 +108,8 @@ export function landingCopy(opening) {
 
   if (!opening?.configured) {
     return {
-      title: "Connect a Harness to get started",
-      lede: "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.",
+      title: t("Connect a Harness to get started"),
+      lede: t("Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here."),
       command: null,
       signInLabel: null,
       hint: null,
@@ -114,8 +119,8 @@ export function landingCopy(opening) {
 
   if (!opening.enabled) {
     return {
-      title: "Chat is switched off",
-      lede: "Turn AI back on in Settings, or connect a Harness below.",
+      title: t("Chat is switched off"),
+      lede: t("Turn AI back on in Settings, or connect a Harness below."),
       command: null,
       signInLabel: null,
       hint: null,
@@ -124,10 +129,12 @@ export function landingCopy(opening) {
   }
 
   if (missing) {
-    const installHint = harness.install ? ` Install from ${harness.install}.` : "";
+    const args = { name, missing, url: harness.install };
     return {
-      title: `${name} needs \`${missing}\``,
-      lede: `\`${missing}\` is not installed. Fidget does not bundle \`${missing}\`.${installHint} Then press ${name} again, or pick a different Harness below.`,
+      title: t("{name} needs `{missing}`", args),
+      lede: harness.install
+        ? t("`{missing}` is not installed. Fidget does not bundle `{missing}`. Install from {url}. Then press {name} again, or pick a different Harness below.", args)
+        : t("`{missing}` is not installed. Fidget does not bundle `{missing}`. Then press {name} again, or pick a different Harness below.", args),
       command: null,
       signInLabel: null,
       hint: null,
@@ -137,8 +144,8 @@ export function landingCopy(opening) {
 
   if (harness?.initializing) {
     return {
-      title: `Initializing ${name}…`,
-      lede: `${name} is starting up. First run may download and can take a while. Chat will be ready when the Harness answers.`,
+      title: t("Initializing {name}…", { name }),
+      lede: t("{name} is starting up. First run may download and can take a while. Chat will be ready when the Harness answers.", { name }),
       command: null,
       signInLabel: null,
       hint: null,
@@ -158,16 +165,16 @@ export function landingCopy(opening) {
     if (!command) {
       lede = `${why}.`;
     } else if (output) {
-      lede = `It ${why}. This is what it printed:`;
+      lede = t("It {why}. This is what it printed:", { why });
     } else {
-      lede = `It ${why}, and printed nothing.`;
+      lede = t("It {why}, and printed nothing.", { why });
     }
     return {
-      kicker: "Harness error",
-      title: `${preset ? name : "Harness"} couldn't start`,
+      kicker: t("Harness error"),
+      title: t("{name} couldn't start", { name: preset ? name : t("Harness") }),
       lede,
       failure: { command: command || null, output: output || null, nodeCheck: nodeCheck || null },
-      next: "Fix the error above, then pick it again, or pick a different Harness below.",
+      next: t("Fix the error above, then pick it again, or pick a different Harness below."),
       command: null,
       signInLabel: null,
       hint: null,
@@ -177,8 +184,8 @@ export function landingCopy(opening) {
 
   if (harness && !harness.alive) {
     return {
-      title: `${name} is not running`,
-      lede: `${name} is set but has not come up. Static weights answer until it does. Pick a different Harness below.`,
+      title: t("{name} is not running", { name }),
+      lede: t("{name} is set but has not come up. Static weights answer until it does. Pick a different Harness below.", { name }),
       command: null,
       signInLabel: null,
       hint: null,
@@ -187,8 +194,8 @@ export function landingCopy(opening) {
   }
 
   return {
-    title: "Chat is switched off",
-    lede: "Turn AI back on in Settings, or connect a Harness below.",
+    title: t("Chat is switched off"),
+    lede: t("Turn AI back on in Settings, or connect a Harness below."),
     command: null,
     signInLabel: null,
     hint: null,

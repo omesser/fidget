@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 
 // The window-names notice. Split from chat.js, which reads `window.__TAURI__`
 // at import, so node can load this.
@@ -13,10 +14,18 @@ const BUTTONS = [
 
 const HIDDEN = { visible: false, heading: "", body: "", buttons: [] };
 
-const SHOWN = { visible: true, heading: HEADING, body: BODY, buttons: BUTTONS };
+// Built per view, so a language change reaches the next draw.
+function shown() {
+  return {
+    visible: true,
+    heading: t(HEADING),
+    body: t(BODY),
+    buttons: BUTTONS.map((button) => ({ ...button, label: t(button.label) })),
+  };
+}
 
 function viewOf(hint) {
-  return hint === "due" ? SHOWN : HIDDEN;
+  return hint === "due" ? shown() : HIDDEN;
 }
 
 export function createNamesNotice({ act }) {

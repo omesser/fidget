@@ -10,6 +10,7 @@ import {
   readableBubbleRect,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
+import { t } from "./i18n.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
@@ -74,7 +75,7 @@ function createView(id) {
   const more = document.createElement("button");
   more.type = "button";
   more.className = "bubble-more";
-  more.textContent = "Open chat";
+  more.textContent = t("Open chat");
   // The overlay's own pointer listeners report a press to the Engine, which
   // answers a click on the art with a Poke. This press is on a control, not on
   // the Character, so it stops here.
@@ -187,7 +188,7 @@ function createView(id) {
       ctx.font = "14px system-ui, sans-serif";
       const { lines, truncated } = wrapText(text, 260, ctx.measureText.bind(ctx));
       view.bubbleContent.textContent = lines.join("\n");
-      more.textContent = "Open chat";
+      more.textContent = t("Open chat");
       bubble.removeAttribute("data-ask");
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
@@ -200,9 +201,9 @@ function createView(id) {
     // still opens Chat.
     showAsk() {
       view.bubbleContent.textContent = clickableOffArt
-        ? "Question for you in the "
-        : "Question for you in the chat";
-      more.textContent = "chat";
+        ? t("Question for you in the ")
+        : t("Question for you in the chat");
+      more.textContent = t("chat");
       bubble.setAttribute("data-ask", "");
       bubble.toggleAttribute("data-more", clickableOffArt);
       show("speech");
@@ -421,7 +422,7 @@ function attachQuickMessage(view, id) {
   // On macOS, WebKit autocorrects a spellchecked field, and its correction
   // panel takes the next Escape for itself, so Escape would not reach the pill.
   field.spellcheck = false;
-  field.setAttribute("aria-label", "Quick message");
+  field.setAttribute("aria-label", t("Quick message"));
   // Only where a click off the art lands. Elsewhere the hint stays text.
   // A muted hint whose last words are the control, as the ask bubble does.
   let link = null;
@@ -432,7 +433,9 @@ function attachQuickMessage(view, id) {
     const openChat = document.createElement("button");
     openChat.type = "button";
     openChat.className = "quick-message-open";
-    openChat.textContent = "Open chat";
+    // Marked for `localize`: this pill is built once and outlives a language change.
+    openChat.dataset.i18n = "Open chat";
+    openChat.textContent = t("Open chat");
     const swallow = (event) => event.stopPropagation();
     openChat.addEventListener("pointerdown", swallow);
     openChat.addEventListener("pointerup", swallow);
@@ -443,12 +446,17 @@ function attachQuickMessage(view, id) {
         console.error("overlay_open_chat", err);
       });
     });
-    link.append(`${CONNECT_HINT} `, openChat);
+    const hint = document.createElement("span");
+    hint.dataset.i18n = CONNECT_HINT;
+    hint.textContent = t(CONNECT_HINT);
+    link.append(hint, " ", openChat);
   }
   const send = document.createElement("button");
   send.type = "button";
   send.className = "quick-message-send";
-  send.setAttribute("aria-label", "Send");
+  send.dataset.i18nAttr = "aria-label";
+  send.dataset.i18nSourceAriaLabel = "Send";
+  send.setAttribute("aria-label", t("Send"));
   send.disabled = true;
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("viewBox", "0 0 12 12");

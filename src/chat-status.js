@@ -2,6 +2,7 @@
 // What the status bar draws from one push and the clock, and which mind
 // answers. Split from chat.js, which reads `window.__TAURI__` at import,
 // so node can load this.
+import { t } from "./i18n.js";
 
 // What a cell says when there is nothing to say. A blank cell reads as a
 // bar that broke.
@@ -36,7 +37,7 @@ export function statusCells(status, msLeft) {
     facing: status ? (status.facing < 0 ? "←" : "→") : "",
     // One fact, not both. This cell held the widest pair, and a wake resets
     // the countdown, so under a turn on the wire it is always the full wait.
-    director: status?.thinking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
+    director: status?.thinking ? t("thinking") : t("wake {when}", { when: untilWake(status ? msLeft : null) }),
     happened: status?.happened ?? NONE,
   };
 }
@@ -44,10 +45,10 @@ export function statusCells(status, msLeft) {
 // What the fidget is doing right now, without Primitive or State vocabulary.
 export function plainStatus(status, msLeft) {
   if (!status) {
-    return "Starting up…";
+    return t("Starting up…");
   }
   if (status.thinking) {
-    return "Thinking…";
+    return t("Thinking…");
   }
 
   let parts = [];
@@ -55,7 +56,7 @@ export function plainStatus(status, msLeft) {
   if (activity) {
     parts.push(activity);
   } else {
-    parts.push("Idle");
+    parts.push(t("Idle"));
   }
 
   const cue = humanizeHappened(status.happened);
@@ -65,7 +66,7 @@ export function plainStatus(status, msLeft) {
 
   const wake = untilWake(msLeft);
   if (wake !== "due" && wake !== NONE && !cue) {
-    parts.push(`next thought in ${wake}`);
+    parts.push(t("next thought in {wake}", { wake }));
   }
 
   return parts.join(" · ");
@@ -134,7 +135,7 @@ function humanizeHappened(happened) {
     "spoken to": "just spoken to",
   };
 
-  return map[happened] || `just ${happened}`;
+  return map[happened] ? t(map[happened]) : t("just {happened}", { happened });
 }
 
 function cleanName(raw) {
@@ -152,7 +153,7 @@ export function mindLine(opening) {
     return "";
   }
   if (!opening.enabled) {
-    return "static weights";
+    return t("static weights");
   }
   const harness = opening.harness;
   if (!harness) {
@@ -161,29 +162,29 @@ export function mindLine(opening) {
     return opening.model && opening.host ? `${opening.model} · ${opening.host}` : "";
   }
   if (harness.login) {
-    return `${harness.name} · not signed in — \`${harness.login}\``;
+    return t("{name} · not signed in — `{login}`", { name: harness.name, login: harness.login });
   }
   if (harness.missing) {
-    return `${harness.name} · \`${harness.missing}\` is not installed`;
+    return t("{name} · `{missing}` is not installed", { name: harness.name, missing: harness.missing });
   }
   if (harness.unhealthy) {
-    return `${harness.name} · unhealthy`;
+    return t("{name} · unhealthy", { name: harness.name });
   }
   // Before `not running`. Over the handshake that names a state the user
   // would have to act on, when the only thing to do is wait.
   if (harness.initializing) {
-    return `${harness.name} · starting`;
+    return t("{name} · starting", { name: harness.name });
   }
   if (harness.failed) {
-    return `${harness.name} · failed to start`;
+    return t("{name} · failed to start", { name: harness.name });
   }
   if (!harness.alive) {
-    return `${harness.name} · not running`;
+    return t("{name} · not running", { name: harness.name });
   }
   if (!harness.session) {
-    return `${harness.name} · no session yet`;
+    return t("{name} · no session yet", { name: harness.name });
   }
   // The head of the id. A full UUID pushes the Instance name off a 420-point
   // header, and Settings draws the id in full, so the head cannot disagree.
-  return `${harness.name} · session ${harness.session.slice(0, 8)}`;
+  return t("{name} · session {id}", { name: harness.name, id: harness.session.slice(0, 8) });
 }

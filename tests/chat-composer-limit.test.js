@@ -32,6 +32,6 @@ test("the composer field is bounded at CHAT_LIMIT", () => {
 // submit path cannot fail this.
 test("the log row and what is sent are the same string", () => {
   assert.match(js, /const text = line\.value\.trim\(\);/, "one read of the field");
-  assert.match(js, /said\("You", text, "you"\)/, "the row is built from it");
+  assert.match(js, /said\(t\("You"\), text, "you"\)/, "the row is built from it");
   assert.match(js, /invoke\("chat_send", \{ instance, text \}\)/, "and so is the send");
 });

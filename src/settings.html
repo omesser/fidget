@@ -3,22 +3,22 @@
 <html lang="en" class="chat-ui-minimal">
   <head>
     <meta charset="utf-8" />
-    <title>Fidget Settings</title>
+    <title data-i18n>Fidget Settings</title>
     <link rel="stylesheet" href="chat-ui.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
     <header class="set-bar">
-      <h1>Settings</h1>
+      <h1 data-i18n>Settings</h1>
     </header>
-    <nav class="set-tabs" role="tablist" aria-label="Settings">
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="true">Presence</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Character</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">AI</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Chat</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Privacy</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Caffeinate</button>
-      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Development</button>
+    <nav class="set-tabs" role="tablist" aria-label="Settings" data-i18n-attr="aria-label">
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="true" data-title="Presence" data-i18n>Presence</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="Character" data-i18n>Character</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="AI" data-i18n>AI</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="Chat" data-i18n>Chat</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="Privacy" data-i18n>Privacy</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="Caffeinate" data-i18n>Caffeinate</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false" data-title="Development" data-i18n>Development</button>
     </nav>
     <main class="set-form" id="set-panel" role="tabpanel" aria-label="Presence"></main>
     <footer class="set-footer" id="set-footer"></footer>

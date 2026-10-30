@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 
 // The caffeinate button in the Chat header.
 
@@ -10,7 +11,7 @@ export function cupModel(field) {
   return {
     disabled,
     on,
-    title: field.reason || "keep my computer awake",
-    label: on ? "caffeinated" : null,
+    title: field.reason ? t(field.reason) : t("keep my computer awake"),
+    label: on ? t("caffeinated") : null,
   };
 }
