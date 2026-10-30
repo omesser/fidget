@@ -3,12 +3,14 @@
 # Each one is scripts\bench-mask-rebuild-windows-flame.ps1 -Scenario ... -Check,
 # so no WPR and no admin. Results go under Out, one folder a scenario, and the
 # table at the end is also in Out\table.txt.
-# Usage: scripts\bench-mask-rebuild-windows-scenarios.ps1 -Bin PATH\fidget.exe [-Out DIR]
-#        scripts\bench-mask-rebuild-windows-scenarios.ps1 -Report DIR
+# Usage: scripts\bench-mask-rebuild-windows-scenarios.ps1 -Bin PATH\fidget.exe [-Out DIR] [-Only NAME,...]
+#        scripts\bench-mask-rebuild-windows-scenarios.ps1 -Report DIR [-Only NAME,...]
 #   FIDGET_BENCH_GREEN_LIGHT=1: the operator agreed to fidget on the desktop
 #   and to the pointer moving. It holds the pointer for about 2-3 minutes,
 #   4 at most.
 #   -Report prints the table again from a finished Out without running.
+#   -Only runs (or reports) just the named rows: idle, walk, fast, large,
+#   small, small-1x.
 #
 # Build release first, e.g.:
 #   $env:CARGO_TARGET_DIR='E:\workspace\target-428'; cargo build --release -p fidget
@@ -16,7 +18,8 @@
 param(
     [string]$Bin = "",
     [string]$Out = "",
-    [string]$Report = ""
+    [string]$Report = "",
+    [string[]]$Only = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +35,17 @@ $runs = @(
     @{ Name = "small"; Scenario = "small"; Scale = 0; Target = 200; Seconds = 30 },
     @{ Name = "small-1x"; Scenario = "small"; Scale = 1; Target = 200; Seconds = 30 }
 )
+
+# powershell -File passes "-Only idle,walk" as one string.
+$Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($Only.Count -gt 0) {
+    $unknown = @($Only | Where-Object { $_ -notin $runs.Name })
+    if ($unknown.Count -gt 0) {
+        [Console]::Error.WriteLine("unknown -Only $($unknown -join ', '); rows are $($runs.Name -join ', ')")
+        exit 2
+    }
+    $runs = @($runs | Where-Object { $_.Name -in $Only })
+}
 
 function Show-Table([string]$Dir) {
     $rows = foreach ($run in $runs) {

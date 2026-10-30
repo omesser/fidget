@@ -33,14 +33,17 @@
 #
 # Scenario runs a bench copy of a shipped character whose only Behavior
 # repeats one animation, as scripts/measure-mask-rebuild-x11.sh does on X11:
-#   idle   BMO, pointer parked in the corner; every rebuild counts (expect 0).
-#          Target 0 runs out Seconds.
+#   idle   BMO idling, pointer parked in the corner. Target 0 runs out Seconds.
+#          Windows has no cursor-over gate: the region follows the drawn art
+#          whatever the pointer does, so idle frame flips still rebuild.
 #   walk   BMO walking, pointer on the sprite.
 #   fast   BMO looping react (10 fps), pointer on the sprite.
 #   large  BMO at 4x (or Scale) looping react.
 #   small  Nim at its shipped 4x (or Scale) looping react (12 fps).
 # Only rebuilds while that animation is on screen count, and the rate is over
-# the time it was on screen. summary.txt and result.json carry the rate.
+# the time it was on screen, so the fall and landing at launch stay out. Each
+# frame flip rebuilds twice: the region holds the last and the new frame for
+# one tick (DrawTrail in crates/core/src/overlay.rs), then the new one alone. summary.txt and result.json carry the rate.
 # scripts\bench-mask-rebuild-windows-scenarios.ps1 runs them all with -Check.
 
 param(
@@ -105,7 +108,7 @@ if (-not $Check) {
 # The package and the animation each scenario times.
 $steady = $null
 switch ($Scenario) {
-    "idle" { $Instances = "BMO" }
+    "idle" { $Instances = "BMO"; $steady = "idle" }
     "walk" { $Instances = "BMO"; $steady = "walk" }
     "fast" { $Instances = "BMO"; $steady = "react" }
     "large" { $Instances = "BMO"; $steady = "react"; if ($Scale -le 0) { $Scale = 4 } }
@@ -144,8 +147,7 @@ if ($Scale -gt 0 -or $Scenario) {
     Copy-Item -Recurse -LiteralPath $source -Destination $copy
     $copied = Join-Path $copy "character.manifest"
     if ($Scenario) {
-        $bench = if ($steady) { $steady } else { "idle" }
-        $text = [FidgetBench.BenchManifest]::Rewrite([System.IO.File]::ReadAllText($copied), $bench, $Scale)
+        $text = [FidgetBench.BenchManifest]::Rewrite([System.IO.File]::ReadAllText($copied), $steady, $Scale)
         # WriteAllText leaves out the BOM that Windows PowerShell 5.1 adds.
         [System.IO.File]::WriteAllText($copied, $text + "`n")
     } else {
@@ -274,7 +276,7 @@ if ($steer) {
     Write-Host "$doing; holding the pointer at sprite + ($HalfWidth,$HalfHeight) points x $dpiScale on $drawn$timing until $until"
 } else {
     [void][FidgetBench.Screen]::MoveTo(0, 0)
-    Write-Host "$doing; pointer parked at (0,0), $drawn idle, until $until"
+    Write-Host "$doing; pointer parked at (0,0), $drawn$timing, until $until"
 }
 
 $followed = Read-Log $since $HalfWidth $HalfHeight $dpiScale 0 $Target $Seconds $steer $steady

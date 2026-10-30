@@ -60,3 +60,21 @@ test("the report has one row a scenario, with rate, ms per rebuild and mask ms p
   }
   assert.match(table, /^idle\s+\(no result\.json\)/m);
 });
+
+test("-Only keeps just the named rows, as one comma-separated argument", { skip }, (t) => {
+  const out = tempDir(t, "mask-scenarios-");
+  const result = run(["-Report", out, "-Only", "idle,small-1x"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const rows = readFileSync(join(out, "table.txt"), "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.split(/\s+/)[0])
+    .filter((name) => name && !/^(Scenario|-+)$/.test(name));
+  assert.deepEqual(rows, ["idle", "small-1x"]);
+});
+
+test("-Only refuses a row it does not have", { skip }, (t) => {
+  const out = tempDir(t, "mask-scenarios-");
+  const result = run(["-Report", out, "-Only", "idle,tiny"]);
+  assert.equal(result.status, 2, result.stdout + result.stderr);
+  assert.match(result.stderr, /unknown -Only tiny/);
+});
