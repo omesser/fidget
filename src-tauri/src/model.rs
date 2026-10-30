@@ -484,17 +484,23 @@ fn completions_url(base: &str) -> String {
     }
 }
 
-/// Derive the model-list endpoint from the URL used for inference. Providers
-/// may serve the OpenAI-compatible API below a path such as `/api/v1`.
+/// Model-list URL. The path is the only edit, so `https://chat/completions` stays on host `chat`.
 fn models_url(inference_url: &str) -> String {
-    let trimmed = inference_url.trim_end_matches('/');
-    if let Some(prefix) = trimmed.strip_suffix("/chat/completions") {
-        return format!("{prefix}/models");
-    }
-    if let Some(prefix) = trimmed.strip_suffix("/responses") {
-        return format!("{prefix}/models");
-    }
-    format!("{}/v1/models", origin(trimmed))
+    let Some(mut models) = url_of(inference_url) else {
+        return format!("{}/v1/models", origin(inference_url));
+    };
+    let path = models.path().trim_end_matches('/').to_string();
+    let path = if let Some(rest) = path.strip_suffix("/chat/completions") {
+        format!("{rest}/models")
+    } else if let Some(rest) = path.strip_suffix("/responses") {
+        format!("{rest}/models")
+    } else {
+        "/v1/models".to_string()
+    };
+    models.set_path(&path);
+    models.set_query(None);
+    models.set_fragment(None);
+    models.to_string()
 }
 
 /// Whether this URL is served by xAI, which decides the inference path below.
@@ -649,7 +655,7 @@ impl Endpoint {
                 // the only place that says which value cost it.
                 eprintln!(
                     "director: {}; retrying without {}",
-                    unsent.why(),
+                    redact_url(unsent.why(), url),
                     dropped_field(field, self.effort.as_deref().unwrap_or(""))
                 );
             }
@@ -953,7 +959,13 @@ impl Completer for Endpoint {
     fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         let prompt = request.text(false);
         if tracing() {
-            eprintln!("director: sending POST {} model={}", self.url, self.model);
+            eprintln!(
+                "{}",
+                director_trace(
+                    &format!("sending POST {} model={}", self.url, self.model),
+                    &self.url
+                )
+            );
             trace_block("prompt", &prompt);
             eprintln!("director: waiting for model");
         }
@@ -966,11 +978,11 @@ impl Completer for Endpoint {
             }
             Err(error) => {
                 if tracing() {
-                    eprintln!("director: http {error}");
+                    eprintln!("{}", director_trace(&format!("http {error}"), &self.url));
                 }
                 if let Some(alt) = fallback_url(&self.url, &error) {
                     if tracing() {
-                        eprintln!("director: trying {alt}");
+                        eprintln!("{}", director_trace(&format!("trying {alt}"), &alt));
                     }
                     match self.post(&alt, &prompt, &request.instance, said) {
                         Ok(reply) => {
@@ -981,7 +993,7 @@ impl Completer for Endpoint {
                         }
                         Err(alt_error) => {
                             if tracing() {
-                                eprintln!("director: http {alt_error}");
+                                eprintln!("{}", director_trace(&format!("http {alt_error}"), &alt));
                             }
                             Err(alt_error)
                         }
@@ -1008,6 +1020,28 @@ impl Completer for Endpoint {
 /// Scheme, host, and port of a URL.
 fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
+}
+
+/// `text`, with userinfo, query, and fragment removed from `url`.
+fn redact_url(text: &str, url: &str) -> String {
+    if url.is_empty() {
+        return text.to_string();
+    }
+    let shown = match url_of(url) {
+        Some(mut parsed) => {
+            let _ = parsed.set_password(None);
+            let _ = parsed.set_username("");
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        None => "<redacted-url>".to_string(),
+    };
+    text.replace(url, &shown)
+}
+
+fn director_trace(line: &str, url: &str) -> String {
+    format!("director: {}", redact_url(line, url))
 }
 
 fn alternate_url(url: &str) -> Option<String> {
@@ -1121,6 +1155,18 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
     ))
 }
 
+/// A transport error may already quote the models URL, so it is not named twice.
+fn preflight_failure_line(models_endpoint: &str, why: &str) -> String {
+    let shown = redact_url(models_endpoint, models_endpoint);
+    let why = redact_url(why, models_endpoint);
+    let reason = if why.contains(&shown) {
+        why
+    } else {
+        format!("{shown} {why}")
+    };
+    format!("director: {reason}; staying on StaticDirector until it answers")
+}
+
 /// Say once, in the background, whether the configured server is there.
 /// Diagnostic only, because a failed wake already falls to `StaticDirector`.
 /// Spawned rather than awaited so a stopped server cannot hold up startup. ADR-0004.
@@ -1139,21 +1185,13 @@ pub fn spawn_preflight(settings: &DirectorSettings) {
             Ok(()) => {
                 if tracing() {
                     eprintln!(
-                        "director: {models_endpoint} answered, model {}",
+                        "director: {} answered, model {}",
+                        redact_url(&models_endpoint, &models_endpoint),
                         endpoint.model()
                     );
                 }
             }
-            // A transport error already quotes the URL it failed to reach;
-            // naming the models URL again would say it twice.
-            Err(why) => {
-                let reason = if why.contains(&models_endpoint) {
-                    why
-                } else {
-                    format!("{models_endpoint} {why}")
-                };
-                eprintln!("director: {reason}; staying on StaticDirector until it answers");
-            }
+            Err(why) => eprintln!("{}", preflight_failure_line(&models_endpoint, &why)),
         }
     });
 }
@@ -1175,7 +1213,7 @@ pub fn run_probe() -> i32 {
     };
 
     println!("probe-model");
-    println!("  url    {}", endpoint.url());
+    println!("  url    {}", redact_url(endpoint.url(), endpoint.url()));
     println!("  model  {}", endpoint.model());
     if endpoint.api_key.is_empty() {
         println!("  key    none (local server)");
@@ -1189,7 +1227,7 @@ pub fn run_probe() -> i32 {
     probe_result(&models_endpoint, &models);
     match preflight_verdict(models, endpoint.model()) {
         Ok(()) => println!("  model {} is served", endpoint.model()),
-        Err(why) => println!("  {why}"),
+        Err(why) => println!("  {}", redact_url(&why, &models_endpoint)),
     }
     println!();
     if endpoint.is_xai() {
@@ -1222,15 +1260,15 @@ fn probe_get(endpoint: &Endpoint, url: &str) {
 }
 
 fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
-    println!("GET {url}");
+    println!("GET {}", redact_url(url, url));
     match answer {
         Ok((code, body)) => println!("  {code} {}", clip_body(body)),
-        Err(error) => println!("  transport {error}"),
+        Err(error) => println!("  transport {}", clip_body(&redact_url(error, url))),
     }
 }
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
-    println!("POST {url}");
+    println!("POST {}", redact_url(url, url));
     match endpoint.post(url, PING, "probe", &|_| {}) {
         Ok(reply) => {
             println!("  ok {}", clip_body(&reply.text));
@@ -1238,7 +1276,7 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
             true
         }
         Err(error) => {
-            println!("  {}", clip_body(&error));
+            println!("  {}", clip_body(&redact_url(&error, url)));
             println!();
             false
         }
@@ -3714,6 +3752,60 @@ pub(crate) mod tests {
         assert_eq!(
             models_url("https://api.openai.com"),
             "https://api.openai.com/v1/models"
+        );
+    }
+
+    #[test]
+    fn the_models_url_stays_on_the_inference_origin() {
+        let cases = [
+            ("https://chat/completions", "https://chat/v1/models"),
+            ("https://responses", "https://responses/v1/models"),
+            (
+                "https://openrouter.ai/api/v1/chat/completions?api_key=secret#frag",
+                "https://openrouter.ai/api/v1/models",
+            ),
+            (
+                "https://user:pass@api.openai.com/v1/chat/completions?api_key=secret", // pragma: allowlist secret
+                "https://user:pass@api.openai.com/v1/models", // pragma: allowlist secret
+            ),
+            (
+                "foo://api.example/v1/chat/completions",
+                "foo://api.example/v1/models",
+            ),
+        ];
+        for (inference, models) in cases {
+            assert_eq!(models_url(inference), models, "{inference}");
+        }
+    }
+
+    #[test]
+    fn a_preflight_failure_hides_url_secrets() {
+        let url = "https://user:pass@api.openai.com/v1/models?api_key=sek#frag"; // pragma: allowlist secret
+        assert_eq!(
+            preflight_failure_line(url, "answered 404"),
+            "director: https://api.openai.com/v1/models answered 404; staying on StaticDirector until it answers"
+        );
+        let transport = format!("unreachable: bad uri: {url}");
+        assert_eq!(
+            preflight_failure_line(url, &transport),
+            "director: unreachable: bad uri: https://api.openai.com/v1/models; staying on StaticDirector until it answers"
+        );
+    }
+
+    #[test]
+    fn a_director_trace_hides_url_secrets() {
+        let url = "https://user:pass@api.openai.com/v1/chat/completions?api_key=sek#frag"; // pragma: allowlist secret
+        assert_eq!(
+            director_trace(&format!("sending POST {url} model=gpt-4o"), url),
+            "director: sending POST https://api.openai.com/v1/chat/completions model=gpt-4o"
+        );
+        assert_eq!(
+            director_trace(&format!("http {url}: status 401"), url),
+            "director: http https://api.openai.com/v1/chat/completions: status 401"
+        );
+        assert_eq!(
+            director_trace(&format!("trying {url}"), url),
+            "director: trying https://api.openai.com/v1/chat/completions"
         );
     }
 
