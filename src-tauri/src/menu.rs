@@ -430,6 +430,8 @@ pub fn show(
         .get_webview_window(window_label)
         .ok_or(tauri::Error::WindowNotFound)?;
 
+    #[cfg(target_os = "macos")]
+    crate::platform::deliver_pending_press();
     window.popup_menu_at(&menu, position)
 }
 

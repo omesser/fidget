@@ -14,13 +14,18 @@
 //! is still held. In the #1858 trace the counters saw every press the overlay
 //! saw, and presses it missed, so the overlay is not a second source here.
 
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
-use objc2_app_kit::NSEvent;
+use block2::RcBlock;
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSApplication, NSEvent, NSEventMask};
 use objc2_core_graphics::{
     CGEventFlags, CGEventSource, CGEventSourceStateID, CGEventType, CGMouseButton,
 };
+use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSProcessInfo};
 
 use crate::platform::{trace_ms, ButtonsDown};
 
@@ -197,6 +202,84 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+
+/// When the session's last left or right press happened, in any app, on the
+/// clock `NSEvent` timestamps use.
+fn last_session_press() -> f64 {
+    let now = NSProcessInfo::processInfo().systemUptime();
+    let state = CGEventSourceStateID::CombinedSessionState;
+    let since = |kind| CGEventSource::seconds_since_last_event_type(state, kind);
+    now - since(CGEventType::LeftMouseDown).min(since(CGEventType::RightMouseDown))
+}
+
+/// Read back from its age, a press lands within microseconds of its own
+/// mouse-down's timestamp. Two presses a millisecond apart are not a hand's.
+const SAME_PRESS_SECS: f64 = 0.001;
+
+/// Whether the session's last press is newer than the last mouse-down AppKit
+/// delivered, so its own mouse-down is still to come.
+fn press_pending(delivered_at: f64, pressed_at: f64) -> bool {
+    pressed_at - delivered_at > SAME_PRESS_SECS
+}
+
+/// The timestamp of the last mouse-down AppKit handed this app, as `f64` bits.
+static DELIVERED_AT: AtomicU64 = AtomicU64::new(0);
+
+fn delivered_at() -> f64 {
+    f64::from_bits(DELIVERED_AT.load(Ordering::Relaxed))
+}
+
+const PRESS_MASK: NSEventMask = NSEventMask::LeftMouseDown.union(NSEventMask::RightMouseDown);
+
+/// Start noting which presses AppKit has delivered. Main thread, once.
+pub fn watch_delivered_presses() {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    let now = NSProcessInfo::processInfo().systemUptime();
+    DELIVERED_AT.store(now.to_bits(), Ordering::Relaxed);
+    let block = RcBlock::new(|event: NonNull<NSEvent>| {
+        // SAFETY: AppKit hands the monitor a live event.
+        let at = unsafe { event.as_ref() }.timestamp();
+        DELIVERED_AT.store(at.to_bits(), Ordering::Relaxed);
+        event.as_ptr()
+    });
+    // SAFETY: main thread; the block hands back the event it was given.
+    let monitor =
+        unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(PRESS_MASK, &block) };
+    // The monitor lives as long as the app.
+    std::mem::forget(monitor);
+}
+
+/// Measured mouse-downs arrived up to 40 ms after the session saw the press;
+/// a pointerdown has trailed by 220 ms. Only a press that never comes, such
+/// as one another app took, pays all of it.
+const PRESS_DELIVERY_WAIT_SECS: f64 = 0.25;
+
+/// The session sees a press before AppKit delivers its mouse-down, and a menu
+/// that starts tracking first takes that mouse-down as a click that closes it.
+/// So dispatch it, and any older one queued ahead of it, first.
+pub fn deliver_pending_press() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let until = NSDate::dateWithTimeIntervalSinceNow(PRESS_DELIVERY_WAIT_SECS);
+    // SAFETY: a Foundation constant, defined for the life of the process.
+    let mode = unsafe { NSDefaultRunLoopMode };
+    while press_pending(delivered_at(), last_session_press()) {
+        let Some(event) = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+            PRESS_MASK,
+            Some(&until),
+            mode,
+            true,
+        ) else {
+            eprintln!("menu: no mouse-down matched the last press in time; opening anyway");
+            return;
+        };
+        app.sendEvent(&event);
+    }
+}
 
 /// Which buttons count as down this tick, a Control-click as secondary. The
 /// frame loop asks once per tick: a second call would take the next tick's
@@ -637,6 +720,18 @@ mod tests {
             button_change(sample(false, 7, 7), sample(false, 9, 9)).as_deref(),
             Some("session=0 session_edge=- down_delta=2 up_delta=2")
         );
+    }
+
+    #[test]
+    fn the_last_press_delivered_leaves_nothing_pending() {
+        assert!(!press_pending(100.0, 100.000_002));
+        assert!(!press_pending(100.0, 99.999_998));
+    }
+
+    /// A late mouse-down for an older press says nothing of the newer one.
+    #[test]
+    fn an_older_press_delivered_late_leaves_the_newer_one_pending() {
+        assert!(press_pending(100.0, 100.120));
     }
 
     #[test]

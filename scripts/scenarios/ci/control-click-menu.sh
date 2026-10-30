@@ -6,9 +6,8 @@
 #   the menu's bounds.
 #   Fidget quits when the scenario ends.
 # Input: one Control-click on the sprite (synthetic, via CGEvent), held while
-#   the menu is read; Escape closes the menu before the release. When the app
-#   draws no menu at all, the leaf clicks again, three times at most.
-# Duration: a few seconds; 20 s at most when a Control-click has to be repeated.
+#   the menu is read; Escape closes the menu before the release.
+# Duration: a few seconds.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
 # Asserts: the Control-click lands as Menu, and the open menu's Accessibility
 #   items include Chat…, Settings… and Quit.
@@ -65,25 +64,15 @@ wait_for_trace 3 "$log" '^frame: .* sprite\(' || fail "Fidget traced no frame; s
 wait_for_rest "$log" || fail "the sprite never came to rest; see $log"
 read -r w h < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
 
-# The app opens the tray menu and, in about one Control-click in five, draws no
-# menu at all: `popup_menu_at` returns with no menu window and the frame traces
-# keep coming through the click. Only that failure is retried.
-attempt=0
-while :; do
-  attempt=$((attempt + 1))
-  menu_dump="$out/menu.ax.txt"
-  [ "$attempt" -eq 1 ] || menu_dump="$out/menu.ax.$attempt.txt"
-  # A Poke can leave the sprite walking, so a retried click waits for rest
-  # before the newest frame line is trusted.
-  [ "$attempt" -eq 1 ] || wait_for_rest "$log" || fail "the sprite never came to rest after the retried click; see $log"
-  read -r x y < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
-  cx=$((x + w / 2))
-  cy=$((y + h / 2))
-  echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
+menu_dump="$out/menu.ax.txt"
+read -r x y < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$log" | tail -1) || fail "no frame trace in $log"
+cx=$((x + w / 2))
+cy=$((y + h / 2))
+echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
 
-  # Hold the Control-down while the menu is read: a release before the menu
-  # tracks lands on the overlay as a Poke. Escape closes it, then the release.
-  if swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT'
+# Hold the Control-down while the menu is read: a release before the menu
+# tracks lands on the overlay as a Poke. Escape closes it, then the release.
+swift - "$pid" "$cx" "$cy" "$out/menu.png" > "$menu_dump" 2>&1 << 'SWIFT' || fail "the menu read failed (exit $?); see $menu_dump"
 import AppKit
 import ApplicationServices
 
@@ -233,25 +222,10 @@ key(53)
 waitFor(kAXMenuClosedNotification, seconds: 2)
 mouse(.leftMouseUp)
 clearFlags()
-// 3 is "the app drew no menu", the one failure a second click answers to
-// (#1651). An empty read of a menu that did draw is this leaf's own bug, and a
-// retry would hide it, so it exits 1.
-if items.isEmpty { exit(rect == nil ? 3 : 1) }
+if items.isEmpty { exit(1) }
 items.forEach { print($0) }
 exit(0)
 SWIFT
-  then
-    break
-  else
-    code=$?
-  fi
-  [ "$code" -eq 3 ] || fail "the menu read failed (exit $code); see $menu_dump"
-  if [ "$attempt" -ge 3 ]; then
-    fail "the app drew no menu window after $attempt Control-clicks; see $menu_dump"
-  fi
-  echo "retry: the Control-click drew no menu window (#1651); clicking again (attempt $((attempt + 1)) of 3)" >&2
-  echo "retry: that read is in $menu_dump" >&2
-done
 
 wait_for_trace 2 "$log" '^verbs: .*\[Menu\]' || fail "the Control-click did not land as Menu; see $log"
 echo "ok: the Control-click landed as Menu"
