@@ -56,6 +56,8 @@ opened="$out/opened.txt"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %q\n' "$opened" > "$out/bin/open"
 chmod +x "$out/bin/open"
 
+seed_tour_shown "$out/home"
+start_ms=$(now_ms)
 env HOME="$out/home" PATH="$out/bin:$PATH" \
   FIDGET_HARNESS="$harness" \
   FIDGET_DIRECTOR_WAKE_SECS=1 \
@@ -117,4 +119,4 @@ if grep -qE 'Finish signing in in your browser' "$out/signed-in.ax.txt"; then
   fail "waiting line still present after sign-in; see $out/signed-in.ax.txt"
 fi
 echo "ok: session opened, waiting line cleared"
-echo "PASS: evidence in $out"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)"

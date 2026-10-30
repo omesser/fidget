@@ -150,6 +150,7 @@ sed -E \
 harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=slow count=$marks"
 [ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
+start_ms=$(now_ms)
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
   FIDGET_INSTANCES="bmo:One,bmo:Two" \
@@ -328,4 +329,4 @@ wait_until 3 textedit_has wander ||
   fail "a pill took \"wander\" after both had closed; see $log"
 echo "ok: typing went back to TextEdit"
 
-echo "PASS: evidence in $out"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)"

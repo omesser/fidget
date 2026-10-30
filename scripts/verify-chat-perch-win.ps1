@@ -353,11 +353,21 @@ try {
     }
     $marker = "Windows Chat perch"
     [System.Windows.Forms.SendKeys]::SendWait($marker)
-    Start-Sleep -Milliseconds 500
-    $typed = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    $value = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $null = Wait-For 2 { $value.Current.Value -eq $marker }
+    $typed = $value.Current.Value
     Set-Content -LiteralPath (Join-Path $out "composer-value.txt") -Value $typed
     if ($typed -ne $marker) { Fail "composer holds '$typed', expected '$marker'" }
     Pass "composer_click_and_type" "$focusLine value=$typed"
+
+    # Answer the ask, so the fixture Harness finishes its turn instead of waiting.
+    $allowName = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty, "Allow")
+    $allow = $UIA::FromHandle($chat).FindFirst([System.Windows.Automation.TreeScope]::Subtree, $allowName)
+    if (-not $allow) { Fail "no Allow button on the permission ask in Chat" }
+    $allow.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    if (-not (Wait-For 3 { (Lines $marks) -contains "replied" })) { Fail "the Harness never replied after Allow; see $marks" }
+    Write-Output "ok: answered the permission ask, and the Harness replied"
 
     Write-Output "PASS: all four Windows checks; evidence in $out"
 } finally {

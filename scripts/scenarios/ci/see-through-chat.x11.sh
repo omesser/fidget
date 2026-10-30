@@ -109,6 +109,7 @@ expect_depth() { # <case> <depth> [VAR=value...]
   ok "$case: Chat and Settings at depth $want"
 }
 
+start_ms=$(now_ms)
 expect_depth no-compositor 24
 # Fidget's frame trace is the clock the compositor check runs on.
 picom --backend xrender > "$out/picom.log" 2>&1 &
@@ -127,4 +128,4 @@ if printf '2.54\n%s\n' "$webkit" | sort -CV; then dmabuf=24; else dmabuf=32; fi
 expect_depth picom-dmabuf-off "$dmabuf" WEBKIT_DISABLE_DMABUF_RENDERER=1
 stop_fidget
 
-echo "PASS: evidence in $out" | tee -a "$results"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)" | tee -a "$results"
