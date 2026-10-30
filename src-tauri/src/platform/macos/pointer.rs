@@ -251,15 +251,14 @@ pub fn watch_delivered_presses() {
     std::mem::forget(monitor);
 }
 
-/// Measured mouse-downs arrived up to 40 ms after the counters saw the press;
-/// a pointerdown has trailed by 220 ms. Only a press that never comes
-/// pays all of it.
+/// Measured mouse-downs arrived up to 40 ms after the session saw the press;
+/// a pointerdown has trailed by 220 ms. Only a press that never comes, such
+/// as one another app took, pays all of it.
 const PRESS_DELIVERY_WAIT_SECS: f64 = 0.25;
 
 /// The session sees a press before AppKit delivers its mouse-down, and a menu
 /// that starts tracking first takes that mouse-down as a click that closes it.
-/// So dispatch it, and any older one queued ahead of it, first. A press
-/// another app took never comes, hence the wait.
+/// So dispatch it, and any older one queued ahead of it, first.
 pub fn deliver_pending_press() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -275,7 +274,7 @@ pub fn deliver_pending_press() {
             mode,
             true,
         ) else {
-            eprintln!("menu: the press's mouse-down never reached Fidget; opening anyway");
+            eprintln!("menu: no mouse-down matched the last press in time; opening anyway");
             return;
         };
         app.sendEvent(&event);
@@ -723,8 +722,6 @@ mod tests {
         );
     }
 
-    /// The session's last press, read back from its age, lands microseconds
-    /// either side of the timestamp its own delivered mouse-down carries.
     #[test]
     fn the_last_press_delivered_leaves_nothing_pending() {
         assert!(!press_pending(100.0, 100.000_002));
