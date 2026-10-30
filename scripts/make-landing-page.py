@@ -943,7 +943,9 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
 
     figures = "\n".join(
         f'<a class="card" href="characters.html#{name}"><figure><div class="art">'
-        + sprite(c["loops"]["walk"], c["name"], (' class="pixel"' if c["pixel"] else "")
+        + sprite(c["loops"]["idle"], c["name"], (' class="pixel"' if c["pixel"] else "")
+                 + f' data-walk-frames="{html.escape(json.dumps(c["loops"]["walk"]["frames"]))}"'
+                 + f' data-walk-fps="{c["loops"]["walk"]["fps"]}"'
                  + gesture(characters_root / name, manifest(characters_root / name), defaults["fps"]))
         + f'</div><figcaption>{html.escape(c["name"])}</figcaption></figure></a>'
         for name, c in players.items()
@@ -1157,6 +1159,7 @@ def self_check():
         (package / "frames" / "walk-0.png").write_bytes(art)
         page = render(readme, scratch, rust, shell)
         assert f'<a class="card" href="characters.html#{HERO}">' in page, "a cast card does not link its gallery section"
+        assert 'data-walk-frames="' in page, "a cast card cannot walk between its idles"
         engine = read_engine()
         heavy = dict(engine)
         heavy["engine.rs"] = re.sub(r"const GRAVITY: f64 = [\d_.]+;", "const GRAVITY: f64 = 1234.0;", engine["engine.rs"])

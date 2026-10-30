@@ -169,7 +169,11 @@
   .cast figcaption { font-size: .88rem; color: var(--ink-2); margin-top: .4rem; }
   /* A Packaged Fidgets card links its gallery section and plays its gesture
      while hovered or focused. Touch has no hover, so a tap just navigates. */
-  .cast a.card { display: block; color: inherit; text-decoration: none; border-radius: 12px; }
+  .cast a.card { display: flex; color: inherit; text-decoration: none; border-radius: 12px; }
+  /* Every card matches the tallest, across rows too, whether or not its
+     name wraps to a second line. */
+  .cast a.card figure { flex: 1; }
+  #characters .cast { grid-auto-rows: 1fr; }
   .cast a.card:focus-visible { outline: none; }
   .cast a.card figure { transition: transform 160ms cubic-bezier(.2, .7, .3, 1),
     border-color 160ms cubic-bezier(.2, .7, .3, 1), box-shadow 160ms cubic-bezier(.2, .7, .3, 1); }
@@ -695,12 +699,23 @@
   // frame, and a hidden tab stops every timer until it is shown again.
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const reel = (frames, fps, once) => ({ frames, once, ms: frames.map((_, n) => 1000 / (fps[n] ?? fps)) });
+  // A cast card rests between hovers: idle, idle, walk, walk, idle, each one
+  // full cycle. An idle cycle under 600ms repeats until its step lasts 1s.
+  const steps = (...parts) => ({ frames: parts.flatMap((part) => part.frames), once: false,
+    ms: parts.flatMap((part) => part.ms) });
+  function resting(idle, walk) {
+    const cycle = idle.ms.reduce((sum, ms) => sum + ms, 0);
+    const pause = steps(...Array(cycle < 600 ? Math.ceil(1000 / cycle) : 1).fill(idle));
+    return steps(pause, pause, walk, walk, pause);
+  }
   const loops = [...document.querySelectorAll("img[data-frames]")].map((img) => {
-    const walk = reel(JSON.parse(img.dataset.frames), Number(img.dataset.fps), false);
-    if (!still) walk.frames.forEach((src) => { new Image().src = src; });
+    const own = reel(JSON.parse(img.dataset.frames), Number(img.dataset.fps), false);
+    const rest = img.dataset.walkFrames
+      ? resting(own, reel(JSON.parse(img.dataset.walkFrames), Number(img.dataset.walkFps), false)) : own;
+    if (!still) new Set(rest.frames).forEach((src) => { new Image().src = src; });
     const gesture = img.dataset.gestureFrames && reel(JSON.parse(img.dataset.gestureFrames),
       JSON.parse(img.dataset.gestureFps), "gestureOnce" in img.dataset);
-    return { img, walk, gesture, now: walk, i: 0, timer: 0, leaving: 0 };
+    return { img, rest, gesture, now: rest, i: 0, timer: 0, leaving: 0 };
   });
   function showFrame(loop, now, i) {
     loop.now = now;
@@ -708,22 +723,22 @@
     loop.img.src = now.frames[i];
   }
   // A once clip holds its last frame. Leaving lets the gesture finish its
-  // cycle, then walks again.
+  // cycle, then rests again from the first idle.
   function stepLoop(loop) {
     clearTimeout(loop.timer);
     const { now, i } = loop;
     const last = now.frames.length - 1;
     if (still || document.hidden || (now.once && i === last && !loop.leaving)) return;
     loop.timer = setTimeout(() => {
-      if (loop.leaving && i === last) return walkAgain(loop);
+      if (loop.leaving && i === last) return restAgain(loop);
       showFrame(loop, now, (i + 1) % now.frames.length);
       stepLoop(loop);
     }, now.ms[i]);
   }
-  function walkAgain(loop) {
+  function restAgain(loop) {
     clearTimeout(loop.leaving);
     loop.leaving = 0;
-    showFrame(loop, loop.walk, 0);
+    showFrame(loop, loop.rest, 0);
     stepLoop(loop);
   }
   function run() {
@@ -744,12 +759,12 @@
       if (lit && loop.leaving) {
         clearTimeout(loop.leaving);
         loop.leaving = 0;
-      } else if (lit && loop.now === loop.walk) {
+      } else if (lit && loop.now === loop.rest) {
         showFrame(loop, loop.gesture, still && loop.gesture.once ? loop.gesture.frames.length - 1 : 0);
         stepLoop(loop);
       } else if (!lit && loop.now === loop.gesture && !loop.leaving) {
-        if (still || (loop.gesture.once && loop.i === loop.gesture.frames.length - 1)) walkAgain(loop);
-        else loop.leaving = setTimeout(() => walkAgain(loop), 600);
+        if (still || (loop.gesture.once && loop.i === loop.gesture.frames.length - 1)) restAgain(loop);
+        else loop.leaving = setTimeout(() => restAgain(loop), 600);
       }
     };
     card.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") { over = true; update(); } });
