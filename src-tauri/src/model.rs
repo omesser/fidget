@@ -960,9 +960,11 @@ impl Completer for Endpoint {
         let prompt = request.text(false);
         if tracing() {
             eprintln!(
-                "director: sending POST {} model={}",
-                redact_url(&self.url, &self.url),
-                self.model
+                "{}",
+                director_trace(
+                    &format!("sending POST {} model={}", self.url, self.model),
+                    &self.url
+                )
             );
             trace_block("prompt", &prompt);
             eprintln!("director: waiting for model");
@@ -976,11 +978,11 @@ impl Completer for Endpoint {
             }
             Err(error) => {
                 if tracing() {
-                    eprintln!("director: http {}", redact_url(&error, &self.url));
+                    eprintln!("{}", director_trace(&format!("http {error}"), &self.url));
                 }
                 if let Some(alt) = fallback_url(&self.url, &error) {
                     if tracing() {
-                        eprintln!("director: trying {}", redact_url(&alt, &alt));
+                        eprintln!("{}", director_trace(&format!("trying {alt}"), &alt));
                     }
                     match self.post(&alt, &prompt, &request.instance, said) {
                         Ok(reply) => {
@@ -991,7 +993,7 @@ impl Completer for Endpoint {
                         }
                         Err(alt_error) => {
                             if tracing() {
-                                eprintln!("director: http {}", redact_url(&alt_error, &alt));
+                                eprintln!("{}", director_trace(&format!("http {alt_error}"), &alt));
                             }
                             Err(alt_error)
                         }
@@ -1036,6 +1038,10 @@ fn redact_url(text: &str, url: &str) -> String {
         None => "<redacted-url>".to_string(),
     };
     text.replace(url, &shown)
+}
+
+fn director_trace(line: &str, url: &str) -> String {
+    format!("director: {}", redact_url(line, url))
 }
 
 fn alternate_url(url: &str) -> Option<String> {
@@ -3790,16 +3796,16 @@ pub(crate) mod tests {
     fn a_director_trace_hides_url_secrets() {
         let url = "https://user:pass@api.openai.com/v1/chat/completions?api_key=sek#frag"; // pragma: allowlist secret
         assert_eq!(
-            format!(
-                "director: sending POST {} model=gpt-4o",
-                redact_url(url, url)
-            ),
+            director_trace(&format!("sending POST {url} model=gpt-4o"), url),
             "director: sending POST https://api.openai.com/v1/chat/completions model=gpt-4o"
         );
-        let error = format!("{url}: status 401");
         assert_eq!(
-            format!("director: http {}", redact_url(&error, url)),
+            director_trace(&format!("http {url}: status 401"), url),
             "director: http https://api.openai.com/v1/chat/completions: status 401"
+        );
+        assert_eq!(
+            director_trace(&format!("trying {url}"), url),
+            "director: trying https://api.openai.com/v1/chat/completions"
         );
     }
 
