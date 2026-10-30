@@ -1970,7 +1970,10 @@ pub(crate) fn run_frame_loop(
                         // The panel shows this copy. The worker appends `line`
                         // after `request`, so an in-flight reply can still open
                         // the session before this wake is sent.
-                        let mut payload = model.prompt_in_language(&context, crate::i18n::reply_language());
+                        let mut payload = model.prompt_in_language(
+                            &context,
+                            crate::i18n::reply_language(),
+                        );
                         if !payload.ends_with('\n') {
                             payload.push('\n');
                         }

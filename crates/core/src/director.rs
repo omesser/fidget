@@ -397,7 +397,11 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     /// Build this wake with an explicit language, without shared mutable state.
-    pub fn request_in_language(&self, context: &Context, reply_language: Option<&str>) -> WakeRequest {
+    pub fn request_in_language(
+        &self,
+        context: &Context,
+        reply_language: Option<&str>,
+    ) -> WakeRequest {
         WakeRequest {
             prompt: named_moment(context, &self.instance),
             layers: character_layers(context, self.behaviors.iter(), self.blank, reply_language),
