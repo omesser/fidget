@@ -34,7 +34,7 @@ SHOWCASES = (
     # Permission granted by MekaRamen (Yeoh Kher En) to publish.
     ("timber-wolf-walk.gif", "timber-wolf", "walk", 20, 8),
     ("trump-wave.gif", "trump", "wave", 3, 4),
-    ("tux-checking-work.gif", "tux", "checking-work", 6, 3),
+    ("tux-recover-card.gif", "tux", "recover-card", 8, 3),
 )
 
 

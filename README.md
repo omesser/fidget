@@ -54,7 +54,7 @@ Buddy Bot is the default. Ten Characters ship; each moves and speaks differently
 </tr>
 <tr>
 <td align="center" colspan="2"><img src="./docs/readme/rubber-duck-talk.gif" height="96" alt="Rubber Duck" /><br><b><a href="./characters/rubber-duck/personality.txt">Rubber Duck</a></b><br><sub>Patient listener. One small question at a time.</sub></td>
-<td align="center" colspan="2"><img src="./docs/readme/tux-checking-work.gif" height="96" alt="Tux" /><br><b><a href="./characters/tux/personality.txt">Tux</a></b><br><sub>Cozy penguin. Small commands and a flipper salute.</sub></td>
+<td align="center" colspan="2"><img src="./docs/readme/tux-recover-card.gif" height="96" alt="Tux" /><br><b><a href="./characters/tux/personality.txt">Tux</a></b><br><sub>Cozy penguin. Small commands and a flipper salute.</sub></td>
 </tr>
 </table>
 
