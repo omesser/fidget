@@ -1040,7 +1040,7 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
     let (_, frozen, _) = harness_env_row_parts("AI source");
     let (model_label, model_frozen, model_status) = env_row_parts("Model", model::MODEL);
     FormSection {
-        heading: HARNESS_HEADING.to_string(),
+        heading: tr(HARNESS_HEADING),
         serves: Some(AiSource::Harness),
         comment: None,
         disclosure: None,
@@ -1088,7 +1088,7 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
 /// is no log or file.
 fn byo_section() -> FormSection {
     FormSection {
-        heading: BYO_HEADING.to_string(),
+        heading: tr(BYO_HEADING),
         serves: None,
         comment: Some(tr("For a Harness you start in your own terminal.")),
         disclosure: Some(
@@ -2322,6 +2322,7 @@ pub(crate) mod tests {
             "Harness attachment",
             "Hide",
             "Instances",
+            "Language",
             "Last user turn",
             "Launch",
             "Memory File",
@@ -2332,6 +2333,18 @@ pub(crate) mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(headings, expected);
+    }
+
+    #[test]
+    fn a_language_title_and_its_stored_code_round_trip() {
+        assert_eq!(language_options()[0], LANGUAGE_SYSTEM);
+        for title in language_options() {
+            assert_eq!(language_title(&language_choice(&title)), title);
+        }
+        assert_eq!(language_choice("Français"), "fr");
+        assert_eq!(language_choice(LANGUAGE_SYSTEM), "");
+        assert_eq!(language_title("es"), "Español");
+        assert_eq!(language_title("de"), LANGUAGE_SYSTEM);
     }
 
     #[test]

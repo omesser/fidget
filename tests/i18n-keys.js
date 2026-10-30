@@ -25,6 +25,7 @@ export const INDIRECT = [
   "Custom",
   "Model API",
   "Harness · Custom",
+  "BYO - Point existing Harness at Fidget",
   "low",
   "medium",
   "high",

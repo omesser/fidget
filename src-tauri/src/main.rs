@@ -2651,7 +2651,7 @@ fn build_settings(
     let handle = app.clone();
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .initialization_script(i18n::init_script())
-        .title(&i18n::tr("Settings"))
+        .title(i18n::tr("Settings"))
         .inner_size(600.0, 520.0)
         .min_inner_size(480.0, 400.0)
         // Settings wears the Chat UI, whose rules assume Chat's see-through window.

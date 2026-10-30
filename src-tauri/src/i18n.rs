@@ -167,7 +167,7 @@ fn catalog(lang: Lang) -> &'static HashMap<String, String> {
 }
 
 /// `en` in `lang`, or `en` itself where the catalog has no entry.
-pub fn translate<'a>(lang: Lang, en: &'a str) -> &'a str {
+pub fn translate(lang: Lang, en: &str) -> &str {
     catalog(lang).get(en).map(String::as_str).unwrap_or(en)
 }
 

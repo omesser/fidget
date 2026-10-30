@@ -30,6 +30,7 @@
   "At least one caffeinate flag has to stay on.": "Al menos una opción de cafeína debe seguir activada.",
   "Auth retry, in seconds": "Reintento de autenticación, en segundos",
   "Awake": "Despierto",
+  "BYO - Point existing Harness at Fidget": "BYO - Apuntar un Harness existente a Fidget",
   "Base URL": "URL base",
   "Blank AI": "IA en blanco",
   "Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.": "IA en blanco vacía el Prompt de Personalidad integrado y las instrucciones de la aplicación (reglas de voz, lista de comportamientos, contrato de respuesta). Un Prompt de Instancia que escribas se sigue enviando, para que una prueba de control pueda iterar un prompt en las condiciones de Fidget. La pestaña Prompt muestra esas tres capas; las vaciadas dicen Vacío. Sin contrato, el fidget dice lo que llega y no reproduce ningún Comportamiento salvo que ese Prompt de Instancia lo pida. Cambiarlo abre una sesión nueva, para que ninguna sesión mezcle los dos prompts.",

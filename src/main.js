@@ -10,7 +10,7 @@ import {
   readableBubbleRect,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
-import { t } from "./i18n.js";
+import { onLocaleChange, t } from "./i18n.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
@@ -330,6 +330,13 @@ function noteQuickOpening(opening) {
     paintQuickGate(view, opening);
   }
 }
+
+// The pill's sentence is in the interface language, so a new one re-asks.
+onLocaleChange(() => {
+  for (const [id, view] of views) {
+    if (view.quickGate) refreshQuickGate(view, id);
+  }
+});
 
 function reportComposing() {
   let id = "";
