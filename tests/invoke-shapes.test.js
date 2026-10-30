@@ -211,7 +211,7 @@ test("every renderer invoke names a registered command with its parameters as ke
     .join("\n");
   const { problems, checked } = check(sources, rust);
   assert.deepEqual(problems, []);
-  for (const name of ["overlay_report_qm_draft", "overlay_trace_bubble", "names_hint_act", "character_import_remove"]) {
+  for (const name of ["overlay_report_qm_draft", "overlay_trace_bubble", "names_hint_act", "character_import_remove", "character_import_folder"]) {
     assert.ok(checked.has(name), `${name} was found and checked`);
   }
 });

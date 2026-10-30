@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use fidget_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
@@ -160,6 +160,15 @@ pub fn user_characters_dir() -> PathBuf {
     fidget_core::memory::data_dir().join("characters")
 }
 
+/// Where Settings > Character Imports keeps its own copies. Fidget owns every
+/// file here, so Remove can delete them; the user folder is never touched.
+pub fn imported_characters_dir() -> PathBuf {
+    fidget_core::memory::data_dir().join(IMPORTED_CHARACTERS)
+}
+
+/// The managed folder's name under the data dir.
+const IMPORTED_CHARACTERS: &str = "imported-characters";
+
 /// Where fidget looks for Character Packages, in order. `FIDGET_CHARACTERS`
 /// goes in front, the way `PATH` does, and earlier wins. Replacing the other
 /// directories would hide the user folder and the shipped packages.
@@ -184,6 +193,9 @@ fn search_paths_from(bundled: Option<PathBuf>, roots: PackageRoots<'_>) -> Vec<P
         paths.extend(split_list(extra, roots.desktop.separator()));
     }
     paths.push(roots.data_dir.join("characters"));
+    // After the user folder: a package placed there by hand is the user's own
+    // choice, so it wins over Fidget's copy should a stem ever repeat.
+    paths.push(roots.data_dir.join(IMPORTED_CHARACTERS));
     if roots.desktop == Desktop::Linux {
         // An XDG base is `/usr/share`, not `.../fidget`, so both components are added.
         for base in xdg_bases(roots.xdg_data_dirs) {
@@ -539,6 +551,69 @@ pub fn read_import_archive(path: &Path) -> Result<PackageBytes, String> {
         .collect())
 }
 
+/// Pack the folder at `root` into `out` as a ZIP, for `read_import_archive`.
+///
+/// The walk counts every file against the package limits and refuses links
+/// before a byte is written, so an oversized folder fails fast.
+pub fn pack_import_directory<W: Write + Seek>(root: &Path, out: W) -> Result<(), String> {
+    let mut found = Vec::new();
+    let mut budget = Budget::new();
+    let mut pending = vec![(root.to_path_buf(), 1usize)];
+
+    while let Some((directory, depth)) = pending.pop() {
+        let entries = fs::read_dir(&directory)
+            .map_err(|e| format!("{} could not be listed: {e}", directory.display()))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| format!("{} could not be read: {e}", directory.display()))?;
+            let path = entry.path();
+            let metadata = path
+                .symlink_metadata()
+                .map_err(|e| format!("{} could not be read: {e}", path.display()))?;
+            if metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "{} is a symlink. Character folders cannot contain links.",
+                    path.display()
+                ));
+            }
+            if metadata.is_dir() {
+                if entry.file_name() == ".git" {
+                    continue; // a cloned repository's history is not part of the Character
+                }
+                // The same bound read_import_archive puts on a ZIP entry's path.
+                if depth >= MAX_PACKAGE_DEPTH + 4 {
+                    return Err(format!("{} exceeds the nesting limit", path.display()));
+                }
+                pending.push((path, depth + 1));
+                continue;
+            }
+            if !metadata.is_file() {
+                continue; // a socket or a device: not art and not a manifest
+            }
+            budget.charge(metadata.len())?;
+            let name = relative_name(root, &path)
+                .ok_or_else(|| format!("{} has a non-Unicode path", path.display()))?;
+            found.push((name, path, metadata.len()));
+        }
+    }
+
+    let mut zip = zip::ZipWriter::new(out);
+    let stored: zip::write::FileOptions<'_, '_, ()> =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, path, size) in found {
+        zip.start_file(name.as_str(), stored)
+            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
+        let file = fs::File::open(&path)
+            .map_err(|e| format!("{} could not be read: {e}", path.display()))?;
+        // Bounded by the size that was charged, in case the file grew since.
+        std::io::copy(&mut file.take(size), &mut zip)
+            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
+    }
+    zip.finish()
+        .map_err(|e| format!("Cannot finish character ZIP: {e}"))?;
+    Ok(())
+}
+
 /// IDs are used strictly as flat package stems. Never accept a path from a
 /// settings webview, even though the frontend only sends our own IDs.
 pub fn safe_package_id(id: &str) -> bool {
@@ -617,16 +692,13 @@ pub fn import_name_conflict(name: &str, installed: &[PathBuf]) -> Result<Option<
     Ok(None)
 }
 
-/// Persist one validated package as a flat .zip in the same user directory
-/// that ordinary discovery already searches. tempfile's noclobber persistence
-/// refuses simultaneous imports and never exposes a half-written archive.
-pub fn save_user_archive(files: &PackageBytes, name: &str) -> Result<PathBuf, String> {
-    use std::io::Write;
-    let directory = user_characters_dir();
-    fs::create_dir_all(&directory)
-        .map_err(|e| format!("Cannot create character directory: {e}"))?;
+/// Copies the validated bytes into `directory`; the source is never kept or referenced.
+///
+/// Noclobber persistence refuses simultaneous imports and never exposes a half-written archive.
+fn save_import(directory: &Path, files: &PackageBytes, name: &str) -> Result<PathBuf, String> {
+    fs::create_dir_all(directory).map_err(|e| format!("Cannot create character directory: {e}"))?;
     let destination = directory.join(format!("{}.zip", package_id(name)?));
-    let temp = tempfile::NamedTempFile::new_in(&directory)
+    let temp = tempfile::NamedTempFile::new_in(directory)
         .map_err(|e| format!("Cannot start character import: {e}"))?;
     let mut zip = zip::ZipWriter::new(temp);
     let stored: zip::write::FileOptions<'_, '_, ()> =
@@ -650,6 +722,86 @@ pub fn save_user_archive(files: &PackageBytes, name: &str) -> Result<PathBuf, St
     Ok(destination)
 }
 
+/// Validate the Character ZIP at `source` and install a copy in `managed`.
+/// `installed` is every package already visible, which the name may not shadow.
+pub fn import_package(
+    managed: &Path,
+    installed: &[PathBuf],
+    source: &Path,
+) -> Result<String, String> {
+    if !source.is_file()
+        || !source
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(ARCHIVE_EXTENSION))
+    {
+        return Err("Choose a .zip character package".to_string());
+    }
+    let bytes = read_import_archive(source)?;
+    let character = fidget_core::character::load(&bytes)
+        .map_err(|errors| format!("Character package is invalid:\n{}", errors.join("\n")))?;
+    // Both runtime file stems and normalised display names: a user ZIP could
+    // otherwise silently shadow the built-in default at restart.
+    if let Some(conflict) = import_name_conflict(&character.name, installed)? {
+        return Err(format!(
+            "Cannot import '{}': it conflicts with {conflict}. Choose a different Character name.",
+            character.name
+        ));
+    }
+    save_import(managed, &bytes, &character.name)?;
+    Ok(character.name)
+}
+
+/// Every Character Fidget imported into `managed`, by package ID.
+pub fn imports(managed: &Path) -> Vec<(String, fidget_core::character::Character)> {
+    let Ok(directory) = fs::read_dir(managed) else {
+        return Vec::new(); // nothing has been imported yet
+    };
+    let mut found = Vec::new();
+    for entry in directory.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_file()
+            || !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case(ARCHIVE_EXTENSION))
+        {
+            continue;
+        }
+        let Some(id) = path.file_stem().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if !safe_package_id(id) {
+            continue;
+        }
+        let Ok(bytes) = read(&path) else {
+            continue;
+        };
+        let Ok(character) = fidget_core::character::load(&bytes) else {
+            continue;
+        };
+        found.push((id.to_string(), character));
+    }
+    found.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    found
+}
+
+/// Deletes only Fidget's managed copy in `managed`, never the user's source ZIP or folder.
+///
+/// `may_forget` sees the Character's name and can refuse, for one that is in use.
+pub fn forget_import(
+    managed: &Path,
+    id: &str,
+    may_forget: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    if !safe_package_id(id) {
+        return Err("Invalid character package ID".to_string());
+    }
+    let path = managed.join(format!("{id}.{ARCHIVE_EXTENSION}"));
+    let character = fidget_core::character::load(&read(&path).map_err(|e| e.to_string())?)
+        .map_err(|errors| errors.join("\n"))?;
+    may_forget(&character.name)?;
+    fs::remove_file(path).map_err(|error| format!("Could not remove character: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -662,6 +814,139 @@ mod tests {
         assert_eq!(character.name, "Blip");
         assert!(files.contains_key(CHARACTER_MANIFEST_FILE));
         assert!(files.contains_key("frames/idle-0.png"));
+    }
+
+    /// Pack `folder` the way the folder import does, into memory.
+    fn pack(folder: &Path) -> (Result<(), String>, Vec<u8>) {
+        let mut out = std::io::Cursor::new(Vec::new());
+        let result = pack_import_directory(folder, &mut out);
+        (result, out.into_inner())
+    }
+
+    #[test]
+    fn a_character_folder_imports_through_the_zip_reader() {
+        let dir = TempDir::new("folder-import");
+        let folder = dir.join("dosidicus-squid");
+        write_package(&folder);
+        fs::create_dir_all(folder.join(".git/objects")).unwrap();
+        fs::write(folder.join(".git/HEAD"), b"ref: refs/heads/main").unwrap();
+        let (result, zip) = pack(&folder);
+        result.expect("a Character folder packs");
+        let archive = dir.join("packed.zip");
+        fs::write(&archive, zip).unwrap();
+
+        let files = read_import_archive(&archive).expect("the packed folder reads as a ZIP");
+        let expected: PackageBytes = package_files().into_iter().collect();
+        assert_eq!(files, expected, "the folder round-trips byte for byte");
+        assert_eq!(character::load(&files).expect("valid").name, "Blip");
+    }
+
+    /// Every file under `root` with its bytes, to show a source was left alone.
+    fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        let mut found = BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(directory).unwrap().filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    found.insert(path.clone(), fs::read(&path).unwrap());
+                }
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn removing_an_import_leaves_the_source_zip_and_folder_untouched() {
+        let dir = TempDir::new("forget-import");
+        let sources = dir.join("downloads");
+        fs::create_dir_all(&sources).unwrap();
+        write_archive(&sources.join("blip.zip"), "blip", false);
+        write_package(&sources.join("blip-folder"));
+        let before = snapshot(&sources);
+        let managed = dir.join("imported-characters");
+
+        let zip = sources.join("blip.zip");
+        assert_eq!(import_package(&managed, &[], &zip).unwrap(), "Blip");
+        forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
+        assert!(!managed.join("blip.zip").exists(), "Fidget's copy is gone");
+
+        let packed = dir.join("packed.zip");
+        pack_import_directory(
+            &sources.join("blip-folder"),
+            fs::File::create(&packed).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(import_package(&managed, &[], &packed).unwrap(), "Blip");
+        forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
+
+        assert_eq!(
+            snapshot(&sources),
+            before,
+            "the sources are byte for byte as they were"
+        );
+    }
+
+    #[test]
+    fn a_hand_placed_zip_is_not_listed_and_cannot_be_removed() {
+        let dir = TempDir::new("hand-placed");
+        let user = dir.join("characters");
+        fs::create_dir_all(&user).unwrap();
+        write_archive(&user.join("blip.zip"), "blip", false);
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert!(
+            imports(&managed).is_empty(),
+            "only Fidget's imports are listed"
+        );
+        forget_import(&managed, "blip", |_| Ok(())).expect_err("not Fidget's to remove");
+        assert!(user.join("blip.zip").exists(), "the user's ZIP stays");
+
+        // The commands use these two folders: apart, and both discovered.
+        assert_ne!(imported_characters_dir(), user_characters_dir());
+        assert!(!imported_characters_dir().starts_with(user_characters_dir()));
+        assert!(search_paths(None).contains(&imported_characters_dir()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_with_a_symlink_is_refused() {
+        let dir = TempDir::new("folder-symlink");
+        let folder = dir.join("character");
+        write_package(&folder);
+        std::os::unix::fs::symlink("/etc/passwd", folder.join("frames/stolen.png")).unwrap();
+        let (result, zip) = pack(&folder);
+        let error = result.expect_err("a link could reach outside the folder");
+        assert!(error.contains("stolen.png is a symlink"), "{error}");
+        assert!(zip.is_empty(), "nothing is packed");
+    }
+
+    #[test]
+    fn an_over_limit_folder_is_refused_before_anything_is_written() {
+        let dir = TempDir::new("folder-over-limit");
+        let many = dir.join("many");
+        write_package(&many);
+        for index in 0..MAX_PACKAGE_FILES {
+            fs::write(many.join(format!("extra-{index}")), b"").unwrap();
+        }
+        let (result, zip) = pack(&many);
+        let error = result.expect_err("too many files");
+        assert!(error.contains("more than 4096 files"), "{error}");
+        assert!(zip.is_empty(), "refused during the walk, before packing");
+
+        let large = dir.join("large");
+        write_package(&large);
+        // Sparse, so the test does not write 64 MiB.
+        fs::File::create(large.join("huge.bin"))
+            .unwrap()
+            .set_len(MAX_PACKAGE_BYTES + 1)
+            .unwrap();
+        let (result, zip) = pack(&large);
+        let error = result.expect_err("too many bytes");
+        assert!(error.contains("more than 64 MiB"), "{error}");
+        assert!(zip.is_empty(), "refused during the walk, before packing");
     }
 
     #[test]
@@ -1348,7 +1633,11 @@ mod tests {
                     Some(OsStr::new("/usr/share"))
                 ),
             ),
-            vec![data_dir.join("characters"), bundled]
+            vec![
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
+                bundled
+            ]
         );
     }
 
@@ -1363,6 +1652,7 @@ mod tests {
             ),
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 PathBuf::from("/usr/share/fidget/characters"),
                 bundled,
@@ -1387,6 +1677,7 @@ mod tests {
             set,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/opt/share/fidget/characters"),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 bundled.clone(),
@@ -1401,6 +1692,7 @@ mod tests {
             empty,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 PathBuf::from("/usr/share/fidget/characters"),
                 bundled,
@@ -1424,6 +1716,7 @@ mod tests {
             paths,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/share/fidget/characters"),
             ]
         );
@@ -1448,6 +1741,7 @@ mod tests {
                 PathBuf::from("/tmp/one"),
                 PathBuf::from("/tmp/two"),
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 bundled.clone(),
             ]
         );
@@ -1468,6 +1762,7 @@ mod tests {
                 PathBuf::from(r"D:\one"),
                 PathBuf::from(r"E:\two"),
                 windows_data.join("characters"),
+                windows_data.join(IMPORTED_CHARACTERS),
                 bundled,
             ]
         );
@@ -1489,7 +1784,8 @@ mod tests {
             paths,
             vec![
                 PathBuf::from(r"D:\chars:still"),
-                data_dir.join("characters")
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS)
             ]
         );
     }
@@ -1502,7 +1798,14 @@ mod tests {
             Some(bundled.clone()),
             roots(Desktop::Windows, data_dir, None, None),
         );
-        assert_eq!(paths, vec![data_dir.join("characters"), bundled]);
+        assert_eq!(
+            paths,
+            vec![
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
+                bundled
+            ]
+        );
         assert!(
             paths.iter().all(|path| !path
                 .components()
@@ -1538,6 +1841,7 @@ mod tests {
             empty,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/share/fidget/characters"),
                 PathBuf::from("/bundled/characters"),
             ]

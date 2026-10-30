@@ -13,7 +13,7 @@ import { pageWait } from "./page-wait.js";
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const read = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
 
-test("Import from zip matches the New button, warns below it, and an empty status has no height", { skip: chromeSkip, timeout: 60000 }, async () => {
+test("both import buttons match the New button, the warning sits below them, and an empty status has no height", { skip: chromeSkip, timeout: 60000 }, async () => {
   const snapshot = {
     form: read("settings-snapshot-harnessDriving.json"),
     view: read("settings-values-harnessDriving.json"),
@@ -38,12 +38,16 @@ test("Import from zip matches the New button, warns below it, and an empty statu
     [...document.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Character").click();
     await settle();
     const imports = document.querySelector(".set-character-imports");
-    const importButton = imports.querySelector("button");
+    const [importButton, folderButton] = imports.querySelectorAll(".set-controls button");
     const newButton = document.querySelector('[data-row="new_instance"] button');
     console.log("__PROBE_RESULT__" + JSON.stringify({
       heading: imports.querySelector("h3").textContent,
       label: importButton.textContent,
       importHeight: box(importButton).height,
+      folderLabel: folderButton.textContent,
+      folderHeight: box(folderButton).height,
+      sameRow: importButton.getBoundingClientRect().top === folderButton.getBoundingClientRect().top,
+      folderFits: folderButton.scrollWidth <= folderButton.clientWidth,
       newHeight: box(newButton).height,
       status: box(imports.querySelector(".set-status")),
       order: [...imports.children].map((node) => node.className || node.tagName),
@@ -67,7 +71,11 @@ test("Import from zip matches the New button, warns below it, and an empty statu
   assert.equal(seen.heading, "Character Imports");
   assert.equal(seen.label, "Import from zip");
   assert.equal(seen.importHeight, seen.newHeight, "same height as the New button");
-  assert.deepEqual(seen.order, ["H3", "set-help", "set-controls", "set-notice set-caution", "set-status", "set-list"], "the trust warning sits under the button");
+  assert.equal(seen.folderLabel, "Import from folder");
+  assert.equal(seen.folderHeight, seen.newHeight, "the folder button matches too");
+  assert.ok(seen.sameRow, "the two import buttons sit side by side");
+  assert.ok(seen.folderFits, "the folder label is not clipped");
+  assert.deepEqual(seen.order, ["H3", "set-help", "set-controls", "set-notice set-caution", "set-status", "set-list"], "the trust warning sits under the buttons");
   assert.match(seen.warning, /Only import ones from people you trust/);
   assert.notEqual(seen.cautionBar, seen.errorBar, "the trust warning is not drawn as an error");
   assert.deepEqual(seen.status, { width: seen.status.width, height: 0 }, "empty status draws no strip");

@@ -1,4 +1,4 @@
-// A user-facing Character ZIP installer inside the existing Character tab.
+// A user-facing Character installer, from a ZIP or folder, inside the Character tab.
 // The Rust commands own all filesystem paths and validation; the webview never
 // receives read/write access to arbitrary files.
 
@@ -7,7 +7,7 @@ export function importMessage(name) {
 }
 
 export function removeMessage(name) {
-  return `${name} removed. Restart Fidget to update the Character menu.`;
+  return `Fidget's copy of ${name} removed. Restart Fidget to update the Character menu.`;
 }
 
 export function mountCharacterImports(panel) {
@@ -20,17 +20,20 @@ export function mountCharacterImports(panel) {
   heading.textContent = "Character Imports";
   const intro = document.createElement("p");
   intro.className = "set-help";
-  intro.textContent = "Add a Character from a ZIP file.";
+  intro.textContent = "Add a Character from a ZIP file or folder.";
   const warning = document.createElement("p");
   warning.className = "set-notice set-caution";
   warning.textContent = "Characters include a personality the AI reads. Only import ones from people you trust.";
   const importButton = document.createElement("button");
   importButton.type = "button";
   importButton.textContent = "Import from zip";
-  // .set-controls gives it the same size as every other Settings button.
+  const folderButton = document.createElement("button");
+  folderButton.type = "button";
+  folderButton.textContent = "Import from folder";
+  // .set-controls gives them the same size as every other Settings button.
   const controls = document.createElement("div");
   controls.className = "set-controls";
-  controls.append(importButton);
+  controls.append(importButton, folderButton);
   const message = document.createElement("p");
   message.className = "set-status";
   message.setAttribute("role", "status");
@@ -40,7 +43,10 @@ export function mountCharacterImports(panel) {
   wrap.append(heading, intro, controls, warning, message, list);
   section.append(wrap);
 
-  const busy = (on) => { importButton.disabled = on; };
+  const busy = (on) => {
+    importButton.disabled = on;
+    folderButton.disabled = on;
+  };
   // The Shell returns bare errors; this is the one place that labels them.
   const showError = (error) => {
     const detail = typeof error === "string" ? error : (error?.message || String(error));
@@ -54,7 +60,7 @@ export function mountCharacterImports(panel) {
       list.replaceChildren();
       if (characters.length === 0) {
         const empty = document.createElement("li");
-        empty.textContent = "No imported Character ZIPs yet.";
+        empty.textContent = "No imported Characters yet.";
         list.append(empty);
       }
       for (const character of characters) {
@@ -84,10 +90,11 @@ export function mountCharacterImports(panel) {
     }
   }
 
-  importButton.addEventListener("click", async () => {
+  // Each caller names its command literally, so the invoke check can see it.
+  const runImport = async (pick) => {
     busy(true);
     try {
-      const name = await window.__TAURI_INTERNALS__.invoke("character_import_zip");
+      const name = await pick();
       if (name) {
         message.textContent = importMessage(name);
         await refresh();
@@ -97,6 +104,10 @@ export function mountCharacterImports(panel) {
     } finally {
       busy(false);
     }
-  });
+  };
+  importButton.addEventListener("click", () =>
+    runImport(() => window.__TAURI_INTERNALS__.invoke("character_import_zip")));
+  folderButton.addEventListener("click", () =>
+    runImport(() => window.__TAURI_INTERNALS__.invoke("character_import_folder")));
   refresh();
 }

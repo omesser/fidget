@@ -33,9 +33,9 @@ function setup(invoke) {
   const section = new Element();
   mountCharacterImports({ querySelector: () => section });
   const [, intro, controls, warning, status, list] = section.children[0].children;
-  const [importButton] = controls.children;
+  const [importButton, folderButton] = controls.children;
   return {
-    intro, warning, importButton, status, list,
+    intro, warning, importButton, folderButton, status, list,
     restore() {
       globalThis.window = oldWindow;
       globalThis.document = oldDocument;
@@ -68,10 +68,11 @@ test("import and remove run straight through native commands and say to restart"
   try {
     await settle();
     assert.match(ui.warning.textContent, /Only import ones from people you trust/);
-    assert.equal(ui.intro.textContent, "Add a Character from a ZIP file.");
+    assert.equal(ui.intro.textContent, "Add a Character from a ZIP file or folder.");
     assert.equal(ui.importButton.textContent, "Import from zip");
+    assert.equal(ui.folderButton.textContent, "Import from folder");
     assert.equal(ui.warning.className, "set-notice set-caution");
-    assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
+    assert.equal(ui.list.children[0].textContent, "No imported Characters yet.");
 
     await ui.importButton.click();
     assert.equal(ui.status.textContent, "Dosidicus Squid installed. Restart Fidget to use it.");
@@ -81,8 +82,8 @@ test("import and remove run straight through native commands and say to restart"
     assert.equal(removeButton.disabled, false);
 
     await removeButton.click();
-    assert.match(ui.status.textContent, /removed/);
-    assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
+    assert.equal(ui.status.textContent, "Fidget's copy of Dosidicus Squid removed. Restart Fidget to update the Character menu.");
+    assert.equal(ui.list.children[0].textContent, "No imported Characters yet.");
     assert.deepEqual(calls.map(([name]) => name), [
       "character_import_list",
       "character_import_zip",
@@ -90,6 +91,31 @@ test("import and remove run straight through native commands and say to restart"
       "character_import_remove",
       "character_import_list",
     ]);
+  } finally {
+    ui.restore();
+  }
+});
+
+test("import from folder runs its own native command and says to restart", async () => {
+  const calls = [];
+  let characters = [];
+  const ui = setup(async (command) => {
+    calls.push(command);
+    if (command === "character_import_list") return characters;
+    if (command === "character_import_folder") {
+      characters = [{ id: "dosidicus-squid", name: "Dosidicus Squid", removable: true }];
+      return "Dosidicus Squid";
+    }
+    throw new Error(`unexpected command ${command}`);
+  });
+  try {
+    await settle();
+    await ui.folderButton.click();
+    assert.equal(ui.status.textContent, "Dosidicus Squid installed. Restart Fidget to use it.");
+    assert.equal(ui.list.children[0].children[0].textContent, "Dosidicus Squid");
+    assert.equal(ui.importButton.disabled, false);
+    assert.equal(ui.folderButton.disabled, false);
+    assert.deepEqual(calls, ["character_import_list", "character_import_folder", "character_import_list"]);
   } finally {
     ui.restore();
   }

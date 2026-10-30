@@ -5127,6 +5127,7 @@ fn main() {
             settings_event,
             character_import::character_import_list,
             character_import::character_import_zip,
+            character_import::character_import_folder,
             character_import::character_import_remove
         ])
         .setup(|app| {
