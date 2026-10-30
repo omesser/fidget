@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { mountCharacterImports } from "../src/character-import.js";
 
@@ -146,10 +147,16 @@ test("invalid packages present the actual error and do not show a restart prompt
   try {
     await settle();
     await ui.importButton.click();
-    assert.match(ui.status.textContent, /missing frame idle-0.png/);
+    assert.equal(ui.status.textContent, "Character Imports: Character package is invalid: missing frame idle-0.png");
     assert.equal(ui.alerts.length, 0);
     assert.equal(ui.importButton.disabled, false);
   } finally {
     ui.restore();
   }
+});
+
+test("Shell errors reach the status line labelled once", () => {
+  // showError adds "Character Imports:", so the Shell's errors must not.
+  const shell = readFileSync(new URL("../src-tauri/src/character_import.rs", import.meta.url), "utf8");
+  assert.doesNotMatch(shell, /"Character Imports/);
 });

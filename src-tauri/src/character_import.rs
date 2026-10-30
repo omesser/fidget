@@ -28,23 +28,23 @@ pub async fn character_import_list(
 ) -> Result<Vec<ImportedCharacter>, String> {
     tauri::async_runtime::spawn_blocking(move || imported_characters(&app))
         .await
-        .map_err(|error| format!("Character Imports: {error}"))?
+        .map_err(|error| error.to_string())?
 }
 
 fn imported_characters(app: &tauri::AppHandle) -> Result<Vec<ImportedCharacter>, String> {
     let state = app
         .try_state::<SettingsState>()
-        .ok_or("Character Imports: Fidget is still starting")?;
+        .ok_or("Fidget is still starting")?;
     let selected = state
         .settings
         .lock()
-        .map_err(|_| "Character Imports: settings unavailable")?
+        .map_err(|_| "Settings unavailable")?
         .character
         .clone();
     let in_use: Vec<String> = state
         .instances
         .lock()
-        .map_err(|_| "Character Imports: instances unavailable")?
+        .map_err(|_| "Instances unavailable")?
         .iter()
         .map(|instance| instance.character.clone())
         .collect();
@@ -99,16 +99,14 @@ pub async fn character_import_zip(app: tauri::AppHandle) -> Result<Option<String
 
     let chosen = receiver
         .await
-        .map_err(|_| "Character Imports: file picker did not return")?;
+        .map_err(|_| "The file picker did not return")?;
     let Some(chosen) = chosen else {
         return Ok(None);
     };
-    let source = chosen
-        .into_path()
-        .map_err(|error| format!("Character Imports: {error}"))?;
+    let source = chosen.into_path().map_err(|error| error.to_string())?;
     let name = tauri::async_runtime::spawn_blocking(move || import_archive(&app, &source))
         .await
-        .map_err(|error| format!("Character Imports: {error}"))??;
+        .map_err(|error| error.to_string())??;
     Ok(Some(name))
 }
 
@@ -148,7 +146,7 @@ fn import_archive(app: &tauri::AppHandle, source: &Path) -> Result<String, Strin
 pub async fn character_import_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || remove_archive(&app, &id))
         .await
-        .map_err(|error| format!("Character Imports: {error}"))?
+        .map_err(|error| error.to_string())?
 }
 
 fn remove_archive(app: &tauri::AppHandle, id: &str) -> Result<(), String> {

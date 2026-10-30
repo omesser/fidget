@@ -41,6 +41,7 @@ export function mountCharacterImports(panel) {
   section.append(wrap);
 
   const busy = (on) => { importButton.disabled = on; };
+  // The Shell returns bare errors; this is the one place that labels them.
   const showError = (error) => {
     const detail = typeof error === "string" ? error : (error?.message || String(error));
     message.textContent = `Character Imports: ${detail}`;
