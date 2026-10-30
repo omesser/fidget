@@ -723,7 +723,7 @@ test("Enter sends and Shift+Enter does not", () => {
   assert.equal(qm.visible, false, "Enter is a Send, so the pill goes too");
 });
 
-test("the composer sits above Speech when the two would share a box", () => {
+test("the composer sits above the Speech bubble when the two would share a box", () => {
   const sprite = { x: 100, y: 400, width: 64, height: 64 };
   const size = { width: 200, height: 40 };
   const bounds = { x: 0, y: 0, width: 1000, height: 800 };
@@ -752,11 +752,11 @@ test("inverted flag matches final vertical position relative to sprite", () => {
 
   const speech = { x: 32, y: 104, width: 200, height: 80 };
   const pushed = placeQuickMessage(nearTop, size, bounds, speech);
-  assert.ok(pushed.y < 104, "pill moves above speech to avoid collision");
+  assert.ok(pushed.y < 104, "pill moves above the Speech bubble to avoid collision");
   assert.equal(pushed.inverted, false, "inverted reflects final position above sprite");
 });
 
-test("the pill stays whole on its display, like Speech, when the sprite reaches an edge", () => {
+test("the pill stays whole on its display, like the Speech bubble, when the sprite reaches an edge", () => {
   const size = { width: 200, height: 40 };
   const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
 

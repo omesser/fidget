@@ -36,8 +36,8 @@ impl SpeechBubble {
     }
 }
 
-/// Apply one tick's speech to `bubble`.
-pub fn note_speech(
+/// Apply one tick's dialogue to `bubble`.
+pub fn note_dialogue(
     bubble: &mut SpeechBubble,
     now: Instant,
     line: Option<&str>,
@@ -68,7 +68,7 @@ mod tests {
     fn a_short_line_stays_up_for_two_seconds() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some("hi"), false, true, false);
+        note_dialogue(&mut bubble, now, Some("hi"), false, true, false);
         assert!(bubble.visible_at(now + Duration::from_millis(1999)));
         assert!(!bubble.visible_at(now + Duration::from_millis(2000)));
     }
@@ -77,7 +77,7 @@ mod tests {
     fn a_thirty_character_line_lasts_until_the_unclamped_duration() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some(&"a".repeat(30)), false, true, false);
+        note_dialogue(&mut bubble, now, Some(&"a".repeat(30)), false, true, false);
         assert!(bubble.visible_at(now + Duration::from_millis(2549)));
         assert!(!bubble.visible_at(now + Duration::from_millis(2550)));
     }
@@ -86,7 +86,7 @@ mod tests {
     fn a_long_line_is_clamped_to_eight_seconds() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some(&"a".repeat(200)), false, true, false);
+        note_dialogue(&mut bubble, now, Some(&"a".repeat(200)), false, true, false);
         assert!(bubble.visible_at(now + Duration::from_millis(7999)));
         assert!(!bubble.visible_at(now + Duration::from_millis(8000)));
     }
@@ -95,7 +95,7 @@ mod tests {
     fn an_ask_with_no_line_stays_up_for_eight_seconds() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, None, true, true, false);
+        note_dialogue(&mut bubble, now, None, true, true, false);
         assert!(bubble.visible_at(now + Duration::from_millis(7999)));
         assert!(!bubble.visible_at(now + Duration::from_millis(8000)));
     }
@@ -104,9 +104,9 @@ mod tests {
     fn instant_hide_clears_even_when_a_line_arrives() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some("hi"), false, true, false);
+        note_dialogue(&mut bubble, now, Some("hi"), false, true, false);
         assert!(bubble.visible_at(now));
-        note_speech(&mut bubble, now, Some("hi"), false, true, true);
+        note_dialogue(&mut bubble, now, Some("hi"), false, true, true);
         assert!(!bubble.visible_at(now));
     }
 
@@ -114,7 +114,7 @@ mod tests {
     fn a_hidden_character_does_not_start_a_hold() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some("hi"), false, false, false);
+        note_dialogue(&mut bubble, now, Some("hi"), false, false, false);
         assert!(!bubble.visible_at(now));
         assert!(!bubble.visible_at(now + Duration::from_millis(1999)));
     }
@@ -123,9 +123,9 @@ mod tests {
     fn a_quiet_tick_leaves_a_hold_to_expire() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some("hi"), false, true, false);
+        note_dialogue(&mut bubble, now, Some("hi"), false, true, false);
         let later = now + Duration::from_millis(100);
-        note_speech(&mut bubble, later, None, false, true, false);
+        note_dialogue(&mut bubble, later, None, false, true, false);
         assert!(bubble.visible_at(now + Duration::from_millis(1999)));
         assert!(!bubble.visible_at(now + Duration::from_millis(2000)));
     }
@@ -134,9 +134,9 @@ mod tests {
     fn a_second_line_replaces_the_deadline() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_speech(&mut bubble, now, Some("hi"), false, true, false);
+        note_dialogue(&mut bubble, now, Some("hi"), false, true, false);
         let now2 = now + Duration::from_millis(500);
-        note_speech(
+        note_dialogue(
             &mut bubble,
             now2,
             Some(&"a".repeat(200)),
@@ -153,7 +153,7 @@ mod tests {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
         let line = format!("{}👍", "a".repeat(20));
-        note_speech(&mut bubble, now, Some(&line), false, true, false);
+        note_dialogue(&mut bubble, now, Some(&line), false, true, false);
         // 22 UTF-16 units: 900 + 55 * 22. `chars` would count the emoji as one.
         assert!(bubble.visible_at(now + Duration::from_millis(2109)));
         assert!(!bubble.visible_at(now + Duration::from_millis(2110)));

@@ -114,9 +114,9 @@ struct Delivered {
 
 /// What `take` hands the frame loop for the Instance's current call.
 pub enum Arrived {
-    /// The Speech so far, while the reply is still arriving. Each one
+    /// The Dialogue so far, while the reply is still arriving. Each one
     /// replaces the last, and the reply settles it.
-    Speech(String),
+    Dialogue(String),
     Answered(Box<Answered>),
 }
 
@@ -243,7 +243,7 @@ impl Slots {
             let speaking = |line| {
                 let _ = tx.send(Delivered {
                     epoch,
-                    arrived: Arrived::Speech(line),
+                    arrived: Arrived::Dialogue(line),
                 });
             };
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -286,11 +286,11 @@ impl Slots {
     }
 
     /// The reply for `id`, with the moment it was computed for, or else the
-    /// newest Speech of a reply still arriving. A superseded reply and its
-    /// Speech are dropped here rather than handed out to compare.
+    /// newest Dialogue of a reply still arriving. A superseded reply and its
+    /// Dialogue are dropped here rather than handed out to compare.
     pub fn take(&mut self, id: &InstanceId) -> Option<Arrived> {
         let slot = self.slots.get_mut(id)?;
-        let mut speech = None;
+        let mut dialogue = None;
         while let Ok(delivered) = slot.rx.try_recv() {
             if delivered.epoch != slot.epoch {
                 continue;
@@ -300,9 +300,9 @@ impl Slots {
                 slot.reactive = false;
                 return Some(delivered.arrived);
             }
-            speech = Some(delivered.arrived);
+            dialogue = Some(delivered.arrived);
         }
-        speech
+        dialogue
     }
 
     /// Drop whatever `id` has on the wire, and forget the Instance.
@@ -714,7 +714,7 @@ pub(crate) mod tests {
         assert_eq!(answered.context.happened, Happened::Poke);
     }
 
-    /// A name nobody declared arrives as speech, so the name is the only
+    /// A name nobody declared arrives as dialogue, so the name is the only
     /// thing that tells the two apart. The Action Log is written at `take`,
     /// so the near-miss has to survive the trip.
     #[test]
@@ -730,7 +730,7 @@ pub(crate) mod tests {
         assert_eq!(
             behavior_of(&answered.wake),
             "",
-            "a near miss is still played as speech"
+            "a near miss is still played as dialogue"
         );
     }
 
@@ -835,26 +835,26 @@ pub(crate) mod tests {
         );
     }
 
-    /// The frame loop hears the Speech while the reply is still on the wire,
+    /// The frame loop hears the Dialogue while the reply is still on the wire,
     /// with the Behavior name already cut from it, and then the reply.
     #[test]
-    fn take_hands_over_the_speech_before_the_reply() {
+    fn take_hands_over_the_dialogue_before_the_reply() {
         use std::sync::{Arc, Barrier};
 
         struct SynchronizedAnswers {
             behavior: &'static str,
-            speech_barrier: Arc<Barrier>,
+            dialogue_barrier: Arc<Barrier>,
         }
 
         impl Completer for SynchronizedAnswers {
             fn complete(&self, _: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
                 said(self.behavior);
-                self.speech_barrier.wait();
+                self.dialogue_barrier.wait();
                 Ok(Reply::whole(self.behavior))
             }
         }
 
-        let speech_barrier = Arc::new(Barrier::new(2));
+        let dialogue_barrier = Arc::new(Barrier::new(2));
         let mut slots = Slots::new();
         let id = "fidget".to_string();
 
@@ -863,7 +863,7 @@ pub(crate) mod tests {
             Arc::new(ModelDirector::new(
                 SynchronizedAnswers {
                     behavior: "stroll\nhey there",
-                    speech_barrier: Arc::clone(&speech_barrier),
+                    dialogue_barrier: Arc::clone(&dialogue_barrier),
                 },
                 ["stroll", "nap"],
                 "fidget",
@@ -880,25 +880,25 @@ pub(crate) mod tests {
                     seen.push(Arrived::Answered(answered));
                     break;
                 }
-                Some(speech) => {
-                    seen.push(speech);
-                    speech_barrier.wait();
+                Some(dialogue) => {
+                    seen.push(dialogue);
+                    dialogue_barrier.wait();
                 }
                 None => thread::sleep(Duration::from_millis(5)),
             }
         }
 
-        let speech: Vec<&str> = seen
+        let dialogue: Vec<&str> = seen
             .iter()
             .filter_map(|arrived| match arrived {
-                Arrived::Speech(line) => Some(line.as_str()),
+                Arrived::Dialogue(line) => Some(line.as_str()),
                 Arrived::Answered(_) => None,
             })
             .collect();
-        assert_eq!(speech, ["hey there"]);
+        assert_eq!(dialogue, ["hey there"]);
         assert!(
             matches!(seen.last(), Some(Arrived::Answered(answered)) if behavior_of(&answered.wake) == "stroll"),
-            "the reply still lands after its Speech"
+            "the reply still lands after its Dialogue"
         );
     }
 
@@ -920,15 +920,15 @@ pub(crate) mod tests {
         );
         thread::sleep(Duration::from_millis(200));
 
-        let mut speech = Vec::new();
+        let mut dialogue = Vec::new();
         while let Some(arrived) = slots.take(&id) {
-            if let Arrived::Speech(line) = arrived {
-                speech.push(line);
+            if let Arrived::Dialogue(line) = arrived {
+                dialogue.push(line);
             }
         }
         assert!(
-            !speech.iter().any(|line| line == "stale words"),
-            "got {speech:?}"
+            !dialogue.iter().any(|line| line == "stale words"),
+            "got {dialogue:?}"
         );
     }
 }

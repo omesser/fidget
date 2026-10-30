@@ -1,4 +1,4 @@
-// Streaming Speech updates grow a single Chat row; the turn stays open until
+// Streaming Dialogue updates grow a single Chat row; the turn stays open until
 // the final reply lands. The Shell sends full answer-so-far, not incremental chunks.
 
 import assert from "node:assert/strict";
@@ -110,7 +110,7 @@ const doc = {
   createTextNode: (text) => new Text(text),
 };
 
-test("streaming Speech keeps the turn open for subsequent updates", () => {
+test("streaming Dialogue keeps the turn open for subsequent updates", () => {
   const turns = createChatTurns();
   const turn = turns.typed();
 
@@ -120,16 +120,16 @@ test("streaming Speech keeps the turn open for subsequent updates", () => {
     turns.settle({ said: "hey there friend", streaming: true }),
   ];
 
-  assert.equal(outcomes[0].action, "speech");
+  assert.equal(outcomes[0].action, "dialogue");
   assert.equal(outcomes[0].turn, turn);
-  assert.equal(outcomes[1].action, "speech");
-  assert.equal(outcomes[1].turn, turn, "second Speech updates the same turn");
-  assert.equal(outcomes[2].action, "speech");
-  assert.equal(outcomes[2].turn, turn, "third Speech updates the same turn");
+  assert.equal(outcomes[1].action, "dialogue");
+  assert.equal(outcomes[1].turn, turn, "second Dialogue updates the same turn");
+  assert.equal(outcomes[2].action, "dialogue");
+  assert.equal(outcomes[2].turn, turn, "third Dialogue updates the same turn");
   assert.equal(turns.newest(), turn, "turn remains in waiting queue");
 });
 
-test("final reply settles the turn after streaming Speech", () => {
+test("final reply settles the turn after streaming Dialogue", () => {
   const turns = createChatTurns();
   const turn = turns.typed();
 
@@ -137,12 +137,12 @@ test("final reply settles the turn after streaming Speech", () => {
   turns.settle({ said: "hey there", streaming: true });
   const final = turns.settle({ said: "hey there friend", streaming: false });
 
-  assert.equal(final.action, "speech");
+  assert.equal(final.action, "dialogue");
   assert.equal(final.turn, turn);
   assert.equal(turns.newest(), null, "turn is removed from waiting queue");
 });
 
-test("streaming Speech on typed turn grows one row", () => {
+test("streaming Dialogue on typed turn grows one row", () => {
   const turns = createChatTurns();
   const turn = turns.typed();
 
@@ -158,57 +158,57 @@ test("streaming Speech on typed turn grows one row", () => {
   assert.equal(final.turn, turn);
 });
 
-test("final reply with no said after streaming Speech is silent, not missing", () => {
+test("final reply with no said after streaming Dialogue is silent, not missing", () => {
   const turns = createChatTurns();
   turns.typed();
 
   turns.settle({ said: "hey", streaming: true });
   const final = turns.settle({ said: null });
 
-  assert.equal(final.action, "silent", "Speech was already drawn");
+  assert.equal(final.action, "silent", "Dialogue was already drawn");
 });
 
-test("streaming Speech with no waiting turn creates a pending proactive turn", () => {
+test("streaming Dialogue with no waiting turn creates a pending proactive turn", () => {
   const turns = createChatTurns();
 
   const outcome = turns.settle({ said: "hey", streaming: true });
 
-  assert.equal(outcome.action, "speech", "pending proactive turn created for orphan streaming Speech");
+  assert.equal(outcome.action, "dialogue", "pending proactive turn created for orphan streaming Dialogue");
   assert.equal(outcome.said, "hey");
   assert.ok(outcome.turn, "turn is tracked");
 });
 
-test("proactive reply with streaming Speech (reacting_to set)", () => {
+test("proactive reply with streaming Dialogue (reacting_to set)", () => {
   const turns = createChatTurns();
 
   const first = turns.settle({ said: "hey", streaming: true });
   const second = turns.settle({ said: "hey there", streaming: true });
   const final = turns.settle({ said: "hey there friend", reacting_to: "proactive" });
 
-  assert.equal(first.action, "speech", "proactive creates one pending turn");
-  assert.equal(second.action, "speech", "subsequent Speeches update same turn");
-  assert.equal(final.action, "speech", "final settles the proactive turn");
-  assert.equal(first.turn, second.turn, "all Speeches grow the same turn");
+  assert.equal(first.action, "dialogue", "proactive creates one pending turn");
+  assert.equal(second.action, "dialogue", "subsequent Dialogue updates the same turn");
+  assert.equal(final.action, "dialogue", "final settles the proactive turn");
+  assert.equal(first.turn, second.turn, "all the Dialogue grows the same turn");
   assert.equal(second.turn, final.turn, "final settles same turn");
   assert.equal(first.said, "hey");
   assert.equal(second.said, "hey there");
   assert.equal(final.said, "hey there friend");
 });
 
-test("multiple typed turns: only the most recent receives streaming Speech", () => {
+test("multiple typed turns: only the most recent receives streaming Dialogue", () => {
   const turns = createChatTurns();
   const first = turns.typed();
   const second = turns.typed();
 
   const outcome = turns.settle({ said: "answer", streaming: true });
 
-  assert.equal(outcome.action, "speech");
+  assert.equal(outcome.action, "dialogue");
   assert.equal(outcome.turn, second, "streaming updates the most recent turn");
   assert.equal(turns.newest(), second, "second turn still waiting");
   assert.notEqual(outcome.turn, first);
 });
 
-test("streaming Speech marks turn so final said:null is silent", () => {
+test("streaming Dialogue marks turn so final said:null is silent", () => {
   const turns = createChatTurns();
   const turn = turns.typed();
 
@@ -216,7 +216,7 @@ test("streaming Speech marks turn so final said:null is silent", () => {
   const final = turns.settle({ said: null });
 
   assert.equal(final.action, "silent");
-  assert.equal(turn.alreadyHasSpeechAhead, true, "turn marked after streaming Speech");
+  assert.equal(turn.alreadyHasDialogueAhead, true, "turn marked after streaming Dialogue");
 });
 
 test("drawn text: stream→final produces correct final string, not doubled", () => {
@@ -295,10 +295,10 @@ test("drawn text: failed turn after streaming keeps partial", () => {
   caret.className = "caret";
   body.append(caret);
 
-  const speech = turns.settle({ said: "partial answer", streaming: true });
-  replaceReply(body, speech.said, doc);
+  const dialogue = turns.settle({ said: "partial answer", streaming: true });
+  replaceReply(body, dialogue.said, doc);
   assert.equal(body.textContent.trim(), "partial answer", "partial text drawn");
-  assert.ok(turn.alreadyHasSpeechAhead, "turn marked with Speech");
+  assert.ok(turn.alreadyHasDialogueAhead, "turn marked with Dialogue");
 
   const failure = turns.settle({ failure: "connection lost" });
   assert.equal(failure.action, "failure");
@@ -316,18 +316,18 @@ test("QM pill: stream→final produces one row, no stuck caret", () => {
   body.append(caret);
 
   const first = turns.settle({ said: "thinking", streaming: true });
-  assert.equal(first.action, "speech", "orphan Speech creates proactivePending");
+  assert.equal(first.action, "dialogue", "orphan Dialogue creates proactivePending");
   replaceReply(body, first.said, doc);
   assert.equal(body.textContent.trim(), "thinking");
 
   const second = turns.settle({ said: "thinking about it", streaming: true });
-  assert.equal(second.action, "speech", "subsequent Speech updates same turn");
+  assert.equal(second.action, "dialogue", "subsequent Dialogue updates same turn");
   assert.equal(second.turn, first.turn, "same turn tracked");
   replaceReply(body, second.said, doc);
   assert.equal(body.textContent.trim(), "thinking about it");
 
   const final = turns.settle({ said: "thinking about it more", reacting_to: null });
-  assert.equal(final.action, "speech", "final settles proactivePending even without reacting_to");
+  assert.equal(final.action, "dialogue", "final settles proactivePending even without reacting_to");
   assert.equal(final.turn, first.turn, "final settles same turn");
   replaceReply(body, final.said, doc);
   caret.remove();
@@ -338,16 +338,16 @@ test("QM pill: stream→final produces one row, no stuck caret", () => {
 test("proactive stream superseded by typed turn: proactive row removed", () => {
   const turns = createChatTurns();
 
-  const proactiveSpeech = turns.settle({ said: "thinking", streaming: true });
-  assert.equal(proactiveSpeech.action, "speech", "proactive Speech creates pending turn");
-  const proactiveTurn = proactiveSpeech.turn;
+  const proactiveDialogue = turns.settle({ said: "thinking", streaming: true });
+  assert.equal(proactiveDialogue.action, "dialogue", "proactive Dialogue creates pending turn");
+  const proactiveTurn = proactiveDialogue.turn;
 
   const typedTurn = turns.typed();
   assert.notEqual(turns.newest(), proactiveTurn, "proactive turn removed when typed turn pushed");
   assert.equal(turns.newest(), typedTurn, "typed turn is now newest");
 
   const final = turns.settle({ said: "answer to typed question" });
-  assert.equal(final.action, "speech", "typed turn gets the final");
+  assert.equal(final.action, "dialogue", "typed turn gets the final");
   assert.equal(final.turn, typedTurn, "final targets typed turn");
   assert.equal(turns.newest(), null, "typed turn settled");
 });
@@ -365,19 +365,19 @@ test("QM echo: typed turn, stream, final produces one growing row with plain lab
   assert.equal(turns.newest(), turn, "turn registered in waiting queue");
 
   const stream1 = turns.settle({ said: "thinking", streaming: true });
-  assert.equal(stream1.action, "speech", "streaming Speech finds typed turn");
-  assert.equal(stream1.turn, turn, "speech targets the typed turn");
+  assert.equal(stream1.action, "dialogue", "streaming Dialogue finds typed turn");
+  assert.equal(stream1.turn, turn, "dialogue targets the typed turn");
   replaceReply(body, stream1.said, doc);
   assert.equal(body.textContent.trim(), "thinking");
   assert.ok(body.querySelector(".caret"), "caret present during streaming");
 
   const stream2 = turns.settle({ said: "thinking more", streaming: true });
-  assert.equal(stream2.turn, turn, "subsequent speech grows same turn");
+  assert.equal(stream2.turn, turn, "subsequent dialogue grows same turn");
   replaceReply(body, stream2.said, doc);
   assert.equal(body.textContent.trim(), "thinking more");
 
   const final = turns.settle({ said: "final answer" });
-  assert.equal(final.action, "speech", "final settles the typed turn");
+  assert.equal(final.action, "dialogue", "final settles the typed turn");
   assert.equal(final.turn, turn, "final targets same turn");
   replaceReply(body, final.said, doc);
   caret.remove();
@@ -388,9 +388,9 @@ test("QM echo: typed turn, stream, final produces one growing row with plain lab
 test("QM echo typed turn supersedes proactive pending", () => {
   const turns = createChatTurns();
 
-  const proactiveSpeech = turns.settle({ said: "unprompted thinking", streaming: true });
-  assert.equal(proactiveSpeech.action, "speech", "proactive Speech creates pending turn");
-  const proactiveTurn = proactiveSpeech.turn;
+  const proactiveDialogue = turns.settle({ said: "unprompted thinking", streaming: true });
+  assert.equal(proactiveDialogue.action, "dialogue", "proactive Dialogue creates pending turn");
+  const proactiveTurn = proactiveDialogue.turn;
   assert.ok(proactiveTurn.isProactive, "turn marked as proactive");
 
   const typedTurn = turns.typed();
@@ -398,7 +398,7 @@ test("QM echo typed turn supersedes proactive pending", () => {
   assert.equal(turns.newest(), typedTurn, "typed turn is now newest");
 
   const final = turns.settle({ said: "answer to QM prompt" });
-  assert.equal(final.action, "speech", "final settles typed turn");
+  assert.equal(final.action, "dialogue", "final settles typed turn");
   assert.equal(final.turn, typedTurn, "final targets typed turn, not proactive");
   assert.equal(turns.newest(), null, "typed turn settled");
 });

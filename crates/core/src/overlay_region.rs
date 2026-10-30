@@ -329,7 +329,7 @@ mod tests {
             ("bubble only", &[bubble], &[]),
             ("thinking only", &[thinking], &[]),
             (
-                "truncated speech: Open chat + bubble",
+                "truncated dialogue: Open chat + bubble",
                 &[bubble, open_chat],
                 &[[220, 140, 72, 18]],
             ),
@@ -385,7 +385,7 @@ mod tests {
                 ],
             ),
             (
-                "truncated speech: Open chat + bubble",
+                "truncated dialogue: Open chat + bubble",
                 &art,
                 &[open_chat, bubble],
                 &[

@@ -151,7 +151,7 @@ function createView(id) {
     };
   }
 
-  // One element in one of two modes makes bubble.js's rule (speech and the
+  // One element in one of two modes makes bubble.js's rule (the speech mode and the
   // indicator never coincide) true of the pixels. Only opacity gates it: an exit
   // timed by `fade_ms`, the Character's presence fade, kept dismissed bubbles up.
   function show(mode) {
@@ -214,7 +214,7 @@ function createView(id) {
     },
     showThinking() {
       // The same box in the other mode. main.css hides the control outside
-      // speech, so the attribute left over from the last line draws nothing.
+      // the speech mode, so the attribute left over from the last line draws nothing.
       show("thinking");
       traceBubble(`showThinking instance=${id}`);
     },
@@ -778,7 +778,7 @@ async function start() {
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
 
-        // One overlay owns each Instance's bubble. Speech hides on its reading
+        // One overlay owns each Instance's bubble. The Speech bubble hides on its reading
         // timer, not the next frame, so the overlay that lost ownership drops its
         // bubble once, on the change, and keeps the turn so a reply still shows.
         if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideButKeepTurn();

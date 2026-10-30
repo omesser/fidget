@@ -191,7 +191,7 @@ body {
 
 /* After thinking-bounce so the expression page's bubble slice, which treats
    `background: transparent` as overlay layout, stays speech and thinking.
-   Tails stay on Speech. Opacity only. A scale keyframe fought the exit fade. */
+   Tails stay on the speech mode. Opacity only. A scale keyframe fought the exit fade. */
 .bubble.quick-message {
   display: flex;
   align-items: center;

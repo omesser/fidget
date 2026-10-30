@@ -49,7 +49,7 @@ export function quickMessageMirror(text, prompt, available) {
 // Re-entering resets the wait.
 export const AUTO_HIDE_DELAY_MS = 3000;
 
-// While Speech or thinking is up the Character has the floor, so an empty
+// While the Speech bubble or thinking is up the Character has the floor, so an empty
 // pill the pointer left gives way. Only long enough to cross onto the pill.
 export const BUBBLE_YIELD_MS = 1000;
 
@@ -413,7 +413,7 @@ export function createDraftReporter(invoke) {
   };
 }
 
-// Same seat as a speech line or the thinking dots. When that box is already
+// Same seat as the Speech bubble or the thinking dots. When that box is already
 // there, step clear of it so a hover does not cover it.
 export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   const pos = placeBubble(spriteRect, size, bounds);

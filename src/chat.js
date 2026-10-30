@@ -165,7 +165,7 @@ function said(who, text, cls, at) {
   return add(row);
 }
 
-// A turn's answer, opened empty with a blinking caret. Speech updates grow
+// A turn's answer, opened empty with a blinking caret. Dialogue updates grow
 // the row via replaceReply, and the caret stays until the final reply lands.
 function opening_answer() {
   const row = said(them, "", "them");
@@ -1175,7 +1175,7 @@ async function start() {
       } else {
         hearPhase({ type: "news", at: Date.now() });
       }
-      if (outcome.action === "speech") {
+      if (outcome.action === "dialogue") {
         arrived(turn.them, outcome.said);
         if (!payload.streaming && outcome.reacting_to) {
           const label = turn.them.querySelector(".who-label");
@@ -1187,7 +1187,7 @@ async function start() {
           settled(turn.them);
         }
       } else if (outcome.action === "failure") {
-        if (turn.alreadyHasSpeechAhead) {
+        if (turn.alreadyHasDialogueAhead) {
           settled(turn.them);
           note(`Harness error: ${outcome.said}`);
         } else {
@@ -1196,7 +1196,7 @@ async function start() {
           harnessError(outcome.said);
         }
       } else if (outcome.action === "error") {
-        if (turn.alreadyHasSpeechAhead) {
+        if (turn.alreadyHasDialogueAhead) {
           settled(turn.them);
           note(outcome.note);
         } else {
@@ -1211,7 +1211,7 @@ async function start() {
       } else if (outcome.action === "silent") {
         settled(turn.them);
       } else {
-        if (turn.alreadyHasSpeechAhead) {
+        if (turn.alreadyHasDialogueAhead) {
           settled(turn.them);
         } else {
           endPhase(turn.them);

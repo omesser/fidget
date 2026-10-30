@@ -112,15 +112,15 @@ test("hiding lends the character to the playground and stays put; showing takes 
 test("now and then it says a line from its personality, standing still with its talk loop", () => {
   const page = onPage();
   const quiet = run(page, ticks(1500, 1)).state;
-  assert.equal(quiet.speech, null, "no line before the first one is due");
+  assert.equal(quiet.dialogue, null, "no line before the first one is due");
   const due = quiet.nextLine + 1;
   const talking = run(quiet, [{ type: "tick", now: due, dt: 0.05, rand: 0.6 }]).state;
-  assert.equal(talking.speech.line, "Hello there.");
+  assert.equal(talking.dialogue.line, "Hello there.");
   assert.equal(animation(talking, due + 100), "talk");
   const held = run(talking, ticks(due, 20)).state;
   assert.equal(held.sprite.x, talking.sprite.x, "it stays put while it talks");
   const done = run(held, [{ type: "tick", now: due + 3001, dt: 0.05, rand: 0.9 }]).state;
-  assert.equal(done.speech, null);
+  assert.equal(done.dialogue, null);
   assert.ok(done.nextLine - due >= 60_000 && done.nextLine - due <= 123_001, `the next line is a minute or two away: ${done.nextLine - due}`);
 });
 
@@ -128,7 +128,7 @@ test("a poke plays react with the poke ring and says a line, and a double click 
   const poked = run(onPage(), [{ type: "poke", now: 2000 }, { type: "poke", now: 2200 }]);
   assert.deepEqual(poked.cues, ["poke", "poke"]);
   assert.equal(animation(poked.state, 2300), "react");
-  assert.ok(ENV.lines.includes(poked.state.speech.line));
+  assert.ok(ENV.lines.includes(poked.state.dialogue.line));
 });
 
 test("a scroll startles it awake, and a throw lands it on the bottom edge", () => {
@@ -149,5 +149,5 @@ test("under reduced motion it stays where it is: no walking on, no wandering, an
   const later = run(still.state, ticks(50, 100, 0.05, 0.9)).state;
   assert.equal(later.sprite.x, still.state.sprite.x);
   const poked = run(later, [{ type: "poke", now: 6000 }]).state;
-  assert.ok(poked.speech);
+  assert.ok(poked.dialogue);
 });

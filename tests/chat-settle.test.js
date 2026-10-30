@@ -1,4 +1,4 @@
-// An empty `said` after Speech has already been drawn is not a missing answer;
+// An empty `said` after Dialogue has already been drawn is not a missing answer;
 // treating it as one is the production change that fails this file. Nor is a
 // caret the Shell cancelled, which owes the user the wake that cancelled it.
 
@@ -11,7 +11,7 @@ function play(turns, payloads) {
   const log = [];
   for (const payload of payloads) {
     const outcome = turns.settle(payload);
-    if (outcome.action === "speech") {
+    if (outcome.action === "dialogue") {
       log.push(outcome.said);
     } else if (outcome.action === "missing") {
       log.push(outcome.note);
@@ -26,7 +26,7 @@ function play(turns, payloads) {
   return log;
 }
 
-test("Speech already drawn, then said None, does not report a missing answer", () => {
+test("Dialogue already drawn, then said None, does not report a missing answer", () => {
   const turns = createChatTurns();
   turns.typed();
   turns.typed();
@@ -44,11 +44,11 @@ test("Speech already drawn, then said None, does not report a missing answer", (
   assert.equal(
     log.includes(MISSING_ANSWER),
     false,
-    "an empty settle after Speech landed is not a missing answer",
+    "an empty settle after Dialogue landed is not a missing answer",
   );
 });
 
-test("a turn that produced no Speech still reports a missing answer", () => {
+test("a turn that produced no Dialogue still reports a missing answer", () => {
   const turns = createChatTurns();
   turns.typed();
 
@@ -57,7 +57,7 @@ test("a turn that produced no Speech still reports a missing answer", () => {
   assert.deepEqual(log, [MISSING_ANSWER]);
 });
 
-test("a later turn that produced no Speech still reports a missing answer", () => {
+test("a later turn that produced no Dialogue still reports a missing answer", () => {
   const turns = createChatTurns();
   turns.typed();
   play(turns, [{ said: "You may!" }]);
@@ -139,7 +139,7 @@ test("an attach-time notice with no caret is still a note that outlives a later 
 
   turns.typed();
   const after = turns.settle({ said: "Hello" });
-  assert.equal(after.action, "speech");
+  assert.equal(after.action, "dialogue");
   assert.equal(after.said, "Hello");
 });
 
@@ -156,7 +156,7 @@ test("a notice after typed() leaves the waiting turn for the reply", () => {
   assert.match(notice.note, /gpt-6-sol/);
 
   const reply = turns.settle({ said: "Hello" });
-  assert.equal(reply.action, "speech");
+  assert.equal(reply.action, "dialogue");
   assert.equal(reply.said, "Hello");
   assert.ok(reply.turn, "the typed turn must still be waiting for Hello");
 });

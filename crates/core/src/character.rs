@@ -219,7 +219,7 @@ const PRIMITIVES: [(&str, Primitive); 10] = [
 
 /// Primitives Chat and MCP may ask for by Behavior name via `play_behavior`.
 /// Off the table: `land`/`hold` (Engine landing / perch grip), `talk` (Engine
-/// plays during speech), `idle` (ambient; not an ask).
+/// plays during Dialogue), `idle` (ambient; not an ask).
 pub(super) const ASKABLE_PRIMITIVES: &[(&str, Primitive)] = &[
     ("walk", Primitive::Walk),
     ("sit", Primitive::Sit),

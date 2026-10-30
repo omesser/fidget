@@ -943,7 +943,7 @@ impl SessionKey {
 #[derive(Clone, Debug)]
 pub struct InboundWake {
     pub instance: String,
-    pub speech: String,
+    pub dialogue: String,
 }
 
 /// A loaded session's replay, for its Instance's Chat. Not a wake: nothing
@@ -3255,9 +3255,9 @@ fn note_event(
         // Forwarded and not logged. The Action Log points at the Harness's own
         // session dump rather than copying it (GLOSSARY.md), and a reply is not
         // copied there either.
-        Event::InboundWake { session, speech } => {
+        Event::InboundWake { session, dialogue } => {
             if let Some(instance) = instance_of(&session) {
-                forward(Forwarded::InboundWake(InboundWake { instance, speech }));
+                forward(Forwarded::InboundWake(InboundWake { instance, dialogue }));
             }
         }
         Event::Thought { session, text } => {
@@ -3311,8 +3311,8 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
     );
 }
 
-/// The six answers: `near_miss`, `proposal`, `speech`, `failed`, `error`,
-/// `withdrawn`. `near_miss` arrives as speech but is not `speech`.
+/// The six answers: `near_miss`, `proposal`, `dialogue`, `failed`, `error`,
+/// `withdrawn`. `near_miss` arrives as dialogue but is not `dialogue`.
 /// `withdrawn` outranks `error` because our own cancel arrives as one.
 fn parsed_fields(
     instance: &str,
@@ -3327,7 +3327,7 @@ fn parsed_fields(
         (None, Wake::Proposed(proposal)) if !proposal.behavior.is_empty() => {
             ("proposal", Some(proposal.behavior.as_str()))
         }
-        (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Proposed(_)) => ("dialogue", None),
         (None, Wake::Failed) if withdrawn_for.is_some() => ("withdrawn", None),
         (None, Wake::Failed) if error.is_some() => ("error", None),
         (None, Wake::Failed) => ("failed", None),
@@ -6760,7 +6760,7 @@ mod tests {
         );
     }
 
-    /// The Harness Director's Speech reaches the bubble a chunk at a time,
+    /// The Harness Director's Dialogue reaches the bubble a chunk at a time,
     /// before the turn ends, and the Behavior name never does.
     #[test]
     fn a_harness_answer_is_spoken_as_its_chunks_land() {
@@ -7312,10 +7312,10 @@ mod tests {
         // talk rather than name a Behavior.
         let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None, None);
         assert_eq!(talked["wake"], json!("proactive"));
-        assert_eq!(talked["result"], json!("speech"));
+        assert_eq!(talked["result"], json!("dialogue"));
         assert_eq!(talked["behavior"], json!(null));
 
-        // The same shape as speech on the wire, and a different thing. The
+        // The same shape as dialogue on the wire, and a different thing. The
         // name it named is what makes it readable as a miss.
         let missed = parsed_fields(
             "buddy-1",
@@ -8038,7 +8038,7 @@ mod tests {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Ask { ask, .. }) => break ask,
                 Ok(Forwarded::Thought { instance, line }) => thoughts.push((instance, line)),
-                Ok(Forwarded::InboundWake(wake)) => said.push((wake.instance, wake.speech)),
+                Ok(Forwarded::InboundWake(wake)) => said.push((wake.instance, wake.dialogue)),
                 Ok(_) => {}
                 Err(_) => panic!("the between-turn ask never reached Chat"),
             }
@@ -8100,7 +8100,7 @@ mod tests {
     }
 
     /// A closed session's thought from between turns has ended, so its
-    /// Thinking row closes with it. Speech accumulated between turns is
+    /// Thinking row closes with it. Dialogue accumulated between turns is
     /// emitted as an inbound wake before the close.
     #[test]
     fn closing_a_session_ends_its_thought_from_between_turns() {
@@ -8110,8 +8110,8 @@ mod tests {
             Ok(Reply::whole("Hello"))
         );
         // The ask is the last thing the Harness sends between turns, so once
-        // it is forwarded the speech before it has been collected. The thought
-        // is not enough: the speech follows it on the wire.
+        // it is forwarded the dialogue before it has been collected. The thought
+        // is not enough: the dialogue follows it on the wire.
         let mut buffered = Vec::new();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let mut asked = false;
@@ -8124,14 +8124,14 @@ mod tests {
         assert!(asked, "the between-turn ask never arrived before timeout");
         let wire = session.current_wire().expect("attached");
         assert_eq!(wire.close("fresh-id"), Ok(()));
-        let mut speech_seen = false;
+        let mut dialogue_seen = false;
         let mut thought_ended = false;
         // Check buffered events first, then drain any remaining.
         for forwarded in buffered.into_iter().chain(fx.forwarded.try_iter()) {
             match forwarded {
                 Forwarded::InboundWake(wake) if wake.instance == "buddy-1" => {
-                    assert_eq!(wake.speech, "Your reminder: time to stretch!");
-                    speech_seen = true;
+                    assert_eq!(wake.dialogue, "Your reminder: time to stretch!");
+                    dialogue_seen = true;
                 }
                 Forwarded::Thought { instance, line }
                     if instance == "buddy-1" && line.is_empty() =>
@@ -8141,22 +8141,22 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(speech_seen, "between-turn speech was dropped on close");
+        assert!(dialogue_seen, "between-turn dialogue was dropped on close");
         assert!(thought_ended, "the Thinking row stayed open after close");
         session.shutdown();
     }
 
     /// Prompting again while a between-turn ask is unanswered still emits the
-    /// accumulated speech as an inbound wake, not drops it.
+    /// accumulated dialogue as an inbound wake, not drops it.
     #[test]
-    fn prompting_before_between_turn_ask_flushes_speech() {
+    fn prompting_before_between_turn_ask_flushes_dialogue() {
         let (fx, session) = Fixture::new("between-turn");
         assert_eq!(
             session.complete(&asking("hi"), &|_| {}),
             Ok(Reply::whole("Hello"))
         );
-        // The ask follows the speech on the wire, so once it is forwarded the
-        // speech is collected. The wake may come before it or after the next
+        // The ask follows the dialogue on the wire, so once it is forwarded the
+        // dialogue is collected. The wake may come before it or after the next
         // prompt, so count it from both sides.
         let mut wakes = Vec::new();
         let mut asked = false;
@@ -8178,15 +8178,15 @@ mod tests {
                 wakes.push(wake);
             }
         }
-        let speech: Vec<_> = wakes
+        let dialogue: Vec<_> = wakes
             .iter()
             .filter(|wake| wake.instance == "buddy-1")
-            .map(|wake| wake.speech.as_str())
+            .map(|wake| wake.dialogue.as_str())
             .collect();
         assert_eq!(
-            speech,
+            dialogue,
             ["Your reminder: time to stretch!"],
-            "between-turn speech was dropped when prompting again"
+            "between-turn dialogue was dropped when prompting again"
         );
         drop(worker);
     }
@@ -8212,7 +8212,7 @@ mod tests {
         let ask = loop {
             match fx.forwarded.recv_timeout(Duration::from_secs(5)) {
                 Ok(Forwarded::Ask { ask, .. }) => break ask,
-                Ok(Forwarded::InboundWake(wake)) => wakes.push((wake.instance, wake.speech)),
+                Ok(Forwarded::InboundWake(wake)) => wakes.push((wake.instance, wake.dialogue)),
                 Ok(_) => {}
                 Err(_) => panic!("B's ask never reached Chat"),
             }
@@ -8230,7 +8230,7 @@ mod tests {
         fx: Fixture,
         session: Arc<Session>,
         ask: PermissionAsk,
-        /// Instance and speech of each inbound wake before the ask.
+        /// Instance and dialogue of each inbound wake before the ask.
         wakes: Vec<(String, String)>,
         worker: thread::JoinHandle<Result<Reply, String>>,
     }
@@ -8267,7 +8267,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// B's speech during A's turn is not A's reply. It reaches B's Chat as
+    /// B's dialogue during A's turn is not A's reply. It reaches B's Chat as
     /// work between turns.
     #[test]
     fn another_sessions_update_mid_turn_is_not_folded_into_the_turn() {
@@ -8282,7 +8282,7 @@ mod tests {
         assert_eq!(
             wakes,
             [("buddy-b".to_string(), "Not yours".to_string())],
-            "B's speech did not reach B"
+            "B's dialogue did not reach B"
         );
         assert_eq!(worker.join().unwrap(), Ok(Reply::whole("Hello")));
         session.answer_permission(&ask.request, "allow");
@@ -8435,7 +8435,7 @@ mod tests {
                     restored.push((instance, history))
                 }
                 Forwarded::InboundWake(wake) => {
-                    panic!("replay woke {}: {}", wake.instance, wake.speech)
+                    panic!("replay woke {}: {}", wake.instance, wake.dialogue)
                 }
                 Forwarded::Plan { steps, .. } if !steps.is_empty() => {
                     panic!("replay drew a live plan: {steps:?}")

@@ -132,7 +132,7 @@ impl Cue {
 
 /// What the Director proposed since the previous tick. Advisory: the Engine
 /// plays the named Behavior only if the Character declares it and the State
-/// permits its Primitives. The line is spoken regardless: speech moves nothing.
+/// permits its Primitives. The line is spoken regardless: dialogue moves nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BehaviorProposal {
     pub behavior: String,

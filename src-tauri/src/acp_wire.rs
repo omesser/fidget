@@ -343,8 +343,8 @@ pub enum Event {
     Thought { session: String, text: String },
     /// Between-turn agent text accumulated in a session's `Stream` and flushed
     /// when a session transitions (Ask, Elicit, Prompt, or Close).
-    InboundWake { session: String, speech: String },
-    /// A Harness turn beat for the character. Not speech, and not a Behavior
+    InboundWake { session: String, dialogue: String },
+    /// A Harness turn beat for the character. Not dialogue, and not a Behavior
     /// the Director named.
     Moment { session: String, moment: Moment },
     /// A forwarded ask that can no longer be answered. Every Chat surface
@@ -2750,16 +2750,16 @@ impl Held<'_> {
 
     /// ACP v1 says nothing when a turn the Harness started is over, so a
     /// prompt, a close, an ask, a form or the next fire ends it: flush the
-    /// session's speech as an inbound wake and close open thinking.
+    /// session's dialogue as an inbound wake and close open thinking.
     fn end_inbound(&mut self, session: &SessionId) {
         let Some(held) = self.inbound.remove(session) else {
             return;
         };
-        let speech = held.said.finish();
-        if !speech.is_empty() {
+        let dialogue = held.said.finish();
+        if !dialogue.is_empty() {
             (self.on_event)(Event::InboundWake {
                 session: session.0.to_string(),
-                speech,
+                dialogue,
             });
         }
         if !held.thought.is_empty() {
@@ -3999,7 +3999,7 @@ mod tests {
         events
             .into_iter()
             .filter_map(|event| match event {
-                Event::InboundWake { session, speech } => Some((session, speech)),
+                Event::InboundWake { session, dialogue } => Some((session, dialogue)),
                 _ => None,
             })
             .collect()

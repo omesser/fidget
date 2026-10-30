@@ -61,7 +61,7 @@ export const THINKING_MIN_HOLD_MS = 600;
 
 // Decisions apart from the DOM, so node can drive ticks a display never
 // reproduces. `event` latches a pulse the renderer would otherwise keep only
-// the newest of. Speech holds out the indicator; only a silent ending min-holds.
+// the newest of. Dialogue holds out the indicator; only a silent ending min-holds.
 export function createBubbleMachine(io) {
   const schedule = io.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
@@ -239,7 +239,7 @@ export function createBubbleMachine(io) {
       io.hideSpeech();
     },
 
-    // Hide speech and thinking, but keep the turn. Ownership moved mid-turn,
+    // Hide the Speech bubble and thinking, but keep the turn. Ownership moved mid-turn,
     // and the new owner must still show the incoming dialogue.
     hideButKeepTurn() {
       const hadThinking = thinking || graceTimer !== null || aiTurnPending;
