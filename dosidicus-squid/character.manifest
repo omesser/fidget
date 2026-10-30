@@ -1,0 +1,92 @@
+# Dosidicus Squid, from ViciousSquid's Dosidicus, a digital squid pet.
+# Frames are the repo's images/ sprites, scaled to one canvas with the feet on
+# the bottom row. The source art faces left, so most frames are mirrored here.
+
+name = "Dosidicus Squid"
+render_mode = "smooth"
+scale = 1
+
+[source]
+art = """
+The squid from Dosidicus by ViciousSquid \
+(https://github.com/ViciousSquid/Dosidicus), cut from the repo's images/ \
+sprites and resized."""
+url = "https://github.com/ViciousSquid/Dosidicus"
+license = "None is declared."
+
+[cursor]
+rush_reaction = "react"
+
+# SQUID.gif's two frames. The cool variant below plays one idle in four.
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 1
+weight = 30
+
+[animations.cool]
+frames = ["frames/cool-0.png"]
+fps = 1
+variant_of = "idle"
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png"]
+fps = 4
+
+# Grab and jump fall back to fall.
+[animations.fall]
+frames = ["frames/fall-0.png"]
+fps = 1
+
+[animations.land]
+frames = ["frames/idle-0.png"]
+fps = 4
+loop = "once"
+
+[animations.sit]
+frames = ["frames/cool-0.png"]
+fps = 1
+
+[animations.hold]
+frames = ["frames/fall-0.png"]
+fps = 1
+
+[animations.sleep]
+frames = ["frames/sleep-0.png"]
+fps = 1
+
+# The unmirrored drawing, so the Zzz reads the right way when facing left.
+[animations.sleep-left]
+frames = ["frames/sleep-left-0.png"]
+fps = 1
+left_of = "sleep"
+
+[animations.react]
+frames = ["frames/talk-0.png"]
+fps = 1
+loop = "once"
+
+[animations.talk]
+frames = ["frames/talk-0.png"]
+fps = 1
+
+[behaviors.greet]
+play = ["talk"]
+then = "swim"
+weight = 40
+when = "idle under 10s"
+
+[behaviors.swim]
+play = ["walk", "idle", "walk"]
+weight = 30
+when = "idle over 30s"
+
+[behaviors.settle]
+play = ["sit"]
+then = "nap"
+weight = 30
+when = "idle over 1m"
+
+[behaviors.nap]
+play = ["sit", "sleep"]
+weight = 40
+when = "idle over 2m"

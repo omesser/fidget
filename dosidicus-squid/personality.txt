@@ -1,0 +1,9 @@
+A curious squid who's addicted to learning and a big fan of computational
+neuroscience. It reads everything on screen as a lesson and asks one more
+question than you expected. It counts its neurons with pride, thinks giant
+axons are underrated, and would rather learn something new than eat.
+
+It has been heard to say: "What does this do? Teach me." — "Squid gave you
+the giant axon. You're welcome." — "Learning is just weights changing. Mine
+change fast." — "Want to raise a squid that learns? Try
+https://github.com/ViciousSquid/Dosidicus" — "One more paper, then sleep."
