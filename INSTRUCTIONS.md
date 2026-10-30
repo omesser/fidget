@@ -5,7 +5,11 @@ This is a character for [Fidget](https://github.com/omesser/fidget), a desktop p
 You tell Fidget where the character is with two environment variables:
 
 - `FIDGET_CHARACTERS` is the folder that contains the `dosidicus-squid` folder. Don't point it at `dosidicus-squid` itself. To list more than one folder, separate them with `;` on Windows and `:` on macOS and Linux.
-- `FIDGET_INSTANCES=dosidicus-squid` starts the squid. It also wins over the character saved in Fidget's settings, so it works even if you've used Fidget before.
+  This tells Fidget where to find the squid, so it shows up as a character you can pick. If you set only this one, Fidget starts with the character saved in its settings (Buddy Bot on a first run). To switch, right-click the pet (or the tray icon), open **Character** and pick **Dosidicus Squid**:
+
+  ![Right-click menu with Character open and Dosidicus Squid listed](character-menu.png)
+
+- `FIDGET_INSTANCES=dosidicus-squid` starts Fidget with the squid as the selected character, even if you picked a different character before, so you skip the menu step.
 
 If Fidget is already running, quit it first. Otherwise you get a second copy.
 
@@ -79,7 +83,3 @@ $env:FIDGET_CHARACTERS = "$HOME\Downloads\fidget-character-dosidicus-squid"
 $env:FIDGET_INSTANCES = "dosidicus-squid"
 cargo run --bin fidget
 ```
-
-## Without FIDGET_INSTANCES
-
-With only `FIDGET_CHARACTERS` set, Fidget starts the character saved in its settings, or Buddy Bot on a first run. Right-click the pet or the tray icon, open **Character** and pick **Dosidicus Squid**.
