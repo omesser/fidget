@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.sh
+source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -136,28 +138,17 @@ log_info "Closing perch window to test drop..."
 DROP_START_LINE=$(wc -l < "$TRACE_LOG")
 kill "$TEST_WINDOW_PID" 2> /dev/null || true
 TEST_WINDOW_PID=""
-for _ in $(seq 1 8); do
-  xwininfo -id "$TEST_WINDOW_ID" > /dev/null 2>&1 || break
-  sleep 0.25
-done
 xdotool windowkill "$TEST_WINDOW_ID" 2> /dev/null || true
 
 # Falling at startup also matches `frame: N Falling`; only a new one after close counts.
-DROPPED=0
-for _ in $(seq 1 40); do
-  if tail -n +"$DROP_START_LINE" "$TRACE_LOG" | grep -qE 'frame: [0-9]+ Falling'; then
-    DROPPED=1
-    break
-  fi
-  sleep 0.25
-done
-[ "$DROPPED" -eq 1 ] || fail "Sprite did not drop (no new Falling state after window close)"
+# shellcheck disable=SC2034  # read by the sourced wait core
+pid=$APP_PID
+since_drop=+$((DROP_START_LINE + 1))
+wait_on_lines 3 "$since_drop" "$TRACE_LOG" grep -qEm1 'frame: [0-9]+ Falling' ||
+  fail "Sprite did not drop (no new Falling state within 3 s of the window closing)"
 log_info "Drop behavior (Falling) verified"
-
-for _ in $(seq 1 12); do
-  tail -n +"$DROP_START_LINE" "$TRACE_LOG" | grep -qE 'frame: [0-9]+ Grounded' && break
-  sleep 0.25
-done
+wait_on_lines 5 "$since_drop" "$TRACE_LOG" grep -qEm1 'frame: [0-9]+ Grounded' ||
+  fail "Sprite did not land (no Grounded state within 5 s of the window closing)"
 
 # Feet are pos(); the body is above them. A click shorter than one 16ms tick
 # can miss XQueryPointer, so hold the button across a couple of polls.

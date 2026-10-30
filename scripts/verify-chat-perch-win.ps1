@@ -356,7 +356,7 @@ try {
     $marker = "Windows Chat perch"
     [System.Windows.Forms.SendKeys]::SendWait($marker)
     $value = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    $null = Wait-For 2 { $value.Current.Value -eq $marker }
+    $null = Wait-ForUia 2 $proc.Id { $value.Current.Value -eq $marker }
     $typed = $value.Current.Value
     Set-Content -LiteralPath (Join-Path $out "composer-value.txt") -Value $typed
     if ($typed -ne $marker) { Fail "composer holds '$typed', expected '$marker'" }
@@ -367,7 +367,7 @@ try {
     if (-not (Wait-ForUia 3 $proc.Id { Invoke-AxWin $allowOut @{ Command = "press"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "Allow" } })) {
         Fail "could not press Allow on the permission ask; see $allowOut"
     }
-    if (-not (Wait-For 3 { (Lines $marks) -contains "replied" })) { Fail "the Harness never replied after Allow; see $marks" }
+    if (-not (Wait-ForMarks 3 $marks '^replied$')) { Fail "the Harness never replied after Allow; see $marks" }
     Write-Output "ok: answered the permission ask, and the Harness replied"
 
     Write-Output "PASS: all four Windows checks; evidence in $out ($((Get-NowMs) - $startMs)ms)"
