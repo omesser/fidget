@@ -95,7 +95,7 @@ frames = [
   "frames/walk-6.png",
   "frames/walk-7.png",
 ]
-fps = 6
+fps = 8
 
 [animations.walk-left]
 frames = [
@@ -108,7 +108,7 @@ frames = [
   "frames/walk-left-6.png",
   "frames/walk-left-7.png",
 ]
-fps = 6
+fps = 8
 left_of = "walk"
 
 [animations.talk]
