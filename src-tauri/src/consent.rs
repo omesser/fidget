@@ -567,7 +567,7 @@ mod tests {
     /// key and not copy. Renaming one draws the checkbox unchecked whatever
     /// the grant says.
     #[test]
-    fn a_consent_row_id_is_a_stored_key_and_does_not_move() {
+    fn consent_row_ids_are_pinned_to_their_stored_keys() {
         let ids: Vec<String> = rows(|_| false).iter().map(ConsentRow::row_id).collect();
 
         #[cfg(target_os = "macos")]
