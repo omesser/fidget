@@ -670,7 +670,7 @@ mod tests {
     fn imported_names_cannot_shadow_bundled_or_external_packages() {
         let paths = vec![
             PathBuf::from("/bundled/buddy-bot.zip"),
-            PathBuf::from("/external/hero_bot"),
+            PathBuf::from("/external/hero-bot"),
             PathBuf::from("/user/incomplete.zip"),
         ];
         for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot", "Buddy Bot\\u{200b}"] {
@@ -692,7 +692,7 @@ mod tests {
     fn installed_package_display_name_is_a_reserved_identity() {
         let dir = TempDir::new("name-collision");
         let path = dir.join("different-file-stem.zip");
-        write_archive(&path, "", false); // Valid Character named Blip.
+        write_archive(&path, "blip", false); // Valid Character named Blip.
         assert!(
             import_name_conflict("BLIP", &[path.clone()]).unwrap().is_some()
         );
