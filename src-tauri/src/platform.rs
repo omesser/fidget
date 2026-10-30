@@ -965,31 +965,21 @@ pub fn change_bounding_shape(
     x11::change_bounding_shape(label, change)
 }
 
-/// Set the input region from the sprite's alpha mask plus hotspot rects, so a
-/// control drawn outside the art still receives clicks. macOS uses
+/// Set the input region from every sprite's alpha mask plus hotspot rects, so
+/// a control drawn outside the art still receives clicks. macOS uses
 /// `set_ignore_cursor_events`; `click_through` matters only on Windows.
 #[cfg(all(unix, not(target_os = "macos")))]
-#[allow(clippy::too_many_arguments)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    mask_data: Option<&fidget_core::overlay::AlphaMask>,
-    sprite_x: i32,
-    sprite_y: i32,
-    mirrored: bool,
-    scale: i32,
+    sprites: &[SpriteMask<'_>],
     hotspot_rects: &[[i32; 4]],
     _click_through: bool,
 ) -> Result<(), String> {
-    x11::update_input_region(
-        window,
-        mask_data,
-        sprite_x,
-        sprite_y,
-        mirrored,
-        scale,
-        hotspot_rects,
-    )
+    x11::update_input_region(window, sprites, hotspot_rects)
 }
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub use x11::SpriteMask;
 
 /// Windows: SetWindowRgn from the sprite's swept ink and the renderer's rects.
 /// The region clips drawing as well as input. `click_through` controls
