@@ -1,0 +1,206 @@
+# Source rows are documented in DEVELOPMENT.md; importer indices start at zero.
+# All nine source loops are retained, including checking-work as one idle variant.
+
+name = "Tux"
+render_mode = "smooth"
+scale = 1
+
+[source]
+art = "塔克斯企鹅 Tux, cut from the petscodex (petdex) pet `cozy-tux` by scripts/import-pet.py. Unofficial Tux fan-art animated companion inspired by the Linux mascot created by Larry Ewing. Independently drawn penguin animation with foot-tap salute, terminal-card presentation, card recovery, balance steps and three-direction waddles. Not affiliated with or endorsed by Linux or its contributors."
+url = "https://petscodex.com/pets/cozy-tux"
+license = "MIT for these frames as cut and arranged here, along with the personality prose and the manifest. The art those frames adapt is not: it declares no license anywhere in the source ecosystem, and the importer warned so."
+
+[director]
+model_base = 2
+model_power = 1
+
+[cursor]
+near_reaction = "face"
+rush_reaction = "react"
+
+[animations.idle]
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-2.png",
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
+]
+fps = 2
+weight = 80
+
+[animations.look-around]
+frames = [
+  "frames/look-around-0.png",
+  "frames/look-around-1.png",
+  "frames/look-around-2.png",
+  "frames/look-around-3.png",
+  "frames/look-around-4.png",
+  "frames/look-around-5.png",
+]
+fps = 2
+variant_of = "idle"
+weight = 10
+
+[animations.checking-work]
+frames = [
+  "frames/checking-work-0.png",
+  "frames/checking-work-1.png",
+  "frames/checking-work-2.png",
+  "frames/checking-work-3.png",
+  "frames/checking-work-4.png",
+  "frames/checking-work-5.png",
+]
+fps = 3
+variant_of = "idle"
+weight = 3
+
+[animations.recover-card]
+frames = [
+  "frames/recover-card-0.png",
+  "frames/recover-card-1.png",
+  "frames/recover-card-2.png",
+  "frames/recover-card-3.png",
+  "frames/recover-card-4.png",
+  "frames/recover-card-5.png",
+  "frames/recover-card-6.png",
+  "frames/recover-card-7.png",
+]
+fps = 3
+variant_of = "idle"
+weight = 4
+
+[animations.waddle-in-place]
+frames = [
+  "frames/waddle-in-place-0.png",
+  "frames/waddle-in-place-1.png",
+  "frames/waddle-in-place-2.png",
+  "frames/waddle-in-place-3.png",
+  "frames/waddle-in-place-4.png",
+  "frames/waddle-in-place-5.png",
+]
+fps = 4
+variant_of = "idle"
+weight = 3
+
+[animations.walk]
+frames = [
+  "frames/walk-0.png",
+  "frames/walk-1.png",
+  "frames/walk-2.png",
+  "frames/walk-3.png",
+  "frames/walk-4.png",
+  "frames/walk-5.png",
+  "frames/walk-6.png",
+  "frames/walk-7.png",
+]
+fps = 8
+
+[animations.walk-left]
+frames = [
+  "frames/walk-left-0.png",
+  "frames/walk-left-1.png",
+  "frames/walk-left-2.png",
+  "frames/walk-left-3.png",
+  "frames/walk-left-4.png",
+  "frames/walk-left-5.png",
+  "frames/walk-left-6.png",
+  "frames/walk-left-7.png",
+]
+fps = 8
+left_of = "walk"
+
+[animations.talk]
+frames = [
+  "frames/talk-0.png",
+  "frames/talk-1.png",
+  "frames/talk-2.png",
+  "frames/talk-3.png",
+]
+fps = 3
+
+[animations.jump]
+frames = [
+  "frames/jump-0.png",
+  "frames/jump-1.png",
+  "frames/jump-2.png",
+  "frames/jump-3.png",
+  "frames/jump-4.png",
+]
+fps = 5
+loop = "once"
+
+[animations.fall]
+frames = [
+  "frames/jump-2.png",
+  "frames/jump-3.png",
+]
+fps = 4
+
+[animations.land]
+frames = [
+  "frames/jump-3.png",
+  "frames/jump-4.png",
+]
+fps = 4
+loop = "once"
+
+[animations.hold]
+frames = [
+  "frames/jump-1.png",
+  "frames/jump-2.png",
+]
+fps = 4
+
+[animations.react]
+frames = [
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
+]
+fps = 3
+loop = "once"
+
+[animations.sit]
+frames = [
+  "frames/look-around-0.png",
+]
+fps = 1
+
+# The sheet has no sleep loop. Its seated, closed-eye pose supplies quiet rest.
+
+[animations.sleep]
+frames = [
+  "frames/look-around-2.png",
+]
+fps = 1
+
+[behaviors.keep-company]
+play = ["idle"]
+weight = 50
+
+[behaviors.present]
+play = ["talk", "idle"]
+weight = 15
+when = "idle under 1m"
+
+[behaviors.greet]
+play = ["react"]
+then = "keep-company"
+weight = 20
+when = "idle under 10s"
+
+[behaviors.waddle]
+play = ["walk", "idle"]
+weight = 20
+when = "idle over 30s"
+
+[behaviors.rest]
+play = ["sit", "sleep"]
+weight = 40
+when = "idle over 5m"
+
+[behaviors.salute]
+play = ["react"]
+weight = 0
