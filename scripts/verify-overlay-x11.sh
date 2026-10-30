@@ -75,7 +75,8 @@ APP_PID=$!
 # shellcheck disable=SC2034  # read by the sourced wait core
 pid=$APP_PID
 
-wait_for_up 3 "$TRACE_LOG" || fail "App never published an overlay line within 3 s"
+# A cold debug build on software GL can take well past 3 s to start.
+wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line within 20 s"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 log_info "Waiting for overlay window..."
