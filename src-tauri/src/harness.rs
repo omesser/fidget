@@ -1678,7 +1678,7 @@ impl Session {
             }
             Err(why) => return Err(self.refused(request, &why)),
         };
-        let opening = self
+        let fresh = self
             .state
             .lock()
             .map_err(|_| LOST.to_string())?
@@ -1687,12 +1687,7 @@ impl Session {
             .is_some_and(|opened| {
                 opened.id == session_id && opened.history == SessionHistory::Fresh
             });
-        let prompt = match request.session_opening.as_deref() {
-            Some(layers) if opening && !layers.is_empty() => {
-                format!("{layers}\n\n{}", request.prompt)
-            }
-            _ => request.prompt.clone(),
-        };
+        let prompt = request.text(fresh);
         // The Instance and the wake kind come through the seam rather than
         // from anything here. One child serves every character, so the process is
         // not whose wake this is.
@@ -2987,7 +2982,8 @@ fn probe_turn(session: &Session) -> i32 {
     match session.turn(
         &WakeRequest {
             prompt: PROBE_PROMPT.to_string(),
-            session_opening: None,
+            layers: String::new(),
+            opening: false,
             // Reactive, because a probe is someone asking on purpose. Named for
             // the probe so the Action Log line cannot be read as a character's own wake.
             instance: "probe".to_string(),
@@ -5192,7 +5188,8 @@ mod tests {
     fn asking_as(instance: &str, character: &str, prompt: &str) -> WakeRequest {
         WakeRequest {
             prompt: prompt.to_string(),
-            session_opening: None,
+            layers: String::new(),
+            opening: false,
             instance: instance.to_string(),
             character: character.to_string(),
             reactive: true,

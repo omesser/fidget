@@ -27,9 +27,11 @@ use crate::sensing::Activity;
 mod prompt;
 mod recency;
 #[cfg(test)]
+pub(crate) use prompt::character_prompt;
+#[cfg(test)]
 use prompt::follow_up;
 pub use prompt::{app_instructions, happened_word, typed_line};
-pub(crate) use prompt::{character_layers, character_prompt, named_moment};
+pub(crate) use prompt::{character_layers, named_moment, with_layers};
 pub use recency::{Doing, Lately, Recency, Step};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
@@ -158,10 +160,13 @@ impl Context {
 /// identity travels with the prompt; the Harness keys the session by both.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WakeRequest {
+    /// This wake's moment, without the opening layers. Read it through `text`.
     pub prompt: String,
-    /// Opening layers to prepend if the Completer replaces a conversation
-    /// after this follow-up was built. None when `prompt` is already an opening.
-    pub session_opening: Option<String>,
+    /// Every layer an opening carries ahead of the moment, on every wake, so
+    /// a Completer that replaces a conversation mid-run can still open it.
+    pub layers: String,
+    /// Whether the Director has not yet heard a reply, so this wake opens.
+    pub opening: bool,
     /// Which Character Instance woke. One `ModelDirector` per Instance, so
     /// this is known before the prompt is built.
     pub instance: InstanceId,
@@ -175,6 +180,18 @@ pub struct WakeRequest {
     /// On the wire rather than a switch: a Completer that remembers a session
     /// must not serve one mode's opening into the other's history.
     pub blank: bool,
+}
+
+impl WakeRequest {
+    /// The turn to send. `fresh` is the Completer's word that the
+    /// conversation it is about to prompt has heard nothing yet.
+    pub fn text(&self, fresh: bool) -> String {
+        if self.opening || fresh {
+            with_layers(&self.layers, &self.prompt)
+        } else {
+            self.prompt.clone()
+        }
+    }
 }
 
 /// What kind of moment a wake is, which is what decides whether it may take
@@ -355,27 +372,15 @@ impl<C: Completer> ModelDirector<C> {
 
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
-        if self.opened.load(Ordering::SeqCst) {
-            named_moment(context, &self.instance)
-        } else {
-            character_prompt(context, &self.instance, self.behaviors.iter(), self.blank)
-        }
+        self.request(context).text(false)
     }
 
     /// This wake as the Completer receives it.
     pub fn request(&self, context: &Context) -> WakeRequest {
-        let session_opening = self
-            .opened
-            .load(Ordering::SeqCst)
-            .then(|| character_layers(context, self.behaviors.iter(), self.blank));
-        let prompt = if session_opening.is_some() {
-            named_moment(context, &self.instance)
-        } else {
-            character_prompt(context, &self.instance, self.behaviors.iter(), self.blank)
-        };
         WakeRequest {
-            prompt,
-            session_opening,
+            prompt: named_moment(context, &self.instance),
+            layers: character_layers(context, self.behaviors.iter(), self.blank),
+            opening: !self.opened.load(Ordering::SeqCst),
             instance: self.instance.clone(),
             character: self.character.clone(),
             reactive: reactive(&context.happened),
@@ -1652,7 +1657,7 @@ mod tests {
         }
 
         fn seen_prompt(&self) -> Option<String> {
-            self.seen().map(|request| request.prompt)
+            self.seen().map(|request| request.text(false))
         }
     }
 
@@ -1705,7 +1710,11 @@ mod tests {
         assert_eq!(asked.instance, "buddy-1");
         assert_eq!(asked.character, "bmo");
         assert!(asked.reactive, "Poke is the user addressing the character");
-        assert_eq!(asked.prompt, expected, "the prompt still travels whole");
+        assert_eq!(
+            asked.text(false),
+            expected,
+            "the prompt still travels whole"
+        );
 
         let unprompted = Context {
             happened: Happened::Proactive,
@@ -2390,8 +2399,8 @@ mod tests {
         assert!(rex.contains("Your instance_id is rex."), "{rex}");
         assert!(!pip.contains("rex"), "{pip}");
 
-        // A session the Harness opened mid-run hears only follow-ups, so they
-        // carry the id too.
+        // Later wakes into the same conversation send the moment alone, so it
+        // carries the id too.
         let director = directing(Scripted::says("wave"), ["wave"]);
         director.wake(&moment);
         let later = director.prompt(&moment);
@@ -2467,6 +2476,22 @@ mod tests {
         assert!(
             sent.contains("what just happened: thrown") && sent.contains("state: falling"),
             "{sent}"
+        );
+    }
+
+    /// A conversation the Completer replaces after the first wake still
+    /// hears every layer, joined exactly as the first opening was.
+    #[test]
+    fn a_follow_up_reads_as_an_opening_to_a_fresh_conversation() {
+        let director = directing(Scripted::says("wave"), ["wave"]);
+        let moment = context(working(), &["nap"]);
+        director.wake(&moment);
+
+        let later = director.request(&moment);
+        assert_eq!(later.text(false), named_moment(&moment, "buddy-1"));
+        assert_eq!(
+            later.text(true),
+            character_prompt(&moment, "buddy-1", ["wave"], false)
         );
     }
 

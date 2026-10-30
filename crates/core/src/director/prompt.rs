@@ -3,17 +3,25 @@ use super::{Context, Doing, Happened, Lately, State, Step, CHAT_LIMIT};
 /// The opening turn: Personality Prompt, Instance Prompt (ADR-0012), roster,
 /// the Instance's own id and moment; later wakes send `named_moment`. `blank`
 /// empties the built-in layers for the control run, keeping the rest; its
-/// reply is prose.
+/// reply is prose. `WakeRequest::text` sends it; tests build it here.
+#[cfg(test)]
 pub(crate) fn character_prompt(
     context: &Context,
     instance: &str,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
 ) -> String {
-    let layers = character_layers(context, behaviors, blank);
-    let moment = named_moment(context, instance);
+    with_layers(
+        &character_layers(context, behaviors, blank),
+        &named_moment(context, instance),
+    )
+}
+
+/// The opening turn's one join: layers ahead of the moment, or the moment
+/// alone when every layer is empty.
+pub(crate) fn with_layers(layers: &str, moment: &str) -> String {
     if layers.is_empty() {
-        moment
+        moment.to_string()
     } else {
         format!("{layers}\n\n{moment}")
     }
