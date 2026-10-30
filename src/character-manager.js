@@ -3,7 +3,7 @@
 // receives read/write access to arbitrary files.
 
 export function importMessage(name) {
-  return `${name} installed. Restart Fidget to use it in the Character menu.`;
+  return `${name} installed.`;
 }
 
 export function removeMessage(name) {
