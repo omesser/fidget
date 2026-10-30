@@ -14,7 +14,7 @@ use crate::package;
 use crate::SettingsState;
 
 #[derive(Serialize)]
-pub struct ManagedCharacter {
+pub struct ImportedCharacter {
     pub id: String,
     pub name: String,
     pub removable: bool,
@@ -23,28 +23,28 @@ pub struct ManagedCharacter {
 /// Only user-owned archives are removable. Bundled and external-path packages
 /// remain visible in the normal Character picker, but are never removed here.
 #[tauri::command]
-pub async fn character_manager_list(
+pub async fn character_import_list(
     app: tauri::AppHandle,
-) -> Result<Vec<ManagedCharacter>, String> {
-    tauri::async_runtime::spawn_blocking(move || managed_characters(&app))
+) -> Result<Vec<ImportedCharacter>, String> {
+    tauri::async_runtime::spawn_blocking(move || imported_characters(&app))
         .await
-        .map_err(|error| format!("Character Manager: {error}"))?
+        .map_err(|error| format!("Character Imports: {error}"))?
 }
 
-fn managed_characters(app: &tauri::AppHandle) -> Result<Vec<ManagedCharacter>, String> {
+fn imported_characters(app: &tauri::AppHandle) -> Result<Vec<ImportedCharacter>, String> {
     let state = app
         .try_state::<SettingsState>()
-        .ok_or("Character Manager: Fidget is still starting")?;
+        .ok_or("Character Imports: Fidget is still starting")?;
     let selected = state
         .settings
         .lock()
-        .map_err(|_| "Character Manager: settings unavailable")?
+        .map_err(|_| "Character Imports: settings unavailable")?
         .character
         .clone();
     let in_use: Vec<String> = state
         .instances
         .lock()
-        .map_err(|_| "Character Manager: instances unavailable")?
+        .map_err(|_| "Character Imports: instances unavailable")?
         .iter()
         .map(|instance| instance.character.clone())
         .collect();
@@ -75,7 +75,7 @@ fn managed_characters(app: &tauri::AppHandle) -> Result<Vec<ManagedCharacter>, S
             continue;
         };
         let removable = selected != character.name && !in_use.contains(&character.name);
-        result.push(ManagedCharacter {
+        result.push(ImportedCharacter {
             id: id.to_string(),
             name: character.name,
             removable,
@@ -88,7 +88,7 @@ fn managed_characters(app: &tauri::AppHandle) -> Result<Vec<ManagedCharacter>, S
 /// Import from a native picker. Cancel is not an error. No JS-supplied path is
 /// accepted, and the source archive stays untouched.
 #[tauri::command]
-pub async fn character_manager_import(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn character_import_zip(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
@@ -99,16 +99,16 @@ pub async fn character_manager_import(app: tauri::AppHandle) -> Result<Option<St
 
     let chosen = receiver
         .await
-        .map_err(|_| "Character Manager: file picker did not return")?;
+        .map_err(|_| "Character Imports: file picker did not return")?;
     let Some(chosen) = chosen else {
         return Ok(None);
     };
     let source = chosen
         .into_path()
-        .map_err(|error| format!("Character Manager: {error}"))?;
+        .map_err(|error| format!("Character Imports: {error}"))?;
     let name = tauri::async_runtime::spawn_blocking(move || import_archive(&app, &source))
         .await
-        .map_err(|error| format!("Character Manager: {error}"))??;
+        .map_err(|error| format!("Character Imports: {error}"))??;
     Ok(Some(name))
 }
 
@@ -145,10 +145,10 @@ fn import_archive(app: &tauri::AppHandle, source: &Path) -> Result<String, Strin
 /// Refuse to uninstall a selected or running Character, and never take a path
 /// from the webview. The package ID is a restricted file stem, not a filename.
 #[tauri::command]
-pub async fn character_manager_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn character_import_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || remove_archive(&app, &id))
         .await
-        .map_err(|error| format!("Character Manager: {error}"))?
+        .map_err(|error| format!("Character Imports: {error}"))?
 }
 
 fn remove_archive(app: &tauri::AppHandle, id: &str) -> Result<(), String> {

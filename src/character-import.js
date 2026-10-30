@@ -10,42 +10,46 @@ export function removeMessage(name) {
   return `${name} removed. Restart Fidget to update the Character menu.`;
 }
 
-export function mountCharacterManager(panel) {
+export function mountCharacterImports(panel) {
   const section = panel.querySelector(".set-section");
   if (!section) return;
 
   const wrap = document.createElement("div");
-  wrap.className = "set-character-manager";
+  wrap.className = "set-character-imports";
   const heading = document.createElement("h3");
-  heading.textContent = "Character Manager";
+  heading.textContent = "Character Imports";
   const intro = document.createElement("p");
   intro.className = "set-help";
-  intro.textContent = "Install a Character Package from a local ZIP. No extraction or environment variables needed.";
+  intro.textContent = "Add a Character from a ZIP file.";
   const warning = document.createElement("p");
-  warning.className = "set-help set-character-warning";
+  warning.className = "set-notice";
   warning.textContent = "Characters include a personality the AI reads. Only import ones from people you trust.";
   const importButton = document.createElement("button");
   importButton.type = "button";
-  importButton.textContent = "Import character ZIP…";
+  importButton.textContent = "Import from zip";
+  // .set-controls gives it the same size as every other Settings button.
+  const controls = document.createElement("div");
+  controls.className = "set-controls";
+  controls.append(importButton);
   const message = document.createElement("p");
   message.className = "set-status";
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
   const list = document.createElement("ul");
-  list.className = "set-character-list";
-  wrap.append(heading, intro, warning, importButton, message, list);
+  list.className = "set-list";
+  wrap.append(heading, intro, controls, warning, message, list);
   section.append(wrap);
 
   const invoke = (command, args = {}) => window.__TAURI_INTERNALS__.invoke(command, args);
   const busy = (on) => { importButton.disabled = on; };
   const showError = (error) => {
     const detail = typeof error === "string" ? error : (error?.message || String(error));
-    message.textContent = `Character Manager: ${detail}`;
+    message.textContent = `Character Imports: ${detail}`;
   };
 
   async function refresh() {
     try {
-      const characters = await invoke("character_manager_list");
+      const characters = await invoke("character_import_list");
       if (!wrap.isConnected) return;
       list.replaceChildren();
       if (characters.length === 0) {
@@ -66,7 +70,7 @@ export function mountCharacterManager(panel) {
           if (!window.confirm(`Remove ${character.name} from Fidget?`)) return;
           remove.disabled = true;
           try {
-            await invoke("character_manager_remove", { id: character.id });
+            await invoke("character_import_remove", { id: character.id });
             message.textContent = removeMessage(character.name);
           } catch (error) {
             showError(error);
@@ -85,7 +89,7 @@ export function mountCharacterManager(panel) {
     if (!window.confirm("Characters include a personality the AI reads. Only import ones from people you trust. Continue?")) return;
     busy(true);
     try {
-      const name = await invoke("character_manager_import");
+      const name = await invoke("character_import_zip");
       if (name) {
         message.textContent = importMessage(name);
         window.alert("Restart Fidget to use it.");

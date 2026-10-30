@@ -28,7 +28,7 @@
 mod acp_wire;
 mod action_log;
 mod caffeinate;
-mod character_manager;
+mod character_import;
 mod chat_surface;
 mod completer;
 mod consent;
@@ -5125,9 +5125,9 @@ fn main() {
             show_ai_source,
             settings_snapshot,
             settings_event,
-            character_manager::character_manager_list,
-            character_manager::character_manager_import,
-            character_manager::character_manager_remove
+            character_import::character_import_list,
+            character_import::character_import_zip,
+            character_import::character_import_remove
         ])
         .setup(|app| {
             // No Character means no overlay. Reported and exited rather than

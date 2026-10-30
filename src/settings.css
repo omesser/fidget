@@ -96,6 +96,13 @@
   color: var(--chat-ink-3);
 }
 
+/* A live region waiting for its first message draws no strip. */
+.set-status:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 /* A value the Harness did not take. The same strip as a status, in the error colour. */
 .set-notice {
   margin: 4px 0 0;
@@ -255,7 +262,8 @@
   color: var(--chat-accent-ink);
 }
 
-.set-controls button:disabled {
+.set-controls button:disabled,
+.set-list button:disabled {
   color: var(--chat-ink-4);
   cursor: default;
 }
@@ -351,41 +359,14 @@
   color: var(--chat-ink-2);
 }
 
-/* Imported ZIPs are managed here, beside the existing Character picker. */
-.set-character-manager {
+/* Character Imports lists imported ZIPs beside the existing Character picker. */
+.set-character-imports {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--chat-rule);
 }
 
-.set-character-manager h3 {
+.set-character-imports h3 {
   font-size: 12.5px;
   margin: 0 0 8px;
-}
-
-.set-character-manager button {
-  padding: 6px 10px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  color: var(--chat-ink);
-  background: var(--chat-fill-soft);
-  cursor: pointer;
-}
-
-.set-character-manager button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.set-character-list {
-  padding: 0;
-  list-style: none;
-}
-
-.set-character-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 0;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mountCharacterManager } from "../src/character-manager.js";
+import { mountCharacterImports } from "../src/character-import.js";
 
 // Small DOM harness: exercise the actual mounted UI and asynchronous Tauri
 // commands without introducing jsdom or a browser dependency to the test run.
@@ -34,8 +34,9 @@ function setup(invoke, { confirm = () => true } = {}) {
   };
   globalThis.document = { createElement: (tag) => new Element(tag) };
   const section = new Element();
-  mountCharacterManager({ querySelector: () => section });
-  const [, intro, warning, importButton, status, list] = section.children[0].children;
+  mountCharacterImports({ querySelector: () => section });
+  const [, intro, controls, warning, status, list] = section.children[0].children;
+  const [importButton] = controls.children;
   return {
     intro, warning, importButton, status, list, prompts, alerts,
     restore() {
@@ -55,12 +56,12 @@ test("initial listing, import, restart prompt, and remove use native commands", 
   let characters = [];
   const ui = setup(async (command, args) => {
     calls.push([command, args]);
-    if (command === "character_manager_list") return characters;
-    if (command === "character_manager_import") {
+    if (command === "character_import_list") return characters;
+    if (command === "character_import_zip") {
       characters = [{ id: "dosidicus-squid", name: "Dosidicus Squid", removable: true }];
       return "Dosidicus Squid";
     }
-    if (command === "character_manager_remove") {
+    if (command === "character_import_remove") {
       assert.deepEqual(args, { id: "dosidicus-squid" });
       characters = [];
       return;
@@ -70,6 +71,9 @@ test("initial listing, import, restart prompt, and remove use native commands", 
   try {
     await settle();
     assert.match(ui.warning.textContent, /Only import ones from people you trust/);
+    assert.equal(ui.intro.textContent, "Add a Character from a ZIP file.");
+    assert.equal(ui.importButton.textContent, "Import from zip");
+    assert.equal(ui.warning.className, "set-notice");
     assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
 
     await ui.importButton.click();
@@ -87,22 +91,22 @@ test("initial listing, import, restart prompt, and remove use native commands", 
     assert.match(ui.status.textContent, /removed/);
     assert.equal(ui.list.children[0].textContent, "No imported Character ZIPs yet.");
     assert.deepEqual(calls.map(([name]) => name), [
-      "character_manager_list",
-      "character_manager_import",
-      "character_manager_list",
-      "character_manager_remove",
-      "character_manager_list",
+      "character_import_list",
+      "character_import_zip",
+      "character_import_list",
+      "character_import_remove",
+      "character_import_list",
     ]);
   } finally {
     ui.restore();
   }
 });
 
-test("selected or running Characters cannot be removed from the manager", async () => {
+test("selected or running Characters cannot be removed from Character Imports", async () => {
   const calls = [];
   const ui = setup(async (command) => {
     calls.push(command);
-    if (command === "character_manager_list") {
+    if (command === "character_import_list") {
       return [{ id: "running", name: "Running Character", removable: false }];
     }
     throw new Error("remove must not be called");
@@ -112,7 +116,7 @@ test("selected or running Characters cannot be removed from the manager", async 
     const removeButton = ui.list.children[0].children[1];
     assert.equal(removeButton.disabled, true);
     assert.match(removeButton.title, /Selected or running/);
-    assert.deepEqual(calls, ["character_manager_list"]);
+    assert.deepEqual(calls, ["character_import_list"]);
   } finally {
     ui.restore();
   }
@@ -127,7 +131,7 @@ test("the user can cancel the trust warning without opening a file picker", asyn
   try {
     await settle();
     await ui.importButton.click();
-    assert.deepEqual(calls, ["character_manager_list"]);
+    assert.deepEqual(calls, ["character_import_list"]);
     assert.equal(ui.alerts.length, 0);
   } finally {
     ui.restore();
@@ -136,7 +140,7 @@ test("the user can cancel the trust warning without opening a file picker", asyn
 
 test("invalid packages present the actual error and do not show a restart prompt", async () => {
   const ui = setup(async (command) => {
-    if (command === "character_manager_list") return [];
+    if (command === "character_import_list") return [];
     throw new Error("Character package is invalid: missing frame idle-0.png");
   });
   try {
