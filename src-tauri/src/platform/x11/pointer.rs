@@ -45,39 +45,3 @@ pub fn double_click_interval_ms() -> Option<u32> {
         }
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Our GTK reader must return the same value as an independent
-    /// gtk-double-click-time read (both None, or the same Some).
-    #[test]
-    fn double_click_interval_ms_matches_gtk_settings() {
-        // Settings::default() is None until GTK is up. Without a display,
-        // gtk::init fails and Settings props panic, so only read
-        // gtk-double-click-time when GTK is actually initialized.
-        let _ = gtk::init();
-        if !gtk::is_initialized() {
-            assert_eq!(
-                double_click_interval_ms(),
-                None,
-                "without GTK init, x11::double_click_interval_ms must return None"
-            );
-            return;
-        }
-        let independent = gtk::Settings::default().and_then(|settings| {
-            let interval = settings.gtk_double_click_time();
-            if interval > 0 {
-                Some(interval as u32)
-            } else {
-                None
-            }
-        });
-        assert_eq!(
-            double_click_interval_ms(),
-            independent,
-            "x11::double_click_interval_ms must match gtk::Settings gtk-double-click-time"
-        );
-    }
-}

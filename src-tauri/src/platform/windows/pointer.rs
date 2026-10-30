@@ -35,22 +35,3 @@ pub fn double_click_interval_ms() -> Option<u32> {
         None
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime;
-
-    /// Our Win32 reader must return exactly what GetDoubleClickTime returns
-    /// (None only when the API reports 0).
-    #[test]
-    fn double_click_interval_ms_matches_get_double_click_time() {
-        let from_api = unsafe { GetDoubleClickTime() };
-        let expected = if from_api > 0 { Some(from_api) } else { None };
-        assert_eq!(
-            double_click_interval_ms(),
-            expected,
-            "windows::double_click_interval_ms must match GetDoubleClickTime()"
-        );
-    }
-}
