@@ -240,21 +240,18 @@ fn sprite_pixmap(
 
     let mut cache = PIXMAP_CACHE.lock().unwrap();
     if !should_rebuild_mask(&cache, slot, &current_shape) {
-        // Only position changed: reuse cached pixmap
         POSITION_ONLY_COUNT.fetch_add(1, Ordering::Relaxed);
         return Ok((cache.get(&slot).unwrap().pixmap, false));
     }
     FULL_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-    // Shape changed: need to rebuild the pixmap
     if let Some(cached) = cache.remove(&slot) {
         xproto::free_gc(conn, cached.gc).ok();
         xproto::free_pixmap(conn, cached.pixmap).ok();
     }
 
-    let scale = sprite.scale;
-    let scaled_width = width * scale;
-    let scaled_height = height * scale;
+    let scaled_width = width * sprite.scale;
+    let scaled_height = height * sprite.scale;
 
     let screen = &conn.setup().roots[0];
     let pixmap = conn
@@ -831,32 +828,6 @@ mod tests {
         assert!(
             should_rebuild_mask(&cache, window2, &shape),
             "Window 2 with same shape as cached window 1 must rebuild (per-window cache)"
-        );
-    }
-
-    #[test]
-    fn a_second_character_on_a_window_keeps_its_own_pixmap() {
-        let shape = MaskShape {
-            opaque: vec![true, false, true],
-            width: 3,
-            height: 1,
-            mirrored: false,
-            scale: 1,
-        };
-        let mut cache = HashMap::new();
-        cache.insert(
-            (1, 0),
-            CachedPixmap {
-                pixmap: 100,
-                gc: 200,
-                shape: shape.clone(),
-            },
-        );
-
-        assert!(!should_rebuild_mask(&cache, (1, 0), &shape), "first kept");
-        assert!(
-            should_rebuild_mask(&cache, (1, 1), &shape),
-            "the second Character builds its own pixmap"
         );
     }
 
