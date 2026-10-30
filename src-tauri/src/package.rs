@@ -521,7 +521,7 @@ pub fn read_import_archive(path: &Path) -> Result<PackageBytes, String> {
         .collect();
     if manifests.len() != 1 {
         return Err(format!(
-            "Expected exactly one character.manifest, found {}",
+            "Expected exactly one character.manifest (a valid Character ZIP must contain one), found {}",
             manifests.len()
         ));
     }
@@ -563,6 +563,42 @@ fn package_id(name: &str) -> Result<String, String> {
         return Err("Character name does not form a safe package filename".to_string());
     }
     Ok(id)
+}
+
+/// Reject imports that would shadow an existing package, even when its
+/// display name differs. Runtime discovery resolves package *file stems* before
+/// loading Character names, so comparing names alone is not sufficient.
+///
+/// The supplied paths must include every runtime search root (external, user,
+/// system, and bundled). A malformed installed package still reserves its stem.
+/// Also reserve the default stem when bundled resources are unavailable.
+pub fn import_name_conflict(name: &str, installed: &[PathBuf]) -> Result<Option<String>, String> {
+    let id = package_id(name)?;
+    if id == DEFAULT_CHARACTER {
+        return Ok(Some(format!("the built-in default ({DEFAULT_CHARACTER})")));
+    }
+    for path in installed {
+        let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if id.eq_ignore_ascii_case(stem) {
+            return Ok(Some(format!("installed package '{stem}'")));
+        }
+        // Names are also identities in the Character selector. Normalise using
+        // the same package ID algorithm used at installation, so punctuation,
+        // spaces and case cannot disguise a duplicate name.
+        if let Ok(bytes) = read(path) {
+            if let Ok(other) = fidget_core::character::load(&bytes) {
+                if package_id(&other.name).is_ok_and(|other_id| other_id == id) {
+                    return Ok(Some(format!("installed Character '{}'", other.name)));
+                }
+                if other.name.to_lowercase() == name.to_lowercase() {
+                    return Ok(Some(format!("installed Character '{}'", other.name)));
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Persist one validated package as a flat .zip in the same user directory
@@ -628,6 +664,41 @@ mod tests {
         zip.finish().unwrap();
         let error = read_import_archive(&archive).unwrap_err();
         assert!(error.contains("exactly one"), "{error}");
+    }
+
+    #[test]
+    fn imported_names_cannot_shadow_bundled_or_external_packages() {
+        let paths = vec![
+            PathBuf::from("/bundled/buddy-bot.zip"),
+            PathBuf::from("/external/hero_bot"),
+            PathBuf::from("/user/incomplete.zip"),
+        ];
+        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot", "Buddy Bot\\u{200b}"] {
+            assert!(
+                import_name_conflict(name, &paths).unwrap().is_some(),
+                "{name:?} must not shadow the default"
+            );
+        }
+        assert!(import_name_conflict("Hero Bot", &paths).unwrap().is_some());
+        assert!(import_name_conflict("Incomplete", &paths).unwrap().is_some());
+        assert!(import_name_conflict("Completely New", &paths).unwrap().is_none());
+        // Protect the built-in even when the resource folder is not accessible.
+        assert!(
+            import_name_conflict("Buddy Bot", &[]).unwrap().is_some()
+        );
+    }
+
+    #[test]
+    fn installed_package_display_name_is_a_reserved_identity() {
+        let dir = TempDir::new("name-collision");
+        let path = dir.join("different-file-stem.zip");
+        write_archive(&path, "", false); // Valid Character named Blip.
+        assert!(
+            import_name_conflict("BLIP", &[path.clone()]).unwrap().is_some()
+        );
+        assert!(
+            import_name_conflict("Blip!", &[path]).unwrap().is_some()
+        );
     }
 
     #[test]
