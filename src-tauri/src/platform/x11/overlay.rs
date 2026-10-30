@@ -860,6 +860,66 @@ mod tests {
         );
     }
 
+    /// Run with: Xvfb :97 &
+    /// DISPLAY=:97 cargo test --bin fidget x11::overlay -- --include-ignored
+    #[test]
+    #[ignore = "needs an X server"]
+    fn every_character_on_a_window_takes_clicks() {
+        use x11rb::protocol::shape::ConnectionExt as _;
+        use x11rb::protocol::xproto::ConnectionExt as _;
+        let (conn, screen) = x11rb::connect(None).expect("an X server on DISPLAY");
+        let root = conn.setup().roots[screen].root;
+        let window = conn.generate_id().unwrap();
+        conn.create_window(
+            x11rb::COPY_DEPTH_FROM_PARENT,
+            window,
+            root,
+            0,
+            0,
+            100,
+            100,
+            0,
+            xproto::WindowClass::INPUT_OUTPUT,
+            x11rb::COPY_FROM_PARENT,
+            &Default::default(),
+        )
+        .unwrap();
+        let mask = fidget_core::overlay::AlphaMask::from_png(
+            include_bytes!("../../../../crates/core/tests/fixtures/alpha-2x2.png"),
+            128,
+        )
+        .unwrap();
+        let sprite = |x, y| SpriteMask {
+            mask: &mask,
+            x,
+            y,
+            mirrored: false,
+            scale: 1,
+        };
+
+        apply_input_mask(&conn, window, &[sprite(0, 0), sprite(50, 50)], &[]).unwrap();
+
+        let rects = conn
+            .shape_get_rectangles(window, SK::INPUT)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .rectangles;
+        let takes_click = |x: i16, y: i16| {
+            rects.iter().any(|r| {
+                (r.x..r.x + r.width as i16).contains(&x)
+                    && (r.y..r.y + r.height as i16).contains(&y)
+            })
+        };
+        assert!(takes_click(1, 0) && takes_click(0, 1), "first Character");
+        assert!(
+            takes_click(51, 50) && takes_click(50, 51),
+            "second Character"
+        );
+        assert!(!takes_click(0, 0) && !takes_click(25, 25), "clear pixels");
+        free_cached_pixmaps(&conn, window, 0);
+    }
+
     #[test]
     fn stats_tracking() {
         MASK_UPDATE_COUNT.store(0, Ordering::Relaxed);
