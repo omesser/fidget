@@ -199,7 +199,7 @@ Search paths, in order. An earlier directory wins when two packages share a name
 
 The user directory is the same per-platform data directory as `settings.json`, with `characters` under it. The Settings window's Character picker shows that path.
 
-Ten characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux.
+Eleven characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux, Tuxedo Bean.
 
 ### Writing a Character
 
@@ -519,6 +519,36 @@ uv run scripts/import-pet.py ~/.codex/pets/cozy-tux --format petscodex -o charac
 The `fall`, `land`, and `hold` animations reuse hop poses. `react` reuses the
 salute. `sit` and `sleep` reuse the seated and closed-eye poses from row 6;
 the source has no dedicated sleep loop.
+
+### Tuxedo Bean row map
+
+Tuxedo Bean uses all nine rows of the `tuxedo-bean` sheet. The manifest tunes
+timing and behaviors after import. Row numbers below start at zero.
+
+| Row | Animation | Motion |
+| --- | --- | --- |
+| 0 | `look-around` | Standing glances |
+| 1 | `walk` | Trot right |
+| 2 | `walk-left` | Trot left |
+| 3 | `wave` | Seated paw wave |
+| 4 | `jump` | Crouch, pounce, and land |
+| 5 | `nod-off` | Head droops, then lifts again |
+| 6 | `idle` | Seated glances, ear flick, and blink |
+| 7 | `talk` | Paw to chin, then a raised paw to speak |
+| 8 | `review` | Read a page, then a paw up |
+
+To recut Tuxedo Bean's 57 source frames while keeping its authored manifest and prompt:
+
+```sh
+uv run scripts/import-pet.py ~/.codex/pets/tuxedo-bean --format petscodex -o characters/tuxedo-bean \
+  --frames-only --only-mapped --stand 91 \
+  --map idle=6 --map walk=1 --map walk-left=2 --map wave=3 --map jump=4 \
+  --map nod-off=5 --map look-around=0 --map talk=7 --map review=8
+```
+
+The `fall`, `land`, and `hold` animations reuse pounce poses. `react` reuses
+the wave. `sit` reuses the first seated pose. The source has no dedicated sleep
+loop, so `sleep` holds the lowest nod-off pose.
 
 ### Shimeji Shop
 
