@@ -206,9 +206,9 @@ wait_id_rest() { # <seconds> <id> <case>
   wait_until "$1" at_rest_for "$2" || fail "$3: never rested; see $log"
 }
 
-# Frames start later than the overlay lines when a fresh HOME compiles, so
-# gate the rest waits on the first frame line.
-wait_for_line 30 "$log" '^[0-9]+ frame: ' || fail "no frame line within 30 s of launch; see $log"
+# Frames start after the overlay lines, so the rest waits gate on the first
+# frame. A fresh HOME draws one within 3 s; two Instances get 5.
+wait_for_line 5 "$log" '^[0-9]+ frame: ' || fail "no frame line within 5 s of launch; see $log"
 wait_id_rest 10 "$(grep -E '^[0-9]+ frame: ' "$log" | awk '{print $NF}' | head -1)" first-sprite ||
   fail "the first sprite never rested; see $log"
 ids=()

@@ -136,7 +136,10 @@ log_info "Closing perch window to test drop..."
 DROP_START_LINE=$(wc -l < "$TRACE_LOG")
 kill "$TEST_WINDOW_PID" 2> /dev/null || true
 TEST_WINDOW_PID=""
-sleep 0.5
+for _ in $(seq 1 8); do
+  xwininfo -id "$TEST_WINDOW_ID" > /dev/null 2>&1 || break
+  sleep 0.25
+done
 xdotool windowkill "$TEST_WINDOW_ID" 2> /dev/null || true
 
 # Falling at startup also matches `frame: N Falling`; only a new one after close counts.
@@ -151,9 +154,13 @@ done
 [ "$DROPPED" -eq 1 ] || fail "Sprite did not drop (no new Falling state after window close)"
 log_info "Drop behavior (Falling) verified"
 
+for _ in $(seq 1 12); do
+  tail -n +"$DROP_START_LINE" "$TRACE_LOG" | grep -qE 'frame: [0-9]+ Grounded' && break
+  sleep 0.25
+done
+
 # Feet are pos(); the body is above them. A click shorter than one 16ms tick
 # can miss XQueryPointer, so hold the button across a couple of polls.
-sleep 0.5
 LAST_FRAME=$(grep 'frame:' "$TRACE_LOG" | tail -1)
 SPRITE_POS=$(echo "$LAST_FRAME" | grep -oE 'pos\([-0-9.]+,[-0-9.]+\)' | head -1 || true)
 [ -n "$SPRITE_POS" ] || fail "Could not determine sprite position for Poke test"
