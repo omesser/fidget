@@ -306,12 +306,12 @@ no MCP tool for it (ADR-0040).
 _Avoid_: Speech (reserved for a future audio speech engine), talk (the Required
 Animation), message, utterance
 
-**Bubble**:
+**Speech bubble**:
 A bubble above the sprite showing Dialogue, held for reading time (900ms
 + 55ms per character, clamped to 2–8 s). A new line replaces the old one.
 While a reply streams, the bubble grows with its Dialogue and `talk` plays; the
 Behavior name line is held back and never shown. Implemented in #119.
-_Avoid_: Speech bubble, Chat bubble, message, tooltip
+_Avoid_: Chat bubble, message, tooltip
 
 **Cue**:
 The Shell's acknowledgement that one interaction landed: a procedural visual
@@ -324,7 +324,7 @@ _Avoid_: Effect, feedback, animation (the Character's art), SFX
 
 **Do Not Disturb**:
 A switch that keeps the fidget visible and stops it starting anything. It makes
-no proactive wakes. Prompted wakes (quick message, Chat) and the Bubble
+no proactive wakes. Prompted wakes (quick message, Chat) and the Speech bubble
 work as normal. Behavior proposals are refused, so a prompted reply shows its
 Dialogue but plays no authored Behavior. Permission asks and forms wait until it
 is off instead of opening Chat. It silences the Cue sound and keeps the visual.
@@ -348,7 +348,7 @@ _Avoid_: Reasoning pane, thoughts, chain of thought, transcript, thought strip
 
 **Chat surface**:
 The window a Summon opens: where the user types to the attached Harness and
-reads the answers too long for a Bubble. Belongs to the Character
+reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by Fidget rather than by the
 Harness. #17, ADR-0018.
 _Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
@@ -359,7 +359,7 @@ A named, swappable visual design for the Chat surface — palette, type scale an
 shape — defined in `src/chat-ui.css` and applied by a class on the root element
 of the Chat surface's own document. Not the surface itself: the surface is the
 window, and a Chat UI is one of the designs it can be drawn in. Reaches nothing
-the overlay draws by itself — a Character's art never, and the Bubble
+the overlay draws by itself — a Character's art never, and the Speech bubble
 only the opaque panel tokens in `src/chat-shared.css` that the default Chat UI
 and the overlay both import (#441, #456, #545) — and is not the light or dark
 theme the operating system supplies. The user picks one for the whole app in
