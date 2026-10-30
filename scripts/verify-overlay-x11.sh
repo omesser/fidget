@@ -11,6 +11,7 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 # shellcheck source=scripts/scenarios/helpers/wait-helpers.sh
 source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.sh"
+root_events() { stdbuf -oL xprop -root -spy; }
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -34,11 +35,8 @@ if ! has_supporting_wm; then
   WM_PID=$!
   # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
-  for _ in $(seq 1 40); do
-    has_supporting_wm && break
-    sleep 0.25
-  done
-  has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
+  wait_on_source 3 root_events grep -qEm1 '^_NET_SUPPORTING_WM_CHECK\(.*window id' ||
+    fail "openbox did not publish _NET_SUPPORTING_WM_CHECK within 3 s"
 fi
 
 trap cleanup EXIT
@@ -59,13 +57,8 @@ log_info "Display ${ROOT_W}x${ROOT_H}; perch window at +${PERCH_X}+${PERCH_Y}"
 # with it before the sprite can land.
 xterm -geometry "100x8+${PERCH_X}+${PERCH_Y}" -title "perch-prop" -e sleep 3600 > "$OUT/xterm.out" 2> "$OUT/xterm.err" &
 TEST_WINDOW_PID=$!
-TEST_WINDOW_ID=""
-for _ in $(seq 1 40); do
-  TEST_WINDOW_ID=$(xdotool search --name '^perch-prop$' 2> /dev/null | head -1 || true)
-  [ -n "$TEST_WINDOW_ID" ] && break
-  sleep 0.25
-done
-[ -n "$TEST_WINDOW_ID" ] || fail "Could not create perch window"
+TEST_WINDOW_ID=$(timeout 3 xdotool search --sync --name '^perch-prop$' 2> /dev/null | head -1 || true)
+[ -n "$TEST_WINDOW_ID" ] || fail "The perch window did not map within 3 s"
 log_info "Perch window ID: $TEST_WINDOW_ID"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
@@ -79,29 +72,23 @@ export RUST_LOG=debug
 export LIBGL_ALWAYS_SOFTWARE=1
 target/debug/fidget > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
+# shellcheck disable=SC2034  # read by the sourced wait core
+pid=$APP_PID
 
-await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+wait_for_up 3 "$TRACE_LOG" || fail "App never published an overlay line within 3 s"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 log_info "Waiting for overlay window..."
-WINDOW_ID=""
-for _ in $(seq 1 60); do
-  WINDOW_ID=$(find_overlay_window || true)
-  [ -n "$WINDOW_ID" ] && break
-  sleep 0.25
-done
-[ -n "$WINDOW_ID" ] || fail "Could not find fidget overlay window"
+wait_on_source 3 root_events probe_each_line find_overlay_window ||
+  fail "Could not find the fidget overlay window within 3 s"
+WINDOW_ID=$(find_overlay_window)
 log_info "Found overlay window ID: $WINDOW_ID"
 
 log_info "Waiting for EWMH window states..."
-await "$TRACE_LOG" 'EWMH configured' 40 || fail "configure_overlay never succeeded"
-WINDOW_PROPS=""
-for _ in $(seq 1 40); do
-  WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE 2> /dev/null || true)
-  echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" &&
-    echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR" && break
-  sleep 0.25
-done
+wait_for_line 3 "$TRACE_LOG" 'EWMH configured' || fail "configure_overlay never succeeded within 3 s"
+overlay_state_events() { stdbuf -oL xprop -id "$WINDOW_ID" -spy _NET_WM_STATE; }
+wait_on_source 3 overlay_state_events grep -qEm1 'ABOVE.*SKIP_TASKBAR|SKIP_TASKBAR.*ABOVE' || true
+WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE 2> /dev/null || true)
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR"; then
   log_info "EWMH states verified"
 else
@@ -109,13 +96,13 @@ else
   log_info "WARN: Continuing with overlay presence verified through frame logs"
 fi
 
-await "$TRACE_LOG" 'frame:.* (Falling|Grounded|Perched)' 40 ||
-  fail "Sprite did not initialize (no Falling/Grounded/Perched state)"
+wait_for_line 3 "$TRACE_LOG" 'frame:.* (Falling|Grounded|Perched)' ||
+  fail "Sprite did not initialize (no Falling/Grounded/Perched state within 3 s)"
 log_info "Sprite initialized"
 
 log_info "Waiting for sprite to perch..."
-await "$TRACE_LOG" 'frame: [0-9]+ Perched' 80 ||
-  fail "Sprite did not perch (no Perched state in traces)"
+wait_for_line 10 "$TRACE_LOG" 'frame: [0-9]+ Perched' ||
+  fail "Sprite did not perch (no Perched state within 10 s)"
 log_info "Perched state verified"
 
 # Last Perched pos() is the feet; a ride that yanks is a fall, so step slowly
@@ -141,8 +128,6 @@ TEST_WINDOW_PID=""
 xdotool windowkill "$TEST_WINDOW_ID" 2> /dev/null || true
 
 # Falling at startup also matches `frame: N Falling`; only a new one after close counts.
-# shellcheck disable=SC2034  # read by the sourced wait core
-pid=$APP_PID
 since_drop=+$((DROP_START_LINE + 1))
 wait_on_lines 3 "$since_drop" "$TRACE_LOG" grep -qEm1 'frame: [0-9]+ Falling' ||
   fail "Sprite did not drop (no new Falling state within 3 s of the window closing)"
@@ -164,9 +149,8 @@ sleep 0.05
 xdotool mousedown 1
 sleep 0.12
 xdotool mouseup 1
-sleep 0.4
 
-grep -qE 'verbs:.*Poke' "$TRACE_LOG" || fail "Click did not produce Poke verb"
+wait_for_line 3 "$TRACE_LOG" 'verbs:.*Poke' || fail "Click did not produce a Poke verb within 3 s"
 log_info "Poke verb verified"
 
 log_info ""
