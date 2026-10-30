@@ -945,22 +945,38 @@ mod tests {
     /// Tiny bounds stand in for the real ones, so nothing is built on disk.
     #[test]
     fn a_budget_refuses_the_file_past_its_count() {
-        let mut budget = Budget { bytes: 100, files: 2 };
+        let mut budget = Budget {
+            bytes: 100,
+            files: 2,
+        };
         assert_eq!(budget.charge(0), Ok(()));
         assert_eq!(budget.charge(0), Ok(()));
-        let refusal = budget.charge(0).expect_err("a third file is over a count of 2");
-        assert!(refusal.starts_with("the package holds more than"), "{refusal}");
+        let refusal = budget
+            .charge(0)
+            .expect_err("a third file is over a count of 2");
+        assert!(
+            refusal.starts_with("the package holds more than"),
+            "{refusal}"
+        );
     }
 
     /// Two files that each fit but together pass the total: the bound is on
     /// the whole package, and a file landing exactly on it still fits.
     #[test]
     fn a_budget_refuses_the_byte_past_its_total() {
-        let mut budget = Budget { bytes: 10, files: 100 };
+        let mut budget = Budget {
+            bytes: 10,
+            files: 100,
+        };
         assert_eq!(budget.charge(6), Ok(()));
         assert_eq!(budget.charge(4), Ok(()));
-        let refusal = budget.charge(1).expect_err("an eleventh byte is over a total of 10");
-        assert!(refusal.starts_with("the package expands to more than"), "{refusal}");
+        let refusal = budget
+            .charge(1)
+            .expect_err("an eleventh byte is over a total of 10");
+        assert!(
+            refusal.starts_with("the package expands to more than"),
+            "{refusal}"
+        );
     }
 
     /// Unix only: Windows has no equivalent of a file its owner cannot open, and
