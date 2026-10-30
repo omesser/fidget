@@ -100,7 +100,7 @@ wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 dump() { python3 "$root/scripts/ax-window-linux.py" dump "$pid" Fidget > "$out/$1.ax.txt" 2> "$out/$1.err" || fail "AT-SPI dump failed; see $out/$1.err"; }
 
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
-wait_for_trace 2 "$trace" '^frame: .* sprite\([0-9-]+,[0-9-]+\)' || fail "no frame trace in $trace"
+wait_for_trace 2 "$trace" '^frame: .* sprite\(-?[0-9]+,-?[0-9]+\)' || fail "no frame trace in $trace"
 
 read -r sprite_w sprite_h < <(sed -nE 's/.*sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$trace" | head -1) || fail "no sprite size in $trace"
 read -r sx sy < <(sed -nE 's/^frame: .* sprite\((-?[0-9]+),(-?[0-9]+)\) .*/\1 \2/p' "$trace" | tail -1) || fail "no frame trace in $trace"
