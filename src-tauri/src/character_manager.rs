@@ -124,21 +124,19 @@ fn import_archive(app: &tauri::AppHandle, source: &Path) -> Result<String, Strin
     let character = fidget_core::character::load(&bytes)
         .map_err(|errors| format!("Character package is invalid:\n{}", errors.join("\n")))?;
 
-    // Matching display names have one runtime identity. Refuse a shadow copy
-    // rather than install one that the existing cache will never select.
+    // Check both the runtime file stems and normalised display identities.
+    // A user ZIP can otherwise silently shadow the built-in default at restart.
     let bundled = app
         .path()
         .resource_dir()
         .ok()
         .map(|dir| dir.join("characters"));
-    for existing in package::installed(&package::search_paths(bundled)) {
-        if let Ok(files) = package::read(&existing) {
-            if let Ok(other) = fidget_core::character::load(&files) {
-                if other.name.eq_ignore_ascii_case(&character.name) {
-                    return Err(format!("{} is already installed", character.name));
-                }
-            }
-        }
+    let installed = package::installed(&package::search_paths(bundled));
+    if let Some(conflict) = package::import_name_conflict(&character.name, &installed)? {
+        return Err(format!(
+            "Cannot import '{}': it conflicts with {conflict}. Choose a different Character name.",
+            character.name
+        ));
     }
     package::save_user_archive(&bytes, &character.name)?;
     Ok(character.name)
