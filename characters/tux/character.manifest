@@ -27,8 +27,8 @@ frames = [
   "frames/idle-4.png",
   "frames/idle-5.png",
 ]
-fps = 4
-weight = 40
+fps = 2
+weight = 80
 
 [animations.look-around]
 frames = [
@@ -39,7 +39,7 @@ frames = [
   "frames/look-around-4.png",
   "frames/look-around-5.png",
 ]
-fps = 3
+fps = 2
 variant_of = "idle"
 weight = 10
 
@@ -52,7 +52,7 @@ frames = [
   "frames/checking-work-4.png",
   "frames/checking-work-5.png",
 ]
-fps = 4
+fps = 3
 variant_of = "idle"
 weight = 3
 
@@ -67,7 +67,7 @@ frames = [
   "frames/recover-card-6.png",
   "frames/recover-card-7.png",
 ]
-fps = 5
+fps = 3
 variant_of = "idle"
 weight = 4
 
@@ -80,7 +80,7 @@ frames = [
   "frames/waddle-in-place-4.png",
   "frames/waddle-in-place-5.png",
 ]
-fps = 6
+fps = 4
 variant_of = "idle"
 weight = 3
 
@@ -95,7 +95,7 @@ frames = [
   "frames/walk-6.png",
   "frames/walk-7.png",
 ]
-fps = 8
+fps = 6
 
 [animations.walk-left]
 frames = [
@@ -108,7 +108,7 @@ frames = [
   "frames/walk-left-6.png",
   "frames/walk-left-7.png",
 ]
-fps = 8
+fps = 6
 left_of = "walk"
 
 [animations.talk]
@@ -118,7 +118,7 @@ frames = [
   "frames/talk-2.png",
   "frames/talk-3.png",
 ]
-fps = 4
+fps = 3
 
 [animations.jump]
 frames = [
@@ -128,7 +128,7 @@ frames = [
   "frames/jump-3.png",
   "frames/jump-4.png",
 ]
-fps = 7
+fps = 5
 loop = "once"
 
 [animations.fall]
@@ -136,14 +136,14 @@ frames = [
   "frames/jump-2.png",
   "frames/jump-3.png",
 ]
-fps = 6
+fps = 4
 
 [animations.land]
 frames = [
   "frames/jump-3.png",
   "frames/jump-4.png",
 ]
-fps = 6
+fps = 4
 loop = "once"
 
 [animations.hold]
@@ -151,7 +151,7 @@ frames = [
   "frames/jump-1.png",
   "frames/jump-2.png",
 ]
-fps = 6
+fps = 4
 
 [animations.react]
 frames = [
@@ -159,7 +159,7 @@ frames = [
   "frames/idle-4.png",
   "frames/idle-5.png",
 ]
-fps = 5
+fps = 3
 loop = "once"
 
 [animations.sit]

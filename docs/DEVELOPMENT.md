@@ -507,7 +507,7 @@ To recut Tux's 57 source frames while keeping its authored manifest and prompt:
 
 ```sh
 uv run scripts/import-pet.py ~/.codex/pets/cozy-tux --format petscodex -o characters/tux \
-  --frames-only --only-mapped --stand 105 \
+  --frames-only --only-mapped --stand 91 \
   --map idle=0 --map walk=1 --map walk-left=2 --map talk=3 --map jump=4 \
   --map recover-card=5 --map look-around=6 --map waddle-in-place=7 --map checking-work=8
 ```
