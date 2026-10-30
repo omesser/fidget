@@ -931,7 +931,7 @@ pub(crate) fn note_http_call(
         serde_json::json!({
             "instance": request.instance,
             "wake": if request.reactive { "reactive" } else { "proactive" },
-            "chars": request.prompt.len(),
+            "chars": request.text(false).len(),
         }),
     );
     match result {
@@ -951,13 +951,13 @@ pub(crate) fn note_http_call(
 
 impl Completer for Endpoint {
     fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
-        let prompt = &request.prompt;
+        let prompt = request.text(false);
         if tracing() {
             eprintln!("director: sending POST {} model={}", self.url, self.model);
-            trace_block("prompt", prompt);
+            trace_block("prompt", &prompt);
             eprintln!("director: waiting for model");
         }
-        let result = match self.post(&self.url, prompt, &request.instance, said) {
+        let result = match self.post(&self.url, &prompt, &request.instance, said) {
             Ok(reply) => {
                 if tracing() {
                     trace_block("model", &reply.text);
@@ -972,7 +972,7 @@ impl Completer for Endpoint {
                     if tracing() {
                         eprintln!("director: trying {alt}");
                     }
-                    match self.post(&alt, prompt, &request.instance, said) {
+                    match self.post(&alt, &prompt, &request.instance, said) {
                         Ok(reply) => {
                             if tracing() {
                                 trace_block("model", &reply.text);
@@ -4394,7 +4394,8 @@ pub(crate) mod tests {
     impl<C: Completer> Completer for Reframing<C> {
         fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
             let mut sent = request.clone();
-            sent.prompt = reframed(&sent.prompt, &self.personality, self.framing);
+            sent.prompt = reframed(&request.text(false), &self.personality, self.framing);
+            sent.layers.clear();
             self.inner.complete(&sent, said)
         }
     }
@@ -4747,6 +4748,8 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session");
         let request = WakeRequest {
             prompt: "hi".into(),
+            layers: String::new(),
+            opening: false,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
@@ -4780,6 +4783,8 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session-cut");
         let request = WakeRequest {
             prompt: "hi".into(),
+            layers: String::new(),
+            opening: false,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
@@ -4814,6 +4819,8 @@ pub(crate) mod tests {
         let dir = TempDir::new("http-session-err");
         let request = WakeRequest {
             prompt: "hi".into(),
+            layers: String::new(),
+            opening: false,
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: false,

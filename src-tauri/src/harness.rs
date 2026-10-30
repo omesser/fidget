@@ -1249,12 +1249,17 @@ enum Reach {
     Open { fresh: bool },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionHistory {
+    Fresh,
+    Loaded,
+    Prompted,
+}
+
 struct OpenedSession {
     id: String,
     opened_on: OpenInputs,
-    /// Whether this id came from `session/load` and has not served a turn
-    /// yet. That is the one condition `reopen_loaded` answers to.
-    loaded: bool,
+    history: SessionHistory,
 }
 
 #[derive(Default)]
@@ -1673,6 +1678,16 @@ impl Session {
             }
             Err(why) => return Err(self.refused(request, &why)),
         };
+        let fresh = self
+            .state
+            .lock()
+            .map_err(|_| LOST.to_string())?
+            .sessions
+            .get(&SessionKey::from_request(request))
+            .is_some_and(|opened| {
+                opened.id == session_id && opened.history == SessionHistory::Fresh
+            });
+        let prompt = request.text(fresh);
         // The Instance and the wake kind come through the seam rather than
         // from anything here. One child serves every character, so the process is
         // not whose wake this is.
@@ -1683,10 +1698,10 @@ impl Session {
                 "session_id": session_id,
                 "instance": request.instance,
                 "wake": wake_kind(request.reactive),
-                "chars": request.prompt.len(),
+                "chars": prompt.len(),
             }),
         );
-        let outcome = wire.prompt(&session_id, &request.prompt, self.timeout, said);
+        let outcome = wire.prompt(&session_id, &prompt, self.timeout, said);
         // Charge the loss before the outcome is dressed for the caller. A
         // death under every turn must pay the same backoff a failed spawn
         // does. An answering child must not carry a death from hours ago.
@@ -1700,7 +1715,9 @@ impl Session {
             // later failure on this session is the Harness's own answer.
             if outcome.is_ok() {
                 if let Some(opened) = state.sessions.get_mut(&SessionKey::from_request(request)) {
-                    opened.loaded = false;
+                    if opened.id == session_id {
+                        opened.history = SessionHistory::Prompted;
+                    }
                 }
                 self.signed_in(&mut state);
             }
@@ -1816,7 +1833,7 @@ impl Session {
         let Some(opened) = state.sessions.get(key) else {
             return false;
         };
-        if !opened.loaded {
+        if opened.history != SessionHistory::Loaded {
             return false;
         }
         let dropped = opened.id.clone();
@@ -2428,7 +2445,11 @@ impl Session {
                     OpenedSession {
                         id: id.clone(),
                         opened_on,
-                        loaded: saved.as_deref() == Some(id.as_str()),
+                        history: if saved.as_deref() == Some(id.as_str()) {
+                            SessionHistory::Loaded
+                        } else {
+                            SessionHistory::Fresh
+                        },
                     },
                 );
                 // The AttachSettled below carries a cleared login too.
@@ -2961,6 +2982,8 @@ fn probe_turn(session: &Session) -> i32 {
     match session.turn(
         &WakeRequest {
             prompt: PROBE_PROMPT.to_string(),
+            layers: String::new(),
+            opening: false,
             // Reactive, because a probe is someone asking on purpose. Named for
             // the probe so the Action Log line cannot be read as a character's own wake.
             instance: "probe".to_string(),
@@ -4488,6 +4511,7 @@ mod tests {
                 }
                 Some("session/prompt") => {
                     record(count, "prompt");
+                    record(count, &format!("prompt-json={}", message["params"]));
                     // The SDK routes updates by session id, so a loaded
                     // session's chunks must carry the loaded id.
                     if let Some(id) = message.pointer("/params/sessionId").and_then(Value::as_str) {
@@ -4528,6 +4552,7 @@ mod tests {
                         // there, so the first prompt refuses and the one
                         // after the reopen is served.
                         "load-dead" if prompts == 1 => stop(&id, "refusal"),
+                        "load-dead-after-turn" if session == "saved-ok" => stop(&id, "refusal"),
                         "load-refusal" => stop(&id, "refusal"),
                         "permission" | "permission-after-work" | "permission-stall" => {
                             if script == "permission-after-work" {
@@ -4773,6 +4798,9 @@ mod tests {
                         }
                         "exit" | "load-history" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
+                        "die-third-turn" if prompts == 3 => std::process::exit(3),
+                        "refuse-third-turn" if prompts == 3 => stop(&id, "refusal"),
+                        "cancel-third-turn" if prompts == 3 => stop(&id, CANCELLED),
                         _ => {
                             chunk(&session, "Hell");
                             if script == "garbage" {
@@ -5160,6 +5188,8 @@ mod tests {
     fn asking_as(instance: &str, character: &str, prompt: &str) -> WakeRequest {
         WakeRequest {
             prompt: prompt.to_string(),
+            layers: String::new(),
+            opening: false,
             instance: instance.to_string(),
             character: character.to_string(),
             reactive: true,
@@ -6733,6 +6763,134 @@ mod tests {
                 dialogue: Some("Good morning".to_string()),
             })
         );
+    }
+
+    #[test]
+    fn a_replacement_harness_session_hears_the_full_character_prompt() {
+        crate::model::tests::with_env(None, None, None, || {
+            for (replacement, blank) in [
+                ("blanked-input", false),
+                ("failed-load", false),
+                ("dropped", false),
+                ("blanked-input", true),
+                ("failed-load", true),
+                ("loaded", false),
+                ("respawn", false),
+                ("refused-fresh", false),
+                ("cancelled-fresh", false),
+            ] {
+                let script = match replacement {
+                    "respawn" => "die-third-turn",
+                    "refused-fresh" => "refuse-third-turn",
+                    "cancelled-fresh" => "cancel-third-turn",
+                    _ => "load-dead-after-turn",
+                };
+                let (fx, session) = Fixture::new(script);
+                let session = Arc::new(session.with_backoff(Duration::ZERO));
+                let director = ModelDirector::new(
+                    crate::completer::AnyCompleter::Harness(Arc::clone(&session)),
+                    ["wave", "nap"],
+                    "buddy-1",
+                    "bmo",
+                    blank,
+                );
+                let context = Context {
+                    personality: "A penguin with a terminal card.".into(),
+                    instance_prompt: "Call me Pip.".into(),
+                    happened: Happened::Chat("Keep my latest question.".into()),
+                    ..Context::quiet()
+                };
+                let settings_path = crate::settings::settings_path(session.data.as_path());
+                crate::settings::Settings {
+                    director_model: "some-model".into(),
+                    ..crate::settings::Settings::default()
+                }
+                .save(&settings_path)
+                .unwrap();
+                director.wake(&context);
+                director.wake(&context);
+                match replacement {
+                    "blanked-input" => {
+                        crate::settings::Settings::default()
+                            .save(&settings_path)
+                            .unwrap();
+                        session.inputs_applied();
+                    }
+                    "failed-load" | "loaded" => {
+                        session.drop_conversation("buddy-1");
+                        let id = if replacement == "failed-load" {
+                            "saved-ok"
+                        } else {
+                            "saved-live"
+                        };
+                        std::fs::write(fx.dir.join(SESSION_FILE), serde_json::to_string(&json!({
+                            "harness": "fake", "sessions": [{"instance": "buddy-1", "character": "bmo", "session_id": id, "blank": blank}]
+                        })).unwrap()).unwrap();
+                    }
+                    "respawn" => {
+                        assert_eq!(director.wake(&context), Wake::Failed);
+                    }
+                    _ => session.drop_conversation("buddy-1"),
+                }
+                let mut request = director.request(&context);
+                request.prompt.push_str("\nextra chat context");
+                let woken = director.wake_request(request.clone(), &|_| {});
+                if matches!(replacement, "refused-fresh" | "cancelled-fresh") {
+                    assert_eq!(woken.wake, Wake::Failed);
+                    director.wake_request(request, &|_| {});
+                }
+                director.wake(&context);
+                session.shutdown();
+                let recorded = std::fs::read_to_string(&fx.count).unwrap();
+                let prompts: Vec<String> = recorded
+                    .lines()
+                    .filter_map(|line| {
+                        let params: Value =
+                            serde_json::from_str(line.strip_prefix("prompt-json=")?).unwrap();
+                        Some(
+                            params
+                                .pointer("/prompt/0/text")
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_string(),
+                        )
+                    })
+                    .collect();
+                assert!(
+                    !prompts[1].contains("A penguin"),
+                    "established turns stay short"
+                );
+                let restored = &prompts[prompts.len() - 2];
+                for layer in ["Keep my latest question.", "extra chat context"] {
+                    assert!(
+                        restored.contains(layer),
+                        "{replacement} lost {layer}: {restored}"
+                    );
+                }
+                for layer in [
+                    "A penguin with a terminal card.",
+                    "wave, nap",
+                    "Reply with behavior:",
+                ] {
+                    assert_eq!(
+                        restored.contains(layer),
+                        !blank && replacement != "loaded",
+                        "{replacement}, blank={blank}, {layer}: {restored}"
+                    );
+                }
+                assert_eq!(
+                    restored.contains("Call me Pip."),
+                    replacement != "loaded",
+                    "{restored}"
+                );
+                assert_eq!(restored.matches("Your instance_id is buddy-1.").count(), 1);
+                assert!(
+                    !prompts.last().unwrap().contains("A penguin"),
+                    "the next turn stays short"
+                );
+            }
+        });
     }
 
     /// An Instance Prompt change cannot retrofit the opening turn,

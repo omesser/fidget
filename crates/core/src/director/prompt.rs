@@ -3,15 +3,36 @@ use super::{Context, Doing, Happened, Lately, State, Step, CHAT_LIMIT};
 /// The opening turn: Personality Prompt, Instance Prompt (ADR-0012), roster,
 /// the Instance's own id and moment; later wakes send `named_moment`. `blank`
 /// empties the built-in layers for the control run, keeping the rest; its
-/// reply is prose.
+/// reply is prose. `WakeRequest::text` sends it; tests build it here.
+#[cfg(test)]
 pub(crate) fn character_prompt(
     context: &Context,
     instance: &str,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
 ) -> String {
-    let moment = named_moment(context, instance);
+    with_layers(
+        &character_layers(context, behaviors, blank),
+        &named_moment(context, instance),
+    )
+}
 
+/// The opening turn's one join: layers ahead of the moment, or the moment
+/// alone when every layer is empty.
+pub(crate) fn with_layers(layers: &str, moment: &str) -> String {
+    if layers.is_empty() {
+        moment.to_string()
+    } else {
+        format!("{layers}\n\n{moment}")
+    }
+}
+
+/// Layers a replacement conversation needs before its current moment.
+pub(crate) fn character_layers(
+    context: &Context,
+    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+    blank: bool,
+) -> String {
     // Empty, not `(no personality)`: that placeholder is a Character with an
     // empty file, which still gets the voice rules. Blank AI is the emptied
     // built-in layer sitting in the same seat.
@@ -35,17 +56,16 @@ pub(crate) fn character_prompt(
     let instructions = app_instructions(behaviors, blank);
 
     match (authored.is_empty(), instructions.is_empty()) {
-        (true, true) => moment,
-        (false, true) => format!("{authored}\n\n{moment}"),
-        (true, false) => format!("{instructions}\n\n{moment}"),
-        (false, false) => format!("{authored}\n\n{instructions}\n\n{moment}"),
+        (true, true) => String::new(),
+        (false, true) => authored,
+        (true, false) => instructions,
+        (false, false) => format!("{authored}\n\n{instructions}"),
     }
 }
 
 /// The moment, led by this Instance's id. Every turn carries the id, and
 /// blank mode keeps it: it routes tool calls to this Instance, which is
-/// plumbing rather than voice, and a session the Harness opened mid-run hears
-/// only follow-ups.
+/// plumbing rather than voice.
 pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
     format!(
         "Your instance_id is {instance}. Pass it to every Fidget tool you call.\n\n{}",

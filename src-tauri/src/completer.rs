@@ -596,7 +596,7 @@ pub(crate) mod tests {
 
         impl Completer for Noted {
             fn complete(&self, request: &WakeRequest, _: &dyn Fn(&str)) -> Result<Reply, String> {
-                *self.prompt.lock().expect("prompt lock") = request.prompt.clone();
+                *self.prompt.lock().expect("prompt lock") = request.text(false);
                 Ok(Reply::whole("idle"))
             }
         }
