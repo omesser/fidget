@@ -580,7 +580,7 @@ mod tests {
             ]
         );
         #[cfg(target_os = "windows")]
-        assert_eq!(ids, ["consent_window_titles"]);
+        assert_eq!(ids, ["consent_window_names"]);
         #[cfg(target_os = "linux")]
         assert_eq!(ids, ["consent_screen_cast"]);
     }
