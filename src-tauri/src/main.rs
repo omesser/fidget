@@ -5182,6 +5182,8 @@ fn main() {
             // bar is crowded. The tray icon remains the settings door.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            #[cfg(target_os = "macos")]
+            platform::watch_delivered_presses();
 
             // Windows and Linux get an off-screen taskbar anchor that opens Settings, like
             // the Dock icon. Hold Ctrl+C until the quit handler is in, so the gap between

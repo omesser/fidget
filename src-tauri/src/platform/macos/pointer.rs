@@ -14,13 +14,18 @@
 //! is still held. In the #1858 trace the counters saw every press the overlay
 //! saw, and presses it missed, so the overlay is not a second source here.
 
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
-use objc2_app_kit::NSEvent;
+use block2::RcBlock;
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSApplication, NSEvent, NSEventMask};
 use objc2_core_graphics::{
     CGEventFlags, CGEventSource, CGEventSourceStateID, CGEventType, CGMouseButton,
 };
+use objc2_foundation::{NSDate, NSDefaultRunLoopMode};
 
 use crate::platform::{trace_ms, ButtonsDown};
 
@@ -197,6 +202,64 @@ struct Session {
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+
+/// Every left and right press the session has counted, in any app.
+fn session_downs() -> u32 {
+    let state = CGEventSourceStateID::CombinedSessionState;
+    CGEventSource::counter_for_event_type(state, CGEventType::LeftMouseDown).wrapping_add(
+        CGEventSource::counter_for_event_type(state, CGEventType::RightMouseDown),
+    )
+}
+
+/// `session_downs` as of the last mouse-down AppKit handed this app.
+static DELIVERED_DOWNS: AtomicU32 = AtomicU32::new(0);
+
+const PRESS_MASK: NSEventMask = NSEventMask::LeftMouseDown.union(NSEventMask::RightMouseDown);
+
+/// Start noting which presses AppKit has delivered. Main thread, once.
+pub fn watch_delivered_presses() {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    DELIVERED_DOWNS.store(session_downs(), Ordering::Relaxed);
+    let block = RcBlock::new(|event: NonNull<NSEvent>| {
+        DELIVERED_DOWNS.store(session_downs(), Ordering::Relaxed);
+        event.as_ptr()
+    });
+    // SAFETY: main thread; the block hands back the event it was given.
+    let monitor =
+        unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(PRESS_MASK, &block) };
+    // The monitor lives as long as the app.
+    std::mem::forget(monitor);
+}
+
+/// Measured mouse-downs arrived up to 40 ms after the counters saw the press;
+/// a pointerdown has trailed by 220 ms. Only a press that never comes
+/// pays all of it.
+const PRESS_DELIVERY_WAIT_SECS: f64 = 0.25;
+
+/// The counters see a press before AppKit delivers its mouse-down, and a menu
+/// that starts tracking first takes that mouse-down as a click that closes it.
+/// So dispatch it first. A press another app took never comes, hence the wait.
+pub fn deliver_pending_press() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    if DELIVERED_DOWNS.load(Ordering::Relaxed) == session_downs() {
+        return;
+    }
+    let app = NSApplication::sharedApplication(mtm);
+    let until = NSDate::dateWithTimeIntervalSinceNow(PRESS_DELIVERY_WAIT_SECS);
+    // SAFETY: a Foundation constant, defined for the life of the process.
+    let mode = unsafe { NSDefaultRunLoopMode };
+    if let Some(event) =
+        app.nextEventMatchingMask_untilDate_inMode_dequeue(PRESS_MASK, Some(&until), mode, true)
+    {
+        app.sendEvent(&event);
+    } else {
+        eprintln!("menu: the press's mouse-down never reached Fidget; opening anyway");
+    }
+}
 
 /// Which buttons count as down this tick, a Control-click as secondary. The
 /// frame loop asks once per tick: a second call would take the next tick's
