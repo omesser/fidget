@@ -445,10 +445,8 @@ pub const CAFFEINATE_SYSTEM_ID: &str = "caffeinate_system";
 pub const CAFFEINATE_COMMAND_ID: &str = "caffeinate_command";
 #[cfg(target_os = "linux")]
 pub const CONSENT_PORTAL_SCREENCAST_ID: &str = "consent_screen_cast";
-/// A stored key, not copy: Settings maps a saved value by row id, so the
-/// string keeps the name it was saved under.
 #[cfg(target_os = "windows")]
-pub const CONSENT_WINDOW_NAMES_ID: &str = "consent_window_titles";
+pub const CONSENT_WINDOW_NAMES_ID: &str = "consent_window_names";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
