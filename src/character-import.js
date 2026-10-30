@@ -40,7 +40,6 @@ export function mountCharacterImports(panel) {
   wrap.append(heading, intro, controls, warning, message, list);
   section.append(wrap);
 
-  const invoke = (command, args = {}) => window.__TAURI_INTERNALS__.invoke(command, args);
   const busy = (on) => { importButton.disabled = on; };
   const showError = (error) => {
     const detail = typeof error === "string" ? error : (error?.message || String(error));
@@ -49,7 +48,7 @@ export function mountCharacterImports(panel) {
 
   async function refresh() {
     try {
-      const characters = await invoke("character_import_list");
+      const characters = await window.__TAURI_INTERNALS__.invoke("character_import_list");
       if (!wrap.isConnected) return;
       list.replaceChildren();
       if (characters.length === 0) {
@@ -70,7 +69,7 @@ export function mountCharacterImports(panel) {
           if (!window.confirm(`Remove ${character.name} from Fidget?`)) return;
           remove.disabled = true;
           try {
-            await invoke("character_import_remove", { id: character.id });
+            await window.__TAURI_INTERNALS__.invoke("character_import_remove", { id: character.id });
             message.textContent = removeMessage(character.name);
           } catch (error) {
             showError(error);
@@ -89,7 +88,7 @@ export function mountCharacterImports(panel) {
     if (!window.confirm("Characters include a personality the AI reads. Only import ones from people you trust. Continue?")) return;
     busy(true);
     try {
-      const name = await invoke("character_import_zip");
+      const name = await window.__TAURI_INTERNALS__.invoke("character_import_zip");
       if (name) {
         message.textContent = importMessage(name);
         window.alert("Restart Fidget to use it.");
