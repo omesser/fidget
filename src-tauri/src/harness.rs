@@ -9671,7 +9671,7 @@ mod tests {
 
     fn surface_tick(session: &Arc<Session>) -> (Duration, Vec<SignIn>) {
         use fidget_core::character::{
-            Character, CursorReaction, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+            Character, CursorReaction, GravityScale, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
         };
         use fidget_core::engine::{Point, WorldSnapshot};
         use fidget_core::roster::Roster;
@@ -9697,6 +9697,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            gravity_scale: GravityScale::DEFAULT,
             source: None,
         };
         let id = roster.spawn(&character, "bmo".to_string(), Point { x: 10.0, y: 20.0 });

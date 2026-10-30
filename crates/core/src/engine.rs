@@ -5,7 +5,7 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{Behavior, CursorReaction, Primitive};
+use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
 use crate::turn_motion::Moment;
@@ -274,8 +274,9 @@ const WALK_SPEED: f64 = 120.0;
 const GRAVITY: f64 = 3600.0;
 
 /// Points per second a Jump launches upward at. A tuning knob. The peak is
-/// `JUMP_SPEED` squared over twice `GRAVITY`, so 900 clears about 110 points —
-/// roughly a sprite's height — and lands within half a second.
+/// `JUMP_SPEED` squared over twice `GRAVITY`, so at default gravity 900 clears
+/// about 110 points — roughly a sprite's height — and lands within half a
+/// second.
 const JUMP_SPEED: f64 = 900.0;
 
 /// How much of the art must stay below the usable top for the feet to land.
@@ -348,6 +349,8 @@ pub struct Engine {
     behaviors: BTreeMap<String, Behavior>,
 
     sprite_height: Option<f64>,
+    /// Points per second squared.
+    gravity: f64,
     /// The windows of the previous tick, to tell a window that has come to
     /// contain the sprite from one that contained it all along. See
     /// `swallowed_by`.
@@ -631,6 +634,7 @@ impl Engine {
             variants: Seeded::new(0),
             behaviors: BTreeMap::new(),
             sprite_height: None,
+            gravity: GRAVITY,
             previous_windows: Vec::new(),
             previous_position: position,
             playing: Vec::new(),
@@ -679,6 +683,12 @@ impl Engine {
     /// falls back to a guess sized for the tallest Character, charged to all.
     pub fn with_sprite_height(mut self, height: f64) -> Self {
         self.sprite_height = height.is_finite().then_some(height).filter(|h| *h > 0.0);
+        self
+    }
+
+    /// How hard this Instance falls, as a multiple of `GRAVITY`.
+    pub fn with_gravity_scale(mut self, scale: GravityScale) -> Self {
+        self.gravity = GRAVITY * scale.get();
         self
     }
 
@@ -1377,7 +1387,7 @@ impl Engine {
         self.riding = false;
         match state {
             State::Falling => {
-                self.velocity.y += GRAVITY * dt;
+                self.velocity.y += self.gravity * dt;
                 self.position.x += self.velocity.x * dt;
 
                 let wall_from_screen = wall_reached(self.position.x, self.velocity.x, snapshot);
@@ -7357,6 +7367,84 @@ mod tests {
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0, "the display's bottom edge");
         assert_eq!(landed.velocity, Point::default(), "at rest");
+    }
+
+    fn ticks_to_land(scale: GravityScale) -> usize {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_gravity_scale(scale);
+        (1..=600)
+            .find(|_| engine.tick(&snapshot(16)).state == State::Grounded)
+            .expect("lands within ten seconds")
+    }
+
+    #[test]
+    fn a_lighter_character_reaches_the_floor_later_and_a_heavier_one_sooner() {
+        let scale = |value| GravityScale::new(value).unwrap();
+        let light = ticks_to_land(scale(GravityScale::MIN));
+        let default = ticks_to_land(GravityScale::DEFAULT);
+        let heavy = ticks_to_land(scale(GravityScale::MAX));
+
+        assert!(
+            heavy < default && default < light,
+            "heavy {heavy}, default {default}, light {light} ticks"
+        );
+        assert!(
+            light <= default * 2 + 1,
+            "a quarter of the gravity at most doubles the fall: {light} vs {default}"
+        );
+    }
+
+    fn peak_of_a_throw(scale: GravityScale) -> f64 {
+        let mut engine = Engine::new(Point { x: 500.0, y: 700.0 }).with_gravity_scale(scale);
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 500.0, y: 700.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 0.0, y: -1000.0 },
+            }],
+            ..snapshot(16)
+        });
+        (0..300)
+            .map(|_| engine.tick(&snapshot(16)).position.y)
+            .min_by(f64::total_cmp)
+            .unwrap()
+    }
+
+    #[test]
+    fn the_same_throw_goes_higher_under_lighter_gravity() {
+        let light = peak_of_a_throw(GravityScale::new(0.5).unwrap());
+        let default = peak_of_a_throw(GravityScale::DEFAULT);
+
+        assert!(
+            light < default,
+            "light peaks at y={light}, default at y={default}"
+        );
+        assert!(
+            default > 128.0,
+            "the default arc stays under the ceiling, so the comparison is free flight"
+        );
+    }
+
+    /// A manifest that says nothing about gravity runs today's physics, frame
+    /// for frame.
+    #[test]
+    fn the_default_gravity_scale_falls_as_it_always_has() {
+        // Pinned on main 4da8174b: from rest, 16 ms ticks, Grounded on tick 42.
+        for mut engine in [
+            Engine::new(Point { x: 100.0, y: 0.0 }),
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_gravity_scale(GravityScale::DEFAULT),
+        ] {
+            let first = engine.tick(&snapshot(16));
+            assert_eq!(first.state, State::Falling);
+            assert_eq!(first.velocity.y, 57.6);
+
+            let grounded_on = (2..=100)
+                .find(|_| engine.tick(&snapshot(16)).state == State::Grounded)
+                .unwrap();
+            assert_eq!(grounded_on, 42);
+        }
     }
 
     #[test]

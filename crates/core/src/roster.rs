@@ -257,6 +257,7 @@ impl Roster {
             // tallest one anybody ships.
             .with_sprite_height(character.sprite_height())
             .with_cursor_reactions(character.near_reaction, character.rush_reaction)
+            .with_gravity_scale(character.gravity_scale)
             // The id is this Instance's one random number, so two characters of
             // one Character do not draw the same idle variants at the same moments.
             .with_variant_seed(variant_seed(&id));
@@ -379,8 +380,8 @@ impl crate::tools::ExpressionHandle for Roster {
 mod tests {
     use super::*;
     use crate::character::{
-        Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
-        DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
+        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
+        DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
     };
     use crate::engine::{Point, Rect, Verb};
     use std::collections::BTreeMap;
@@ -438,6 +439,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            gravity_scale: GravityScale::DEFAULT,
             source: None,
         }
     }
@@ -461,6 +463,36 @@ mod tests {
             composing: false,
             locomotion_frozen: false,
         }
+    }
+
+    #[test]
+    fn an_instance_falls_as_hard_as_its_character_declares() {
+        let mut roster = Roster::new();
+        let default = roster.spawn(
+            &test_character("Blip"),
+            "Blip".to_string(),
+            Point { x: 100.0, y: 0.0 },
+        );
+        let light_character = Character {
+            gravity_scale: GravityScale::new(0.5).unwrap(),
+            ..test_character("Feather")
+        };
+        let light = roster.spawn(
+            &light_character,
+            "Feather".to_string(),
+            Point { x: 400.0, y: 0.0 },
+        );
+
+        let world = test_snapshot();
+        let default_frame = roster.get_mut(&default).unwrap().tick(&world);
+        let light_frame = roster.get_mut(&light).unwrap().tick(&world);
+
+        assert!(
+            light_frame.velocity.y < default_frame.velocity.y,
+            "light {:?} against default {:?}",
+            light_frame.velocity,
+            default_frame.velocity
+        );
     }
 
     #[test]

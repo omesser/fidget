@@ -6,7 +6,7 @@ use std::time::Duration;
 use toml_edit::{Document, Item};
 
 use super::{
-    CursorReaction, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS,
+    CursorReaction, GravityScale, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS,
     DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
 };
 
@@ -21,6 +21,7 @@ pub(super) struct Declared {
     pub(super) model_power: Option<u32>,
     pub(super) near_reaction: Option<CursorReaction>,
     pub(super) rush_reaction: Option<CursorReaction>,
+    pub(super) gravity_scale: Option<GravityScale>,
     pub(super) source: Option<Source>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
@@ -128,13 +129,29 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            // TOML reads `1` as an integer and `1.0` as a float; an author
+            // writing either means the same multiple.
+            "gravity" => match item
+                .as_float()
+                .or_else(|| item.as_integer().map(|whole| whole as f64))
+                .and_then(GravityScale::new)
+            {
+                Some(scale) => declared.gravity_scale = Some(scale),
+                None => errors.push(format!(
+                    "\"gravity\" is {}, and must be a number from {} to {}, \
+                     where 1 is the default fall",
+                    wrote(manifest, item.span()).unwrap_or("?"),
+                    GravityScale::MIN,
+                    GravityScale::MAX
+                )),
+            },
             "source" => parse_source(item, manifest, &mut declared, errors),
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, render_mode, scale, source, animations, behaviors, \
-                 director and cursor"
+                 name, render_mode, scale, gravity, source, animations, \
+                 behaviors, director and cursor"
             )),
         }
     }
@@ -696,8 +713,8 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, source, animations, behaviors, \
-                 director and cursor"
+                 name, render_mode, scale, gravity, source, animations, \
+                 behaviors, director and cursor"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"

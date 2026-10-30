@@ -121,6 +121,34 @@ pub(crate) const DEFAULT_SCALE: u32 = 4;
 pub const DEFAULT_MODEL_BASE: u32 = 2;
 pub const DEFAULT_MODEL_POWER: u32 = 1;
 
+/// How hard a Character falls, as a multiple of the Engine's default gravity.
+/// Never NaN, so equality is total. Zero is refused: no State floats yet, and a
+/// sprite with no gravity would never leave Falling.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GravityScale(f64);
+
+impl Eq for GravityScale {}
+
+impl GravityScale {
+    pub const DEFAULT: Self = Self(1.0);
+    /// A quarter at most doubles how long a fall takes and lets a Jump peak 450
+    /// points up, half a 900-point laptop display. Nearer zero is floating.
+    pub const MIN: f64 = 0.25;
+    /// Twice the default, where the planned Settings slider tops out.
+    pub const MAX: f64 = 2.0;
+
+    /// `None` outside `MIN..=MAX`, NaN included.
+    pub fn new(scale: f64) -> Option<Self> {
+        (Self::MIN..=Self::MAX)
+            .contains(&scale)
+            .then_some(Self(scale))
+    }
+
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
 /// The largest integer factor a Character may ask to be drawn at.
 /// Display scaling is small integer factors; art wanting to be bigger on
 /// screen should be authored bigger instead.
@@ -320,6 +348,7 @@ pub struct Character {
     pub near_reaction: CursorReaction,
     /// How the Character reacts to a cursor rushing at it.
     pub rush_reaction: CursorReaction,
+    pub gravity_scale: GravityScale,
     /// Where the art came from, when the package says. `None` is silence, not
     /// a claim: a package that declares no `[source]` gets no attribution
     /// printed for it rather than one implying the art is this repository's.
@@ -555,6 +584,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             model_power: declared.model_power.unwrap_or(DEFAULT_MODEL_POWER),
             near_reaction: declared.near_reaction.unwrap_or_default(),
             rush_reaction: declared.rush_reaction.unwrap_or_default(),
+            gravity_scale: declared.gravity_scale.unwrap_or(GravityScale::DEFAULT),
             source: declared.source,
         }),
         _ => Err(errors),
@@ -1120,6 +1150,36 @@ mod tests {
         let character = load_manifest(&manifest).expect("loads");
         assert!(character.smooth);
         assert_eq!(character.scale, 1);
+    }
+
+    #[test]
+    fn gravity_is_declared_as_a_multiple_or_defaults_to_one() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(character.gravity_scale, GravityScale::DEFAULT);
+
+        for (written, scale) in [("0.25", 0.25), ("0.5", 0.5), ("2", 2.0)] {
+            let manifest = format!("gravity = {written}\n{}", declaring(&REQUIRED_ANIMATIONS));
+            let character = load_manifest(&manifest).expect("loads");
+            assert_eq!(character.gravity_scale.get(), scale, "gravity = {written}");
+        }
+    }
+
+    /// Zero would leave the sprite in Falling forever. Floating is a State of its
+    /// own, not a scale.
+    #[test]
+    fn gravity_outside_a_quarter_to_two_is_rejected_by_name() {
+        for written in ["0", "0.0", "0.1", "-1", "2.5", "nan", "inf", "\"heavy\""] {
+            let manifest = format!("gravity = {written}\n{}", declaring(&REQUIRED_ANIMATIONS));
+            let errors = errors(load_manifest(&manifest));
+            assert_eq!(
+                errors,
+                vec![format!(
+                    "\"gravity\" is {written}, and must be a number from 0.25 to 2, \
+                     where 1 is the default fall"
+                )],
+                "gravity = {written}"
+            );
+        }
     }
 
     /// A manifest whose `idle` declares `base` and carries one variant per
