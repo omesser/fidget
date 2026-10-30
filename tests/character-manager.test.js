@@ -74,7 +74,7 @@ test("initial listing, import, restart prompt, and remove use native commands", 
 
     await ui.importButton.click();
     assert.match(ui.status.textContent, /Dosidicus Squid installed/);
-    assert.match(ui.status.textContent, /Restart Fidget/);
+    assert.equal(ui.status.textContent, "Dosidicus Squid installed.");
     assert.deepEqual(ui.alerts, ["Restart Fidget to use it."]);
     assert.match(ui.prompts[0], /personality the AI reads/);
     assert.equal(ui.list.children.length, 1);
