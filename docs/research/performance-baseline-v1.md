@@ -623,15 +623,7 @@ In this run the app's median was 0.8 to 2.5 times the microbench's at the same c
 
 See [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) for detailed X11 measurements.
 
-**Summary (X11 on Grok Bot Linux desktop, 1280×800, tip `6b4acbf`):**
-- **Idle perched** (cursor not over sprite): **0.0 rebuilds/sec** (BMO 126×128@1x)
-- **Walking under cursor** (BMO on perch): **~26.7 rebuilds/sec**, **~15.0 ms/rebuild** (motion-driven; MaskParams includes x,y)
-- **Fast animation** (BMO react, 10 fps): **~9.6 ms/rebuild** (6360 opaque pixels) — FPS doesn't increase rebuild cost, which remains driven by opaque count
-- **Large sprite** (Black Mage 37×33@3x): **~1.4 ms/rebuild** (477–579 opaque pixels) — much faster than BMO@1x despite 3× scale, because fewer source opaque pixels. Scale multiplies rendered size, not source opaque count.
-- Small sprite: No genuinely smaller shipped character at scale=1; scenario dropped.
-- Prior cloud-VM idle: 0.05/sec, 11–13 ms (kept for comparison in detailed doc)
-- **Windows:** Measured on the workstation. See [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). Walk under the cursor was about 44/s at 14.5 ms.
-- **`perf` flamegraph:** Not yet collected
+The release numbers for every scenario are in [mask-rebuild-baseline-x11.md](./mask-rebuild-baseline-x11.md) and [mask-rebuild-baseline-windows.md](./mask-rebuild-baseline-windows.md). They replace the debug-build summary that used to be here. With the pointer away, X11 does no rebuilds while idle. Windows has no hover gate, so it rebuilds on each idle frame flip (about 2/s for BMO at about 2.3 ms each). The X11 flamegraph is [`mask-rebuild-baseline-x11/flamegraph-x11-mask.svg`](./mask-rebuild-baseline-x11/flamegraph-x11-mask.svg).
 
 ## Memory and multi-monitor (#424)
 
