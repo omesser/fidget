@@ -978,7 +978,7 @@ impl Completer for Endpoint {
     fn complete(&self, request: &WakeRequest, said: &dyn Fn(&str)) -> Result<Reply, String> {
         let prompt = request.text(false);
         if tracing() {
-            eprintln!("director: sending POST {} model={}", self.url, self.model);
+            eprintln!("{}", director_send_trace(&self.url, &self.model));
             trace_block("prompt", &prompt);
             eprintln!("director: waiting for model");
         }
@@ -991,11 +991,11 @@ impl Completer for Endpoint {
             }
             Err(error) => {
                 if tracing() {
-                    eprintln!("director: http {error}");
+                    eprintln!("{}", director_http_trace(&error, &self.url));
                 }
                 if let Some(alt) = fallback_url(&self.url, &error) {
                     if tracing() {
-                        eprintln!("director: trying {alt}");
+                        eprintln!("{}", director_try_trace(&alt));
                     }
                     match self.post(&alt, &prompt, &request.instance, said) {
                         Ok(reply) => {
@@ -1006,7 +1006,7 @@ impl Completer for Endpoint {
                         }
                         Err(alt_error) => {
                             if tracing() {
-                                eprintln!("director: http {alt_error}");
+                                eprintln!("{}", director_http_trace(&alt_error, &alt));
                             }
                             Err(alt_error)
                         }
@@ -1052,6 +1052,18 @@ fn redact_url_in(text: &str, url: &str) -> String {
         return text.to_string();
     }
     text.replace(url, &redacted_url(url))
+}
+
+fn director_send_trace(url: &str, model: &str) -> String {
+    format!("director: sending POST {} model={model}", redacted_url(url))
+}
+
+fn director_http_trace(error: &str, url: &str) -> String {
+    format!("director: http {}", redact_url_in(error, url))
+}
+
+fn director_try_trace(alt: &str) -> String {
+    format!("director: trying {}", redacted_url(alt))
 }
 
 fn alternate_url(url: &str) -> Option<String> {
@@ -3787,8 +3799,8 @@ pub(crate) mod tests {
                 "https://api.anthropic.com/v1/models",
             ),
             (
-                "https://user:pass@api.openai.com/v1/chat/completions?api_key=secret",
-                "https://user:pass@api.openai.com/v1/models",
+                "https://user:pass@api.openai.com/v1/chat/completions?api_key=secret", // pragma: allowlist secret
+                "https://user:pass@api.openai.com/v1/models", // pragma: allowlist secret
             ),
             (
                 "http://127.0.0.1:11434/v1/chat/completions",
@@ -3816,7 +3828,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_preflight_failure_hides_url_secrets() {
-        let url = "https://user:pass@api.openai.com/v1/models?api_key=sek#frag";
+        let url = "https://user:pass@api.openai.com/v1/models?api_key=sek#frag"; // pragma: allowlist secret
         let line = preflight_failure_line(url, "answered 404");
         assert_eq!(
             line,
@@ -3835,6 +3847,36 @@ pub(crate) mod tests {
         assert!(!line.contains("user:pass"), "{line}");
         assert!(!line.contains("api_key"), "{line}");
         assert!(!line.contains("sek"), "{line}");
+    }
+
+    #[test]
+    fn a_director_trace_hides_url_secrets() {
+        let url = "https://user:pass@api.openai.com/v1/chat/completions?api_key=sek"; // pragma: allowlist secret
+        let sending = director_send_trace(url, "gpt-4o");
+        assert_eq!(
+            sending,
+            "director: sending POST https://api.openai.com/v1/chat/completions model=gpt-4o"
+        );
+        assert!(!sending.contains("user:pass"), "{sending}");
+        assert!(!sending.contains("api_key"), "{sending}");
+
+        let error = format!("{url}: status 401");
+        let http = director_http_trace(&error, url);
+        assert_eq!(
+            http,
+            "director: http https://api.openai.com/v1/chat/completions: status 401"
+        );
+        assert!(!http.contains("user:pass"), "{http}");
+        assert!(!http.contains("api_key"), "{http}");
+
+        let alt = "https://user:pass@api.openai.com/v1/responses?api_key=sek"; // pragma: allowlist secret
+        let trying = director_try_trace(alt);
+        assert_eq!(
+            trying,
+            "director: trying https://api.openai.com/v1/responses"
+        );
+        assert!(!trying.contains("user:pass"), "{trying}");
+        assert!(!trying.contains("api_key"), "{trying}");
     }
 
     #[test]
