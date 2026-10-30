@@ -1,4 +1,5 @@
-// Pointer steering for scripts/bench-mask-rebuild-windows-flame.ps1 (#428).
+// Pointer steering for scripts/bench-mask-rebuild-windows-flame.ps1 (#428),
+// and the bench copy of a character that its -Scenario runs.
 // Kept to C# 5 so Windows PowerShell 5.1's Add-Type compiles it.
 //
 // fidget writes a frame line to process.log every frame and keeps the file
@@ -20,7 +21,7 @@ namespace FidgetBench
     public sealed class LogFollower : IDisposable
     {
         static readonly Regex Stamp = new Regex(@"^(\d+) ");
-        static readonly Regex FrameLine = new Regex(@"^\d+ frame: (\d+) .* sprite\((-?\d+),(-?\d+)\)");
+        static readonly Regex FrameLine = new Regex(@"^\d+ frame: (\d+) .* sprite\((-?\d+),(-?\d+)\) (\S+)#");
 
         readonly string path;
         readonly long since;
@@ -37,6 +38,18 @@ namespace FidgetBench
         public List<string> Rebuilds { get; private set; }
         // Per frame line: how long after fidget stamped it this follower read it.
         public List<long> LagsMs { get; private set; }
+        // The animation a scenario times; null times every frame. A rebuild
+        // counts when the newest frame line before it names this animation,
+        // and OnScreenMs adds up the frame-stamp time it was drawn, as
+        // scripts/measure-mask-rebuild-x11.sh does on X11.
+        public string Steady { get; set; }
+        public List<string> Counted { get; private set; }
+        public long OnScreenMs { get { return onMs + (on ? lastFrameMs - onSinceMs : 0); } }
+
+        bool on;
+        long onSinceMs;
+        long lastFrameMs;
+        long onMs;
 
         // since: Unix seconds; earlier lines are skipped. halfWidth, halfHeight:
         // the sprite centre's offset from its top-left, in fidget's points.
@@ -50,6 +63,7 @@ namespace FidgetBench
             this.scale = scale;
             Rebuilds = new List<string>();
             LagsMs = new List<long>();
+            Counted = new List<string>();
         }
 
         public bool Step()
@@ -90,12 +104,21 @@ namespace FidgetBench
             if (frame.Success)
             {
                 Frames++;
-                LagsMs.Add(nowMs - long.Parse(frame.Groups[1].Value));
+                long atMs = long.Parse(frame.Groups[1].Value);
+                LagsMs.Add(nowMs - atMs);
+                bool steady = Steady == null || frame.Groups[4].Value == Steady;
+                if (steady && !on) { on = true; onSinceMs = atMs; }
+                else if (!steady && on) { on = false; onMs += atMs - onSinceMs; }
+                lastFrameMs = atMs;
                 AimX = (int)Math.Round((int.Parse(frame.Groups[2].Value) + halfWidth) * scale);
                 AimY = (int)Math.Round((int.Parse(frame.Groups[3].Value) + halfHeight) * scale);
                 return true;
             }
-            if (line.Contains("region rebuild")) Rebuilds.Add(line);
+            if (line.Contains("region rebuild"))
+            {
+                Rebuilds.Add(line);
+                if (on) Counted.Add(line);
+            }
             return false;
         }
 
@@ -103,6 +126,42 @@ namespace FidgetBench
         {
             if (stream != null) stream.Dispose();
             stream = null;
+        }
+    }
+
+    // The manifest of a scenario's bench copy: the [cursor] table and every
+    // Behavior go, one Behavior plays the steady animation 50 times over, and
+    // that animation loses its loop key so a once-only one (react) cycles. A
+    // scale above 0 replaces the manifest's. Mirrors the awk in
+    // scripts/measure-mask-rebuild-x11.sh.
+    public static class BenchManifest
+    {
+        static readonly Regex Table = new Regex(@"^\[");
+        static readonly Regex Dropped = new Regex(@"^\[(cursor|behaviors\.[^\]]*)\]$");
+        static readonly Regex Loop = new Regex(@"^loop\s*=");
+        static readonly Regex Scale = new Regex(@"^scale\s*=");
+
+        public static string Rewrite(string text, string steady, int scale)
+        {
+            List<string> output = new List<string>();
+            if (scale > 0) output.Add("scale = " + scale);
+            bool skip = false;
+            string section = "";
+            foreach (string raw in text.Split('\n'))
+            {
+                string line = raw.TrimEnd('\r');
+                if (Table.IsMatch(line)) { skip = Dropped.IsMatch(line); section = line; }
+                if (skip) continue;
+                if (section == "[animations." + steady + "]" && Loop.IsMatch(line)) continue;
+                if (scale > 0 && Scale.IsMatch(line)) continue;
+                output.Add(line);
+            }
+            string[] play = new string[50];
+            for (int i = 0; i < play.Length; i++) play[i] = "\"" + steady + "\"";
+            output.Add("");
+            output.Add("[behaviors.bench]");
+            output.Add("play = [" + string.Join(", ", play) + "]");
+            return string.Join("\n", output.ToArray());
         }
     }
 
