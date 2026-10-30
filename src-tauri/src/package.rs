@@ -608,9 +608,6 @@ pub fn import_name_conflict(name: &str, installed: &[PathBuf]) -> Result<Option<
                 if package_id(&other.name).is_ok_and(|other_id| other_id == id) {
                     return Ok(Some(format!("installed Character '{}'", other.name)));
                 }
-                if other.name.to_lowercase() == name.to_lowercase() {
-                    return Ok(Some(format!("installed Character '{}'", other.name)));
-                }
             }
         }
     }
@@ -699,8 +696,16 @@ mod tests {
             assert!(error.contains("control characters"), "{error}");
         }
         assert!(import_name_conflict("Hero Bot", &paths).unwrap().is_some());
-        assert!(import_name_conflict("Incomplete", &paths).unwrap().is_some());
-        assert!(import_name_conflict("Completely New", &paths).unwrap().is_none());
+        assert!(
+            import_name_conflict("Incomplete", &paths)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            import_name_conflict("Completely New", &paths)
+                .unwrap()
+                .is_none()
+        );
         // Protect the built-in even when the resource folder is not accessible.
         assert!(import_name_conflict("Buddy Bot", &[]).unwrap().is_some());
     }
@@ -710,7 +715,11 @@ mod tests {
         let dir = TempDir::new("name-collision");
         let path = dir.join("different-file-stem.zip");
         write_archive(&path, "blip", false); // Valid Character named Blip.
-        assert!(import_name_conflict("BLIP", &[path.clone()]).unwrap().is_some());
+        assert!(
+            import_name_conflict("BLIP", std::slice::from_ref(&path))
+                .unwrap()
+                .is_some()
+        );
         assert!(import_name_conflict("Blip!", &[path]).unwrap().is_some());
     }
 
