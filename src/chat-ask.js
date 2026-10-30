@@ -20,12 +20,12 @@ export function askSays(ask) {
   const visible = content.filter((text) => !onlyEmptyJson(text));
   // Content first, the arguments as the fallback, never both. A tool that
   // sends its question as content usually repeats it in `input`.
+  const words = content.length > 0
+    ? visible.map((text) => ({ kind: "markdown", text }))
+    : inputMarkdown(ask?.input);
   // A mark is not words, so it never stops `input` standing in.
   const marks = (ask?.marks ?? []).map((text) => String(text ?? "")).filter((text) => text.length > 0);
-  const details = [
-    ...(content.length > 0 ? visible.map((text) => ({ kind: "markdown", text })) : inputMarkdown(ask?.input)),
-    ...marks.map((text) => ({ kind: "markdown", text })),
-  ];
+  const details = [...words, ...marks.map((text) => ({ kind: "markdown", text }))];
   // `other` only means the Harness declined to classify the call. Every other
   // kind separates reading, writing, and running, so it rides at the end.
   const about = [kind === "other" ? "" : kind, paths.join(", ")].filter(Boolean).join(" · ");
