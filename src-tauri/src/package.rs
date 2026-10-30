@@ -942,6 +942,75 @@ mod tests {
         }
     }
 
+    /// The minimal valid package plus `extra` entries, deflated so filler of
+    /// zeros costs a few kilobytes on disk however much it expands to.
+    fn write_archive_with(path: &Path, extra: impl IntoIterator<Item = (String, Vec<u8>)>) {
+        let file = fs::File::create(path).expect("archive is creatable");
+        let mut zip = zip::ZipWriter::new(file);
+        let deflated: zip::write::FileOptions<'_, '_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, bytes) in package_files().into_iter().chain(extra) {
+            zip.start_file(name, deflated)
+                .expect("archive entry is startable");
+            zip.write_all(&bytes).expect("archive entry is writable");
+        }
+        zip.finish().expect("archive is finishable");
+    }
+
+    /// Literal 4096 rather than the constant, so raising the bound fails here
+    /// too. The package at the bound still reads, which pins the off-by-one.
+    #[test]
+    fn an_archive_holding_more_than_4096_files_is_refused() {
+        let dir = TempDir::new("too-many-files");
+        let package_file_count = package_files().len();
+        let filler = |count: usize| (0..count).map(|i| (format!("extra/{i}.txt"), Vec::new()));
+
+        let at_bound = dir.join("at-bound.zip");
+        write_archive_with(&at_bound, filler(4096 - package_file_count));
+        let files = read(&at_bound).expect("a package of exactly 4096 files reads");
+        assert_eq!(files.len(), 4096);
+
+        let over = dir.join("over.zip");
+        write_archive_with(&over, filler(4097 - package_file_count));
+        assert_eq!(
+            refusal(read(&over)).to_string(),
+            format!(
+                "{} could not be read: the package holds more than 4096 files",
+                over.display()
+            )
+        );
+    }
+
+    /// The bound is on the whole package: two entries each under 64 MiB that
+    /// together pass it are refused. The package at exactly 64 MiB still reads.
+    #[test]
+    fn an_archive_expanding_past_64_mib_in_total_is_refused() {
+        const MIB: usize = 1024 * 1024;
+        let dir = TempDir::new("too-big");
+        let package_bytes: usize = package_files().iter().map(|(_, bytes)| bytes.len()).sum();
+        let filler = |total: usize| {
+            [
+                ("extra/a.bin".to_string(), vec![0; 32 * MIB]),
+                ("extra/b.bin".to_string(), vec![0; total - 32 * MIB]),
+            ]
+        };
+
+        let at_bound = dir.join("at-bound.zip");
+        write_archive_with(&at_bound, filler(64 * MIB - package_bytes));
+        let files = read(&at_bound).expect("a package of exactly 64 MiB reads");
+        assert_eq!(files.values().map(Vec::len).sum::<usize>(), 64 * MIB);
+
+        let over = dir.join("over.zip");
+        write_archive_with(&over, filler(64 * MIB - package_bytes + 1));
+        assert_eq!(
+            refusal(read(&over)).to_string(),
+            format!(
+                "{} could not be read: the package expands to more than 64 MiB",
+                over.display()
+            )
+        );
+    }
+
     /// Unix only: Windows has no equivalent of a file its owner cannot open, and
     /// a directory does not stand in because the walker recurses into it.
     #[cfg(unix)]
