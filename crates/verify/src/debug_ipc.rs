@@ -6,10 +6,21 @@
 //! Requires fidget to run with FIDGET_DEBUG_IPC=1.
 
 use std::fs;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
 use crate::contract::{Outcome, RunReport};
+
+/// The app polls this path every frame, so it must never see a half-written
+/// command. A rename on the same filesystem swaps the whole file in at once.
+fn write_whole_file_at_once(path: &Path, contents: &str) -> std::io::Result<()> {
+    let staging_path = path.with_extension("tmp");
+    fs::write(&staging_path, contents)?;
+    fs::rename(&staging_path, path).inspect_err(|_| {
+        let _ = fs::remove_file(&staging_path);
+    })
+}
 
 fn send_command(cmd: &str, report: &mut RunReport) -> Outcome {
     let Some(cmd_path) = fidget_core::debug::debug_cmd_path() else {
@@ -31,7 +42,7 @@ fn send_command(cmd: &str, report: &mut RunReport) -> Outcome {
 
     let _ = fs::remove_file(&result_path);
 
-    if let Err(e) = fs::write(&cmd_path, cmd) {
+    if let Err(e) = write_whole_file_at_once(&cmd_path, cmd) {
         report.check(
             Outcome::Error,
             "debug ipc",
