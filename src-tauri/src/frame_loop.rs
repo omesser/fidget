@@ -147,9 +147,9 @@ fn decide_overlay_action<Shape: PartialEq>(
     }
 }
 
-/// Records what a main-thread callback learned about one overlay. A display can
-/// go between queueing and running, and the tick that shrank the list reset its
-/// state to resend on return, so a result for a gone overlay is dropped.
+/// A display can go between queueing a callback and running it. The shrink
+/// already reset that overlay to resend, so its result is dropped. A regrown
+/// slot is the same hidden window, so a late result there still holds.
 #[cfg(any(test, not(target_os = "macos")))]
 fn record_for_overlay<T>(per_overlay: &Mutex<Vec<T>>, index: usize, value: T) {
     if let Some(slot) = per_overlay.lock().unwrap().get_mut(index) {
