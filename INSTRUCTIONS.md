@@ -82,4 +82,4 @@ cargo run --bin fidget
 
 ## Without FIDGET_INSTANCES
 
-With only `FIDGET_CHARACTERS` set, Fidget starts whatever character it ran last. Right-click the pet or the tray icon, open **Character** and pick **Dosidicus Squid**.
+With only `FIDGET_CHARACTERS` set, Fidget starts the character saved in its settings, or Buddy Bot on a first run. Right-click the pet or the tray icon, open **Character** and pick **Dosidicus Squid**.
