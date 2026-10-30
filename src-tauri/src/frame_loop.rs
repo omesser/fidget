@@ -619,17 +619,14 @@ pub(crate) fn run_frame_loop(
 
             // Last tick's click-through decided whether the overlay could
             // hear this press. Passing through drops a lost pointerup. macOS
-            // has no overlay witness to drop, and X11 does not read it.
+            // has no overlay witness to drop.
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             #[cfg(not(target_os = "macos"))]
-            if !visible {
-                platform::overlay_passes_clicks_through();
-            } else if let Some(index) = on_overlay {
-                if ignoring.get(index).copied().flatten() == Some(true) {
-                    platform::overlay_passes_clicks_through();
-                }
-            } else {
+            if !visible
+                || on_overlay
+                    .is_none_or(|index| ignoring.get(index).copied().flatten() == Some(true))
+            {
                 platform::overlay_passes_clicks_through();
             }
             // A consuming read, once per tick and nowhere else. A second read eats the

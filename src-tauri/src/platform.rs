@@ -1089,10 +1089,12 @@ pub fn buttons_down() -> ButtonsDown {
 }
 
 /// X11 on Linux: XI2's raw button edges alone. Wayland has no global pointer,
-/// so there, and on X11 without XI2, only the overlay latch.
+/// so there, and on X11 without XI2, only the overlay latch. The latch is read
+/// every call, so if XI2 stops, its fallback holds no press from before.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn buttons_down() -> ButtonsDown {
-    x11::buttons_down().unwrap_or_else(overlay_buttons_down)
+    let overlay = overlay_buttons_down();
+    x11::buttons_down().unwrap_or(overlay)
 }
 
 /// Where the latest press began, in the cursor's pixels, when the source
