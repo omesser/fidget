@@ -103,7 +103,7 @@ fn resource_mark(resource: &EmbeddedResourceResource) -> String {
 /// One line of text that Markdown reads back as itself: a control character is
 /// a space, and every character that means something to Markdown has its
 /// backslash.
-fn escaped(text: &str) -> String {
+pub(crate) fn escaped(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
         match c {

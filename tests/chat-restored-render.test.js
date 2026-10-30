@@ -256,7 +256,7 @@ const TOOL_HISTORY = [
     ],
     content: [
       { type: "diff", path: "/Users/oded/src/main.rs", added: 3, removed: 1, approximate: false },
-      { type: "terminal", id: "term-7" },
+      { type: "terminal", label: "Terminal term-7" },
       { type: "text", text: "wrote [x](https://evil.example) and **2** hunks" },
       { type: "mark", markdown: "[spec](https://example.com/spec.md)" },
       { type: "mark", markdown: "[image image/png]" },
@@ -311,7 +311,7 @@ test(
         locations: [{ path: "/tmp/a\nb\u202ec.rs", line: 2 }],
         content: [
           { type: "diff", path: "/tmp/x\r\ny\u202ez.rs", added: 1, removed: 0, approximate: false },
-          { type: "terminal", id: "t\n1\u202e2" },
+          { type: "terminal", label: "Terminal t\n1\u202e2" },
           { type: "text", text: "kept\nlines\u202e" },
         ],
       },

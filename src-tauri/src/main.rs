@@ -5790,6 +5790,7 @@ mod tests {
             title: None,
             kind: None,
             content: Vec::new(),
+            marks: Vec::new(),
             input: None,
             locations: Vec::new(),
             options: Vec::new(),
