@@ -1095,6 +1095,20 @@ pub fn buttons_down() -> ButtonsDown {
     x11::buttons_down().unwrap_or_else(overlay_buttons_down)
 }
 
+/// Where the latest press began, in the cursor's pixels, when the source
+/// knows: XI2 on X11. A press dragged away before the tick is hit-tested here,
+/// not where the tick finds the cursor.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn press_point() -> Option<(i32, i32)> {
+    x11::press_point()
+}
+
+/// Elsewhere the tick's cursor stands in for where the press began.
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+pub fn press_point() -> Option<(i32, i32)> {
+    None
+}
+
 /// Windows: GetAsyncKeyState for both buttons, or the overlay latch. Both
 /// reads run every call, so each latch is consumed exactly once.
 #[cfg(not(unix))]

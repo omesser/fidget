@@ -2097,7 +2097,8 @@ fn roster_specs(roster: &Roster) -> Vec<InstanceSpec> {
 }
 
 /// The overlay heard the primary button. A second witness beside the session
-/// poll on X11 and Windows; on macOS it only settles what a Control-click means.
+/// poll on Windows, the press itself on Wayland or an X11 without XI2; on macOS
+/// it only settles what a Control-click means.
 #[tauri::command]
 fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
@@ -2166,7 +2167,7 @@ fn overlay_report_qm_draft(
     platform::set_qm_draft(instance, payload);
 }
 
-/// The overlay heard the right button: the same witness on X11 and Windows,
+/// The overlay heard the right button: the same witness as the primary's,
 /// a trace line on macOS.
 #[tauri::command]
 fn overlay_secondary(down: bool) {

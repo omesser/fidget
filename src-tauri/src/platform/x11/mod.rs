@@ -16,7 +16,7 @@ mod sensing;
 mod settings_raise;
 mod window_source;
 
-pub use input_events::{buttons_down, spawn_listener, InputEvent};
+pub use input_events::{buttons_down, press_point, spawn_listener, InputEvent};
 #[cfg(test)]
 pub use overlay::set_composited_for_test;
 pub use overlay::{

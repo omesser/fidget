@@ -4,6 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
+use std::sync::Mutex;
 use std::thread;
 use x11rb::connection::Connection;
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
@@ -27,6 +28,8 @@ pub enum InputEvent {
 struct Buttons {
     primary: Witness,
     secondary: Witness,
+    /// Where the latest press began. Raw events carry no position.
+    pressed_at: Mutex<Option<(i32, i32)>>,
 }
 
 impl Buttons {
@@ -34,6 +37,7 @@ impl Buttons {
         Self {
             primary: Witness::new(),
             secondary: Witness::new(),
+            pressed_at: Mutex::new(None),
         }
     }
 
@@ -66,6 +70,18 @@ static LISTENING: AtomicBool = AtomicBool::new(false);
 /// What XI2 reported since the last call, or `None` when no listener runs.
 pub fn buttons_down() -> Option<ButtonsDown> {
     LISTENING.load(Ordering::SeqCst).then(|| BUTTONS.take())
+}
+
+/// Where the latest primary or secondary press began, in root pixels, or
+/// `None` when no listener runs.
+pub fn press_point() -> Option<(i32, i32)> {
+    if !LISTENING.load(Ordering::SeqCst) {
+        return None;
+    }
+    *BUTTONS
+        .pressed_at
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Spawn a thread that listens for XI2 raw events; `None` if XI2 cannot set up.
@@ -130,6 +146,10 @@ fn listen_loop(sender: SyncSender<InputEvent>) {
         return;
     };
 
+    let Some(root) = display.setup().roots.first().map(|screen| screen.root) else {
+        return;
+    };
+
     LISTENING.store(true, Ordering::SeqCst);
     let mut map = pointer_mapping(display);
     let events = std::iter::from_fn(|| display.wait_for_event().ok());
@@ -139,7 +159,20 @@ fn listen_loop(sender: SyncSender<InputEvent>) {
                 map = pointer_mapping(display);
             }
         }
-        classify_event(&event, &map)
+        let input_event = classify_event(&event, &map)?;
+        // Read before the edge is latched, so a tick that sees the press
+        // finds where it began.
+        if let InputEvent::Button {
+            button: 1 | 3,
+            down: true,
+        } = input_event
+        {
+            *BUTTONS
+                .pressed_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = pointer_at(display, root);
+        }
+        Some(input_event)
     });
     forward_wakes(classified, &BUTTONS, &sender);
     LISTENING.store(false, Ordering::SeqCst);
@@ -159,6 +192,12 @@ fn forward_wakes(
             Err(TrySendError::Disconnected(_)) => break,
         }
     }
+}
+
+/// The pointer on the root window, read once per press.
+fn pointer_at(display: &impl Connection, root: xproto::Window) -> Option<(i32, i32)> {
+    let reply = display.query_pointer(root).ok()?.reply().ok()?;
+    Some((i32::from(reply.root_x), i32::from(reply.root_y)))
 }
 
 /// The core pointer mapping. Raw events carry the physical button, before the
@@ -335,6 +374,23 @@ mod tests {
         }
     }
 
+    /// The pointer warped to a spot on the root window.
+    fn fake_motion_to(x: i16, y: i16) {
+        let (conn, screen) = x11rb::connect(None).expect("an X server on $DISPLAY");
+        let root = conn.setup().roots[screen].root;
+        conn.xtest_fake_input(
+            xproto::MOTION_NOTIFY_EVENT,
+            0,
+            x11rb::CURRENT_TIME,
+            root,
+            x,
+            y,
+            0,
+        )
+        .unwrap();
+        conn.sync().unwrap();
+    }
+
     /// Run with: Xvfb :77 & DISPLAY=:77 cargo test --bin fidget input_events -- --include-ignored
     #[test]
     #[ignore = "needs an X server with XI2 and XTEST, such as Xvfb"]
@@ -355,6 +411,21 @@ mod tests {
         let events = listener();
         fake_input(xproto::BUTTON_PRESS_EVENT, 3);
         read_until(&events, |read| read.secondary);
+        fake_input(xproto::BUTTON_RELEASE_EVENT, 3);
+        read_until(&events, |read| !read.secondary);
+    }
+
+    /// A press and a drag can land in one tick. The press is hit-tested where
+    /// it began, not where the tick finds the cursor.
+    #[test]
+    #[ignore = "needs an X server with XI2 and XTEST, such as Xvfb"]
+    fn a_press_keeps_where_it_began_after_the_pointer_moves() {
+        let events = listener();
+        fake_motion_to(100, 100);
+        fake_input(xproto::BUTTON_PRESS_EVENT, 3);
+        read_until(&events, |read| read.secondary);
+        fake_motion_to(300, 300);
+        assert_eq!(press_point(), Some((100, 100)));
         fake_input(xproto::BUTTON_RELEASE_EVENT, 3);
         read_until(&events, |read| !read.secondary);
     }
