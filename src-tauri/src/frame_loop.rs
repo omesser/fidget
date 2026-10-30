@@ -147,6 +147,16 @@ fn decide_overlay_action<Shape: PartialEq>(
     }
 }
 
+/// A display can go between queueing a callback and running it. The shrink
+/// already reset that overlay to resend, so its result is dropped. A regrown
+/// slot is the same hidden window, so a late result there still holds.
+#[cfg(any(test, not(target_os = "macos")))]
+fn record_for_overlay<T>(per_overlay: &Mutex<Vec<T>>, index: usize, value: T) {
+    if let Some(slot) = per_overlay.lock().unwrap().get_mut(index) {
+        *slot = value;
+    }
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 /// Webview and hit-test share a loop; the hit-test leads by up to one tick (src/interpolate.js).
 // One over clippy's cap: Director config belongs here, not mixed with window geometry.
@@ -968,6 +978,13 @@ pub(crate) fn run_frame_loop(
                     // the bubble's prompts are in the interface language too.
                     SettingsOp::LanguageChanged => {
                         let _ = app.emit(crate::i18n::EVENT, crate::i18n::payload());
+                        // Update the native caption as well as the webview's title.
+                        let handle = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if let Some(window) = handle.get_webview_window("settings") {
+                                let _ = window.set_title(&crate::i18n::tr("Settings"));
+                            }
+                        });
                     }
                 }
                 remember_instances(&roster, &settings, &settings_path);
@@ -1953,7 +1970,7 @@ pub(crate) fn run_frame_loop(
                         // The panel shows this copy. The worker appends `line`
                         // after `request`, so an in-flight reply can still open
                         // the session before this wake is sent.
-                        let mut payload = model.prompt(&context);
+                        let mut payload = model.prompt_in_language(&context, crate::i18n::reply_language());
                         if !payload.ends_with('\n') {
                             payload.push('\n');
                         }
@@ -2340,11 +2357,11 @@ pub(crate) fn run_frame_loop(
                     let overlay_index = index;
                     let trace = tracing;
                     let _ = app.run_on_main_thread(move || {
-                        configure_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                        record_for_overlay(&configure_in_flight_clone, overlay_index, false);
                         if let Some(window) = handle.get_webview_window(&label_clone) {
                             match platform::configure_overlay(&window) {
                                 Ok(()) => {
-                                    configured_clone.lock().unwrap()[overlay_index] = true;
+                                    record_for_overlay(&configured_clone, overlay_index, true);
                                     if trace {
                                         eprintln!("overlay: {label_clone} EWMH configured");
                                     }
@@ -2499,7 +2516,7 @@ pub(crate) fn run_frame_loop(
                                 let trace = tracing;
 
                                 let _ = app.run_on_main_thread(move || {
-                                    mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    record_for_overlay(&mask_in_flight_clone, overlay_index, false);
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         let (sprite_masks, hotspots) = &mask_params_clone;
                                         let sprites: Vec<platform::SpriteMask<'_>> = masks
@@ -2519,10 +2536,16 @@ pub(crate) fn run_frame_loop(
                                             &window, &sprites, hotspots, false,
                                         ) {
                                             Ok(()) => {
-                                                mask_applied_clone.lock().unwrap()[overlay_index] =
-                                                    true;
-                                                last_mask_clone.lock().unwrap()[overlay_index] =
-                                                    mask_params_clone;
+                                                record_for_overlay(
+                                                    &mask_applied_clone,
+                                                    overlay_index,
+                                                    true,
+                                                );
+                                                record_for_overlay(
+                                                    &last_mask_clone,
+                                                    overlay_index,
+                                                    mask_params_clone,
+                                                );
                                                 if trace {
                                                     eprintln!(
                                                         "overlay: {label_clone} input mask applied"
@@ -2571,8 +2594,11 @@ pub(crate) fn run_frame_loop(
                                         if platform::update_input_region(&window, &[], &[], true)
                                             .is_ok()
                                         {
-                                            last_mask_clone.lock().unwrap()[overlay_index] =
-                                                mask_params_clone;
+                                            record_for_overlay(
+                                                &last_mask_clone,
+                                                overlay_index,
+                                                mask_params_clone,
+                                            );
                                         }
                                     }
                                 });
@@ -2600,8 +2626,11 @@ pub(crate) fn run_frame_loop(
                                     if platform::update_input_region(&window, &[], &[], true)
                                         .is_ok()
                                     {
-                                        last_mask_clone.lock().unwrap()[overlay_index] =
-                                            mask_params_clone;
+                                        record_for_overlay(
+                                            &last_mask_clone,
+                                            overlay_index,
+                                            mask_params_clone,
+                                        );
                                     }
                                 }
                             });
@@ -2690,7 +2719,7 @@ pub(crate) fn run_frame_loop(
                                 let click_through = ignore;
 
                                 let _ = app.run_on_main_thread(move || {
-                                    mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    record_for_overlay(&mask_in_flight_clone, overlay_index, false);
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         let (art, rects) = &mask_params_clone;
                                         match platform::update_input_region(
@@ -2700,12 +2729,21 @@ pub(crate) fn run_frame_loop(
                                             click_through,
                                         ) {
                                             Ok(passes_clicks) => {
-                                                mask_applied_clone.lock().unwrap()[overlay_index] =
-                                                    true;
-                                                last_mask_clone.lock().unwrap()[overlay_index] =
-                                                    mask_params_clone;
-                                                applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                    Some(passes_clicks);
+                                                record_for_overlay(
+                                                    &mask_applied_clone,
+                                                    overlay_index,
+                                                    true,
+                                                );
+                                                record_for_overlay(
+                                                    &last_mask_clone,
+                                                    overlay_index,
+                                                    mask_params_clone,
+                                                );
+                                                record_for_overlay(
+                                                    &applied_ignoring_clone,
+                                                    overlay_index,
+                                                    Some(passes_clicks),
+                                                );
                                                 if trace {
                                                     eprintln!(
                                                         "overlay: {label_clone} input mask applied"
@@ -2735,7 +2773,11 @@ pub(crate) fn run_frame_loop(
                                 let click_through = ignore;
 
                                 let _ = app.run_on_main_thread(move || {
-                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    record_for_overlay(
+                                        &toggle_in_flight_clone,
+                                        overlay_index,
+                                        false,
+                                    );
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         if platform::toggle_click_through_only(
                                             &window,
@@ -2743,8 +2785,11 @@ pub(crate) fn run_frame_loop(
                                         )
                                         .is_ok()
                                         {
-                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                Some(click_through);
+                                            record_for_overlay(
+                                                &applied_ignoring_clone,
+                                                overlay_index,
+                                                Some(click_through),
+                                            );
                                             if trace {
                                                 eprintln!(
                                                     "overlay: {label_clone} click-through toggled"
@@ -2793,15 +2838,25 @@ pub(crate) fn run_frame_loop(
                                 let overlay_index = index;
 
                                 let _ = app.run_on_main_thread(move || {
-                                    toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                    record_for_overlay(
+                                        &toggle_in_flight_clone,
+                                        overlay_index,
+                                        false,
+                                    );
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         if platform::toggle_click_through_only(&window, true)
                                             .is_ok()
                                         {
-                                            applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                                Some(true);
-                                            last_mask_clone.lock().unwrap()[overlay_index] =
-                                                (Vec::new(), Vec::new());
+                                            record_for_overlay(
+                                                &applied_ignoring_clone,
+                                                overlay_index,
+                                                Some(true),
+                                            );
+                                            record_for_overlay(
+                                                &last_mask_clone,
+                                                overlay_index,
+                                                (Vec::new(), Vec::new()),
+                                            );
                                         }
                                     }
                                 });
@@ -2848,11 +2903,14 @@ pub(crate) fn run_frame_loop(
                             let overlay_index = index;
 
                             let _ = app.run_on_main_thread(move || {
-                                toggle_in_flight_clone.lock().unwrap()[overlay_index] = false;
+                                record_for_overlay(&toggle_in_flight_clone, overlay_index, false);
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
                                     if platform::toggle_click_through_only(&window, true).is_ok() {
-                                        applied_ignoring_clone.lock().unwrap()[overlay_index] =
-                                            Some(true);
+                                        record_for_overlay(
+                                            &applied_ignoring_clone,
+                                            overlay_index,
+                                            Some(true),
+                                        );
                                     }
                                 }
                             });
@@ -2997,6 +3055,7 @@ fn answer_tool_call(
                 app_instructions: director::app_instructions(
                     super::behavior_names_of(characters, instance),
                     blank,
+                    crate::i18n::reply_language(),
                 ),
                 personality_prompt: match blank {
                     true => String::new(),
@@ -3286,7 +3345,7 @@ mod tests {
         assert_eq!(pip["id"], json!(id));
         assert_eq!(
             pip["app_instructions"],
-            json!(director::app_instructions(["wave"], false))
+            json!(director::app_instructions(["wave"], false, crate::i18n::reply_language()))
         );
         assert_eq!(pip["personality_prompt"], json!("a shy robot."));
         assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));
@@ -3366,6 +3425,26 @@ mod tests {
                 touched(&verbs, false, pointer.poke_settled())
             })
             .collect()
+    }
+
+    #[test]
+    fn a_callback_that_runs_after_its_display_is_gone_records_nothing() {
+        let configured = Arc::new(Mutex::new(vec![false; 2]));
+        let queued: Vec<Box<dyn FnOnce()>> = (0..2)
+            .map(|overlay_index| {
+                let configured = Arc::clone(&configured);
+                Box::new(move || record_for_overlay(&configured, overlay_index, true))
+                    as Box<dyn FnOnce()>
+            })
+            .collect();
+
+        // The next tick sees one display and shrinks the list to fit.
+        configured.lock().unwrap().resize(1, false);
+        for callback in queued {
+            callback();
+        }
+
+        assert_eq!(*configured.lock().unwrap(), vec![true]);
     }
 
     fn click() -> Vec<bool> {

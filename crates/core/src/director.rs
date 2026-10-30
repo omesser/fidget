@@ -30,7 +30,7 @@ mod recency;
 pub(crate) use prompt::character_prompt;
 #[cfg(test)]
 use prompt::follow_up;
-pub use prompt::{app_instructions, happened_word, set_reply_language, typed_line};
+pub use prompt::{app_instructions, happened_word, typed_line};
 pub(crate) use prompt::{character_layers, named_moment, with_layers};
 pub use recency::{Doing, Lately, Recency, Step};
 
@@ -383,14 +383,24 @@ impl<C: Completer> ModelDirector<C> {
 
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
-        self.request(context).text(false)
+        self.prompt_in_language(context, None)
     }
 
-    /// This wake as the Completer receives it.
+    /// A prompt with the reply language selected by the calling shell.
+    pub fn prompt_in_language(&self, context: &Context, reply_language: Option<&str>) -> String {
+        self.request_in_language(context, reply_language).text(false)
+    }
+
+    /// This wake as the Completer receives it (English by default).
     pub fn request(&self, context: &Context) -> WakeRequest {
+        self.request_in_language(context, None)
+    }
+
+    /// Build this wake with an explicit language, without shared mutable state.
+    pub fn request_in_language(&self, context: &Context, reply_language: Option<&str>) -> WakeRequest {
         WakeRequest {
             prompt: named_moment(context, &self.instance),
-            layers: character_layers(context, self.behaviors.iter(), self.blank),
+            layers: character_layers(context, self.behaviors.iter(), self.blank, reply_language),
             opening: !self.opened.load(Ordering::SeqCst),
             instance: self.instance.clone(),
             character: self.character.clone(),
@@ -2389,12 +2399,33 @@ mod tests {
     /// small context, and it crowds the Character and Instance prompts.
     #[test]
     fn the_app_layer_stays_shorter_than_it_was_before_the_tool_invitation() {
-        let app = app_instructions(["wave", "nap", "sit"], false);
+        let app = app_instructions(["wave", "nap", "sit"], false, None);
         assert!(
             app.len() < 717,
             "app_instructions was 717 bytes before #917, now {}: {app}",
             app.len()
         );
+    }
+
+    #[test]
+    fn spoken_language_is_explicit_per_request() {
+        let french = app_instructions(["wave"], false, Some("French"));
+        let spanish = app_instructions(["wave"], false, Some("Spanish"));
+        let english = app_instructions(["wave"], false, None);
+        assert!(french.contains("Write every spoken line in French."));
+        assert!(!french.contains("Spanish"));
+        assert!(spanish.contains("Write every spoken line in Spanish."));
+        assert!(!spanish.contains("French"));
+        assert!(!english.contains("Write every spoken line in"));
+        assert_eq!(english, app_instructions(["wave"], false, Some("English")));
+        assert_eq!(app_instructions(["wave"], true, Some("French")), "");
+
+        let moment = context(working(), &[]);
+        let model = directing(Scripted::says("wave"), ["wave"]);
+        let fr_request = model.request_in_language(&moment, Some("French"));
+        let en_request = model.request_in_language(&moment, None);
+        assert!(fr_request.layers.contains("Write every spoken line in French."));
+        assert!(!en_request.layers.contains("Write every spoken line in"));
     }
 
     #[test]

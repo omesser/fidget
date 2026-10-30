@@ -4,6 +4,7 @@
 name = "Tux"
 render_mode = "smooth"
 scale = 1
+gravity = 0.8
 
 [source]
 art = "塔克斯企鹅 Tux, cut from the petscodex (petdex) pet `cozy-tux` by scripts/import-pet.py. Unofficial Tux fan-art animated companion inspired by the Linux mascot created by Larry Ewing. Independently drawn penguin animation with foot-tap salute, terminal-card presentation, card recovery, balance steps and three-direction waddles. Not affiliated with or endorsed by Linux or its contributors."

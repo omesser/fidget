@@ -3,6 +3,7 @@
 name = "Cat"
 render_mode = "smooth"
 scale = 1
+gravity = 0.8
 
 [source]
 art = """

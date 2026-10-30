@@ -3089,7 +3089,7 @@ fn chat_opening_layers(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        instructions: app_instructions(behaviors, blank),
+        instructions: app_instructions(behaviors, blank, i18n::reply_language()),
         personality: if blank {
             String::new()
         } else {
@@ -3153,6 +3153,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
                 .map(|rows| declared_behaviors(&rows, &state.behavior_names, &instance))
                 .unwrap_or_default(),
             blank,
+            i18n::reply_language(),
         ),
         personality: if blank {
             String::new()
@@ -5188,6 +5189,8 @@ fn main() {
             // bar is crowded. The tray icon remains the settings door.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            #[cfg(target_os = "macos")]
+            platform::watch_delivered_presses();
 
             // Windows and Linux get an off-screen taskbar anchor that opens Settings, like
             // the Dock icon. Hold Ctrl+C until the quit handler is in, so the gap between
@@ -5794,6 +5797,7 @@ mod tests {
             title: None,
             kind: None,
             content: Vec::new(),
+            marks: Vec::new(),
             input: None,
             locations: Vec::new(),
             options: Vec::new(),

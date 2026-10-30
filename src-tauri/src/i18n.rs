@@ -93,14 +93,17 @@ pub fn current() -> Lang {
         .unwrap_or(Lang::En)
 }
 
-/// Put `lang` in force for every string translated from here on. Also the
-/// language the model is asked to speak, so a reply matches the menus.
+/// Put `lang` in force for the Shell and its webviews.
 pub fn set(lang: Lang) {
     CURRENT.store(lang.index(), Ordering::Relaxed);
-    fidget_core::director::set_reply_language(match lang {
+}
+
+/// The spoken language passed explicitly into each model request.
+pub fn reply_language() -> Option<&'static str> {
+    match current() {
         Lang::En => None,
         other => Some(other.english_name()),
-    });
+    }
 }
 
 /// The language `--lang` pins, read once from this process's arguments.

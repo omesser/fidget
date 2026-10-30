@@ -208,3 +208,44 @@ fn data_dir_override_moves_debug_ipc_out_of_home() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// Runs one `place` and returns the first text a busy reader sees at the
+/// command file, the way the app's per-frame poll could catch it.
+fn first_read_of_a_sent_place_command(data: &Path) -> String {
+    let evidence = data.join("evidence");
+    let child = Command::new(BIN)
+        .args(["--evidence-dir", evidence.to_str().unwrap()])
+        .args(["--run-id", "clitest"])
+        .args(["place", "--x", "3", "--y", "4"])
+        .env("FIDGET_DATA_DIR", data)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let cmd = data.join(".fidget-debug-cmd");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let first_read = loop {
+        if let Ok(text) = std::fs::read_to_string(&cmd) {
+            break text;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no command file within 3 s"
+        );
+    };
+    std::fs::remove_file(&cmd).unwrap();
+    std::fs::write(data.join(".fidget-debug-result"), "ok").unwrap();
+    child.wait_with_output().unwrap();
+    first_read
+}
+
+#[test]
+fn a_reader_never_sees_a_partial_debug_command() {
+    let dir = TempDir::new().unwrap();
+    for _ in 0..20 {
+        assert_eq!(
+            first_read_of_a_sent_place_command(dir.path()),
+            "place x=3 y=4"
+        );
+    }
+}

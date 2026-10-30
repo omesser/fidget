@@ -935,7 +935,7 @@ function toolPiece(piece) {
       }) · full diff not drawn`;
       break;
     case "terminal":
-      line.textContent = t("Terminal {id}", { id: piece.id });
+      line.textContent = piece.label;
       break;
     case "mark":
       drawThought(line, piece.markdown);

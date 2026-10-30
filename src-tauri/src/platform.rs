@@ -1090,6 +1090,19 @@ pub fn buttons_down() -> ButtonsDown {
     macos::buttons_down()
 }
 
+/// Start noting which presses AppKit has delivered. Main thread, once.
+#[cfg(target_os = "macos")]
+pub fn watch_delivered_presses() {
+    macos::watch_delivered_presses();
+}
+
+/// Dispatch the press a menu is about to open for, if AppKit still holds it.
+/// Main thread.
+#[cfg(target_os = "macos")]
+pub fn deliver_pending_press() {
+    macos::deliver_pending_press();
+}
+
 /// X11 on Linux: XI2's raw button edges alone. Wayland has no global pointer,
 /// so there, and on X11 without XI2, only the overlay latch. The latch is read
 /// every call, so if XI2 stops, its fallback holds no press from before.

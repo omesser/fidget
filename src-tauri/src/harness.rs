@@ -8588,7 +8588,7 @@ mod tests {
                  "kind": "execute", "status": "completed",
                  "locations": [],
                  "content": [
-                    {"type": "terminal", "id": "term-7"},
+                    {"type": "terminal", "label": "Terminal term-7"},
                     {"type": "text", "text": "running 3 tests"},
                  ]},
                 {"type": "tool_call", "id": "t-media", "title": "Fetch page",

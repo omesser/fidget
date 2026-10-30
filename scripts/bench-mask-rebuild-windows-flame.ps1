@@ -1,7 +1,7 @@
 # Record a WPR CPU trace, with stacks, while fidget rebuilds its click-through
 # region (#428). Windows only, from an elevated PowerShell: WPR needs admin.
 # Usage: scripts\bench-mask-rebuild-windows-flame.ps1 -Bin PATH\fidget.exe [-Out DIR] [-Target N] [-Seconds N]
-#          [-HalfWidth N -HalfHeight N] [-Instances NAME] [-Scale N] [-Check]
+#          [-HalfWidth N -HalfHeight N] [-Instances NAME] [-Scale N] [-Scenario NAME] [-Check]
 #   FIDGET_BENCH_GREEN_LIGHT=1: the operator agreed to fidget on the desktop
 #   and to this script moving the pointer. Hands off the mouse while it runs.
 #
@@ -30,6 +30,21 @@
 # Instances names a shipped package under characters\ (BMO, the large one at
 # 126x128; Nim, the small one at 32x32 drawn 4x). Scale draws a copy of it at
 # that scale instead, with the copy under Out\characters.
+#
+# Scenario runs a bench copy of a shipped character whose only Behavior
+# repeats one animation, as scripts/measure-mask-rebuild-x11.sh does on X11:
+#   idle   BMO idling, pointer parked in the corner. Target 0 runs out Seconds.
+#          Windows has no cursor-over gate: the region follows the drawn art
+#          whatever the pointer does, so idle frame flips still rebuild.
+#   walk   BMO walking, pointer on the sprite.
+#   fast   BMO looping react (10 fps), pointer on the sprite.
+#   large  BMO at 4x (or Scale) looping react.
+#   small  Nim at its shipped 4x (or Scale) looping react (12 fps).
+# Only rebuilds while that animation is on screen count, and the rate is over
+# the time it was on screen, so the fall and landing at launch stay out. Each
+# frame flip rebuilds twice: the region holds the last and the new frame for
+# one tick (DrawTrail in crates/core/src/overlay.rs), then the new one alone. summary.txt and result.json carry the rate.
+# scripts\bench-mask-rebuild-windows-scenarios.ps1 runs them all with -Check.
 
 param(
     [Parameter(Mandatory = $true)]
@@ -44,6 +59,8 @@ param(
     [string]$Instances = "BMO",
     # 0: the manifest's scale.
     [int]$Scale = 0,
+    [ValidateSet("", "idle", "walk", "fast", "large", "small")]
+    [string]$Scenario = "",
     [switch]$Check
 )
 
@@ -88,7 +105,19 @@ if (-not $Check) {
     }
 }
 
-if ($Seconds -le 0) { $Seconds = if ($Check) { 20 } else { [int][math]::Ceiling($Target / 2) + 15 } }
+# The package and the animation each scenario times.
+$steady = $null
+switch ($Scenario) {
+    "idle" { $Instances = "BMO"; $steady = "idle" }
+    "walk" { $Instances = "BMO"; $steady = "walk" }
+    "fast" { $Instances = "BMO"; $steady = "react" }
+    "large" { $Instances = "BMO"; $steady = "react"; if ($Scale -le 0) { $Scale = 4 } }
+    "small" { $Instances = "Nim"; $steady = "react" }
+}
+# Target 0: no rebuild target; the run lasts Seconds (default 20).
+$untilSeconds = $Target -le 0
+if ($Seconds -le 0) { $Seconds = if ($Check -or $untilSeconds) { 20 } else { [int][math]::Ceiling($Target / 2) + 15 } }
+if ($untilSeconds) { $Target = [int]::MaxValue }
 if (-not ('FidgetBench.LogFollower' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot "bench-mask-rebuild-windows-steer.cs")
 }
@@ -105,21 +134,27 @@ $processLog = Join-Path $dataDir "process.log"
 $etl = Join-Path $Out "trace.etl"
 
 $characters = Join-Path (Get-Location).Path "characters"
-if ($Scale -gt 0) {
+if ($Scale -gt 0 -or $Scenario) {
     $source = Join-Path $characters $Instances.ToLowerInvariant()
     $manifest = Join-Path $source "character.manifest"
     if (-not (Test-Path -LiteralPath $manifest)) {
-        [Console]::Error.WriteLine("no $manifest to draw at ${Scale}x")
+        [Console]::Error.WriteLine("no $manifest to copy")
         exit 2
     }
     $characters = Join-Path $Out "characters"
     $copy = Join-Path $characters (Split-Path -Leaf $source)
     $null = New-Item -ItemType Directory -Force -Path $characters
     Copy-Item -Recurse -LiteralPath $source -Destination $copy
-    # scale is a top-level key, so it goes above the first table.
-    $body = @(Get-Content -Encoding UTF8 -LiteralPath (Join-Path $copy "character.manifest") | Where-Object { $_ -notmatch '^scale\s*=' })
-    # WriteAllLines leaves out the BOM that Windows PowerShell 5.1 adds.
-    [System.IO.File]::WriteAllLines((Join-Path $copy "character.manifest"), [string[]](@("scale = $Scale") + $body))
+    $copied = Join-Path $copy "character.manifest"
+    if ($Scenario) {
+        $text = [FidgetBench.BenchManifest]::Rewrite([System.IO.File]::ReadAllText($copied), $steady, $Scale)
+        # WriteAllText leaves out the BOM that Windows PowerShell 5.1 adds.
+        [System.IO.File]::WriteAllText($copied, $text + "`n")
+    } else {
+        # scale is a top-level key, so it goes above the first table.
+        $body = @(Get-Content -Encoding UTF8 -LiteralPath $copied | Where-Object { $_ -notmatch '^scale\s*=' })
+        [System.IO.File]::WriteAllLines($copied, [string[]](@("scale = $Scale") + $body))
+    }
 }
 
 # Scratch profile, as scripts\bench-frame-cadence-windows.ps1 does, plus
@@ -131,6 +166,9 @@ $launchEnv = @{
     FIDGET_DIRECTOR_API_KEY = "bench-placeholder" # pragma: allowlist secret
     FIDGET_TRACE_FRAMES = "1"
     FIDGET_TRACE_MASK_REBUILD = "1"
+    # A pointer resting on the sprite opens the hover bubble after 1.5 s, and
+    # the bubble stops a walk. An hour keeps it shut for the run.
+    FIDGET_HOVER_DELAY_MS = "3600000"
     FIDGET_INSTANCES = $Instances
     FIDGET_CHARACTERS = $characters
 }
@@ -159,12 +197,14 @@ trap { Stop-All; break }
 
 # Each pass waits for the next display refresh, then reads what fidget logged
 # since the last one. Returns the follower once it has seen Frames frame lines
-# and Rebuilds rebuild lines, or when Seconds pass or fidget exits.
-function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Scale, [int]$Frames, [int]$Rebuilds, [int]$Seconds, [bool]$Steer) {
-    $follower = New-Object FidgetBench.LogFollower $processLog, $Since, $Hw, $Hh, $Scale
+# and Rebuilds counted rebuild lines (those while Steady is on screen; all of
+# them without Steady), or when Seconds pass or fidget exits.
+function Read-Log([long]$Since, [int]$Hw, [int]$Hh, [double]$Dpi, [int]$Frames, [int]$Rebuilds, [int]$Seconds, [bool]$Steer, [string]$Steady) {
+    $follower = New-Object FidgetBench.LogFollower $processLog, $Since, $Hw, $Hh, $Dpi
+    if ($Steady) { $follower.Steady = $Steady }
     $clock = [Diagnostics.Stopwatch]::StartNew()
     try {
-        while ($follower.Frames -lt $Frames -or $follower.Rebuilds.Count -lt $Rebuilds) {
+        while ($follower.Frames -lt $Frames -or $follower.Counted.Count -lt $Rebuilds) {
             if ($clock.Elapsed.TotalSeconds -ge $Seconds) { break }
             if ($app.HasExited) { [Console]::Error.WriteLine("fidget exited; see $processLog"); break }
             [FidgetBench.Refresh]::Wait()
@@ -194,7 +234,7 @@ if (-not (Test-Path -LiteralPath $processLog)) {
     [Console]::Error.WriteLine("no $processLog within 60s; see $Out\stderr.log")
     exit 1
 }
-if ((Read-Log 0 0 0 1 1 0 60 $false).Frames -eq 0) {
+if ((Read-Log 0 0 0 1 1 0 60 $false "").Frames -eq 0) {
     Stop-All
     [Console]::Error.WriteLine("no frame line within 60s; see $processLog")
     exit 1
@@ -215,8 +255,10 @@ if ($HalfWidth -le 0 -or $HalfHeight -le 0) {
         if ($HalfHeight -le 0) { $HalfHeight = 64 }
     }
 }
-$scale = [FidgetBench.Screen]::PrimaryScale()
-if ($scale -le 0) { Stop-All; [Console]::Error.WriteLine("no DPI for the primary display"); exit 1 }
+# Not $scale: PowerShell names are case-insensitive, and the [int] Scale
+# parameter would round the display's 1.25 or 1.5 to a whole number.
+$dpiScale = [FidgetBench.Screen]::PrimaryScale()
+if ($dpiScale -le 0) { Stop-All; [Console]::Error.WriteLine("no DPI for the primary display"); exit 1 }
 
 if (-not $Check) {
     & wpr.exe -start CPU -filemode
@@ -226,11 +268,21 @@ if (-not $Check) {
 $since = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $drawn = if ($Scale -gt 0) { "$Instances at ${Scale}x" } else { $Instances }
 $doing = if ($Check) { "checking" } else { "recording" }
-Write-Host "$doing; holding the pointer at sprite + ($HalfWidth,$HalfHeight) points x $scale on $drawn until $Target region rebuilds or ${Seconds}s"
+$until = if ($untilSeconds) { "${Seconds}s" } else { "$Target region rebuilds or ${Seconds}s" }
+$timing = if ($steady) { ", timing $steady" } else { "" }
+# Idle parks the pointer in the corner, where the standing sprite is not.
+$steer = $Scenario -ne "idle"
+if ($steer) {
+    Write-Host "$doing; holding the pointer at sprite + ($HalfWidth,$HalfHeight) points x $dpiScale on $drawn$timing until $until"
+} else {
+    [void][FidgetBench.Screen]::MoveTo(0, 0)
+    Write-Host "$doing; pointer parked at (0,0), $drawn$timing, until $until"
+}
 
-$followed = Read-Log $since $HalfWidth $HalfHeight $scale 0 $Target $Seconds $true
+$followed = Read-Log $since $HalfWidth $HalfHeight $dpiScale 0 $Target $Seconds $steer $steady
 $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $since
-$lines = @($followed.Rebuilds)
+$lines = @($followed.Counted)
+$onSeconds = $followed.OnScreenMs / 1000.0
 
 $stopCode = 0
 if (-not $Check) {
@@ -250,7 +302,14 @@ if (-not $Check) {
 $ms = @($lines | ForEach-Object { if ($_ -match ', ([\d.]+) ms$') { [double]$Matches[1] } } | Sort-Object)
 $rects = @($lines | ForEach-Object { if ($_ -match 'region rebuild (\d+) rects') { [int]$Matches[1] } } | Sort-Object)
 $lags = @($followed.LagsMs | Sort-Object)
-$summary = "character: $drawn`nrebuilds: $($ms.Count) in ${elapsed}s (target $Target)`nframes: $($followed.Frames)"
+$targetText = if ($untilSeconds) { "none" } else { "$Target" }
+$summary = "character: $drawn`nrebuilds: $($ms.Count) in ${elapsed}s (target $targetText)`nframes: $($followed.Frames)"
+$rate = if ($onSeconds -gt 0) { [math]::Round($ms.Count / $onSeconds, 2) } else { 0 }
+if ($Scenario) {
+    $over = if ($steady) { "$steady on screen" } else { "frames" }
+    $summary += "`nscenario: $Scenario`nrate: $rate rebuilds/s ($($ms.Count) over $([math]::Round($onSeconds, 2))s of $over)"
+    $summary += "`nall rebuilds, any animation: $($followed.Rebuilds.Count)"
+}
 if ($lags.Count -gt 0) {
     $summary += "`nframe line age when the pointer moved, ms: median $($lags[[math]::Floor($lags.Count / 2)]) max $($lags[-1])"
 }
@@ -263,9 +322,16 @@ if (-not $Check) {
 }
 $summary | Set-Content -LiteralPath (Join-Path $Out "summary.txt") -Encoding UTF8
 $lines | Set-Content -LiteralPath (Join-Path $Out "rebuilds.log") -Encoding UTF8
+$median = { param($sorted) if ($sorted.Count -gt 0) { $sorted[[math]::Floor($sorted.Count / 2)] } else { $null } }
+[ordered]@{
+    scenario = $Scenario; character = $drawn; timing = $steady
+    rebuilds = $ms.Count; onSeconds = [math]::Round($onSeconds, 2); rate = $rate
+    msMin = if ($ms.Count) { $ms[0] } else { $null }; msMedian = & $median $ms; msMax = if ($ms.Count) { $ms[-1] } else { $null }
+    rectsMedian = & $median $rects; frames = $followed.Frames
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Out "result.json") -Encoding UTF8
 Write-Host $summary
 if ($Check) {
-    Write-Host "output: $Out (summary.txt, rebuilds.log, process log in data\)"
+    Write-Host "output: $Out (summary.txt, result.json, rebuilds.log, process log in data\)"
     exit 0
 }
 Write-Host "output: $Out (summary.txt, rebuilds.log, trace.etl, process log in data\)"

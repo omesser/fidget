@@ -214,6 +214,7 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = [
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
   "NSArray",
+  "NSDate",
   "NSDictionary",
   "NSEnumerator",
   "NSString",
@@ -223,6 +224,11 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   # A Chat window's miniaturize notifications. Tauri has no minimize event.
   "NSNotification",
   "NSOperation",
+  # A menu waits for its press: NSApp's dequeue takes a date and a mode.
+  "NSObjCRuntime",
+  "NSRunLoop",
+  # Now, on the clock NSEvent timestamps use: is the last press delivered?
+  "NSProcessInfo",
   "block2"
 ] }
 # The notification observer's callback. Already in the tree under objc2-foundation.

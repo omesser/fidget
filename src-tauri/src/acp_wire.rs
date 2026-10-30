@@ -12,9 +12,9 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::content_mark::chunk_text;
+use crate::content_mark::{self, chunk_text};
 use crate::mcp_http::SecretString;
-use crate::tool_content::{pieces, places, Place, ToolPiece};
+use crate::tool_content::{piece, pieces, places, Piece, Place, ToolPiece};
 use agent_client_protocol::schema::v1::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
@@ -234,6 +234,9 @@ pub struct PermissionAsk {
     /// The tool call's `content`, as the text of it. Where a question from an
     /// MCP server arrives, and so the first thing the row has to show.
     pub content: Vec<String>,
+    /// Every other piece but a diff, as the Markdown mark a replayed tool row
+    /// draws for it. Not words, so `input` still stands in beside them.
+    pub marks: Vec<String>,
     /// The arguments the call was made with. ACP's `rawInput`, arbitrary JSON.
     /// What the row falls back to when a call carried no content.
     pub input: Option<serde_json::Value>,
@@ -2400,28 +2403,21 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
         .map(|at| at.path.display().to_string())
         .collect();
     let mut content = Vec::new();
-    for piece in fields.content.iter().flatten() {
-        match piece {
-            ToolCallContent::Content(block) => {
-                // Only text is drawn here. A replayed tool row marks the
-                // other blocks in `tool_content`.
-                if let ContentBlock::Text(text) = &block.content {
-                    content.push(text.text.clone());
-                }
-            }
+    let mut marks = Vec::new();
+    for sent in fields.content.iter().flatten() {
+        match piece(sent) {
+            Piece::Text(text) => content.push(text.to_string()),
+            Piece::Mark(mark) => marks.push(mark),
             // A diff is a file the call would rewrite, and the path is the
             // part a consent row can use. Its text is a whole new file.
             // The same path can arrive both ways and is still one path.
-            ToolCallContent::Diff(diff) => {
+            Piece::Diff(diff) => {
                 let path = diff.path.display().to_string();
                 if !locations.contains(&path) {
                     locations.push(path);
                 }
             }
-            // Only text is drawn on the consent row. A replayed tool row
-            // names a terminal, and marks any other variant, in
-            // `tool_content`.
-            _ => {}
+            Piece::Terminal(label) => marks.push(content_mark::escaped(&label)),
         }
     }
     PermissionAsk {
@@ -2429,6 +2425,7 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
         title: fields.title.clone(),
         kind: fields.kind.as_ref().map(name_of),
         content,
+        marks,
         input: fields.raw_input.clone(),
         locations,
         options: request
@@ -4109,10 +4106,11 @@ mod tests {
         assert_eq!(ask.locations, ["/tmp/a.rs", "/tmp/b.rs"]);
     }
 
-    /// Content this row cannot read out is not content. An image says nothing
-    /// on a text surface, and the arguments still say what was asked.
+    /// An image is not words, so the arguments still say what was asked. It
+    /// is still part of the ask, so it arrives as the mark a replayed tool
+    /// row draws for it.
     #[test]
-    fn content_with_no_words_leaves_the_arguments_to_say_it() {
+    fn content_with_no_words_is_marked_and_leaves_the_arguments_to_say_it() {
         let ask = asked_for(serde_json::json!({
             "toolCallId": "t1",
             "content": [{
@@ -4123,7 +4121,34 @@ mod tests {
         }));
 
         assert!(ask.content.is_empty(), "{:?}", ask.content);
+        assert_eq!(ask.marks, ["[image image/png]"]);
         assert_eq!(ask.input, Some(serde_json::json!({"path": "/tmp/a.png"})));
+    }
+
+    /// Every piece that is neither text nor a diff reaches the row as a mark,
+    /// in the order sent, so an ask of only such pieces is never blank.
+    #[test]
+    fn every_other_piece_is_marked_in_the_order_sent() {
+        let ask = asked_for(serde_json::json!({
+            "toolCallId": "t1",
+            "content": [
+                {"type": "content", "content": {"type": "audio", "data": "AAAA", "mimeType": "audio/wav"}},
+                {"type": "content", "content": {
+                    "type": "resource_link", "name": "spec", "uri": "https://example.com/spec",
+                }},
+                {"type": "terminal", "terminalId": "term_1"},
+            ],
+        }));
+
+        assert!(ask.content.is_empty(), "{:?}", ask.content);
+        assert_eq!(
+            ask.marks,
+            [
+                "[audio audio/wav]",
+                "[spec](https://example.com/spec)",
+                "Terminal term\\_1",
+            ]
+        );
     }
 
     /// A missing title is missing, not `(untitled)`. The surface has to tell

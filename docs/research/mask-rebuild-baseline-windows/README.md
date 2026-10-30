@@ -1,9 +1,10 @@
 # Windows mask-rebuild baseline evidence (#428)
 
-Measured on DESKTOP-UQIE144 at tip `a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1` (PR #981 instrumentation) on 2026-09-24.
+The debug summaries were measured on DESKTOP-UQIE144 at tip `a38ba3b48bb43ed4b909cb26866b6b1af97dbcd1` (PR #981 instrumentation) on 2026-09-24.
 
 ## Files
 
+- `scenarios-release.txt` — 2026-10-30 release runs, every #428 scenario (supersedes the debug summaries)
 - `environment.txt` — host/OS/display/binary configuration
 - `idle-summary.txt` — cursor away, 0 rebuilds / 12s
 - `walk-summary.txt` — walk-only subset under cursor

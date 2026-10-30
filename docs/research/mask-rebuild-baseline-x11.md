@@ -139,5 +139,5 @@ Issue #432 measured ~271 voluntary context switches/sec during idle perched on L
 
 ## Follow-up
 
-1. **Windows:** a release run of `scripts/bench-mask-rebuild-windows-flame.ps1` measured a median 2.42 ms per region rebuild; see [`mask-rebuild-baseline-windows.md`](./mask-rebuild-baseline-windows.md#release-build-2026-10-26). Nim and BMO at `-Target 1000`, and the flamegraph from `scripts/export-mask-flame-windows.ps1`, are pending.
+1. **Windows:** release rates and ms per rebuild for every scenario are in [`mask-rebuild-baseline-windows.md`](./mask-rebuild-baseline-windows.md#per-scenario-rates-release-2026-10-30). Windows has no hover gate and rebuilds twice per frame flip, so its idle is about 2/s and its standing rates twice X11's. Its flamegraph from `scripts/export-mask-flame-windows.ps1` is not exported yet.
 2. **If X11 updates ever get hot:** the [CPU profile](#cpu-profile) points at reserving `mask_rects` capacity and caching the window handle. At about 1.4 ms per second at worst, neither is worth doing yet.

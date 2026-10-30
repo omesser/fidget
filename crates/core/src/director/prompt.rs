@@ -12,7 +12,7 @@ pub(crate) fn character_prompt(
     blank: bool,
 ) -> String {
     with_layers(
-        &character_layers(context, behaviors, blank),
+        &character_layers(context, behaviors, blank, None),
         &named_moment(context, instance),
     )
 }
@@ -32,6 +32,7 @@ pub(crate) fn character_layers(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    reply_language: Option<&str>,
 ) -> String {
     // Empty, not `(no personality)`: that placeholder is a Character with an
     // empty file, which still gets the voice rules. Blank AI is the emptied
@@ -53,7 +54,7 @@ pub(crate) fn character_layers(
         written => format!("{personality}\n\n{written}"),
     };
 
-    let instructions = app_instructions(behaviors, blank);
+    let instructions = app_instructions(behaviors, blank, reply_language);
 
     match (authored.is_empty(), instructions.is_empty()) {
         (true, true) => String::new(),
@@ -73,22 +74,13 @@ pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
     )
 }
 
-static REPLY_LANGUAGE: std::sync::RwLock<Option<&'static str>> = std::sync::RwLock::new(None);
-
-/// The language every spoken line is asked for, by its English name, or `None`
-/// for English. The interface language: a reply should match the menus.
-pub fn set_reply_language(language: Option<&'static str>) {
-    if let Ok(mut held) = REPLY_LANGUAGE.write() {
-        *held = language;
-    }
-}
-
-fn reply_language_rule() -> String {
-    match REPLY_LANGUAGE.read().ok().and_then(|held| *held) {
+// Reply language is an explicit input, not process state.
+fn reply_language_rule(reply_language: Option<&str>) -> String {
+    match reply_language {
+        None | Some("English") | Some("") => String::new(),
         Some(language) => format!(
             "\n\nWrite every spoken line in {language}. Behavior names stay exactly as listed."
         ),
-        None => String::new(),
     }
 }
 
@@ -98,6 +90,7 @@ fn reply_language_rule() -> String {
 pub fn app_instructions(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    reply_language: Option<&str>,
 ) -> String {
     if blank {
         return String::new();
@@ -131,7 +124,7 @@ pub fn app_instructions(
          \n\
          When you are asked for something, use the tools you have. Then \
          reply as above.{}",
-        reply_language_rule()
+        reply_language_rule(reply_language)
     )
 }
 
