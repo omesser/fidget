@@ -302,9 +302,8 @@ fn trace_tick(gap_ms: f64, changes: [(&str, ButtonSample, ButtonSample); 2], out
     }
 }
 
-/// The OS double-click interval, in milliseconds.
-pub fn double_click_interval_ms() -> Option<u32> {
-    let seconds = NSEvent::doubleClickInterval();
+/// Seconds from AppKit as whole milliseconds. Zero or less is unset.
+fn interval_ms_from_seconds(seconds: f64) -> Option<u32> {
     if seconds > 0.0 {
         Some((seconds * 1000.0).round() as u32)
     } else {
@@ -312,10 +311,14 @@ pub fn double_click_interval_ms() -> Option<u32> {
     }
 }
 
+/// The OS double-click interval, in milliseconds.
+pub fn double_click_interval_ms() -> Option<u32> {
+    interval_ms_from_seconds(NSEvent::doubleClickInterval())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use objc2_app_kit::NSEvent;
 
     use fidget_core::engine::{Point, Verb};
     use fidget_core::input::Pointer;
@@ -637,17 +640,12 @@ mod tests {
     }
 
     #[test]
-    fn double_click_interval_ms_matches_nsevent() {
-        let seconds = NSEvent::doubleClickInterval();
-        let expected = if seconds > 0.0 {
-            Some((seconds * 1000.0).round() as u32)
-        } else {
-            None
-        };
-        assert_eq!(
-            double_click_interval_ms(),
-            expected,
-            "macos::double_click_interval_ms must match NSEvent::doubleClickInterval()"
-        );
+    fn double_click_interval_seconds_become_whole_milliseconds() {
+        assert_eq!(interval_ms_from_seconds(0.5), Some(500));
+        assert_eq!(interval_ms_from_seconds(1.5), Some(1500));
+        assert_eq!(interval_ms_from_seconds(0.0024), Some(2));
+        assert_eq!(interval_ms_from_seconds(0.0026), Some(3));
+        assert_eq!(interval_ms_from_seconds(0.0), None);
+        assert_eq!(interval_ms_from_seconds(-0.5), None);
     }
 }
