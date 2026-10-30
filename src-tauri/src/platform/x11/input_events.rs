@@ -2,7 +2,7 @@
 //! Permission-free raw events on the root window, so the frame loop can
 //! block on `recv()` instead of waking at 16ms while idle.
 
-use std::sync::mpsc;
+use std::sync::mpsc::{self, SyncSender, TrySendError};
 use std::thread;
 use x11rb::connection::Connection;
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
@@ -23,7 +23,7 @@ pub enum InputEvent {
 /// uses. x11rb `Sync` allows that; if event processing stalls, look here.
 pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     let display = super::connection::connection()?;
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = wake_channel();
 
     let screen = display.setup().roots.first()?;
     let root = screen.root;
@@ -32,13 +32,18 @@ pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
         return None;
     }
 
-    let sender_clone = sender.clone();
     thread::Builder::new()
         .name("xi2-input".to_string())
-        .spawn(move || listen_loop(sender_clone))
+        .spawn(move || listen_loop(sender))
         .ok()?;
 
     Some(receiver)
+}
+
+/// One slot, as on macOS: a full one is a wake already pending, and an
+/// unbounded queue grows while the loop is active or hidden and not reading.
+fn wake_channel() -> (SyncSender<InputEvent>, mpsc::Receiver<InputEvent>) {
+    mpsc::sync_channel(1)
 }
 
 fn setup_xi2(
@@ -51,10 +56,11 @@ fn setup_xi2(
         return Err("XI2 not available".into());
     }
 
+    // One mask word holding all three bits; a word per event is BadValue.
     let mask = vec![
-        xinput::XIEventMask::RAW_BUTTON_PRESS,
-        xinput::XIEventMask::RAW_BUTTON_RELEASE,
-        xinput::XIEventMask::RAW_MOTION,
+        xinput::XIEventMask::RAW_BUTTON_PRESS
+            | xinput::XIEventMask::RAW_BUTTON_RELEASE
+            | xinput::XIEventMask::RAW_MOTION,
     ];
 
     display.xinput_xi_select_events(
@@ -69,18 +75,24 @@ fn setup_xi2(
     Ok(())
 }
 
-fn listen_loop(sender: mpsc::Sender<InputEvent>) {
+fn listen_loop(sender: SyncSender<InputEvent>) {
     let Some(display) = super::connection::connection() else {
         return;
     };
 
-    while let Ok(event) = display.wait_for_event() {
-        let Some(input_event) = classify_event(display, &event) else {
-            continue;
-        };
+    let events = std::iter::from_fn(|| display.wait_for_event().ok());
+    forward_wakes(
+        events.filter_map(|event| classify_event(display, &event)),
+        &sender,
+    );
+}
 
-        if sender.send(input_event).is_err() {
-            break;
+/// Offer each event to the frame loop; drop it when a wake is already pending.
+fn forward_wakes(events: impl IntoIterator<Item = InputEvent>, sender: &SyncSender<InputEvent>) {
+    for input_event in events {
+        match sender.try_send(input_event) {
+            Ok(()) | Err(TrySendError::Full(_)) => {}
+            Err(TrySendError::Disconnected(_)) => break,
         }
     }
 }
@@ -102,5 +114,58 @@ fn classify_event(
             None
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Duration;
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    use x11rb::wrapper::ConnectionExt as _;
+
+    #[test]
+    fn a_burst_of_motion_with_no_reader_leaves_one_wake_waiting() {
+        let (sender, receiver) = wake_channel();
+        forward_wakes(std::iter::repeat_n(InputEvent::Motion, 1000), &sender);
+        assert!(matches!(receiver.try_recv(), Ok(InputEvent::Motion)));
+        assert_eq!(receiver.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    #[test]
+    fn forwarding_stops_once_the_frame_loop_is_gone() {
+        let (sender, receiver) = wake_channel();
+        drop(receiver);
+        let mut offered = 0;
+        let events = std::iter::repeat_with(|| {
+            offered += 1;
+            InputEvent::Motion
+        });
+        forward_wakes(events.take(1000), &sender);
+        assert_eq!(offered, 1);
+    }
+
+    /// Run with: Xvfb :77 & DISPLAY=:77 cargo test --bin fidget input_events -- --include-ignored
+    #[test]
+    #[ignore = "needs an X server with XI2 and XTEST, such as Xvfb"]
+    fn pointer_motion_wakes_the_frame_loop() {
+        let events = spawn_listener().expect("XI2 on $DISPLAY");
+        let (conn, screen) = x11rb::connect(None).expect("an X server on $DISPLAY");
+        let root = conn.setup().roots[screen].root;
+        conn.xtest_fake_input(
+            xproto::MOTION_NOTIFY_EVENT,
+            0,
+            x11rb::CURRENT_TIME,
+            root,
+            40,
+            30,
+            0,
+        )
+        .unwrap();
+        conn.sync().unwrap();
+        // The idle frame loop blocks on this same `recv_timeout`.
+        let woken = events.recv_timeout(Duration::from_secs(2));
+        assert!(matches!(woken, Ok(InputEvent::Motion)), "got {woken:?}");
     }
 }
