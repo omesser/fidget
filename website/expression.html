@@ -148,7 +148,7 @@
       the indicator held down — an unasked turn never shows an ellipsis — and
       then lands its line anyway, which is the contrast the two buttons draw.
       The hold is whatever <code>bubbleDuration</code> returns for that line;
-      speech and the indicator share one surface, and speech wins.</p>
+      Dialogue and the indicator share one surface, and Dialogue wins.</p>
   </header>
 
   <div class="desk-bar">
@@ -349,7 +349,7 @@ function say(said) {
 function speakLine() {
   const said = text();
   say(said);
-  note(`speech shown, held ${bubbleDuration(said)} ms`);
+  note(`Dialogue shown, held ${bubbleDuration(said)} ms`);
 }
 
 function poke() {
@@ -385,7 +385,7 @@ function wake() {
 
 function replyNow() {
   say(text());
-  note("reply landed · speech wins, the ellipsis goes down the same frame");
+  note("reply landed · Dialogue wins, the ellipsis goes down the same frame");
 }
 
 document.getElementById("speak").addEventListener("click", speakLine);

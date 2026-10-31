@@ -630,7 +630,7 @@
     <div class="bar">
       <span class="label">State</span>
       <button class="btn state" id="s-slow" aria-pressed="false">A turn in flight, slowly</button>
-      <button class="btn state" id="s-speak" aria-pressed="false">An answer through the Character</button>
+      <button class="btn state" id="s-dialogue" aria-pressed="false">An answer through the Character</button>
       <button class="btn state" id="s-empty" aria-pressed="false">No Harness attached</button>
     </div>
 
@@ -822,7 +822,7 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-// ---- Speech. The bubble is held for reading time, and a new line
+// ---- Dialogue. The Speech bubble is held for reading time, and a new line
 // replaces the old one. It is the app's own surface, so no variant skins it.
 let bubbleTimer = null;
 function placeBubble() {
@@ -834,7 +834,7 @@ function placeBubble() {
   bubble.style.transform = "translateX(-50%)";
   bubble.style.setProperty("--tail-offset", (cx - clamped) + "px");
 }
-function speak(text) {
+function showDialogue(text) {
   clearTimeout(bubbleTimer);
   bubble.textContent = text;
   placeBubble();
@@ -891,7 +891,7 @@ function tool(name, arg) {
 }
 // Streamed a few characters at a time, because a reply that appears whole
 // hides the only thing this window can honestly show about a long turn.
-function stream(row, text, mine) {
+function stream(row, text, mine, onText) {
   const said = row.querySelector(".said");
   const caret = el("caret", "▍");
   // Inside the line rather than after it: the row is a grid, so a caret that
@@ -906,6 +906,7 @@ function stream(row, text, mine) {
       if (mine !== gen) { caret.remove(); return done(); }
       chars.data += text.slice(i, i + 3);
       i += 3;
+      if (onText) onText(chars.data);
       scroll();
       if (i < text.length) setTimeout(step, 18);
       else { caret.remove(); done(); }
@@ -1017,10 +1018,10 @@ function permission() {
   });
 }
 
-async function speakTurn() {
+async function dialogueTurn() {
   const mine = reset();
   const check = guard(mine);
-  pressed(".state", "s-speak");
+  pressed(".state", "s-dialogue");
 
   said("You", "Did anything break in the overnight CI runs?", "you");
   tHarness.textContent = "session/prompt · in flight";
@@ -1028,20 +1029,16 @@ async function speakTurn() {
   tool("gh", "run list --branch main --limit 12");
   await wait(1400); check();
 
-  // One turn, two surfaces: the Harness proposes Speech by calling speak, and
-  // plays a Behavior through the expression tools. Both are tool calls, so both
-  // show as one-liners; the chat keeps the long form.
-  const line = "Windows went red twice. Clippy again.";
-  tool("speak", '"' + line + '"');
-  speak(line);
-  await wait(200); check();
+  // One turn, two surfaces: the Harness plays a Behavior through the expression
+  // tools, a tool call that shows as a one-liner. The reply is the Dialogue
+  // (ADR-0040): it streams into the chat and grows in the Speech bubble at once.
   tool("play_behavior", "report");
   play("report");
-  tHarness.textContent = "speak + play_behavior · through the Character";
+  tHarness.textContent = "reply + play_behavior · through the Character";
   await wait(300); check();
 
   const row = said("bmo", "", "them");
-  await stream(row, "Two failures out of twelve, both the windows job, both on lints. macOS and Ubuntu were green each time, which is why nobody noticed.", mine);
+  await stream(row, "Windows went red twice, both on Clippy lints. macOS and Ubuntu stayed green, which is why nobody noticed.", mine, showDialogue);
   check();
   tHarness.textContent = "attached · idle";
 }
@@ -1060,7 +1057,7 @@ function emptyState() {
   box.append(
     el("", "No Harness attached", "h3"),
     el("", "Fidget ships no agent of its own. Point it at one you already have — Claude Code, opencode, Hermes, Pi — and the character answers here, out of the same session that proposes what BMO does on your desktop.", "p"),
-    el("", "<b>What it costs.</b> Fidget spawns and holds a full agent process for as long as the app runs, working in <code>~/.fidget</code> rather than in your repositories. One process, one conversation — this window, the Speech and the Behaviors.", "p"),
+    el("", "<b>What it costs.</b> Fidget spawns and holds a full agent process for as long as the app runs, working in <code>~/.fidget</code> rather than in your repositories. One process, one conversation — this window, the Dialogue and the Behaviors.", "p"),
     el("", "<b>If you would rather not.</b> Static weights keep BMO moving with no model at all, and the HTTP Completer answers a wake over a chat-completions endpoint. Both stay supported: the character still walks, reacts and speaks. This window is the only part that waits for a Harness.", "p"),
   );
   const attach = document.createElement("button");
@@ -1099,7 +1096,7 @@ document.querySelectorAll(".bar .bd").forEach(b => b.addEventListener("click", (
   pressed(".bar .bd", b.id);
 }));
 document.getElementById("s-slow").addEventListener("click", () => { slowTurn().catch(() => {}); });
-document.getElementById("s-speak").addEventListener("click", () => { speakTurn().catch(() => {}); });
+document.getElementById("s-dialogue").addEventListener("click", () => { dialogueTurn().catch(() => {}); });
 document.getElementById("s-empty").addEventListener("click", emptyState);
 document.getElementById("close").addEventListener("click", () => {
   win.hidden = true;
@@ -1119,13 +1116,11 @@ composer.addEventListener("submit", async e => {
   tHarness.textContent = "session/prompt · in flight";
   try {
     await wait(800); check();
-    const line = "On it.";
-    tool("speak", '"' + line + '"');
-    speak(line);
+    tool("play_behavior", "report");
     play("report");
     await wait(400); check();
     const row = said("bmo", "", "them");
-    await stream(row, "The fake Harness on this page answers every typed turn the same way — it is a timer, not an agent. What is up for review is which of the three designs the window should be in, not the line.", mine);
+    await stream(row, "The fake Harness on this page answers every typed turn the same way — it is a timer, not an agent. What is up for review is which of the three designs the window should be in, not the line.", mine, showDialogue);
     check();
     tHarness.textContent = "attached · idle";
   } catch (_) { /* switched states mid-turn */ }
