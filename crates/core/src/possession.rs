@@ -1,4 +1,4 @@
-//! Manual drive: turning key edges into what a possessed sprite does this tick.
+//! Possession: turning key edges into what a possessed sprite does this tick.
 //! The keyboard twin of `input::Pointer`, and pure for the same reason.
 
 /// A walk key.
@@ -8,7 +8,7 @@ pub enum Arrow {
     Right,
 }
 
-/// A key drive listens to. The Shell drops every other key.
+/// A key possession hears. The Shell drops every other key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Arrow(Arrow),
@@ -42,7 +42,7 @@ impl Charge {
     }
 }
 
-/// What drive asks of the Engine this tick.
+/// What possession asks of the Engine this tick.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Intent {
     /// The arrow to walk towards, or `None` to stand.
@@ -57,7 +57,7 @@ pub struct Intent {
 
 /// Held keys, between key edges and ticks.
 #[derive(Clone, Debug, Default)]
-pub struct Drive {
+pub struct Possession {
     /// Held arrows in press order. The latest walks, and letting it go hands
     /// the walk back to the other.
     arrows: Vec<Arrow>,
@@ -69,7 +69,7 @@ pub struct Drive {
     end_possession: bool,
 }
 
-impl Drive {
+impl Possession {
     /// One key edge, `down` for a press and not for a release. A keydown for a
     /// key already down is auto-repeat and changes nothing, bar Escape, whose
     /// repeat only asks again to end a possession that is already ending.
@@ -120,81 +120,81 @@ mod tests {
 
     #[test]
     fn a_held_arrow_walks_until_it_is_released() {
-        let mut drive = Drive::default();
-        drive.key(Key::Arrow(Arrow::Left), true);
-        assert_eq!(drive.tick(FRAME_MS).walk, Some(Arrow::Left));
-        assert_eq!(drive.tick(FRAME_MS).walk, Some(Arrow::Left));
-        drive.key(Key::Arrow(Arrow::Left), false);
-        assert_eq!(drive.tick(FRAME_MS).walk, None);
+        let mut keys = Possession::default();
+        keys.key(Key::Arrow(Arrow::Left), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
+        keys.key(Key::Arrow(Arrow::Left), false);
+        assert_eq!(keys.tick(FRAME_MS).walk, None);
     }
 
     #[test]
     fn the_later_arrow_walks_and_letting_it_go_hands_back_to_the_other() {
-        let mut drive = Drive::default();
-        drive.key(Key::Arrow(Arrow::Left), true);
-        drive.key(Key::Arrow(Arrow::Right), true);
-        assert_eq!(drive.tick(FRAME_MS).walk, Some(Arrow::Right));
-        drive.key(Key::Arrow(Arrow::Right), false);
-        assert_eq!(drive.tick(FRAME_MS).walk, Some(Arrow::Left));
+        let mut keys = Possession::default();
+        keys.key(Key::Arrow(Arrow::Left), true);
+        keys.key(Key::Arrow(Arrow::Right), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Right));
+        keys.key(Key::Arrow(Arrow::Right), false);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
     }
 
     #[test]
     fn an_auto_repeat_keydown_does_not_steal_the_walk() {
-        let mut drive = Drive::default();
-        drive.key(Key::Arrow(Arrow::Left), true);
-        drive.key(Key::Arrow(Arrow::Right), true);
-        drive.key(Key::Arrow(Arrow::Left), true);
-        assert_eq!(drive.tick(FRAME_MS).walk, Some(Arrow::Right));
+        let mut keys = Possession::default();
+        keys.key(Key::Arrow(Arrow::Left), true);
+        keys.key(Key::Arrow(Arrow::Right), true);
+        keys.key(Key::Arrow(Arrow::Left), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Right));
     }
 
     #[test]
     fn holding_space_fills_the_bar_over_a_second_and_letting_go_launches() {
-        let mut drive = Drive::default();
-        drive.key(Key::Space, true);
-        assert_eq!(drive.tick(250).charging.map(Charge::fraction), Some(0.25));
-        assert_eq!(drive.tick(250).charging.map(Charge::fraction), Some(0.5));
-        assert_eq!(drive.tick(250).launch, None);
-        drive.key(Key::Space, false);
-        let launched = drive.tick(FRAME_MS);
+        let mut keys = Possession::default();
+        keys.key(Key::Space, true);
+        assert_eq!(keys.tick(250).charging.map(Charge::fraction), Some(0.25));
+        assert_eq!(keys.tick(250).charging.map(Charge::fraction), Some(0.5));
+        assert_eq!(keys.tick(250).launch, None);
+        keys.key(Key::Space, false);
+        let launched = keys.tick(FRAME_MS);
         assert_eq!(launched.launch.map(Charge::fraction), Some(0.75));
         assert_eq!(launched.charging, None);
-        assert_eq!(drive.tick(FRAME_MS).launch, None);
+        assert_eq!(keys.tick(FRAME_MS).launch, None);
     }
 
     #[test]
     fn the_bar_stops_full_at_a_second() {
-        let mut drive = Drive::default();
-        drive.key(Key::Space, true);
-        drive.tick(1_500);
-        drive.key(Key::Space, false);
-        assert_eq!(drive.tick(FRAME_MS).launch.map(Charge::fraction), Some(1.0));
+        let mut keys = Possession::default();
+        keys.key(Key::Space, true);
+        keys.tick(1_500);
+        keys.key(Key::Space, false);
+        assert_eq!(keys.tick(FRAME_MS).launch.map(Charge::fraction), Some(1.0));
     }
 
     #[test]
     fn a_tap_launches_with_an_empty_bar() {
-        let mut drive = Drive::default();
-        drive.key(Key::Space, true);
-        drive.key(Key::Space, false);
-        assert_eq!(drive.tick(FRAME_MS).launch.map(Charge::fraction), Some(0.0));
+        let mut keys = Possession::default();
+        keys.key(Key::Space, true);
+        keys.key(Key::Space, false);
+        assert_eq!(keys.tick(FRAME_MS).launch.map(Charge::fraction), Some(0.0));
     }
 
     #[test]
     fn an_auto_repeat_space_keeps_charging() {
-        let mut drive = Drive::default();
-        drive.key(Key::Space, true);
-        drive.tick(400);
-        drive.key(Key::Space, true);
-        assert_eq!(drive.tick(100).charging.map(Charge::fraction), Some(0.5));
+        let mut keys = Possession::default();
+        keys.key(Key::Space, true);
+        keys.tick(400);
+        keys.key(Key::Space, true);
+        assert_eq!(keys.tick(100).charging.map(Charge::fraction), Some(0.5));
     }
 
     #[test]
     fn the_jump_rises_from_a_hop_to_the_full_height_in_step_with_the_bar() {
         let launch = |held_ms| {
-            let mut drive = Drive::default();
-            drive.key(Key::Space, true);
-            drive.tick(held_ms);
-            drive.key(Key::Space, false);
-            drive.tick(FRAME_MS).launch.unwrap().height(110.0, 910.0)
+            let mut keys = Possession::default();
+            keys.key(Key::Space, true);
+            keys.tick(held_ms);
+            keys.key(Key::Space, false);
+            keys.tick(FRAME_MS).launch.unwrap().height(110.0, 910.0)
         };
         assert_eq!(launch(0), 110.0);
         assert_eq!(launch(250), 310.0);
@@ -204,59 +204,59 @@ mod tests {
 
     #[test]
     fn a_pause_lets_go_of_every_key_without_jumping() {
-        let mut drive = Drive::default();
-        drive.key(Key::Arrow(Arrow::Left), true);
-        drive.key(Key::Arrow(Arrow::Right), true);
-        drive.key(Key::Space, true);
-        drive.tick(500);
-        drive.pause();
-        assert_eq!(drive.tick(FRAME_MS), Intent::default());
+        let mut keys = Possession::default();
+        keys.key(Key::Arrow(Arrow::Left), true);
+        keys.key(Key::Arrow(Arrow::Right), true);
+        keys.key(Key::Space, true);
+        keys.tick(500);
+        keys.pause();
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
         // Keyups that straggle in after the pause launch nothing.
-        drive.key(Key::Space, false);
-        drive.key(Key::Arrow(Arrow::Left), false);
-        assert_eq!(drive.tick(FRAME_MS), Intent::default());
+        keys.key(Key::Space, false);
+        keys.key(Key::Arrow(Arrow::Left), false);
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
     #[test]
     fn a_pause_drops_a_jump_not_yet_launched() {
-        let mut drive = Drive::default();
-        drive.key(Key::Space, true);
-        drive.key(Key::Space, false);
-        drive.pause();
-        assert_eq!(drive.tick(FRAME_MS).launch, None);
+        let mut keys = Possession::default();
+        keys.key(Key::Space, true);
+        keys.key(Key::Space, false);
+        keys.pause();
+        assert_eq!(keys.tick(FRAME_MS).launch, None);
     }
 
     #[test]
     fn escape_asks_once_to_end_possession_and_lets_go_of_every_key() {
-        let mut drive = Drive::default();
-        drive.key(Key::Arrow(Arrow::Right), true);
-        drive.key(Key::Space, true);
-        drive.tick(500);
-        drive.key(Key::Escape, true);
+        let mut keys = Possession::default();
+        keys.key(Key::Arrow(Arrow::Right), true);
+        keys.key(Key::Space, true);
+        keys.tick(500);
+        keys.key(Key::Escape, true);
         assert_eq!(
-            drive.tick(FRAME_MS),
+            keys.tick(FRAME_MS),
             Intent {
                 end_possession: true,
                 ..Intent::default()
             }
         );
-        assert_eq!(drive.tick(FRAME_MS), Intent::default());
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
     #[test]
     fn letting_go_of_escape_asks_nothing() {
-        let mut drive = Drive::default();
-        drive.key(Key::Escape, false);
-        assert_eq!(drive.tick(FRAME_MS), Intent::default());
+        let mut keys = Possession::default();
+        keys.key(Key::Escape, false);
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
     /// Escape hands the keyboard back, so the pause that follows can land
     /// before the next tick.
     #[test]
     fn a_pause_after_escape_still_ends_possession() {
-        let mut drive = Drive::default();
-        drive.key(Key::Escape, true);
-        drive.pause();
-        assert!(drive.tick(FRAME_MS).end_possession);
+        let mut keys = Possession::default();
+        keys.key(Key::Escape, true);
+        keys.pause();
+        assert!(keys.tick(FRAME_MS).end_possession);
     }
 }

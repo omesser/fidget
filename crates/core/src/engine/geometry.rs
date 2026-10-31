@@ -154,6 +154,37 @@ pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> 
         .min_by(f64::total_cmp)
 }
 
+/// How far a full jump bar lifts the feet. The display under them, at its
+/// raw height: not the clearance, and not the room left above the feet, so
+/// the bar can later reach a display stacked above this one.
+pub(super) fn usable_height_under(feet: Point, snapshot: &WorldSnapshot) -> Option<f64> {
+    displays_spanning(feet.x, snapshot)
+        .find(|display| feet.y >= display.y && feet.y <= display.bottom())
+        .map(|display| display.height)
+}
+
+/// Whether a step at `x` heading `direction` would leave the outermost display
+/// edge's inset, `EDGE_CLEARANCE`, where a standing sprite shows whole.
+pub(super) fn edge_ahead(x: f64, direction: f64, snapshot: &WorldSnapshot) -> bool {
+    let left = snapshot
+        .displays
+        .iter()
+        .map(|display| display.x)
+        .min_by(f64::total_cmp);
+    let right = snapshot
+        .displays
+        .iter()
+        .map(|display| display.x + display.width)
+        .max_by(f64::total_cmp);
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            (direction > 0.0 && x >= right - EDGE_CLEARANCE)
+                || (direction < 0.0 && x <= left + EDGE_CLEARANCE)
+        }
+        _ => false,
+    }
+}
+
 /// The clearance actually applied on one display: no display gives up more
 /// than half its height to the ceiling, or art taller than the screen would
 /// leave nowhere to stand.
