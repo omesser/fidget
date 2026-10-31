@@ -41,6 +41,8 @@ jobs:
           cache-on-failure: true
       - name: Build the real Fidget application
         run: cargo build -p fidget
+      - name: Build the fake ACP agent test binary for French speech
+        run: cargo test -p fidget --no-run
       - name: Capture each language on the native Linux desktop
         shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
         env:
@@ -83,7 +85,7 @@ jobs:
       - name: Publish the actual images and gallery on translations
         run: |
           set -euo pipefail
-          test "$(find docs/i18n/gallery -name '*.png' | wc -l)" -eq 30
+          test "$(find docs/i18n/gallery -name '*.png' | wc -l)" -eq 31
           test -s docs/i18n/gallery/README.md
           git pull --ff-only origin translations
           git add docs/i18n/gallery/
