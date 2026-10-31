@@ -60,7 +60,8 @@ TEST_WINDOW_ID=$(timeout 3 xdotool search --sync --name '^perch-prop$' 2> /dev/n
 log_info "Perch window ID: $TEST_WINDOW_ID"
 PERCH_W=$(xwininfo -id "$TEST_WINDOW_ID" | awk '/Width:/ {print $2}')
 PERCH_X=$((ROOT_W / 2 - PERCH_W / 2))
-xdotool windowmove --sync "$TEST_WINDOW_ID" "$PERCH_X" "$PERCH_Y"
+timeout 3 xdotool windowmove --sync "$TEST_WINDOW_ID" "$PERCH_X" "$PERCH_Y" ||
+  fail "The perch window did not move within 3 s"
 log_info "Display ${ROOT_W}x${ROOT_H}; perch window ${PERCH_W} px wide at +${PERCH_X}+${PERCH_Y}"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
