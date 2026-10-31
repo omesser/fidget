@@ -82,7 +82,7 @@ def probe(lang):
     line_checks = []
     for line in speech.splitlines():
         line = line.strip()
-        if len(re.findall(r"[^\\W\\d_]", line, flags=re.UNICODE)) < 12:
+        if sum(ch.isalpha() for ch in line) < 12:
             continue
         try:
             found = detect_langs(line)[0]
