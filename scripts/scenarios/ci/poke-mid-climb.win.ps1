@@ -304,8 +304,9 @@ try {
     # Only the display's half of the sprite is drawn. Clicks a double-click
     # interval apart are separate Pokes, so stop at the first. Aim a quarter of
     # the sprite in from the edge, where Buddy Bot is solid from row 15 to 59:
-    # halfway in crosses its eye and misses. Aim at its top, never above the
-    # display; it climbs 30-55 px before the press lands.
+    # halfway in crosses its eye and misses. It climbs 27-65 px before the
+    # press lands, so aim 10 px above its top; `$sy -gt $size` keeps that on
+    # the display.
     $px = $edge + $into * [int][Math]::Floor($half / 4)
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
     $before = Pokes
@@ -315,7 +316,7 @@ try {
         if (-not $frame -or $frame.State -cne "Climbing") { break }
         $sy = $frame.Y
         if ($sy -le $size) { break }
-        $py = $sy
+        $py = $sy - 10
         Skip-IfFullscreenOverClick $px $py $script:proc.Id $out "click"
         [ClimbInput]::Click($px, $py)
         Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
