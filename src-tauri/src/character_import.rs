@@ -49,14 +49,19 @@ fn imported_characters(app: &tauri::AppHandle) -> Result<Vec<ImportedCharacter>,
         .iter()
         .map(|instance| instance.character.clone())
         .collect();
-    Ok(package::imports(&package::imported_characters_dir())
+    Ok(listed(&selected, &in_use))
+}
+
+/// Apart from the app state, so a test can check which folder the list reads.
+fn listed(selected: &str, in_use: &[String]) -> Vec<ImportedCharacter> {
+    package::imports(&package::imported_characters_dir())
         .into_iter()
         .map(|(id, character)| ImportedCharacter {
             id,
             removable: selected != character.name && !in_use.contains(&character.name),
             name: character.name,
         })
-        .collect())
+        .collect()
 }
 
 /// Import from a native picker. Cancel is not an error. No JS-supplied path is
@@ -149,4 +154,61 @@ fn forget_import(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    use super::*;
+
+    /// Set in the child process, which owns `FIDGET_DATA_DIR` alone.
+    const CHILD: &str = "FIDGET_TEST_IMPORT_LIST_CHILD";
+
+    fn bundled(id: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../characters")
+            .join(id)
+    }
+
+    /// Settings lists Fidget's imports, never a package the user put in the
+    /// characters folder by hand. Re-runs itself with its own data dir, since
+    /// other tests read `FIDGET_DATA_DIR`.
+    #[test]
+    fn settings_lists_only_fidgets_imports() {
+        if std::env::var_os(CHILD).is_none() {
+            let data =
+                std::env::temp_dir().join(format!("fidget-import-list-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&data);
+            let output = Command::new(std::env::current_exe().expect("test binary"))
+                .args([
+                    "character_import::tests::settings_lists_only_fidgets_imports",
+                    "--exact",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("FIDGET_DATA_DIR", &data)
+                .output()
+                .expect("the child test starts");
+            let _ = std::fs::remove_dir_all(&data);
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        package::import_package(&package::imported_characters_dir(), &[], &bundled("bmo"))
+            .expect("BMO imports");
+        package::import_package(&package::user_characters_dir(), &[], &bundled("tux"))
+            .expect("Tux is placed by hand");
+
+        let names: Vec<String> = listed("", &[]).into_iter().map(|c| c.name).collect();
+        assert_eq!(names, ["BMO"]);
+    }
 }
