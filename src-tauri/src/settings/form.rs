@@ -3910,11 +3910,7 @@ pub(crate) mod tests {
             .find(|s| s.heading == BYO_HEADING)
             .expect("the Harness registration section");
 
-        assert_eq!(
-            section.rows.len(),
-            6,
-            "BYO section always emits 6 rows (gate 5 fix)"
-        );
+        assert_eq!(section.rows.len(), 6, "BYO section always emits 6 rows");
 
         assert!(matches!(
             section.rows[0],
