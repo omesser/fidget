@@ -140,6 +140,17 @@ impl Instance {
         self.engine.set_do_not_disturb(enabled)
     }
 
+    /// Whether the user is driving this Instance from the keyboard. Per
+    /// Instance: the keys drive one sprite, the one possessed.
+    pub fn possessed(&self) -> bool {
+        self.engine.possessed()
+    }
+
+    /// Hand this Instance to the keyboard, or give it back.
+    pub fn set_possessed(&mut self, possessed: bool) {
+        self.engine.set_possessed(possessed)
+    }
+
     /// Where this Instance's feet are.
     pub fn feet(&self) -> Point {
         self.engine.feet()
@@ -462,6 +473,7 @@ mod tests {
             poll_generation: 0,
             composing: false,
             locomotion_frozen: false,
+            drive: Default::default(),
         }
     }
 
