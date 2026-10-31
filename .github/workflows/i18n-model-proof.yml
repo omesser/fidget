@@ -42,10 +42,10 @@ jobs:
             sleep 2
           done
           curl -fsS http://127.0.0.1:11434/api/tags >/dev/null
-          docker exec fidget-ollama ollama pull qwen2.5:3b
+          docker exec fidget-ollama ollama pull qwen2.5:7b
       - name: Verify actual English French and Spanish model output
         env:
-          FIDGET_PROOF_MODEL: qwen2.5:3b
+          FIDGET_PROOF_MODEL: qwen2.5:7b
           FIDGET_PROOF_URL: http://127.0.0.1:11434/v1/chat/completions
         run: python3 scripts/verify-i18n-model.py
       - name: Upload raw responses and detection results
