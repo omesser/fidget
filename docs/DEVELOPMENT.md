@@ -535,7 +535,7 @@ timing and behaviors after import. Row numbers below start at zero.
 | 5 | `nod-off` | Head droops, then lifts again |
 | 6 | `idle` | Seated glances, ear flick, and blink |
 | 7 | `talk` | Paw to chin, then a raised paw to speak |
-| 8 | `review` | Read a page, then a paw up |
+| 8 | `review` | Looks at a page, then paws at it |
 
 To recut Tuxedo Bean's 57 source frames while keeping its authored manifest and prompt:
 

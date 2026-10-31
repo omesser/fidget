@@ -55,7 +55,7 @@ Buddy Bot is the default. Eleven Characters ship; each moves and speaks differen
 <tr>
 <td align="center" width="25%"><img src="./docs/readme/rubber-duck-talk.gif" height="96" alt="Rubber Duck" /><br><b><a href="./characters/rubber-duck/personality.txt">Rubber Duck</a></b><br><sub>Patient listener. One small question at a time.</sub></td>
 <td align="center" width="25%"><img src="./docs/readme/tux-recover-card.gif" height="96" alt="Tux" /><br><b><a href="./characters/tux/personality.txt">Tux</a></b><br><sub>Cozy penguin. Small commands and a flipper salute.</sub></td>
-<td align="center" width="25%"><img src="./docs/readme/tuxedo-bean-review.gif" height="96" alt="Tuxedo Bean" /><br><b><a href="./characters/tuxedo-bean/personality.txt">Tuxedo Bean</a></b><br><sub>Calm tuxedo cat. Reads the whole diff first.</sub></td>
+<td align="center" width="25%"><img src="./docs/readme/tuxedo-bean-review.gif" height="96" alt="Tuxedo Bean" /><br><b><a href="./characters/tuxedo-bean/personality.txt">Tuxedo Bean</a></b><br><sub>Aloof tuxedo cat. Chases the cursor, then naps.</sub></td>
 </tr>
 </table>
 

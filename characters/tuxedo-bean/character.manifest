@@ -7,7 +7,7 @@ render_mode = "smooth"
 scale = 1
 
 [source]
-art = "Tuxedo Bean, cut from the petscodex (petdex) pet `tuxedo-bean` by scripts/import-pet.py. A tiny velvet tuxedo cat with bright amber eyes and pristine white socks. Bean offers calm company, careful reviews, and a little feline charm."
+art = "Tuxedo Bean, cut from the petscodex (petdex) pet `tuxedo-bean` by scripts/import-pet.py. A tiny velvet tuxedo cat with bright amber eyes and pristine white socks. Bean keeps calm company, naps a lot, and chases the cursor when the mood takes it."
 url = "https://petscodex.com/pets/tuxedo-bean"
 license = "MIT for these frames as cut and arranged here, along with the personality prose and the manifest. The art those frames adapt is not: it declares no license anywhere in the source ecosystem, and the importer warned so."
 
