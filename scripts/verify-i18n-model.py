@@ -66,9 +66,16 @@ def probe(lang):
     if lang == "en" and "Write every spoken line in" in prompt:
         raise AssertionError("the English setting unexpectedly inserted a foreign-language rule")
     reply = wire(prompt)
-    speech = spoken_line(reply)
-    probabilities = detect_langs(speech)
-    best = probabilities[0]
+    failure = None
+    try:
+        speech = spoken_line(reply)
+        best = detect_langs(speech)[0]
+        detected, confidence = best.lang, best.prob
+    except (AssertionError, ValueError) as exc:
+        # The unedited answer is evidence even if the model ignores the
+        # response contract. Continue to test the other languages.
+        speech, detected, confidence = reply.strip(), "unclassified", 0.0
+        failure = str(exc)
     result = {
         "setting": lang,
         "language": LOCALES[lang],
@@ -77,11 +84,12 @@ def probe(lang):
         "fidget_prompt": prompt,
         "raw_model_response": reply,
         "spoken_text": speech,
-        "detected_language": best.lang,
-        "detector_confidence": round(best.prob, 4),
-        "passed": best.lang == lang and best.prob >= 0.80,
+        "detected_language": detected,
+        "detector_confidence": round(confidence, 4),
+        "passed": failure is None and detected == lang and confidence >= 0.80,
+        "failure_reason": failure,
     }
-    print(f"{lang} → {best.lang} ({best.prob:.3f}): {speech!r}", flush=True)
+    print(f"{lang} → {detected} ({confidence:.3f}): {speech!r}", flush=True)
     return result
 
 
