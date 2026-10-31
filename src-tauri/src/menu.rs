@@ -66,7 +66,7 @@ pub struct MenuSnapshot<'a> {
     /// cross to the main thread and be compared against the last one.
     pub director_env_owned: bool,
     pub do_not_disturb: bool,
-    /// The keyboard is driving this Instance. The row's label follows it.
+    /// The user possesses this Instance. The row's label follows it.
     pub possessed: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,

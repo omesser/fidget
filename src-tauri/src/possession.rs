@@ -1,11 +1,11 @@
 //! One possessed Instance's keyboard. The frame loop owns the session. The
 //! webview only enqueues key and focus edges, so the two threads never share
-//! the `Drive`.
+//! the `Possession`.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fidget_core::drive::{Arrow, Drive, Intent, Key};
+use fidget_core::possession::{Arrow, Intent, Key, Possession};
 
 /// A blur shorter than this is the focus request's own false-then-true pair,
 /// not the user leaving. Longer, and the keyups will never arrive.
@@ -23,11 +23,11 @@ pub enum Release {
     Removed,
 }
 
-/// The Instance the keys drive, and the overlay that holds them.
+/// The Instance the keys move, and the overlay that holds them.
 pub struct Session {
     pub instance: String,
     pub window: String,
-    drive: Drive,
+    keys: Possession,
     paused: bool,
     blurred_at: Option<Instant>,
     /// The press began while paused, so its click resumes and is not a Poke.
@@ -42,7 +42,7 @@ impl Session {
         Self {
             instance: instance.into(),
             window: window.into(),
-            drive: Drive::default(),
+            keys: Possession::default(),
             paused: false,
             blurred_at: None,
             swallow_click: false,
@@ -67,7 +67,7 @@ impl Session {
                     return;
                 }
                 if let Some(key) = parse_key(name) {
-                    self.drive.key(key, *down);
+                    self.keys.key(key, *down);
                 }
             }
             Edge::Focus { focused, .. } => {
@@ -87,11 +87,11 @@ impl Session {
         if let Some(at) = self.blurred_at {
             if !self.paused && now.saturating_duration_since(at) >= BLUR_SETTLE {
                 self.paused = true;
-                self.drive.pause();
+                self.keys.pause();
                 self.blurred_at = None;
             }
         }
-        self.drive.tick(elapsed_ms)
+        self.keys.tick(elapsed_ms)
     }
 }
 
@@ -109,7 +109,7 @@ pub enum Edge {
     },
 }
 
-/// The names the overlay sends. Anything else is not a drive key.
+/// The names the overlay sends. Anything else is not a possession key.
 pub fn parse_key(name: &str) -> Option<Key> {
     match name {
         "left" => Some(Key::Arrow(Arrow::Left)),
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn arrows_space_and_escape_are_the_only_drive_keys() {
+    fn arrows_space_and_escape_are_the_only_possession_keys() {
         assert!(parse_key("left").is_some());
         assert!(parse_key("right").is_some());
         assert!(parse_key("space").is_some());

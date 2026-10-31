@@ -10,7 +10,7 @@ use std::sync::{Mutex, OnceLock};
 #[derive(Default)]
 pub struct OpenPills {
     pills: HashMap<String, HashSet<String>>,
-    drive: HashSet<String>,
+    possession: HashSet<String>,
 }
 
 impl OpenPills {
@@ -37,12 +37,12 @@ impl OpenPills {
 
     /// The possession card on `window` is holding the keyboard, or it is not.
     /// Same flip report as a pill, so a card and a pill share one hand-back.
-    pub fn note_drive(&mut self, window: &str, holding: bool) -> Vec<(String, bool)> {
+    pub fn note_possession(&mut self, window: &str, holding: bool) -> Vec<(String, bool)> {
         let before = self.on();
         if holding {
-            self.drive.insert(window.to_string());
+            self.possession.insert(window.to_string());
         } else {
-            self.drive.remove(window);
+            self.possession.remove(window);
         }
         self.flips(&before)
     }
@@ -65,7 +65,7 @@ impl OpenPills {
             .filter(|(_, pills)| !pills.is_empty())
             .map(|(label, _)| label.clone())
             .collect();
-        labels.extend(self.drive.iter().cloned());
+        labels.extend(self.possession.iter().cloned());
         labels
     }
 
@@ -73,7 +73,7 @@ impl OpenPills {
     /// app serves every overlay, so the last holder on any display is the one
     /// that hands the keyboard back.
     pub fn any_open(&self) -> bool {
-        self.pills.values().any(|pills| !pills.is_empty()) || !self.drive.is_empty()
+        self.pills.values().any(|pills| !pills.is_empty()) || !self.possession.is_empty()
     }
 }
 
@@ -381,17 +381,17 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_pill_mid_drive_keeps_the_keyboard() {
+    fn closing_a_pill_mid_possession_keeps_the_keyboard() {
         let mut pills = OpenPills::default();
         pills.note("overlay-0", "a", true);
-        assert_eq!(pills.note_drive("overlay-0", true), flips(&[]));
+        assert_eq!(pills.note_possession("overlay-0", true), flips(&[]));
         assert_eq!(pills.note("overlay-0", "a", false), flips(&[]));
         assert!(
             pills.any_open(),
             "the possession card still holds the keyboard"
         );
         assert_eq!(
-            pills.note_drive("overlay-0", false),
+            pills.note_possession("overlay-0", false),
             flips(&[("overlay-0", false)])
         );
         assert!(!pills.any_open());

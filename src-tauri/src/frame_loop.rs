@@ -9,12 +9,12 @@ use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::drive::Intent;
 use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{bubble_owner, display_index_for, drawn_frame, place_sprite};
+use fidget_core::possession::Intent;
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
@@ -172,7 +172,7 @@ fn chat_dialogue<'a>(
     parsed_from_harness.or(from_engine_frame)
 }
 
-fn drive_window(roster: &Roster, id: &str, frames: &[Rect]) -> String {
+fn possession_window(roster: &Roster, id: &str, frames: &[Rect]) -> String {
     let index = roster
         .get(id)
         .and_then(|instance| {
@@ -183,36 +183,39 @@ fn drive_window(roster: &Roster, id: &str, frames: &[Rect]) -> String {
     overlay_label(index)
 }
 
-fn hold_drive_keyboard(app: &tauri::AppHandle, window: &str, holding: bool) {
+fn hold_possession_keyboard(app: &tauri::AppHandle, window: &str, holding: bool) {
     let (flips, process_empty) = super::pill_focus::shared()
         .lock()
         .map(|mut pills| {
-            let flips = pills.note_drive(window, holding);
+            let flips = pills.note_possession(window, holding);
             (flips, !pills.any_open())
         })
         .unwrap_or((Vec::new(), true));
     apply_keyboard_flips(app, flips, process_empty);
 }
 
-fn begin_drive(
+fn begin_possession(
     app: &tauri::AppHandle,
-    drive: &mut Option<possession::Session>,
+    session: &mut Option<possession::Session>,
     lives: &mut [InstanceState],
     id: &str,
     window: &str,
 ) {
-    if drive.as_ref().is_some_and(|session| session.instance == id) {
+    if session
+        .as_ref()
+        .is_some_and(|session| session.instance == id)
+    {
         return;
     }
-    if let Some(old) = drive.take() {
-        hold_drive_keyboard(app, &old.window, false);
+    if let Some(old) = session.take() {
+        hold_possession_keyboard(app, &old.window, false);
     }
-    *drive = Some(possession::Session::start(id, window));
+    *session = Some(possession::Session::start(id, window));
     if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
         note_happened(&mut live.happened, Happened::PossessionStart);
         live.addressed = true;
     }
-    hold_drive_keyboard(app, window, true);
+    hold_possession_keyboard(app, window, true);
     if let Some(overlay) = app.get_webview_window(window) {
         if let Err(why) = overlay_request_focus(overlay) {
             eprintln!("possession: {window} could not take the keyboard: {why}");
@@ -220,14 +223,14 @@ fn begin_drive(
     }
 }
 
-fn end_drive(
+fn end_possession(
     app: &tauri::AppHandle,
-    drive: &mut Option<possession::Session>,
+    session: &mut Option<possession::Session>,
     roster: &mut Roster,
     lives: &mut [InstanceState],
     reason: possession::Release,
 ) {
-    let Some(old) = drive.take() else {
+    let Some(old) = session.take() else {
         return;
     };
     if let Some(instance) = roster.get_mut(old.instance.as_str()) {
@@ -237,8 +240,8 @@ fn end_drive(
         note_happened(&mut live.happened, Happened::PossessionEnd);
         live.addressed = true;
     }
-    hold_drive_keyboard(app, &old.window, false);
-    eprintln!("drive: {}", release_word(reason));
+    hold_possession_keyboard(app, &old.window, false);
+    eprintln!("possession: {}", release_word(reason));
 }
 
 fn release_word(reason: possession::Release) -> &'static str {
@@ -255,7 +258,7 @@ fn release_word(reason: possession::Release) -> &'static str {
 fn take_menu_effect(
     effect: MenuEffect,
     app: &tauri::AppHandle,
-    drive: &mut Option<possession::Session>,
+    session: &mut Option<possession::Session>,
     roster: &mut Roster,
     lives: &mut [InstanceState],
     id: &str,
@@ -263,18 +266,21 @@ fn take_menu_effect(
 ) {
     match effect {
         MenuEffect::Possession(true) => {
-            if drive.as_ref().is_some_and(|session| session.instance != id) {
-                end_drive(app, drive, roster, lives, possession::Release::Menu);
+            if session
+                .as_ref()
+                .is_some_and(|session| session.instance != id)
+            {
+                end_possession(app, session, roster, lives, possession::Release::Menu);
             }
-            let window = drive_window(roster, id, frames);
-            begin_drive(app, drive, lives, id, &window);
+            let window = possession_window(roster, id, frames);
+            begin_possession(app, session, lives, id, &window);
         }
         MenuEffect::Possession(false) => {
-            end_drive(app, drive, roster, lives, possession::Release::Menu);
+            end_possession(app, session, roster, lives, possession::Release::Menu);
         }
-        MenuEffect::Hide => end_drive(app, drive, roster, lives, possession::Release::Hide),
+        MenuEffect::Hide => end_possession(app, session, roster, lives, possession::Release::Hide),
         MenuEffect::Quit => {
-            end_drive(app, drive, roster, lives, possession::Release::Quit);
+            end_possession(app, session, roster, lives, possession::Release::Quit);
             quit_now();
         }
         MenuEffect::None => {}
@@ -353,7 +359,7 @@ pub(crate) fn run_frame_loop(
             (description.actions.clone(), Some(description))
         };
         let mut caffeinate_shown = None;
-        let mut drive: Option<possession::Session> = None;
+        let mut session: Option<possession::Session> = None;
 
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
@@ -734,13 +740,13 @@ pub(crate) fn run_frame_loop(
             // behind still counts as a gesture, and a mid-drag dismiss would
             // hold every other character's presses for as long as the button stayed down.
             lives.retain(|live| roster.get(&live.id).is_some());
-            if drive
+            if session
                 .as_ref()
                 .is_some_and(|session| roster.get(&session.instance).is_none())
             {
-                end_drive(
+                end_possession(
                     &app,
-                    &mut drive,
+                    &mut session,
                     &mut roster,
                     &mut lives,
                     possession::Release::Removed,
@@ -909,7 +915,7 @@ pub(crate) fn run_frame_loop(
                 take_menu_effect(
                     effect,
                     &app,
-                    &mut drive,
+                    &mut session,
                     &mut roster,
                     &mut lives,
                     id,
@@ -948,7 +954,7 @@ pub(crate) fn run_frame_loop(
                         take_menu_effect(
                             effect,
                             &app,
-                            &mut drive,
+                            &mut session,
                             &mut roster,
                             &mut lives,
                             &target,
@@ -980,10 +986,13 @@ pub(crate) fn run_frame_loop(
                         );
                     }
                     SettingsOp::Dismiss { id } => {
-                        if drive.as_ref().is_some_and(|session| session.instance == id) {
-                            end_drive(
+                        if session
+                            .as_ref()
+                            .is_some_and(|session| session.instance == id)
+                        {
+                            end_possession(
                                 &app,
-                                &mut drive,
+                                &mut session,
                                 &mut roster,
                                 &mut lives,
                                 possession::Release::Removed,
@@ -1509,7 +1518,9 @@ pub(crate) fn run_frame_loop(
                 );
                 // A click that lands while paused resumes. It is not a Poke.
                 // A drag that keeps going is still a Grab.
-                if let Some(session) = drive.as_mut().filter(|session| session.instance == live.id)
+                if let Some(session) = session
+                    .as_mut()
+                    .filter(|session| session.instance == live.id)
                 {
                     if !was_gesturing && live.pointer.gesturing() && session.paused() {
                         session.swallow_click = true;
@@ -1714,7 +1725,7 @@ pub(crate) fn run_frame_loop(
             };
 
             // Visibility before instance ticks, so scheduler::mode gets the real answer.
-            let mut drive_release = None;
+            let mut possession_release = None;
             let (presence, hide_in_fullscreen) = rules
                 .lock()
                 .map(|mut rules| {
@@ -1725,7 +1736,7 @@ pub(crate) fn run_frame_loop(
                             change.fade_ms,
                         );
                         if !change.visible {
-                            drive_release = Some(if rules.is_away() {
+                            possession_release = Some(if rules.is_away() {
                                 possession::Release::Hide
                             } else {
                                 possession::Release::FullscreenHide
@@ -1741,16 +1752,16 @@ pub(crate) fn run_frame_loop(
                     },
                     false,
                 ));
-            if let Some(reason) = drive_release {
-                end_drive(&app, &mut drive, &mut roster, &mut lives, reason);
+            if let Some(reason) = possession_release {
+                end_possession(&app, &mut session, &mut roster, &mut lives, reason);
             }
             // Already hidden, including a possess clicked while away: the
-            // change above does not fire again, and a hidden sprite is not driven.
-            if !presence.visible && drive.is_some() {
+            // change above does not fire again, and a hidden sprite is not possessed.
+            if !presence.visible && session.is_some() {
                 let away = rules.lock().map(|rules| rules.is_away()).unwrap_or(false);
-                end_drive(
+                end_possession(
                     &app,
-                    &mut drive,
+                    &mut session,
                     &mut roster,
                     &mut lives,
                     if away {
@@ -1761,11 +1772,11 @@ pub(crate) fn run_frame_loop(
                 );
             }
 
-            let drive_now = Instant::now();
-            let drive_edges = possession::take_edges();
-            if let Some(session) = drive.as_mut() {
-                for edge in &drive_edges {
-                    session.apply(edge, drive_now);
+            let possession_now = Instant::now();
+            let possession_edges = possession::take_edges();
+            if let Some(session) = session.as_mut() {
+                for edge in &possession_edges {
+                    session.apply(edge, possession_now);
                 }
             }
 
@@ -2001,15 +2012,18 @@ pub(crate) fn run_frame_loop(
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);
                 world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
-                let ending = match drive.as_mut().filter(|session| session.instance == live.id) {
+                let ending = match session
+                    .as_mut()
+                    .filter(|session| session.instance == live.id)
+                {
                     Some(session) => {
-                        let intent = session.tick(elapsed_ms, drive_now);
+                        let intent = session.tick(elapsed_ms, possession_now);
                         let ending = intent.end_possession;
-                        world.drive = intent;
+                        world.possession = intent;
                         ending
                     }
                     None => {
-                        world.drive = Intent::default();
+                        world.possession = Intent::default();
                         false
                     }
                 };
@@ -2019,8 +2033,8 @@ pub(crate) fn run_frame_loop(
                     instance.set_possessed(false);
                     note_happened(&mut live.happened, Happened::PossessionEnd);
                     live.addressed = true;
-                    if let Some(old) = drive.take() {
-                        hold_drive_keyboard(&app, &old.window, false);
+                    if let Some(old) = session.take() {
+                        hold_possession_keyboard(&app, &old.window, false);
                         eprintln!("possession: {}", release_word(possession::Release::Escape));
                     }
                 }
@@ -2461,7 +2475,7 @@ pub(crate) fn run_frame_loop(
 
                 last_sprite_rects.push((sprite.x, sprite.y, width, height));
 
-                let (driving, paused, drive_cue) = match drive.as_mut() {
+                let (possessed, paused, possession_cue) = match session.as_mut() {
                     Some(session) if session.instance == live.id => {
                         let cue = std::mem::take(&mut session.cue);
                         (true, session.paused(), cue)
@@ -2489,10 +2503,10 @@ pub(crate) fn run_frame_loop(
                     contact: frame.contact,
                     owner,
                     qm: live.qm.clone(),
-                    driving,
+                    possessed,
                     paused,
                     charge: frame.charge,
-                    drive_cue,
+                    possession_cue,
                     mask: drawn.mask.clone(),
                 });
             }

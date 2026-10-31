@@ -627,8 +627,8 @@ struct SpritePlacement<'a> {
     /// The open quick-message draft. `None` off the bubble owner, so exactly one
     /// overlay draws the pill and the text follows the Instance across a seam.
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
-    /// The keyboard is driving this Instance. Only the bubble owner draws the card.
-    driving: bool,
+    /// The user possesses this Instance. Only the bubble owner draws the card.
+    possessed: bool,
     /// Focus left. The card asks for a click, and the keys were dropped.
     paused: bool,
     /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
@@ -682,7 +682,7 @@ impl<'a> SpritePlacement<'a> {
             asking: bubble && instance.asking,
             hovered: bubble && instance.hovered,
             bubble,
-            cue: if bubble && instance.drive_cue {
+            cue: if bubble && instance.possession_cue {
                 Some("possess")
             } else {
                 instance.cue.filter(|_| bubble).map(Cue::name)
@@ -691,7 +691,7 @@ impl<'a> SpritePlacement<'a> {
             ripple_y: contact.map(|c| c.point.y.round() as i32 - display.y.round() as i32),
             ripple_normal: contact.map(|c| c.normal),
             qm: instance.qm.as_ref().filter(|_| bubble),
-            driving: bubble && instance.driving,
+            possessed: bubble && instance.possessed,
             paused: bubble && instance.paused,
             charge: instance.charge.filter(|_| bubble),
         }
@@ -778,11 +778,11 @@ struct Placed {
     owner: Option<usize>,
     /// The open quick-message draft, carried to the bubble owner like `dialogue`.
     qm: Option<fidget_core::quick_message::QmDraft>,
-    driving: bool,
+    possessed: bool,
     paused: bool,
     charge: Option<f64>,
     /// This tick started the possession, so the overlay plays its cue.
-    drive_cue: bool,
+    possession_cue: bool,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -2193,10 +2193,10 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
     }
 }
 
-/// The overlay heard a drive key. Repeats are dropped in the page. Edges wait
-/// for the frame loop, which owns the `Drive`.
+/// The overlay heard a possession key. Repeats are dropped in the page. Edges wait
+/// for the frame loop, which owns the session.
 #[tauri::command]
-fn overlay_drive_key(window: tauri::Window, key: String, down: bool) {
+fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
     possession::push_key(window.label(), &key, down);
 }
 
@@ -2551,7 +2551,7 @@ fn build_overlay(
         });
     }
 
-    // macOS and Windows have no move watcher. Focus loss is what pauses drive.
+    // macOS and Windows have no move watcher. Focus loss is what pauses possession.
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     {
         let owner = label.to_string();
@@ -5190,7 +5190,7 @@ fn main() {
             overlay_secondary,
             overlay_composing,
             overlay_report_qm_draft,
-            overlay_drive_key,
+            overlay_possession_key,
             overlay_rects,
             overlay_trace_bubble,
             overlay_hit_tests_hotspots,
@@ -7255,10 +7255,10 @@ mod tests {
             }),
             owner: Some(1),
             qm: None,
-            driving: false,
+            possessed: false,
             paused: false,
             charge: None,
-            drive_cue: false,
+            possession_cue: false,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
@@ -7354,10 +7354,10 @@ mod tests {
             contact: None,
             owner: Some(1),
             qm: Some(draft.clone()),
-            driving: false,
+            possessed: false,
             paused: false,
             charge: None,
-            drive_cue: false,
+            possession_cue: false,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };

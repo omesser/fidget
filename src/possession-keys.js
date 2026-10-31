@@ -10,7 +10,7 @@ const NAMES = {
 };
 
 // `down` is true for a keydown. A repeat, or any other key, is not an edge.
-export function driveEdge(key, repeat, down) {
+export function possessionEdge(key, repeat, down) {
   if (repeat) return null;
   const name = NAMES[key];
   if (!name) return null;

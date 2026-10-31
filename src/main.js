@@ -10,7 +10,7 @@ import {
   readableBubbleRect,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
-import { driveEdge } from "./drive-keys.js";
+import { possessionEdge } from "./possession-keys.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
@@ -30,7 +30,7 @@ const stage = document.getElementById("stage");
 // asks, which is the safe way to be wrong.
 let clickableOffArt = false;
 // True while any sprite on this overlay is possessed, paused or not.
-let driving = false;
+let possessed = false;
 
 // Every Character's art as data: URLs, keyed by Character name and fetched
 // once. Art, not state, and one entry however many Instances draw from it.
@@ -765,7 +765,7 @@ async function start() {
       hoverDelayMs = payload.hover_delay_ms;
       const seen = new Set();
 
-      driving = payload.sprites.some((sprite) => sprite.driving);
+      possessed = payload.sprites.some((sprite) => sprite.possessed);
 
       payload.sprites.forEach((sprite, index) => {
         seen.add(sprite.id);
@@ -876,19 +876,19 @@ async function start() {
     event.preventDefault();
   });
   // The pill's field keeps its own keys. Everything else, while possessed,
-  // is a drive edge. Repeats are not edges.
-  const onDriveKey = (event) => {
-    if (!driving) return;
+  // is a possession edge. Repeats are not edges.
+  const onPossessionKey = (event) => {
+    if (!possessed) return;
     if (event.target?.closest?.("textarea, input")) return;
-    const edge = driveEdge(event.key, event.repeat, event.type === "keydown");
+    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown");
     if (!edge) return;
     event.preventDefault();
-    window.__TAURI__.core.invoke("overlay_drive_key", { key: edge.key, down: edge.down }).catch((err) => {
-      console.error("overlay_drive_key", err);
+    window.__TAURI__.core.invoke("overlay_possession_key", { key: edge.key, down: edge.down }).catch((err) => {
+      console.error("overlay_possession_key", err);
     });
   };
-  document.addEventListener("keydown", onDriveKey);
-  document.addEventListener("keyup", onDriveKey);
+  document.addEventListener("keydown", onPossessionKey);
+  document.addEventListener("keyup", onPossessionKey);
   petDrag = null;
   gestureActive = false;
   // A window blur is only a cue to ask the Shell once whether the overlay is
