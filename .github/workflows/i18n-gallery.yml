@@ -1,0 +1,97 @@
+name: i18n-gallery
+
+# Capture the actual Fidget GTK/WebKit desktop UI on GitHub's native Linux
+# runner. Publish only if English, French and Spanish all pass every capture.
+on:
+  push:
+    branches: [translations]
+    paths-ignore:
+      - "docs/i18n/gallery/**"
+  workflow_dispatch:
+
+concurrency:
+  group: i18n-gallery-translations
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the translations branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK, WebKit, a real X11 desktop, and screenshot tools
+        run: |
+          sudo find /etc/apt/sources.list.d -type f -exec grep -lE 'dl\.google\.com' {} + 2>/dev/null | sudo xargs -r rm -vf || true
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev xvfb xfwm4 xdotool x11-utils \
+            imagemagick at-spi2-core dbus-x11 python3-pyatspi python3-pil \
+            ayatana-indicator-application
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: .
+          key: i18n-gallery
+          cache-on-failure: true
+      - name: Build the real Fidget application
+        run: cargo build -p fidget
+      - name: Capture each language on the native Linux desktop
+        shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
+        env:
+          GDK_BACKEND: x11
+          GTK_MODULES: gail:atk-bridge
+        run: |
+          exec {ready}< <(Xvfb -displayfd 1 -screen 0 1600x1000x24 -nolisten tcp 2>"$RUNNER_TEMP/xvfb.log")
+          read -r -t 5 number <&"$ready" || { cat "$RUNNER_TEMP/xvfb.log"; exit 1; }
+          export DISPLAY=":$number"
+          dbus-update-activation-environment DISPLAY
+          xfwm4 >"$RUNNER_TEMP/xfwm4.log" 2>&1 &
+          /usr/libexec/ayatana-indicator-application/ayatana-indicator-application-service \
+            >"$RUNNER_TEMP/indicator.log" 2>&1 &
+          gdbus wait --session --timeout 10 org.kde.StatusNotifierWatcher
+          /usr/bin/python3 scripts/capture-i18n-gallery.py
+      - name: Upload live screenshots for the publishing job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fidget-i18n-live-gallery
+          path: docs/i18n/gallery/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: capture
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out the branch to receive screenshots
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: translations
+      - name: Download verified captures
+        uses: actions/download-artifact@v4
+        with:
+          name: fidget-i18n-live-gallery
+          path: docs/i18n/gallery/
+      - name: Publish the actual images and gallery on translations
+        run: |
+          set -euo pipefail
+          test "$(find docs/i18n/gallery -name '*.png' | wc -l)" -eq 30
+          test -s docs/i18n/gallery/README.md
+          git pull --ff-only origin translations
+          git add docs/i18n/gallery/
+          if git diff --cached --quiet; then
+            echo "Screenshot gallery already matches the latest runner capture."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "docs(i18n): publish live English, French and Spanish gallery [skip ci]"
+          git push origin HEAD:translations
