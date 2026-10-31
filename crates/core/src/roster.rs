@@ -140,8 +140,8 @@ impl Instance {
         self.engine.set_do_not_disturb(enabled)
     }
 
-    /// Whether the user is driving this Instance from the keyboard. Per
-    /// Instance: the keys drive one sprite, the one possessed.
+    /// Whether this Instance is possessed. Per Instance: the keys drive one
+    /// sprite, the one possessed.
     pub fn possessed(&self) -> bool {
         self.engine.possessed()
     }

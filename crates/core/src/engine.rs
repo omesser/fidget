@@ -773,7 +773,7 @@ impl Engine {
         self.steering = false;
     }
 
-    /// Whether the keyboard is driving the sprite.
+    /// Whether the sprite is possessed: the keyboard moves it, not the Director.
     pub fn possessed(&self) -> bool {
         self.possessed
     }
@@ -9690,8 +9690,8 @@ mod tests {
             );
         }
 
-        /// A frozen bubble or a quick message holds an autonomous walk, not one
-        /// the user is driving.
+        /// A frozen bubble or a quick message holds an autonomous walk, not a
+        /// driven walk of a possessed sprite.
         #[test]
         fn a_driven_walk_strides_through_frozen_locomotion() {
             let world = on(one_display());
