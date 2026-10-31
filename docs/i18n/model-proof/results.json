@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-10-31T00:29:34.007922+00:00",
+  "timestamp_utc": "2026-10-31T00:32:19.192517+00:00",
   "test_type": "actual local LLM inference (not mocked)",
   "model": "qwen2.5:7b",
   "results": [
