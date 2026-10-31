@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-10-31T00:23:49.942288+00:00",
+  "timestamp_utc": "2026-10-31T00:29:34.007922+00:00",
   "test_type": "actual local LLM inference (not mocked)",
   "model": "qwen2.5:7b",
   "results": [
@@ -14,6 +14,14 @@
       "detected_language": "en",
       "detector_confidence": 1.0,
       "passed": true,
+      "line_checks": [
+        {
+          "text": "What's up, friend? Let's have some fun today! What would you like to do?",
+          "detected": "en",
+          "confidence": 1.0,
+          "foreign": false
+        }
+      ],
       "failure_reason": null
     },
     {
@@ -27,6 +35,14 @@
       "detected_language": "fr",
       "detector_confidence": 1.0,
       "passed": true,
+      "line_checks": [
+        {
+          "text": "\"Bonjour! Je suis ravi de parler avec toi. Que dirais-tu de faire une petite sieste aujourd'hui?\"",
+          "detected": "fr",
+          "confidence": 1.0,
+          "foreign": false
+        }
+      ],
       "failure_reason": null
     },
     {
@@ -40,6 +56,14 @@
       "detected_language": "es",
       "detector_confidence": 1.0,
       "passed": true,
+      "line_checks": [
+        {
+          "text": "¿Qué tal un siesta? Me siento un poco cansado hoy, bmo-1.",
+          "detected": "es",
+          "confidence": 1.0,
+          "foreign": false
+        }
+      ],
       "failure_reason": null
     }
   ]
