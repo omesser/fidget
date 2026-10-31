@@ -85,6 +85,7 @@ cp -R "$root/characters/bmo" "$out/characters/"
 sed -E '/^play = /s/"walk"/"idle"/g' "$root/characters/bmo/character.manifest" > "$out/characters/bmo/character.manifest"
 harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=slow count=$marks"
 [ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
+start_ms=$(now_ms)
 env HOME="$out/home" FIDGET_HARNESS="$harness" FIDGET_DIRECTOR_WAKE_SECS=600 \
   FIDGET_DIRECTOR_API_KEY=x FIDGET_TRACE_FRAMES=1 FIDGET_TRACE_BUBBLE=1 FIDGET_HOVER_DELAY_MS=300 \
   FIDGET_CHARACTER=bmo FIDGET_CHARACTERS="$out/characters" \
@@ -146,4 +147,4 @@ wait_for_next "$closed" xdotool key Escape || fail "pill-close: the pill did not
 wait_until 3 accepts_focus False || fail "pill-close: the overlay still accepts focus"
 ok "pill-close: the overlay refuses focus again"
 
-echo "PASS: evidence in $out" | tee -a "$results"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)" | tee -a "$results"

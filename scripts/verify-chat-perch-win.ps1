@@ -82,6 +82,7 @@ $Bin = (Resolve-Path -LiteralPath $args[1]).Path
 $TestBin = (Resolve-Path -LiteralPath $args[2]).Path
 $VerifyBin = Join-Path (Split-Path -Parent $Bin) "fidget-verify.exe"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $root "scripts\scenarios\helpers\wait-helpers.win.ps1")
 
 $out = Join-Path $args[3] ("chat-perch-win-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 $data = Join-Path $out "data"
@@ -260,6 +261,7 @@ $env:FIDGET_TRACE_BUBBLE = "1"
 $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
+$startMs = Get-NowMs
 $proc = Start-Process -FilePath $Bin -WorkingDirectory $out -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 @("pid=$($proc.Id)", "commit=$(git -C $root rev-parse HEAD)", "bin=$Bin") |
@@ -353,16 +355,22 @@ try {
     }
     $marker = "Windows Chat perch"
     [System.Windows.Forms.SendKeys]::SendWait($marker)
-    Start-Sleep -Milliseconds 500
-    $typed = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    $value = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $null = Wait-ForUia 2 $proc.Id { $value.Current.Value -eq $marker }
+    $typed = $value.Current.Value
     Set-Content -LiteralPath (Join-Path $out "composer-value.txt") -Value $typed
     if ($typed -ne $marker) { Fail "composer holds '$typed', expected '$marker'" }
     Pass "composer_click_and_type" "$focusLine value=$typed"
 
-    Write-Output "PASS: all four Windows checks; evidence in $out"
+    # Answer the ask, so the fixture Harness finishes its turn instead of waiting.
+    $allowOut = Join-Path $out "allow.txt"
+    if (-not (Wait-ForUia 3 $proc.Id { Invoke-AxWin $allowOut @{ Command = "press"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "Allow" } })) {
+        Fail "could not press Allow on the permission ask; see $allowOut"
+    }
+    if (-not (Wait-ForMarks 3 $marks '^replied$')) { Fail "the Harness never replied after Allow; see $marks" }
+    Write-Output "ok: answered the permission ask, and the Harness replied"
+
+    Write-Output "PASS: all four Windows checks; evidence in $out ($((Get-NowMs) - $startMs)ms)"
 } finally {
-    if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*count=$marks*" } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Stop-FidgetTree $proc "count=$marks"
 }

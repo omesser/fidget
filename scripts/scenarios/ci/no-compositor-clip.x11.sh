@@ -105,6 +105,7 @@ root_prop_matches _NET_CLIENT_LIST "$(printf '0x%x' "$plain_window")" || fail "x
 
 cp -R "$root/characters/bmo" "$out/characters/"
 sed -E '/^play = /s/"walk"/"idle"/g' "$root/characters/bmo/character.manifest" > "$out/characters/bmo/character.manifest"
+start_ms=$(now_ms)
 env HOME="$out/home" FIDGET_DIRECTOR_WAKE_SECS=600 FIDGET_TRACE_FRAMES=1 \
   FIDGET_INSTANCES=bmo:One,bmo:Two FIDGET_CHARACTERS="$out/characters" \
   "$bin" > "$out/app.log" 2>&1 &
@@ -157,4 +158,4 @@ wait_until 3 uncomposited || fail "_NET_WM_CM_S0 still has an owner after picom 
 expect_shape picom-stopped shaped
 expect_clipped picom-stopped
 
-echo "PASS: evidence in $out" | tee -a "$results"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)" | tee -a "$results"

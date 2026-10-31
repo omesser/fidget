@@ -16,7 +16,7 @@ fidget_alive() {
 # tail -F follows a file through kqueue (BSD) or inotify (GNU). GNU tail
 # treats some file systems as remote (overlayfs, NFS) and falls back to a
 # poll every second, so ask it for 50 ms there; it stops with Fidget, too.
-follow() { # <first line: +1 for the whole file, 0 for new lines> <file>
+follow() { # <first line: +1 for the whole file, +N from line N, 0 for new lines> <file>
   if tail --version > /dev/null 2>&1; then
     tail -s 0.05 ${pid:+--pid="$pid"} -n "$1" -F "$2" 2> /dev/null
   else
@@ -26,7 +26,7 @@ follow() { # <first line: +1 for the whole file, 0 for new lines> <file>
 
 # Feed a file's lines to a reader until the reader exits or the seconds run
 # out. A timer kills the reader, so nothing here re-reads or polls.
-wait_on_lines() { # <seconds> <+1|0> <file> <reader...>
+wait_on_lines() { # <seconds> <+1|+N|0, as follow takes> <file> <reader...>
   local seconds=$1
   follow_from=$2 follow_file=$3
   shift 3

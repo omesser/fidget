@@ -160,6 +160,7 @@ sed -E '/^play = /s/"walk"/"idle"/g' "$root/characters/bmo/character.manifest" >
 harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=slow count=$marks"
 [ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
+start_ms=$(now_ms)
 env HOME="$out/home" \
   FIDGET_HARNESS="$harness" \
   FIDGET_DIRECTOR_WAKE_SECS=600 \
@@ -350,4 +351,4 @@ wait_text click-away caret_moved || fail "click-away: the click did not put Text
 ! tail -n +"$((mark + 1))" "$log" | grep -qE "$closed" || fail "click-away: the pill closed after the click; see $log"
 echo "ok: click-away: the caret moved to the click, typing followed, and the pill kept \"nine\""
 
-echo "PASS: evidence in $out"
+echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)"

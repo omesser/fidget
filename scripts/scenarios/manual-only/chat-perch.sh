@@ -340,4 +340,9 @@ grep -Fq "$marker" "$out/chat-after.ax.txt" ||
   fail "typed text did not appear in Chat composer"
 echo 'composer_click_and_type=pass' >> "$out/result.txt"
 
+# Answer the ask, so the fixture Harness finishes its turn instead of waiting.
+answer_permission "$pid" Allow || fail "could not answer the permission ask in Chat; see $log"
+wait_for_marks 3 "$marks" '^replied$' || fail "the Harness never replied after Allow; see $marks"
+echo "ok: answered the permission ask, and the Harness replied"
+
 echo "PASS: all four macOS checks; evidence in $out ($(($(now_ms) - start_ms))ms)"
