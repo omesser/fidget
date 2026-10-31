@@ -2385,18 +2385,16 @@ mod tests {
         );
     }
 
-    /// The app layer is paid on every wake and crowds the Character and Instance
-    /// prompts, so it stays under this size.
-    const APP_LAYER_BUDGET: usize = 717;
-
     /// The app layer is paid on every wake, including an HTTP Director with a
     /// small context, and it crowds the Character and Instance prompts.
+    const APP_LAYER_BUDGET: usize = 717;
+
     #[test]
     fn the_app_layer_stays_under_its_budget() {
         let app = app_instructions(["wave", "nap", "sit"], false);
         assert!(
             app.len() < APP_LAYER_BUDGET,
-            "app_instructions is {} bytes, over the {APP_LAYER_BUDGET} budget",
+            "app_instructions is {} bytes, over the {APP_LAYER_BUDGET} budget: {app}",
             app.len()
         );
     }
