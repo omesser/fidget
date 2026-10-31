@@ -296,6 +296,20 @@ Right-click on the sprite, or Control-click on macOS — character switching, se
 The deliberate act that opens the Functional Layer.
 _Avoid_: Invoke, activate, wake
 
+**Possession**:
+The switch that hands a fidget to the user's keyboard. The arrows walk it,
+Space makes it jump and Escape releases it. The fidget is possessed, the way a ghost
+possesses a body, and the Director's prompt says so. Possession applies to one
+Character Instance. Possessing another releases the first. It is not a State,
+so a possessed sprite still falls, perches and can be grabbed, and it stays
+possessed when another window takes the keyboard. Users see it explained as
+"Manually drive the fidget on your screen". #1655.
+
+**Possess, Release**:
+The verbs that turn Possession on and off, and the Menu row's two labels.
+Escape, hiding, Quit and removing the Instance also release. This Release is
+not the release of a Grab that ends in a Throw.
+
 ### Expression
 
 **Dialogue**:
