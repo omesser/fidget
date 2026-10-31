@@ -142,15 +142,17 @@ fi
 
 # Only the display's half is drawn; click into it, right of a left edge or left
 # of a right one. Clicks a double-click interval apart are separate Pokes, so
-# stop at the first. Aim high, since it rises, but below any panel.
-px=$((edge + into * half / 2))
+# stop at the first. Aim a quarter of the sprite in, where Buddy Bot is solid
+# from row 15 to 59; halfway in crosses its eye. It rises before the press
+# lands, so aim 10 px above its top; `sy > size` keeps that below any panel.
+px=$((edge + into * half / 4))
 before=$(pokes)
 poked=
 for _ in 1 2 3 4 5 6; do
   in_state Climbing || break
   read -r sx sy < <(sprite_xy)
   [ "$sy" -gt "$size" ] || break
-  click_at "$px" "$((sy + half / 9))" >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
+  click_at "$px" "$((sy - 10))" >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
   # A second click inside the double-click gap is not a new Poke, so wait out the gap for one.
   if wait_for_count "$click_gap" "$trace" '^verbs: .*Poke' "$before"; then
     poked=1
