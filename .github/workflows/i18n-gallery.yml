@@ -59,6 +59,14 @@ jobs:
             >"$RUNNER_TEMP/indicator.log" 2>&1 &
           gdbus wait --session --timeout 10 org.kde.StatusNotifierWatcher
           /usr/bin/python3 scripts/capture-i18n-gallery.py
+      - name: Preserve failed French speech framebuffer for diagnosis
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: french-speech-framebuffer-debug
+          path: docs/i18n/gallery-debug/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload live screenshots for the publishing job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
