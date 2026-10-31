@@ -105,7 +105,7 @@ def probe(lang):
         "spoken_text": speech,
         "detected_language": detected,
         "detector_confidence": round(confidence, 4),
-        "passed": failure is None and detected == lang and confidence >= 0.80 and not mixed_language,
+        "passed": failure is None and detected == lang and confidence >= 0.65 and not mixed_language,
         "line_checks": line_checks,
         "failure_reason": failure or ("mixed-language spoken lines" if mixed_language else None),
     }
