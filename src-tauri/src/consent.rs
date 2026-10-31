@@ -65,7 +65,7 @@ impl ConsentRow {
 /// talks to TCC; everywhere else is Null.
 pub trait Probe: Send + Sync {
     fn granted(&self, id: CapabilityId) -> bool;
-    fn prompt(&self, id: CapabilityId);
+    fn prompt(&self, _id: CapabilityId) {}
 }
 
 #[cfg(target_os = "macos")]
@@ -171,8 +171,6 @@ impl Probe for Null {
     fn granted(&self, _: CapabilityId) -> bool {
         false
     }
-
-    fn prompt(&self, _: CapabilityId) {}
 }
 
 #[cfg(target_os = "macos")]
@@ -216,8 +214,6 @@ impl Probe for WindowsProbe {
             CapabilityId::WindowNames => true,
         }
     }
-
-    fn prompt(&self, _id: CapabilityId) {}
 }
 
 #[cfg(target_os = "linux")]
