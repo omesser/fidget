@@ -312,6 +312,10 @@ const NEAR_RADIUS: f64 = 150.0;
 /// immediate.
 const DWELL_MS: u32 = 400;
 
+/// How close the cursor must be to count as Dwell, in points. 30 is a typical
+/// sprite half-width. `NEAR_RADIUS` would address from a window away.
+const DWELL_RADIUS: f64 = 30.0;
+
 /// Minimum cursor speed to count as a Rush, in points per second. A flick
 /// past startles the same as a flick at it. Fast enough to read as a startle,
 /// slow enough that ordinary travel near the sprite does not trigger it.
@@ -1028,11 +1032,9 @@ impl Engine {
             }
         }
 
-        // Dwell is the cursor on the art, not merely Near: 30 points is a
-        // typical sprite half-width, where `NEAR_RADIUS` would address from a
-        // window away. `addressed` makes the next Director wake reactive.
+        // The next Director wake is reactive because `addressed` is set.
         let mut addressed = false;
-        if cursor_distance < 30.0 {
+        if cursor_distance < DWELL_RADIUS {
             self.cursor_dwell_ms = self.cursor_dwell_ms.saturating_add(snapshot.elapsed_ms);
             if self.cursor_dwell_ms >= DWELL_MS && !self.cursor_dwell_addressed {
                 self.cursor_dwell_addressed = true;
