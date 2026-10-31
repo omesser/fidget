@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { chargeFill, possessionCard, possessionRects } from "../src/possession-card.js";
+import { chargeFill, placePossession, possessionCard, possessionRects } from "../src/possession-card.js";
 import { possessionEdge } from "../src/possession-keys.js";
 
 test("arrows, space and escape are the possession keys, and a repeat is ignored", () => {
@@ -49,6 +49,41 @@ test("the bar fills with the charge and hides when space is up", () => {
   assert.equal(chargeFill(0.4), 0.4);
   assert.equal(chargeFill(1), 1);
   assert.equal(chargeFill(1.5), 1);
+});
+
+function covers(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function onScreen(rect, bounds) {
+  return (
+    rect.x >= bounds.x &&
+    rect.y >= bounds.y &&
+    rect.x + rect.width <= bounds.x + bounds.width &&
+    rect.y + rect.height <= bounds.y + bounds.height
+  );
+}
+
+test("a card at the top corner of the display stays on screen", () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+  const card = { width: 220, height: 88 };
+  const sprite = { x: 0, y: 12, width: 128, height: 128 };
+  const placed = placePossession(sprite, card, 8, 8, bounds, null);
+  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
+});
+
+test("a card steps clear of the speech bubble", () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+  const card = { width: 220, height: 88 };
+  const sprite = { x: 290, y: 320, width: 128, height: 128 };
+  const speech = { x: 244, y: 190, width: 220, height: 90 };
+  const placed = placePossession(sprite, card, 8, 8, bounds, speech);
+  const cardRect = { ...placed.card, width: card.width, height: card.height };
+  assert.equal(covers(cardRect, speech), false);
+  assert.equal(covers(placed.bar, speech), false);
+  assert.equal(onScreen(cardRect, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
 });
 
 test("the card takes a click and the charge bar does not", () => {
