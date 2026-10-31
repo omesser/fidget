@@ -7,6 +7,7 @@ on:
     branches: [translations]
     paths-ignore:
       - "docs/i18n/gallery/**"
+      - "docs/i18n/model-proof/**"
   workflow_dispatch:
 
 concurrency:
