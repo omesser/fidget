@@ -296,6 +296,26 @@ Right-click on the sprite, or Control-click on macOS — character switching, se
 The deliberate act that opens the Functional Layer.
 _Avoid_: Invoke, activate, wake
 
+**Possession**:
+The switch that hands one fidget to the user's keyboard: arrows walk, Space
+jumps, Escape releases. The fidget is possessed, as a ghost possesses it, and
+the Director is told so. One Instance at a time. Not a State: a possessed
+sprite still falls, perches and can be grabbed. The user-facing explanation is
+"Manually drive the fidget on your screen". `drive.rs` is the key input under
+it, not the feature's name. #1655.
+_Avoid_: Manual drive, driving mode
+
+**Possess, Release**:
+Turning Possession on and off, and the Menu row's two labels. Escape, hiding,
+Quit and removing the Instance also release.
+_Avoid_: Start driving, stop driving
+
+**Paused**:
+Possessed without the keyboard, after a click on another window. The fidget
+stands still and stays possessed, physics still runs, and a click on the card
+or the sprite resumes. A flag on Possession, not a State.
+_Avoid_: Suspended, released (Release ends Possession)
+
 ### Expression
 
 **Dialogue**:

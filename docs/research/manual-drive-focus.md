@@ -1,4 +1,4 @@
-# Manual drive: the overlay's keyboard with no pill open
+# Possession: the overlay's keyboard with no pill open
 
 Spike for [#1920](https://github.com/omesser/fidget/issues/1920), step 1 of
 [#1655](https://github.com/omesser/fidget/issues/1655). Question: can an
@@ -12,6 +12,10 @@ throwaway probe at tag `probe-1920-drive-focus` (`e34dcf28`), which is
 `2f9ad5c4` plus the probe and nothing else. One macOS run is at `65b4043c`, the
 probe's second commit, whose macOS leaf and helpers match `e34dcf28`. Written
 2026-10-29. This document does not follow `main`.
+
+**Name.** Written when the feature was called Manual drive. On 2026-10-31 it
+was named Possession (see `GLOSSARY.md`); "drive" below means the feature's
+key input, which keeps that name in `drive.rs`.
 
 **Answer.** Yes on all three. Every item in #1920 is proven on a CI runner of
 each OS, with no change to the focus path. The pill's `overlay_request_focus`
