@@ -257,7 +257,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         url: completions_url(&settings.base_url),
         model: settings.model.clone(),
         timeout: timeout_for(),
-        max_tokens: max_tokens_for(),
+        max_tokens: max_tokens(),
         cap_pinned: crate::dev_flags::director_max_tokens().is_some(),
         effort: effort_for(),
         session: Mutex::new(Session::default()),
@@ -425,7 +425,7 @@ fn timeout_for() -> Duration {
 /// The cap a turn goes out with, before `wire_budget` may swap in the think
 /// ceiling. Decided in `dev_flags::seed`, like the timeout, where a zero cap
 /// counts as unset because it leaves no room to answer.
-fn max_tokens_for() -> u32 {
+fn max_tokens() -> u32 {
     crate::dev_flags::director_max_tokens().unwrap_or(TURN_CEILING)
 }
 
@@ -4232,13 +4232,13 @@ pub(crate) mod tests {
             };
             crate::dev_flags::seed(&file);
             assert_eq!(timeout_for(), Duration::from_secs(45));
-            assert_eq!(max_tokens_for(), 300);
+            assert_eq!(max_tokens(), 300);
 
             std::env::set_var(TIMEOUT_SECS, "7");
             std::env::set_var(MAX_TOKENS, "11");
             crate::dev_flags::seed(&file);
             assert_eq!(timeout_for(), Duration::from_secs(7));
-            assert_eq!(max_tokens_for(), 11);
+            assert_eq!(max_tokens(), 11);
             std::env::remove_var(TIMEOUT_SECS);
             std::env::remove_var(MAX_TOKENS);
         });
@@ -4298,14 +4298,14 @@ pub(crate) mod tests {
     }
 
     /// One guard for every wake and host. Only `THINK_CEILING` and a pinned cap
-    /// move it, each tested above. Under the env lock, as `max_tokens_for` reads
+    /// move it, each tested above. Under the env lock, as `max_tokens` reads
     /// `dev_flags` values another test sets.
     #[test]
     fn one_runaway_guard_caps_every_wake_on_every_host() {
         with_env(None, None, None, || {
             crate::dev_flags::seed(&crate::settings::Settings::default());
             assert_eq!(timeout_for(), TIMEOUT, "timeout no longer splits on URL");
-            assert_eq!(max_tokens_for(), 1024, "and the cap no longer does either");
+            assert_eq!(max_tokens(), 1024, "and the cap no longer does either");
 
             for base in ["http://localhost:11434", "https://api.openai.com"] {
                 let endpoint = endpoint_from(&resolve(base, "gemma4", Some("sk-test")))
