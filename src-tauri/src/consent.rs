@@ -61,8 +61,10 @@ impl ConsentRow {
     }
 }
 
-/// How settings learns a grant and how it asks. Tests inject a fake; macOS
-/// talks to TCC; everywhere else is Null.
+/// How settings learns a grant and how it asks.
+///
+/// Tests inject a fake. macOS, Linux, and Windows each have a probe.
+/// Anywhere else is Null.
 pub trait Probe: Send + Sync {
     fn granted(&self, id: CapabilityId) -> bool;
     fn prompt(&self, _id: CapabilityId) {}
