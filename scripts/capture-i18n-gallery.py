@@ -441,6 +441,10 @@ def build_readme():
 def main():
     global NAMES_BY_SETTING
     NAMES_BY_SETTING = ["en"]
+    # Never count or reuse a previously committed speech screenshot as proof.
+    # Only this run may produce the final verified French bubble image.
+    for stale in ("11-bmo-speaks-french.png", "11-bmo-speaks-french.ax.txt"):
+        (OUT / "fr" / stale).unlink(missing_ok=True)
     home = Path(tempfile.mkdtemp(prefix="fidget-i18n-", dir=os.environ.get("RUNNER_TEMP")))
     config = home / ".local/share/fidget/settings.json"
     config.parent.mkdir(parents=True, exist_ok=True)
