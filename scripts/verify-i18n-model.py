@@ -20,7 +20,7 @@ from langdetect import DetectorFactory, detect_langs
 DetectorFactory.seed = 0
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs/i18n/model-proof"
-MODEL = os.environ.get("FIDGET_PROOF_MODEL", "qwen2.5:1.5b")
+MODEL = os.environ.get("FIDGET_PROOF_MODEL", "qwen2.5:7b")
 URL = os.environ.get("FIDGET_PROOF_URL", "http://127.0.0.1:11434/v1/chat/completions")
 LOCALES = {"en": "English", "fr": "French", "es": "Spanish"}
 
