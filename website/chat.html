@@ -553,7 +553,7 @@ function tool(name, arg) {
 }
 // Streamed a few characters at a time, because a reply that appears whole
 // hides the only thing this window can honestly show about a long turn.
-function stream(row, text, mine, onText) {
+function stream(row, text, mine, onDialogue) {
   const said = row.querySelector(".said");
   const caret = el("caret", "▍");
   said.after(caret);
@@ -565,7 +565,7 @@ function stream(row, text, mine, onText) {
       if (mine !== gen) { caret.remove(); return done(); }
       said.textContent += text.slice(i, i + 3);
       i += 3;
-      if (onText) onText(said.textContent);
+      if (onDialogue) onDialogue(said.textContent);
       scroll();
       if (i < text.length) setTimeout(step, 18);
       else { caret.remove(); done(); }
