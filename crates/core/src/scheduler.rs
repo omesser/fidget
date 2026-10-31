@@ -86,6 +86,7 @@ mod tests {
             cue: None,
             contact: None,
             refused: None,
+            charge: None,
         }
     }
 

@@ -801,6 +801,7 @@ mod tests {
             poll_generation: 0,
             composing: false,
             locomotion_frozen: false,
+            drive: Default::default(),
         }
     }
 

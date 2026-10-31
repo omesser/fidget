@@ -7,6 +7,7 @@
 
 use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
+use crate::drive::{Arrow, Charge, Intent};
 use crate::overlay::{display_index_for, stands_on};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
@@ -172,6 +173,9 @@ pub struct WorldSnapshot {
     /// A speech bubble or the quick-message pill is showing. Walk and chase
     /// stop and none starts; a sprite on its feet draws `talk` meanwhile.
     pub locomotion_frozen: bool,
+    /// What the keys ask of a possessed sprite this tick. Read only while
+    /// possessed; the default asks for nothing.
+    pub drive: Intent,
 }
 
 /// Everything the renderer is told after one tick.
@@ -231,6 +235,10 @@ pub struct Frame {
     /// Reported so a refusal and a model that proposed nothing differ in the
     /// trace. `crates/core` does no I/O, so the Shell prints it.
     pub refused: Option<String>,
+
+    /// How full the jump bar is while a possessed sprite's Space is held, from
+    /// 0 to 1. `None` hides the bar.
+    pub charge: Option<f64>,
 }
 
 /// How long one Primitive holds the screen.
@@ -414,6 +422,13 @@ pub struct Engine {
     /// dialogue is not spoken, while Poke/Grab/Throw still work and the
     /// Character stays visible.
     do_not_disturb: bool,
+    /// The user drives this sprite from the keyboard. A switch, not a State: it
+    /// still falls and is grabbed the usual way, but never sleeps or climbs, and
+    /// refuses proposals while their Speech still shows.
+    possessed: bool,
+    /// This fall left the feet while possessed, so a held arrow steers it. A
+    /// release from the hand is not one: a throw flies as thrown.
+    steering: bool,
     /// Harness turn beats waiting out the one on screen. `play` leaves each
     /// unnamed, so a Character cannot replace it, and the next waits until
     /// that one-shot ends so a payoff cannot erase a failed beat.
@@ -654,6 +669,8 @@ impl Engine {
             yank_reference: Point::default(),
             since_yank_ref_s: 0.0,
             do_not_disturb: false,
+            possessed: false,
+            steering: false,
             moment_queue: VecDeque::new(),
             moment_holding: false,
             near_reaction: CursorReaction::default(),
@@ -739,6 +756,24 @@ impl Engine {
 
     pub fn do_not_disturb(&self) -> bool {
         self.do_not_disturb
+    }
+
+    /// Hand the sprite to the keyboard, or give it back. An autonomous walk
+    /// under way ends, or it would stride on with no arrow held. The keys own
+    /// the feet from the next tick.
+    pub fn set_possessed(&mut self, possessed: bool) {
+        self.possessed = possessed;
+        if possessed && matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
+            self.stop_playing();
+        }
+        if !possessed {
+            self.steering = false;
+        }
+    }
+
+    /// Whether the keyboard is driving the sprite.
+    pub fn possessed(&self) -> bool {
+        self.possessed
     }
 
     /// Queue `moment`. One pending outcome: failed wins over succeeded, and
@@ -831,8 +866,10 @@ impl Engine {
         self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
 
         // Idling is resting untouched. Time spent in the air or in someone's
-        // hand does not count towards nodding off.
-        if snapshot.verbs.is_empty() {
+        // hand does not count towards nodding off, nor does being driven.
+        if self.possessed {
+            self.idle_ms = 0;
+        } else if snapshot.verbs.is_empty() {
             self.idle_ms = match self.state {
                 State::Grounded | State::Perched | State::Asleep => {
                     self.idle_ms.saturating_add(snapshot.elapsed_ms)
@@ -874,7 +911,7 @@ impl Engine {
 
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
-        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
+        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
 
         // A grab or a release ends the cooldown, or it would refuse the first
         // walk after landing. A fall the world causes clears it a tick late, at
@@ -940,8 +977,9 @@ impl Engine {
         };
         self.last_cursor = snapshot.cursor;
 
-        // Crossing into Near plays `near_reaction`, even under DND.
-        if self.cursor_near && !was_near {
+        // Crossing into Near plays `near_reaction`, even under DND. Not while
+        // possessed: the cursor is not what the user is steering with.
+        if self.cursor_near && !was_near && !self.possessed {
             self.rush_reported = false;
             match self.near_reaction {
                 CursorReaction::Indifferent => {}
@@ -988,7 +1026,7 @@ impl Engine {
 
         // Rush (startle): once per Near session, or a fast cursor still in the
         // radius retriggers every tick.
-        if self.cursor_near && !self.rush_reported {
+        if self.cursor_near && !self.rush_reported && !self.possessed {
             let velocity_magnitude = self.cursor_velocity.x.hypot(self.cursor_velocity.y);
             let rushing = velocity_magnitude > RUSH_VELOCITY;
             if rushing {
@@ -1098,6 +1136,12 @@ impl Engine {
             }
         }
 
+        // The keys own a possessed sprite's feet, after every hold above: a
+        // bubble or a quick message stops a walk the sprite chose, not this.
+        if self.possessed {
+            started |= self.drive(state, snapshot);
+        }
+
         let contact = self.integrate(state, dt, snapshot);
 
         // Still moving is still awake. A walk proposed just before the timer
@@ -1105,6 +1149,9 @@ impl Engine {
         // playing `sleep`.
         let rested = self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0;
         self.state = transition::on_contact(state, contact, rested);
+        self.steering = self.possessed
+            && self.state == State::Falling
+            && (self.steering || matches!(state, State::Grounded | State::Perched));
 
         // The release's cue sounds on arrival: floor, Perch, or wall, once.
         // Every landing reports where it touched for the cue ripple.
@@ -1206,8 +1253,10 @@ impl Engine {
         // The State gate's refusals only. Do Not Disturb is a silence the
         // user asked for, and an undeclared name is traced at the parse.
         let mut refused = None;
+        // Possessed, the user is the one deciding. The Speech still shows: the
+        // Frame carries the proposal's dialogue whatever happens here.
         if let Some(proposal) = &snapshot.proposal {
-            if !self.do_not_disturb {
+            if !self.do_not_disturb && !self.possessed {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
                     // Mid-cooldown, `play` refuses a moving chain whole,
                     // greeting included. A lone line or gesture plays. After
@@ -1296,6 +1345,9 @@ impl Engine {
         // A Behavior is drawn over whatever the sprite is doing, so a Poke
         // shows even mid-fall. It changes nothing about where the sprite is.
         let animation = match self.on_screen() {
+            // A driven walk is the user's stride: it shows over a landing or a
+            // startle rather than sliding under them.
+            _ if self.possessed && self.is_walking() => "walk",
             Some(primitive) => animation_of(primitive),
             // A walk outlasts the Primitive that starts it: the velocity holds
             // until the sprite runs out of Perch, so the Animation has to hold
@@ -1370,7 +1422,66 @@ impl Engine {
             cue,
             contact: ripple,
             refused,
+            charge: snapshot
+                .drive
+                .charging
+                .filter(|_| self.possessed)
+                .map(Charge::fraction),
         }
+    }
+
+    /// Apply this tick's keys to a possessed sprite, true when Space launched
+    /// it. A launch plays Jump the way a proposal does, so the flight, `land`
+    /// and the drop Cue are every fall's. In hand the keys do nothing.
+    fn drive(&mut self, state: State, snapshot: &WorldSnapshot) -> bool {
+        let on_feet = matches!(state, State::Grounded | State::Perched);
+        if !on_feet && !(state == State::Falling && self.steering) {
+            return false;
+        }
+
+        let heading = snapshot.drive.walk.map(|arrow| match arrow {
+            Arrow::Left => -1.0,
+            Arrow::Right => 1.0,
+        });
+        if let Some(heading) = heading {
+            self.facing = heading;
+        }
+        // Into the outermost edge the walk stops where a standing sprite shows
+        // whole, rather than walking off and catching the wall to climb.
+        self.velocity.x = match heading {
+            Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
+                heading * WALK_SPEED
+            }
+            _ => 0.0,
+        };
+
+        let Some(charge) = snapshot.drive.launch else {
+            return false;
+        };
+        if !on_feet || !self.play(&[Primitive::Jump]) {
+            return false;
+        }
+        let speed = self.launch_speed(charge, snapshot);
+        self.velocity.y = -speed;
+        // `jump` holds the screen for the rise and `fall` takes over at the
+        // apex, where the upward speed runs out.
+        self.primitive_ms = (speed / self.gravity * 1000.0).ceil() as u32;
+        self.release_cue = Some(Cue::Drop);
+        true
+    }
+
+    /// The upward speed that lifts the feet as high as `charge` asks, from Jump's
+    /// hop to the usable top of the display under them. `integrate` steps velocity
+    /// before position, topping out half a tick short of `v²/2g`, so the launch
+    /// tick's step is solved for and a full bar meets the ceiling.
+    fn launch_speed(&self, charge: Charge, snapshot: &WorldSnapshot) -> f64 {
+        let hop = JUMP_SPEED * JUMP_SPEED / (2.0 * self.gravity);
+        let full = usable_top_under(self.position, snapshot, self.ceiling_clearance())
+            .map_or(hop, |top| (self.position.y - top).max(hop));
+        let height = charge.height(hop, full);
+
+        let half_step = self.gravity * f64::from(snapshot.elapsed_ms) / 1000.0 / 2.0;
+        half_step + (half_step * half_step + 2.0 * self.gravity * height).sqrt()
     }
 
     /// Move the sprite through one tick of `state`'s physics and report what
@@ -1402,36 +1513,40 @@ impl Engine {
                 if let Some(wall) = wall_from_screen.or(wall_from_dock) {
                     let side = self.velocity.x.signum();
                     self.position.x = wall;
-                    self.velocity = Point::default();
-                    Some(Contact::Wall { side })
-                } else {
-                    let next_y = self.position.y + self.velocity.y * dt;
+                    // A possessed sprite does not climb: it meets the side and
+                    // goes on falling.
+                    if !self.possessed {
+                        self.velocity = Point::default();
+                        return Some(Contact::Wall { side });
+                    }
+                    self.velocity.x = 0.0;
+                }
+                let next_y = self.position.y + self.velocity.y * dt;
 
-                    // Rising only: a Grab can put the feet above the ceiling,
-                    // and snapping them down would teleport a drop.
-                    if self.velocity.y < 0.0 {
-                        if let Some(ceiling) =
-                            ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
-                        {
-                            let stop_at = self.position.y.min(ceiling);
-                            if next_y < stop_at {
-                                self.position.y = stop_at;
-                                self.velocity.y = 0.0;
-                                return Some(Contact::Ceiling);
-                            }
+                // Rising only: a Grab can put the feet above the ceiling, and
+                // snapping them down would teleport a drop.
+                if self.velocity.y < 0.0 {
+                    if let Some(ceiling) =
+                        ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
+                    {
+                        let stop_at = self.position.y.min(ceiling);
+                        if next_y < stop_at {
+                            self.position.y = stop_at;
+                            self.velocity.y = 0.0;
+                            return Some(Contact::Ceiling);
                         }
                     }
+                }
 
-                    match support_below(self.position, snapshot, self.ceiling_clearance()) {
-                        Some(support) if next_y >= support.y => {
-                            self.position.y = support.y;
-                            self.velocity = Point::default();
-                            Some(Contact::Landed(support.surface))
-                        }
-                        _ => {
-                            self.position.y = next_y;
-                            Some(Contact::Airborne)
-                        }
+                match support_below(self.position, snapshot, self.ceiling_clearance()) {
+                    Some(support) if next_y >= support.y => {
+                        self.position.y = support.y;
+                        self.velocity = Point::default();
+                        Some(Contact::Landed(support.surface))
+                    }
+                    _ => {
+                        self.position.y = next_y;
+                        Some(Contact::Airborne)
                     }
                 }
             }
@@ -1492,7 +1607,10 @@ impl Engine {
                     let side = self.velocity.x.signum();
                     self.position.x = x;
                     self.velocity = Point::default();
-                    return Some(Contact::Wall { side });
+                    // Driven, the side stops the walk and is not climbed.
+                    if !self.possessed {
+                        return Some(Contact::Wall { side });
+                    }
                 }
 
                 let fresh = snapshot.poll_generation == 0

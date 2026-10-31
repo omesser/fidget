@@ -26,9 +26,10 @@ pub enum Contact {
 
 /// Where the user's hand leaves the sprite before any physics runs, and
 /// whether a verb woke it. The wake is reported rather than left for the
-/// caller to re-derive, so what waking means is written here once.
-pub fn on_verbs(state: State, verbs: &[Verb]) -> (State, bool) {
-    let woke = state == State::Asleep && !verbs.is_empty();
+/// caller to re-derive, so what waking means is written here once. Being
+/// possessed wakes it too: the keys drive a sprite on its feet.
+pub fn on_verbs(state: State, verbs: &[Verb], possessed: bool) -> (State, bool) {
+    let woke = state == State::Asleep && (!verbs.is_empty() || possessed);
 
     if verbs.contains(&Verb::Grab) {
         return (State::Dragged, woke);
