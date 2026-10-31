@@ -33,17 +33,6 @@ pub enum RowOperation {
     NewSession,
 }
 
-impl RowOperation {
-    /// The wire name is serde's snake_case name.
-    pub fn as_str(&self) -> String {
-        serde_json::to_value(self)
-            .expect("RowOperation serializes")
-            .as_str()
-            .expect("a unit variant serializes as a string")
-            .to_owned()
-    }
-}
-
 /// One section of the settings form.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormSection {
