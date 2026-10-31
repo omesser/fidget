@@ -47,19 +47,21 @@ ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
 MIN_OVERLAY_W=$((ROOT_W / 2))
 # shellcheck disable=SC2034  # read by the sourced find_overlay_window()
 MIN_OVERLAY_H=$((ROOT_H / 2))
-# Halfway from the spawn (display centre) to the floor, and wide enough that a
-# short walk before the ride still leaves the sprite over the Perch.
+# Halfway from the spawn (display centre, starting_position()) to the floor;
+# centred on the spawn x once mapped, so a short walk stays over the Perch.
 PERCH_Y=$((ROOT_H * 2 / 3))
-PERCH_X=$((ROOT_W / 8))
-log_info "Display ${ROOT_W}x${ROOT_H}; perch window at +${PERCH_X}+${PERCH_Y}"
 
 # -e sleep: a login shell on Xvfb often exits immediately, taking the window
 # with it before the sprite can land.
-xterm -geometry "100x8+${PERCH_X}+${PERCH_Y}" -title "perch-prop" -e sleep 3600 > "$OUT/xterm.out" 2> "$OUT/xterm.err" &
+xterm -geometry "100x8+0+${PERCH_Y}" -title "perch-prop" -e sleep 3600 > "$OUT/xterm.out" 2> "$OUT/xterm.err" &
 TEST_WINDOW_PID=$!
 TEST_WINDOW_ID=$(timeout 3 xdotool search --sync --name '^perch-prop$' 2> /dev/null | head -1 || true)
 [ -n "$TEST_WINDOW_ID" ] || fail "The perch window did not map within 3 s"
 log_info "Perch window ID: $TEST_WINDOW_ID"
+PERCH_W=$(xwininfo -id "$TEST_WINDOW_ID" | awk '/Width:/ {print $2}')
+PERCH_X=$((ROOT_W / 2 - PERCH_W / 2))
+xdotool windowmove --sync "$TEST_WINDOW_ID" "$PERCH_X" "$PERCH_Y"
+log_info "Display ${ROOT_W}x${ROOT_H}; perch window ${PERCH_W} px wide at +${PERCH_X}+${PERCH_Y}"
 xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
 
 log_info "Building fidget..."
