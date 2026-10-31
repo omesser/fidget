@@ -14,8 +14,8 @@ const PREEMPTED_BY = {
   summoned: "You summoned me",
   grabbed: "You picked me up",
   perched: "I perched",
-  possessed: "You started driving me",
-  released: "You stopped driving me",
+  possessed: "You possessed me",
+  released: "You let me go",
   proactive: "My next thought started",
 };
 

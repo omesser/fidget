@@ -39,6 +39,17 @@ test("every wake the Rust side can name has a clause of its own", () => {
   }
 });
 
+test("a possession preempt stays ghostly", () => {
+  assert.equal(
+    preemptedNote("possessed"),
+    "You possessed me before that answer landed, so I dropped it.",
+  );
+  assert.equal(
+    preemptedNote("released"),
+    "You let me go before that answer landed, so I dropped it.",
+  );
+});
+
 test("the transcript draws a preempted turn instead of dropping the row", () => {
   const after = js.split('outcome.action === "preempted")')[1];
   assert.ok(after, "chat.js handles no preempted outcome");
