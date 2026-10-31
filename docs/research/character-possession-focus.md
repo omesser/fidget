@@ -13,14 +13,9 @@ throwaway probe at tag `probe-1920-drive-focus` (`e34dcf28`), which is
 probe's second commit, whose macOS leaf and helpers match `e34dcf28`. Written
 2026-10-29. This document does not follow `main`.
 
-**Name.** Written when the feature was called Manual drive. On 2026-10-31 it
-was named Possession (see `GLOSSARY.md`), and this file moved from
-`manual-drive-focus.md`. "Drive" below means the feature's key input, which
-keeps that name in `drive.rs`.
-
 **Answer.** Yes on all three. Every item in #1920 is proven on a CI runner of
 each OS, with no change to the focus path. The pill's `overlay_request_focus`
-works unchanged with no pill. Two findings shape the drive build: a click on
+works unchanged with no pill. Two findings shape the Possession build: a click on
 the sprite takes the keyboard back by itself while the overlay stays focusable,
 and the focusable flag the request sets is never cleared when no pill closes.
 
@@ -120,17 +115,17 @@ manager is not tested.
   lands before the webview's `pointerdown`, so the click activates the overlay
   before the probe's second `overlay_request_focus` runs. On macOS and X11 that
   is because `focusable` stays set after the launch request. The second request
-  is harmless, but drive cannot rely on the request alone being what resumes.
+  is harmless, but Possession cannot rely on the request alone being what resumes.
 - **Focusable is never cleared without a pill close:** `overlay_report_qm_draft`
   sets `focusable(false)` only when a pill's flip closes, and
-  `platform::hand_back_keyboard` runs only from there. A drive release must do
+  `platform::hand_back_keyboard` runs only from there. A release must do
   both itself. Until it does, every later sprite click on macOS or X11 takes
   the keyboard from the user's app, which is the regression #1699 fixed.
 - **DOM focus lags the invoke:** the native `Focused(true)` landed before
   `request launch ok` in the final runs and after it in an earlier X11 run, so
   its order against the invoke varies. `request launch ok` reports
   `hasFocus=false` on macOS and X11 and `true` on Windows, and the DOM `focus`
-  event follows. Drive should treat the DOM `focus` event, or `Focused(true)`
+  event follows. Possession should treat the DOM `focus` event, or `Focused(true)`
   on the Rust side, as the moment it holds the keyboard, never the invoke's
   return.
 - **A press needs the pointer to arrive first:** on X11 and Windows a
@@ -143,21 +138,21 @@ manager is not tested.
   (runs
   [40842574888](https://github.com/omesser/fidget/actions/runs/40842574888) and
   [40842578998](https://github.com/omesser/fidget/actions/runs/40842578998)).
-  A hand always gives that tick. The drive scenarios in #1655 step 8 must wait
+  A hand always gives that tick. The Possession scenarios in #1655 step 8 must wait
   for a frame between the move and the press, as these leaves now do.
 - **The hover pill can fake a resume:** in run 40842578998 the pointer rested
   on the sprite after the click, the pill opened on hover, and its focus request
   produced the `Focused(true)`. The leaves move the pointer off after the
-  press. Drive will meet the same case for real: a hover on the sprite while
-  paused opens a pill, and the pill takes the keyboard.
+  press. Possession will meet the same case for real: a hover on the sprite
+  while another window has the keyboard opens a pill, and the pill takes the keyboard.
 
 ## Limits
 
 - **Repeat is synthetic:** a runner has no hardware auto-repeat. macOS sends a
   second `keyDown` with `kCGKeyboardEventAutorepeat` set. X11 and Windows send
   a second press with no release between. All three map to `repeat=true`,
-  which is the field drive filters on. Hardware auto-repeat is not tested.
-- **One display:** each runner has one display. Drive on a second display, the
+  which is the field Possession filters on. Hardware auto-repeat is not tested.
+- **One display:** each runner has one display. Possession on a second display, the
   case #1572 covers, is not tested.
 - **One launch per OS:** the #1578 race needs about 24 launches to show. Not
   tested here.
@@ -165,12 +160,12 @@ manager is not tested.
   no pill is not tested.
 - **Wayland and focus-follows-mouse X11:** not tested. No runner has either.
 
-## What #1578 and #1572 mean for drive
+## What #1578 and #1572 mean for Possession
 
 **#1578 (open):** on X11, a sprite click about 1 s after launch once left the
 overlay active with no pill. The probe shows the mechanism that makes this
-worse under drive: once `focusable` is set, a sprite click activates the
-overlay on X11 and macOS by design. Under drive that is the resume, so it is
+worse under Possession: once `focusable` is set, a sprite click activates the
+overlay on X11 and macOS by design. Under Possession that is the resume, so it is
 wanted while possessed. After a release it is the #1578 symptom on every
 click, not one launch in 24. The release path has to clear `focusable` and
 hand the keyboard back, and its scenario has to assert that a sprite click
@@ -179,15 +174,15 @@ case 1 does.
 
 **#1572 (closed by #1694):** typing went to the wrong app when pills on two
 displays closed, because one remembered app serves every overlay. #1694 hands
-back only when the last pill in the process closes. Drive calls
+back only when the last pill in the process closes. Possession calls
 `overlay_request_focus`, which calls `remember_front_app` on macOS and
 `remember_foreground` on Windows and X11. That memory is the same one the pills
-use. A pill opened mid-drive finds an overlay in front, and each of those
-remember functions skips an overlay, so the app remembered at drive start
-survives. But a pill closing mid-drive is a close that empties `OpenPills`,
-because drive is not in it, and it hands the keyboard back mid-drive. The same
+use. A pill opened while possessed finds an overlay in front, and each of those
+remember functions skips an overlay, so the app remembered when Possession starts
+survives. But a pill closing while possessed is a close that empties `OpenPills`,
+because Possession is not in it, and it hands the keyboard back while possessed. The same
 close flip also sets `focusable(false)` on that overlay, on macOS and X11, even
 when another display's pill keeps the process from emptying. That breaks the
-sprite-click resume until drive asks for focus again. That is the case #1655's
-"keyboard bookkeeping" bullet names. Drive has to count in `OpenPills`, or the
-hand-back has to ask whether drive holds the overlay.
+sprite-click resume until Possession asks for focus again. That is the case #1655's
+"keyboard bookkeeping" bullet names. Possession has to count in `OpenPills`, or the
+hand-back has to ask whether Possession holds the overlay.

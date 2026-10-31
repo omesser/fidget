@@ -303,15 +303,12 @@ possesses a body, and the Director's prompt says so. Possession applies to one
 Character Instance. Possessing another releases the first. It is not a State,
 so a possessed sprite still falls, perches and can be grabbed, and it stays
 possessed when another window takes the keyboard. Users see it explained as
-"Manually drive the fidget on your screen". `drive.rs` reads the keys and is
-not the feature's name. #1655.
-_Avoid_: Manual drive, driving mode
+"Manually drive the fidget on your screen". #1655.
 
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.
 Escape, hiding, Quit and removing the Instance also release. This Release is
 not the release of a Grab that ends in a Throw.
-_Avoid_: Start driving, stop driving
 
 ### Expression
 
