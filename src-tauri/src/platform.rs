@@ -456,7 +456,7 @@ pub fn overlay_focus_follows_pill() -> bool {
 /// Remember the active window before a pill takes the keyboard, unless it
 /// is one of Fidget's overlays. Wayland has no X window to remember.
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn remember_foreground(window: &tauri::Window) {
+pub fn remember_foreground(window: &tauri::WebviewWindow) {
     let Some(caller) = x11_window(window) else {
         return;
     };

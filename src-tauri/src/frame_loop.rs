@@ -9,6 +9,7 @@ use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
+use fidget_core::drive::Intent;
 use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
@@ -28,14 +29,15 @@ use super::chat_surface::{CHAT_APPEARANCE_EVENT, CHAT_EVENT, CHAT_STATUS_EVENT, 
 use super::session_log;
 use super::settings::{ChatAppearance, SettingsOp};
 use super::{
-    apply_menu_action, bring_roster_off_fullscreen, cancelled_caret, chat_label, close_chat,
-    completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources, menu, menu_caffeinate,
-    model, note_caffeinate_view, note_happened, open_chat, overlay_label, paced, place_overlays,
-    platform, publish_instances, push_chat_opening, push_chat_openings, remember_instances,
-    spawn_live, sprite_width, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
-    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
-    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT,
-    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    apply_keyboard_flips, apply_menu_action, bring_roster_off_fullscreen, cancelled_caret,
+    chat_label, close_chat, completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources,
+    menu, menu_caffeinate, model, note_caffeinate_view, note_happened, open_chat, overlay_label,
+    overlay_request_focus, paced, place_overlays, platform, possession, publish_instances,
+    push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
+    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
+    FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
+    SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
@@ -170,6 +172,115 @@ fn chat_dialogue<'a>(
     parsed_from_harness.or(from_engine_frame)
 }
 
+fn drive_window(roster: &Roster, id: &str, frames: &[Rect]) -> String {
+    let index = roster
+        .get(id)
+        .and_then(|instance| {
+            let feet = instance.feet();
+            display_index_for((feet.x, feet.y), frames)
+        })
+        .unwrap_or(0);
+    overlay_label(index)
+}
+
+fn hold_drive_keyboard(app: &tauri::AppHandle, window: &str, holding: bool) {
+    let (flips, process_empty) = super::pill_focus::shared()
+        .lock()
+        .map(|mut pills| {
+            let flips = pills.note_drive(window, holding);
+            (flips, !pills.any_open())
+        })
+        .unwrap_or((Vec::new(), true));
+    apply_keyboard_flips(app, flips, process_empty);
+}
+
+fn begin_drive(
+    app: &tauri::AppHandle,
+    drive: &mut Option<possession::Session>,
+    lives: &mut [InstanceState],
+    id: &str,
+    window: &str,
+) {
+    if drive.as_ref().is_some_and(|session| session.instance == id) {
+        return;
+    }
+    if let Some(old) = drive.take() {
+        hold_drive_keyboard(app, &old.window, false);
+    }
+    *drive = Some(possession::Session::start(id, window));
+    if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
+        note_happened(&mut live.happened, Happened::PossessionStart);
+        live.addressed = true;
+    }
+    hold_drive_keyboard(app, window, true);
+    if let Some(overlay) = app.get_webview_window(window) {
+        if let Err(why) = overlay_request_focus(overlay) {
+            eprintln!("possession: {window} could not take the keyboard: {why}");
+        }
+    }
+}
+
+fn end_drive(
+    app: &tauri::AppHandle,
+    drive: &mut Option<possession::Session>,
+    roster: &mut Roster,
+    lives: &mut [InstanceState],
+    reason: possession::Release,
+) {
+    let Some(old) = drive.take() else {
+        return;
+    };
+    if let Some(instance) = roster.get_mut(old.instance.as_str()) {
+        instance.set_possessed(false);
+    }
+    if let Some(live) = lives.iter_mut().find(|live| live.id == old.instance) {
+        note_happened(&mut live.happened, Happened::PossessionEnd);
+        live.addressed = true;
+    }
+    hold_drive_keyboard(app, &old.window, false);
+    eprintln!("drive: {}", release_word(reason));
+}
+
+fn release_word(reason: possession::Release) -> &'static str {
+    match reason {
+        possession::Release::Escape => "escape",
+        possession::Release::Menu => "release",
+        possession::Release::Hide => "hide",
+        possession::Release::Quit => "quit",
+        possession::Release::FullscreenHide => "fullscreen",
+        possession::Release::Removed => "removed",
+    }
+}
+
+fn take_menu_effect(
+    effect: MenuEffect,
+    app: &tauri::AppHandle,
+    drive: &mut Option<possession::Session>,
+    roster: &mut Roster,
+    lives: &mut [InstanceState],
+    id: &str,
+    frames: &[Rect],
+) {
+    match effect {
+        MenuEffect::Possession(true) => {
+            if drive.as_ref().is_some_and(|session| session.instance != id) {
+                end_drive(app, drive, roster, lives, possession::Release::Menu);
+            }
+            let window = drive_window(roster, id, frames);
+            begin_drive(app, drive, lives, id, &window);
+        }
+        MenuEffect::Possession(false) => {
+            end_drive(app, drive, roster, lives, possession::Release::Menu);
+        }
+        MenuEffect::Hide => end_drive(app, drive, roster, lives, possession::Release::Hide),
+        MenuEffect::Quit => {
+            end_drive(app, drive, roster, lives, possession::Release::Quit);
+            quit_now();
+        }
+        MenuEffect::None => {}
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_frame_loop(
     app: tauri::AppHandle,
@@ -242,6 +353,7 @@ pub(crate) fn run_frame_loop(
             (description.actions.clone(), Some(description))
         };
         let mut caffeinate_shown = None;
+        let mut drive: Option<possession::Session> = None;
 
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per character would be
@@ -622,6 +734,18 @@ pub(crate) fn run_frame_loop(
             // behind still counts as a gesture, and a mid-drag dismiss would
             // hold every other character's presses for as long as the button stayed down.
             lives.retain(|live| roster.get(&live.id).is_some());
+            if drive
+                .as_ref()
+                .is_some_and(|session| roster.get(&session.instance).is_none())
+            {
+                end_drive(
+                    &app,
+                    &mut drive,
+                    &mut roster,
+                    &mut lives,
+                    possession::Release::Removed,
+                );
+            }
 
             // Last tick's art is the one being hit-tested. A Character nobody
             // can see is not there to press, so the click reaches the window underneath.
@@ -764,7 +888,7 @@ pub(crate) fn run_frame_loop(
                 .collect();
 
             for (id, action) in &picked {
-                apply_menu_action(
+                let effect = apply_menu_action(
                     action.clone(),
                     &mut roster,
                     &mut lives,
@@ -782,6 +906,15 @@ pub(crate) fn run_frame_loop(
                     &displays.frames,
                     &displays.usable_frames,
                 );
+                take_menu_effect(
+                    effect,
+                    &app,
+                    &mut drive,
+                    &mut roster,
+                    &mut lives,
+                    id,
+                    &displays.frames,
+                );
             }
             let mut menu_acted = !picked.is_empty();
 
@@ -794,7 +927,7 @@ pub(crate) fn run_frame_loop(
                             .first()
                             .map(|live| live.id.clone())
                             .unwrap_or_default();
-                        apply_menu_action(
+                        let effect = apply_menu_action(
                             action,
                             &mut roster,
                             &mut lives,
@@ -811,6 +944,15 @@ pub(crate) fn run_frame_loop(
                             cursor_points,
                             &displays.frames,
                             &displays.usable_frames,
+                        );
+                        take_menu_effect(
+                            effect,
+                            &app,
+                            &mut drive,
+                            &mut roster,
+                            &mut lives,
+                            &target,
+                            &displays.frames,
                         );
                         menu_acted = true;
                     }
@@ -838,6 +980,15 @@ pub(crate) fn run_frame_loop(
                         );
                     }
                     SettingsOp::Dismiss { id } => {
+                        if drive.as_ref().is_some_and(|session| session.instance == id) {
+                            end_drive(
+                                &app,
+                                &mut drive,
+                                &mut roster,
+                                &mut lives,
+                                possession::Release::Removed,
+                            );
+                        }
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
                         slots.abandon(&id);
@@ -1348,6 +1499,7 @@ pub(crate) fn run_frame_loop(
                 // Only the Instance the press belongs to is told the cursor is
                 // over it. The rest still get time: a pointer that stopped
                 // being told would measure the next gesture's velocity over the gap.
+                let was_gesturing = live.pointer.gesturing();
                 live.verbs = live.pointer.update(
                     target == Some(index),
                     held,
@@ -1355,6 +1507,29 @@ pub(crate) fn run_frame_loop(
                     cursor_points,
                     elapsed_ms,
                 );
+                // A click that lands while paused resumes. It is not a Poke.
+                // A drag that keeps going is still a Grab.
+                if let Some(session) = drive.as_mut().filter(|session| session.instance == live.id)
+                {
+                    if !was_gesturing && live.pointer.gesturing() && session.paused() {
+                        session.swallow_click = true;
+                    }
+                    if session.swallow_click {
+                        let grabbing = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab));
+                        let clicking = live
+                            .verbs
+                            .iter()
+                            .any(|verb| matches!(verb, Verb::Poke | Verb::Summon));
+                        if grabbing || clicking {
+                            if clicking {
+                                live.verbs
+                                    .retain(|verb| !matches!(verb, Verb::Poke | Verb::Summon));
+                            }
+                            live.pointer.discard_unsettled_poke();
+                            session.swallow_click = false;
+                        }
+                    }
+                }
 
                 if tracing_clicks && !live.verbs.is_empty() {
                     eprintln!("verbs: {} {:?}", live.id, live.verbs);
@@ -1539,6 +1714,7 @@ pub(crate) fn run_frame_loop(
             };
 
             // Visibility before instance ticks, so scheduler::mode gets the real answer.
+            let mut drive_release = None;
             let (presence, hide_in_fullscreen) = rules
                 .lock()
                 .map(|mut rules| {
@@ -1548,6 +1724,13 @@ pub(crate) fn run_frame_loop(
                             if change.visible { "shown" } else { "hidden" },
                             change.fade_ms,
                         );
+                        if !change.visible {
+                            drive_release = Some(if rules.is_away() {
+                                possession::Release::Hide
+                            } else {
+                                possession::Release::FullscreenHide
+                            });
+                        }
                     }
                     (rules.presence(), rules.hide_in_fullscreen())
                 })
@@ -1558,6 +1741,33 @@ pub(crate) fn run_frame_loop(
                     },
                     false,
                 ));
+            if let Some(reason) = drive_release {
+                end_drive(&app, &mut drive, &mut roster, &mut lives, reason);
+            }
+            // Already hidden, including a possess clicked while away: the
+            // change above does not fire again, and a hidden sprite is not driven.
+            if !presence.visible && drive.is_some() {
+                let away = rules.lock().map(|rules| rules.is_away()).unwrap_or(false);
+                end_drive(
+                    &app,
+                    &mut drive,
+                    &mut roster,
+                    &mut lives,
+                    if away {
+                        possession::Release::Hide
+                    } else {
+                        possession::Release::FullscreenHide
+                    },
+                );
+            }
+
+            let drive_now = Instant::now();
+            let drive_edges = possession::take_edges();
+            if let Some(session) = drive.as_mut() {
+                for edge in &drive_edges {
+                    session.apply(edge, drive_now);
+                }
+            }
 
             // Teleport, as Bring does: a walk would parade the sprite across the app
             // it is leaving. A held sprite stays in the hand until let go.
@@ -1752,7 +1962,7 @@ pub(crate) fn run_frame_loop(
                         live.previous_idle,
                         live.since_state,
                         instance.do_not_disturb(),
-                        false,
+                        instance.possessed(),
                     );
                     live.previous_idle = activity.idle;
 
@@ -1774,7 +1984,7 @@ pub(crate) fn run_frame_loop(
                                 front_title: None,
                                 lately: Lately::default(),
                                 caffeinate: caffeinate_fact,
-                                possessed: false,
+                                possessed: instance.possessed(),
                             });
                         }
                     }
@@ -1791,8 +2001,29 @@ pub(crate) fn run_frame_loop(
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);
                 world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
+                let ending = match drive.as_mut().filter(|session| session.instance == live.id) {
+                    Some(session) => {
+                        let intent = session.tick(elapsed_ms, drive_now);
+                        let ending = intent.end_possession;
+                        world.drive = intent;
+                        ending
+                    }
+                    None => {
+                        world.drive = Intent::default();
+                        false
+                    }
+                };
 
                 let frame = instance.tick(&world);
+                if ending {
+                    instance.set_possessed(false);
+                    note_happened(&mut live.happened, Happened::PossessionEnd);
+                    live.addressed = true;
+                    if let Some(old) = drive.take() {
+                        hold_drive_keyboard(&app, &old.window, false);
+                        eprintln!("possession: {}", release_word(possession::Release::Escape));
+                    }
+                }
                 riding |= frame.riding;
                 live.recency.tick(elapsed, &world.verbs, &frame);
 
@@ -1921,7 +2152,7 @@ pub(crate) fn run_frame_loop(
                         activity.displays_asleep,
                         instance.do_not_disturb(),
                         config.proactive_allowed,
-                        false,
+                        instance.possessed(),
                     ) && config.enabled
                     {
                         let context = Context {
@@ -1941,7 +2172,7 @@ pub(crate) fn run_frame_loop(
                                 .as_deref()
                                 .and_then(|name| assembler.front_title(name)),
                             caffeinate: caffeinate_fact,
-                            possessed: false,
+                            possessed: instance.possessed(),
                         };
                         let was_addressed = live.addressed;
                         if live.addressed {
@@ -2230,6 +2461,14 @@ pub(crate) fn run_frame_loop(
 
                 last_sprite_rects.push((sprite.x, sprite.y, width, height));
 
+                let (driving, paused, drive_cue) = match drive.as_mut() {
+                    Some(session) if session.instance == live.id => {
+                        let cue = std::mem::take(&mut session.cue);
+                        (true, session.paused(), cue)
+                    }
+                    _ => (false, false, false),
+                };
+
                 placed.push(Placed {
                     id: live.id.clone(),
                     character: live.character.name.clone(),
@@ -2250,6 +2489,10 @@ pub(crate) fn run_frame_loop(
                     contact: frame.contact,
                     owner,
                     qm: live.qm.clone(),
+                    driving,
+                    paused,
+                    charge: frame.charge,
+                    drive_cue,
                     mask: drawn.mask.clone(),
                 });
             }
