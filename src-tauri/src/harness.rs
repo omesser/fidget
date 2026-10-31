@@ -4623,6 +4623,20 @@ mod tests {
                             record(count, "spoken");
                             stop(&id, "end_turn");
                         }
+                        // Live UI gallery: BMO's French bubble, held until the
+                        // screenshot runner has actually captured the pixels.
+                        // This is fixture dialogue, not an assertion about
+                        // model language compliance.
+                        "scenario-gallery-french" => {
+                            chunk(&session, "greet\nBonjour ! Je suis BMO. Enchanté de te rencontrer !");
+                            record(count, "french-spoken");
+                            if let Some(fifo) = std::env::args()
+                                .find_map(|arg| arg.strip_prefix("hold=").map(PathBuf::from))
+                            {
+                                hold(&fifo, Duration::from_secs(25));
+                            }
+                            stop(&id, "end_turn");
+                        }
                         // Hands over a picture and a link and says no text.
                         "resource-only" => {
                             block_chunk(&session, "agent_thought_chunk", screenshot());
