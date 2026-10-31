@@ -30,7 +30,7 @@ export function start({ now, rolls: [side, wait], width, hidden = false, still =
     sprite: away({ x: side < 0.5 ? 0 : width, facing: side < 0.5 ? 1 : -1 }),
     still,
     view: null,
-    speech: null,
+    dialogue: null,
     nextLine: now + span(LINES.first, wait),
   };
 }
@@ -42,7 +42,7 @@ function inMargin(sprite, left, width, margin, spriteW) {
   return { ...sprite, x: left ? inset : width - inset, facing: left ? 1 : -1 };
 }
 
-const speaking = (state, now) => state.speech !== null && now < state.speech.until;
+const speaking = (state, now) => state.dialogue !== null && now < state.dialogue.until;
 const talkable = (sprite) => sprite.mode === "standing" && (sprite.act === "idle" || sprite.act === "walk");
 
 export function animation(state, now) {
@@ -52,7 +52,7 @@ export function animation(state, now) {
 function say(state, now, rand, env) {
   const line = env.lines[Math.floor(rand * env.lines.length)];
   const until = now + env.sayMs(line);
-  return { ...state, speech: { line, until }, nextLine: until + span(LINES.gap, rand) };
+  return { ...state, dialogue: { line, until }, nextLine: until + span(LINES.gap, rand) };
 }
 
 // Each tick walks the Character toward where it is wanted: off the page while the hero stage
@@ -61,7 +61,7 @@ function say(state, now, rand, env) {
 function tick(state, event, env) {
   const { now, rand } = event;
   const move = (sprite, extra) => step(sprite, { now, still: state.still, ...extra }, env.world, env.tuning).state;
-  let next = speaking(state, now) ? state : { ...state, speech: null };
+  let next = speaking(state, now) ? state : { ...state, dialogue: null };
   const hold = speaking(next, now) && talkable(next.sprite);
   const out = step(next.sprite, { ...event, still: state.still, hold }, env.world, env.tuning);
   next = { ...next, sprite: out.state };
@@ -72,7 +72,7 @@ function tick(state, event, env) {
   if (next.phase === "page") {
     next = { ...next, sprite: move(next.sprite, { type: wanted }) };
     if (next.sprite.mode === "away") {
-      next = { ...next, phase: state.view.play ? "lent" : "away", speech: null };
+      next = { ...next, phase: state.view.play ? "lent" : "away", dialogue: null };
       handoff = state.view.play ? "arrive" : null;
     }
   } else if (next.phase === "away" && state.view.play) {
@@ -97,7 +97,7 @@ export function update(state, event, env) {
   if (event.type === "view") return { ...unchanged, state: { ...state, view: { play: event.play, blocked: event.blocked } } };
   if (event.type === "hide") {
     const lend = state.phase === "page" || state.phase === "away";
-    const hidden = { ...state, phase: "hidden", speech: null, sprite: away(state.sprite) };
+    const hidden = { ...state, phase: "hidden", dialogue: null, sprite: away(state.sprite) };
     return { state: hidden, cue: null, handoff: lend ? "arrive" : null };
   }
   if (event.type === "show") return state.phase === "hidden" ? { ...unchanged, state: { ...state, phase: "lent" } } : unchanged;
@@ -105,7 +105,7 @@ export function update(state, event, env) {
   if (state.phase !== "page") return unchanged;
   const out = step(state.sprite, event, env.world, env.tuning);
   let next = { ...state, sprite: out.state };
-  if (event.type === "grab") next = { ...next, speech: null };
+  if (event.type === "grab") next = { ...next, dialogue: null };
   // The page has no chat to summon, so a double click is two pokes.
   const cue = out.cue === "summon" ? "poke" : out.cue;
   if (cue === "poke" && !speaking(next, event.now)) next = say(next, event.now, event.rand ?? 0, env);
@@ -272,7 +272,7 @@ export function mount(doc, data, { cue, bubble, play, still }) {
       refocus = false;
       hide.focus({ preventScroll: true });
     }
-    const line = state.speech?.line ?? null;
+    const line = state.dialogue?.line ?? null;
     if (line !== shown) {
       shown = line;
       balloon.classList.toggle("visible", line !== null);

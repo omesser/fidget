@@ -30,7 +30,7 @@ export function createChatTurns() {
 
   return {
     typed() {
-      const turn = { alreadyHasSpeechAhead: false };
+      const turn = { alreadyHasDialogueAhead: false };
       if (proactivePending && waiting.includes(proactivePending)) {
         const at = waiting.indexOf(proactivePending);
         waiting.splice(at, 1);
@@ -77,14 +77,14 @@ export function createChatTurns() {
         const turn = waiting.at(-1) ?? null;
         if (!turn) {
           if (!proactivePending) {
-            proactivePending = { alreadyHasSpeechAhead: false, isProactive: true };
+            proactivePending = { alreadyHasDialogueAhead: false, isProactive: true };
             waiting.push(proactivePending);
           }
-          proactivePending.alreadyHasSpeechAhead = true;
-          return { action: "speech", turn: proactivePending, said: payload.said ?? "" };
+          proactivePending.alreadyHasDialogueAhead = true;
+          return { action: "dialogue", turn: proactivePending, said: payload.said ?? "" };
         }
-        turn.alreadyHasSpeechAhead = true;
-        return { action: "speech", turn, said: payload.said };
+        turn.alreadyHasDialogueAhead = true;
+        return { action: "dialogue", turn, said: payload.said };
       }
       const turn = waiting.at(-1) ?? null;
       if (!turn) {
@@ -96,9 +96,9 @@ export function createChatTurns() {
       }
       if (payload.said) {
         for (const leftover of waiting) {
-          leftover.alreadyHasSpeechAhead = true;
+          leftover.alreadyHasDialogueAhead = true;
         }
-        return { action: "speech", turn, said: payload.said, reacting_to: payload.reacting_to };
+        return { action: "dialogue", turn, said: payload.said, reacting_to: payload.reacting_to };
       }
       if (payload.failure) {
         return { action: "failure", turn, said: payload.failure };
@@ -109,7 +109,7 @@ export function createChatTurns() {
       if (payload.superseded_by) {
         return { action: "preempted", turn, note: preemptedNote(payload.superseded_by) };
       }
-      if (turn.alreadyHasSpeechAhead) {
+      if (turn.alreadyHasDialogueAhead) {
         return { action: "silent", turn };
       }
       return { action: "missing", turn, note: MISSING_ANSWER };

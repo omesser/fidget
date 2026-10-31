@@ -322,7 +322,7 @@ pub struct Woken {
     /// never parsed.
     pub truncated: bool,
     /// Planning cut from the reply by a heuristic peel, for the Thinking row.
-    /// Never speech. `None` when nothing was peeled.
+    /// Never dialogue. `None` when nothing was peeled.
     pub peeled_thought: Option<String>,
 }
 
@@ -404,7 +404,7 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     /// The wake, and the Behavior name the reply proposed that this Character
-    /// declares none of. A near miss arrives as speech, so without this it is
+    /// declares none of. A near miss arrives as dialogue, so without this it is
     /// invisible. Reported, never corrected: guessing a fix is ruled out.
     pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
         self.wake_request(self.request(context), &|_| {})
@@ -416,7 +416,7 @@ impl<C: Completer> ModelDirector<C> {
     pub fn wake_request(&self, request: WakeRequest, speaking: &dyn Fn(String)) -> Woken {
         let last = std::cell::RefCell::new(None);
         let said = |answer: &str| {
-            let line = self.speech_so_far(answer);
+            let line = self.dialogue_so_far(answer);
             if line.is_some() && *last.borrow() != line {
                 last.replace(line.clone());
                 speaking(line.unwrap_or_default());
@@ -449,7 +449,7 @@ impl<C: Completer> ModelDirector<C> {
     /// What the reply so far lets the character say: nothing until the
     /// contract line is found, then what the final reply's parse would speak.
     /// That parse is the only shaping.
-    fn speech_so_far(&self, answer: &str) -> Option<String> {
+    fn dialogue_so_far(&self, answer: &str) -> Option<String> {
         let answer = answer.trim_end_matches('\r');
         let prepared = prepare_reply(answer, &self.behaviors);
         if !contract_visible(&prepared.text, &self.behaviors) {
@@ -602,7 +602,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
     }
 }
 
-/// Whether streaming may show speech yet. Runs on already-unglued text.
+/// Whether streaming may show dialogue yet. Runs on already-unglued text.
 fn contract_visible(answer: &str, behaviors: &[String]) -> bool {
     let (lines, tail) = answer.split_at(answer.rfind('\n').map_or(0, |at| at + 1));
     let tail = tail.trim();
@@ -641,7 +641,7 @@ fn glued_declared_behavior<'a>(
                 from = dot + 1;
                 continue;
             }
-            // Glue at EOF, `|` or a newline, or space then uppercase speech.
+            // Glue at EOF, `|` or a newline, or space then uppercase dialogue.
             // Not `main.rs now`.
             let name_ends_here = match bytes.get(name_end) {
                 None => true,
@@ -774,10 +774,10 @@ pub fn dialogue_of(reply: &str, behaviors: &[String]) -> Option<String> {
     }
 }
 
-/// A reply that named no Behavior: speech when there are words, else a
+/// A reply that named no Behavior: dialogue when there are words, else a
 /// failed turn for `StaticDirector` to take.
 fn spoken_or_failed(reply: &str) -> Wake {
-    match as_speech(reply) {
+    match as_dialogue(reply) {
         Some(said) => Wake::Proposed(said),
         None => Wake::Failed,
     }
@@ -786,7 +786,7 @@ fn spoken_or_failed(reply: &str) -> Wake {
 /// A reply that is not a declared Behavior. Empty name: the Engine plays
 /// `talk` and speaks. Length is not judged here: refusing a long reply
 /// would be a second, stricter ceiling on a bubble that already clamps.
-fn as_speech(reply: &str) -> Option<BehaviorProposal> {
+fn as_dialogue(reply: &str) -> Option<BehaviorProposal> {
     let text = reply.trim();
     let text = text
         .strip_prefix("say:")
@@ -1770,7 +1770,7 @@ mod tests {
     /// The other half: a name nobody declared is still prose, not a Behavior
     /// invented by loosening the comparison.
     #[test]
-    fn a_name_no_character_declares_is_still_speech() {
+    fn a_name_no_character_declares_is_still_dialogue() {
         let director = directing(Scripted::says("Check\nSomething moved."), ["prowl"]);
         let moment = context(working(), &[]);
 
@@ -1781,11 +1781,11 @@ mod tests {
                     "no Behavior was played: {proposal:?}"
                 );
             }
-            other => panic!("unknown names become speech, not {other:?}"),
+            other => panic!("unknown names become dialogue, not {other:?}"),
         }
     }
 
-    /// `prowll` and a model that simply chose to talk both arrive as speech,
+    /// `prowll` and a model that simply chose to talk both arrive as dialogue,
     /// so a contract miss is invisible in a trace. The name is handed back
     /// rather than corrected: the Shell is what prints it.
     #[test]
@@ -1799,9 +1799,9 @@ mod tests {
         match wake {
             Wake::Proposed(proposal) => assert!(
                 proposal.behavior.is_empty(),
-                "a near miss still becomes speech: {proposal:?}"
+                "a near miss still becomes dialogue: {proposal:?}"
             ),
-            other => panic!("a near miss still becomes speech, not {other:?}"),
+            other => panic!("a near miss still becomes dialogue, not {other:?}"),
         }
     }
 
@@ -1958,7 +1958,7 @@ mod tests {
     }
 
     /// The `behavior:` marker is the act. Planning above it is Thinking, not
-    /// speech. A bare name mid-reply still keeps prose.
+    /// dialogue. A bare name mid-reply still keeps prose.
     #[test]
     fn a_behavior_marker_drops_planning_above_it() {
         let marked = parse_proposal(
@@ -2023,7 +2023,7 @@ mod tests {
     /// Blank lines are the model's own paragraph breaks in the middle and the
     /// contract line's padding at the ends, so only the inner ones are kept.
     #[test]
-    fn blank_lines_at_the_ends_are_padding_not_speech() {
+    fn blank_lines_at_the_ends_are_padding_not_dialogue() {
         let padded = parse_proposal("\n\nwave\n\nHello\n\n").expect("a named Behavior");
         assert_eq!(padded.dialogue.as_deref(), Some("Hello"));
 
@@ -2052,7 +2052,7 @@ mod tests {
         }
     }
 
-    /// Pi's startup banner is filtered from speech by recognizing its
+    /// Pi's startup banner is filtered from dialogue by recognizing its
     /// specific markers. A targeted filter, not a heuristic.
     #[test]
     fn pi_banner_is_filtered_from_dialogue() {
@@ -2138,7 +2138,7 @@ mod tests {
                 assert!(said.behavior.is_empty());
                 assert_eq!(said.dialogue.as_deref(), Some("hey"));
             }
-            other => panic!("expected speech, got {other:?}"),
+            other => panic!("expected dialogue, got {other:?}"),
         }
 
         let piped = directing(Scripted::says("say | hey"), ["wave"]);
@@ -2147,7 +2147,7 @@ mod tests {
                 assert!(said.behavior.is_empty());
                 assert_eq!(said.dialogue.as_deref(), Some("hey"));
             }
-            other => panic!("expected speech, got {other:?}"),
+            other => panic!("expected dialogue, got {other:?}"),
         }
     }
 
@@ -2159,7 +2159,7 @@ mod tests {
                 assert!(said.behavior.is_empty());
                 assert_eq!(said.dialogue.as_deref(), Some("cartwheel"));
             }
-            other => panic!("expected speech, got {other:?}"),
+            other => panic!("expected dialogue, got {other:?}"),
         }
     }
 
@@ -2714,7 +2714,7 @@ mod tests {
     }
 
     /// What Chat draws for a reply, with the Behavior line read against what
-    /// the Character declared. A near miss and plain prose are both speech.
+    /// the Character declared. A near miss and plain prose are both dialogue.
     #[test]
     fn a_reply_is_drawn_as_its_dialogue() {
         let declared = declares(&["wave", "nod"]);
@@ -2761,7 +2761,7 @@ mod tests {
         assert_eq!(
             dialogue_of("I'll rest now.\nnap\nBack in five.", &declares(&["nap"]),),
             Some("I'll rest now.\nBack in five.".to_string()),
-            "a Behavior already on its own line keeps prose before it as speech"
+            "a Behavior already on its own line keeps prose before it as dialogue"
         );
 
         match directing(
@@ -2785,7 +2785,7 @@ mod tests {
         assert_eq!(
             drawn("Checking the screen, then answering.\nbehavior: ponder\nI cast Doomsday."),
             Some("I cast Doomsday.".to_string()),
-            "marked contract keeps only speech after the marker"
+            "marked contract keeps only dialogue after the marker"
         );
 
         // A later one-word line must not beat glued `wave` as a bare near miss.
@@ -2808,15 +2808,15 @@ mod tests {
 
     /// A short declared name must not steal a file extension as period glue.
     /// `main.rs now`, `main.rs\nPlease.` and a bare `main.rs` at EOF all stay
-    /// whole-sentence speech.
+    /// whole-sentence dialogue.
     #[test]
     fn a_file_extension_that_matches_a_short_declared_name_is_not_period_glue() {
         let declared = declares(&["rs", "wave"]);
-        let expect_whole_speech = |reply: &str| {
+        let expect_whole_dialogue = |reply: &str| {
             assert_eq!(
                 dialogue_of(reply, &declared),
                 Some(reply.to_string()),
-                "dotted file suffix stays in speech: {reply:?}"
+                "dotted file suffix stays in dialogue: {reply:?}"
             );
             let woken =
                 directing(Scripted::says(reply), ["rs", "wave"]).wake_and_near_miss(&typed("open"));
@@ -2832,13 +2832,13 @@ mod tests {
                     );
                     assert_eq!(proposal.dialogue.as_deref(), Some(reply));
                 }
-                other => panic!("file extension must be whole-sentence speech, not {other:?}"),
+                other => panic!("file extension must be whole-sentence dialogue, not {other:?}"),
             }
         };
 
-        expect_whole_speech("Open main.rs now please.");
-        expect_whole_speech("Open main.rs\nPlease.");
-        expect_whole_speech("Open main.rs");
+        expect_whole_dialogue("Open main.rs now please.");
+        expect_whole_dialogue("Open main.rs\nPlease.");
+        expect_whole_dialogue("Open main.rs");
     }
 
     /// A `behavior:` line that names nothing declared is still a contract cut:
@@ -2857,7 +2857,7 @@ mod tests {
                 assert!(proposal.behavior.is_empty(), "{proposal:?}");
                 assert_eq!(proposal.dialogue.as_deref(), Some("Hi there."));
             }
-            other => panic!("marked near miss with speech should still speak, not {other:?}"),
+            other => panic!("marked near miss with dialogue should still speak, not {other:?}"),
         }
         assert_eq!(woken.peeled_thought.as_deref(), Some("Planning first."));
 
@@ -3101,10 +3101,10 @@ mod tests {
         }
     }
 
-    /// The common chat shape: an answer and no Behavior. Speech under an empty
+    /// The common chat shape: an answer and no Behavior. Dialogue under an empty
     /// name, not a failed turn for `StaticDirector` to answer with silence.
     #[test]
-    fn a_chat_reply_that_is_only_words_is_speech() {
+    fn a_chat_reply_that_is_only_words_is_dialogue() {
         let director = directing(Scripted::says("Just the desktop floor."), ["wave"]);
 
         match director.wake(&typed("what are you standing on?")) {
@@ -3112,7 +3112,7 @@ mod tests {
                 assert!(said.behavior.is_empty(), "{said:?}");
                 assert_eq!(said.dialogue.as_deref(), Some("Just the desktop floor."));
             }
-            other => panic!("expected speech, got {other:?}"),
+            other => panic!("expected dialogue, got {other:?}"),
         }
     }
 
@@ -3242,7 +3242,7 @@ mod tests {
     /// The parse cases above, streamed. Each row is a reply and the last line
     /// the bubble shows before the turn ends.
     #[test]
-    fn streamed_speech_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
+    fn streamed_dialogue_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
         let banner = format!("{PI_BANNER}\nwave\nHello!");
         let rows: [(&str, Option<&str>); 23] = [
             ("stroll\nhey there", Some("hey there")),

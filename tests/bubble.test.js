@@ -29,7 +29,7 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
   assert.equal(bubbleDuration(long), 8000, "max clamp");
 });
 
-// One Speech duration. `bubbleDuration` clamps how long a bubble may show a
+// One Speech bubble duration. `bubbleDuration` clamps how long a bubble may show a
 // line; `CARRY_WINDOW` is how long the Shell may re-say it to a new owner.
 // Longer resurrects a line nobody is still reading. Shorter drops one still up.
 test("the Shell carries a line for exactly as long as the bubble can show one", () => {
@@ -221,7 +221,7 @@ function machineHarness() {
   const timers = new Map();
   const calls = [];
   // main.js draws both bubbles into one element in one of two modes, so the
-  // harness models that element rather than two booleans: speech strictly
+  // harness models that element rather than two booleans: the speech mode strictly
   // wins. A hide landing after the show that replaced it reads as a blank surface.
   let surface = null;
   const machine = createBubbleMachine({
@@ -410,7 +410,7 @@ test("a new turn waits behind a displayed reply, indicator only after it hides",
   assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech", "showThinking"]);
 });
 
-test("a reply landing in the post-speech grace never flashes the indicator", () => {
+test("a reply landing in the post-bubble grace never flashes the indicator", () => {
   const { machine, calls, advance, placement } = machineHarness();
 
   const first = placement({ dialogue: "hi" });
@@ -440,7 +440,7 @@ test("an asking pulse points at Chat for the longest reading window", () => {
   machine.event(placement({ asking: true }));
   machine.event(placement({}));
   machine.frame(placement({ thinking: true }));
-  assert.deepEqual(calls, ["showAsk"], "latched like a line, and speech wins");
+  assert.deepEqual(calls, ["showAsk"], "latched like a line, and the speech mode wins");
 
   advance(bubbleDuration("a".repeat(1000)) - 1);
   assert.equal(surface(), "speech", "still up to be clicked");

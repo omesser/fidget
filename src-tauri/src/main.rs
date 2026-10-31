@@ -3460,7 +3460,7 @@ struct ChatReply {
     /// silent turn. Naming the wake reads as a cause rather than a bug.
     #[serde(default)]
     superseded_by: Option<&'static str>,
-    /// Streaming answer-so-far from Speech, not the final reply. The turn
+    /// Streaming answer-so-far from Dialogue, not the final reply. The turn
     /// stays open; the row replaces content instead of appending.
     #[serde(default)]
     streaming: bool,
@@ -3565,7 +3565,7 @@ fn replayed_reply(turn: session_log::Turn) -> ChatReply {
 }
 
 /// A Chat surface reporting that it is listening. Events only reach windows
-/// that existed, so this session's turns wait here too, Speech as well as
+/// that existed, so this session's turns wait here too, Dialogue as well as
 /// permission asks that arrived before this window existed.
 #[tauri::command]
 fn chat_ready(

@@ -243,7 +243,7 @@ export function appendReply(body, chunk, doc = globalThis.document) {
   drawReply(body, (drawn.get(body) ?? "") + chunk, doc);
 }
 
-// Replace the reply with the full answer so far. Streaming Speech
+// Replace the reply with the full answer so far. Streaming Dialogue
 // sends the complete text each time, not a chunk.
 export function replaceReply(body, text, doc = globalThis.document) {
   drawReply(body, text, doc);

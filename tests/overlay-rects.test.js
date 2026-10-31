@@ -104,7 +104,7 @@ async function launch() {
     handlers.frame({ payload: ${JSON.stringify(frame)} });
     const quick = document.querySelector('.quick-message[data-instance="idler"]');
     document.querySelector('.sprite[data-instance="idler"]').dispatchEvent(new PointerEvent("pointerenter"));
-    // Open chat, the speech, the dots and the pill: four rects, all reported.
+    // Open chat, the line, the dots and the pill: four rects, all reported.
     await until(() => has("talker", true) && has("talker", false) && has("thinker", false) && has("idler", true));
     const bubble = (id) => document.querySelector('.bubble:not(.quick-message)[data-instance="' + id + '"]');
     const reported = last();
@@ -141,7 +141,7 @@ test("Open chat and the pill take clicks; the bubble and its dots are only drawn
   const rows = [
     ["Open chat", expected.openChat, true, { instance: "talker", at: [100, 400] }],
     ["the quick pill", expected.pill, true, { instance: "idler", at: [1000, 400] }],
-    ["a line of speech", expected.speech, false, { instance: "talker", at: [100, 400] }],
+    ["a line of dialogue", expected.speech, false, { instance: "talker", at: [100, 400] }],
     ["the thinking dots", expected.dots, false, { instance: "thinker", at: [600, 400] }],
   ];
   for (const [name, rect, clickable, follows] of rows) {

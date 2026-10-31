@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # Scenario: pill-dual-display (Windows)
 # On screen: launches Fidget with dual displays (3440x1440@(0,0) + 1200x1920@(-1200,-209)).
-#   A static-director wake shows speech; the pill is typed into and carried across the seam.
+#   A static-director wake shows Dialogue; the pill is typed into and carried across the seam.
 #   Fidget quits when the scenario ends. No screenshots.
 # Input: none automated. A person hovers the sprite, types into the pill, and
 #   drags the sprite to the other display. The run ends the moment the pill

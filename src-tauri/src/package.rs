@@ -952,7 +952,7 @@ mod tests {
         let character = shipped_character(DEFAULT_CHARACTER);
         assert!(
             character.behaviors.contains_key("jump"),
-            "{DEFAULT_CHARACTER} must expose jump so asking for it is a Behavior, not speech"
+            "{DEFAULT_CHARACTER} must expose jump so asking for it is a Behavior, not dialogue"
         );
 
         let ground = WorldSnapshot {

@@ -1,5 +1,5 @@
 //! Current-session Chat turns, held because `emit_to` only reaches windows that
-//! exist. Permission asks already wait on `PendingAsks`; Speech of this
+//! exist. Permission asks already wait on `PendingAsks`; Dialogue of this
 //! Completer session belongs in the same log (ADR-0018) even when Chat was
 //! never opened, and so does the thinking that led to it (ADR-0034).
 
@@ -465,7 +465,7 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     /// Production change that would fail this: dropping a spoken line because
-    /// no Chat surface was listening. ADR-0018 puts every Speech in that log.
+    /// no Chat surface was listening. ADR-0018 puts every Dialogue in that log.
     #[test]
     fn a_spoken_line_is_still_there_when_chat_opens_later() {
         let mut log = Log::new();
@@ -536,7 +536,7 @@ mod tests {
         );
     }
 
-    /// Production change that would fail this: replaying Instance A's Speech
+    /// Production change that would fail this: replaying Instance A's Dialogue
     /// into Instance B's window.
     #[test]
     fn replay_is_the_instance_that_said_it() {
@@ -563,7 +563,7 @@ mod tests {
     /// Production change that would fail this: holding a Behavior-only wake
     /// that has no words (ADR-0018: nothing is held for that).
     #[test]
-    fn a_wake_with_no_speech_is_not_held() {
+    fn a_wake_with_no_dialogue_is_not_held() {
         let mut log = Log::new();
         log.log_them("buddy-1", None, None, UNIX_EPOCH);
         assert!(log.replay("buddy-1").is_empty());

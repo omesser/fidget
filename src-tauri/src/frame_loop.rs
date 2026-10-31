@@ -994,7 +994,7 @@ pub(crate) fn run_frame_loop(
                 let line = match msg {
                     ChatMsg::Said(line) => line,
                     ChatMsg::InboundWake(wake) => {
-                        // Inbound wake triggers a Director wake so the speech participates
+                        // Inbound wake triggers a Director wake so the dialogue participates
                         // in Pace and reaches Chat/bubble/Behaviors.
                         if let Some(live) = lives.iter_mut().find(|live| live.id == wake.instance) {
                             live.addressed = true;
@@ -1003,7 +1003,7 @@ pub(crate) fn run_frame_loop(
                                 chat_label(&wake.instance),
                                 CHAT_EVENT,
                                 super::ChatReply {
-                                    said: Some(wake.speech),
+                                    said: Some(wake.dialogue),
                                     busy: false,
                                     reacting_to: Some(director::unprompted_ai()),
                                     you: false,
@@ -1625,8 +1625,8 @@ pub(crate) fn run_frame_loop(
                     Some(completer::Arrived::Answered(answered)) => Some(*answered),
                     // A line with no Behavior, so `talk` plays while it grows.
                     // The reply's own Behavior is applied when it lands. The same
-                    // speech updates the Chat row so both surfaces stream together.
-                    Some(completer::Arrived::Speech(line)) => {
+                    // dialogue updates the Chat row so both surfaces stream together.
+                    Some(completer::Arrived::Dialogue(line)) => {
                         proposal = Some(BehaviorProposal {
                             behavior: String::new(),
                             dialogue: Some(line.clone()),
@@ -2219,7 +2219,7 @@ pub(crate) fn run_frame_loop(
                     Instant::now(),
                 );
                 let overlay_drops_the_bubble = !presence.visible && presence.fade_ms == 0;
-                speech::note_speech(
+                speech::note_dialogue(
                     &mut live.speech,
                     Instant::now(),
                     dialogue.as_deref(),
