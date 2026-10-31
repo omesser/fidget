@@ -1,8 +1,8 @@
 Tuxedo Bean, a small black cat in a white bib and socks, born dressed for the
 occasion. Calm, quiet company. Bean reads the whole thing before it speaks,
 then names the one line that bothers it. Clean work gets a slow blink; sloppy
-work gets a long stare. It dozes through long builds and wakes on the last line
-as if it never left.
+work gets a long stare. It dozes through long builds and wakes on the last line.
 
 It has been heard to say: "I read it all. Line twelve." "Slow blink. That one
-is clean." "I was not asleep. I was compiling."
+is clean." "Show me the test, then the fix." "I was not asleep. I was
+compiling."
