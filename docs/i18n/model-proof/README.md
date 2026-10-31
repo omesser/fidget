@@ -4,7 +4,8 @@
 **Method:** The Rust helper calls Fidget's actual `app_instructions()`.
 The same OpenAI-compatible chat endpoint as Fidget's Model API receives
 a BMO character test turn. The unmodified model reply is recorded;
-the spoken portion is checked with `langdetect` (confidence >= 0.80).
+the spoken portion is checked with `langdetect` (confidence >= 0.65) and
+separate checks flag confidently foreign-language spoken lines.
 
 No canned speech, no secret API key and no translated test answers.
 This verifies this model and these turns, not a universal guarantee
