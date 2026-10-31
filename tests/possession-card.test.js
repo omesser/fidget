@@ -93,6 +93,38 @@ test("a card steps clear of the quick-message pill", () => {
   assert.equal(onScreen(placed.bar, bounds), true);
 });
 
+test("a card that steps off the pill does not land back on the bubble", () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+  const card = { width: 220, height: 88 };
+  const sprite = { x: 290, y: 200, width: 128, height: 128 };
+  const bubble = { x: 0, y: 130, width: 800, height: 80 };
+  const pill = { x: 0, y: 80, width: 800, height: 40 };
+  const placed = placePossession(sprite, card, 8, 8, bounds, bubble, pill);
+  const top = Math.min(placed.card.y, placed.bar.y);
+  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
+  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
+  assert.equal(covers(stack, bubble), false);
+  assert.equal(covers(stack, pill), false);
+  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
+});
+
+test("a card near the top stays clear of the bubble and the pill", () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+  const card = { width: 220, height: 88 };
+  const sprite = { x: 290, y: 16, width: 128, height: 128 };
+  const bubble = { x: 0, y: 154, width: 800, height: 50 };
+  const pill = { x: 0, y: 40, width: 800, height: 50 };
+  const placed = placePossession(sprite, card, 8, 8, bounds, bubble, pill);
+  const top = Math.min(placed.card.y, placed.bar.y);
+  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
+  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
+  assert.equal(covers(stack, bubble), false);
+  assert.equal(covers(stack, pill), false);
+  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
+});
+
 test("a card steps clear of the speech bubble", () => {
   const bounds = { x: 0, y: 0, width: 800, height: 600 };
   const card = { width: 220, height: 88 };

@@ -422,18 +422,49 @@ function overlapsBox(pos, size, obstacle) {
   );
 }
 
-// Same seat as the Speech bubble or the thinking dots. Each later obstacle
-// is a box already there, so a hover steps clear of it.
+function clampSeatY(y, size, bounds) {
+  return Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
+}
+
+function clearsEvery(pos, size, blocks) {
+  return blocks.every((obstacle) => !overlapsBox(pos, size, obstacle));
+}
+
+// A step off one box can land on another, so a seat has to clear every
+// obstacle. Above first, then below, and stop when no seat is left.
 export function placeQuickMessage(spriteRect, size, bounds, ...obstacles) {
+  const blocks = obstacles.filter(Boolean);
   let pos = placeBubble(spriteRect, size, bounds);
+  if (blocks.length === 0) return pos;
   const gap = 10;
-  for (const obstacle of obstacles) {
-    if (!obstacle || !overlapsBox(pos, size, obstacle)) continue;
-    let y = obstacle.y - size.height - gap;
-    if (y < bounds.y) y = obstacle.y + obstacle.height + gap;
-    y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-    // The step can cross the sprite, so the tail reads the final seat.
-    pos = { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
+  const ideal = pos.y;
+  const tried = new Set();
+  for (let pass = 0; pass < blocks.length * 2 + 1; pass++) {
+    if (clearsEvery(pos, size, blocks)) return pos;
+    const seats = [];
+    for (const obstacle of blocks) {
+      seats.push({ y: clampSeatY(obstacle.y - size.height - gap, size, bounds), above: true });
+      seats.push({
+        y: clampSeatY(obstacle.y + obstacle.height + gap, size, bounds),
+        above: false,
+      });
+    }
+    const open = seats.filter((seat) => {
+      if (tried.has(seat.y)) return false;
+      const trial = { ...pos, y: seat.y };
+      return clearsEvery(trial, size, blocks);
+    });
+    if (open.length === 0) break;
+    const above = open.filter((seat) => seat.above);
+    const pool = above.length > 0 ? above : open;
+    pool.sort((a, b) => Math.abs(a.y - ideal) - Math.abs(b.y - ideal) || a.y - b.y);
+    tried.add(pool[0].y);
+    pos = {
+      ...pos,
+      y: pool[0].y,
+      // The step can cross the sprite, so the tail reads the final seat.
+      inverted: pool[0].y > spriteRect.y + spriteRect.height / 2,
+    };
   }
   return pos;
 }
