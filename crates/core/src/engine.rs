@@ -1473,13 +1473,14 @@ impl Engine {
     }
 
     /// The upward speed that lifts the feet as high as `charge` asks, from Jump's
-    /// hop to the usable top of the display under them. `integrate` steps velocity
-    /// before position, topping out half a tick short of `v²/2g`, so the launch
-    /// tick's step is solved for and a full bar meets the ceiling.
+    /// hop to the usable height of the display under them, wherever on it they
+    /// stand. `integrate` steps velocity before position, topping out half a
+    /// tick short of `v²/2g`, so the launch tick's step is solved for and a full
+    /// bar from the floor meets the ceiling. From a Perch it bumps it.
     fn launch_speed(&self, charge: Charge, snapshot: &WorldSnapshot) -> f64 {
         let hop = JUMP_SPEED * JUMP_SPEED / (2.0 * self.gravity);
-        let full = usable_top_under(self.position, snapshot, self.ceiling_clearance())
-            .map_or(hop, |top| (self.position.y - top).max(hop));
+        let full = usable_height_under(self.position, snapshot, self.ceiling_clearance())
+            .map_or(hop, |height| height.max(hop));
         let height = charge.height(hop, full);
 
         let half_step = self.gravity * f64::from(snapshot.elapsed_ms) / 1000.0 / 2.0;
@@ -9409,7 +9410,7 @@ mod tests {
             let mut frames = Vec::new();
             for _ in 0..400 {
                 let frame = engine.tick(world);
-                let landed = frame.state == State::Grounded;
+                let landed = matches!(frame.state, State::Grounded | State::Perched);
                 frames.push(frame);
                 if landed {
                     return frames;
@@ -9500,6 +9501,46 @@ mod tests {
                 launch_speeds[1] > launch_speeds[0],
                 "a taller display launches harder: {launch_speeds:?}"
             );
+        }
+
+        /// A full bar is the display's usable height wherever the feet stand,
+        /// not the room left above them: from a window Perch halfway up it
+        /// launches as hard as from the floor, and the usable top stops it.
+        #[test]
+        fn a_full_bar_from_a_high_perch_launches_as_hard_as_from_the_floor() {
+            let ledge = window(
+                1,
+                Rect {
+                    x: 300.0,
+                    y: 400.0,
+                    width: 400.0,
+                    height: 200.0,
+                },
+            );
+            let floor = on(one_display());
+            let perch = WorldSnapshot {
+                windows: vec![ledge],
+                ..floor.clone()
+            };
+            // 800 tall, 128 kept clear above the art: a 672-point rise.
+            let full_speed = 2228.62;
+
+            for (world, feet) in [(&floor, 800.0), (&perch, 400.0)] {
+                let mut engine = possessed_at(500.0, world);
+                assert_eq!(engine.position.y, feet, "standing where expected");
+
+                let launched = engine.tick(&driven(launching(released_after(1_000)), world));
+                assert!(
+                    (-launched.velocity.y - full_speed).abs() < 0.01,
+                    "from {feet}: {launched:?}"
+                );
+                let frames = flight(&mut engine, world);
+                assert!(
+                    (peak(&frames) - 128.0).abs() < 1.0,
+                    "from {feet} the usable top stops it: peak {}",
+                    peak(&frames)
+                );
+            }
         }
 
         #[test]
