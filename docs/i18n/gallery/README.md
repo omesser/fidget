@@ -23,15 +23,13 @@ and opens the context menu. No user profile or credentials are used.
 
 ## BMO speaking French
 
-**Speech screenshot under verification.** The initial frame showed BMO
-animating but did not show the French speech bubble. A revised native-runner
-capture now requires the frontend's showSpeech event and visible bubble pixels.
-The gallery will display the new image only after those checks pass.
+![BMO speaking French in a real Fidget speech bubble](fr/11-bmo-speaks-french.png)
 
-The intended fixture dialogue is: **Bonjour ! Je suis BMO. Enchanté de te rencontrer !**
+BMO says: **Bonjour ! Je suis BMO. Enchanté de te rencontrer !**
 
-This scripted fixture is separate from the [real-model language proof](../model-proof/README.md),
-which checks actual English, French and Spanish inference responses.
+The line comes from a deterministic ACP test fixture, not a live AI model.
+The screenshot is taken from the actual running desktop app;
+the harness fixture's spoken line and the live talk animation are checked.
 
 The English screenshots use the English source strings; the French
 and Spanish screenshots use the branch's translation catalogs.
