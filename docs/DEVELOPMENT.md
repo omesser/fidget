@@ -547,10 +547,10 @@ uv run scripts/import-pet.py ~/.codex/pets/tuxedo-bean --format petscodex -o cha
 ```
 
 The `jump` Behavior lets the Static Director pick the pounce after 30 seconds
-idle, so row 4 plays without a model. The `fall`, `land`, and `hold` animations
-reuse pounce poses. `react` reuses the wave. `sit` reuses the first seated
-pose. The source has no dedicated sleep loop, so `sleep` holds the lowest
-nod-off pose.
+idle, so row 4 plays without a model. The `fall` and `land` animations reuse
+pounce poses. `hold` plays the idle loop, so a perched or held Bean just sits.
+`react` reuses the wave. `sit` reuses the first seated pose. The source has no
+dedicated sleep loop, so `sleep` holds the lowest nod-off pose.
 
 ### Shimeji Shop
 

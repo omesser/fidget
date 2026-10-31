@@ -496,16 +496,29 @@ fn assert_idle_loops_and_drawn_left_walk(package: &str, art: usize, loops: &[(&s
 
 #[test]
 fn tux_draws_each_idle_loop_and_its_left_waddle() {
-    assert_idle_loops_and_drawn_left_walk(
-        "tux",
-        57,
-        &[
-            ("look-around", 6),
-            ("checking-work", 6),
-            ("recover-card", 8),
-            ("waddle-in-place", 6),
-        ],
-    );
+    let character = load_package("tux").expect("Tux package is valid");
+    assert_eq!(character.art.len(), 57, "all nine source rows are retained");
+    for (name, count) in [
+        ("look-around", 6),
+        ("checking-work", 6),
+        ("recover-card", 8),
+        ("waddle-in-place", 6),
+    ] {
+        let animation = &character.animations[name];
+        assert_eq!(animation.frames.len(), count);
+        let seed = (0..4096)
+            .find(|seed| character.draw("idle", 0, *seed, 1.0).unwrap().animation == name)
+            .unwrap_or_else(|| panic!("{name} is unreachable while idling"));
+        for index in 0..=count {
+            let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
+            let drawn = character.draw("idle", elapsed, seed, 1.0).unwrap();
+            assert_eq!(drawn.animation, name);
+            assert_eq!(drawn.index, index % count, "{name} plays one complete loop");
+        }
+    }
+    let left = character.draw("walk", 0, 0, -1.0).expect("left walk draws");
+    assert_eq!(left.animation, "walk-left");
+    assert!(!left.mirrored, "Tux uses the drawn left-facing poses");
 }
 
 #[test]

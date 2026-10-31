@@ -53,9 +53,11 @@ Buddy Bot is the default. Eleven Characters ship; each moves and speaks differen
 <td align="center" width="25%"><img src="./docs/readme/trump-wave.gif" height="96" alt="Trump" /><br><b><a href="./characters/trump/personality.txt">Trump</a></b><br><sub>The desktop is his rally. Bombastic.</sub></td>
 </tr>
 <tr>
-<td align="center" width="25%"><img src="./docs/readme/rubber-duck-talk.gif" height="96" alt="Rubber Duck" /><br><b><a href="./characters/rubber-duck/personality.txt">Rubber Duck</a></b><br><sub>Patient listener. One small question at a time.</sub></td>
-<td align="center" width="25%"><img src="./docs/readme/tux-recover-card.gif" height="96" alt="Tux" /><br><b><a href="./characters/tux/personality.txt">Tux</a></b><br><sub>Cozy penguin. Small commands and a flipper salute.</sub></td>
-<td align="center" width="25%"><img src="./docs/readme/tuxedo-bean-review.gif" height="96" alt="Tuxedo Bean" /><br><b><a href="./characters/tuxedo-bean/personality.txt">Tuxedo Bean</a></b><br><sub>Aloof tuxedo cat. Chases the cursor, then naps.</sub></td>
+<td align="center" colspan="2"><img src="./docs/readme/rubber-duck-talk.gif" height="96" alt="Rubber Duck" /><br><b><a href="./characters/rubber-duck/personality.txt">Rubber Duck</a></b><br><sub>Patient listener. One small question at a time.</sub></td>
+<td align="center" colspan="2"><img src="./docs/readme/tux-recover-card.gif" height="96" alt="Tux" /><br><b><a href="./characters/tux/personality.txt">Tux</a></b><br><sub>Cozy penguin. Small commands and a flipper salute.</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="4"><img src="./docs/readme/tuxedo-bean-review.gif" height="96" alt="Tuxedo Bean" /><br><b><a href="./characters/tuxedo-bean/personality.txt">Tuxedo Bean</a></b><br><sub>Aloof tuxedo cat. Chases the cursor, then naps.</sub></td>
 </tr>
 </table>
 

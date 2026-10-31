@@ -1,6 +1,5 @@
 # Source rows are documented in DEVELOPMENT.md; importer indices start at zero.
 # All nine source loops are retained: a seated idle with four idle variants.
-# Every animated loop plays 1fps faster than the import's 2, 3, 4, 5 and 8 fps.
 
 name = "Tuxedo Bean"
 render_mode = "smooth"
@@ -147,12 +146,17 @@ frames = [
 fps = 5
 loop = "once"
 
+# Perched on a window or held, Bean just sits there, so hold reuses idle.
 [animations.hold]
 frames = [
-  "frames/jump-1.png",
-  "frames/jump-2.png",
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-2.png",
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
 ]
-fps = 5
+fps = 3
 
 [animations.react]
 frames = [
