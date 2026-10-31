@@ -414,6 +414,10 @@ body {
   opacity: 0;
 }
 
+.cue-ring.possess {
+  border-color: var(--shared-accent);
+}
+
 @keyframes cue-summon {
   from {
     transform: translate(-50%, -50%) scale(5);

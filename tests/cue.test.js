@@ -49,7 +49,7 @@ function machineHarness() {
 }
 
 test("each cue is drawn and sounded once, on the tick that carries it", () => {
-  for (const name of ["poke", "summon", "menu", "pickup", "drop", "throw"]) {
+  for (const name of ["poke", "summon", "menu", "pickup", "drop", "throw", "possess"]) {
     // A machine each, so the Poke the previous cue left in flight is not the
     // thing the next one is measured against. The cancel has its own test.
     const { machine, calls, placement } = machineHarness();
