@@ -405,6 +405,10 @@ body {
 
 /* Summon is Poke played backwards, twice. The double, and a pull toward
    the sprite rather than away from it. */
+.cue-ring.possess {
+  border-color: var(--shared-accent);
+}
+
 .cue-ring.in {
   animation: cue-summon 340ms cubic-bezier(0.3, 0, 0.2, 1) forwards;
 }
@@ -536,6 +540,77 @@ body {
 
 /* Collapsed rather than removed. The cue still marks the gesture, and
    `reap` waits on `animationend`. A cue that never animated is never reaped. */
+/* The bindings card. Same panel tokens as the Speech bubble. The bar is
+   drawn and does not take the resume click. The card does. */
+.possession {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 280px;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--shared-panel);
+  color: var(--shared-ink);
+  border-radius: var(--shared-radius);
+  font-size: var(--shared-type-size);
+  line-height: var(--shared-type-leading);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.possession.visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.possession.paused {
+  opacity: 0.45;
+}
+
+.possession-heading {
+  margin: 0;
+}
+
+.possession ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.possession li {
+  display: flex;
+  gap: 12px;
+}
+
+.possession-keys {
+  min-width: 4.2em;
+  color: var(--shared-accent);
+}
+
+.possession-charge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(232, 235, 242, 0.18);
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.possession-charge.visible {
+  opacity: 1;
+}
+
+.possession-charge-fill {
+  height: 100%;
+  width: 0;
+  background: var(--shared-accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cue-ring,
   .cue-wedge,

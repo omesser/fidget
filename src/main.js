@@ -12,6 +12,12 @@ import {
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import { possessionEdge } from "./possession-keys.js";
 import {
+  chargeFill,
+  paintPossession,
+  placePossession,
+  possessionCard,
+} from "./drive-card.js";
+import {
   CONNECT_HINT,
   applyQuickMessageGate,
   createDraftReporter,
@@ -269,6 +275,34 @@ function speechRect(view) {
   };
 }
 
+const CHARGE_BAR_PX = 8;
+const POSSESSION_GAP_PX = 8;
+
+function positionPossession(view, sprite, latest) {
+  const model = possessionCard({
+    driving: Boolean(latest.driving),
+    paused: Boolean(latest.paused),
+  });
+  const fill = chargeFill(latest.charge);
+  paintPossession(view.card, view.bar, model, fill);
+  if (!model) {
+    view.possessionRect = null;
+    view.chargeRect = null;
+    reportOverlayRects();
+    return;
+  }
+  const cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
+  const placed = placePossession(sprite, cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX);
+  view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
+  view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
+  view.bar.style.width = `${placed.bar.width}px`;
+  view.placedFrom = [sprite.x, sprite.y];
+  view.possessionRect = [placed.card.x, placed.card.y, cardSize.width, cardSize.height];
+  view.chargeRect =
+    fill == null ? null : [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
+  reportOverlayRects();
+}
+
 function positionQuick(view, spriteRect) {
   const size = { width: view.quick.offsetWidth, height: view.quick.offsetHeight };
   const pos = placeQuickMessage(spriteRect, size, currentDisplayBounds(), speechRect(view));
@@ -471,6 +505,29 @@ function attachQuickMessage(view, id) {
   view.quickField = field;
   view.quickMirror = mirror;
 
+  const card = document.createElement("div");
+  card.className = "possession";
+  const bar = document.createElement("div");
+  bar.className = "possession-charge";
+  const charge = document.createElement("div");
+  charge.className = "possession-charge-fill";
+  bar.append(charge);
+  // A press here resumes. It is not a press on the art, so it must not poke.
+  const resume = (event) => {
+    event.stopPropagation();
+    window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+      console.error("overlay_request_focus", err);
+    });
+  };
+  card.addEventListener("pointerdown", resume);
+  card.addEventListener("pointerup", (event) => event.stopPropagation());
+  card.addEventListener("click", (event) => event.stopPropagation());
+  stage.append(card, bar);
+  view.card = card;
+  view.bar = bar;
+  view.possessionRect = null;
+  view.chargeRect = null;
+
   let machine;
   machine = createQuickMessage({
     schedule: (fn, ms) => window.setTimeout(fn, ms),
@@ -561,7 +618,9 @@ function reportOverlayRects() {
     const push = (rect, clickable) => rects.push(follows ? { rect, clickable, follows } : { rect, clickable });
     if (view.hotspot) push(view.hotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
+    if (view.possessionRect) push(view.possessionRect, true);
     if (view.bubbleRect) push(view.bubbleRect, false);
+    if (view.chargeRect) push(view.chargeRect, false);
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedRects) return;
@@ -582,6 +641,8 @@ function removeView(id) {
   view.sprite.remove();
   view.bubble.remove();
   view.quick.remove();
+  view.card.remove();
+  view.bar.remove();
   view.cueLayer.remove();
   views.delete(id);
   // After the view is gone, so a scan cannot still name it. dispose already
@@ -616,6 +677,9 @@ function drawView(view, now) {
     // still `.visible`, so this is cleared here as well as in `hide`.
     view.hotspot = null;
     view.bubbleRect = null;
+    view.possessionRect = null;
+    view.chargeRect = null;
+    paintPossession(view.card, view.bar, null, null);
     reportOverlayRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
@@ -638,6 +702,11 @@ function drawView(view, now) {
     if (view.quickMachine.visible) {
       positionQuick(view, rect);
     }
+    positionPossession(view, rect, latest);
+  } else {
+    view.possessionRect = null;
+    view.chargeRect = null;
+    paintPossession(view.card, view.bar, null, null);
   }
 
   const placement = `${latest.character} ${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
@@ -780,6 +849,8 @@ async function start() {
         // a line clamped onto the head near a display's top stays readable.
         view.bubble.style.zIndex = `${index * 2 + 1}`;
         view.quick.style.zIndex = `${index * 2 + 2}`;
+        view.card.style.zIndex = `${index * 2 + 3}`;
+        view.bar.style.zIndex = `${index * 2 + 3}`;
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
 

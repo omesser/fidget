@@ -287,6 +287,17 @@ mod tests {
         );
     }
 
+    /// The bindings card takes the resume click. The charge bar is drawn
+    /// and passes the click through.
+    #[test]
+    fn the_possession_card_takes_a_click_and_the_charge_bar_does_not() {
+        const card: OverlayRect = clickable([40, 280, 220, 88]);
+        const bar: OverlayRect = drawn([40, 376, 220, 8]);
+        assert!(card.takes_click_at(50, 300));
+        assert!(!bar.takes_click_at(50, 380));
+        assert_eq!(clickable_rects(&[card, bar]), vec![[40, 280, 220, 88]]);
+    }
+
     /// Only a clickable rect stops the overlay passing a click, over its
     /// pixels and not one past them.
     #[test]
