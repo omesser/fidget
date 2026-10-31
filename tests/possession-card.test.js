@@ -4,7 +4,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { chargeFill, placePossession, possessionCard, possessionRects } from "../src/possession-card.js";
+import {
+  chargeFill,
+  paintPossession,
+  placePossession,
+  possessionCard,
+  possessionRects,
+} from "../src/possession-card.js";
 import { possessionEdge } from "../src/possession-keys.js";
 
 test("arrows, space and escape are the possession keys, and a repeat is ignored", () => {
@@ -84,6 +90,60 @@ test("a card steps clear of the speech bubble", () => {
   assert.equal(covers(placed.bar, speech), false);
   assert.equal(onScreen(cardRect, bounds), true);
   assert.equal(onScreen(placed.bar, bounds), true);
+});
+
+function element() {
+  const node = {
+    className: "",
+    textContent: "",
+    style: {},
+    children: [],
+    classList: { toggle() {} },
+    append(...kids) {
+      node.children.push(...kids);
+    },
+    replaceChildren(...kids) {
+      node.children = kids;
+    },
+    querySelector(selector) {
+      const name = selector.slice(1);
+      const walk = (current) => {
+        if ((current.className || "").split(" ").includes(name)) return current;
+        for (const child of current.children) {
+          const found = walk(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      return walk(node);
+    },
+  };
+  return node;
+}
+
+test("a charge-only change keeps the same card nodes", () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => element() };
+  try {
+    const card = element();
+    const bar = element();
+    const fill = element();
+    fill.className = "possession-charge-fill";
+    bar.append(fill);
+    const model = possessionCard({ possessed: true, paused: false });
+
+    paintPossession(card, bar, model, 0.2);
+    const heading = card.children[0];
+    const keys = card.children[1];
+    paintPossession(card, bar, model, 0.8);
+
+    assert.equal(card.children[0], heading);
+    assert.equal(card.children[1], keys);
+    assert.equal(fill.style.width, "80%");
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
 });
 
 test("the card takes a click and the charge bar does not", () => {

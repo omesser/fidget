@@ -285,17 +285,21 @@ function positionPossession(view, sprite, latest) {
     paused: Boolean(latest.paused),
   });
   const fill = chargeFill(latest.charge);
-  paintPossession(view.card, view.bar, model, fill);
+  const rebuilt = paintPossession(view.card, view.bar, model, fill);
   if (!model) {
+    view.cardSize = null;
     view.possessionRect = null;
     view.chargeRect = null;
     reportOverlayRects();
     return;
   }
-  const cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
+  // A charge tick only widens the fill. Measuring the card again forces layout.
+  if (rebuilt || !view.cardSize) {
+    view.cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
+  }
   const placed = placePossession(
     sprite,
-    cardSize,
+    view.cardSize,
     CHARGE_BAR_PX,
     POSSESSION_GAP_PX,
     currentDisplayBounds(),
@@ -305,7 +309,7 @@ function positionPossession(view, sprite, latest) {
   view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
   view.bar.style.width = `${placed.bar.width}px`;
   view.placedFrom = [sprite.x, sprite.y];
-  view.possessionRect = [placed.card.x, placed.card.y, cardSize.width, cardSize.height];
+  view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
   view.chargeRect =
     fill == null ? null : [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
   reportOverlayRects();
