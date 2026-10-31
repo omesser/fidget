@@ -76,6 +76,25 @@ def probe(lang):
         # response contract. Continue to test the other languages.
         speech, detected, confidence = reply.strip(), "unclassified", 0.0
         failure = str(exc)
+    # A long French/Spanish paragraph can mask a short English line
+    # ("BMO on the first line") in a whole-response language score.
+    # Inspect every substantive spoken line separately.
+    line_checks = []
+    for line in speech.splitlines():
+        line = line.strip()
+        if len(re.findall(r"[^\\W\\d_]", line, flags=re.UNICODE)) < 12:
+            continue
+        try:
+            found = detect_langs(line)[0]
+            line_checks.append({
+                "text": line,
+                "detected": found.lang,
+                "confidence": round(found.prob, 4),
+                "foreign": found.lang != lang and found.prob >= 0.80,
+            })
+        except Exception as exc:
+            line_checks.append({"text": line, "error": str(exc), "foreign": True})
+    mixed_language = any(item["foreign"] for item in line_checks)
     result = {
         "setting": lang,
         "language": LOCALES[lang],
@@ -86,8 +105,9 @@ def probe(lang):
         "spoken_text": speech,
         "detected_language": detected,
         "detector_confidence": round(confidence, 4),
-        "passed": failure is None and detected == lang and confidence >= 0.80,
-        "failure_reason": failure,
+        "passed": failure is None and detected == lang and confidence >= 0.80 and not mixed_language,
+        "line_checks": line_checks,
+        "failure_reason": failure or ("mixed-language spoken lines" if mixed_language else None),
     }
     print(f"{lang} → {detected} ({confidence:.3f}): {speech!r}", flush=True)
     return result
