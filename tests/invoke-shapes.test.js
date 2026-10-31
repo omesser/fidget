@@ -77,7 +77,8 @@ function signatureParams(rust, start) {
 
 function commandsOf(rust) {
   const handler = rust.match(/generate_handler!\[([^\]]*)\]/);
-  const registered = new Set(handler[1].split(",").map((name) => name.trim()).filter(Boolean));
+  // A command from a module is registered by its path, `module::name`.
+  const registered = new Set(handler[1].split(",").map((name) => name.trim().split("::").pop()).filter(Boolean));
   const commands = new Map();
   for (const found of rust.matchAll(/#\[tauri::command\]\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(/g)) {
     const open = found.index + found[0].length;
@@ -201,10 +202,16 @@ test("every renderer invoke names a registered command with its parameters as ke
   const sources = readdirSync(src)
     .filter((name) => name.endsWith(".js"))
     .map((name) => [`src/${name}`, readFileSync(join(src, name), "utf8")]);
-  const rust = readFileSync(join(root, "src-tauri/src/main.rs"), "utf8");
+  // main.rs registers the commands; a module such as character_import.rs may define them.
+  const shell = join(root, "src-tauri/src");
+  const rust = readdirSync(shell)
+    .filter((name) => name.endsWith(".rs"))
+    .sort((a, b) => (a === "main.rs" ? -1 : b === "main.rs" ? 1 : a.localeCompare(b)))
+    .map((name) => readFileSync(join(shell, name), "utf8"))
+    .join("\n");
   const { problems, checked } = check(sources, rust);
   assert.deepEqual(problems, []);
-  for (const name of ["overlay_report_qm_draft", "overlay_trace_bubble", "names_hint_act"]) {
+  for (const name of ["overlay_report_qm_draft", "overlay_trace_bubble", "names_hint_act", "character_import_remove", "character_import_folder"]) {
     assert.ok(checked.has(name), `${name} was found and checked`);
   }
 });

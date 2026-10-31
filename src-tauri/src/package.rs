@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use fidget_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
@@ -160,6 +160,15 @@ pub fn user_characters_dir() -> PathBuf {
     fidget_core::memory::data_dir().join("characters")
 }
 
+/// Where Settings > Character Imports keeps its own copies. Fidget owns every
+/// file here, so Remove can delete them; the user folder is never touched.
+pub fn imported_characters_dir() -> PathBuf {
+    fidget_core::memory::data_dir().join(IMPORTED_CHARACTERS)
+}
+
+/// The managed folder's name under the data dir.
+const IMPORTED_CHARACTERS: &str = "imported-characters";
+
 /// Where fidget looks for Character Packages, in order. `FIDGET_CHARACTERS`
 /// goes in front, the way `PATH` does, and earlier wins. Replacing the other
 /// directories would hide the user folder and the shipped packages.
@@ -184,6 +193,9 @@ fn search_paths_from(bundled: Option<PathBuf>, roots: PackageRoots<'_>) -> Vec<P
         paths.extend(split_list(extra, roots.desktop.separator()));
     }
     paths.push(roots.data_dir.join("characters"));
+    // After the user folder: a package placed there by hand is the user's own
+    // choice, so it wins over Fidget's copy should a stem ever repeat.
+    paths.push(roots.data_dir.join(IMPORTED_CHARACTERS));
     if roots.desktop == Desktop::Linux {
         // An XDG base is `/usr/share`, not `.../fidget`, so both components are added.
         for base in xdg_bases(roots.xdg_data_dirs) {
@@ -468,8 +480,379 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
         .collect::<BTreeMap<_, _>>()
 }
 
+/// IDs are used strictly as flat package stems. Never accept a path from a
+/// settings webview, even though the frontend only sends our own IDs.
+pub fn safe_package_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+        })
+}
+
+fn package_id(name: &str) -> Result<String, String> {
+    // A Character name is shown next to trusted built-in names. Invisible
+    // format controls, line separators and bidi overrides may spoof that
+    // display identity.
+    if name.chars().any(|ch| {
+        ch.is_control()
+            || matches!(
+                ch,
+                '\u{00ad}'
+                    | '\u{061c}'
+                    | '\u{200b}'..='\u{200f}'
+                    | '\u{2028}'..='\u{202e}'
+                    | '\u{2060}'..='\u{206f}'
+                    | '\u{feff}'
+            )
+    }) {
+        return Err(
+            "Character name contains hidden or bidirectional control characters".to_string(),
+        );
+    }
+    let mut id = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            id.push(ch.to_ascii_lowercase());
+        } else if !id.is_empty() && !id.ends_with('-') {
+            id.push('-');
+        }
+    }
+    let id = id.trim_matches('-').to_string();
+    if !safe_package_id(&id) {
+        return Err("Character name does not form a safe package filename".to_string());
+    }
+    Ok(id)
+}
+
+/// Reject imports that would shadow an existing package, even when its
+/// display name differs. Runtime discovery resolves package *file stems* before
+/// loading Character names, so comparing names alone is not sufficient.
+///
+/// The supplied paths must include every runtime search root (external, user,
+/// imported-characters, system, and bundled). A malformed installed package still reserves its stem.
+/// Also reserve the default stem when bundled resources are unavailable.
+pub fn import_name_conflict(name: &str, installed: &[PathBuf]) -> Result<Option<String>, String> {
+    let id = package_id(name)?;
+    if id == DEFAULT_CHARACTER {
+        return Ok(Some(format!("the built-in default ({DEFAULT_CHARACTER})")));
+    }
+    for path in installed {
+        let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if id.eq_ignore_ascii_case(stem) {
+            return Ok(Some(format!("installed package '{stem}'")));
+        }
+        // Names are also identities in the Character selector. Normalise using
+        // the same package ID algorithm used at installation, so punctuation,
+        // spaces and case cannot disguise a duplicate name.
+        if let Ok(bytes) = read(path) {
+            if let Ok(other) = fidget_core::character::load(&bytes) {
+                if package_id(&other.name).is_ok_and(|other_id| other_id == id) {
+                    return Ok(Some(format!("installed Character '{}'", other.name)));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Copies the validated bytes into `directory`; the source is never kept or referenced.
+///
+/// Noclobber persistence refuses simultaneous imports and never exposes a half-written archive.
+fn save_import(directory: &Path, files: &PackageBytes, name: &str) -> Result<PathBuf, String> {
+    fs::create_dir_all(directory).map_err(|e| format!("Cannot create character directory: {e}"))?;
+    let destination = directory.join(format!("{}.zip", package_id(name)?));
+    let temp = tempfile::NamedTempFile::new_in(directory)
+        .map_err(|e| format!("Cannot start character import: {e}"))?;
+    let mut zip = zip::ZipWriter::new(temp);
+    let stored: zip::write::FileOptions<'_, '_, ()> =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, bytes) in files {
+        zip.start_file(name, stored)
+            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
+        zip.write_all(bytes)
+            .map_err(|e| format!("Cannot write {name}: {e}"))?;
+    }
+    let temp = zip
+        .finish()
+        .map_err(|e| format!("Cannot finish character ZIP: {e}"))?;
+    temp.persist_noclobber(&destination).map_err(|e| {
+        format!(
+            "Cannot install {} (already exists or inaccessible): {}",
+            destination.display(),
+            e.error
+        )
+    })?;
+    Ok(destination)
+}
+
+/// Read the ZIP or folder at `source` the way discovery does, validate it, and
+/// install a copy in `managed`. `installed` is every package already visible,
+/// which the name may not shadow.
+pub fn import_package(
+    managed: &Path,
+    installed: &[PathBuf],
+    source: &Path,
+) -> Result<String, String> {
+    let bytes = read(source).map_err(|e| e.to_string())?;
+    let character = fidget_core::character::load(&bytes)
+        .map_err(|errors| format!("Character package is invalid:\n{}", errors.join("\n")))?;
+    // Both runtime file stems and normalised display names: a user ZIP could
+    // otherwise silently shadow the built-in default at restart.
+    if let Some(conflict) = import_name_conflict(&character.name, installed)? {
+        return Err(format!(
+            "Cannot import '{}': it conflicts with {conflict}. Choose a different Character name.",
+            character.name
+        ));
+    }
+    save_import(managed, &bytes, &character.name)?;
+    Ok(character.name)
+}
+
+/// Every Character Fidget imported into `managed`, by package ID.
+pub fn imports(managed: &Path) -> Vec<(String, fidget_core::character::Character)> {
+    let Ok(directory) = fs::read_dir(managed) else {
+        return Vec::new(); // nothing has been imported yet
+    };
+    let mut found = Vec::new();
+    for entry in directory.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_file()
+            || !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case(ARCHIVE_EXTENSION))
+        {
+            continue;
+        }
+        let Some(id) = path.file_stem().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if !safe_package_id(id) {
+            continue;
+        }
+        let Ok(bytes) = read(&path) else {
+            continue;
+        };
+        let Ok(character) = fidget_core::character::load(&bytes) else {
+            continue;
+        };
+        found.push((id.to_string(), character));
+    }
+    found.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    found
+}
+
+/// Deletes only Fidget's managed copy in `managed`, never the user's source ZIP or folder.
+///
+/// `may_forget` sees the Character's name and can refuse, for one that is in use.
+pub fn forget_import(
+    managed: &Path,
+    id: &str,
+    may_forget: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    if !safe_package_id(id) {
+        return Err("Invalid character package ID".to_string());
+    }
+    let path = managed.join(format!("{id}.{ARCHIVE_EXTENSION}"));
+    let character = fidget_core::character::load(&read(&path).map_err(|e| e.to_string())?)
+        .map_err(|errors| errors.join("\n"))?;
+    may_forget(&character.name)?;
+    fs::remove_file(path).map_err(|error| format!("Could not remove character: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
+    /// Every file under `root` with its bytes, to show a source was left alone.
+    fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        let mut found = BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(directory).unwrap().filter_map(Result::ok) {
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    pending.push(entry_path);
+                } else {
+                    found.insert(entry_path.clone(), fs::read(&entry_path).unwrap());
+                }
+            }
+        }
+        found
+    }
+
+    /// The bytes of the copy Fidget saved for `id`.
+    fn saved(managed: &Path, id: &str) -> PackageBytes {
+        read(&managed.join(format!("{id}.zip"))).expect("the managed copy reads back")
+    }
+
+    #[test]
+    fn a_character_folder_imports_as_it_loads() {
+        let dir = TempDir::new("folder-import");
+        let folder = dir.join("blip");
+        write_package(&folder);
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert_eq!(import_package(&managed, &[], &folder).unwrap(), "Blip");
+        let expected: PackageBytes = package_files().into_iter().collect();
+        assert_eq!(saved(&managed, "blip"), expected, "byte for byte");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_a_folder_is_not_imported() {
+        let dir = TempDir::new("folder-symlink");
+        let secret = dir.join("secret.txt");
+        fs::write(&secret, b"not the Character's").unwrap();
+        let folder = dir.join("blip");
+        write_package(&folder);
+        std::os::unix::fs::symlink(&secret, folder.join("frames/stolen.png")).unwrap();
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert_eq!(import_package(&managed, &[], &folder).unwrap(), "Blip");
+        assert!(
+            !saved(&managed, "blip").contains_key("frames/stolen.png"),
+            "the link is skipped, not followed"
+        );
+    }
+
+    #[test]
+    fn an_over_limit_folder_is_refused_before_anything_is_saved() {
+        let dir = TempDir::new("folder-over-limit");
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        let many = dir.join("many");
+        write_package(&many);
+        for index in 0..MAX_PACKAGE_FILES {
+            fs::write(many.join(format!("extra-{index}")), b"").unwrap();
+        }
+        let error = import_package(&managed, &[], &many).expect_err("too many files");
+        assert!(error.contains("more than 4096 files"), "{error}");
+
+        let large = dir.join("large");
+        write_package(&large);
+        // Sparse, so the test does not write 64 MiB.
+        fs::File::create(large.join("huge.bin"))
+            .unwrap()
+            .set_len(MAX_PACKAGE_BYTES + 1)
+            .unwrap();
+        let error = import_package(&managed, &[], &large).expect_err("too many bytes");
+        assert!(error.contains("more than 64 MiB"), "{error}");
+
+        assert!(!managed.exists(), "nothing reached the imports folder");
+    }
+
+    #[test]
+    fn removing_an_import_leaves_the_source_zip_and_folder_untouched() {
+        let dir = TempDir::new("forget-import");
+        let sources = dir.join("downloads");
+        fs::create_dir_all(&sources).unwrap();
+        write_archive(&sources.join("blip.zip"), "blip", false);
+        write_package(&sources.join("blip-folder"));
+        let before = snapshot(&sources);
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        for source in ["blip.zip", "blip-folder"] {
+            assert_eq!(
+                import_package(&managed, &[], &sources.join(source)).unwrap(),
+                "Blip"
+            );
+            forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
+            assert!(!managed.join("blip.zip").exists(), "Fidget's copy is gone");
+        }
+
+        assert_eq!(
+            snapshot(&sources),
+            before,
+            "the sources are byte for byte as they were"
+        );
+    }
+
+    #[test]
+    fn a_hand_placed_zip_is_not_listed_and_cannot_be_removed() {
+        let dir = TempDir::new("hand-placed");
+        let user = dir.join("characters");
+        fs::create_dir_all(&user).unwrap();
+        write_archive(&user.join("blip.zip"), "blip", false);
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert!(
+            imports(&managed).is_empty(),
+            "only Fidget's imports are listed"
+        );
+        forget_import(&managed, "blip", |_| Ok(())).expect_err("not Fidget's to remove");
+        assert!(user.join("blip.zip").exists(), "the user's ZIP stays");
+
+        // The commands use these two folders: apart, and both discovered.
+        assert_ne!(imported_characters_dir(), user_characters_dir());
+        assert!(!imported_characters_dir().starts_with(user_characters_dir()));
+        assert!(search_paths(None).contains(&imported_characters_dir()));
+    }
+
+    #[test]
+    fn imported_names_cannot_shadow_bundled_or_external_packages() {
+        let paths = vec![
+            PathBuf::from("/bundled/buddy-bot.zip"),
+            PathBuf::from("/external/hero-bot"),
+            PathBuf::from("/user/incomplete.zip"),
+        ];
+        for name in ["Buddy Bot", "Buddy-Bot", "buddy_bot"] {
+            assert!(
+                import_name_conflict(name, &paths).unwrap().is_some(),
+                "{name:?} must not shadow the default"
+            );
+        }
+        for spoofed in [
+            "Buddy Bot\u{200b}",
+            "Buddy\u{202e} Bot",
+            "Good\u{2066} Name",
+            "Bud\u{00ad}dy Bot",
+            "Buddy\u{061c} Bot",
+            "Buddy\u{2028}Bot",
+            "Buddy\u{2029}Bot",
+        ] {
+            let error = import_name_conflict(spoofed, &paths).unwrap_err();
+            assert!(error.contains("control characters"), "{error}");
+        }
+        assert!(import_name_conflict("Hero Bot", &paths).unwrap().is_some());
+        assert!(import_name_conflict("Incomplete", &paths)
+            .unwrap()
+            .is_some());
+        assert!(import_name_conflict("Completely New", &paths)
+            .unwrap()
+            .is_none());
+        // Protect the built-in even when the resource folder is not accessible.
+        assert!(import_name_conflict("Buddy Bot", &[]).unwrap().is_some());
+    }
+
+    #[test]
+    fn installed_package_display_name_is_a_reserved_identity() {
+        let dir = TempDir::new("name-collision");
+        let path = dir.join("different-file-stem.zip");
+        write_archive(&path, "blip", false); // Valid Character named Blip.
+        assert!(import_name_conflict("BLIP", std::slice::from_ref(&path))
+            .unwrap()
+            .is_some());
+        assert!(import_name_conflict("Blip!", &[path]).unwrap().is_some());
+    }
+
+    #[test]
+    fn only_flat_package_ids_are_accepted() {
+        for bad in [
+            "",
+            "../other",
+            ".",
+            "nested/pack",
+            "C:\\foo",
+            "a.zip",
+            "Upper",
+        ] {
+            assert!(!safe_package_id(bad), "{bad:?}");
+        }
+        assert!(safe_package_id("dosidicus-squid"));
+        assert_eq!(package_id("Dosidicus Squid").unwrap(), "dosidicus-squid");
+    }
+
     use super::*;
     use std::collections::BTreeSet;
     use std::io::Write;
@@ -1073,7 +1456,11 @@ mod tests {
                     Some(OsStr::new("/usr/share"))
                 ),
             ),
-            vec![data_dir.join("characters"), bundled]
+            vec![
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
+                bundled
+            ]
         );
     }
 
@@ -1088,6 +1475,7 @@ mod tests {
             ),
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 PathBuf::from("/usr/share/fidget/characters"),
                 bundled,
@@ -1112,6 +1500,7 @@ mod tests {
             set,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/opt/share/fidget/characters"),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 bundled.clone(),
@@ -1126,6 +1515,7 @@ mod tests {
             empty,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/local/share/fidget/characters"),
                 PathBuf::from("/usr/share/fidget/characters"),
                 bundled,
@@ -1149,6 +1539,7 @@ mod tests {
             paths,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/share/fidget/characters"),
             ]
         );
@@ -1173,6 +1564,7 @@ mod tests {
                 PathBuf::from("/tmp/one"),
                 PathBuf::from("/tmp/two"),
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 bundled.clone(),
             ]
         );
@@ -1193,6 +1585,7 @@ mod tests {
                 PathBuf::from(r"D:\one"),
                 PathBuf::from(r"E:\two"),
                 windows_data.join("characters"),
+                windows_data.join(IMPORTED_CHARACTERS),
                 bundled,
             ]
         );
@@ -1214,7 +1607,8 @@ mod tests {
             paths,
             vec![
                 PathBuf::from(r"D:\chars:still"),
-                data_dir.join("characters")
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS)
             ]
         );
     }
@@ -1227,7 +1621,14 @@ mod tests {
             Some(bundled.clone()),
             roots(Desktop::Windows, data_dir, None, None),
         );
-        assert_eq!(paths, vec![data_dir.join("characters"), bundled]);
+        assert_eq!(
+            paths,
+            vec![
+                data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
+                bundled
+            ]
+        );
         assert!(
             paths.iter().all(|path| !path
                 .components()
@@ -1263,6 +1664,7 @@ mod tests {
             empty,
             vec![
                 data_dir.join("characters"),
+                data_dir.join(IMPORTED_CHARACTERS),
                 PathBuf::from("/usr/share/fidget/characters"),
                 PathBuf::from("/bundled/characters"),
             ]

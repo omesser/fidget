@@ -1,4 +1,5 @@
 import { mountChatAppearance } from "./chat-appearance.js";
+import { mountCharacterImports } from "./character-import.js";
 import { applyChatUiClass, applyPlatform } from "./chat-ui-class.js";
 
 // One interpreter of `form::describe()`, in two halves. `controls()` is pure,
@@ -719,6 +720,7 @@ if (typeof document !== "undefined") {
     const tab = currentForm.tabs[currentTabIndex];
     if (tab) {
       render(panel, tab, { ...currentValues, ...draft }, emitEvent, stage);
+      if (tab.title === "Character") mountCharacterImports(panel);
       if (feedback && tab.title === "AI") {
         document.getElementById("set-footer")?.append(el("p", {
           class: "set-feedback",
