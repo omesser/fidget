@@ -77,7 +77,11 @@ wait_for_marks() { # <seconds> <marks file> <pattern>
 # attaches a Harness. A wait for a harness mark starts here, so the mark gets
 # the whole budget instead of sharing it with the app's launch.
 wait_for_up() { # <seconds> <app log>
-  wait_for_line "$1" "$2" '^overlay:'
+  echo "diag-up: start $(now_ms)" >&2
+  local r=0
+  wait_for_line 30 "$2" '^overlay:' || r=$?
+  echo "diag-up: end $(now_ms) r=$r" >&2
+  return $r
 }
 
 # Wait for a file to exist. tail -F cannot see an empty file appear, so this

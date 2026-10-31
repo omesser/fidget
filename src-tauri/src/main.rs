@@ -823,8 +823,12 @@ impl ArtJson {
     }
 
     fn json(&self) -> &str {
-        self.json
-            .get_or_init(|| serde_json::to_string(&self.art).expect("ArtUrls always serializes"))
+        self.json.get_or_init(|| {
+            diag_t("art_json start");
+            let j = serde_json::to_string(&self.art).expect("ArtUrls always serializes");
+            diag_t("art_json done");
+            j
+        })
     }
 }
 
@@ -837,6 +841,7 @@ fn character_response(art: &ArtJson) -> tauri::ipc::Response {
 /// listener. Async, so waiting on the encode never holds the main thread.
 #[tauri::command]
 async fn character(art: tauri::State<'_, Arc<ArtJson>>) -> Result<tauri::ipc::Response, ()> {
+    diag_t("character invoked");
     Ok(character_response(art.inner()))
 }
 
@@ -5115,7 +5120,16 @@ fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
     }
 }
 
+fn diag_t(label: &str) {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    eprintln!("diag-t: {ms} {label}");
+}
+
 fn main() {
+    diag_t("main");
     fidget::process_log::init();
 
     // Same Completer, no overlay. scripts/probe-model.sh is the face of this.
@@ -5144,6 +5158,7 @@ fn main() {
     // reads PATH from the registry and needs none of this.
     #[cfg(unix)]
     login_path::adopt();
+    diag_t("login_path");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -5183,6 +5198,7 @@ fn main() {
             character_import::character_import_remove
         ])
         .setup(|app| {
+            diag_t("setup");
             // No Character means no overlay. Reported and exited rather than
             // returned as a setup error: Tauri turns that into a panic the
             // event loop cannot unwind, burying the one line under a backtrace.
@@ -5222,7 +5238,9 @@ fn main() {
 
             // Every installed package's art, so a switch or a spawn does not
             // have to wait for a reload the overlay never does.
+            diag_t("load_instances");
             let (art, character_cache) = load_all_characters(&app.handle().clone());
+            diag_t("load_all_characters");
             follow_lone_default(&mut loaded, &character_cache);
             let mut characters = art;
             for (_, character) in &loaded {
@@ -5240,6 +5258,7 @@ fn main() {
             std::thread::spawn(move || {
                 art.json();
             });
+            diag_t("encode_art_json");
             let installed: Vec<String> = character_cache.keys().cloned().collect();
 
             // Show in the Dock so users have a findable anchor when the menu
@@ -5262,6 +5281,7 @@ fn main() {
             // AppKit, and only the main thread may do that.
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
+            diag_t("window_source");
 
             // Which Dock the physics got. Printed because the difference is
             // invisible until a sprite walks past the Dock's real end.
@@ -5290,6 +5310,7 @@ fn main() {
                 return Err("no displays reported".into());
             }
             place_overlays(app.handle(), &covered)?;
+            diag_t("place_overlays");
 
             // The sprite size is the first Instance's idle Animation, blown
             // up. Here because scripts/verify-overlay.sh crops a screenshot
