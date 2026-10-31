@@ -32,7 +32,7 @@ test("the card lists the bound keys under the explanation", () => {
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
     ["Space", "Jump"],
-    ["Esc", "Release"],
+    ["Esc", "Release Possession"],
   ]);
 });
 

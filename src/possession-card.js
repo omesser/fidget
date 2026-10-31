@@ -11,7 +11,7 @@ export const RESUME_LABEL = "Click to resume";
 const KEYS = [
   ["← →", "Walk"],
   ["Space", "Jump"],
-  ["Esc", "Release"],
+  ["Esc", "Release Possession"],
 ];
 
 // Null while the sprite is not possessed. Paused keeps the card and replaces
