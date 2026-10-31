@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Reads Cargo.lock and `.cargo/audit.toml` only, so the project is not built.
+  # Reads Cargo.lock only, so the project is not built.
   cargo-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
