@@ -480,7 +480,10 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 /// An unsigned `cargo run` is listed as whoever launched it, not "fidget".
 #[cfg(target_os = "macos")]
 pub fn listed_under_hint(name: &str) -> String {
-    format!("macOS lists this app as {name}, under Privacy & Security.")
+    crate::i18n::trf(
+        "macOS lists this app as {name}, under Privacy & Security.",
+        &[("name", name)],
+    )
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
@@ -488,7 +491,8 @@ pub fn listed_under_hint(name: &str) -> String {
 #[cfg(target_os = "macos")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
-        "Checking a box asks macOS for the permission. {}",
+        "{} {}",
+        crate::i18n::tr("Checking a box asks macOS for the permission."),
         listed_under_hint(listed_as)
     )
 }
@@ -497,14 +501,13 @@ pub fn pane_intro(listed_as: &str) -> String {
 /// macOS-specific vocabulary.
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
-    "Checking a box prompts via xdg-desktop-portal. Window positions are already readable without a grant."
-        .to_string()
+    crate::i18n::tr("Checking a box prompts via xdg-desktop-portal. Window positions are already readable without a grant.")
 }
 
 /// Windows pane intro. Its one row needs no system permission.
 #[cfg(target_os = "windows")]
 pub fn windows_pane_intro() -> String {
-    "Window and Application Names requires no system permission.".to_string()
+    crate::i18n::tr("Window and Application Names requires no system permission.")
 }
 
 /// The name the OS privacy list shows. Packaged builds are this app;

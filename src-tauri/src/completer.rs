@@ -236,6 +236,8 @@ impl Slots {
         let tx = slot.tx.clone();
         let abandoned = Arc::clone(&slot.abandoned);
         let traced = id.clone();
+        // Snapshot the Shell language per wake before the worker starts.
+        let reply_language = crate::i18n::reply_language();
         thread::spawn(move || {
             ABANDONED.with_borrow_mut(|flag| *flag = Some(abandoned));
             // Always send. A panic here would leave the slot waiting forever
@@ -247,7 +249,7 @@ impl Slots {
                 });
             };
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut request = director.request(&context);
+                let mut request = director.request_in_language(&context, reply_language);
                 if let Some(line) = line {
                     if !request.prompt.ends_with('\n') {
                         request.prompt.push('\n');

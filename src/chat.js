@@ -3,6 +3,7 @@
 // authoritative state. The Shell owns the session behind it.
 import { elicitChoices, elicitSays, inputMarkdown } from "./chat-ask.js";
 import { drawAskDetails } from "./chat-ask-row.js";
+import { localize, onLocaleChange, t } from "./i18n.js";
 import { mountChatAppearance } from "./chat-appearance.js";
 import {
   canAnswer,
@@ -270,7 +271,7 @@ function fold(row, open) {
 function drawThinking(view) {
   let row = thinkingRows.get(view.id);
   if (!row) {
-    row = foldRow("", "Thinking", when(view.at));
+    row = foldRow("", t("Thinking"), when(view.at));
     row.querySelector(".thinking-toggle").addEventListener("click", () => thinking.toggle(view.id));
     thinkingRows.set(view.id, row);
     add(row);
@@ -316,14 +317,14 @@ function note(text) {
 function harnessError(said) {
   const row = el("note harness-error");
   const kicker = el("kicker", "p");
-  kicker.textContent = "Harness error";
+  kicker.textContent = t("Harness error");
   const title = el("", "h2");
-  title.textContent = `${harnessDisplayName(lastOpening)} couldn't answer`;
+  title.textContent = t("{name} couldn't answer", { name: harnessDisplayName(lastOpening) });
   const lede = el("", "p");
-  lede.textContent = "It sent back an error instead of a reply:";
+  lede.textContent = t("It sent back an error instead of a reply:");
   const part = el("failure-part", "section");
   const label = el("", "h3");
-  label.textContent = "Error output";
+  label.textContent = t("Error output");
   const box = el("failure-box error", "pre");
   box.textContent = said;
   part.append(label, box);
@@ -342,7 +343,7 @@ log.addEventListener("click", (event) => {
   const where = link.dataset.href;
   invoke("open_link", { url: where }).catch((why) => {
     console.error("chat: that link did not open:", why);
-    note(`That link did not open: ${why}.`);
+    note(t("That link did not open: {why}.", { why }));
   });
 });
 
@@ -359,7 +360,7 @@ function askRow(request, heading, body, buttons) {
   const toggle = el("who thinking-toggle", "button");
   toggle.type = "button";
   const label = el("who-label");
-  label.textContent = `${them} · asks`;
+  label.textContent = t("{name} · asks", { name: them });
   toggle.append(label);
   toggle.addEventListener("click", () => fold(row, toggle.getAttribute("aria-expanded") !== "true"));
   body.append(buttons);
@@ -399,7 +400,7 @@ function retire(request, option) {
   }
   asks.delete(request);
   const { row, heading } = held;
-  let answer = option ? "Answered" : "Closed";
+  let answer = option ? t("Answered") : t("Closed");
   for (const button of row.querySelectorAll(".options button")) {
     button.disabled = true;
     button.setAttribute("aria-disabled", "true");
@@ -438,14 +439,14 @@ function asked(ask) {
       sendOnce(buttons);
       invoke("permission_answer", { request: ask.request, option: option.id }).catch((why) => {
         console.error("chat: the answer did not reach the Harness:", why);
-        note("That answer did not get through.");
+        note(t("That answer did not get through."));
       });
     });
     buttons.append(button);
   }
   return askRow(
     ask.request,
-    firstLine(body.querySelector(".ask-title")?.textContent ?? "", `${them} · asks`),
+    firstLine(body.querySelector(".ask-title")?.textContent ?? "", t("{name} · asks", { name: them })),
     body,
     buttons,
   );
@@ -488,7 +489,7 @@ function elicited(form) {
         .then(() => invoke("elicitation_answer", { request: form.request, value: choice.value }))
         .catch((why) => {
           console.error("chat: the answer did not reach the Harness:", why);
-          note("That answer did not get through.");
+          note(t("That answer did not get through."));
         });
     });
     buttons.append(button);
@@ -643,7 +644,7 @@ function connect(harness, label) {
     // No opening follows a refusal, so the note is the status and has to be seen.
     holdLogAtTop = false;
     console.error(`connect failed:`, why);
-    note(`Could not connect to ${label}: ${why}.`);
+    note(t("Could not connect to {name}: {why}.", { name: label, why }));
   });
 }
 
@@ -734,7 +735,7 @@ function fillFrozen(id, text) {
   const written = (text ?? "").trim();
   el.classList.toggle("is-empty", !written);
   // "Empty", not a collapsed box: Blank AI empties a layer rather than hiding it.
-  el.textContent = written || "Empty";
+  el.textContent = written || t("Empty");
 }
 
 function showPrompt(opening) {
@@ -778,7 +779,7 @@ promptConfirm.addEventListener("click", () => {
     .then(() => {
       savedPrompt = promptText.value.trim();
       promptText.value = savedPrompt;
-      promptSaid.textContent = "Saved.";
+      promptSaid.textContent = t("Saved.");
       // The log is cleared by `chat-session`: saving reopens the session, and
       // that event is the one place a replacement is drawn.
       syncPromptActions();
@@ -844,7 +845,7 @@ composer.addEventListener("submit", (event) => {
       line.value = "";
       thinking.landed();
       const turn = turns.typed();
-      turn.you = said("You", text, "you");
+      turn.you = said(t("You"), text, "you");
       recall.release();
       turn.them = opening_answer();
       return invoke("chat_send", { instance, text }).catch((why) => {
@@ -854,7 +855,7 @@ composer.addEventListener("submit", (event) => {
     })
     .catch((why) => {
       console.error("chat: the line did not reach the frame loop:", why);
-      note("That did not get through.");
+      note(t("That did not get through."));
     });
 });
 
@@ -889,7 +890,7 @@ function newSession(why) {
   // A boundary is where a stamp should say the hour again rather than count
   // minutes from a line that is no longer on screen.
   previousAt = null;
-  note(`New session — ${why}. Nothing said earlier is in it.`);
+  note(t("New session — {why}. Nothing said earlier is in it.", { why: t(why) }));
 }
 
 // A loaded session's replay sits above the live log, in session order, with no
@@ -909,7 +910,7 @@ function foldShut(cls, title, body, draw) {
 // The Harness title as sent. CSS holds the handle to one line; the label's
 // `title` attribute keeps the whole text on hover.
 function toolLabel(entry) {
-  return [entry.title || entry.name || entry.kind || "Tool call", entry.status].filter(Boolean).join(" · ");
+  return [entry.title || entry.name || entry.kind || t("Tool call"), entry.status].filter(Boolean).join(" · ");
 }
 
 // The one `stripUnsafe` pass for a tool payload, where it enters (live or
@@ -1055,20 +1056,20 @@ const RESTORED_ROWS = {
     const row = el("row you restored");
     const cluster = el("who");
     const label = el("who-label");
-    label.textContent = "You";
+    label.textContent = t("You");
     cluster.append(label);
     const body = el("said");
     body.textContent = entry.text;
     row.append(cluster, body);
     return row;
   },
-  prompt: (entry) => foldShut("restored prompt", "Prompt", entry.text, drawThought),
-  thought: (entry) => foldShut("restored thought", "Thinking", entry.text, drawThought),
+  prompt: (entry) => foldShut("restored prompt", t("Prompt"), entry.text, drawThought),
+  thought: (entry) => foldShut("restored thought", t("Thinking"), entry.text, drawThought),
   tool_call: (entry) => toolRow("restored tool", cleanTool(entry)),
   plan: (entry) => {
     const row = el("row restored plan-steps");
     const label = el("who-label");
-    label.textContent = "Plan";
+    label.textContent = t("Plan");
     const body = el("said plan");
     row.append(label, body);
     body.append(...stepRows(planSteps(entry.steps)));
@@ -1097,7 +1098,7 @@ function restored(history) {
     return;
   }
   const heading = el("note");
-  heading.textContent = "Earlier in this session.";
+  heading.textContent = t("Earlier in this session.");
   restoredBlock = [heading, ...rows];
   empty.after(...restoredBlock);
   log.scrollTop = holdLogAtTop ? 0 : log.scrollHeight;
@@ -1135,7 +1136,7 @@ async function start() {
     ({ payload }) => {
       if (payload.you) {
         const turn = turns.typed();
-        turn.you = said("You", payload.said ?? "", "you", payload.at);
+        turn.you = said(t("You"), payload.said ?? "", "you", payload.at);
         turn.them = opening_answer();
         // A typed turn starts clean. Calls kept for an unprompted row stay.
         armPhase(turn.them, true);
@@ -1151,7 +1152,7 @@ async function start() {
         if (refused) {
           drop(refused);
         }
-        note("Still answering the last one — ask again when it lands.");
+        note(t("Still answering the last one — ask again when it lands."));
         return;
       }
       thinking.landed();
@@ -1189,7 +1190,7 @@ async function start() {
       } else if (outcome.action === "failure") {
         if (turn.alreadyHasDialogueAhead) {
           settled(turn.them);
-          note(`Harness error: ${outcome.said}`);
+          note(t("Harness error: {said}", { said: outcome.said }));
         } else {
           endPhase(turn.them);
           turn.them.remove();
@@ -1387,6 +1388,12 @@ async function start() {
   line.focus();
 }
 
+localize();
+// Script-built text follows the next draw; the landing and composer redraw now.
+onLocaleChange(() => {
+  if (lastOpening) attached(lastOpening);
+});
+
 // Only the countdown moves between pushes, and it moves once a second.
 paint();
 setInterval(paint, 1000);
@@ -1396,5 +1403,5 @@ start().catch((why) => {
   // makes it a field that takes lines nobody reads, so say so rather than
   // showing an empty log.
   console.error("fidget could not open the Chat surface:", why);
-  note("This window could not reach Fidget.");
+  note(t("This window could not reach Fidget."));
 });

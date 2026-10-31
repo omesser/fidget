@@ -1,0 +1,101 @@
+name: i18n-model-proof
+
+# Distinct from canned speech/bubble screenshots: this invokes a REAL local LLM
+# on a native GitHub-hosted Linux runner and checks the language of its output.
+on:
+  push:
+    branches: [translations]
+    paths:
+      - ".github/workflows/i18n-model-proof.yml"
+      - "scripts/verify-i18n-model.py"
+      - "crates/core/examples/i18n-model-probe.rs"
+      - "crates/core/src/director/prompt.rs"
+      - "crates/core/src/director.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: i18n-model-proof-translations
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the real Rust Director prompt
+        run: cargo build -p fidget-core --example i18n-model-probe
+      - name: Run core language-contract tests
+        run: cargo test -p fidget-core spoken_language_is_explicit_per_request -- --nocapture
+      - name: Install independent language detector
+        run: |
+          python3 -m pip install --user --break-system-packages langdetect==1.0.9
+      - name: Launch a real local LLM
+        run: |
+          docker run --rm -d --name fidget-ollama \
+            -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec fidget-ollama ollama pull qwen2.5:7b
+      - name: Verify actual English French and Spanish model output
+        env:
+          FIDGET_PROOF_MODEL: qwen2.5:7b
+          FIDGET_PROOF_URL: http://127.0.0.1:11434/v1/chat/completions
+        run: python3 scripts/verify-i18n-model.py
+      - name: Upload raw responses and detection results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: i18n-real-model-evidence
+          path: docs/i18n/model-proof/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Summarise proof
+        if: success()
+        run: |
+          cat docs/i18n/model-proof/README.md >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: prove
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out current translations branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: translations
+      - name: Download actual inference evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: i18n-real-model-evidence
+          path: docs/i18n/model-proof/
+      - name: Publish verified report to the PR branch
+        run: |
+          set -euo pipefail
+          test -s docs/i18n/model-proof/results.json
+          test -s docs/i18n/model-proof/README.md
+          python3 - <<'PY'
+          import json
+          with open('docs/i18n/model-proof/results.json') as f:
+              data = json.load(f)
+          assert set(x['setting'] for x in data['results']) == {'en','fr','es'}
+          assert all(x['passed'] for x in data['results'])
+          PY
+          git pull --ff-only origin translations
+          git add docs/i18n/model-proof/
+          if git diff --cached --quiet; then
+            echo "Existing report matches the latest live model proof."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "docs(i18n): publish actual model-language validation results [skip ci]"
+          git push origin HEAD:translations

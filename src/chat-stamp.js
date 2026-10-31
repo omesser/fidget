@@ -1,20 +1,7 @@
 
 // Local clock stamps for Chat turns. Split from chat.js, which reads
 // `window.__TAURI__` at import, so node can load this.
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+import { locale } from "./i18n.js";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -24,8 +11,10 @@ function localHm(at) {
   return `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
 }
 
+// The month's short name in the interface language, day first in every one
+// this page speaks.
 function dayMonth(at) {
-  return `${at.getDate()} ${MONTHS[at.getMonth()]}`;
+  return `${at.getDate()} ${new Intl.DateTimeFormat(locale(), { month: "short" }).format(at)}`;
 }
 
 function sameLocalDay(a, b) {

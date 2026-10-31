@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::consent;
 use crate::dev_flags;
+use crate::i18n::{tr, trf, Lang};
 use crate::model;
 use crate::settings::{BoolField, TextField};
 
@@ -486,6 +487,7 @@ pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 pub const HARNESS_CWD_ID: &str = "harness_cwd";
 pub const HOVER_DELAY_MS_ID: &str = "hover_delay_ms";
+pub const LANGUAGE_ID: &str = "language";
 
 /// A place in Settings the Shell can send the user to. A capability, not a
 /// tab index: the per-OS row id stays in the consent catalog.
@@ -697,6 +699,56 @@ pub fn harness_choice(title: &str) -> String {
     }
 }
 
+/// The Language picker's title for following the system. The other titles are
+/// each language's own name, which no catalog translates.
+pub const LANGUAGE_SYSTEM: &str = "System";
+
+/// The Language picker's choices, System first.
+pub fn language_options() -> Vec<String> {
+    let mut options = vec![LANGUAGE_SYSTEM.to_string()];
+    options.extend(Lang::ALL.iter().map(|lang| lang.endonym().to_string()));
+    options
+}
+
+/// What a Language title means in the file: blank for System, else a code.
+pub fn language_choice(title: &str) -> String {
+    Lang::ALL
+        .into_iter()
+        .find(|lang| lang.endonym() == title)
+        .map(|lang| lang.code().to_string())
+        .unwrap_or_default()
+}
+
+/// The title for a stored Language value. The inverse of `language_choice`.
+pub fn language_title(value: &str) -> String {
+    match Lang::parse(value) {
+        Some(lang) => lang.endonym().to_string(),
+        None => LANGUAGE_SYSTEM.to_string(),
+    }
+}
+
+fn language_section() -> FormSection {
+    let flagged = crate::i18n::flag().is_some();
+    FormSection {
+        heading: tr("Language"),
+        serves: None,
+        comment: None,
+        disclosure: None,
+        status: None,
+        rows: vec![FormRow::Popup {
+            id: LANGUAGE_ID.to_string(),
+            label: None,
+            writes: TextField::Language,
+            help: Some(tr("The language of menus, Settings, and Chat. System follows this computer.")),
+            options: language_options(),
+            frozen: flagged,
+            batched: false,
+            disclosure: Some(tr("The character answers in this language too. A conversation already open keeps the language it started in until the next session.")),
+            status: flagged.then(|| trf("Overridden by {flag}", &[("flag", crate::i18n::FLAG)])),
+        }],
+    }
+}
+
 pub fn chat_ui_choice(title: &str) -> String {
     match title {
         "Minimal" => "minimal".to_string(),
@@ -732,11 +784,11 @@ fn switch_row_parts(label: &str, var: &str) -> (String, bool, Option<String>) {
 fn owned_row_parts(label: &str, var: &str, owned: bool) -> (String, bool, Option<String>) {
     match owned {
         true => (
-            label.to_string(),
+            tr(label),
             true,
-            Some(format!("Overridden by env: {var}")),
+            Some(trf("Overridden by env: {var}", &[("var", var)])),
         ),
-        false => (label.to_string(), false, None),
+        false => (tr(label), false, None),
     }
 }
 
@@ -765,7 +817,7 @@ fn flag_row(
         writes,
         batched: false,
         frozen,
-        help: Some(help.to_string()),
+        help: Some(tr(help)),
         comment: None,
         disclosure: None,
         status,
@@ -784,10 +836,10 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 
     vec![
         FormSection {
-            heading: "AI".to_string(),
+            heading: tr("AI"),
             serves: None,
-            comment: Some("Control whether the fidget improvises, and how often it starts a conversation on its own.".to_string()),
-            disclosure: Some("The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
+            comment: Some(tr("Control whether the fidget improvises, and how often it starts a conversation on its own.")),
+            disclosure: Some(tr("The fidget can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".")),
             status: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -796,20 +848,20 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     writes: BoolField::DirectorEnabled,
                     batched: true,
                     frozen: director_frozen,
-                    help: Some("Lets the model pick what happens next.".to_string()),
+                    help: Some(tr("Lets the model pick what happens next.")),
                     comment: None,
-                    disclosure: Some("With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
+                    disclosure: Some(tr("With this off, the fidget runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.")),
                     status: director_status,
                 },
                 FormRow::Checkbox {
                     id: PROACTIVE_ID.to_string(),
-                    label: "Proactive model calls".to_string(),
+                    label: tr("Proactive model calls"),
                     writes: BoolField::ProactiveWakes,
                     batched: true,
                     frozen: false,
-                    help: Some("Acts on its own, not only when asked.".to_string()),
+                    help: Some(tr("Acts on its own, not only when asked.")),
                     comment: None,
-                    disclosure: Some("Proactive model calls address you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first one waits.".to_string()),
+                    disclosure: Some(tr("Proactive model calls address you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first one waits.")),
                     status: None,
                 },
                 FormRow::TextField {
@@ -825,11 +877,11 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "session_actions".to_string(),
-                    help: Some("Throws the conversation in flight away and opens a fresh one.".to_string()),
-                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this fidget. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
+                    help: Some(tr("Throws the conversation in flight away and opens a fresh one.")),
+                    disclosure: Some(tr("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this fidget. The next wake is an opening turn rather than a follow-up. Memory is untouched.")),
                     controls: vec![CompositeControl::Button {
                         id: NEW_SESSION_ID.to_string(),
-                        label: "Start new session".to_string(),
+                        label: tr("Start new session"),
                         frozen: false,
                     }],
                 },
@@ -838,7 +890,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
         completer_source_section(),
         harness_section(&live.pi_mcp_dir),
         FormSection {
-            heading: "Model / API".to_string(),
+            heading: tr("Model / API"),
             serves: Some(AiSource::ModelApi),
             comment: None,
             disclosure: None,
@@ -847,8 +899,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
-                        true => "Off, for the same reason the field beside it is.".to_string(),
-                        false => "Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
+                        true => tr("Off, for the same reason the field beside it is."),
+                        false => tr("Fills in the field beside it. Any other OpenAI-compatible endpoint can be typed there."),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {
@@ -879,7 +931,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
-                    help: Some("Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.".to_string()),
+                    help: Some(tr("Leave blank to leave the model unset on HTTP and on a Harness. A typed name is sent as the model.")),
                     disclosure: None,
                     status: model_status,
                 },
@@ -897,23 +949,23 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
                     disclosure: None,
                     controls: vec![CompositeControl::Button {
                         id: CLEAR_KEY_ID.to_string(),
-                        label: "Clear key".to_string(),
+                        label: tr("Clear key"),
                         frozen: api_key_frozen,
                     }],
                 },
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.".to_string()),
+                    help: Some(tr("Apply saves AI switches, wake interval, endpoint, AI source, and registration choice.")),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: APPLY_ID.to_string(),
-                            label: "Apply".to_string(),
+                            label: tr("Apply"),
                             frozen: false,
                         },
                         CompositeControl::Button {
                             id: CANCEL_ID.to_string(),
-                            label: "Cancel".to_string(),
+                            label: tr("Cancel"),
                             frozen: false,
                         },
                     ],
@@ -922,7 +974,7 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
         },
         byo_section(),
         FormSection {
-            heading: "Last user turn".to_string(),
+            heading: tr("Last user turn"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -930,8 +982,8 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
             rows: vec![FormRow::InspectBlock {
                 id: PAYLOAD_ID.to_string(),
                 label: None,
-                help: Some("The last thing sent to the model.".to_string()),
-                disclosure: Some("This is the Character Prompt (opening turn) or the short follow-up (later wakes), inspectable so you can see exactly what context leaves your machine.".to_string()),
+                help: Some(tr("The last thing sent to the model.")),
+                disclosure: Some(tr("This is the Character Prompt (opening turn) or the short follow-up (later wakes), inspectable so you can see exactly what context leaves your machine.")),
                 status: None,
             }],
         },
@@ -939,8 +991,9 @@ fn director_sections(live: &Live) -> Vec<FormSection> {
 }
 
 fn pi_mcp_status(dir: &str) -> String {
-    format!(
-        "Apply creates {dir}/.mcp.json, or updates only its Fidget entry. The entry names FIDGET_MCP_URL and FIDGET_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing."
+    trf(
+        "Apply creates {dir}/.mcp.json, or updates only its Fidget entry. The entry names FIDGET_MCP_URL and FIDGET_MCP_TOKEN. The port and the token stay out of the file, and a later Apply leaves a correct file alone. Pi still needs pi-mcp-adapter, or the file does nothing.",
+        &[("dir", dir)],
     )
 }
 
@@ -950,28 +1003,28 @@ fn pi_mcp_status(dir: &str) -> String {
 fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
-        heading: "AI source".to_string(),
+        heading: tr("AI source"),
         serves: None,
-        comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
-        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (copilot, cursor-agent, goose, grok, hermes, opencode) need only their CLI on PATH. antigravity needs Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.", HARNESS_PRESETS.join(", "))),
+        comment: Some(tr("Choose which \"AI brain\" answers: Model API or an attached Harness.")),
+        disclosure: Some(trf("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({presets}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Standalone binaries (copilot, cursor-agent, goose, grok, hermes, opencode) need only their CLI on PATH. antigravity needs Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) require Node.js and npx. Apply is the one moment the attachment changes: Cancel restores both rows and leaves the running child alone.", &[("presets", &HARNESS_PRESETS.join(", "))])),
         status: None,
         rows: vec![
             FormRow::Popup {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some("Which \"AI brain\" answers for the fidget.".to_string()),
+                help: Some(tr("Which \"AI brain\" answers for the fidget.")),
                 options: harness_options(),
                 frozen,
                 batched: true,
-                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (copilot, cursor-agent, goose, grok, hermes, opencode) require only their binary on PATH. antigravity requires Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.".to_string()),
+                disclosure: Some(tr("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Standalone CLIs (copilot, cursor-agent, goose, grok, hermes, opencode) require only their binary on PATH. antigravity requires Google's agy_acp_server on PATH. Registry adapters (claude, codex, pi) also require Node.js and npx. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in. Apply commits the pick.")),
                 status: source_status,
             },
             FormRow::InspectBlock {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
-                help: Some("Harness signs itself in - Fidget never asks for credentials.".to_string()),
-                disclosure: Some("Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                help: Some(tr("Harness signs itself in - Fidget never asks for credentials.")),
+                disclosure: Some(tr("Fidget holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).")),
                 status: None,
             },
         ],
@@ -985,7 +1038,7 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
     let (_, frozen, _) = harness_env_row_parts("AI source");
     let (model_label, model_frozen, model_status) = env_row_parts("Model", model::MODEL);
     FormSection {
-        heading: HARNESS_HEADING.to_string(),
+        heading: tr(HARNESS_HEADING),
         serves: Some(AiSource::Harness),
         comment: None,
         disclosure: None,
@@ -998,13 +1051,13 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
                 writes: TextField::DirectorModel,
                 frozen: model_frozen,
                 batched: true,
-                help: Some("Leave blank for the Harness's own default. The same setting as Model under Model / API.".to_string()),
+                help: Some(tr("Leave blank for the Harness's own default. The same setting as Model under Model / API.")),
                 disclosure: None,
                 status: model_status,
             },
             FormRow::Checkbox {
                 id: PI_PROJECT_MCP_ID.to_string(),
-                label: "Write .mcp.json in the working directory".to_string(),
+                label: tr("Write .mcp.json in the working directory"),
                 writes: BoolField::PiProjectMcp,
                 batched: true,
                 frozen: false,
@@ -1015,13 +1068,13 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
             },
             FormRow::TextField {
                 id: HARNESS_COMMAND_ID.to_string(),
-                label: Some("Custom command line".to_string()),
+                label: Some(tr("Custom command line")),
                 placeholder: "opencode acp".to_string(),
                 writes: TextField::HarnessCommand,
                 frozen,
                 batched: true,
                 help: None,
-                disclosure: Some("The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.".to_string()),
+                disclosure: Some(tr("The command Fidget runs when Custom is picked above. Apply commits it and re-opens the attachment. Cancel restores the line.")),
                 status: None,
             },
         ],
@@ -1033,22 +1086,21 @@ fn harness_section(pi_mcp_dir: &str) -> FormSection {
 /// is no log or file.
 fn byo_section() -> FormSection {
     FormSection {
-        heading: BYO_HEADING.to_string(),
+        heading: tr(BYO_HEADING),
         serves: None,
-        comment: Some("For a Harness you start in your own terminal.".to_string()),
+        comment: Some(tr("For a Harness you start in your own terminal.")),
         disclosure: Some(
-            "Registering Fidget as an MCP server there lets it move and emote \
+            tr("Registering Fidget as an MCP server there lets it move and emote \
              the fidget on your screen. Nothing here changes which mind the \
-             Director uses."
-                .to_string(),
+             Director uses."),
         ),
         status: None,
         rows: vec![
             FormRow::Popup {
                 id: BYO_HARNESS_ID.to_string(),
-                label: Some("Harness".to_string()),
+                label: Some(tr("Harness")),
                 writes: TextField::ByoHarness,
-                help: Some("Preview instructions for this Harness. Apply saves the choice; Cancel restores it.".to_string()),
+                help: Some(tr("Preview instructions for this Harness. Apply saves the choice; Cancel restores it.")),
                 options: HARNESS_PRESETS.map(str::to_string).to_vec(),
                 frozen: false,
                 batched: true,
@@ -1059,14 +1111,12 @@ fn byo_section() -> FormSection {
                 id: BYO_SNIPPET_ID.to_string(),
                 label: None,
                 help: Some(
-                    "Good for this app run only. Come back here and copy it again \
-                     after a relaunch."
-                        .to_string(),
+                    tr("Good for this app run only. Come back here and copy it again \
+                     after a relaunch."),
                 ),
                 disclosure: Some(
-                    "The port and the token are both new every launch, so a paste \
-                     from yesterday stops connecting."
-                        .to_string(),
+                    tr("The port and the token are both new every launch, so a paste \
+                     from yesterday stops connecting."),
                 ),
                 status: None,
             },
@@ -1076,7 +1126,7 @@ fn byo_section() -> FormSection {
                 disclosure: None,
                 controls: vec![CompositeControl::Button {
                     id: BYO_COPY_ID.to_string(),
-                    label: "Copy".to_string(),
+                    label: tr("Copy"),
                     frozen: false,
                 }],
             },
@@ -1084,8 +1134,7 @@ fn byo_section() -> FormSection {
                 id: BYO_TOKEN_ID.to_string(),
                 label: None,
                 help: Some(
-                    "Paste at Hermes auth prompt; no Bearer prefix; rotates each launch."
-                        .to_string(),
+                    tr("Paste at Hermes auth prompt; no Bearer prefix; rotates each launch."),
                 ),
                 disclosure: None,
                 status: None,
@@ -1096,7 +1145,7 @@ fn byo_section() -> FormSection {
                 disclosure: None,
                 controls: vec![CompositeControl::Button {
                     id: BYO_COPY_TOKEN_ID.to_string(),
-                    label: "Copy".to_string(),
+                    label: tr("Copy"),
                     frozen: false,
                 }],
             },
@@ -1104,9 +1153,8 @@ fn byo_section() -> FormSection {
                 id: BYO_STEPS_ID.to_string(),
                 label: None,
                 help: Some(
-                    "This token reaches Fidget and nothing else. The Harness \
-                     signs itself in."
-                        .to_string(),
+                    tr("This token reaches Fidget and nothing else. The Harness \
+                     signs itself in."),
                 ),
                 disclosure: None,
                 status: None,
@@ -1118,7 +1166,7 @@ fn byo_section() -> FormSection {
 fn character_sections(live: &Live) -> Vec<FormSection> {
     vec![
         FormSection {
-            heading: "Character".to_string(),
+            heading: tr("Character"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1127,19 +1175,19 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                 id: CHARACTER_ID.to_string(),
                 label: None,
                 writes: TextField::Character,
-                help: Some(format!(
-                    "The character your fidget wears. Read from {}.",
-                    live.characters_dir
+                help: Some(trf(
+                    "The character your fidget wears. Read from {dir}.",
+                    &[("dir", &live.characters_dir)],
                 )),
                 options: live.installed.clone(),
                 frozen: false,
                 batched: false,
-                disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
+                disclosure: Some(tr("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.")),
                 status: None,
             }],
         },
         FormSection {
-            heading: "Instances".to_string(),
+            heading: tr("Instances"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1147,18 +1195,18 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
             rows: vec![
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
-                    dismiss_label: "Dismiss".to_string(),
-                    help: Some("Fidgets on screen now.".to_string()),
-                    disclosure: Some("An Instance is one spawned fidget: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
+                    dismiss_label: tr("Dismiss"),
+                    help: Some(tr("Fidgets on screen now.")),
+                    disclosure: Some(tr("An Instance is one spawned fidget: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.")),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
-                    help: Some("Adds another fidget.".to_string()),
+                    help: Some(tr("Adds another fidget.")),
                     disclosure: None,
                     controls: vec![
                         CompositeControl::TextField {
                             id: NEW_NAME_ID.to_string(),
-                            placeholder: "Name".to_string(),
+                            placeholder: tr("Name"),
                         },
                         CompositeControl::Popup {
                             id: NEW_CHARACTER_ID.to_string(),
@@ -1168,7 +1216,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
                         },
                         CompositeControl::Button {
                             id: SPAWN_ID.to_string(),
-                            label: "New".to_string(),
+                            label: tr("New"),
                             frozen: false,
                         },
                     ],
@@ -1180,8 +1228,9 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
 
 fn presence_sections(bundled: bool) -> Vec<FormSection> {
     vec![
+        language_section(),
         FormSection {
-            heading: "Do Not Disturb".to_string(),
+            heading: tr("Do Not Disturb"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1189,30 +1238,30 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
             rows: vec![
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
-                    label: "Do Not Disturb".to_string(),
+                    label: tr("Do Not Disturb"),
                     writes: BoolField::DoNotDisturb,
                     batched: false,
                     frozen: false,
-                    help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
+                    help: Some(tr("Stays on screen, silences sounds, stops initiating actions.")),
                     comment: None,
-                    disclosure: Some("Do Not Disturb leaves the fidget visible but quiet: it starts no wakes on its own and refuses Behavior proposals. Quick messages, Chat replies, and the speech bubble still work, and so do Poke, Grab, and Throw. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    disclosure: Some(tr("Do Not Disturb leaves the fidget visible but quiet: it starts no wakes on its own and refuses Behavior proposals. Quick messages, Chat replies, and the speech bubble still work, and so do Poke, Grab, and Throw. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.")),
                     status: None,
                 },
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
-                    label: "Sound".to_string(),
+                    label: tr("Sound"),
                     writes: BoolField::Sound,
                     batched: false,
                     frozen: false,
-                    help: Some("Off silences audio cues.".to_string()),
+                    help: Some(tr("Off silences audio cues.")),
                     comment: None,
-                    disclosure: Some("A synthesized sound accompanies each Cue. This switch silences them. Do Not Disturb (above) takes the sound with it.".to_string()),
+                    disclosure: Some(tr("A synthesized sound accompanies each Cue. This switch silences them. Do Not Disturb (above) takes the sound with it.")),
                     status: None,
                 },
             ],
         },
         FormSection {
-            heading: "Hide".to_string(),
+            heading: tr("Hide"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1220,36 +1269,36 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
             rows: vec![
                 FormRow::Checkbox {
                     id: HIDDEN_ID.to_string(),
-                    label: "Go away".to_string(),
+                    label: tr("Go away"),
                     writes: BoolField::Hidden,
                     batched: false,
                     frozen: false,
-                    help: Some("Go off screen. But still exist.".to_string()),
+                    help: Some(tr("Go off screen. But still exist.")),
                     comment: None,
                     disclosure: None,
                     status: None,
                 },
                 FormRow::Checkbox {
                     id: FULLSCREEN_ID.to_string(),
-                    label: "Hide in fullscreen apps".to_string(),
+                    label: tr("Hide in fullscreen apps"),
                     writes: BoolField::HideInFullscreen,
                     batched: false,
                     frozen: false,
-                    help: Some("Steps aside for fullscreen apps.".to_string()),
+                    help: Some(tr("Steps aside for fullscreen apps.")),
                     comment: None,
                     disclosure: None,
                     status: None,
                 },
                 FormRow::Checkbox {
                     id: CAPTURABLE_ID.to_string(),
-                    label: "Appear in screenshots and screen shares".to_string(),
+                    label: tr("Appear in screenshots and screen shares"),
                     writes: BoolField::Capturable,
                     batched: false,
                     frozen: cfg!(target_os = "linux"),
                     help: Some(if cfg!(target_os = "linux") {
-                        "Fidget has no portable API to exclude itself from screen captures on Linux. Always visible.".to_string()
+                        tr("Fidget has no portable API to exclude itself from screen captures on Linux. Always visible.")
                     } else {
-                        "Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()
+                        tr("Checked: visible in captures. Unchecked: excluded. Needs restart.")
                     }),
                     comment: None,
                     disclosure: None,
@@ -1257,15 +1306,15 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
                 },
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
-                    label: Some("Hide/Show Toggle".to_string()),
-                    help: Some("Hides or shows from any app.".to_string()),
+                    label: Some(tr("Hide/Show Toggle")),
+                    help: Some(tr("Hides or shows from any app.")),
                     disclosure: None,
                     status: None,
                 },
             ],
         },
         FormSection {
-            heading: "Launch".to_string(),
+            heading: tr("Launch"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1273,17 +1322,17 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
             rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
                 label: if bundled {
-                    "Launch at login".to_string()
+                    tr("Launch at login")
                 } else {
-                    "Launch at login (unimplemented)".to_string()
+                    tr("Launch at login (unimplemented)")
                 },
                 writes: BoolField::LaunchAtLogin,
                 batched: false,
                 frozen: !bundled,
                 help: Some(if bundled {
-                    "Starts Fidget when you log in.".to_string()
+                    tr("Starts Fidget when you log in.")
                 } else {
-                    "Not available yet.".to_string()
+                    tr("Not available yet.")
                 }),
                 comment: None,
                 disclosure: None,
@@ -1295,7 +1344,7 @@ fn presence_sections(bundled: bool) -> Vec<FormSection> {
 
 fn chat_sections() -> Vec<FormSection> {
     vec![FormSection {
-        heading: "Appearance".to_string(),
+        heading: tr("Appearance"),
         serves: None,
         comment: None,
         disclosure: None,
@@ -1303,24 +1352,24 @@ fn chat_sections() -> Vec<FormSection> {
         rows: vec![
             FormRow::Popup {
                 id: "chat_ui".to_string(),
-                label: Some("UI Theme".to_string()),
+                label: Some(tr("UI Theme")),
                 writes: TextField::ChatUI,
-                help: Some("Visual design for the chat surface.".to_string()),
+                help: Some(tr("Visual design for the chat surface.")),
                 options: vec!["Minimal".to_string(), "Terminal".to_string(), "Glass".to_string()],
                 frozen: false,
                 batched: false,
-                disclosure: Some("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.".to_string()),
+                disclosure: Some(tr("The chat UI is the chat surface's visual design. The overlay, sprite, and speech bubble are unaffected.")),
                 status: None,
             },
             FormRow::Popup {
                 id: "chat_appearance".to_string(),
-                label: Some("Light/Dark Mode".to_string()),
+                label: Some(tr("Light/Dark Mode")),
                 writes: TextField::ChatAppearance,
-                help: Some("Light or dark for the Chat surface. System follows this computer.".to_string()),
+                help: Some(tr("Light or dark for the Chat surface. System follows this computer.")),
                 options: vec!["System".to_string(), "Light".to_string(), "Dark".to_string()],
                 frozen: false,
                 batched: false,
-                disclosure: Some("The overlay and speech bubble are unchanged.".to_string()),
+                disclosure: Some(tr("The overlay and speech bubble are unchanged.")),
                 status: None,
             },
         ],
@@ -1335,49 +1384,49 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
         #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_ACCESSIBILITY_ID.to_string(),
-            label: "Accessibility".to_string(),
+            label: tr("Accessibility"),
             writes: BoolField::UseAccessibility,
             batched: false,
             frozen: false,
-            help: Some("Reads the Dock's position.".to_string()),
+            help: Some(tr("Reads the Dock's position.")),
             comment: None,
-            disclosure: Some("Accessibility permission lets fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.".to_string()),
+            disclosure: Some(tr("Accessibility permission lets fidget read the Dock's position and height, so the sprite never disappears behind it. Window bounds require no grant on macOS; the names of what is open have their own row.")),
             status: None,
         },
         #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
-            label: "Window and application names".to_string(),
+            label: tr("Window and application names"),
             writes: BoolField::UseWindowNames,
             batched: false,
             frozen: false,
-            help: Some("Requires macOS Screen Recording.".to_string()),
+            help: Some(tr("Requires macOS Screen Recording.")),
             comment: None,
-            disclosure: Some("macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.".to_string()),
+            disclosure: Some(tr("macOS Screen Recording lets your fidget read window titles. Fidget does not capture the screen. One switch covers titles and application names alike, so with it off fidget knows where the windows are and not what they are; the sprite lands on them either way. With it on, list_windows, describe_screen and the readonly MCP resource report the owning application and the title.")),
             status: None,
         },
         #[cfg(target_os = "windows")]
         FormRow::Checkbox {
             id: CONSENT_WINDOW_NAMES_ID.to_string(),
-            label: "Window and Application Names".to_string(),
+            label: tr("Window and Application Names"),
             writes: BoolField::UseWindowNames,
             batched: false,
             frozen: false,
-            help: Some("Reads window titles and application names.".to_string()),
+            help: Some(tr("Reads window titles and application names.")),
             comment: None,
-            disclosure: Some("This lets fidget read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the fidget knows where the windows are and not what they are.".to_string()),
+            disclosure: Some(tr("This lets fidget read other applications' window titles via GetWindowText, and the application each window belongs to. No system permission prompt appears — Windows allows this by default. One switch covers both, so with it off the fidget knows where the windows are and not what they are.")),
             status: None,
         },
         #[cfg(target_os = "macos")]
         FormRow::Checkbox {
             id: CONSENT_INPUT_MONITORING_ID.to_string(),
-            label: "Input Monitoring".to_string(),
+            label: tr("Input Monitoring"),
             writes: BoolField::UseInputMonitoring,
             batched: false,
             frozen: false,
-            help: Some("Reacts to the mouse at once, not a second late.".to_string()),
+            help: Some(tr("Reacts to the mouse at once, not a second late.")),
             comment: None,
-            disclosure: Some("Without this grant fidget asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the fidget the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the fidget goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.".to_string()),
+            disclosure: Some(tr("Without this grant fidget asks macOS where the cursor is on a timer, and while it sits still that timer runs once a second — so a poke, or the cursor arriving over the art, can take that long to land. With the grant, a listen-only event tap tells the fidget the moment the mouse moves or a button goes down, which is what the Linux build already gets without asking for anything. The tap's mask holds mouse events only: it cannot see the keyboard, and it modifies nothing it hears. Unchecked, the fidget goes back to the timer. macOS asks for the grant when you check the box, and the tap starts once the grant lands.")),
             status: None,
         },
     ];
@@ -1386,20 +1435,20 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
     let consent_rows = vec![
         FormRow::Checkbox {
             id: CONSENT_PORTAL_SCREENCAST_ID.to_string(),
-            label: "Window and application names".to_string(),
+            label: tr("Window and application names"),
             writes: BoolField::UseWindowNames,
             batched: false,
             frozen: false,
-            help: Some("Requires xdg-desktop-portal ScreenCast.".to_string()),
+            help: Some(tr("Requires xdg-desktop-portal ScreenCast.")),
             comment: None,
-            disclosure: Some("xdg-desktop-portal ScreenCast lets fidget read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.".to_string()),
+            disclosure: Some(tr("xdg-desktop-portal ScreenCast lets fidget read Wayland window titles, and one switch covers application names with them. Your desktop prompts when you enable this; accepting shows the consent was granted. Off does not revoke the portal session while the app runs. Window positions are readable without a grant either way.")),
             status: None,
         },
     ];
 
     vec![
         FormSection {
-            heading: "What the fidget can see".to_string(),
+            heading: tr("What the fidget can see"),
             serves: None,
             comment: consent_comment,
             disclosure: None,
@@ -1407,7 +1456,7 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
             rows: consent_rows,
         },
         FormSection {
-            heading: "Excluded applications".to_string(),
+            heading: tr("Excluded applications"),
             serves: None,
             comment: None,
             disclosure: None,
@@ -1416,16 +1465,16 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
                 writes: TextField::ExcludedApplications,
-                help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
+                help: Some(tr("One app name per line. Those windows stay out of MCP sensing.")),
                 editable: true,
-                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata). The fidget can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
+                disclosure: Some(tr("Applications on this list never appear in MCP sensing tool results (window metadata). The fidget can still sit on their windows. Password fields are excluded everywhere, regardless of this list.")),
             }],
         },
         FormSection {
-            heading: "Memory File".to_string(),
+            heading: tr("Memory File"),
             serves: None,
-            comment: Some("What your fidget remembers between runs.".to_string()),
-            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
+            comment: Some(tr("What your fidget remembers between runs.")),
+            disclosure: Some(tr("Memory is one Markdown file, append-structured under stable headings. Shared by every fidget instance. Every recall reads the file, so an edit made outside Fidget is visible to the next recall. A single timestamped backup is written before a wipe.")),
             status: None,
             rows: vec![
                 FormRow::InspectPath {
@@ -1438,12 +1487,12 @@ fn privacy_sections(live: &Live) -> Vec<FormSection> {
                     controls: vec![
                         CompositeControl::Button {
                             id: MEMORY_OPEN_ID.to_string(),
-                            label: "Open in editor".to_string(),
+                            label: tr("Open in editor"),
                             frozen: false,
                         },
                         CompositeControl::Button {
                             id: MEMORY_WIPE_ID.to_string(),
-                            label: "Wipe".to_string(),
+                            label: tr("Wipe"),
                             frozen: false,
                         },
                     ],
@@ -1470,11 +1519,11 @@ fn caffeinate_section(live: &Live) -> FormSection {
     let row =
         |id: &str, label: &str, writes: BoolField, help: &str, flag: bool| FormRow::Checkbox {
             id: id.to_string(),
-            label: label.to_string(),
+            label: tr(label),
             writes,
             batched: false,
             frozen: freeze(flag),
-            help: Some(help.to_string()),
+            help: Some(tr(help)),
             comment: None,
             disclosure: None,
             status: None,
@@ -1522,32 +1571,29 @@ fn caffeinate_section(live: &Live) -> FormSection {
     ));
     rows.push(FormRow::InspectBlock {
         id: CAFFEINATE_COMMAND_ID.to_string(),
-        label: Some("Command".to_string()),
+        label: Some(tr("Command")),
         help: None,
         disclosure: None,
         status: None,
     });
     FormSection {
-        heading: "Awake".to_string(),
+        heading: tr("Awake"),
         serves: None,
-        comment: Some(
-            if mac {
-                "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the \
+        comment: Some(tr(if mac {
+            "Fidget can keep your Mac from sleeping. Turn it on with the coffee cup in the \
                  Chat header, or with Caffeinate in the right-click or tray menu. The flags \
                  below go to the macOS caffeinate command and pick which kinds of sleep it \
                  blocks."
-            } else if cfg!(target_os = "linux") {
-                "Fidget can keep your computer from sleeping. Turn it on with the coffee cup in \
+        } else if cfg!(target_os = "linux") {
+            "Fidget can keep your computer from sleeping. Turn it on with the coffee cup in \
                  the Chat header, or with Caffeinate in the right-click or tray menu. The flags \
                  below pick what Fidget asks systemd-logind and the desktop's screen saver to \
                  block. Without either, Caffeinate stays off and says why."
-            } else {
-                "Fidget can keep your computer from sleeping. Turn it on with the coffee cup in \
+        } else {
+            "Fidget can keep your computer from sleeping. Turn it on with the coffee cup in \
                  the Chat header, or with Caffeinate in the right-click or tray menu. The flags \
                  below pick which power requests Fidget asks Windows for."
-            }
-            .to_string(),
-        ),
+        })),
         disclosure: None,
         status: None,
         rows,
@@ -1607,18 +1653,18 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
 
     vec![
         FormSection {
-            heading: "Traces".to_string(),
+            heading: tr("Traces"),
             serves: None,
-            comment: Some("Switches for development and testing.".to_string()),
-            disclosure: Some("Development switches print to stderr. Trace frames prints each frame the Engine produces. Trace hit-test prints where each click went (the sprite or click-through). Trace AI prints each model call with its context. Trace Engine prints each change of Behavior or Animation.".to_string()),
+            comment: Some(tr("Switches for development and testing.")),
+            disclosure: Some(tr("Development switches print to stderr. Trace frames prints each frame the Engine produces. Trace hit-test prints where each click went (the sprite or click-through). Trace AI prints each model call with its context. Trace Engine prints each change of Behavior or Animation.")),
             status: None,
             rows,
         },
         FormSection {
-            heading: "Blank AI".to_string(),
+            heading: tr("Blank AI"),
             serves: None,
-            comment: Some("Also for development and testing. Off is the fidget as shipped.".to_string()),
-            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            comment: Some(tr("Also for development and testing. Off is the fidget as shipped.")),
+            disclosure: Some(tr("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under Fidget's conditions. The Prompt tab shows those three layers; emptied ones say Empty. Without a contract the fidget says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.")),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,
@@ -1629,12 +1675,12 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
             )],
         },
         FormSection {
-            heading: "HTTP limits".to_string(),
+            heading: tr("HTTP limits"),
             serves: None,
-            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
-            disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to leave effort unset: HTTP omits the field, and a Harness does not call session/set_config_option. The picker lists low, medium, and high. Other typed values are sent as written. On a Harness the value is set on thought_level, or on model_config if that is what the Harness lists.",
-                model::TIMEOUT.as_secs()
+            comment: Some(tr("Also for development and testing. Leave empty for the default.")),
+            disclosure: Some(trf(
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {secs} seconds (the default), remote or local. A Harness turn's timeout is the row under Harness attachment. Turn ceiling is the HTTP endpoint's alone, and it is a safeguard against a model that will not stop rather than a reply length: it does not vary by what woke the fidget or by where the server runs, and an endpoint seen to mark its thinking is given room to think instead. A Harness decides its own reply length. Reasoning effort is one value for the Completer in use. Leave it empty to leave effort unset: HTTP omits the field, and a Harness does not call session/set_config_option. The picker lists low, medium, and high. Other typed values are sent as written. On a Harness the value is set on thought_level, or on model_config if that is what the Harness lists.",
+                &[("secs", &model::TIMEOUT.as_secs().to_string())],
             )),
             status: None,
             rows: vec![
@@ -1645,7 +1691,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some("Model API hop. Expiry falls back to default behavior.".to_string()),
+                    help: Some(tr("Model API hop. Expiry falls back to default behavior.")),
                     disclosure: None,
                     status: timeout_status,
                 },
@@ -1656,15 +1702,15 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
-                    help: Some("A runaway guard, not a reply length. HTTP endpoint only.".to_string()),
+                    help: Some(tr("A runaway guard, not a reply length. HTTP endpoint only.")),
                     disclosure: None,
                     status: max_tokens_status,
                 },
                 FormRow::Composite {
                     id: "reasoning_effort_pick".to_string(),
                     help: Some(match effort_frozen {
-                        true => "Off, for the same reason the field beside it is.".to_string(),
-                        false => "Fills in the field beside it. Any value the server takes can be typed there.".to_string(),
+                        true => tr("Off, for the same reason the field beside it is."),
+                        false => tr("Fills in the field beside it. Any value the server takes can be typed there."),
                     }),
                     disclosure: None,
                     controls: vec![CompositeControl::Popup {
@@ -1684,19 +1730,19 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::DirectorReasoningEffort,
                     frozen: effort_frozen,
                     batched: false,
-                    help: Some("Leave blank to omit effort. A typed value is sent as written to the Completer in use.".to_string()),
+                    help: Some(tr("Leave blank to omit effort. A typed value is sent as written to the Completer in use.")),
                     disclosure: None,
                     status: effort_status,
                 },
             ],
         },
         FormSection {
-            heading: "Harness attachment".to_string(),
+            heading: tr("Harness attachment"),
             serves: None,
-            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
-            disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel, not counting the time it waits on you to answer an ask, and started over once you answer. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
-                crate::harness::TURN_TIMEOUT.as_secs()
+            comment: Some(tr("Also for development and testing. Leave empty for the default.")),
+            disclosure: Some(trf(
+                "Turn timeout: how long a session/prompt may run before session/cancel, not counting the time it waits on you to answer an ask, and started over once you answer. Leave empty for {secs} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server). Working directory: the directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.",
+                &[("secs", &crate::harness::TURN_TIMEOUT.as_secs().to_string())],
             )),
             status: None,
             rows: vec![
@@ -1707,7 +1753,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::HarnessTurnTimeoutSecs,
                     frozen: harness_turn_frozen,
                     batched: false,
-                    help: Some("Harness session/prompt. Expiry cancels the turn.".to_string()),
+                    help: Some(tr("Harness session/prompt. Expiry cancels the turn.")),
                     disclosure: None,
                     status: harness_turn_status,
                 },
@@ -1718,18 +1764,18 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::HarnessAuthRetrySecs,
                     frozen: auth_retry_frozen,
                     batched: false,
-                    help: Some("How long before retrying session/new.".to_string()),
+                    help: Some(tr("How long before retrying session/new.")),
                     disclosure: None,
                     status: auth_retry_status,
                 },
                 FormRow::TextField {
                     id: MCP_BIN_ID.to_string(),
                     label: Some(mcp_bin_label),
-                    placeholder: "beside the app, or this app as its own MCP server".to_string(),
+                    placeholder: tr("beside the app, or this app as its own MCP server"),
                     writes: TextField::McpBin,
                     frozen: mcp_bin_frozen,
                     batched: false,
-                    help: Some("The stdio MCP server for the Harness.".to_string()),
+                    help: Some(tr("The stdio MCP server for the Harness.")),
                     disclosure: None,
                     status: mcp_bin_status,
                 },
@@ -1740,19 +1786,19 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                     writes: TextField::HarnessCwd,
                     frozen: harness_cwd_frozen,
                     batched: false,
-                    help: Some("The directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.".to_string()),
+                    help: Some(tr("The directory the Harness treats as the project, and where it finds the MCP servers you configured for that project. Session file and Action Log stay in the data folder.")),
                     disclosure: None,
                     status: harness_cwd_status,
                 },
             ],
         },
         FormSection {
-            heading: "Quick message".to_string(),
+            heading: tr("Quick message"),
             serves: None,
-            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
-            disclosure: Some(format!(
-                "Hover delay: how long the pointer rests on the Character before the quick message opens. Leave empty for {} milliseconds (the default). A change applies to the next hover.",
-                crate::hover_delay_placeholder()
+            comment: Some(tr("Also for development and testing. Leave empty for the default.")),
+            disclosure: Some(trf(
+                "Hover delay: how long the pointer rests on the Character before the quick message opens. Leave empty for {ms} milliseconds (the default). A change applies to the next hover.",
+                &[("ms", &crate::hover_delay_placeholder())],
             )),
             status: None,
             rows: vec![FormRow::TextField {
@@ -1762,7 +1808,7 @@ fn development_sections(live: &Live) -> Vec<FormSection> {
                 writes: TextField::HoverDelayMs,
                 frozen: hover_delay_frozen,
                 batched: false,
-                help: Some("How long to rest on the Character before the quick message opens.".to_string()),
+                help: Some(tr("How long to rest on the Character before the quick message opens.")),
                 disclosure: None,
                 status: hover_delay_status,
             }],
@@ -2274,6 +2320,7 @@ pub(crate) mod tests {
             "Harness attachment",
             "Hide",
             "Instances",
+            "Language",
             "Last user turn",
             "Launch",
             "Memory File",
@@ -2284,6 +2331,18 @@ pub(crate) mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(headings, expected);
+    }
+
+    #[test]
+    fn a_language_title_and_its_stored_code_round_trip() {
+        assert_eq!(language_options()[0], LANGUAGE_SYSTEM);
+        for title in language_options() {
+            assert_eq!(language_title(&language_choice(&title)), title);
+        }
+        assert_eq!(language_choice("Français"), "fr");
+        assert_eq!(language_choice(LANGUAGE_SYSTEM), "");
+        assert_eq!(language_title("es"), "Español");
+        assert_eq!(language_title("de"), LANGUAGE_SYSTEM);
     }
 
     #[test]

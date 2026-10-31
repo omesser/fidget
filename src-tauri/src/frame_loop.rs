@@ -974,6 +974,18 @@ pub(crate) fn run_frame_loop(
                             );
                         }
                     }
+                    // Every webview, overlays included: the quick message and
+                    // the bubble's prompts are in the interface language too.
+                    SettingsOp::LanguageChanged => {
+                        let _ = app.emit(crate::i18n::EVENT, crate::i18n::payload());
+                        // Update the native caption as well as the webview's title.
+                        let handle = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if let Some(window) = handle.get_webview_window("settings") {
+                                let _ = window.set_title(&crate::i18n::tr("Settings"));
+                            }
+                        });
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }
@@ -1958,7 +1970,10 @@ pub(crate) fn run_frame_loop(
                         // The panel shows this copy. The worker appends `line`
                         // after `request`, so an in-flight reply can still open
                         // the session before this wake is sent.
-                        let mut payload = model.prompt(&context);
+                        let mut payload = model.prompt_in_language(
+                            &context,
+                            crate::i18n::reply_language(),
+                        );
                         if !payload.ends_with('\n') {
                             payload.push('\n');
                         }
@@ -3043,6 +3058,7 @@ fn answer_tool_call(
                 app_instructions: director::app_instructions(
                     super::behavior_names_of(characters, instance),
                     blank,
+                    crate::i18n::reply_language(),
                 ),
                 personality_prompt: match blank {
                     true => String::new(),
@@ -3332,7 +3348,7 @@ mod tests {
         assert_eq!(pip["id"], json!(id));
         assert_eq!(
             pip["app_instructions"],
-            json!(director::app_instructions(["wave"], false))
+            json!(director::app_instructions(["wave"], false, crate::i18n::reply_language()))
         );
         assert_eq!(pip["personality_prompt"], json!("a shy robot."));
         assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));

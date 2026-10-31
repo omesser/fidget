@@ -31,6 +31,7 @@ use tauri::AppHandle;
 
 use crate::consent::{self, CapabilityId, ConsentRow};
 use crate::dev_flags;
+use crate::i18n::{tr, trf};
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
@@ -189,6 +190,8 @@ pub struct SettingsView {
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
     pub chat_appearance: ChatAppearance,
+    /// The Language setting as stored: blank for System, else a code.
+    pub language: String,
     /// A model or effort the attached Harness did not take.
     pub not_applied: Vec<crate::harness::NotAppliedNotice>,
     pub caffeinate_display: bool,
@@ -331,62 +334,83 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 /// (ADR-0018), asks for none, and runs no login.
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
-        None => "Not attached. The HTTP endpoint below is the AI brain.".to_string(),
+        None => tr("Not attached. The HTTP endpoint below is the AI brain."),
         Some(attached) => match &attached.login {
-            Some(login) => format!(
-                "{} attached but not authenticated. Run `{login}` in a terminal - \
+            Some(login) => trf(
+                "{name} attached but not authenticated. Run `{login}` in a terminal - \
                  Fidget never asks for it.",
-                attached.name
+                &[("name", &attached.name), ("login", login)],
             ),
             // Configured and not answering is not attached: `completer_from`
             // keeps the handle while the Director runs on Static (ADR-0008). A
             // missing CLI waits for an install.
             None if !attached.alive => match &attached.missing {
-                Some(command) => format!(
-                    "`{command}` is not installed, so {} is not running and the fidget runs on \
-                     static weights. Fidget does not bundle `{command}` - install it{}, or switch AI \
-                     source to Model API to use an HTTP endpoint.",
-                    attached.name,
-                    crate::harness::install_page(command)
-                        .map(|(_, url)| format!(" from {url}"))
-                        .unwrap_or_default(),
-                ),
+                Some(command) => match crate::harness::install_page(command) {
+                    Some((_, url)) => trf(
+                        "`{command}` is not installed, so {name} is not running and the fidget runs \
+                         on static weights. Fidget does not bundle `{command}` - install it from \
+                         {url}, or switch AI source to Model API to use an HTTP endpoint.",
+                        &[("command", command), ("name", &attached.name), ("url", url)],
+                    ),
+                    None => trf(
+                        "`{command}` is not installed, so {name} is not running and the fidget runs \
+                         on static weights. Fidget does not bundle `{command}` - install it, or \
+                         switch AI source to Model API to use an HTTP endpoint.",
+                        &[("command", command), ("name", &attached.name)],
+                    ),
+                },
                 // Apply starts the attach itself and the handshake takes a
                 // second or two. "Set but not running" over that wait reads as
                 // a Harness that never will be.
-                None if attached.initializing => format!(
-                    "{} is starting. Chat waits until it answers, and the AI runs on static \
+                None if attached.initializing => trf(
+                    "{name} is starting. Chat waits until it answers, and the AI runs on static \
                      weights meanwhile.",
-                    attached.name
+                    &[("name", &attached.name)],
                 ),
-                None if attached.unhealthy.is_some() => format!(
-                    "{} is unhealthy: {} The fidget runs on static weights until it is fixed.",
-                    attached.name,
-                    attached
-                        .unhealthy
-                        .as_ref()
-                        .map(crate::harness::LaunchFailure::sentence)
-                        .unwrap_or_default()
+                None if attached.unhealthy.is_some() => trf(
+                    "{name} is unhealthy: {why} The fidget runs on static weights until it is fixed.",
+                    &[
+                        ("name", &attached.name),
+                        (
+                            "why",
+                            &attached
+                                .unhealthy
+                                .as_ref()
+                                .map(crate::harness::LaunchFailure::sentence)
+                                .unwrap_or_default(),
+                        ),
+                    ],
                 ),
-                None if attached.failed.is_some() => format!(
-                    "{} failed to start: {} The fidget runs on static weights until it answers.",
-                    attached.name,
-                    attached
-                        .failed
-                        .as_ref()
-                        .map(crate::harness::LaunchFailure::sentence)
-                        .unwrap_or_default()
+                None if attached.failed.is_some() => trf(
+                    "{name} failed to start: {why} The fidget runs on static weights until it answers.",
+                    &[
+                        ("name", &attached.name),
+                        (
+                            "why",
+                            &attached
+                                .failed
+                                .as_ref()
+                                .map(crate::harness::LaunchFailure::sentence)
+                                .unwrap_or_default(),
+                        ),
+                    ],
                 ),
-                None => format!(
-                    "{} is set but not running, so the fidget runs on static weights until it \
+                None => trf(
+                    "{name} is set but not running, so the fidget runs on static weights until it \
                      answers. It stays the AI brain while it is set; you may switch AI source at any \
                      time. Apply takes effect at once.",
-                    attached.name
+                    &[("name", &attached.name)],
                 ),
             },
             None => match &attached.session_id {
-                Some(id) => format!("{} attached, session {id}.", attached.name),
-                None => format!("{} attached; no session opened yet.", attached.name),
+                Some(id) => trf(
+                    "{name} attached, session {id}.",
+                    &[("name", &attached.name), ("id", id)],
+                ),
+                None => trf(
+                    "{name} attached; no session opened yet.",
+                    &[("name", &attached.name)],
+                ),
             },
         },
     }
@@ -413,12 +437,13 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                  claude mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
-            steps: "Run both lines in a terminal, then exit your Claude session and start a \
+            steps: tr(
+                "Run both lines in a terminal, then exit your Claude session and start a \
              new one with `claude`. The remove is not optional: re-adding a name Claude \
              Code already knows keeps the old URL and token and reports success. Add `-s \
              user` only if you want the same entry in every project. `claude mcp list` \
-             says whether it connected."
-                .to_string(),
+             says whether it connected.",
+            ),
             paste_token: None,
         },
         "codex" => ByoRegistration {
@@ -426,13 +451,14 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                 "export FIDGET_MCP_TOKEN='{token}'\n\
                  codex mcp add fidget --url '{url}' --bearer-token-env-var FIDGET_MCP_TOKEN"
             ),
-            steps: format!(
+            steps: trf(
                 "Run both lines in a terminal where Codex will inherit the environment, then \
                  run `mcpServer/refresh` from your Codex session to pick up the change. If \
                  `mcpServer/refresh` is unavailable, exit your Codex session and open a new \
                  one. Alternatively, add or update `[mcp_servers.fidget]` in \
-                 `~/.codex/config.toml` with `url = \"{url}\"` and `http_headers = {{ \
-                 \"Authorization\" = \"Bearer {token}\" }}`."
+                 `~/.codex/config.toml` with `url = \"{url}\"` and `http_headers = { \
+                 \"Authorization\" = \"Bearer {token}\" }`.",
+                &[("token", token), ("url", url)],
             ),
             paste_token: None,
         },
@@ -445,11 +471,12 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                  copilot mcp add --transport http fidget \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
-            steps: "Run both lines in a terminal, then start a new `copilot` session. The \
+            steps: tr(
+                "Run both lines in a terminal, then start a new `copilot` session. The \
              remove is not optional: `copilot mcp add` refuses a name it already \
              holds. This writes `~/.copilot/mcp-config.json` (user scope). \
-             `copilot mcp list` says whether it is registered."
-                .to_string(),
+             `copilot mcp list` says whether it is registered.",
+            ),
             paste_token: None,
         },
         "cursor-agent" => ByoRegistration {
@@ -465,11 +492,12 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                  \x20 }}\n\
                  }}"
             ),
-            steps: "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
+            steps: tr(
+                "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
              not a command. Add or update the `fidget` entry under `mcpServers`, \
              then run `cursor-agent mcp enable fidget` in a terminal and start a \
-             new session. `cursor-agent mcp list` reports."
-                .to_string(),
+             new session. `cursor-agent mcp list` reports.",
+            ),
             paste_token: None,
         },
         "pi" => ByoRegistration {
@@ -486,10 +514,11 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                  \x20 }}\n\
                  }}"
             ),
-            steps: "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
+            steps: tr(
+                "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
              command. Add or update the `fidget` entry under `mcpServers`. Then run \
-             `/reload` followed by `/mcp reconnect fidget` in your Pi session."
-                .to_string(),
+             `/reload` followed by `/mcp reconnect fidget` in your Pi session.",
+            ),
             paste_token: None,
         },
         "grok" => ByoRegistration {
@@ -497,24 +526,26 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
                 "grok mcp add fidget \"{url}\" --transport http \
                  --header \"Authorization: Bearer {token}\""
             ),
-            steps: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
+            steps: tr(
+                "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
              after a relaunch is enough. It defaults to user scope (`~/.grok/config.toml`). \
              Add `--scope project` only if you want project-local config (careful: shareable \
              config should not commit the token). Then in your live Grok session, run `/mcps` \
-             and press `r` to reload. `grok mcp doctor fidget` reports."
-                .to_string(),
+             and press `r` to reload. `grok mcp doctor fidget` reports.",
+            ),
             paste_token: None,
         },
         "hermes" => ByoRegistration {
             snippet: format!("hermes mcp add fidget --url '{url}' --auth header"),
-            steps: format!(
+            steps: trf(
                 "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
                  interactive prompt. This stores `MCP_FIDGET_API_KEY` in `~/.hermes/.env` \
-                 and adds the header `Bearer ${{MCP_FIDGET_API_KEY}}`. Then run `/reload-mcp` \
+                 and adds the header `Bearer ${MCP_FIDGET_API_KEY}`. Then run `/reload-mcp` \
                  in your Hermes session. Alternatively, add or update `fidget:` under \
                  `mcp_servers:` in `~/.hermes/config.yaml` with `url: \"{url}\"` and `headers:` \
                  → `Authorization: \"Bearer <token>\"`; keep the indentation exactly. \
-                 `hermes mcp test fidget` reports."
+                 `hermes mcp test fidget` reports.",
+                &[("url", url)],
             ),
             paste_token: Some(token.to_string()),
         },
@@ -525,22 +556,24 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> ByoRegistration {
             snippet: format!(
                 "opencode mcp add fidget --url '{url}' --header \"Authorization=Bearer {token}\""
             ),
-            steps: format!(
+            steps: trf(
                 "Run it in a terminal, then restart your OpenCode session. OpenCode does not \
                  re-read MCP mid-session. If OpenCode tries OAuth, set `\"oauth\": false` in \
                  the config. Alternatively, merge this flat `mcp.fidget` content into \
-                 `opencode.jsonc` (not nested `mcp.servers`): `{{ \"mcp\": {{ \"fidget\": \
-                 {{ \"type\": \"remote\", \"url\": \"{url}\", \"oauth\": false, \"headers\": \
-                 {{ \"Authorization\": \"Bearer {token}\" }} }} }} }}`. `opencode mcp list` \
-                 reports."
+                 `opencode.jsonc` (not nested `mcp.servers`): `{ \"mcp\": { \"fidget\": \
+                 { \"type\": \"remote\", \"url\": \"{url}\", \"oauth\": false, \"headers\": \
+                 { \"Authorization\": \"Bearer {token}\" } } } }`. `opencode mcp list` \
+                 reports.",
+                &[("token", token), ("url", url)],
             ),
             paste_token: None,
         },
         _ => ByoRegistration {
             snippet: format!("URL:   {url}\nToken: {token}"),
-            steps: format!(
-                "No generated snippet for {harness:?}. Point the Harness at that URL over \
-                 Streamable HTTP and have it send `Authorization: Bearer <token>`."
+            steps: trf(
+                "No generated snippet for \"{harness}\". Point the Harness at that URL over \
+                 Streamable HTTP and have it send `Authorization: Bearer <token>`.",
+                &[("harness", harness)],
             ),
             paste_token: None,
         },
@@ -630,6 +663,7 @@ impl SettingsView {
             consent: consent::rows(|id| settings.wants_consent(id)),
             chat_ui: settings.chat_ui.clone(),
             chat_appearance: settings.chat_appearance,
+            language: settings.language.clone(),
         }
     }
 
@@ -765,7 +799,7 @@ impl SettingsView {
                 self.caffeinate_system,
             ) {
                 Ok(flags) => flags.command_label(),
-                Err(_) => fidget_core::caffeinate::Empty::REASON.to_string(),
+                Err(_) => tr(fidget_core::caffeinate::Empty::REASON),
             }),
         );
         values.insert(
@@ -775,6 +809,10 @@ impl SettingsView {
         values.insert(
             "chat_appearance".to_string(),
             text(self.chat_appearance.title()),
+        );
+        values.insert(
+            form::LANGUAGE_ID.to_string(),
+            text(&form::language_title(&self.language)),
         );
         values
     }
@@ -791,13 +829,16 @@ impl SettingsView {
         if model::env_override(model::API_KEY).is_some() {
             // The variable's key is the one `resolve` hands the Completer, so
             // the stored fingerprint would name a key nothing uses.
-            "Overridden by env".to_string()
+            tr("Overridden by env")
         } else if !self.api_key_error.is_empty() {
-            format!("Unavailable: {}", self.api_key_error)
+            trf("Unavailable: {why}", &[("why", &self.api_key_error)])
         } else if self.api_key_set {
-            format!("Set: {}", self.api_key_fingerprint)
+            trf(
+                "Set: {fingerprint}",
+                &[("fingerprint", &self.api_key_fingerprint)],
+            )
         } else {
-            "Not set".into()
+            tr("Not set")
         }
     }
 
@@ -817,6 +858,7 @@ impl SettingsView {
                     .unwrap_or_default(),
             )),
             "chat_appearance" => Some(self.chat_appearance.title().to_string()),
+            form::LANGUAGE_ID => Some(form::language_title(&self.language)),
             _ => None,
         }
     }
@@ -872,6 +914,8 @@ pub enum SettingsOp {
     ChatAppearanceChanged {
         chat_appearance: ChatAppearance,
     },
+    /// The language in force changed: every webview takes the new catalog.
+    LanguageChanged,
 }
 
 /// Whether what a secure field holds is a key somebody typed. Both windows
@@ -1366,6 +1410,7 @@ impl SettingsSession {
             .is_some_and(|ui| *ui != settings.chat_ui);
         let new_chat_ui = patch.chat_ui.clone();
         let appearance_op = chat_appearance_op(settings.chat_appearance, &patch);
+        let language_patched = patch.language.is_some();
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and turn ceiling.
         apply_and_seed(&mut settings, patch);
@@ -1376,6 +1421,7 @@ impl SettingsSession {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
         }
+        let language_changed = language_patched && crate::i18n::apply(&settings.language);
         let snapshot = settings.clone();
         drop(settings);
         // The frame loop takes `settings` every tick. The file write stays
@@ -1447,6 +1493,9 @@ impl SettingsSession {
         }
         if let Some(op) = appearance_op {
             let _ = self.ops.send(op);
+        }
+        if language_changed {
+            let _ = self.ops.send(SettingsOp::LanguageChanged);
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
@@ -1554,6 +1603,8 @@ pub struct SettingsPatch {
     pub chat_ui: Option<String>,
     pub chat_appearance: Option<ChatAppearance>,
     pub hover_delay_ms: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 /// The Character every Instance switches to.
@@ -1665,6 +1716,9 @@ pub enum TextField {
     ChatUI,
     ChatAppearance,
     HoverDelayMs,
+    /// The Language popup. Written as a title and stored as a code, blank for
+    /// System; `form::language_choice` translates.
+    Language,
 }
 
 impl SettingsPatch {
@@ -1755,6 +1809,7 @@ impl SettingsPatch {
                 self.chat_appearance = Some(ChatAppearance::from_title(value))
             }
             TextField::HoverDelayMs => self.hover_delay_ms = Some(value.to_string()),
+            TextField::Language => self.language = Some(form::language_choice(value)),
         }
         true
     }
@@ -1948,6 +2003,9 @@ impl Settings {
         if let Some(value) = patch.chat_appearance {
             self.chat_appearance = value;
         }
+        if let Some(value) = patch.language {
+            self.language = value;
+        }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
     }
@@ -2124,6 +2182,9 @@ pub struct Settings {
     pub chat_ui: String,
     #[serde(default)]
     pub chat_appearance: ChatAppearance,
+    /// The interface language as a code, blank for System. `--lang` outranks it.
+    #[serde(default)]
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -2173,6 +2234,7 @@ impl Default for Settings {
             names_hint_dismissed: false,
             chat_ui: "minimal".to_string(),
             chat_appearance: ChatAppearance::System,
+            language: String::new(),
         }
     }
 }
@@ -2466,6 +2528,7 @@ mod tests {
             capturable: true,
             chat_ui: "minimal".into(),
             chat_appearance: ChatAppearance::System,
+            language: String::new(),
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: true,
@@ -2979,6 +3042,7 @@ mod tests {
             capturable: true,
             chat_ui: "minimal".into(),
             chat_appearance: ChatAppearance::System,
+            language: String::new(),
             use_accessibility: true,
             use_window_names: false,
             use_input_monitoring: false,

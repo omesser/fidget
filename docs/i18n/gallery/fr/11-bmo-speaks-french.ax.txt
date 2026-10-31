@@ -1,0 +1,9 @@
+frame|Fidget
+filler|
+filler|
+filler|
+scroll-area|
+web-area|Fidget
+section|Bonjour ! Je suis BMO.
+entry|Message rapide
+button|Envoyer

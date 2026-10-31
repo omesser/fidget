@@ -12,7 +12,7 @@ pub(crate) fn character_prompt(
     blank: bool,
 ) -> String {
     with_layers(
-        &character_layers(context, behaviors, blank),
+        &character_layers(context, behaviors, blank, None),
         &named_moment(context, instance),
     )
 }
@@ -32,6 +32,7 @@ pub(crate) fn character_layers(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    reply_language: Option<&str>,
 ) -> String {
     // Empty, not `(no personality)`: that placeholder is a Character with an
     // empty file, which still gets the voice rules. Blank AI is the emptied
@@ -53,7 +54,7 @@ pub(crate) fn character_layers(
         written => format!("{personality}\n\n{written}"),
     };
 
-    let instructions = app_instructions(behaviors, blank);
+    let instructions = app_instructions(behaviors, blank, reply_language);
 
     match (authored.is_empty(), instructions.is_empty()) {
         (true, true) => String::new(),
@@ -73,12 +74,23 @@ pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
     )
 }
 
+// Reply language is an explicit input, not process state.
+fn reply_language_rule(reply_language: Option<&str>) -> String {
+    match reply_language {
+        None | Some("English") | Some("") => String::new(),
+        Some(language) => format!(
+            "\n\nWrite every spoken line in {language}. Behavior names stay exactly as listed."
+        ),
+    }
+}
+
 /// The app layer of the Character Prompt: voice rules, roster, reply contract.
 /// Empty under Blank AI, which the Prompt tab shows frozen. Paid every wake,
 /// so the tools describe themselves over MCP; a copy here would drift.
 pub fn app_instructions(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    reply_language: Option<&str>,
 ) -> String {
     if blank {
         return String::new();
@@ -111,7 +123,8 @@ pub fn app_instructions(
          happened to you, and what you are standing on.\n\
          \n\
          When you are asked for something, use the tools you have. Then \
-         reply as above."
+         reply as above.{}",
+        reply_language_rule(reply_language)
     )
 }
 

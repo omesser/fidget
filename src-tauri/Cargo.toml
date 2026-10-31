@@ -49,6 +49,9 @@ tempfile = "3"
 # does not wait. ureq instead of reqwest: no tokio.
 ureq = { version = "3", features = ["json"] }
 serde_json = "1"
+# The system's preferred languages, for a Language setting left on System.
+# macOS hands a GUI app no LANG, so the environment alone cannot answer.
+sys-locale = "0.3"
 # Reading a base URL: whether it is served from this machine decides whether a
 # key is optional, so the host is a security question and not a string to split
 # on `://` by hand. Already in the tree through the crates above; this only
