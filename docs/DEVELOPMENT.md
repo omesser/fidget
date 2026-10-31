@@ -552,12 +552,6 @@ reuse pounce poses. `react` reuses the wave. `sit` reuses the first seated
 pose. The source has no dedicated sleep loop, so `sleep` holds the lowest
 nod-off pose.
 
-Each loop plays about 12% faster than its import fps. `fps` takes whole numbers
-only, so a strip repeats each pose: the 2fps loops play at 9fps with 4 repeats,
-the 3fps loops at 10fps with 3, the 4fps pounce poses at 9fps with 2, `jump` at
-17fps with 3, and the walks at 9fps. A recut writes single-pose strips, so
-re-apply the repeats after one.
-
 ### Shimeji Shop
 
 Download the pack's `.zip` from its gallery page. The importer wants per-pose PNGs named `shime1.png`, `shime2.png`, and so on, together in one folder at the pack's root or under it. Without an `actions.xml` it assumes Shimeji-ee's standard conf, which reads `shime1`-`shime14` and `shime18`-`shime21`. Pass the zip as is:

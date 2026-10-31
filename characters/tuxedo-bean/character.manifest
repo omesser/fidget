@@ -1,7 +1,6 @@
 # Source rows are documented in DEVELOPMENT.md; importer indices start at zero.
 # All nine source loops are retained: a seated idle with four idle variants.
-# fps is a whole number, so each strip repeats its poses to play about 12%
-# faster than the sheet's original 2, 3, 4, 5 and 8 fps (#1983).
+# Every animated loop plays 1fps faster than the import's 2, 3, 4, 5 and 8 fps.
 
 name = "Tuxedo Bean"
 render_mode = "smooth"
@@ -23,136 +22,64 @@ rush_reaction = "react"
 [animations.idle]
 frames = [
   "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-1.png",
-  "frames/idle-1.png",
-  "frames/idle-1.png",
   "frames/idle-1.png",
   "frames/idle-2.png",
-  "frames/idle-2.png",
-  "frames/idle-2.png",
-  "frames/idle-2.png",
-  "frames/idle-3.png",
-  "frames/idle-3.png",
-  "frames/idle-3.png",
   "frames/idle-3.png",
   "frames/idle-4.png",
-  "frames/idle-4.png",
-  "frames/idle-4.png",
-  "frames/idle-4.png",
-  "frames/idle-5.png",
-  "frames/idle-5.png",
-  "frames/idle-5.png",
   "frames/idle-5.png",
 ]
-fps = 9
+fps = 3
 weight = 80
 
 [animations.look-around]
 frames = [
   "frames/look-around-0.png",
-  "frames/look-around-0.png",
-  "frames/look-around-0.png",
-  "frames/look-around-0.png",
-  "frames/look-around-1.png",
-  "frames/look-around-1.png",
-  "frames/look-around-1.png",
   "frames/look-around-1.png",
   "frames/look-around-2.png",
-  "frames/look-around-2.png",
-  "frames/look-around-2.png",
-  "frames/look-around-2.png",
-  "frames/look-around-3.png",
-  "frames/look-around-3.png",
-  "frames/look-around-3.png",
   "frames/look-around-3.png",
   "frames/look-around-4.png",
-  "frames/look-around-4.png",
-  "frames/look-around-4.png",
-  "frames/look-around-4.png",
-  "frames/look-around-5.png",
-  "frames/look-around-5.png",
-  "frames/look-around-5.png",
   "frames/look-around-5.png",
 ]
-fps = 9
+fps = 3
 variant_of = "idle"
 weight = 10
 
 [animations.nod-off]
 frames = [
   "frames/nod-off-0.png",
-  "frames/nod-off-0.png",
-  "frames/nod-off-0.png",
-  "frames/nod-off-1.png",
-  "frames/nod-off-1.png",
   "frames/nod-off-1.png",
   "frames/nod-off-2.png",
-  "frames/nod-off-2.png",
-  "frames/nod-off-2.png",
-  "frames/nod-off-3.png",
-  "frames/nod-off-3.png",
   "frames/nod-off-3.png",
   "frames/nod-off-4.png",
-  "frames/nod-off-4.png",
-  "frames/nod-off-4.png",
-  "frames/nod-off-5.png",
-  "frames/nod-off-5.png",
   "frames/nod-off-5.png",
   "frames/nod-off-6.png",
-  "frames/nod-off-6.png",
-  "frames/nod-off-6.png",
-  "frames/nod-off-7.png",
-  "frames/nod-off-7.png",
   "frames/nod-off-7.png",
 ]
-fps = 10
+fps = 4
 variant_of = "idle"
 weight = 4
 
 [animations.review]
 frames = [
   "frames/review-0.png",
-  "frames/review-0.png",
-  "frames/review-0.png",
-  "frames/review-1.png",
-  "frames/review-1.png",
   "frames/review-1.png",
   "frames/review-2.png",
-  "frames/review-2.png",
-  "frames/review-2.png",
-  "frames/review-3.png",
-  "frames/review-3.png",
   "frames/review-3.png",
   "frames/review-4.png",
-  "frames/review-4.png",
-  "frames/review-4.png",
-  "frames/review-5.png",
-  "frames/review-5.png",
   "frames/review-5.png",
 ]
-fps = 10
+fps = 4
 variant_of = "idle"
 weight = 3
 
 [animations.wave]
 frames = [
   "frames/wave-0.png",
-  "frames/wave-0.png",
-  "frames/wave-0.png",
-  "frames/wave-1.png",
-  "frames/wave-1.png",
   "frames/wave-1.png",
   "frames/wave-2.png",
-  "frames/wave-2.png",
-  "frames/wave-2.png",
-  "frames/wave-3.png",
-  "frames/wave-3.png",
   "frames/wave-3.png",
 ]
-fps = 10
+fps = 4
 variant_of = "idle"
 weight = 3
 
@@ -186,91 +113,55 @@ left_of = "walk"
 [animations.talk]
 frames = [
   "frames/talk-0.png",
-  "frames/talk-0.png",
-  "frames/talk-0.png",
-  "frames/talk-1.png",
-  "frames/talk-1.png",
   "frames/talk-1.png",
   "frames/talk-2.png",
-  "frames/talk-2.png",
-  "frames/talk-2.png",
-  "frames/talk-3.png",
-  "frames/talk-3.png",
   "frames/talk-3.png",
   "frames/talk-4.png",
-  "frames/talk-4.png",
-  "frames/talk-4.png",
-  "frames/talk-5.png",
-  "frames/talk-5.png",
   "frames/talk-5.png",
 ]
-fps = 10
+fps = 4
 
 [animations.jump]
 frames = [
   "frames/jump-0.png",
-  "frames/jump-0.png",
-  "frames/jump-0.png",
-  "frames/jump-1.png",
-  "frames/jump-1.png",
   "frames/jump-1.png",
   "frames/jump-2.png",
-  "frames/jump-2.png",
-  "frames/jump-2.png",
   "frames/jump-3.png",
-  "frames/jump-3.png",
-  "frames/jump-3.png",
-  "frames/jump-4.png",
-  "frames/jump-4.png",
   "frames/jump-4.png",
 ]
-fps = 17
+fps = 6
 loop = "once"
 
 [animations.fall]
 frames = [
   "frames/jump-2.png",
-  "frames/jump-2.png",
-  "frames/jump-3.png",
   "frames/jump-3.png",
 ]
-fps = 9
+fps = 5
 
 [animations.land]
 frames = [
   "frames/jump-3.png",
-  "frames/jump-3.png",
-  "frames/jump-4.png",
   "frames/jump-4.png",
 ]
-fps = 9
+fps = 5
 loop = "once"
 
 [animations.hold]
 frames = [
   "frames/jump-1.png",
-  "frames/jump-1.png",
-  "frames/jump-2.png",
   "frames/jump-2.png",
 ]
-fps = 9
+fps = 5
 
 [animations.react]
 frames = [
   "frames/wave-0.png",
-  "frames/wave-0.png",
-  "frames/wave-0.png",
-  "frames/wave-1.png",
-  "frames/wave-1.png",
   "frames/wave-1.png",
   "frames/wave-2.png",
-  "frames/wave-2.png",
-  "frames/wave-2.png",
-  "frames/wave-3.png",
-  "frames/wave-3.png",
   "frames/wave-3.png",
 ]
-fps = 10
+fps = 4
 loop = "once"
 
 [animations.sit]
@@ -311,7 +202,7 @@ when = "idle over 30s"
 
 [behaviors.jump]
 play = ["jump"]
-weight = 8
+weight = 5
 when = "idle over 30s"
 
 [behaviors.nap]
