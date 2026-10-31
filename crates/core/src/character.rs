@@ -495,6 +495,16 @@ const OPTIONAL_FALLBACKS: [(&str, &str); 3] = [
 /// where their loop closes, and an awkward package can chain twenty thousand.
 const SHOWN_LOOP_BEHAVIORS: usize = 8;
 
+/// The name a package's Character Manifest declares, read without decoding
+/// any art, so a caller can skip a package whose name another already took.
+pub fn declared_name(package: &PackageBytes) -> Option<String> {
+    let manifest = std::str::from_utf8(package.get(CHARACTER_MANIFEST_FILE)?).ok()?;
+    if manifest.len() > MANIFEST_LIMIT {
+        return None;
+    }
+    parse(manifest, &mut Vec::new())?.name
+}
+
 /// Validate a Character Package.
 /// Returns every error at once rather than the first, so an author fixes their
 /// package in one pass instead of one rejection per attempt.
@@ -680,6 +690,18 @@ mod tests {
             left_strip: None,
             weight: DEFAULT_WEIGHT,
         }
+    }
+
+    #[test]
+    fn the_declared_name_is_the_name_a_load_gives() {
+        let mut package = art();
+        assert_eq!(declared_name(&package), None, "no manifest, no name");
+        package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
+        );
+        let loaded = load(&package).expect("loads");
+        assert_eq!(declared_name(&package), Some(loaded.name));
     }
 
     #[test]

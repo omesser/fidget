@@ -4435,11 +4435,14 @@ fn load_all_characters(
             Ok(files) => files,
             Err(_) => continue,
         };
+        // Earlier directories win, so a package the user added is the one a
+        // switch loads. Checked before the load: decoding the art of every
+        // shadowed copy cost a debug launch on CI up to half a second.
+        let name = fidget_core::character::declared_name(&files);
+        if name.is_some_and(|name| cache.contains_key(&name)) {
+            continue;
+        }
         if let Ok(character) = fidget_core::character::load(&files) {
-            // Earlier directories win, so a package the user added is the one a switch loads.
-            if cache.contains_key(&character.name) {
-                continue;
-            }
             art.insert(
                 character.name.clone(),
                 CharacterArt {
