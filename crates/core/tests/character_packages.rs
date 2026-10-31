@@ -12,7 +12,7 @@
 //! shipped character's load and required animations are covered by the shell
 //! crate's integration test.
 
-use fidget_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
+use fidget_core::character::{self, CursorReaction, Primitive, REQUIRED_ANIMATIONS};
 use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -514,12 +514,86 @@ fn tuxedo_bean_draws_each_idle_loop_and_its_left_walk() {
         "tuxedo-bean",
         57,
         &[
-            ("look-around", 6),
-            ("nod-off", 8),
-            ("review", 6),
-            ("wave", 4),
+            ("look-around", 24),
+            ("nod-off", 24),
+            ("review", 18),
+            ("wave", 12),
         ],
     );
+}
+
+/// Every row of the `tuxedo-bean` sheet reaches the screen without a model:
+/// as an idle variant, or through a Behavior the Static Director can pick.
+/// Row 2, the left walk, is checked by the test above.
+#[test]
+fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
+    let character = load_package("tuxedo-bean").expect("Tuxedo Bean package is valid");
+    for (row, name) in [
+        (0, "look-around"),
+        (3, "wave"),
+        (5, "nod-off"),
+        (8, "review"),
+    ] {
+        assert!(
+            character.animations["idle"]
+                .variants
+                .contains(&name.to_string()),
+            "row {row} ({name}) plays while idling"
+        );
+    }
+    for (row, primitive) in [
+        (1, Primitive::Walk),
+        (4, Primitive::Jump),
+        (6, Primitive::Idle),
+        (7, Primitive::Talk),
+    ] {
+        assert!(
+            character
+                .behaviors
+                .values()
+                .any(|behavior| behavior.weight > 0 && behavior.primitives.contains(&primitive)),
+            "row {row} ({primitive:?}) needs a Behavior the Static Director can pick"
+        );
+    }
+}
+
+/// Each loop shows its poses 10-15% faster than the sheet's import fps. A
+/// whole-number fps can't say 2.25, so a strip repeats each pose instead.
+#[test]
+fn tuxedo_bean_plays_each_pose_about_twelve_percent_faster_than_imported() {
+    let character = load_package("tuxedo-bean").expect("Tuxedo Bean package is valid");
+    for (name, imported_fps) in [
+        ("idle", 2),
+        ("look-around", 2),
+        ("nod-off", 3),
+        ("review", 3),
+        ("wave", 3),
+        ("talk", 3),
+        ("react", 3),
+        ("walk", 8),
+        ("walk-left", 8),
+        ("jump", 5),
+        ("fall", 4),
+        ("land", 4),
+        ("hold", 4),
+    ] {
+        let animation = &character.animations[name];
+        let poses = animation.frames.iter().collect::<BTreeSet<_>>().len();
+        let repeats = animation.frames.len() / poses;
+        assert!(
+            animation
+                .frames
+                .chunks(repeats)
+                .all(|run| run.iter().all(|frame| *frame == run[0])),
+            "{name} holds each pose for {repeats} frames in a row"
+        );
+        let pose_rate = f64::from(animation.fps) / repeats as f64;
+        let speedup = pose_rate / f64::from(imported_fps);
+        assert!(
+            (1.10..=1.15).contains(&speedup),
+            "{name} plays {pose_rate:.2} poses/s, {speedup:.3}x its imported {imported_fps}fps"
+        );
+    }
 }
 
 #[test]
