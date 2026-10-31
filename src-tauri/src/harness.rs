@@ -4628,7 +4628,11 @@ mod tests {
                         // This is fixture dialogue, not an assertion about
                         // model language compliance.
                         "scenario-gallery-french" => {
-                            chunk(&session, "greet\nBonjour ! Je suis BMO. Enchanté de te rencontrer !");
+                            // Stream in two chunks as the real speech path does.
+                            // Hold the turn only after the bubble sees spoken text.
+                            chunk(&session, "greet\nBonjour ! Je suis BMO.");
+                            thread::sleep(Duration::from_millis(250));
+                            chunk(&session, " Enchanté de te rencontrer !");
                             record(count, "french-spoken");
                             if let Some(fifo) = std::env::args()
                                 .find_map(|arg| arg.strip_prefix("hold=").map(PathBuf::from))
