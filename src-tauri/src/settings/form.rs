@@ -14,6 +14,7 @@ use crate::settings::{BoolField, TextField};
 
 /// Operations the settings window requests.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RowOperation {
     Spawn,
     OpenMemory,
@@ -33,19 +34,13 @@ pub enum RowOperation {
 }
 
 impl RowOperation {
-    /// Stable wire name for the Rust/JS boundary, the variant in snake_case.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Spawn => "spawn",
-            Self::OpenMemory => "open_memory",
-            Self::WipeMemory => "wipe_memory",
-            Self::ClearKey => "clear_key",
-            Self::CopyByoSnippet => "copy_byo_snippet",
-            Self::CopyByoToken => "copy_byo_token",
-            Self::Apply => "apply",
-            Self::Cancel => "cancel",
-            Self::NewSession => "new_session",
-        }
+    /// The wire name is serde's snake_case name.
+    pub fn as_str(&self) -> String {
+        serde_json::to_value(self)
+            .expect("RowOperation serializes")
+            .as_str()
+            .expect("a unit variant serializes as a string")
+            .to_owned()
     }
 }
 

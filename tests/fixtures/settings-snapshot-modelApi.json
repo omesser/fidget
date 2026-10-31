@@ -987,14 +987,14 @@
     }
   ],
   "operations": {
-    "byo_copy": "CopyByoSnippet",
-    "byo_copy_token": "CopyByoToken",
-    "clear_key": "ClearKey",
-    "director_apply": "Apply",
-    "director_cancel": "Cancel",
-    "memory_open": "OpenMemory",
-    "memory_wipe": "WipeMemory",
-    "new_session": "NewSession",
-    "spawn": "Spawn"
+    "byo_copy": "copy_byo_snippet",
+    "byo_copy_token": "copy_byo_token",
+    "clear_key": "clear_key",
+    "director_apply": "apply",
+    "director_cancel": "cancel",
+    "memory_open": "open_memory",
+    "memory_wipe": "wipe_memory",
+    "new_session": "new_session",
+    "spawn": "spawn"
   }
 }
