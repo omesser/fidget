@@ -22,6 +22,6 @@ fn main() {
          time: Saturday 12:00\n\
          state: idle\n\
          standing on: nothing\n\
-         they said: Tell me two cheerful sentences about what you would like to do today."
+         they said: Please speak to me now. Answer my question in two complete cheerful sentences: what would you like to do today? Include the sentences in the spoken reply, not just a behavior name."
     );
 }
