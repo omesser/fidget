@@ -4427,17 +4427,25 @@ fn load_all_characters(
         .resource_dir()
         .ok()
         .map(|dir| dir.join(BUNDLED_CHARACTERS));
-    let search_paths = package::search_paths(bundled);
+    characters_in(&package::search_paths(bundled))
+}
+
+fn characters_in(
+    search_paths: &[PathBuf],
+) -> (
+    BTreeMap<String, CharacterArt>,
+    BTreeMap<String, Arc<Character>>,
+) {
     let mut art = BTreeMap::new();
     let mut cache = BTreeMap::new();
-    for path in package::installed(&search_paths) {
+    for path in package::installed(search_paths) {
         let files = match package::read(&path) {
             Ok(files) => files,
             Err(_) => continue,
         };
         // Earlier directories win, so a package the user added is the one a
-        // switch loads. Checked before the load: decoding the art of every
-        // shadowed copy cost a debug launch on CI up to half a second.
+        // switch loads. Checked before the load, so a shadowed copy's art is
+        // never decoded only to be discarded.
         let name = fidget_core::character::declared_name(&files);
         if name.is_some_and(|name| cache.contains_key(&name)) {
             continue;
@@ -6551,6 +6559,33 @@ mod tests {
                 shipped_characters().display()
             ))
         );
+    }
+
+    #[test]
+    fn an_earlier_directory_shadows_a_later_character_of_the_same_name() {
+        let user = tempfile::tempdir().expect("temp dir");
+        let copy = user.path().join("bmo");
+        let shipped = shipped_characters().join("bmo");
+        std::fs::create_dir_all(copy.join("frames")).expect("package dir");
+        for entry in std::fs::read_dir(shipped.join("frames")).expect("frames") {
+            let frame = entry.expect("frame").path();
+            std::fs::copy(
+                &frame,
+                copy.join("frames").join(frame.file_name().expect("name")),
+            )
+            .expect("copy frame");
+        }
+        let manifest = std::fs::read_to_string(shipped.join("character.manifest"))
+            .expect("manifest")
+            .replace("render_mode = \"smooth\"\n", "");
+        std::fs::write(copy.join("character.manifest"), manifest).expect("manifest");
+
+        let (art, cache) = characters_in(&[user.path().to_path_buf(), shipped_characters()]);
+        assert!(
+            !cache["BMO"].smooth,
+            "the user's pixel copy, not the shipped smooth one"
+        );
+        assert!(!art["BMO"].smooth);
     }
 
     #[test]
