@@ -758,17 +758,19 @@ impl Engine {
         self.do_not_disturb
     }
 
-    /// Hand the sprite to the keyboard, or give it back. An autonomous walk
-    /// under way ends, or it would stride on with no arrow held. The keys own
-    /// the feet from the next tick.
+    /// Hand the sprite to the keyboard, or give it back. Either way the walk
+    /// under way ends, chosen or driven, or it would stride on with no arrow
+    /// held. The keys own the feet from the next tick.
     pub fn set_possessed(&mut self, possessed: bool) {
         self.possessed = possessed;
-        if possessed && matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
+        if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
             self.stop_playing();
         }
-        if !possessed {
-            self.steering = false;
+        // Walk velocity outlives what set it, a Primitive or a held arrow.
+        if self.is_walking() || self.steering {
+            self.velocity.x = 0.0;
         }
+        self.steering = false;
     }
 
     /// Whether the keyboard is driving the sprite.
@@ -9760,6 +9762,46 @@ mod tests {
             assert!(!engine.possessed());
             let frame = engine.tick(&driven(holding(Arrow::Right), &world));
             assert_eq!(frame.velocity.x, 0.0, "keys move it no more: {frame:?}");
+        }
+
+        /// Ending the possession lets go of every key, so a driven walk stops
+        /// where it is rather than striding on to the edge and climbing it.
+        #[test]
+        fn ending_the_possession_mid_walk_stands_the_sprite_still() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            for _ in 0..5 {
+                engine.tick(&driven(holding(Arrow::Right), &world));
+            }
+            engine.set_possessed(false);
+
+            let x = engine.feet().x;
+            for _ in 0..300 {
+                let frame = engine.tick(&driven(holding(Arrow::Right), &world));
+                assert_eq!(frame.velocity.x, 0.0, "{frame:?}");
+                assert_eq!(frame.position.x, x, "{frame:?}");
+                assert_eq!(frame.state, State::Grounded, "{frame:?}");
+                assert_ne!(frame.animation, "walk", "{frame:?}");
+            }
+        }
+
+        /// Mid-air, the drift stops as letting go of the arrow stops it, and
+        /// the fall lands straight down.
+        #[test]
+        fn ending_the_possession_mid_jump_stops_the_drift() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            engine.tick(&driven(launching(released_after(1_000)), &world));
+            let steered = engine.tick(&driven(holding(Arrow::Right), &world));
+            assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
+            engine.set_possessed(false);
+
+            let x = engine.feet().x;
+            let frames = flight(&mut engine, &world);
+            let drifting = frames.iter().find(|frame| frame.velocity.x != 0.0);
+            assert_eq!(drifting, None);
+            assert_eq!(frames.last().unwrap().position.x, x, "straight down");
+            assert_eq!(engine.tick(&world).velocity.x, 0.0);
         }
     }
 }
