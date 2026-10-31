@@ -21,6 +21,16 @@ and opens the context menu. No user profile or credentials are used.
 | **Chat (live language change)** | ![Chat (live language change) — English](en/09-chat.png) | ![Chat (live language change) — Français](fr/09-chat.png) | ![Chat (live language change) — Español](es/09-chat.png) |
 | **Context menu** | ![Context menu — English](en/10-context-menu.png) | ![Context menu — Français](fr/10-context-menu.png) | ![Context menu — Español](es/10-context-menu.png) |
 
+## BMO speaking French
+
+![BMO speaking French in a real Fidget speech bubble](fr/11-bmo-speaks-french.png)
+
+BMO says: **Bonjour ! Je suis BMO. Enchanté de te rencontrer !**
+
+The line comes from a deterministic ACP test fixture, not a live AI model.
+The screenshot is taken from the actual running desktop app;
+the harness fixture's spoken line and the live talk animation are checked.
+
 The English screenshots use the English source strings; the French
 and Spanish screenshots use the branch's translation catalogs.
 The language is chosen through the actual in-app picker, not
