@@ -16,7 +16,7 @@ import {
   paintPossession,
   placePossession,
   possessionCard,
-} from "./drive-card.js";
+} from "./possession-card.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
@@ -280,7 +280,7 @@ const POSSESSION_GAP_PX = 8;
 
 function positionPossession(view, sprite, latest) {
   const model = possessionCard({
-    driving: Boolean(latest.driving),
+    possessed: Boolean(latest.possessed),
     paused: Boolean(latest.paused),
   });
   const fill = chargeFill(latest.charge);

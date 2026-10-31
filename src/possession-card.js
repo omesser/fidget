@@ -15,8 +15,8 @@ const KEYS = [
 
 // Null while the sprite is not possessed. Paused keeps the card and replaces
 // the explanation with the resume line.
-export function possessionCard({ driving, paused }) {
-  if (!driving) return null;
+export function possessionCard({ possessed, paused }) {
+  if (!possessed) return null;
   if (paused) {
     return { paused: true, dimmed: true, heading: RESUME_LABEL, keys: KEYS };
   }

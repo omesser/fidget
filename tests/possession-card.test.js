@@ -4,23 +4,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { chargeFill, possessionCard, possessionRects } from "../src/drive-card.js";
-import { driveEdge } from "../src/drive-keys.js";
+import { chargeFill, possessionCard, possessionRects } from "../src/possession-card.js";
+import { possessionEdge } from "../src/possession-keys.js";
 
-test("arrows, space and escape are the drive keys, and a repeat is ignored", () => {
-  assert.deepEqual(driveEdge("ArrowLeft", false, true), { key: "left", down: true });
-  assert.deepEqual(driveEdge("ArrowRight", false, false), { key: "right", down: false });
-  assert.deepEqual(driveEdge(" ", false, true), { key: "space", down: true });
-  assert.deepEqual(driveEdge("Escape", false, true), { key: "escape", down: true });
-  assert.equal(driveEdge("ArrowLeft", true, true), null);
-  assert.equal(driveEdge("ArrowUp", false, true), null);
-  assert.equal(driveEdge("ArrowDown", false, true), null);
-  assert.equal(driveEdge("1", false, true), null);
-  assert.equal(driveEdge("a", false, true), null);
+test("arrows, space and escape are the possession keys, and a repeat is ignored", () => {
+  assert.deepEqual(possessionEdge("ArrowLeft", false, true), { key: "left", down: true });
+  assert.deepEqual(possessionEdge("ArrowRight", false, false), { key: "right", down: false });
+  assert.deepEqual(possessionEdge(" ", false, true), { key: "space", down: true });
+  assert.deepEqual(possessionEdge("Escape", false, true), { key: "escape", down: true });
+  assert.equal(possessionEdge("ArrowLeft", true, true), null);
+  assert.equal(possessionEdge("ArrowUp", false, true), null);
+  assert.equal(possessionEdge("ArrowDown", false, true), null);
+  assert.equal(possessionEdge("1", false, true), null);
+  assert.equal(possessionEdge("a", false, true), null);
 });
 
 test("the card lists the bound keys under the explanation", () => {
-  const card = possessionCard({ driving: true, paused: false });
+  const card = possessionCard({ possessed: true, paused: false });
   assert.equal(card.paused, false);
   assert.equal(card.heading, "Manually drive the fidget on your screen");
   assert.deepEqual(card.keys, [
@@ -31,15 +31,15 @@ test("the card lists the bound keys under the explanation", () => {
 });
 
 test("a paused card dims and asks for a click", () => {
-  const card = possessionCard({ driving: true, paused: true });
+  const card = possessionCard({ possessed: true, paused: true });
   assert.equal(card.paused, true);
   assert.equal(card.heading, "Click to resume");
   assert.equal(card.dimmed, true);
 });
 
 test("the card is absent until the sprite is possessed", () => {
-  assert.equal(possessionCard({ driving: false, paused: false }), null);
-  assert.equal(possessionCard({ driving: false, paused: true }), null);
+  assert.equal(possessionCard({ possessed: false, paused: false }), null);
+  assert.equal(possessionCard({ possessed: false, paused: true }), null);
 });
 
 test("the bar fills with the charge and hides when space is up", () => {
