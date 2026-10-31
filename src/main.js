@@ -16,6 +16,7 @@ import {
   paintPossession,
   placePossession,
   possessionCard,
+  possessionRects,
 } from "./possession-card.js";
 import {
   CONNECT_HINT,
@@ -292,7 +293,14 @@ function positionPossession(view, sprite, latest) {
     return;
   }
   const cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
-  const placed = placePossession(sprite, cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX);
+  const placed = placePossession(
+    sprite,
+    cardSize,
+    CHARGE_BAR_PX,
+    POSSESSION_GAP_PX,
+    currentDisplayBounds(),
+    speechRect(view),
+  );
   view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
   view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
   view.bar.style.width = `${placed.bar.width}px`;
@@ -618,9 +626,12 @@ function reportOverlayRects() {
     const push = (rect, clickable) => rects.push(follows ? { rect, clickable, follows } : { rect, clickable });
     if (view.hotspot) push(view.hotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
-    if (view.possessionRect) push(view.possessionRect, true);
+    const parts = possessionRects(view.possessionRect, view.chargeRect);
+    const card = parts.find((part) => part.clickable);
+    const bar = parts.find((part) => !part.clickable);
+    if (card) push(card.rect, card.clickable);
     if (view.bubbleRect) push(view.bubbleRect, false);
-    if (view.chargeRect) push(view.chargeRect, false);
+    if (bar) push(bar.rect, bar.clickable);
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedRects) return;
