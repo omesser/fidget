@@ -9336,4 +9336,430 @@ mod tests {
         let again = engine.tick(&world);
         assert_eq!(again.position, there, "the next tick does not hop");
     }
+
+    /// A possessed sprite and the keys the Shell feeds it.
+    mod possession {
+        use super::*;
+        use crate::drive::{Arrow, Charge, Drive, Intent, Key};
+
+        const FRAME_MS: u32 = 16;
+
+        /// The charge a Space held for `held_ms` releases with.
+        fn released_after(held_ms: u32) -> Charge {
+            let mut keys = Drive::default();
+            keys.key(Key::Space, true);
+            keys.tick(held_ms);
+            keys.key(Key::Space, false);
+            keys.tick(FRAME_MS).launch.expect("a keyup launches")
+        }
+
+        fn holding(arrow: Arrow) -> Intent {
+            Intent {
+                walk: Some(arrow),
+                ..Intent::default()
+            }
+        }
+
+        fn launching(charge: Charge) -> Intent {
+            Intent {
+                launch: Some(charge),
+                ..Intent::default()
+            }
+        }
+
+        fn on(display: Rect) -> WorldSnapshot {
+            WorldSnapshot {
+                displays: vec![display],
+                elapsed_ms: FRAME_MS,
+                ..WorldSnapshot::default()
+            }
+        }
+
+        fn driven(drive: Intent, world: &WorldSnapshot) -> WorldSnapshot {
+            WorldSnapshot {
+                drive,
+                ..world.clone()
+            }
+        }
+
+        /// Standing at `x` on `world`'s floor, its landing played out.
+        fn resting_at(x: f64, world: &WorldSnapshot) -> Engine {
+            let mut engine = a_character_at(Point { x, y: 0.0 });
+            settle(
+                &mut engine,
+                &WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                },
+            );
+            engine
+        }
+
+        fn possessed_at(x: f64, world: &WorldSnapshot) -> Engine {
+            let mut engine = resting_at(x, world);
+            engine.set_possessed(true);
+            engine
+        }
+
+        /// Ticks with nothing held until the sprite stands again, and the
+        /// frames on the way, the landing last.
+        fn flight(engine: &mut Engine, world: &WorldSnapshot) -> Vec<Frame> {
+            let mut frames = Vec::new();
+            for _ in 0..400 {
+                let frame = engine.tick(world);
+                let landed = frame.state == State::Grounded;
+                frames.push(frame);
+                if landed {
+                    return frames;
+                }
+            }
+            panic!("the jump never came down: {:?}", frames.last());
+        }
+
+        fn peak(frames: &[Frame]) -> f64 {
+            frames
+                .iter()
+                .map(|frame| frame.position.y)
+                .fold(f64::INFINITY, f64::min)
+        }
+
+        #[test]
+        fn a_held_arrow_walks_a_possessed_sprite_and_letting_go_stops_it() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+
+            let walking = engine.tick(&driven(holding(Arrow::Left), &world));
+            assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
+            assert_eq!(walking.facing, -1.0);
+            assert_eq!(walking.animation, "walk");
+            assert!(walking.position.x < 500.0, "it moved: {walking:?}");
+
+            let stopped = engine.tick(&world);
+            assert_eq!(stopped.velocity.x, 0.0, "{stopped:?}");
+            assert_eq!(stopped.facing, -1.0, "it keeps the heading it walked");
+            let there = stopped.position.x;
+            assert_eq!(engine.tick(&world).position.x, there, "and stays put");
+        }
+
+        #[test]
+        fn drive_moves_nothing_until_the_sprite_is_possessed() {
+            let world = on(one_display());
+            let mut engine = resting_at(500.0, &world);
+            let resting = engine.tick(&world);
+
+            let frame = engine.tick(&driven(holding(Arrow::Right), &world));
+            assert_eq!(frame.position, resting.position, "{frame:?}");
+            assert_eq!(frame.charge, None);
+        }
+
+        #[test]
+        fn the_frame_carries_the_charge_while_space_is_held() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let mut keys = Drive::default();
+            keys.key(Key::Space, true);
+
+            let charging = engine.tick(&driven(keys.tick(250), &world));
+            assert_eq!(charging.charge, Some(0.25), "{charging:?}");
+            assert_eq!(charging.state, State::Grounded, "charging is not jumping");
+
+            keys.key(Key::Space, false);
+            let launched = engine.tick(&driven(keys.tick(FRAME_MS), &world));
+            assert_eq!(launched.charge, None, "the bar empties on release");
+        }
+
+        /// A tap is today's hop. A full bar lifts the feet to the usable top of
+        /// the display they stand on, however tall: the same `ceiling_over` a
+        /// climb lets go at.
+        #[test]
+        fn a_full_bar_reaches_the_usable_top_of_displays_of_two_heights() {
+            let short = monitor(0.0, 0.0, 1000.0, 800.0);
+            let tall = monitor(0.0, 0.0, 1000.0, 1600.0);
+            let mut launch_speeds = Vec::new();
+
+            for display in [short, tall] {
+                let world = on(display);
+                let mut engine = possessed_at(500.0, &world);
+                let floor = engine.position.y;
+                let usable_top = ceiling_over(500.0, &world, engine.ceiling_clearance())
+                    .expect("over a display");
+
+                let launched = engine.tick(&driven(launching(released_after(1_000)), &world));
+                launch_speeds.push(-launched.velocity.y);
+                let frames = flight(&mut engine, &world);
+
+                assert!(
+                    (peak(&frames) - usable_top).abs() < 1.0,
+                    "feet at {} reach the usable top {usable_top} from {floor}",
+                    peak(&frames)
+                );
+            }
+            assert!(
+                launch_speeds[1] > launch_speeds[0],
+                "a taller display launches harder: {launch_speeds:?}"
+            );
+        }
+
+        #[test]
+        fn a_tap_hops_and_a_half_bar_rises_halfway_to_the_full_height() {
+            let world = on(one_display());
+            let height = |held_ms| {
+                let mut engine = possessed_at(500.0, &world);
+                let floor = engine.position.y;
+                engine.tick(&driven(launching(released_after(held_ms)), &world));
+                floor - peak(&flight(&mut engine, &world))
+            };
+            let hop = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
+            let full = height(1_000);
+
+            assert!((height(0) - hop).abs() < 1.0, "a tap is the hop");
+            assert!(
+                (height(500) - (hop + full) / 2.0).abs() < 1.0,
+                "linear in the bar: half {} between {hop} and {full}",
+                height(500)
+            );
+        }
+
+        /// The jump goes through the one landing path a proposed Jump uses.
+        #[test]
+        fn a_driven_jump_rises_as_jump_falls_as_fall_and_lands_with_the_drop_cue() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let floor = engine.position.y;
+
+            let launched = engine.tick(&driven(launching(released_after(500)), &world));
+            assert_eq!(launched.state, State::Falling, "{launched:?}");
+            assert!(launched.velocity.y < 0.0, "going up: {launched:?}");
+            assert_eq!(launched.animation, "jump");
+            assert_eq!(launched.velocity.x, 0.0, "no arrow, straight up");
+
+            let frames = flight(&mut engine, &world);
+            let (landing, air) = frames.split_last().unwrap();
+            let step = GRAVITY * f64::from(FRAME_MS) / 1000.0;
+            for frame in air {
+                if frame.velocity.y < -step {
+                    assert_eq!(frame.animation, "jump", "rising: {frame:?}");
+                } else if frame.velocity.y > step {
+                    assert_eq!(frame.animation, "fall", "past the apex: {frame:?}");
+                }
+                assert_eq!(frame.cue, None, "no cue in the air: {frame:?}");
+            }
+            assert_eq!(landing.position, Point { x: 500.0, y: floor });
+            assert_eq!(landing.animation, "land", "{landing:?}");
+            assert_eq!(landing.cue, Some(Cue::Drop), "{landing:?}");
+        }
+
+        #[test]
+        fn a_held_arrow_steers_a_jump_and_letting_go_stops_the_drift() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            engine.tick(&driven(launching(released_after(1_000)), &world));
+
+            let steered = engine.tick(&driven(holding(Arrow::Right), &world));
+            assert_eq!(steered.state, State::Falling);
+            assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
+            assert_eq!(steered.facing, 1.0);
+
+            let let_go = engine.tick(&world);
+            assert_eq!(let_go.state, State::Falling);
+            assert_eq!(let_go.velocity.x, 0.0, "the drift stops: {let_go:?}");
+            let x = let_go.position.x;
+            let landed = flight(&mut engine, &world);
+            assert_eq!(landed.last().unwrap().position.x, x, "straight down");
+        }
+
+        #[test]
+        fn an_arrow_held_at_launch_jumps_forward() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let launched = engine.tick(&driven(
+                Intent {
+                    walk: Some(Arrow::Left),
+                    launch: Some(released_after(0)),
+                    ..Intent::default()
+                },
+                &world,
+            ));
+            assert_eq!(launched.velocity.x, -WALK_SPEED, "{launched:?}");
+            assert!(launched.velocity.y < 0.0, "{launched:?}");
+        }
+
+        /// A Grab wins: the keys move nothing in hand, the release falls and
+        /// lands as usual, and the sprite is still possessed after.
+        #[test]
+        fn a_grab_mid_drive_wins_and_the_release_lands_as_usual() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            engine.tick(&driven(holding(Arrow::Right), &world));
+
+            let feet = engine.feet();
+            let grabbed = engine.tick(&WorldSnapshot {
+                cursor: feet,
+                verbs: vec![Verb::Grab],
+                ..driven(holding(Arrow::Right), &world)
+            });
+            assert_eq!(grabbed.state, State::Dragged);
+            let held = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 300.0, y: 300.0 },
+                verbs: vec![Verb::Grab],
+                ..driven(
+                    Intent {
+                        walk: Some(Arrow::Right),
+                        launch: Some(released_after(1_000)),
+                        ..Intent::default()
+                    },
+                    &world,
+                )
+            });
+            assert_eq!(held.state, State::Dragged, "{held:?}");
+            assert_eq!(held.velocity, Point::default(), "{held:?}");
+            let in_hand = held.position;
+
+            let released = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 300.0, y: 300.0 },
+                ..world.clone()
+            });
+            assert_eq!(released.state, State::Falling);
+            let frames = flight(&mut engine, &world);
+            let landing = frames.last().unwrap();
+            assert_eq!(landing.position.x, in_hand.x, "dropped straight down");
+            assert_eq!(landing.cue, Some(Cue::Drop), "{landing:?}");
+            assert!(engine.possessed(), "the Grab did not end the possession");
+        }
+
+        #[test]
+        fn a_thrown_possessed_sprite_flies_as_thrown() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            carry(&mut engine, Point { x: 500.0, y: 300.0 }, &world);
+            let thrown = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 500.0, y: 300.0 },
+                verbs: vec![Verb::Throw {
+                    velocity: Point { x: 400.0, y: 0.0 },
+                }],
+                ..world.clone()
+            });
+            assert_eq!(thrown.velocity.x, 400.0, "{thrown:?}");
+            let flying = engine.tick(&world);
+            assert_eq!(
+                flying.velocity.x, 400.0,
+                "no arrow held does not stop a throw: {flying:?}"
+            );
+        }
+
+        /// A frozen bubble or a quick message holds an autonomous walk, not one
+        /// the user is driving.
+        #[test]
+        fn a_driven_walk_strides_through_frozen_locomotion() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+
+            for frozen in [
+                WorldSnapshot {
+                    locomotion_frozen: true,
+                    ..world.clone()
+                },
+                WorldSnapshot {
+                    composing: true,
+                    ..world.clone()
+                },
+            ] {
+                let frame = engine.tick(&driven(holding(Arrow::Right), &frozen));
+                assert_eq!(frame.velocity.x, WALK_SPEED, "{frame:?}");
+                assert_eq!(frame.animation, "walk", "{frame:?}");
+            }
+        }
+
+        #[test]
+        fn a_possessed_sprite_refuses_proposals_but_shows_their_speech() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+
+            let frame = engine.tick(&WorldSnapshot {
+                proposal: Some(BehaviorProposal {
+                    behavior: "walk".to_string(),
+                    dialogue: Some("hands off the wheel".to_string()),
+                }),
+                ..world.clone()
+            });
+            assert_eq!(frame.behavior, None, "{frame:?}");
+            assert_eq!(frame.playing_primitive, None, "{frame:?}");
+            assert_eq!(frame.dialogue.as_deref(), Some("hands off the wheel"));
+            assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
+        }
+
+        #[test]
+        fn a_possessed_sprite_never_falls_asleep() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+
+            let frame = engine.tick(&WorldSnapshot {
+                elapsed_ms: SLEEP_AFTER_MS * 2,
+                ..world.clone()
+            });
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            let frame = engine.tick(&world);
+            assert_ne!(frame.state, State::Asleep, "{frame:?}");
+        }
+
+        #[test]
+        fn possessing_a_sleeping_sprite_wakes_it() {
+            let world = on(one_display());
+            let mut engine = resting_at(500.0, &world);
+            let asleep = engine.tick(&WorldSnapshot {
+                elapsed_ms: SLEEP_AFTER_MS,
+                ..world.clone()
+            });
+            assert_eq!(asleep.state, State::Asleep);
+
+            engine.set_possessed(true);
+            settle(&mut engine, &world);
+            let walking = engine.tick(&driven(holding(Arrow::Left), &world));
+            assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
+        }
+
+        /// The screen edge and the Dock's side stop a driven walk; neither is
+        /// climbed while the user steers.
+        #[test]
+        fn a_driven_walk_into_a_wall_stops_rather_than_climbs() {
+            let worlds = [
+                on(one_display()),
+                WorldSnapshot {
+                    windows: vec![window(
+                        DOCK_PERCH_ID,
+                        Rect {
+                            x: 700.0,
+                            y: 740.0,
+                            width: 200.0,
+                            height: 60.0,
+                        },
+                    )],
+                    ..on(one_display())
+                },
+            ];
+            for world in worlds {
+                let mut engine = possessed_at(500.0, &world);
+                let mut last = None;
+                for _ in 0..400 {
+                    let frame = engine.tick(&driven(holding(Arrow::Right), &world));
+                    assert_ne!(frame.state, State::Climbing, "{frame:?}");
+                    assert_eq!(frame.state, State::Grounded, "{frame:?}");
+                    last = Some(frame);
+                }
+                let last = last.unwrap();
+                assert_eq!(last.velocity.x, 0.0, "stopped at the wall: {last:?}");
+                assert_eq!(last.animation, "idle", "standing, not striding: {last:?}");
+            }
+        }
+
+        #[test]
+        fn ending_the_possession_hands_the_sprite_back() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_possessed(false);
+            assert!(!engine.possessed());
+            let frame = engine.tick(&driven(holding(Arrow::Right), &world));
+            assert_eq!(frame.velocity.x, 0.0, "keys move it no more: {frame:?}");
+        }
+    }
 }
