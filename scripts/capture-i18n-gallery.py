@@ -299,6 +299,7 @@ def capture_french_speech():
            "FIDGET_DIRECTOR_API_KEY": "x",
            "FIDGET_CAPTURABLE": "1",
            "FIDGET_TRACE_FRAMES": "1",
+           "FIDGET_TRACE_BUBBLE": "1",
            "FIDGET_CHARACTER": "bmo",
            "FIDGET_CHARACTERS": str(ROOT / "characters")}
     log = home / "app.log"
@@ -309,6 +310,10 @@ def capture_french_speech():
         try:
             eventually(lambda: "french-spoken" in marks.read_text(errors="replace"),
                        "the French ACP fixture did not speak", 30)
+            # The fixture marks its output before the UI receives it. The
+            # frontend's showSpeech trace is the real webview witness.
+            eventually(lambda: "showSpeech instance=" in log.read_text(errors="replace"),
+                       "WebKit never displayed the streamed French bubble", 12)
 
             def bubble_text():
                 dump = run("/usr/bin/python3", ROOT / "scripts/ax-window-linux.py",
@@ -339,26 +344,40 @@ def capture_french_speech():
             sw, sh = map(int, sizes[0])
             screen_file = Path(tempfile.mkstemp(suffix=".png")[1])
             try:
-                run("import", "-window", "root", screen_file)
-                image = Image.open(screen_file).convert("RGB")
-                # A bubble is at most 260px wide and lives above the sprite.
-                cx = sx + sw // 2
-                left, top = max(0, cx - 210), max(0, sy - 245)
-                right = min(image.width, cx + 210)
-                bottom = min(image.height, sy + sh + 55)
-                image = image.crop((left, top, right, bottom))
-                if image.width < 220 or image.height < 200:
-                    raise RuntimeError("French speech crop is outside the desktop")
-                if max(ImageStat.Stat(image).stddev) < 3:
-                    raise RuntimeError("French speech screenshot is flat/blank")
+                def visible_bubble():
+                    run("import", "-window", "root", screen_file)
+                    whole = Image.open(screen_file).convert("RGB")
+                    # A bubble is at most 260px wide and sits above BMO's head.
+                    cx = sx + sw // 2
+                    left, top = max(0, cx - 210), max(0, sy - 245)
+                    right = min(whole.width, cx + 210)
+                    bottom = min(whole.height, sy + sh + 55)
+                    crop = whole.crop((left, top, right, bottom))
+                    if crop.width < 220 or crop.height < 200:
+                        raise RuntimeError("French speech crop is outside the desktop")
+                    # Checking image variance alone accepted a black screenshot
+                    # containing only BMO's sprite. Require actual light-coloured
+                    # pixels above the sprite, where the speech bubble is drawn.
+                    upper_height = max(1, min(crop.height, sy - top - 8))
+                    upper = crop.crop((0, 0, crop.width, upper_height))
+                    light = sum(max(pixel) > 150 for pixel in upper.getdata())
+                    return crop if light >= 200 else None
+
+                image = eventually(visible_bubble,
+                    "French speech bubble is not visible in framebuffer above BMO", 10)
                 dest = OUT / "fr/11-bmo-speaks-french.png"
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 image.save(dest, optimize=True)
-                print(f"CAPTURE {dest.relative_to(ROOT)} (live French bubble)",
+                print(f"CAPTURE {dest.relative_to(ROOT)} (verified visible French bubble)",
                       flush=True)
             finally:
                 screen_file.unlink(missing_ok=True)
         except Exception:
+            debug = ROOT / "docs/i18n/gallery-debug"
+            debug.mkdir(parents=True, exist_ok=True)
+            run("import", "-window", "root", debug / "french-full-screen.png", check=False)
+            (debug / "french-app.log").write_text(
+                log.read_text(errors="replace"), encoding="utf-8")
             print("--- French speech run log ---", file=sys.stderr)
             print("\n".join(log.read_text(errors="replace").splitlines()[-100:]),
                   file=sys.stderr)
