@@ -49,11 +49,11 @@ fn imported_characters(app: &tauri::AppHandle) -> Result<Vec<ImportedCharacter>,
         .iter()
         .map(|instance| instance.character.clone())
         .collect();
-    Ok(listed(&selected, &in_use))
+    Ok(list_imports(&selected, &in_use))
 }
 
-/// Apart from the app state, so a test can check which folder the list reads.
-fn listed(selected: &str, in_use: &[String]) -> Vec<ImportedCharacter> {
+/// Kept apart from the app state so a test can check which folder the list reads.
+fn list_imports(selected: &str, in_use: &[String]) -> Vec<ImportedCharacter> {
     package::imports(&package::imported_characters_dir())
         .into_iter()
         .map(|(id, character)| ImportedCharacter {
@@ -208,7 +208,7 @@ mod tests {
         package::import_package(&package::user_characters_dir(), &[], &bundled("tux"))
             .expect("Tux is placed by hand");
 
-        let names: Vec<String> = listed("", &[]).into_iter().map(|c| c.name).collect();
+        let names: Vec<String> = list_imports("", &[]).into_iter().map(|c| c.name).collect();
         assert_eq!(names, ["BMO"]);
     }
 }
