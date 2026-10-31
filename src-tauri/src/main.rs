@@ -1210,7 +1210,7 @@ mod settings_event_tests {
         assert_eq!(
             run_operation(&session, &RowOperation::CopyByoSnippet, &no_fields()),
             Ok(SettingsEventResponse::Run {
-                operation: "copy_byo_snippet".to_string()
+                operation: RowOperation::CopyByoSnippet,
             })
         );
         assert!(session.ran().is_empty());
@@ -1276,13 +1276,13 @@ mod settings_event_tests {
     fn response_run_uses_stable_wire_format() {
         use settings::form::RowOperation;
         let response = SettingsEventResponse::Run {
-            operation: RowOperation::Spawn.as_str().to_string(),
+            operation: RowOperation::Spawn,
         };
         let json = serde_json::to_string(&response).expect("should serialize");
         assert_eq!(json, r#"{"action":"run","operation":"spawn"}"#);
 
         let response = SettingsEventResponse::Run {
-            operation: RowOperation::NewSession.as_str().to_string(),
+            operation: RowOperation::NewSession,
         };
         let json = serde_json::to_string(&response).expect("should serialize");
         assert_eq!(json, r#"{"action":"run","operation":"new_session"}"#);
@@ -1433,11 +1433,7 @@ mod settings_event_tests {
                     applied += 1;
                     Ok(())
                 },
-                |op| {
-                    Ok(SettingsEventResponse::Run {
-                        operation: op.as_str().to_string(),
-                    })
-                },
+                |op| Ok(SettingsEventResponse::Run { operation: op }),
             )
         };
         let patch = settings::SettingsPatch::default();
@@ -1475,7 +1471,7 @@ mod settings_event_tests {
         assert_eq!(
             respond_counting(Outcome::Run(RowOperation::Spawn)),
             Ok(SettingsEventResponse::Run {
-                operation: "spawn".to_string()
+                operation: RowOperation::Spawn,
             })
         );
         assert_eq!(applied, 1, "only Commit(Some) wrote");
@@ -1511,7 +1507,7 @@ enum SettingsEventResponse {
     ClearKey,
     Reset,
     Run {
-        operation: String,
+        operation: settings::form::RowOperation,
     },
 }
 
@@ -1744,7 +1740,7 @@ fn run_operation(
             Ok(SettingsEventResponse::Nothing)
         }
         _ => Ok(SettingsEventResponse::Run {
-            operation: op.as_str().to_string(),
+            operation: op.clone(),
         }),
     }
 }
