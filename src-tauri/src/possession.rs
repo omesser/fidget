@@ -15,7 +15,7 @@ pub const BLUR_SETTLE: Duration = Duration::from_millis(80);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Release {
     Escape,
-    /// The Release row.
+    /// The Release Possession row.
     Menu,
     Hide,
     Quit,

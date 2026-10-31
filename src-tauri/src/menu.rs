@@ -121,9 +121,8 @@ const DND_ID: &str = "dnd";
 const POSSESSION_ID: &str = "possession";
 
 /// The row while this Instance is possessed. One string, so a later
-/// "Unpossess" replaces "Release" without a second edit. Release already
-/// means letting go of a Grab, and that clash is not settled.
-const POSSESSED_LABEL: &str = "Release";
+/// label is one edit. "Release" already means letting go of a Grab.
+const POSSESSED_LABEL: &str = "Release Possession";
 
 const HIDE_ID: &str = "hide";
 
@@ -661,7 +660,7 @@ mod tests {
             entry_with_id(&during, "possession"),
             Some(&MenuEntry::Item {
                 id: "possession".to_string(),
-                label: POSSESSED_LABEL.to_string(),
+                label: "Release Possession".to_string(),
                 enabled: true,
             })
         );
