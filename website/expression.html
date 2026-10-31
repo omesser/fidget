@@ -173,7 +173,7 @@
       <input id="line" type="text" value="hello there" autocomplete="off">
     </label>
     <div class="row">
-      <button class="play primary" id="speak" type="button">Speak</button>
+      <button class="play primary" id="say-line" type="button">Say</button>
       <button class="play" id="poke" type="button">Poke</button>
       <button class="play" id="reply" type="button">Reply now</button>
       <button class="play" id="wake" type="button">Proactive wake</button>
@@ -346,7 +346,7 @@ function say(said) {
   live();
 }
 
-function speakLine() {
+function sayLine() {
   const said = text();
   say(said);
   note(`Dialogue shown, held ${bubbleDuration(said)} ms`);
@@ -365,7 +365,7 @@ const WAKE_WAIT_MS = 1500;
 let waking = null;
 
 // Any other control starts its own turn, so a wake still counting down would
-// otherwise speak over it a second later.
+// otherwise say its line over it a second later.
 function cancelWake() {
   clearTimeout(waking);
   waking = null;
@@ -388,13 +388,13 @@ function replyNow() {
   note("reply landed · Dialogue wins, the ellipsis goes down the same frame");
 }
 
-document.getElementById("speak").addEventListener("click", speakLine);
+document.getElementById("say-line").addEventListener("click", sayLine);
 document.getElementById("poke").addEventListener("click", poke);
 document.getElementById("reply").addEventListener("click", replyNow);
 document.getElementById("wake").addEventListener("click", wake);
 lineEl.addEventListener("input", live);
 lineEl.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") speakLine();
+  if (event.key === "Enter") sayLine();
 });
 document.querySelectorAll(".seg button").forEach((button) => {
   button.addEventListener("click", () => {
