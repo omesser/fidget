@@ -29,7 +29,7 @@ jobs:
       - name: Build the real Rust Director prompt
         run: cargo build -p fidget-core --example i18n-model-probe
       - name: Run core language-contract tests
-        run: cargo test -p fidget-core the_language_rule -- --nocapture
+        run: cargo test -p fidget-core spoken_language_is_explicit_per_request -- --nocapture
       - name: Install independent language detector
         run: |
           python3 -m pip install --user --break-system-packages langdetect==1.0.9
