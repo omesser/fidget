@@ -12,7 +12,7 @@
 //! shipped character's load and required animations are covered by the shell
 //! crate's integration test.
 
-use fidget_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
+use fidget_core::character::{self, CursorReaction, Primitive, REQUIRED_ANIMATIONS};
 use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -325,6 +325,7 @@ fn shipped_frames_keep_their_authored_floor_clearance() {
         ("timber-wolf", (0, 1..=20)),
         ("trump", (8, 0..=6)),
         ("tux", (5, 0..=1)),
+        ("tuxedo-bean", (6, 0..=0)),
     ]);
     for package in shipped_packages() {
         let (grounded_max, airborne) = profiles
@@ -470,6 +471,29 @@ fn rubber_duck_plays_thinking_and_looking_in_its_idle_rotation() {
     }
 }
 
+/// Every listed idle variant is reachable from idle and plays one complete
+/// loop, and the left walk draws its own poses rather than mirroring.
+fn assert_idle_loops_and_drawn_left_walk(package: &str, art: usize, loops: &[(&str, usize)]) {
+    let character = load_package(package).unwrap_or_else(|e| panic!("{package} is valid: {e:?}"));
+    assert_eq!(character.art.len(), art, "all source rows are retained");
+    for &(name, count) in loops {
+        let animation = &character.animations[name];
+        assert_eq!(animation.frames.len(), count);
+        let seed = (0..4096)
+            .find(|seed| character.draw("idle", 0, *seed, 1.0).unwrap().animation == name)
+            .unwrap_or_else(|| panic!("{name} is unreachable while idling"));
+        for index in 0..=count {
+            let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
+            let drawn = character.draw("idle", elapsed, seed, 1.0).unwrap();
+            assert_eq!(drawn.animation, name);
+            assert_eq!(drawn.index, index % count, "{name} plays one complete loop");
+        }
+    }
+    let left = character.draw("walk", 0, 0, -1.0).expect("left walk draws");
+    assert_eq!(left.animation, "walk-left");
+    assert!(!left.mirrored, "{package} uses the drawn left-facing poses");
+}
+
 #[test]
 fn tux_draws_each_idle_loop_and_its_left_waddle() {
     let character = load_package("tux").expect("Tux package is valid");
@@ -495,6 +519,55 @@ fn tux_draws_each_idle_loop_and_its_left_waddle() {
     let left = character.draw("walk", 0, 0, -1.0).expect("left walk draws");
     assert_eq!(left.animation, "walk-left");
     assert!(!left.mirrored, "Tux uses the drawn left-facing poses");
+}
+
+#[test]
+fn tuxedo_bean_draws_each_idle_loop_and_its_left_walk() {
+    assert_idle_loops_and_drawn_left_walk(
+        "tuxedo-bean",
+        57,
+        &[
+            ("look-around", 6),
+            ("nod-off", 8),
+            ("review", 6),
+            ("wave", 4),
+        ],
+    );
+}
+
+/// Every row of the `tuxedo-bean` sheet reaches the screen without a model:
+/// as an idle variant, or through a Behavior the Static Director can pick.
+/// Row 2, the left walk, is checked by the test above.
+#[test]
+fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
+    let character = load_package("tuxedo-bean").expect("Tuxedo Bean package is valid");
+    for (row, name) in [
+        (0, "look-around"),
+        (3, "wave"),
+        (5, "nod-off"),
+        (8, "review"),
+    ] {
+        assert!(
+            character.animations["idle"]
+                .variants
+                .contains(&name.to_string()),
+            "row {row} ({name}) plays while idling"
+        );
+    }
+    for (row, primitive) in [
+        (1, Primitive::Walk),
+        (4, Primitive::Jump),
+        (6, Primitive::Idle),
+        (7, Primitive::Talk),
+    ] {
+        assert!(
+            character
+                .behaviors
+                .values()
+                .any(|behavior| behavior.weight > 0 && behavior.primitives.contains(&primitive)),
+            "row {row} ({primitive:?}) needs a Behavior the Static Director can pick"
+        );
+    }
 }
 
 #[test]

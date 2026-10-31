@@ -35,6 +35,7 @@ SHOWCASES = (
     ("timber-wolf-walk.gif", "timber-wolf", "walk", 20, 8),
     ("trump-wave.gif", "trump", "wave", 3, 4),
     ("tux-recover-card.gif", "tux", "recover-card", 8, 3),
+    ("tuxedo-bean-review.gif", "tuxedo-bean", "review", 6, 4),
 )
 
 

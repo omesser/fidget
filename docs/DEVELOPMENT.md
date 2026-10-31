@@ -201,7 +201,7 @@ The user directory is the same per-platform data directory as `settings.json`, w
 
 For ordinary use, open **Settings > Character > Character Imports** and select **Import from zip** or **Import from folder**. The native picker accepts a Character Package ZIP or a folder laid out the same way; either may wrap the package in one folder. Fidget reads it with the same loader it uses for the Character folders, so symlinks are skipped, never followed, and the same size limits apply. Fidget validates it, then keeps a clean ZIP of its own in `imported-characters` beside the user directory, and never writes to, moves, or deletes the source. Restart Fidget to select the new Character. Remove, allowed when no running or selected Instance uses it, deletes only Fidget's copy; packages you place in the user directory by hand are not listed there. No environment variables are required. A notice under the buttons warns that a Character's `personality.txt` becomes AI prompt content: only install packages from trusted authors. An import with an invalid manifest or missing art reports the validation error; archive name collisions with installed or built-in Characters are refused. Character package manifests are still evolving, so older packages may need updating before they can be imported. Only local ZIPs and folders are supported here, not URLs or a gallery.
 
-Ten characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux.
+Eleven characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotaro Kujo, Rubber Duck, Timber Wolf, Trump, Tux, Tuxedo Bean.
 
 ### Writing a Character
 
@@ -521,6 +521,38 @@ uv run scripts/import-pet.py ~/.codex/pets/cozy-tux --format petscodex -o charac
 The `fall`, `land`, and `hold` animations reuse hop poses. `react` reuses the
 salute. `sit` and `sleep` reuse the seated and closed-eye poses from row 6;
 the source has no dedicated sleep loop.
+
+### Tuxedo Bean row map
+
+Tuxedo Bean uses all nine rows of the `tuxedo-bean` sheet. The manifest tunes
+timing and behaviors after import. Row numbers below start at zero.
+
+| Row | Animation | Motion |
+| --- | --- | --- |
+| 0 | `look-around` | Standing glances |
+| 1 | `walk` | Trot right |
+| 2 | `walk-left` | Trot left |
+| 3 | `wave` | Seated paw wave |
+| 4 | `jump` | Crouch, pounce, and land |
+| 5 | `nod-off` | Head droops, then lifts again |
+| 6 | `idle` | Seated glances, ear flick, and blink |
+| 7 | `talk` | Paw to chin, then a raised paw to speak |
+| 8 | `review` | Looks at a page, then paws at it |
+
+To recut Tuxedo Bean's 57 source frames while keeping its authored manifest and prompt:
+
+```sh
+uv run scripts/import-pet.py ~/.codex/pets/tuxedo-bean --format petscodex -o characters/tuxedo-bean \
+  --frames-only --only-mapped --stand 91 \
+  --map idle=6 --map walk=1 --map walk-left=2 --map wave=3 --map jump=4 \
+  --map nod-off=5 --map look-around=0 --map talk=7 --map review=8
+```
+
+The `jump` Behavior lets the Static Director pick the pounce after 30 seconds
+idle, so row 4 plays without a model. The `fall` and `land` animations reuse
+pounce poses. `hold` plays the idle loop, so a perched or held Bean just sits.
+`react` reuses the wave. `sit` reuses the first seated pose. The source has no
+dedicated sleep loop, so `sleep` holds the lowest nod-off pose.
 
 ### Shimeji Shop
 
