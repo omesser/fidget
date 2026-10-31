@@ -154,19 +154,13 @@ pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> 
         .min_by(f64::total_cmp)
 }
 
-/// The usable height of the display the feet are on: how far a full jump bar
-/// lifts them. That display rather than the highest one over x, as
-/// `ceiling_over` takes, so a display stacked above does not set the height.
-/// The whole usable height, not the room left above the feet, so a full bar
-/// is the same jump from the floor or from a high Perch.
-pub(super) fn usable_height_under(
-    feet: Point,
-    snapshot: &WorldSnapshot,
-    clearance: f64,
-) -> Option<f64> {
+/// How far a full jump bar lifts the feet. The display under them, at its
+/// raw height: not the clearance, and not the room left above the feet, so
+/// the bar can later reach a display stacked above this one.
+pub(super) fn usable_height_under(feet: Point, snapshot: &WorldSnapshot) -> Option<f64> {
     displays_spanning(feet.x, snapshot)
         .find(|display| feet.y >= display.y && feet.y <= display.bottom())
-        .map(|display| display.height - room_above(clearance, display))
+        .map(|display| display.height)
 }
 
 /// Whether a step at `x` heading `direction` would leave the outermost display

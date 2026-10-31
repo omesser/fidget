@@ -1473,14 +1473,14 @@ impl Engine {
     }
 
     /// The upward speed that lifts the feet as high as `charge` asks, from Jump's
-    /// hop to the usable height of the display under them, wherever on it they
-    /// stand. `integrate` steps velocity before position, topping out half a
-    /// tick short of `v²/2g`, so the launch tick's step is solved for and a full
-    /// bar from the floor meets the ceiling. From a Perch it bumps it.
+    /// hop to the height of the display under them, wherever on it they stand.
+    /// `integrate` steps velocity before position, topping out half a tick short
+    /// of `v²/2g`, so the launch tick's step is solved for. The ceiling still
+    /// stops a body the bar aimed past it.
     fn launch_speed(&self, charge: Charge, snapshot: &WorldSnapshot) -> f64 {
         let hop = JUMP_SPEED * JUMP_SPEED / (2.0 * self.gravity);
-        let full = usable_height_under(self.position, snapshot, self.ceiling_clearance())
-            .map_or(hop, |height| height.max(hop));
+        let full =
+            usable_height_under(self.position, snapshot).map_or(hop, |height| height.max(hop));
         let height = charge.height(hop, full);
 
         let half_step = self.gravity * f64::from(snapshot.elapsed_ms) / 1000.0 / 2.0;
