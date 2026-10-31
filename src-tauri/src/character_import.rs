@@ -1,6 +1,6 @@
 //! Import Characters from a ZIP or folder into Fidget's own imports folder, and
-//! remove them from there. A folder is packed into a ZIP first, so both take
-//! one validate-and-save path, and neither source is ever written or deleted.
+//! remove them from there. Both are read by the same loader as discovery, and
+//! neither source is ever written or deleted.
 //!
 //! Packaging and validation happen on a worker; the native file chooser uses
 //! the non-blocking dialog API so it cannot stall Fidget's desktop companion.
@@ -21,8 +21,8 @@ pub struct ImportedCharacter {
     pub removable: bool,
 }
 
-/// Only user-owned archives are removable. Bundled and external-path packages
-/// remain visible in the normal Character picker, but are never removed here.
+/// Only Fidget's own copies in imported-characters, each removable unless it is
+/// selected or running. Hand-placed and bundled packages never appear here.
 #[tauri::command]
 pub async fn character_import_list(
     app: tauri::AppHandle,
@@ -78,7 +78,7 @@ pub async fn character_import_zip(app: tauri::AppHandle) -> Result<Option<String
         return Ok(None);
     };
     let source = chosen.into_path().map_err(|error| error.to_string())?;
-    let name = tauri::async_runtime::spawn_blocking(move || import_archive(&app, &source))
+    let name = tauri::async_runtime::spawn_blocking(move || install(&app, &source))
         .await
         .map_err(|error| error.to_string())??;
     Ok(Some(name))
@@ -99,23 +99,13 @@ pub async fn character_import_folder(app: tauri::AppHandle) -> Result<Option<Str
         return Ok(None);
     };
     let source = chosen.into_path().map_err(|error| error.to_string())?;
-    let name = tauri::async_runtime::spawn_blocking(move || import_folder(&app, &source))
+    let name = tauri::async_runtime::spawn_blocking(move || install(&app, &source))
         .await
         .map_err(|error| error.to_string())??;
     Ok(Some(name))
 }
 
-/// The packed ZIP is a temp file, removed when this returns.
-fn import_folder(app: &tauri::AppHandle, source: &Path) -> Result<String, String> {
-    let mut archive = tempfile::Builder::new()
-        .suffix(".zip")
-        .tempfile()
-        .map_err(|e| format!("Cannot start character import: {e}"))?;
-    package::pack_import_directory(source, archive.as_file_mut())?;
-    import_archive(app, archive.path())
-}
-
-fn import_archive(app: &tauri::AppHandle, source: &Path) -> Result<String, String> {
+fn install(app: &tauri::AppHandle, source: &Path) -> Result<String, String> {
     let bundled = app
         .path()
         .resource_dir()

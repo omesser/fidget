@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use fidget_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
@@ -480,140 +480,6 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
         .collect::<BTreeMap<_, _>>()
 }
 
-/// An archive downloaded from a character author's repository may wrap the
-/// Character Package in documentation or a repository folder. The runtime
-/// loader expects the manifest at the package root; the importer finds exactly
-/// one nested manifest and retains only that subtree before validating it.
-pub fn read_import_archive(path: &Path) -> Result<PackageBytes, String> {
-    // Reject hostile paths and duplicate entries before the existing archive
-    // reader normalizes names into a map, where a duplicate would disappear.
-    let file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
-    if archive.len() > MAX_PACKAGE_FILES {
-        return Err(format!("ZIP has more than {MAX_PACKAGE_FILES} entries"));
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|e| format!("ZIP entry {index}: {e}"))?;
-        if !entry.is_file() {
-            continue;
-        }
-        let path = entry
-            .enclosed_name()
-            .ok_or_else(|| format!("ZIP entry {index} has an unsafe path"))?;
-        let name = path
-            .to_str()
-            .ok_or_else(|| format!("ZIP entry {index} has a non-Unicode path"))?
-            .replace('\\', "/");
-        if is_macos_litter(&name) {
-            continue;
-        }
-        if entry
-            .unix_mode()
-            .is_some_and(|mode| mode & 0o170000 == 0o120000)
-        {
-            return Err(format!("ZIP entry {name} is a symlink"));
-        }
-        if name.split('/').count() > MAX_PACKAGE_DEPTH + 4 {
-            return Err(format!("ZIP entry {name} exceeds the nesting limit"));
-        }
-        if !seen.insert(name.clone()) {
-            return Err(format!("ZIP contains a duplicate entry: {name}"));
-        }
-    }
-    let files = read_archive(path)?;
-    let manifests: Vec<&str> = files
-        .keys()
-        .filter(|name| {
-            name.as_str() == CHARACTER_MANIFEST_FILE || name.ends_with("/character.manifest")
-        })
-        .map(String::as_str)
-        .collect();
-    if manifests.len() != 1 {
-        return Err(format!(
-            "Expected exactly one character.manifest (a valid Character ZIP must contain one), found {}",
-            manifests.len()
-        ));
-    }
-    let prefix = manifests[0]
-        .strip_suffix(CHARACTER_MANIFEST_FILE)
-        .expect("matched a Character Manifest name")
-        .to_string();
-    Ok(files
-        .into_iter()
-        .filter_map(|(name, content)| {
-            name.strip_prefix(&prefix)
-                .filter(|relative| !relative.is_empty())
-                .map(|relative| (relative.to_string(), content))
-        })
-        .collect())
-}
-
-/// Pack the folder at `root` into `out` as a ZIP, for `read_import_archive`.
-///
-/// The walk counts every file against the package limits and refuses links
-/// before a byte is written, so an oversized folder fails fast.
-pub fn pack_import_directory<W: Write + Seek>(root: &Path, out: W) -> Result<(), String> {
-    let mut found = Vec::new();
-    let mut budget = Budget::new();
-    let mut pending = vec![(root.to_path_buf(), 1usize)];
-
-    while let Some((directory, depth)) = pending.pop() {
-        let entries = fs::read_dir(&directory)
-            .map_err(|e| format!("{} could not be listed: {e}", directory.display()))?;
-        for entry in entries {
-            let entry =
-                entry.map_err(|e| format!("{} could not be read: {e}", directory.display()))?;
-            let path = entry.path();
-            let metadata = path
-                .symlink_metadata()
-                .map_err(|e| format!("{} could not be read: {e}", path.display()))?;
-            if metadata.file_type().is_symlink() {
-                return Err(format!(
-                    "{} is a symlink. Character folders cannot contain links.",
-                    path.display()
-                ));
-            }
-            if metadata.is_dir() {
-                if entry.file_name() == ".git" {
-                    continue; // a cloned repository's history is not part of the Character
-                }
-                // The same bound read_import_archive puts on a ZIP entry's path.
-                if depth >= MAX_PACKAGE_DEPTH + 4 {
-                    return Err(format!("{} exceeds the nesting limit", path.display()));
-                }
-                pending.push((path, depth + 1));
-                continue;
-            }
-            if !metadata.is_file() {
-                continue; // a socket or a device: not art and not a manifest
-            }
-            budget.charge(metadata.len())?;
-            let name = relative_name(root, &path)
-                .ok_or_else(|| format!("{} has a non-Unicode path", path.display()))?;
-            found.push((name, path, metadata.len()));
-        }
-    }
-
-    let mut zip = zip::ZipWriter::new(out);
-    let stored: zip::write::FileOptions<'_, '_, ()> =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    for (name, path, size) in found {
-        zip.start_file(name.as_str(), stored)
-            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
-        let file = fs::File::open(&path)
-            .map_err(|e| format!("{} could not be read: {e}", path.display()))?;
-        // Bounded by the size that was charged, in case the file grew since.
-        std::io::copy(&mut file.take(size), &mut zip)
-            .map_err(|e| format!("Cannot pack {name}: {e}"))?;
-    }
-    zip.finish()
-        .map_err(|e| format!("Cannot finish character ZIP: {e}"))?;
-    Ok(())
-}
-
 /// IDs are used strictly as flat package stems. Never accept a path from a
 /// settings webview, even though the frontend only sends our own IDs.
 pub fn safe_package_id(id: &str) -> bool {
@@ -664,7 +530,7 @@ fn package_id(name: &str) -> Result<String, String> {
 /// loading Character names, so comparing names alone is not sufficient.
 ///
 /// The supplied paths must include every runtime search root (external, user,
-/// system, and bundled). A malformed installed package still reserves its stem.
+/// imported-characters, system, and bundled). A malformed installed package still reserves its stem.
 /// Also reserve the default stem when bundled resources are unavailable.
 pub fn import_name_conflict(name: &str, installed: &[PathBuf]) -> Result<Option<String>, String> {
     let id = package_id(name)?;
@@ -722,21 +588,15 @@ fn save_import(directory: &Path, files: &PackageBytes, name: &str) -> Result<Pat
     Ok(destination)
 }
 
-/// Validate the Character ZIP at `source` and install a copy in `managed`.
-/// `installed` is every package already visible, which the name may not shadow.
+/// Read the ZIP or folder at `source` the way discovery does, validate it, and
+/// install a copy in `managed`. `installed` is every package already visible,
+/// which the name may not shadow.
 pub fn import_package(
     managed: &Path,
     installed: &[PathBuf],
     source: &Path,
 ) -> Result<String, String> {
-    if !source.is_file()
-        || !source
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(ARCHIVE_EXTENSION))
-    {
-        return Err("Choose a .zip character package".to_string());
-    }
-    let bytes = read_import_archive(source)?;
+    let bytes = read(source).map_err(|e| e.to_string())?;
     let character = fidget_core::character::load(&bytes)
         .map_err(|errors| format!("Character package is invalid:\n{}", errors.join("\n")))?;
     // Both runtime file stems and normalised display names: a user ZIP could
@@ -804,58 +664,82 @@ pub fn forget_import(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn repository_wrapped_character_zip_loads_without_manual_extraction() {
-        let dir = TempDir::new("repo-archive");
-        let archive = dir.join("repository.zip");
-        write_archive(&archive, "fidget-branch/dosidicus-squid", false);
-        let files = read_import_archive(&archive).expect("locates the nested manifest");
-        let character = character::load(&files).expect("a normalized package is valid");
-        assert_eq!(character.name, "Blip");
-        assert!(files.contains_key(CHARACTER_MANIFEST_FILE));
-        assert!(files.contains_key("frames/idle-0.png"));
-    }
-
-    /// Pack `folder` the way the folder import does, into memory.
-    fn pack(folder: &Path) -> (Result<(), String>, Vec<u8>) {
-        let mut out = std::io::Cursor::new(Vec::new());
-        let result = pack_import_directory(folder, &mut out);
-        (result, out.into_inner())
-    }
-
-    #[test]
-    fn a_character_folder_imports_through_the_zip_reader() {
-        let dir = TempDir::new("folder-import");
-        let folder = dir.join("dosidicus-squid");
-        write_package(&folder);
-        fs::create_dir_all(folder.join(".git/objects")).unwrap();
-        fs::write(folder.join(".git/HEAD"), b"ref: refs/heads/main").unwrap();
-        let (result, zip) = pack(&folder);
-        result.expect("a Character folder packs");
-        let archive = dir.join("packed.zip");
-        fs::write(&archive, zip).unwrap();
-
-        let files = read_import_archive(&archive).expect("the packed folder reads as a ZIP");
-        let expected: PackageBytes = package_files().into_iter().collect();
-        assert_eq!(files, expected, "the folder round-trips byte for byte");
-        assert_eq!(character::load(&files).expect("valid").name, "Blip");
-    }
-
     /// Every file under `root` with its bytes, to show a source was left alone.
     fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         let mut found = BTreeMap::new();
         let mut pending = vec![root.to_path_buf()];
         while let Some(directory) = pending.pop() {
             for entry in fs::read_dir(directory).unwrap().filter_map(Result::ok) {
-                let path = entry.path();
-                if path.is_dir() {
-                    pending.push(path);
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    pending.push(entry_path);
                 } else {
-                    found.insert(path.clone(), fs::read(&path).unwrap());
+                    found.insert(entry_path.clone(), fs::read(&entry_path).unwrap());
                 }
             }
         }
         found
+    }
+
+    /// The bytes of the copy Fidget saved for `id`.
+    fn saved(managed: &Path, id: &str) -> PackageBytes {
+        read(&managed.join(format!("{id}.zip"))).expect("the managed copy reads back")
+    }
+
+    #[test]
+    fn a_character_folder_imports_as_it_loads() {
+        let dir = TempDir::new("folder-import");
+        let folder = dir.join("blip");
+        write_package(&folder);
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert_eq!(import_package(&managed, &[], &folder).unwrap(), "Blip");
+        let expected: PackageBytes = package_files().into_iter().collect();
+        assert_eq!(saved(&managed, "blip"), expected, "byte for byte");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_a_folder_is_not_imported() {
+        let dir = TempDir::new("folder-symlink");
+        let secret = dir.join("secret.txt");
+        fs::write(&secret, b"not the Character's").unwrap();
+        let folder = dir.join("blip");
+        write_package(&folder);
+        std::os::unix::fs::symlink(&secret, folder.join("frames/stolen.png")).unwrap();
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        assert_eq!(import_package(&managed, &[], &folder).unwrap(), "Blip");
+        assert!(
+            !saved(&managed, "blip").contains_key("frames/stolen.png"),
+            "the link is skipped, not followed"
+        );
+    }
+
+    #[test]
+    fn an_over_limit_folder_is_refused_before_anything_is_saved() {
+        let dir = TempDir::new("folder-over-limit");
+        let managed = dir.join(IMPORTED_CHARACTERS);
+
+        let many = dir.join("many");
+        write_package(&many);
+        for index in 0..MAX_PACKAGE_FILES {
+            fs::write(many.join(format!("extra-{index}")), b"").unwrap();
+        }
+        let error = import_package(&managed, &[], &many).expect_err("too many files");
+        assert!(error.contains("more than 4096 files"), "{error}");
+
+        let large = dir.join("large");
+        write_package(&large);
+        // Sparse, so the test does not write 64 MiB.
+        fs::File::create(large.join("huge.bin"))
+            .unwrap()
+            .set_len(MAX_PACKAGE_BYTES + 1)
+            .unwrap();
+        let error = import_package(&managed, &[], &large).expect_err("too many bytes");
+        assert!(error.contains("more than 64 MiB"), "{error}");
+
+        assert!(!managed.exists(), "nothing reached the imports folder");
     }
 
     #[test]
@@ -866,21 +750,16 @@ mod tests {
         write_archive(&sources.join("blip.zip"), "blip", false);
         write_package(&sources.join("blip-folder"));
         let before = snapshot(&sources);
-        let managed = dir.join("imported-characters");
+        let managed = dir.join(IMPORTED_CHARACTERS);
 
-        let zip = sources.join("blip.zip");
-        assert_eq!(import_package(&managed, &[], &zip).unwrap(), "Blip");
-        forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
-        assert!(!managed.join("blip.zip").exists(), "Fidget's copy is gone");
-
-        let packed = dir.join("packed.zip");
-        pack_import_directory(
-            &sources.join("blip-folder"),
-            fs::File::create(&packed).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(import_package(&managed, &[], &packed).unwrap(), "Blip");
-        forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
+        for source in ["blip.zip", "blip-folder"] {
+            assert_eq!(
+                import_package(&managed, &[], &sources.join(source)).unwrap(),
+                "Blip"
+            );
+            forget_import(&managed, "blip", |_| Ok(())).expect("the import is removed");
+            assert!(!managed.join("blip.zip").exists(), "Fidget's copy is gone");
+        }
 
         assert_eq!(
             snapshot(&sources),
@@ -908,62 +787,6 @@ mod tests {
         assert_ne!(imported_characters_dir(), user_characters_dir());
         assert!(!imported_characters_dir().starts_with(user_characters_dir()));
         assert!(search_paths(None).contains(&imported_characters_dir()));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_folder_with_a_symlink_is_refused() {
-        let dir = TempDir::new("folder-symlink");
-        let folder = dir.join("character");
-        write_package(&folder);
-        std::os::unix::fs::symlink("/etc/passwd", folder.join("frames/stolen.png")).unwrap();
-        let (result, zip) = pack(&folder);
-        let error = result.expect_err("a link could reach outside the folder");
-        assert!(error.contains("stolen.png is a symlink"), "{error}");
-        assert!(zip.is_empty(), "nothing is packed");
-    }
-
-    #[test]
-    fn an_over_limit_folder_is_refused_before_anything_is_written() {
-        let dir = TempDir::new("folder-over-limit");
-        let many = dir.join("many");
-        write_package(&many);
-        for index in 0..MAX_PACKAGE_FILES {
-            fs::write(many.join(format!("extra-{index}")), b"").unwrap();
-        }
-        let (result, zip) = pack(&many);
-        let error = result.expect_err("too many files");
-        assert!(error.contains("more than 4096 files"), "{error}");
-        assert!(zip.is_empty(), "refused during the walk, before packing");
-
-        let large = dir.join("large");
-        write_package(&large);
-        // Sparse, so the test does not write 64 MiB.
-        fs::File::create(large.join("huge.bin"))
-            .unwrap()
-            .set_len(MAX_PACKAGE_BYTES + 1)
-            .unwrap();
-        let (result, zip) = pack(&large);
-        let error = result.expect_err("too many bytes");
-        assert!(error.contains("more than 64 MiB"), "{error}");
-        assert!(zip.is_empty(), "refused during the walk, before packing");
-    }
-
-    #[test]
-    fn importing_two_characters_at_once_is_not_an_ambiguous_choice() {
-        let dir = TempDir::new("two-manifests");
-        let archive = dir.join("bundle.zip");
-        let file = fs::File::create(&archive).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let stored: zip::write::FileOptions<'_, '_, ()> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for name in ["one/character.manifest", "two/character.manifest"] {
-            zip.start_file(name, stored).unwrap();
-            zip.write_all(b"name = \"Blip\"\n").unwrap();
-        }
-        zip.finish().unwrap();
-        let error = read_import_archive(&archive).unwrap_err();
-        assert!(error.contains("exactly one"), "{error}");
     }
 
     #[test]
