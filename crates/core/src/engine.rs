@@ -9471,14 +9471,16 @@ mod tests {
             assert_eq!(launched.charge, None, "the bar empties on release");
         }
 
-        /// A tap is today's hop. A full bar lifts the feet to the usable top of
-        /// the display they stand on, however tall: the same `ceiling_over` a
-        /// climb lets go at.
+        /// A full bar aims at the height of the display under the feet. The
+        /// ceiling still stops them where a climb lets go.
         #[test]
         fn a_full_bar_reaches_the_usable_top_of_displays_of_two_heights() {
             let short = monitor(0.0, 0.0, 1000.0, 800.0);
             let tall = monitor(0.0, 0.0, 1000.0, 1600.0);
             let mut launch_speeds = Vec::new();
+            let half_step = GRAVITY * f64::from(FRAME_MS) / 1000.0 / 2.0;
+            let for_height =
+                |height: f64| half_step + (half_step * half_step + 2.0 * GRAVITY * height).sqrt();
 
             for display in [short, tall] {
                 let world = on(display);
@@ -9490,6 +9492,11 @@ mod tests {
                 let launched =
                     engine.tick(&with_possession(launching(released_after(1_000)), &world));
                 launch_speeds.push(-launched.velocity.y);
+                assert!(
+                    (-launched.velocity.y - for_height(display.height)).abs() < 0.01,
+                    "a full bar asks for the display height {}: {launched:?}",
+                    display.height
+                );
                 let frames = flight(&mut engine, &world);
 
                 assert!(
@@ -9504,9 +9511,9 @@ mod tests {
             );
         }
 
-        /// A full bar is the display's usable height wherever the feet stand,
-        /// not the room left above them: from a window Perch halfway up it
-        /// launches as hard as from the floor, and the usable top stops it.
+        /// A full bar is the display's height wherever the feet stand, not
+        /// the room left above them: from a window Perch halfway up it
+        /// launches as hard as from the floor, and the ceiling still stops it.
         #[test]
         fn a_full_bar_from_a_high_perch_launches_as_hard_as_from_the_floor() {
             let ledge = window(
@@ -9523,8 +9530,10 @@ mod tests {
                 windows: vec![ledge],
                 ..floor.clone()
             };
-            // 800 tall, 128 kept clear above the art: a 672-point rise.
-            let full_speed = 2228.62;
+            // The display is 800 tall. The bar asks for that whole height.
+            let half_step = GRAVITY * f64::from(FRAME_MS) / 1000.0 / 2.0;
+            let full_speed =
+                half_step + (half_step * half_step + 2.0 * GRAVITY * one_display().height).sqrt();
 
             for (world, feet) in [(&floor, 800.0), (&perch, 400.0)] {
                 let mut engine = possessed_at(500.0, world);
@@ -9555,7 +9564,7 @@ mod tests {
                 floor - peak(&flight(&mut engine, &world))
             };
             let hop = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
-            let full = height(1_000);
+            let full = one_display().height;
 
             assert!((height(0) - hop).abs() < 1.0, "a tap is the hop");
             assert!(
