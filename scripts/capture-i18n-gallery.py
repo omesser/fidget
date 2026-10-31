@@ -263,6 +263,113 @@ def capture_menu(pid, wid, log, lang):
     raise_window(wid)
 
 
+
+def capture_french_speech():
+    """Use the real ACP fixture to hold BMO's French speech on screen."""
+    import glob
+
+    binaries = [Path(p) for p in glob.glob(str(ROOT / "target/debug/deps/fidget-*"))
+                if re.search(r"/fidget-[0-9a-f]{16}$", p) and os.access(p, os.X_OK)]
+    if not binaries:
+        raise RuntimeError("no fidget test binary; run cargo test -p fidget --no-run")
+    test_bin = max(binaries, key=lambda p: p.stat().st_mtime)
+
+    home = Path(tempfile.mkdtemp(prefix="fidget-french-speech-",
+                                dir=os.environ.get("RUNNER_TEMP")))
+    conf = home / ".local/share/fidget/settings.json"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(json.dumps({
+        "first_run_tour_shown": True,
+        "language": "fr",
+        "director_enabled": True,
+        "proactive_wakes": True
+    }), encoding="utf-8")
+    marks, hold = home / "marks.txt", home / "hold"
+    marks.touch()
+    os.mkfifo(hold)
+    command = (f"{ROOT}/scripts/scenarios/helpers/fixture-harness.sh {test_bin} "
+               f"script=scenario-gallery-french count={marks} hold={hold}")
+    if any(" " in str(part) for part in (ROOT, test_bin, home)):
+        raise RuntimeError("fixture harness paths contain spaces")
+    env = {**os.environ, "HOME": str(home),
+           "FIDGET_HARNESS": command,
+           "FIDGET_DIRECTOR_WAKE_SECS": "1",
+           "FIDGET_DIRECTOR_API_KEY": "x",
+           "FIDGET_CAPTURABLE": "1",
+           "FIDGET_TRACE_FRAMES": "1",
+           "FIDGET_CHARACTER": "bmo",
+           "FIDGET_CHARACTERS": str(ROOT / "characters")}
+    log = home / "app.log"
+    with log.open("w") as log_out:
+        app = subprocess.Popen([str(ROOT / "target/debug/fidget")],
+                               env=env, stdout=log_out, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+        try:
+            eventually(lambda: "french-spoken" in marks.read_text(errors="replace"),
+                       "the French ACP fixture did not speak", 30)
+
+            def bubble_text():
+                dump = run("/usr/bin/python3", ROOT / "scripts/ax-window-linux.py",
+                           "dump", app.pid, "Fidget", check=False)
+                if dump.returncode == 0 and "Bonjour ! Je suis BMO." in dump.stdout:
+                    return dump.stdout
+                return None
+
+            text_dump = eventually(bubble_text, "no French text in BMO's live speech bubble", 12)
+            (OUT / "fr/11-bmo-speaks-french.ax.txt").write_text(text_dump, encoding="utf-8")
+            trace = eventually(
+                lambda: log.read_text(errors="replace")
+                if "sprite(" in log.read_text(errors="replace") else None,
+                "no sprite position in French bubble run", 10)
+            positions = re.findall(r"sprite\((-?\d+),(-?\d+)\)", trace)
+            sizes = re.findall(r"sprite (\d+)x(\d+);", trace)
+            if not positions or not sizes:
+                raise RuntimeError("the French dialogue run lacks sprite geometry")
+            sx, sy = map(int, positions[-1])
+            sw, sh = map(int, sizes[0])
+            screen_file = Path(tempfile.mkstemp(suffix=".png")[1])
+            try:
+                run("import", "-window", "root", screen_file)
+                image = Image.open(screen_file).convert("RGB")
+                # A bubble is at most 260px wide and lives above the sprite.
+                cx = sx + sw // 2
+                left, top = max(0, cx - 210), max(0, sy - 245)
+                right = min(image.width, cx + 210)
+                bottom = min(image.height, sy + sh + 55)
+                image = image.crop((left, top, right, bottom))
+                if image.width < 220 or image.height < 200:
+                    raise RuntimeError("French speech crop is outside the desktop")
+                if max(ImageStat.Stat(image).stddev) < 3:
+                    raise RuntimeError("French speech screenshot is flat/blank")
+                dest = OUT / "fr/11-bmo-speaks-french.png"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                image.save(dest, optimize=True)
+                print(f"CAPTURE {dest.relative_to(ROOT)} (live French bubble)",
+                      flush=True)
+            finally:
+                screen_file.unlink(missing_ok=True)
+        except Exception:
+            print("--- French speech run log ---", file=sys.stderr)
+            print("\n".join(log.read_text(errors="replace").splitlines()[-100:]),
+                  file=sys.stderr)
+            raise
+        finally:
+            # Release the deliberately held ACP turn and terminate its process tree.
+            try:
+                fd = os.open(hold, os.O_RDWR | os.O_NONBLOCK)
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.killpg(app.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                app.wait(timeout=6)
+            except subprocess.TimeoutExpired:
+                os.killpg(app.pid, signal.SIGKILL)
+
+
 def build_readme():
     lines = [
         "# Fidget language gallery",
@@ -286,7 +393,16 @@ def build_readme():
         cells = [f"![{label} — {NAMES[lang]}]({lang}/{name})"
                  for lang in LANGS]
         lines.append("| **" + label + "** | " + " | ".join(cells) + " |")
-    lines += ["", "The English screenshots use the English source strings; the French",
+    lines += ["", "## BMO speaking French", "",
+              "![BMO speaking French in a real Fidget speech bubble](fr/11-bmo-speaks-french.png)",
+              "",
+              "BMO says: **Bonjour ! Je suis BMO. Enchanté de te rencontrer !**",
+              "",
+              "The line comes from a deterministic ACP test fixture, not a live AI model.",
+              "The screenshot is taken from the actual running desktop app; the",
+              "visible text is also checked via the Linux accessibility tree.",
+              "",
+              "The English screenshots use the English source strings; the French",
               "and Spanish screenshots use the branch's translation catalogs.",
               "The language is chosen through the actual in-app picker, not",
               "through a test-only DOM override or command-line language pin.", ""]
@@ -354,8 +470,7 @@ def main():
             actual = len(list(OUT.glob("*/*.png")))
             if actual != expected:
                 raise RuntimeError(f"expected {expected} PNGs, got {actual}")
-            build_readme()
-            print(f"SUCCESS: {actual} live screenshots and README", flush=True)
+            print(f"CAPTURED: {actual} interface images", flush=True)
         except Exception:
             print("\n--- Fidget process log (last 100 lines) ---", file=sys.stderr)
             print("\n".join(log.read_text(errors="replace").splitlines()[-100:]), file=sys.stderr)
@@ -369,6 +484,12 @@ def main():
                 app.wait(timeout=6)
             except subprocess.TimeoutExpired:
                 os.killpg(app.pid, signal.SIGKILL)
+
+    capture_french_speech()
+    if len(list(OUT.glob("*/*.png"))) != 31:
+        raise RuntimeError("expected 31 real screenshots (30 UI + French speech)")
+    build_readme()
+    print("SUCCESS: 31 live screenshots and gallery README", flush=True)
 
 
 if __name__ == "__main__":
