@@ -71,9 +71,9 @@ pub enum Happened {
     /// line, or hang a line off a Proactive wake. Costs `Copy`.
     Chat(String),
     Proactive,
-    /// The user took the wheel through Manual drive.
+    /// The user possessed this fidget.
     PossessionStart,
-    /// Manual drive ended: Escape, the menu, or the fidget going away.
+    /// Possession ended: Escape, the menu, or the fidget going away.
     PossessionEnd,
 }
 
@@ -140,7 +140,7 @@ pub struct Context {
     /// The caffeinate line for the prompt. `None` where this build has no
     /// Caffeinate, which leaves the line out.
     pub caffeinate: Option<crate::caffeinate::Fact>,
-    /// The user is driving this fidget, paused or not. Pause is the Shell's
+    /// The user possesses this fidget, paused or not. Pause is the Shell's
     /// concern: the Director hears the same thing either way.
     pub possessed: bool,
 }
@@ -2580,11 +2580,11 @@ mod tests {
 
     #[test]
     fn a_possessed_wake_says_so() {
-        let driven = Context {
+        let possessed_context = Context {
             possessed: true,
             ..context(working(), &[])
         };
-        let sent = follow_up(&driven);
+        let sent = follow_up(&possessed_context);
         assert!(
             sent.contains("state: idle\npossessed: yes\n"),
             "the line sits under state: {sent}"
@@ -2594,9 +2594,9 @@ mod tests {
         assert!(!free.contains("possessed"), "{free}");
     }
 
-    /// A fidget nobody drives sends the moment it sent before Possession.
+    /// A fidget nobody possesses sends the moment it sent before Possession.
     #[test]
-    fn an_undriven_wake_sends_the_same_bytes() {
+    fn an_unpossessed_wake_sends_the_same_bytes() {
         let moment = "what just happened: poked\n\
                       recent: stroll, nap, wave\n\
                       time: Tue 14:52\n\
@@ -3300,18 +3300,18 @@ mod tests {
         }
     }
 
-    /// The Director cannot tell a paused drive from a live one: the Shell
+    /// The Director cannot tell a paused possession from a live one: the Shell
     /// keeps `possessed` set through a pause, so this covers both.
     #[test]
-    fn a_driven_fidget_wakes_only_when_the_user_does_something() {
+    fn a_possessed_fidget_wakes_only_when_the_user_does_something() {
         let pace = Pace::new();
         assert!(
             session_due(true, Duration::ZERO, &pace, false, false, true, true),
-            "a Poke or a Chat line while driving still gets a reply"
+            "a Poke or a Chat line while possessed still gets a reply"
         );
         assert!(
             !session_due(false, Pace::FIRST, &pace, false, false, true, true),
-            "an elapsed ambient wait does not wake a driven fidget"
+            "an elapsed ambient wait does not wake a possessed fidget"
         );
         assert!(
             session_due(false, Pace::FIRST, &pace, false, false, true, false),
@@ -3332,7 +3332,7 @@ mod tests {
                 false,
                 true
             ),
-            "Static weights stay off while driving"
+            "Static weights stay off while possessed"
         );
         assert!(
             due(

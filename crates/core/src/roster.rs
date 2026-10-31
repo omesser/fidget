@@ -140,7 +140,7 @@ impl Instance {
         self.engine.set_do_not_disturb(enabled)
     }
 
-    /// Whether this Instance is possessed. Per Instance: the keys drive one
+    /// Whether this Instance is possessed. Per Instance: the keys move one
     /// sprite, the one possessed.
     pub fn possessed(&self) -> bool {
         self.engine.possessed()
@@ -473,7 +473,7 @@ mod tests {
             poll_generation: 0,
             composing: false,
             locomotion_frozen: false,
-            drive: Default::default(),
+            possession: Default::default(),
         }
     }
 
