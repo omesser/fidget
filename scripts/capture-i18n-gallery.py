@@ -217,7 +217,9 @@ def set_language(pid, wid, home, lang):
     # Locale-change redraws Settings and the already-open Chat asynchronously.
     eventually(lambda: locate_tab(pid, lang, "Presence"),
                f"{lang}: tab labels did not translate", 12)
-    time.sleep(0.35)
+    # A locale change can replace the Settings webview while AX is rebuilding.
+    # The first matching translated tab is not necessarily its final redraw.
+    time.sleep(1.1)
     NAMES_BY_SETTING[0] = lang
 
 
@@ -457,7 +459,7 @@ def main():
                 for i, tab in enumerate(TABS, 1):
                     raise_window(settings_wid)
                     element = eventually(lambda: locate_tab(app.pid, lang, tab),
-                                         f"{lang}: missing {tab} tab", 8)
+                                         f"{lang}: missing {tab} tab", 30)
                     click_node(element)
                     time.sleep(0.2)
                     capture(f"{lang}/{i:02d}-{tab.lower()}.png", settings_wid)
