@@ -413,21 +413,27 @@ export function createDraftReporter(invoke) {
   };
 }
 
-// Same seat as the Speech bubble or the thinking dots. When that box is already
-// there, step clear of it so a hover does not cover it.
-export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
-  const pos = placeBubble(spriteRect, size, bounds);
-  if (!speechRect) return pos;
-  const overlaps =
-    pos.x < speechRect.x + speechRect.width &&
-    pos.x + size.width > speechRect.x &&
-    pos.y < speechRect.y + speechRect.height &&
-    pos.y + size.height > speechRect.y;
-  if (!overlaps) return pos;
+function overlapsBox(pos, size, obstacle) {
+  return (
+    pos.x < obstacle.x + obstacle.width &&
+    pos.x + size.width > obstacle.x &&
+    pos.y < obstacle.y + obstacle.height &&
+    pos.y + size.height > obstacle.y
+  );
+}
+
+// Same seat as the Speech bubble or the thinking dots. Each later obstacle
+// is a box already there, so a hover steps clear of it.
+export function placeQuickMessage(spriteRect, size, bounds, ...obstacles) {
+  let pos = placeBubble(spriteRect, size, bounds);
   const gap = 10;
-  let y = speechRect.y - size.height - gap;
-  if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
-  y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-  // The step can cross the sprite, so the tail reads the final seat.
-  return { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
+  for (const obstacle of obstacles) {
+    if (!obstacle || !overlapsBox(pos, size, obstacle)) continue;
+    let y = obstacle.y - size.height - gap;
+    if (y < bounds.y) y = obstacle.y + obstacle.height + gap;
+    y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
+    // The step can cross the sprite, so the tail reads the final seat.
+    pos = { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
+  }
+  return pos;
 }

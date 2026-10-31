@@ -87,9 +87,9 @@ export function paintPossession(card, bar, model, fill) {
 }
 
 // One box, so the card takes the same seat as the quick-message pill.
-export function placePossession(sprite, cardSize, barHeight, gap, bounds, speech) {
+export function placePossession(sprite, cardSize, barHeight, gap, bounds, speech, pill) {
   const stack = { width: cardSize.width, height: cardSize.height + gap + barHeight };
-  const seat = placeQuickMessage(sprite, stack, bounds, speech);
+  const seat = placeQuickMessage(sprite, stack, bounds, speech, pill);
   const x = Math.round(seat.x);
   if (seat.inverted) {
     return {

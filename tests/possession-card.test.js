@@ -79,6 +79,20 @@ test("a card at the top corner of the display stays on screen", () => {
   assert.equal(onScreen(placed.bar, bounds), true);
 });
 
+test("a card steps clear of the quick-message pill", () => {
+  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+  const card = { width: 220, height: 88 };
+  const sprite = { x: 290, y: 320, width: 128, height: 128 };
+  const pill = { x: 244, y: 200, width: 220, height: 70 };
+  const placed = placePossession(sprite, card, 8, 8, bounds, null, pill);
+  const top = Math.min(placed.card.y, placed.bar.y);
+  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
+  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
+  assert.equal(covers(stack, pill), false);
+  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
+});
+
 test("a card steps clear of the speech bubble", () => {
   const bounds = { x: 0, y: 0, width: 800, height: 600 };
   const card = { width: 220, height: 88 };

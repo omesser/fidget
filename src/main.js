@@ -262,6 +262,16 @@ function positionBubble(view, spriteRect, displayBounds) {
   reportOverlayRects();
 }
 
+function pillRect(view) {
+  if (!view.quick.classList.contains("visible")) return null;
+  return {
+    x: parseFloat(view.quick.style.left) || 0,
+    y: parseFloat(view.quick.style.top) || 0,
+    width: view.quick.offsetWidth,
+    height: view.quick.offsetHeight,
+  };
+}
+
 function speechRect(view) {
   if (!view.bubble.classList.contains("visible")) return null;
   // Dots sit in this same box, so the pill has to step clear of them too.
@@ -304,6 +314,7 @@ function positionPossession(view, sprite, latest) {
     POSSESSION_GAP_PX,
     currentDisplayBounds(),
     speechRect(view),
+    pillRect(view),
   );
   view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
   view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
