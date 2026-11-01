@@ -4493,7 +4493,9 @@ mod windows_job {
                     map.insert(pid, LeakedJobHandle(job));
                 }
                 Err(_) => {
-                    eprintln!("harness: JOBS lock poisoned, handle leaked for pid {pid}");
+                    eprintln!(
+                        "harness: JOBS lock poisoned for pid {pid}; closing the job, which kills the child"
+                    );
                     CloseHandle(job);
                 }
             }
