@@ -147,7 +147,7 @@ while ((Get-Date) -lt $endTime) {
     Start-Sleep -Seconds $Interval
 }
 
-$data = Import-Csv -Path $Out -Delimiter "`t" | Select-Object -Skip 0
+$data = Import-Csv -Path $Out -Delimiter "`t"
 $totals = $data | ForEach-Object { [int]$_.total_kb }
 $sorted = $totals | Sort-Object
 $min = [math]::Round($sorted[0] / 1024)
