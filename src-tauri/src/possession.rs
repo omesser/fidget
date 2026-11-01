@@ -118,6 +118,9 @@ pub fn parse_key(name: &str) -> Option<Key> {
         "down" => Some(Key::Down),
         "space" => Some(Key::Space),
         "escape" => Some(Key::Escape),
+        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+            Some(Key::Digit(name.as_bytes()[0] - b'0'))
+        }
         _ => None,
     }
 }
@@ -173,15 +176,30 @@ mod tests {
     }
 
     #[test]
-    fn four_arrows_space_and_escape_are_the_only_possession_keys() {
-        assert!(parse_key("left").is_some());
-        assert!(parse_key("right").is_some());
-        assert!(parse_key("space").is_some());
-        assert!(parse_key("escape").is_some());
-        assert!(parse_key("up").is_some());
-        assert!(parse_key("down").is_some());
-        assert!(parse_key("1").is_none());
+    fn arrows_space_escape_and_digits_are_the_possession_keys() {
+        assert_eq!(parse_key("left"), Some(Key::Walk(Walk::Left)));
+        assert_eq!(parse_key("right"), Some(Key::Walk(Walk::Right)));
+        assert_eq!(parse_key("up"), Some(Key::Up));
+        assert_eq!(parse_key("down"), Some(Key::Down));
+        assert_eq!(parse_key("space"), Some(Key::Space));
+        assert_eq!(parse_key("escape"), Some(Key::Escape));
+        assert_eq!(parse_key("1"), Some(Key::Digit(1)));
+        assert_eq!(parse_key("9"), Some(Key::Digit(9)));
+        assert!(parse_key("0").is_none());
         assert!(parse_key("a").is_none());
+        assert!(parse_key("d").is_none());
+    }
+
+    #[test]
+    fn a_digit_press_reaches_the_intent_once() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("4", true), t0);
+        assert_eq!(session.tick(16, t0).play, Some(4));
+        session.apply(&key("4", true), t0);
+        assert_eq!(session.tick(16, t0).play, None);
+        session.apply(&key("4", false), t0);
+        assert_eq!(session.tick(16, t0).play, None);
     }
 
     #[test]

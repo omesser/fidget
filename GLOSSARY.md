@@ -299,7 +299,8 @@ _Avoid_: Invoke, activate, wake
 **Possession**:
 The switch that hands a fidget to the user's keyboard. Left and Right walk it,
 Up climbs the wall it stands against, Down drops it through its Perch, Space
-makes it jump and Escape releases it. The fidget is possessed, the way a ghost
+makes it jump, the digits 1 to 9 play its Behaviors in name order (skipping
+walk and jump), and Escape releases it. The fidget is possessed, the way a ghost
 possesses a body, and the Director's prompt says so. Possession applies to one
 Character Instance. Possessing another releases the first. It is not a State,
 so a possessed sprite still falls, perches and can be grabbed, and it stays

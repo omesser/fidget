@@ -38,16 +38,6 @@ fail() {
   exit 1
 }
 
-# $1=file  $2=grep -E pattern  $3=attempts of a quarter-second each
-await() {
-  local file="$1" pattern="$2" attempts="$3"
-  for _ in $(seq 1 "$attempts"); do
-    grep -qE "$pattern" "$file" 2> /dev/null && return 0
-    sleep 0.25
-  done
-  return 1
-}
-
 has_supporting_wm() {
   xprop -root _NET_SUPPORTING_WM_CHECK 2> /dev/null | grep -q 'window id'
 }

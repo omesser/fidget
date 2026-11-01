@@ -10,7 +10,8 @@ export const RESUME_LABEL = "Click to resume";
 // stays put while the sprite walks, so the background under it stays visible.
 export const POSSESSION_INSET = 16;
 
-// The keys this build binds. The digits are later.
+// Digit rows are the list the Shell already mapped, in that order. The card
+// only numbers them.
 const KEYS = [
   ["← →", "Walk"],
   ["↑", "Climb"],
@@ -19,14 +20,29 @@ const KEYS = [
   ["Esc", "Release Possession"],
 ];
 
+// Walk and Jump are written as labels. A Behavior name is a key (`nod`).
+function behaviorLabel(name) {
+  if (!name) return name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function bindingRows(behaviors) {
+  const digits = [...(behaviors ?? [])].map((name, index) => [
+    String(index + 1),
+    behaviorLabel(name),
+  ]);
+  return [...KEYS, ...digits];
+}
+
 // Null while the sprite is not possessed. Paused keeps the card and replaces
 // the explanation with the resume line.
-export function possessionCard({ possessed, paused }) {
+export function possessionCard({ possessed, paused, behaviors }) {
   if (!possessed) return null;
+  const keys = bindingRows(behaviors);
   if (paused) {
-    return { paused: true, dimmed: true, heading: RESUME_LABEL, keys: KEYS };
+    return { paused: true, dimmed: true, heading: RESUME_LABEL, keys };
   }
-  return { paused: false, dimmed: false, heading: POSSESSION_HEADING, keys: KEYS };
+  return { paused: false, dimmed: false, heading: POSSESSION_HEADING, keys };
 }
 
 // Null hides the bar. A number is the fill, clamped to 0..1.
