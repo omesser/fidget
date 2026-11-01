@@ -148,7 +148,7 @@ news=$(line_count "$marks" '^new$')
 ax press "$pid" BMO Open > "$out/press-open.txt" 2>&1 || fail "could not press Open on the sign-in link; see $out/press-open.txt"
 wait_for_marks 2 "$marks" '^elicit-url:accept$' || fail "sign-in form never answered; see $log"
 # The recording file exists from the start, so wait for its URL, not the file.
-wait_until 2 handed || true
+skip_thread_dump=1 wait_until 2 handed || true
 check_opened "$opened"
 wait_for_count 2 "$marks" '^new$' "$news" || fail "session did not open after sign-in; see $log"
 

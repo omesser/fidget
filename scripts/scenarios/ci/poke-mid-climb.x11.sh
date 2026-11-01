@@ -154,7 +154,7 @@ for _ in 1 2 3 4 5 6; do
   [ "$sy" -gt "$size" ] || break
   click_at "$px" "$((sy - 10))" >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
   # A second click inside the double-click gap is not a new Poke, so wait out the gap for one.
-  if wait_for_count "$click_gap" "$trace" '^verbs: .*Poke' "$before"; then
+  if skip_thread_dump=1 wait_for_count "$click_gap" "$trace" '^verbs: .*Poke' "$before"; then
     poked=1
     break
   fi
@@ -177,7 +177,7 @@ wait_for_trace 3 "$trace" 'frame: .* Climbing .* react#[0-9]' || fail "sprite di
 # The checker passes once the trace runs past the Poke's 2.5 s cooldown;
 # stopping Fidget sooner cuts those frames off.
 cooldown_traced() { python3 "$root/scripts/scenarios/helpers/poke-mid-climb-check.py" "$trace" 2> /dev/null; }
-wait_until 3 cooldown_traced || true
+skip_thread_dump=1 wait_until 3 cooldown_traced || true
 stop_fidget
 
 check "$trace"

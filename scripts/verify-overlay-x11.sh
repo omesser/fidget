@@ -91,7 +91,7 @@ log_info "Found overlay window ID: $WINDOW_ID"
 log_info "Waiting for EWMH window states..."
 wait_for_line 3 "$TRACE_LOG" 'EWMH configured' || fail "configure_overlay never succeeded within 3 s"
 overlay_state_events() { stdbuf -oL xprop -id "$WINDOW_ID" -spy _NET_WM_STATE; }
-wait_on_source 3 overlay_state_events grep -qEm1 'ABOVE.*SKIP_TASKBAR|SKIP_TASKBAR.*ABOVE' || true
+skip_thread_dump=1 wait_on_source 3 overlay_state_events grep -qEm1 'ABOVE.*SKIP_TASKBAR|SKIP_TASKBAR.*ABOVE' || true
 WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE 2> /dev/null || true)
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR"; then
   log_info "EWMH states verified"

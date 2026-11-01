@@ -66,7 +66,7 @@ capture() { # <name> <glyph the first Thinking row starts with>
   local id row
   # Chat draws the row after the mark that triggers it, so wait for the glyph
   # and keep the dump that showed it.
-  wait_for_ax_dump 3 "$pid" BMO "^AXButton\|$2 " "$out/$1.ax.txt" || true
+  skip_thread_dump=1 wait_for_ax_dump 3 "$pid" BMO "^AXButton\|$2 " "$out/$1.ax.txt" || true
   id=$("$tools/window-id" "$pid" BMO) || fail "$1: no Chat window"
   screencapture -x -o -l "$id" "$out/$1.png"
   row=$(grep -iEm1 '^AXButton\|(▸|▾) thinking' "$out/$1.ax.txt") || fail "$1: no Thinking row in $out/$1.ax.txt"

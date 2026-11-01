@@ -77,6 +77,35 @@ wait "$pid" 2> /dev/null || true
   assert.doesNotMatch(r.out, /thread dump in/);
 });
 
+test("eu-stack's error does not hide a gdb stack", (t) => {
+  const r = run(t, `set -e
+mkdir -p "$dir/bin"
+printf '%s\n' '#!/bin/sh' 'echo "eu-stack: Permission denied" >&2' 'exit 2' > "$dir/bin/eu-stack"
+printf '%s\n' '#!/bin/sh' 'echo "GDB STACK"' > "$dir/bin/gdb"
+chmod +x "$dir/bin/eu-stack" "$dir/bin/gdb"
+sleep 30 & pid=$!
+out="$dir"
+echo "showThinking" > "$log"
+PATH="$dir/bin:$PATH" wait_for_trace 1 "$log" '^never-this$' || true
+kill "$pid" 2> /dev/null || true
+wait "$pid" 2> /dev/null || true
+grep -F "GDB STACK" "$out/fidget-threads.txt"
+! grep -F "Permission denied" "$out/fidget-threads.txt"`);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+test("skip_thread_dump leaves a timed-out wait alone", (t) => {
+  const r = run(t, `sleep 30 & pid=$!
+out="$dir"
+echo "showThinking" > "$log"
+skip_thread_dump=1 wait_for_trace 1 "$log" '^never-this$' || true
+kill "$pid" 2> /dev/null || true
+wait "$pid" 2> /dev/null || true
+[ ! -e "$out/fidget-threads.txt" ]`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /thread dump in/);
+});
+
 test("a wait that sees its line leaves no thread dump", (t) => {
   const r = run(t, `sleep 30 & pid=$!
 out="$dir"

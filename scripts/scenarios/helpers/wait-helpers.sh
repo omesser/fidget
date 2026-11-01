@@ -13,8 +13,17 @@ fidget_alive() {
   [ -z "${pid:-}" ] || kill -0 "$pid" 2> /dev/null
 }
 
+run_bounded() { # <command...>
+  if command -v timeout > /dev/null 2>&1; then
+    timeout 8 "$@"
+  else
+    "$@"
+  fi
+}
+
 dump_fidget_threads() {
-  local dest dir
+  local dest dir got=1
+  [ -z "${skip_thread_dump:-}" ] || return 0
   [ -n "${pid:-}" ] || return 0
   # Attaching to this shell samples the waiter, not Fidget.
   if [ "$pid" -eq "$$" ] 2> /dev/null; then
@@ -26,24 +35,16 @@ dump_fidget_threads() {
   dir=${out:-${TMPDIR:-/tmp}}
   mkdir -p "$dir"
   dest=$dir/fidget-threads.txt
-  if command -v eu-stack > /dev/null 2>&1; then
-    if command -v timeout > /dev/null 2>&1; then
-      timeout 8 eu-stack -p "$pid" > "$dest" 2>&1 || true
-    else
-      eu-stack -p "$pid" > "$dest" 2>&1 || true
-    fi
+  # A tool that only writes an error still leaves a non-empty file. The next
+  # tool has to run, or a permission failure hides gdb.
+  if command -v eu-stack > /dev/null 2>&1 && run_bounded eu-stack -p "$pid" > "$dest" 2>&1; then
+    got=0
+  elif command -v gdb > /dev/null 2>&1 && run_bounded gdb -batch -ex 'set pagination off' -ex 'thread apply all bt' -p "$pid" > "$dest" 2>&1; then
+    got=0
+  elif command -v sample > /dev/null 2>&1 && sample "$pid" 1 -file "$dest" > /dev/null 2>&1; then
+    got=0
   fi
-  if [ ! -s "$dest" ] && command -v gdb > /dev/null 2>&1; then
-    if command -v timeout > /dev/null 2>&1; then
-      timeout 8 gdb -batch -ex 'set pagination off' -ex 'thread apply all bt' -p "$pid" > "$dest" 2>&1 || true
-    else
-      gdb -batch -ex 'set pagination off' -ex 'thread apply all bt' -p "$pid" > "$dest" 2>&1 || true
-    fi
-  fi
-  if [ ! -s "$dest" ] && command -v sample > /dev/null 2>&1; then
-    sample "$pid" 1 -file "$dest" > /dev/null 2>&1 || true
-  fi
-  if [ ! -s "$dest" ]; then
+  if [ "$got" -ne 0 ] && [ ! -s "$dest" ]; then
     echo "thread dump skipped: no eu-stack, gdb, or sample produced output" > "$dest"
   fi
   echo "thread dump in $dest" >&2
@@ -95,16 +96,15 @@ wait_on_source() { # <seconds> <source command> <reader...>
   kill "$timer_pid" "$source_pid" 2> /dev/null || true
   wait "$timer_pid" "$source_pid" 2> /dev/null || true
   rm -f "$fifo"
+  if [ "$result" -ne 0 ] && [ -z "${wait_defer_dump:-}" ]; then
+    dump_fidget_threads
+  fi
   return "$result"
 }
 
 # Wait for a line matching an extended regex to land in a file.
 wait_for_line() { # <seconds> <file> <pattern>
-  if wait_on_lines "$1" +1 "$2" grep -qEm1 "$3"; then
-    return 0
-  fi
-  dump_fidget_threads
-  return 1
+  wait_on_lines "$1" +1 "$2" grep -qEm1 "$3"
 }
 
 # Wait for a trace line in the app log or process.log.
@@ -140,6 +140,8 @@ in_state() { # <log> <state pattern>
 # Accessibility waits use OS events instead: see wait_for_ax_dump.
 wait_until() { # <seconds> <command...>
   local seconds=$1
+  # The last check can still succeed after the inner wait gives up.
+  local wait_defer_dump=1
   shift
   "$@" > /dev/null 2>&1 && return 0
   if wait_on_lines "$seconds" 0 "${wait_log:-${log:?wait_until needs \$log}}" probe_each_line "$@"; then
@@ -164,11 +166,7 @@ probe_each_line() { # <command...>
 # line that repeats (a second minimize, a second Poke). Take the count before
 # the trigger.
 wait_for_count() { # <seconds> <file> <pattern> <count before the trigger>
-  if wait_on_lines "$1" +1 "$2" count_past "$3" "$4"; then
-    return 0
-  fi
-  dump_fidget_threads
-  return 1
+  wait_on_lines "$1" +1 "$2" count_past "$3" "$4"
 }
 
 # Read lines until more than <count> match the pattern.
@@ -192,21 +190,17 @@ line_count() { # <file> <pattern>
 # which they hold through an inherited fd even after the pid is gone; without
 # it (macOS), caffeinate -w watches the pid through kqueue. True once gone.
 wait_for_exit() { # <seconds> <pid> <lock>
+  # Cleanup, not an assertion. The local pid below is whoever is still
+  # exiting, and a stack of that process is not the stall we are after.
+  local wait_defer_dump=1
   if command -v flock > /dev/null && [ -e "${3:-}" ]; then
-    if flock -w "$1" "$3" true; then
-      return 0
-    fi
-    dump_fidget_threads
-    return 1
+    flock -w "$1" "$3" true
+    return
   fi
   kill -0 "$2" 2> /dev/null || return 0
   local pid=$2 # wait_on_source fails at once if this pid is already gone
   exit_watched=$2
-  if wait_on_source "$1" watch_exit read -r; then
-    return 0
-  fi
-  dump_fidget_threads
-  return 1
+  wait_on_source "$1" watch_exit read -r
 }
 # No caffeinate (Linux without the lock) prints nothing, so the wait fails.
 watch_exit() {
@@ -263,10 +257,7 @@ wait_for_rest() { # <log>
       result=1 && break
     fi
     : > "$flag"
-    wait_on_lines 3 0 "$1" rest_or_moved "$1" "$flag" || {
-      dump_fidget_threads
-      result=1 && break
-    }
+    wait_on_lines 3 0 "$1" rest_or_moved "$1" "$flag" || { result=1 && break; }
     [ -s "$flag" ] || { result=0 && break; }
   done
   rm -f "$flag"

@@ -26,7 +26,11 @@ wait_for_file() { # <seconds> <file path>
 wait_for_ax_dump() { # <seconds> <pid> <window title> <pattern> [<file>]
   fidget_alive || return 1
   # shellcheck disable=SC2154
-  python3 "${root}/scripts/ax-wait-linux.py" "$2" "$3" "$1" "$4" ${5:+"$5"} 2> /dev/null
+  if python3 "${root}/scripts/ax-wait-linux.py" "$2" "$3" "$1" "$4" ${5:+"$5"} 2> /dev/null; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 
 # Answer a permission ask by pressing the named button (Allow or Reject) in

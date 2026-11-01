@@ -85,7 +85,7 @@ else
 
   poked=
   for attempt in 1 2 3 4 5; do
-    wait_for_rest "$log" || continue
+    skip_thread_dump=1 wait_for_rest "$log" || continue
     read -r sx sy < <(sprite_xy)
     cx=$((sx + half))
     # Toward the nearer side of the sprite's own display, and the far side on
@@ -97,7 +97,7 @@ else
     if [ "$near_left" -eq 1 ]; then dx=-1500; else dx=1500; fi
     "$tools/throw-sprite" "$cx" "$((sy + half))" "$dx" >> "$out/input.txt" 2>&1 || fail "could not throw the sprite; see $out/input.txt"
 
-    if ! wait_until 2 climbing; then
+    if ! skip_thread_dump=1 wait_until 2 climbing; then
       echo "attempt $attempt: no climb" >> "$out/input.txt"
       continue
     fi
@@ -135,7 +135,7 @@ else
       [ "$sy" -gt "$size" ] || break
       "$tools/click-cursor" "$px" "$((sy - 10))" 1 >> "$out/input.txt" 2>&1 || fail "could not click the sprite; see $out/input.txt"
       "$tools/warp-cursor" "$away" "$sy" --event >> "$out/input.txt" 2>&1 || fail "could not move the pointer off the sprite; see $out/input.txt"
-      if wait_for_count "$click_gap" "$log" '^verbs: .*Poke' "$before"; then
+      if skip_thread_dump=1 wait_for_count "$click_gap" "$log" '^verbs: .*Poke' "$before"; then
         poked=1
         break
       fi
@@ -145,7 +145,7 @@ else
   done
   [ -n "$poked" ] || fail "five throws and no Poke landed mid-climb; see $out/input.txt"
 
-  wait_until 3 cooldown_traced || true
+  skip_thread_dump=1 wait_until 3 cooldown_traced || true
   stop_fidget
 fi
 

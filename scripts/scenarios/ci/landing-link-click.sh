@@ -70,7 +70,7 @@ wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
 chat_opened=0
 for attempt in 1 2; do
   "$tools/ax" open "$pid" Chat BMO > "$out/open.txt" 2>&1 || true
-  if wait_for_ax 2 "$pid" "$tools/window-id" "$pid" BMO; then
+  if skip_thread_dump=1 wait_for_ax 2 "$pid" "$tools/window-id" "$pid" BMO; then
     chat_opened=1
     break
   fi

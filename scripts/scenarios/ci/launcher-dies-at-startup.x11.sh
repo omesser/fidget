@@ -166,7 +166,7 @@ for w in 420 320; do fits "$w"; done
 ax press "$pid" BMO Codex > "$out/press.txt" 2>&1 || fail "could not press Codex on the landing; see $out/press.txt"
 # The first launch's spawn is already in the marks file: wait for a second.
 wait_for_count 2 "$marks" '^spawn$' 1 || fail "the re-pick did not launch the Harness again; see $log"
-wait_for_ax_dump 2 "$pid" BMO " · session " || true
+skip_thread_dump=1 wait_for_ax_dump 2 "$pid" BMO " · session " || true
 shows_live || true
 check_live "$out/live.ax.txt"
 elapsed_ms=$(($(date +%s%N) / 1000000 - start_ms))
