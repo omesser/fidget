@@ -5045,9 +5045,8 @@ fn anchor_icons() -> (
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetSystemMetrics, LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON, SM_CYSMICON,
     };
-    // The id tauri-build gives the app icon, as MAKEINTRESOURCEW.
     const APP_ICON: windows_sys::core::PCWSTR =
-        tauri::utils::platform::WINDOWS_APP_ICON_RESOURCE_ID as _;
+        tauri::utils::platform::WINDOWS_APP_ICON_RESOURCE_ID as usize as windows_sys::core::PCWSTR;
     // The shell's largest icon slot; a bigger one only costs memory.
     const JUMBO: i32 = 256;
 
