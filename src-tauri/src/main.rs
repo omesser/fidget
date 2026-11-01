@@ -5033,56 +5033,43 @@ unsafe extern "system" fn anchor_wndproc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Taskbar icon from the same PNG the bundle uses. The class stores the handle
-/// until process exit, and `DestroyIcon` would blank the button.
+/// Taskbar icons, big and small, from the `.ico` tauri-build links into the exe.
+/// The class keeps both handles until process exit, and `DestroyIcon` would
+/// blank the button. A null handle leaves that slot to the system default.
 #[cfg(target_os = "windows")]
 fn anchor_icons() -> (
     windows_sys::Win32::UI::WindowsAndMessaging::HICON,
     windows_sys::Win32::UI::WindowsAndMessaging::HICON,
 ) {
-    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
-    (icon, icon)
-}
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON, SM_CYSMICON,
+    };
+    // tauri_utils::platform::WINDOWS_APP_ICON_RESOURCE_ID, as MAKEINTRESOURCEW.
+    const APP_ICON: windows_sys::core::PCWSTR = 32512 as _;
 
-#[cfg(target_os = "windows")]
-fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::CreateIcon;
-
-    let decoded = match image::load_from_memory(include_bytes!("../icons/icon.png")) {
-        Ok(decoded) => decoded,
-        Err(why) => {
-            eprintln!("anchor: icon: {why}");
-            return None;
+    // Not LR_SHARED: it caches one handle per resource, so the second size could be the first.
+    let load = |width, height| {
+        let icon = unsafe {
+            LoadImageW(
+                GetModuleHandleW(std::ptr::null()),
+                APP_ICON,
+                IMAGE_ICON,
+                width,
+                height,
+                LR_DEFAULTCOLOR,
+            )
+        };
+        if icon.is_null() {
+            eprintln!(
+                "anchor: icon {width}x{height}: {}",
+                std::io::Error::last_os_error()
+            );
         }
+        icon
     };
-    // The PNG is 512. The shell's jumbo slot is 256, and a larger icon is only memory.
-    let rgba = decoded.thumbnail(256, 256).to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let mut pixels = rgba.into_raw();
-    let mut mask = Vec::with_capacity(pixels.len() / 4);
-    // CreateIcon's color plane is BGRA. The mask byte is inverted alpha so a
-    // transparent pixel stays transparent on the taskbar.
-    for chunk in pixels.as_chunks_mut::<4>().0 {
-        mask.push(chunk[3].wrapping_sub(u8::MAX));
-        chunk.swap(0, 2);
-    }
-    let icon = unsafe {
-        CreateIcon(
-            std::ptr::null_mut(),
-            width as i32,
-            height as i32,
-            1,
-            32,
-            mask.as_ptr(),
-            pixels.as_ptr(),
-        )
-    };
-    if icon.is_null() {
-        eprintln!("anchor: icon: {}", std::io::Error::last_os_error());
-        None
-    } else {
-        Some(icon)
-    }
+    let small = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+    (load(256, 256), load(small.0, small.1))
 }
 
 fn main() {

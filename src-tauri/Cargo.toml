@@ -80,8 +80,6 @@ ctrlc = "3"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
-# PNG decoding for the tray icon.
-image = { version = "0.25", default-features = false, features = ["png"] }
 # The bearer token for the loopback MCP server (ADR-0023). The OS CSPRNG and
 # nothing else: already in the tree under keyring and tokio, and a token minted
 # from a clock is a token an attacker can guess.
