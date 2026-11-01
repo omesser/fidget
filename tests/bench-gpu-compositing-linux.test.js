@@ -11,6 +11,7 @@ const script = join(
   "scripts",
   "bench-gpu-compositing-linux.sh",
 );
+const skipLinuxProcTests = process.platform === "linux" ? false : "requires Linux /proc process metadata";
 
 function stub(dir, name, body) {
   const path = join(dir, name);
@@ -89,7 +90,7 @@ test("no compositor on this display reports compositing false", (t) => {
   });
 });
 
-test("picom and Xvfb on this display are picked up, with compositing true", (t) => {
+test("picom and Xvfb on this display are picked up, with compositing true", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, {
       display: ":77",
@@ -115,7 +116,7 @@ test("a compositor and X server serving another display are ignored", (t) => {
   );
 });
 
-test("an X server started from this display but serving another is not picked", (t) => {
+test("an X server started from this display but serving another is not picked", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, {
       display: ":77",
@@ -128,7 +129,7 @@ test("an X server started from this display but serving another is not picked", 
   );
 });
 
-test("a Wayland session picks the compositor serving its socket, with no X server", (t) => {
+test("a Wayland session picks the compositor serving its socket, with no X server", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, {
       wayland: "wayland-77",
@@ -142,7 +143,7 @@ test("a Wayland session picks the compositor serving its socket, with no X serve
   );
 });
 
-test("the Wayland row reads the CPU of the weston on its socket, not another weston", (t) => {
+test("the Wayland row reads the CPU of the weston on its socket, not another weston", { skip: skipLinuxProcTests }, (t) => {
   const { out } = runBench(
     t,
     {
@@ -159,14 +160,14 @@ test("the Wayland row reads the CPU of the weston on its socket, not another wes
   assert.ok(Number(row[5]) > 50, row.join(" "));
 });
 
-test("kwin_x11 is compositing", (t) => {
+test("kwin_x11 is compositing", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, { display: ":77", running: [{ comm: "kwin_x11", display: ":77" }] }),
     { compositor: "kwin_x11", compositing: "true", x_server: "none" },
   );
 });
 
-test("xfwm4 started with --compositor=off is not compositing", (t) => {
+test("xfwm4 started with --compositor=off is not compositing", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, {
       display: ":77",
@@ -176,7 +177,7 @@ test("xfwm4 started with --compositor=off is not compositing", (t) => {
   );
 });
 
-test("picom over a window manager is the compositor", (t) => {
+test("picom over a window manager is the compositor", { skip: skipLinuxProcTests }, (t) => {
   assert.deepEqual(
     probe(t, {
       display: ":77",
