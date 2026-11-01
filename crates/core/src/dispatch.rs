@@ -268,7 +268,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     let mut tools = vec![
         ToolInfo {
             name: "play_behavior".to_string(),
-            description: "Play a named Behavior. Pass direction to make a walk go left or right, whichever way the Character last faced.".to_string(),
+            description: "Play a named Behavior. Pass direction to aim a walk left or right instead of the way the Character last faced.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
