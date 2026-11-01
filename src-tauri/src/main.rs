@@ -5068,8 +5068,9 @@ fn anchor_icons() -> (
         }
         icon
     };
-    let small = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
-    (load(256, 256), load(small.0, small.1))
+    let (small_width, small_height) =
+        unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+    (load(256, 256), load(small_width, small_height))
 }
 
 fn main() {
