@@ -184,7 +184,7 @@ pub struct SettingsView {
     /// Every text row a variable can own, by form row id: the exported
     /// variable's value where it owns the row, else the file's.
     pub variable_texts: HashMap<String, String>,
-    /// Live OS grants, not a file field. The window rereads them on become-key.
+    /// Settings intent for each capability, separate from its OS grant.
     pub consent: Vec<ConsentRow>,
     /// Which Chat UI design is selected: minimal, terminal, or glass.
     pub chat_ui: String,
@@ -724,7 +724,7 @@ impl SettingsView {
         values.extend(
             self.consent
                 .iter()
-                .map(|row| (row.row_id(), RowValue::Bool(row.granted))),
+                .map(|row| (row.row_id(), RowValue::Bool(row.wanted))),
         );
         // Only a field the Harness did not take has a notice. A row with none has no key.
         for notice in &self.not_applied {
@@ -3029,10 +3029,10 @@ mod tests {
                 ]
             );
             assert!(
-                view.consent[0].granted,
+                view.consent[0].wanted,
                 "the checkbox follows settings intent, not the OS grant"
             );
-            assert!(!view.consent[1].granted);
+            assert!(!view.consent[1].wanted);
         }
         #[cfg(target_os = "windows")]
         {
@@ -3041,7 +3041,7 @@ mod tests {
                 ["Window and Application Names"]
             );
             assert!(
-                !view.consent[0].granted,
+                !view.consent[0].wanted,
                 "the checkbox follows settings intent, not the OS grant"
             );
         }
@@ -3049,7 +3049,7 @@ mod tests {
         {
             assert_eq!(view.consent.len(), 1);
             assert_eq!(view.consent[0].title, "Window and application names");
-            assert!(!view.consent[0].granted);
+            assert!(!view.consent[0].wanted);
         }
         #[cfg(target_os = "macos")]
         {
@@ -3140,7 +3140,7 @@ mod tests {
             None,
         );
         assert!(
-            !view.consent[0].granted,
+            !view.consent[0].wanted,
             "unchecking has to show off even if the OS still holds the grant"
         );
 
