@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.x11.sh
+source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.x11.sh"
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -79,6 +81,8 @@ env -u FIDGET_DIRECTOR_API_KEY \
   LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE" \
   "$BIN" > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
+# shellcheck disable=SC2034  # read by the sourced wait helpers
+pid=$APP_PID wait_log=$TRACE_LOG
 
 await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
@@ -206,16 +210,11 @@ debug_place() { # <x> <y>
   rm -f "$RES_PATH"
   printf 'place x=%s y=%s\n' "$1" "$2" > "$CMD_PATH.tmp"
   mv "$CMD_PATH.tmp" "$CMD_PATH"
-  for _ in $(seq 1 40); do
-    if [ -f "$RES_PATH" ]; then
-      PLACE_REPLY=$(cat "$RES_PATH" 2> /dev/null || true)
-      echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
-      echo "$PLACE_REPLY" | grep -q '^placed:' && return 0
-      echo "$PLACE_REPLY" | grep -q '^error:' && fail "debug place failed: $PLACE_REPLY"
-    fi
-    sleep 0.25
-  done
-  fail "debug place to ($1, $2) timed out (is FIDGET_DEBUG_IPC on?)"
+  wait_for_file 10 "$RES_PATH" ||
+    fail "debug place to ($1, $2) timed out (is FIDGET_DEBUG_IPC on?)"
+  PLACE_REPLY=$(cat "$RES_PATH")
+  echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
+  echo "$PLACE_REPLY" | grep -q '^placed:' || fail "debug place failed: $PLACE_REPLY"
 }
 debug_place "$PLACE_X" "$PLACE_Y"
 log_info "Placed: $(cat "$OUT/place-reply.txt")"
