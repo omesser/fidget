@@ -7,8 +7,8 @@
 #   The cursor pokes the sprite and hovers until the pill opens, "hi" is typed,
 #   and the sprite is pressed, carried to the middle of another display and let go.
 #   Keep hands off the mouse and keyboard for the run.
-# Duration: a few seconds. Every wait gives up 3 s after its trigger: launch,
-#   landing, poke, hover, keys, press, move and drop.
+# Duration: a few seconds. Every wait gives up 3 s after its trigger (launch,
+#   landing, poke, hover, keys, press, move, drop), and page load 5 s after rest.
 # Grants: a desktop session with two or more displays. A loopback TCP port.
 #   Nothing is pressed unless Fidget owns the window under the cursor, and
 #   nothing is typed unless Fidget holds the foreground.
@@ -195,6 +195,7 @@ function Aim-AtSprite($p, [string]$What) {
         $script:aim = @{ X = $x; Y = $y; At = $at }
         [PillDrag]::OwnerAt($x, $y) -eq $script:proc.Id
     }
+    if (-not $script:aim) { Fail "no sprite position to $What at in 3 s; see $log" }
     if (-not $owned) { Fail "refusing to $What at ($($script:aim.X),$($script:aim.Y)): Fidget did not own the window there in 3 s; see $log" }
     $script:aim
 }
@@ -281,6 +282,10 @@ try {
     if (-not (Wait-ForUp 3 $traceFile)) { Fail "Fidget never wrote its overlay line in 3 s; see $traceFile" }
     if (-not (Wait-ForTrace 3 $log $landedPattern)) { Fail "the sprite never landed within 3 s of startup; see $log" }
     if (-not (Wait-Until 3 { Get-SpriteAtRest $log })) { Fail "the sprite never came to rest within 3 s of landing; see $log" }
+    # A bubble sent before an overlay's page loads is never drawn or traced. 5 s,
+    # not 3: WebView2 page load runs late on slower machines (Oded's exception).
+    $overlays = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^overlay: \S+ covers ' }).Count
+    if (-not (Wait-ForCount 5 $traceFile '^overlay: \S+ page loaded$' ($overlays - 1))) { Fail "not all $overlays overlay pages loaded within 5 s of rest; see $traceFile" }
 
     Drive-PillAcrossSeam
     # The region rebuild that clears the painted rects follows the hide.
