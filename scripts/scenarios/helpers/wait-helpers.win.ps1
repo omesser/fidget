@@ -258,13 +258,6 @@ function Wait-ForRest([string]$TraceFile) {
     }
 }
 
-function In-State([string]$LogFile, [string]$StatePattern) {
-    if (-not (Test-Path -LiteralPath $LogFile)) { return $false }
-    $frame = Get-Content -LiteralPath $LogFile | Where-Object { $_ -match '^frame: ' } | Select-Object -Last 1
-    if (-not $frame) { return $false }
-    return $frame -match " ($StatePattern) "
-}
-
 # Cleanup for a finally block: kill Fidget and every process under it, then
 # any fixture Harness whose command line holds $Pattern (bash can outlive the
 # tree when its parent is already gone).
