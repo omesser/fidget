@@ -158,7 +158,7 @@ The full variable list, including `FIDGET_DIRECTOR_*`, is in [harness.md](./docs
 
 <p align="center">
 <img src="./docs/readme/settings-switch-character.gif" width="480" alt="Right-click menu opens Settings, and the Character tab switches Buddy Bot to Cat" /><br>
-<b>Swap who lives on your desktop</b><br>
+<b>Switch between characters</b><br>
 <sub>Right-click, open Settings, and trade Buddy Bot for Cat in the Character tab.</sub>
 </p>
 
