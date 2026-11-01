@@ -4292,9 +4292,8 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
     )
 }
 
-// One over the clippy cap, for the same reason `apply_menu_action` is: the new
-// session belongs beside the `retarget_model` that opens it, and the Chat
-// surface it has to tell is reached through the app handle.
+// One over the clippy cap. Roster, Completer, and Chat all hear one switch,
+// and splitting them would hide that they move together.
 #[allow(clippy::too_many_arguments)]
 fn switch_instance(
     roster: &mut Roster,
@@ -4311,18 +4310,17 @@ fn switch_instance(
         live.character = character;
         live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
         live.pace = paced(config, &live.character);
-        // The old session is the previous Character's. A Wake still on the
-        // wire would propose as them; drop it and ask for this opening turn.
-        completer::retarget_model(
+        // The previous Character's Harness session stays. It is keyed by
+        // Character, so switching back still has it.
+        frame_loop::replace_session(
+            app,
             slots,
-            instance_id,
-            &mut live.model,
-            live.character.behaviors.keys().cloned(),
-            live.character.name.clone(),
+            live,
             settings,
             config.configured,
+            "the Character changed",
+            frame_loop::HarnessSession::Keep,
         );
-        session_log::new_session(app, instance_id, "the Character changed");
         live.recent.clear();
         live.happened = Happened::Proactive;
         live.addressed = true;
