@@ -25,8 +25,9 @@ wait_for_file() { # <seconds> <file path>
 wait_for_ax_dump() { # <seconds> <pid> <window title> <pattern> [<file>]
   fidget_alive || return 1
   # shellcheck disable=SC2154
+  # It exits 1 when the seconds run out and 2 on bad input.
   python3 "${root}/scripts/ax-wait-linux.py" "$2" "$3" "$1" "$4" ${5:+"$5"} 2> /dev/null || {
-    dump_stacks
+    [ $? != 1 ] || dump_stacks
     return 1
   }
 }
