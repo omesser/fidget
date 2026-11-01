@@ -131,6 +131,24 @@ impl Cue {
     }
 }
 
+/// Which way a walk goes, when the caller says. A Primitive carries no
+/// direction, so a walk without one goes the way the sprite last faced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Left,
+    Right,
+}
+
+impl Direction {
+    /// This direction as the `facing` the Engine steers by.
+    pub fn facing(self) -> f64 {
+        match self {
+            Self::Left => -1.0,
+            Self::Right => 1.0,
+        }
+    }
+}
+
 /// What the Director proposed since the previous tick. Advisory: the Engine
 /// plays the named Behavior only if the Character declares it and the State
 /// permits its Primitives. The line is spoken regardless: dialogue moves nothing.
@@ -138,6 +156,8 @@ impl Cue {
 pub struct BehaviorProposal {
     pub behavior: String,
     pub dialogue: Option<String>,
+    /// Which way a walk in `behavior` goes. `None` keeps the last heading.
+    pub direction: Option<Direction>,
 }
 
 /// Everything the Engine is told about the world for one tick.
@@ -1218,6 +1238,17 @@ impl Engine {
                 match self.start_behavior(&proposal.behavior) {
                     Some(true) => {
                         started = true;
+                        // The walk's velocity was read before this proposal
+                        // arrived, so the heading has to land now or the next
+                        // tick walks the way the sprite last faced.
+                        if let Some(direction) = proposal.direction {
+                            if self
+                                .chain(&proposal.behavior)
+                                .is_some_and(|primitives| primitives.contains(&Primitive::Walk))
+                            {
+                                self.facing = direction.facing();
+                            }
+                        }
                         behavior = Some(proposal.behavior.clone());
                     }
                     // Mid-cooldown, `play` refuses a moving chain whole,
@@ -2491,6 +2522,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: behavior.to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..snapshot(100)
         }
@@ -2967,6 +2999,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: Some("morning".to_string()),
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -4416,6 +4449,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "jump".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..a_long_perch()
         });
@@ -4572,6 +4606,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "settle".to_string(),
                 dialogue: Some("off we go".to_string()),
+                direction: None,
             }),
             ..held.clone()
         });
@@ -5081,7 +5116,41 @@ mod tests {
         Some(BehaviorProposal {
             behavior: "walk".to_string(),
             dialogue: None,
+            direction: None,
         })
+    }
+
+    /// A walk the caller aims. The heading is set before the first step, so
+    /// the ask wins over whichever way the sprite last faced.
+    #[test]
+    fn a_proposed_walk_goes_the_way_it_was_asked_not_the_way_it_faced() {
+        let mut engine = a_resting_sprite();
+        engine.facing = 1.0;
+        engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "walk".to_string(),
+                dialogue: None,
+                direction: Some(Direction::Left),
+            }),
+            ..snapshot(100)
+        });
+        let left = engine.tick(&snapshot(100));
+        assert!(left.position.x < 100.0, "asked to walk left: {left:?}");
+        assert_eq!(left.velocity.x, -WALK_SPEED);
+
+        let mut engine = a_resting_sprite();
+        engine.facing = -1.0;
+        engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "walk".to_string(),
+                dialogue: None,
+                direction: Some(Direction::Right),
+            }),
+            ..snapshot(100)
+        });
+        let right = engine.tick(&snapshot(100));
+        assert!(right.position.x > 100.0, "asked to walk right: {right:?}");
+        assert_eq!(right.velocity.x, WALK_SPEED);
     }
 
     /// The art has one heading, so the renderer mirrors it by `facing`. Only
@@ -5159,6 +5228,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "amble".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..a_long_perch()
         });
@@ -5202,6 +5272,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -5303,6 +5374,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..a_long_perch()
         });
@@ -8049,6 +8121,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: Some("hello there".to_string()),
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -8072,6 +8145,7 @@ mod tests {
                     proposal: Some(BehaviorProposal {
                         behavior: "greet".to_string(),
                         dialogue: None,
+                        direction: None,
                     }),
                     ..snapshot(100)
                 })
@@ -8368,6 +8442,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: String::new(),
                 dialogue: Some("hello there".to_string()),
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -8398,6 +8473,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: Some("hi".to_string()),
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -8418,6 +8494,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "greet".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..snapshot(100)
         });
@@ -8704,6 +8781,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "chase-test".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             cursor: Point {
                 x: engine.position.x + 200.0,
@@ -9798,6 +9876,7 @@ mod tests {
                 proposal: Some(BehaviorProposal {
                     behavior: "walk".to_string(),
                     dialogue: Some("hands off the wheel".to_string()),
+                    direction: None,
                 }),
                 ..world.clone()
             });

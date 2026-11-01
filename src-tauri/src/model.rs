@@ -2380,6 +2380,7 @@ pub(crate) mod tests {
             fidget_core::director::Wake::Proposed(fidget_core::engine::BehaviorProposal {
                 behavior: "stroll".to_string(),
                 dialogue: Some("hey there".to_string()),
+                direction: None,
             })
         );
     }

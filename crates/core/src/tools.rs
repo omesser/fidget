@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 
 use crate::display::Whereabouts;
-use crate::engine::{BehaviorProposal, Point};
+use crate::engine::{BehaviorProposal, Direction, Point};
 use crate::memory::MemoryManifest;
 use crate::window_source::Rect;
 
@@ -304,9 +304,11 @@ mod helpers {
     }
 }
 
-/// Play a named Behavior.
+/// Play a named Behavior. `direction` aims a walk, and `None` keeps the
+/// heading the sprite last had.
 pub(crate) fn play_behavior(
     behavior: &str,
+    direction: Option<Direction>,
     instance_id: Option<&str>,
     roster: &[InstanceInfo],
     expression: Option<&mut dyn ExpressionHandle>,
@@ -322,6 +324,7 @@ pub(crate) fn play_behavior(
     let proposal = BehaviorProposal {
         behavior: behavior.to_string(),
         dialogue: None,
+        direction,
     };
 
     let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();

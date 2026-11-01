@@ -403,6 +403,7 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
         proposal: Some(BehaviorProposal {
             behavior: "jump".into(),
             dialogue: None,
+            direction: None,
         }),
         ..world.clone()
     });
@@ -864,6 +865,7 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
             proposal: (!playing).then(|| BehaviorProposal {
                 behavior: "patrol".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..ground.clone()
         });
@@ -1409,6 +1411,7 @@ fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
                 proposal: (tick == 0).then(|| BehaviorProposal {
                     behavior: "groom".to_string(),
                     dialogue: None,
+                    direction: None,
                 }),
                 ..ground.clone()
             });

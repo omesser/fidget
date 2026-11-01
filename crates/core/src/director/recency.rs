@@ -300,6 +300,7 @@ mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "walk".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..snapshot(100, vec![])
         });
