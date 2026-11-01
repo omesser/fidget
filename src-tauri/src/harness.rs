@@ -7030,6 +7030,73 @@ mod tests {
         session.shutdown();
     }
 
+    /// A saved slot is not a session this Harness can resume. It never
+    /// advertised `loadSession`, so the open is `session/new`.
+    #[test]
+    fn a_harness_without_load_session_opens_new_despite_a_saved_slot() {
+        let (fx, session) = Fixture::new("happy");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        session.shutdown();
+
+        let loads = fx.count("load");
+        let news = fx.count("new");
+        assert_eq!(
+            loads, 0,
+            "session/load count {loads}, session/new count {news}"
+        );
+        assert!(
+            news >= 1,
+            "session/load count {loads}, session/new count {news}"
+        );
+    }
+
+    /// Bytes that do not parse are not a session to resume. The open is
+    /// `session/new`, and the save that follows names the id that open minted.
+    #[test]
+    fn a_corrupt_session_file_opens_new_and_the_save_names_that_id() {
+        let (fx, session) = Fixture::new("load");
+        std::fs::write(fx.dir.join(SESSION_FILE), b"not json").unwrap();
+        assert_eq!(
+            session.complete(&asking("hi"), &|_| {}),
+            Ok(Reply::whole("Hello"))
+        );
+        session.shutdown();
+
+        let loads = fx.count("load");
+        let news = fx.count("new");
+        assert_eq!(
+            loads, 0,
+            "session/load count {loads}, session/new count {news}"
+        );
+        assert!(
+            news >= 1,
+            "session/load count {loads}, session/new count {news}"
+        );
+        let prompts = fx.events("prompt");
+        let opened = prompts[0]["session_id"]
+            .as_str()
+            .expect("the prompt names the session that opened");
+        let saved: SavedSession = serde_json::from_str(
+            &std::fs::read_to_string(fx.dir.join(SESSION_FILE)).expect("the save wrote a file"),
+        )
+        .expect("the save replaced the corrupt file with JSON");
+        assert_eq!(
+            saved.sessions.len(),
+            1,
+            "the save should name only the opened session: {:?}",
+            saved.sessions
+        );
+        assert_eq!(saved.sessions[0].session_id, opened);
+    }
+
     /// Start a new session drops every live Instance, so every lane has to
     /// open with `session/new`. A restart between the two would load a
     /// torn-down id back, which is the box this is for.
