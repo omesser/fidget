@@ -62,6 +62,20 @@ kill "$pid"; ls "$out" | grep . && exit 1; exit 0`);
   assert.strictEqual(r.code, 0, r.out);
 });
 
+// A fake python3 stands in for ax-wait-linux.py, which needs AT-SPI. Only its
+// timeout, exit 3, saves stacks; a crash exits 1 like Python itself does.
+for (const [rc, dumps] of [[3, true], [1, false], [2, false]]) {
+  test(`wait_for_ax_dump ${dumps ? "saves" : "saves no"} stacks when the script exits ${rc}`, (t) => {
+    const r = run(t, `${fakeEuStack}
+root="$dir"; printf '#!/bin/sh\\nexit ${rc}\\n' > "$dir/bin/python3"; chmod +x "$dir/bin/python3"
+wait_for_ax_dump 1 "$pid" BMO 'x'; got=$?; kill "$pid"
+[ "$got" = 1 ] || { echo "wait returned $got"; exit 1; }
+echo "count=$(ls "$out" | grep -c stacks-)"`, path.join(scenarios, "wait-helpers.x11.sh"));
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(r.out, dumps ? /^count=1$/m : /^count=0$/m);
+  });
+}
+
 test("waits fail at once when Fidget has exited", (t) => {
   const r = run(t, `: > "$dir/log"; sleep 0 & pid=$!; wait "$pid"; wait_for_trace 2 "$dir/log" x`);
   assert.strictEqual(r.code, 1, r.out);
