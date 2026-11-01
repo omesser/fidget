@@ -60,7 +60,7 @@ function Fail([string]$Message) {
 # process.log puts epoch seconds before each line; a saved stderr log does not.
 $framePattern = '^(?:\d+ )?frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) '
 $pokePattern = '^(?:\d+ )?verbs:.*Poke'
-$hitPattern = '^(?:\d+ )?hit-test: .* HIT click-through OFF'
+$hitPattern = '^(?:\d+ )?hit-test: .* HIT +click-through OFF'
 
 # poke-mid-climb-check.py in PowerShell, so no Windows host needs Python. Case
 # sensitive and word for word like it: the same broken fixtures fail both.
