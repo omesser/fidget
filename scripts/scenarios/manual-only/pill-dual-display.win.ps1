@@ -1,14 +1,15 @@
 #!/usr/bin/env pwsh
 # Scenario: pill-dual-display (Windows)
-# On screen: launches Fidget with dual displays (3440x1440@(0,0) + 1200x1920@(-1200,-209)).
-#   A static-director wake shows Dialogue; the pill is typed into and carried across the seam.
-#   Fidget quits when the scenario ends. No screenshots.
-# Input: SendInput cursor moves, typed text and one left-button drag. The
-#   cursor hovers the sprite until the pill opens, "hi" is typed into it, and
-#   the sprite is pressed, carried to the middle of another display and let go.
+# On screen: launches Fidget on a desktop with two or more displays, any layout.
+#   A poke against a local Director that never answers shows the Thinking bubble;
+#   the pill is typed into and carried to another display. Fidget quits at the end.
+# Input: SendInput cursor moves, one click, typed text and one left-button drag.
+#   The cursor pokes the sprite and hovers until the pill opens, "hi" is typed,
+#   and the sprite is pressed, carried to the middle of another display and let go.
 #   Keep hands off the mouse and keyboard for the run.
-# Duration: a few seconds. Every wait gives up 3 s after its trigger.
-# Grants: a desktop session with dual displays matching geometry above.
+# Duration: a few seconds. Startup gets 5 s, as in CI; every later wait gives up
+#   3 s after its trigger. The sprite's fall may take longer while it keeps moving.
+# Grants: a desktop session with two or more displays. A loopback TCP port.
 #   Nothing is pressed unless Fidget owns the window under the cursor, and
 #   nothing is typed unless Fidget holds the foreground.
 # Asserts: painted bubble rect included in Windows region while visible,
@@ -16,7 +17,8 @@
 # Fixture: FIDGET_SCENARIO_TRACE=<saved stderr> runs only the check and
 #   launches nothing; FIDGET_SCENARIO_PLAN_LOG=<process.log> prints the drag.
 #
-# Usage: pill-dual-display.win.ps1 --go <fidget binary>
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File pill-dual-display.win.ps1 --go <fidget binary>
+#   Windows PowerShell 5.1, as the fidget-verify runner calls it; pwsh 7 is not supported.
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 $Go = if ($args.Count -gt 0) { $args[0] } else { "" }
 $Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
@@ -186,6 +188,9 @@ function Drive-PillAcrossSeam {
     $p = $script:plan
 
     $null = [PillDrag]::SetCursorPos($p.X, $p.Y)
+    if ([PillDrag]::OwnerAt($p.X, $p.Y) -ne $script:proc.Id) { Fail "refusing to poke at ($($p.X),$($p.Y)): Fidget does not own the window there" }
+    [PillDrag]::Button($false); [PillDrag]::Button($true)
+    if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble in 3 s; see $traceFile" }
     if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($p.X),$($p.Y)) did not open a focused pill in 3 s; see $log" }
     if (-not (Wait-Until 3 { [PillDrag]::ForegroundOwner() -eq $script:proc.Id })) { Fail "the pill opened but Fidget never took the foreground, so nothing was typed; see $log" }
     [PillDrag]::Text("hi")
@@ -222,22 +227,27 @@ $data = Initialize-ScenarioData $out
 $traceFile = Join-Path $out "app.err"
 $log = Join-Path $data "process.log"
 
-Write-Host "scenario: launching Fidget with FIDGET_TRACE_BUBBLE=1, static director"
+# A local Director that accepts and never answers keeps a poke's turn in flight,
+# so the Thinking bubble shows until the 2 s timeout. No network leaves the box.
+$listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+$listener.Start()
+Write-Host "scenario: launching Fidget with FIDGET_TRACE_BUBBLE=1, silent Director on port $($listener.LocalEndpoint.Port)"
 $env:FIDGET_TRACE_BUBBLE = "1"
-$env:FIDGET_DIRECTOR = "static"
-$env:FIDGET_DIRECTOR_WAKE_SECS = "1"
+$env:FIDGET_DIRECTOR_BASE_URL = "http://127.0.0.1:$($listener.LocalEndpoint.Port)"
+$env:FIDGET_DIRECTOR_TIMEOUT_SECS = "2"
 $env:FIDGET_TRACE_FRAMES = "1"
 $startMs = Get-NowMs
 $script:proc = Start-FidgetPiped $Bin @() (Join-Path $out "app.log") $traceFile
 try {
-    # The static director's wake brings up a speech bubble on its own.
-    if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the static wake showed no speech bubble; see $traceFile" }
+    if (-not (Wait-ForUp 5 $traceFile)) { Fail "Fidget never wrote its overlay line in 5 s; see $traceFile" }
+    if (-not (Wait-ForRest $log)) { Fail "the sprite never came to rest; see $log" }
 
     Drive-PillAcrossSeam
     # The region rebuild that clears the painted rects follows the hide.
     $null = Wait-ForTrace 3 $traceFile $bubbleHidePattern
 } finally {
     Stop-FidgetTree $script:proc $null
+    $listener.Stop()
 }
 
 Check-Trace $traceFile
