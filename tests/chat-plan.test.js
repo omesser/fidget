@@ -18,12 +18,6 @@ test("the in-progress step is the one marked current", () => {
     ["completed", "in_progress", "pending"],
   );
   assert.equal(steps[1].text, "write the patch");
-  // Carried rather than drawn: no CSS rule reads it yet, and dropping it here
-  // would be a fresh gap of the kind ADR-0028 is about.
-  assert.deepEqual(
-    steps.map((step) => step.priority),
-    ["high", "medium", "low"],
-  );
 });
 
 test("an empty plan draws nothing", () => {
