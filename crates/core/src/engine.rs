@@ -8,7 +8,7 @@
 use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
-use crate::possession::{digit_behaviors, Arrow, Charge, Intent};
+use crate::possession::{digit_behaviors, Charge, Intent, Walk};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
@@ -429,8 +429,8 @@ pub struct Engine {
     /// Character stays visible.
     do_not_disturb: bool,
     /// The user possesses this sprite from the keyboard. A switch, not a State: it
-    /// still falls and is grabbed the usual way, but never sleeps or climbs, and
-    /// refuses proposals while their Speech still shows.
+    /// still falls and is grabbed the usual way, but never sleeps, climbs only
+    /// on Up, and refuses proposals while their Speech still shows.
     possessed: bool,
     /// This fall left the feet while possessed, so a held arrow steers it. A
     /// release from the hand is not one: a throw flies as thrown.
@@ -1408,30 +1408,40 @@ impl Engine {
     /// and the drop Cue are every fall's. In hand the keys do nothing.
     fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> bool {
         let on_feet = matches!(state, State::Grounded | State::Perched);
-        if !on_feet && !(state == State::Falling && self.steering) {
+        let climbing = state == State::Climbing;
+        if !on_feet && !climbing && !(state == State::Falling && self.steering) {
             return false;
         }
 
-        let heading = snapshot.possession.walk.map(|arrow| match arrow {
-            Arrow::Left => -1.0,
-            Arrow::Right => 1.0,
+        let heading = snapshot.possession.walk.map(|walk| match walk {
+            Walk::Left => -1.0,
+            Walk::Right => 1.0,
         });
-        if let Some(heading) = heading {
-            self.facing = heading;
-        }
-        // Into the outermost edge the walk stops where a standing sprite shows
-        // whole, rather than walking off and catching the wall to climb.
-        self.velocity.x = match heading {
-            Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
-                heading * WALK_SPEED
+        if climbing {
+            // A climber faces its wall. An arrow away lets go and Space jumps
+            // off, and either one leaves the wall at a walk.
+            let away = -self.facing;
+            if heading == Some(away) || snapshot.possession.launch.is_some() {
+                self.velocity.x = away * WALK_SPEED;
             }
-            _ => 0.0,
-        };
+        } else {
+            if let Some(heading) = heading {
+                self.facing = heading;
+            }
+            // Into the outermost edge the walk stops where a standing sprite
+            // shows whole, rather than walking off and catching the wall.
+            self.velocity.x = match heading {
+                Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
+                    heading * WALK_SPEED
+                }
+                _ => 0.0,
+            };
+        }
 
         let Some(charge) = snapshot.possession.launch else {
             return false;
         };
-        if !on_feet || !self.play(&[Primitive::Jump]) {
+        if !(on_feet || climbing) || !self.play(&[Primitive::Jump]) {
             return false;
         }
         let speed = self.launch_speed(charge, snapshot);
@@ -1475,16 +1485,7 @@ impl Engine {
                 self.velocity.y += self.gravity * dt;
                 self.position.x += self.velocity.x * dt;
 
-                let wall_from_screen = wall_reached(self.position.x, self.velocity.x, snapshot);
-                let wall_from_dock = dock_side_reached(self.position, self.velocity.x, snapshot);
-                debug_assert!(
-                    wall_from_screen.is_none() || wall_from_dock.is_none(),
-                    "at most one wall check fires: screen at {:?}, dock at {:?}",
-                    wall_from_screen,
-                    wall_from_dock
-                );
-
-                if let Some(wall) = wall_from_screen.or(wall_from_dock) {
+                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot) {
                     let side = self.velocity.x.signum();
                     self.position.x = wall;
                     // A possessed sprite does not climb: it meets the side and
@@ -1525,6 +1526,10 @@ impl Engine {
                 }
             }
             State::Climbing => {
+                // Only possession moves a climber sideways, off the wall.
+                if self.velocity.x != 0.0 {
+                    return Some(Contact::Airborne);
+                }
                 let speed = if self.climb_paused() {
                     0.0
                 } else {
@@ -1532,17 +1537,6 @@ impl Engine {
                 };
                 let next_y = self.position.y - speed * dt;
 
-                // Climbing the Dock's side ends on its top: the Dock is a
-                // Perch, so its top edge is a landing, not a ceiling. The step
-                // inward puts the feet on it; stopping clear stands beside it.
-                if let Some(dock) = dock_in(snapshot) {
-                    if self.position.y > dock.y && next_y <= dock.y {
-                        if let Some(x) = dock_top_at(self.position.x, dock) {
-                            self.position = Point { x, y: dock.y };
-                            return Some(Contact::Landed(Surface::Perch));
-                        }
-                    }
-                }
                 self.position.y = next_y;
 
                 // Off the top of the display there is nothing left to hold, so
@@ -1568,29 +1562,34 @@ impl Engine {
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
+                if self.possessed {
+                    let keys = snapshot.possession;
+                    if let Some((x, side)) = keys
+                        .climb
+                        .then(|| wall_beside(self.position, snapshot))
+                        .flatten()
+                    {
+                        self.position.x = x;
+                        self.facing = side;
+                        self.velocity = Point::default();
+                        return Some(Contact::Wall { side });
+                    }
+                    // A point under the edge, so the fall that follows does
+                    // not land straight back on the Perch it left. Not the
+                    // Dock, which hides what falls behind it.
+                    let on_dock = dock_in(snapshot).is_some_and(|dock| {
+                        dock.y == self.position.y && dock.spans_x(self.position.x)
+                    });
+                    if keys.drop && state == State::Perched && !on_dock {
+                        self.position.y += 1.0;
+                        self.rest_perch();
+                        return Some(Contact::Airborne);
+                    }
+                }
                 let dx = self.velocity.x * dt;
                 self.position.x += dx;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += dx;
-                }
-
-                // A walk beside the Dock stops clear of its side once, then
-                // climbs; a per-tick step back stutters under a held walk.
-                debug_assert!(
-                    snapshot.elapsed_ms <= crate::snapshot::MAX_ELAPSED_MS
-                        || dock_in(snapshot).is_none(),
-                    "Dock walk step is {} ms, over the {} ms poll cap",
-                    snapshot.elapsed_ms,
-                    crate::snapshot::MAX_ELAPSED_MS,
-                );
-                if let Some(x) = dock_side_reached(self.position, self.velocity.x, snapshot) {
-                    let side = self.velocity.x.signum();
-                    self.position.x = x;
-                    self.velocity = Point::default();
-                    // While possessed, the side stops the walk and is not climbed.
-                    if !self.possessed {
-                        return Some(Contact::Wall { side });
-                    }
                 }
 
                 let fresh = snapshot.poll_generation == 0
@@ -1893,7 +1892,10 @@ impl Engine {
             Primitive::Walk | Primitive::Chase => {
                 on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
-            Primitive::Jump => on_feet && self.poke_cooldown_ms == 0,
+            Primitive::Jump => {
+                let off_a_wall = self.possessed && self.state == State::Climbing;
+                (on_feet || off_a_wall) && self.poke_cooldown_ms == 0
+            }
             _ => on_feet,
         })
     }
@@ -2279,27 +2281,10 @@ mod tests {
         }
     }
 
-    /// Where a climb up the Dock's left side comes to rest, and where one up
-    /// its right side does: a half sprite in from the corner, on the top.
-    fn on_the_dock_from_the_left() -> Point {
-        Point {
-            x: dock().x + EDGE_CLEARANCE,
-            y: dock().y,
-        }
-    }
-
-    fn on_the_dock_from_the_right() -> Point {
-        Point {
-            x: dock().x + dock().width - EDGE_CLEARANCE,
-            y: dock().y,
-        }
-    }
-
-    /// The Dock is the one thing on screen drawn in front of the sprite, so a
-    /// walk that carries on under it puts the sprite where nobody can see or
-    /// grab it. Its side is a wall.
+    /// The Dock is a Perch to stand on, and nothing more: a walk into its side
+    /// goes on behind it to the display edge, as it would past any window.
     #[test]
-    fn a_walk_into_the_dock_climbs_onto_it_rather_than_behind_it() {
+    fn a_walk_into_the_dock_goes_on_past_it() {
         let dock = dock();
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
         settle(&mut engine, &dock_snapshot(100));
@@ -2308,79 +2293,15 @@ mod tests {
             ..dock_snapshot(16)
         });
 
-        let mut previous = engine.tick(&dock_snapshot(16));
-        let mut climbed = false;
         for _ in 0..400 {
             let frame = engine.tick(&dock_snapshot(16));
-            let behind = frame.position.y > dock.y
-                && frame.position.x > dock.x
-                && frame.position.x < dock.x + dock.width;
-            assert!(!behind, "behind the Dock: {:?}", frame.position);
-            if frame.state == State::Grounded {
-                assert!(
-                    frame.position.x >= previous.position.x,
-                    "walking right never sets the sprite back: {} -> {}",
-                    previous.position.x,
-                    frame.position.x
-                );
-            }
-            climbed |= frame.state == State::Climbing;
-            if frame.state == State::Perched {
-                assert!(climbed, "on the Dock's top without climbing its side");
-                assert_eq!(frame.position, on_the_dock_from_the_left(), "{frame:?}");
+            if frame.state == State::Climbing {
+                assert_eq!(frame.position.x, 1000.0, "the display edge: {frame:?}");
                 return;
             }
-            previous = frame;
+            assert_ne!(frame.position.y, dock.y, "on the Dock's top: {frame:?}");
         }
-        panic!("the walk never reached the Dock's top: {previous:?}");
-    }
-
-    /// The Dock's side is a wall for a sprite walking into it, and not for one
-    /// that has just walked off the top. Catching that one puts it back on the
-    /// top to walk off again, and everything past the Dock stays unreachable.
-    #[test]
-    fn a_walk_off_the_dock_top_carries_on_past_it_rather_than_climbing_back() {
-        let dock = dock();
-        let mut engine = a_character_at(Point { x: 700.0, y: 0.0 });
-        settle(&mut engine, &dock_snapshot(100));
-
-        // Thrown leftwards into the Dock's right side, which it climbs, leaving
-        // it on the top facing left with the far edge ahead of it.
-        carry(
-            &mut engine,
-            Point { x: 700.0, y: 760.0 },
-            &dock_snapshot(16),
-        );
-        engine.tick(&WorldSnapshot {
-            verbs: vec![Verb::Throw {
-                velocity: Point { x: -400.0, y: 0.0 },
-            }],
-            ..dock_snapshot(16)
-        });
-        let on_top = settle(&mut engine, &dock_snapshot(16));
-        assert_eq!(
-            (on_top.state, on_top.position.y),
-            (State::Perched, dock.y),
-            "the throw is meant to leave it on the Dock: {on_top:?}"
-        );
-
-        let mut stepped_off = false;
-        for _ in 0..400 {
-            let frame = engine.tick(&WorldSnapshot {
-                proposal: walk(),
-                ..dock_snapshot(16)
-            });
-            let on_dock = frame.state == State::Perched && frame.position.y == dock.y;
-            stepped_off |= !on_dock;
-            assert!(
-                !(stepped_off && on_dock),
-                "put back on the Dock it had just walked off: {frame:?}"
-            );
-            if frame.state == State::Climbing && frame.position.x == one_display().x {
-                return; // the far wall, which is what walking that way is for
-            }
-        }
-        panic!("the walk never got past the Dock to the display edge");
+        panic!("the walk never reached the display edge");
     }
 
     /// Standing on the Dock's top is standing above its side, not behind it.
@@ -2404,11 +2325,10 @@ mod tests {
         }
     }
 
-    /// Let go with the cursor over the Dock and the sprite falls behind it.
-    /// It climbs the nearer side out: a real Dock is wide, and the way out
-    /// from the middle of one is a long way sideways.
+    /// Let go over the Dock below its top, the sprite lands where it was let
+    /// go. The Dock's side pulls nothing out from behind it.
     #[test]
-    fn a_sprite_dropped_behind_the_dock_climbs_out_onto_it() {
+    fn a_sprite_dropped_behind_the_dock_lands_where_it_was_let_go() {
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
         settle(&mut engine, &dock_snapshot(100));
         carry(
@@ -2418,69 +2338,8 @@ mod tests {
         );
 
         let frame = settle(&mut engine, &dock_snapshot(16));
-        assert_eq!(frame.state, State::Perched, "{frame:?}");
-        assert_eq!(frame.position, on_the_dock_from_the_left());
-    }
-
-    /// The nearer side is whichever one it is. Dropped in the right-hand half,
-    /// the sprite climbs out to the right, not back across everything it was
-    /// hidden behind.
-    #[test]
-    fn a_sprite_dropped_near_the_docks_right_end_climbs_out_that_side() {
-        let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
-        settle(&mut engine, &dock_snapshot(100));
-        carry(
-            &mut engine,
-            Point { x: 560.0, y: 760.0 },
-            &dock_snapshot(16),
-        );
-
-        let frame = settle(&mut engine, &dock_snapshot(16));
-        assert_eq!(frame.state, State::Perched, "{frame:?}");
-        assert_eq!(frame.position, on_the_dock_from_the_right());
-    }
-
-    /// An autohidden Dock slides out around whatever is standing there, asleep
-    /// included. The sprite that was resting in front of nothing is now behind
-    /// something, and climbs out the same way.
-    #[test]
-    fn a_dock_that_unhides_around_a_sleeping_sprite_wakes_it_onto_the_top() {
-        let mut engine = a_character_at(Point { x: 450.0, y: 0.0 });
-        settle(&mut engine, &snapshot(100));
-        let asleep = engine.tick(&snapshot(SLEEP_AFTER_MS));
-        assert_eq!(asleep.state, State::Asleep, "{asleep:?}");
-
-        let frame = settle(&mut engine, &dock_snapshot(16));
-        assert_eq!(frame.state, State::Perched, "{frame:?}");
-        assert_eq!(frame.position, on_the_dock_from_the_left());
-    }
-
-    /// Behind the Dock means behind the Dock's own display. A display below
-    /// this one shares its x-range: a sprite on that floor is under the Dock's
-    /// columns and behind none of it. Treating it as hidden loops it for ever.
-    #[test]
-    fn a_sprite_on_a_display_below_the_docks_is_not_behind_the_dock() {
-        let below = Rect {
-            x: 0.0,
-            y: 800.0,
-            width: 1000.0,
-            height: 800.0,
-        };
-        let stacked = WorldSnapshot {
-            displays: vec![one_display(), below],
-            ..dock_snapshot(16)
-        };
-        let standing = Point {
-            x: 500.0,
-            y: below.bottom(),
-        };
-
-        let mut engine = a_character_at(standing);
-        for _ in 0..80 {
-            let frame = engine.tick(&stacked);
-            assert_ne!(frame.state, State::Climbing, "{frame:?}");
-            assert_eq!(frame.position, standing, "{frame:?}");
-        }
+        assert_eq!(frame.state, State::Grounded, "{frame:?}");
+        assert_eq!(frame.position.x, 480.0, "{frame:?}");
     }
 
     fn a_resting_sprite() -> Engine {
@@ -3726,175 +3585,6 @@ mod tests {
                 normal: Point { x: 1.0, y: 0.0 },
             }],
             "ripple centered in work area (y=30+770/2=415), not full display (y=0+800/2=400)"
-        );
-    }
-
-    /// The ripple centers vertically on the work area: the Dock beside it does
-    /// not occlude that height.
-    #[test]
-    fn dock_side_catch_positions_ripple_at_dock_not_display_edge() {
-        let mut engine = Engine::new(Point { x: 700.0, y: 0.0 });
-
-        let work_area_with_menu_bar = Rect {
-            x: 0.0,
-            y: 30.0,
-            width: 1000.0,
-            height: 770.0,
-        };
-        let world = WorldSnapshot {
-            displays: vec![work_area_with_menu_bar],
-            windows: vec![window(DOCK_PERCH_ID, dock())],
-            elapsed_ms: 100,
-            ..WorldSnapshot::default()
-        };
-
-        settle(&mut engine, &world);
-        let at = Point { x: 700.0, y: 760.0 };
-        carry(&mut engine, at, &world);
-        let frame = engine.tick(&WorldSnapshot {
-            cursor: at,
-            verbs: vec![Verb::Throw {
-                velocity: Point { x: -400.0, y: 0.0 },
-            }],
-            ..world.clone()
-        });
-
-        let dock = dock();
-        assert_eq!(
-            frame.contact,
-            Some(RippleContact {
-                point: Point {
-                    x: dock.x + dock.width + EDGE_CLEARANCE,
-                    y: 415.0,
-                },
-                normal: Point { x: 1.0, y: 0.0 },
-            }),
-            "ripple at the Dock's right side, not the display edge, centred in the work area: (30 + 770) / 2 = 415, not 400"
-        );
-    }
-
-    /// At dock.x ± EDGE_CLEARANCE in mid-air, falling without wall contact,
-    /// the sprite reports no Dock-side ripple. Only a wall contact does.
-    #[test]
-    fn sprite_at_dock_side_without_contact_reports_no_dock_ripple() {
-        let mut engine = Engine::new(Point { x: 700.0, y: 0.0 });
-        let world = WorldSnapshot {
-            displays: vec![one_display()],
-            windows: vec![window(DOCK_PERCH_ID, dock())],
-            elapsed_ms: 100,
-            ..WorldSnapshot::default()
-        };
-
-        settle(&mut engine, &world);
-        let dock = dock();
-        let dock_right_side = dock.x + dock.width + EDGE_CLEARANCE;
-
-        carry(
-            &mut engine,
-            Point {
-                x: dock_right_side,
-                y: 200.0,
-            },
-            &world,
-        );
-
-        let mut frame = engine.tick(&WorldSnapshot {
-            cursor: Point {
-                x: dock_right_side,
-                y: 200.0,
-            },
-            verbs: vec![],
-            ..world.clone()
-        });
-
-        for _ in 0..200 {
-            if frame.state != State::Falling {
-                break;
-            }
-            if frame.contact.is_some() {
-                panic!(
-                    "No Dock ripple expected during fall at dock_right_side without wall contact, but got one at state {:?}",
-                    frame.state
-                );
-            }
-            frame = engine.tick(&world);
-        }
-
-        assert!(
-            [State::Grounded, State::Perched].contains(&frame.state),
-            "sprite eventually lands"
-        );
-    }
-
-    #[test]
-    fn dock_left_side_catch_positions_ripple_at_dock() {
-        let mut engine = Engine::new(Point { x: 300.0, y: 0.0 });
-
-        let world = WorldSnapshot {
-            displays: vec![one_display()],
-            windows: vec![window(DOCK_PERCH_ID, dock())],
-            elapsed_ms: 100,
-            ..WorldSnapshot::default()
-        };
-
-        settle(&mut engine, &world);
-        let at = Point { x: 300.0, y: 760.0 };
-        carry(&mut engine, at, &world);
-        let frame = engine.tick(&WorldSnapshot {
-            cursor: at,
-            verbs: vec![Verb::Throw {
-                velocity: Point { x: 400.0, y: 0.0 },
-            }],
-            ..world.clone()
-        });
-
-        let dock = dock();
-        assert_eq!(
-            frame.contact,
-            Some(RippleContact {
-                point: Point {
-                    x: dock.x - EDGE_CLEARANCE,
-                    y: 400.0,
-                },
-                normal: Point { x: -1.0, y: 0.0 },
-            }),
-            "ripple at the Dock's left side, not the display edge, facing left"
-        );
-    }
-
-    #[test]
-    fn dock_right_side_catch_positions_ripple_at_contact_x() {
-        let mut engine = Engine::new(Point { x: 700.0, y: 0.0 });
-
-        let world = WorldSnapshot {
-            displays: vec![one_display()],
-            windows: vec![window(DOCK_PERCH_ID, dock())],
-            elapsed_ms: 100,
-            ..WorldSnapshot::default()
-        };
-
-        settle(&mut engine, &world);
-        let at = Point { x: 700.0, y: 760.0 };
-        carry(&mut engine, at, &world);
-        let frame = engine.tick(&WorldSnapshot {
-            cursor: at,
-            verbs: vec![Verb::Throw {
-                velocity: Point { x: -400.0, y: 0.0 },
-            }],
-            ..world.clone()
-        });
-
-        let dock = dock();
-        assert_eq!(
-            frame.contact,
-            Some(RippleContact {
-                point: Point {
-                    x: dock.x + dock.width + EDGE_CLEARANCE,
-                    y: 400.0,
-                },
-                normal: Point { x: 1.0, y: 0.0 },
-            }),
-            "ripple at the Dock's right side contact x, facing right"
         );
     }
 
@@ -9404,7 +9094,7 @@ mod tests {
     /// A possessed sprite and the keys the Shell feeds it.
     mod possession {
         use super::*;
-        use crate::possession::{Arrow, Charge, Intent, Key, Possession};
+        use crate::possession::{Charge, Intent, Key, Possession, Walk};
 
         const FRAME_MS: u32 = 16;
 
@@ -9417,9 +9107,9 @@ mod tests {
             keys.tick(FRAME_MS).launch.expect("a keyup launches")
         }
 
-        fn holding(arrow: Arrow) -> Intent {
+        fn holding(walk: Walk) -> Intent {
             Intent {
-                walk: Some(arrow),
+                walk: Some(walk),
                 ..Intent::default()
             }
         }
@@ -9499,7 +9189,7 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
 
-            let walking = engine.tick(&with_possession(holding(Arrow::Left), &world));
+            let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
             assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
             assert_eq!(walking.facing, -1.0);
             assert_eq!(walking.animation, "walk");
@@ -9520,8 +9210,8 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             let mut played = Vec::new();
             for lap in 0..20 {
-                let arrow = [Arrow::Left, Arrow::Right][lap % 2];
-                for intent in [holding(arrow), launching(released_after(0))] {
+                let walk = [Walk::Left, Walk::Right][lap % 2];
+                for intent in [holding(walk), launching(released_after(0))] {
                     played.extend(engine.tick(&with_possession(intent, &world)).behavior);
                 }
                 played.extend(
@@ -9539,7 +9229,7 @@ mod tests {
             let mut engine = resting_at(500.0, &world);
             let resting = engine.tick(&world);
 
-            let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(frame.position, resting.position, "{frame:?}");
             assert_eq!(frame.charge, None);
         }
@@ -9698,7 +9388,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             engine.tick(&with_possession(launching(released_after(1_000)), &world));
 
-            let steered = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(steered.state, State::Falling);
             assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
             assert_eq!(steered.facing, 1.0);
@@ -9717,7 +9407,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             let launched = engine.tick(&with_possession(
                 Intent {
-                    walk: Some(Arrow::Left),
+                    walk: Some(Walk::Left),
                     launch: Some(released_after(0)),
                     ..Intent::default()
                 },
@@ -9727,19 +9417,46 @@ mod tests {
             assert!(launched.velocity.y < 0.0, "{launched:?}");
         }
 
+        /// A jump faces the way the sprite last went: the walk before it, or an
+        /// arrow held mid-flight.
+        #[test]
+        fn a_jump_keeps_the_last_heading_through_the_flight() {
+            let world = on(one_display());
+            for (walk, turn, heading) in [
+                (Walk::Right, Walk::Left, 1.0),
+                (Walk::Left, Walk::Right, -1.0),
+            ] {
+                let mut engine = possessed_at(500.0, &world);
+                for _ in 0..5 {
+                    engine.tick(&with_possession(holding(walk), &world));
+                }
+                engine.tick(&world);
+                engine.tick(&with_possession(launching(released_after(500)), &world));
+                for frame in flight(&mut engine, &world) {
+                    assert_eq!(frame.facing, heading, "walked {walk:?}: {frame:?}");
+                }
+
+                engine.tick(&with_possession(launching(released_after(500)), &world));
+                engine.tick(&with_possession(holding(turn), &world));
+                for frame in flight(&mut engine, &world) {
+                    assert_eq!(frame.facing, -heading, "turned {turn:?}: {frame:?}");
+                }
+            }
+        }
+
         /// A Grab wins: the keys move nothing in hand, the release falls and
         /// lands as usual, and the sprite is still possessed after.
         #[test]
         fn a_grab_while_possessed_wins_and_the_release_lands_as_usual() {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
-            engine.tick(&with_possession(holding(Arrow::Right), &world));
+            engine.tick(&with_possession(holding(Walk::Right), &world));
 
             let feet = engine.feet();
             let grabbed = engine.tick(&WorldSnapshot {
                 cursor: feet,
                 verbs: vec![Verb::Grab],
-                ..with_possession(holding(Arrow::Right), &world)
+                ..with_possession(holding(Walk::Right), &world)
             });
             assert_eq!(grabbed.state, State::Dragged);
             let held = engine.tick(&WorldSnapshot {
@@ -9747,7 +9464,7 @@ mod tests {
                 verbs: vec![Verb::Grab],
                 ..with_possession(
                     Intent {
-                        walk: Some(Arrow::Right),
+                        walk: Some(Walk::Right),
                         launch: Some(released_after(1_000)),
                         ..Intent::default()
                     },
@@ -9807,7 +9524,7 @@ mod tests {
                     ..world.clone()
                 },
             ] {
-                let frame = engine.tick(&with_possession(holding(Arrow::Right), &frozen));
+                let frame = engine.tick(&with_possession(holding(Walk::Right), &frozen));
                 assert_eq!(frame.velocity.x, WALK_SPEED, "{frame:?}");
                 assert_eq!(frame.animation, "walk", "{frame:?}");
             }
@@ -9938,7 +9655,7 @@ mod tests {
 
             engine.set_possessed(true);
             settle(&mut engine, &world);
-            let walking = engine.tick(&with_possession(holding(Arrow::Left), &world));
+            let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
             assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
         }
 
@@ -9965,7 +9682,7 @@ mod tests {
                 let mut engine = possessed_at(500.0, &world);
                 let mut last = None;
                 for _ in 0..400 {
-                    let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+                    let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
                     assert_ne!(frame.state, State::Climbing, "{frame:?}");
                     assert_eq!(frame.state, State::Grounded, "{frame:?}");
                     last = Some(frame);
@@ -10016,13 +9733,216 @@ mod tests {
             assert_ne!(released.animation, "possessed", "{released:?}");
         }
 
+        const UP: Intent = Intent {
+            climb: true,
+            walk: None,
+            drop: false,
+            charging: None,
+            launch: None,
+            end_possession: false,
+            play: None,
+        };
+
+        const DOWN: Intent = Intent {
+            drop: true,
+            climb: false,
+            ..UP
+        };
+
+        /// Up climbs where a possessed walk stops: the screen edge, from the
+        /// floor or a Perch, and the outermost edge when a display above juts
+        /// out past it. A Dock near the edge neither stops the walk nor takes
+        /// the climb onto its top.
+        #[test]
+        fn up_against_a_wall_climbs_it() {
+            let dock = window(
+                DOCK_PERCH_ID,
+                Rect {
+                    x: 700.0,
+                    y: 740.0,
+                    width: 260.0,
+                    height: 60.0,
+                },
+            );
+            let ledge = window(
+                1,
+                Rect {
+                    x: 300.0,
+                    y: 400.0,
+                    width: 700.0,
+                    height: 200.0,
+                },
+            );
+            let jutting = Rect {
+                x: 0.0,
+                y: -600.0,
+                width: 1020.0,
+                height: 600.0,
+            };
+            let worlds = [
+                (on(one_display()), 1000.0),
+                (
+                    WorldSnapshot {
+                        windows: vec![ledge],
+                        ..on(one_display())
+                    },
+                    1000.0,
+                ),
+                (
+                    WorldSnapshot {
+                        displays: vec![one_display(), jutting],
+                        ..on(one_display())
+                    },
+                    1020.0,
+                ),
+                (
+                    WorldSnapshot {
+                        windows: vec![dock],
+                        ..on(one_display())
+                    },
+                    1000.0,
+                ),
+            ];
+            for (world, wall) in worlds {
+                let mut engine = possessed_at(500.0, &world);
+                for _ in 0..400 {
+                    engine.tick(&with_possession(holding(Walk::Right), &world));
+                }
+                let against = engine.tick(&world);
+                assert_eq!(against.velocity.x, 0.0, "stopped: {against:?}");
+
+                let climbing = engine.tick(&with_possession(UP, &world));
+                assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+                assert_eq!(climbing.position.x, wall, "{climbing:?}");
+                assert_eq!(climbing.facing, 1.0, "it faces the wall: {climbing:?}");
+                let mut below = climbing;
+                for _ in 0..30 {
+                    let higher = engine.tick(&world);
+                    assert_eq!(higher.state, State::Climbing, "{higher:?}");
+                    assert!(higher.position.y < below.position.y, "{higher:?}");
+                    below = higher;
+                }
+            }
+        }
+
+        /// A sprite standing at the left edge, still facing right, turns to the
+        /// wall it climbs.
+        #[test]
+        fn up_climbs_a_left_wall_facing_it() {
+            let world = on(one_display());
+            let mut engine = possessed_at(EDGE_CLEARANCE, &world);
+            let standing = engine.tick(&world);
+            assert_eq!(standing.facing, 1.0, "{standing:?}");
+
+            let climbing = engine.tick(&with_possession(UP, &world));
+            assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+            assert_eq!(climbing.position.x, 0.0, "{climbing:?}");
+            assert_eq!(climbing.facing, -1.0, "{climbing:?}");
+        }
+
+        /// Climbing the right wall, Left lets go and Space jumps off it. Both
+        /// carry the sprite away from the wall and land it on the floor.
+        #[test]
+        fn an_arrow_away_or_space_takes_a_climber_off_the_wall() {
+            let world = on(one_display());
+            let floor = one_display().bottom();
+            let climbing = || {
+                let mut engine = possessed_at(1000.0 - EDGE_CLEARANCE, &world);
+                engine.tick(&world);
+                let climbing = engine.tick(&with_possession(UP, &world));
+                assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+                for _ in 0..20 {
+                    engine.tick(&world);
+                }
+                engine
+            };
+
+            let mut engine = climbing();
+            let into = engine.tick(&with_possession(holding(Walk::Right), &world));
+            assert_eq!(into.state, State::Climbing, "into the wall: {into:?}");
+
+            let mut engine = climbing();
+            let let_go = engine.tick(&with_possession(holding(Walk::Left), &world));
+            assert_eq!(let_go.state, State::Falling, "{let_go:?}");
+            assert_eq!(let_go.facing, -1.0, "{let_go:?}");
+            let landed = flight(&mut engine, &world).pop().unwrap();
+            assert_eq!(landed.position.y, floor, "{landed:?}");
+            assert!(landed.position.x < 1000.0, "off the wall: {landed:?}");
+
+            let mut engine = climbing();
+            let jumped = engine.tick(&with_possession(launching(released_after(500)), &world));
+            assert_eq!(jumped.state, State::Falling, "{jumped:?}");
+            assert!(jumped.velocity.y < 0.0, "it jumps up: {jumped:?}");
+            assert_eq!(jumped.facing, -1.0, "{jumped:?}");
+            let frames = flight(&mut engine, &world);
+            assert!(peak(&frames) < jumped.position.y, "it rose: {jumped:?}");
+            let landed = frames.last().unwrap();
+            assert_eq!(landed.position.y, floor, "{landed:?}");
+            assert!(landed.position.x < 1000.0 - WALK_SPEED / 4.0, "{landed:?}");
+        }
+
+        #[test]
+        fn up_with_no_wall_beside_does_nothing() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let standing = engine.tick(&world);
+            let frame = engine.tick(&with_possession(UP, &world));
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            assert_eq!(frame.position, standing.position, "{frame:?}");
+        }
+
+        /// Down drops through the Perch underfoot, and the fall lands as any
+        /// fall does, on the floor below.
+        #[test]
+        fn down_on_a_perch_drops_through_it() {
+            let world = WorldSnapshot {
+                windows: vec![window(
+                    1,
+                    Rect {
+                        x: 300.0,
+                        y: 400.0,
+                        width: 400.0,
+                        height: 200.0,
+                    },
+                )],
+                ..on(one_display())
+            };
+            let mut engine = possessed_at(500.0, &world);
+            let perched = engine.tick(&world);
+            assert_eq!(perched.state, State::Perched, "{perched:?}");
+
+            let dropped = engine.tick(&with_possession(DOWN, &world));
+            assert_eq!(dropped.state, State::Falling, "{dropped:?}");
+            let landed = flight(&mut engine, &world).pop().unwrap();
+            assert_eq!(landed.state, State::Grounded, "{landed:?}");
+            assert_eq!(landed.position.y, one_display().height, "{landed:?}");
+            assert_eq!(landed.animation, "land", "{landed:?}");
+        }
+
+        /// Down on the floor or the Dock does nothing: the Dock hides what
+        /// falls behind it.
+        #[test]
+        fn down_on_the_floor_or_the_dock_does_nothing() {
+            let dock = WorldSnapshot {
+                windows: vec![window(DOCK_PERCH_ID, dock())],
+                ..on(one_display())
+            };
+            for world in [on(one_display()), dock] {
+                let mut engine = possessed_at(500.0, &world);
+                let standing = engine.tick(&world);
+                let frame = engine.tick(&with_possession(DOWN, &world));
+                assert_eq!(frame.state, standing.state, "{frame:?}");
+                assert_eq!(frame.position, standing.position, "{frame:?}");
+            }
+        }
+
         #[test]
         fn ending_the_possession_hands_the_sprite_back() {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             engine.set_possessed(false);
             assert!(!engine.possessed());
-            let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(frame.velocity.x, 0.0, "keys move it no more: {frame:?}");
         }
 
@@ -10033,13 +9953,13 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             for _ in 0..5 {
-                engine.tick(&with_possession(holding(Arrow::Right), &world));
+                engine.tick(&with_possession(holding(Walk::Right), &world));
             }
             engine.set_possessed(false);
 
             let x = engine.feet().x;
             for _ in 0..300 {
-                let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+                let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
                 assert_eq!(frame.velocity.x, 0.0, "{frame:?}");
                 assert_eq!(frame.position.x, x, "{frame:?}");
                 assert_eq!(frame.state, State::Grounded, "{frame:?}");
@@ -10054,7 +9974,7 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             engine.tick(&with_possession(launching(released_after(1_000)), &world));
-            let steered = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
             engine.set_possessed(false);
 

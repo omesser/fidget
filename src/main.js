@@ -995,14 +995,12 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
-  // The pill's field keeps its own keys. Everything else, while possessed,
-  // is a possession edge. Repeats are not edges.
   const onPossessionKey = (event) => {
     if (!possessed) return;
-    if (event.target?.closest?.("textarea, input")) return;
-    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown", event.code);
+    const inField = Boolean(event.target?.closest?.("textarea, input"));
+    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown", event.code, inField);
     if (!edge) return;
-    event.preventDefault();
+    if (!inField) event.preventDefault();
     window.__TAURI__.core.invoke("overlay_possession_key", { key: edge.key, down: edge.down }).catch((err) => {
       console.error("overlay_possession_key", err);
     });

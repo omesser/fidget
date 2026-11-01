@@ -5,7 +5,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fidget_core::possession::{Arrow, Intent, Key, Possession};
+use fidget_core::possession::{Intent, Key, Possession, Walk};
 
 /// A blur shorter than this is the focus request's own false-then-true pair,
 /// not the user leaving. Longer, and the keyups will never arrive.
@@ -112,8 +112,10 @@ pub enum Edge {
 /// The names the overlay sends. Anything else is not a possession key.
 pub fn parse_key(name: &str) -> Option<Key> {
     match name {
-        "left" => Some(Key::Arrow(Arrow::Left)),
-        "right" => Some(Key::Arrow(Arrow::Right)),
+        "left" => Some(Key::Walk(Walk::Left)),
+        "right" => Some(Key::Walk(Walk::Right)),
+        "up" => Some(Key::Up),
+        "down" => Some(Key::Down),
         "space" => Some(Key::Space),
         "escape" => Some(Key::Escape),
         "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
@@ -175,14 +177,15 @@ mod tests {
 
     #[test]
     fn arrows_space_escape_and_digits_are_the_possession_keys() {
-        assert_eq!(parse_key("left"), Some(Key::Arrow(Arrow::Left)));
-        assert_eq!(parse_key("right"), Some(Key::Arrow(Arrow::Right)));
+        assert_eq!(parse_key("left"), Some(Key::Walk(Walk::Left)));
+        assert_eq!(parse_key("right"), Some(Key::Walk(Walk::Right)));
+        assert_eq!(parse_key("up"), Some(Key::Up));
+        assert_eq!(parse_key("down"), Some(Key::Down));
         assert_eq!(parse_key("space"), Some(Key::Space));
         assert_eq!(parse_key("escape"), Some(Key::Escape));
         assert_eq!(parse_key("1"), Some(Key::Digit(1)));
         assert_eq!(parse_key("9"), Some(Key::Digit(9)));
         assert!(parse_key("0").is_none());
-        assert!(parse_key("up").is_none());
         assert!(parse_key("a").is_none());
         assert!(parse_key("d").is_none());
     }

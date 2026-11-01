@@ -15,14 +15,14 @@ import {
 } from "../src/possession-card.js";
 import { possessionEdge } from "../src/possession-keys.js";
 
-test("arrows, space and escape are the possession keys, and a repeat is ignored", () => {
+test("arrows, space, escape and digits are the possession keys, and a repeat is ignored", () => {
   assert.deepEqual(possessionEdge("ArrowLeft", false, true), { key: "left", down: true });
   assert.deepEqual(possessionEdge("ArrowRight", false, false), { key: "right", down: false });
   assert.deepEqual(possessionEdge(" ", false, true), { key: "space", down: true });
   assert.deepEqual(possessionEdge("Escape", false, true), { key: "escape", down: true });
   assert.equal(possessionEdge("ArrowLeft", true, true), null);
-  assert.equal(possessionEdge("ArrowUp", false, true), null);
-  assert.equal(possessionEdge("ArrowDown", false, true), null);
+  assert.deepEqual(possessionEdge("ArrowUp", false, true), { key: "up", down: true });
+  assert.deepEqual(possessionEdge("ArrowDown", false, false), { key: "down", down: false });
   assert.deepEqual(possessionEdge("&", false, true, "Digit1"), { key: "1", down: true });
   assert.deepEqual(possessionEdge("1", false, false, "Numpad9"), { key: "9", down: false });
   assert.equal(possessionEdge("&", true, true, "Digit1"), null);
@@ -31,12 +31,22 @@ test("arrows, space and escape are the possession keys, and a repeat is ignored"
   assert.equal(possessionEdge("d", false, true, "KeyD"), null);
 });
 
+test("the pill's field keeps its keydowns, but every keyup still lets go", () => {
+  assert.equal(possessionEdge("ArrowLeft", false, true, "ArrowLeft", true), null);
+  assert.equal(possessionEdge("1", false, true, "Digit1", true), null);
+  assert.deepEqual(possessionEdge("ArrowLeft", false, false, "ArrowLeft", true), { key: "left", down: false });
+  assert.deepEqual(possessionEdge(" ", false, false, "Space", true), { key: "space", down: false });
+  assert.deepEqual(possessionEdge("1", false, false, "Digit1", true), { key: "1", down: false });
+});
+
 test("the card lists the bound keys under the explanation", () => {
   const card = possessionCard({ possessed: true, paused: false });
   assert.equal(card.paused, false);
   assert.equal(card.heading, "Manually drive the fidget on your screen");
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
+    ["↑", "Climb"],
+    ["↓", "Drop"],
     ["Space", "Jump"],
     ["Esc", "Release Possession"],
   ]);
@@ -50,6 +60,8 @@ test("the card numbers the shell's list and writes each name as a label", () => 
   });
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
+    ["↑", "Climb"],
+    ["↓", "Drop"],
     ["Space", "Jump"],
     ["Esc", "Release Possession"],
     ["1", "Wave"],
@@ -60,7 +72,7 @@ test("the card numbers the shell's list and writes each name as a label", () => 
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
   const card = possessionCard({ possessed: true, paused: false, behaviors: names });
-  assert.deepEqual(card.keys.slice(3), [
+  assert.deepEqual(card.keys.slice(5), [
     ["1", "K"],
     ["2", "J"],
     ["3", "Walk"],

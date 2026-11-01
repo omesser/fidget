@@ -185,6 +185,28 @@ pub(super) fn edge_ahead(x: f64, direction: f64, snapshot: &WorldSnapshot) -> bo
     }
 }
 
+/// The wall a standing sprite is against, as the x a climb holds and the side:
+/// the outermost display edge inside the inset a walk stops at.
+pub(super) fn wall_beside(feet: Point, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
+    [-1.0, 1.0].into_iter().find_map(|side| {
+        let edges = snapshot.displays.iter().map(|display| {
+            if side < 0.0 {
+                display.x
+            } else {
+                display.x + display.width
+            }
+        });
+        let outermost = if side < 0.0 {
+            edges.min_by(f64::total_cmp)
+        } else {
+            edges.max_by(f64::total_cmp)
+        };
+        outermost
+            .filter(|_| edge_ahead(feet.x, side, snapshot))
+            .map(|x| (x, side))
+    })
+}
+
 /// The clearance actually applied on one display: no display gives up more
 /// than half its height to the ceiling, or art taller than the screen would
 /// leave nowhere to stand.
@@ -240,77 +262,6 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
         .iter()
         .find(|window| window.id == DOCK_PERCH_ID)
         .map(|window| window.rect)
-}
-
-/// Where to stand when the Dock is in the way: clear of its nearer side, on the
-/// floor or in the air. The Dock is the one thing drawn in front of the sprite,
-/// so under it the sprite can be neither seen nor grabbed; its side is a wall.
-pub(super) fn dock_side_reached(
-    position: Point,
-    velocity_x: f64,
-    snapshot: &WorldSnapshot,
-) -> Option<f64> {
-    let dock = dock_in(snapshot)?;
-    // `EDGE_CLEARANCE` out from the Dock's edge, the same half-sprite
-    // `at_horizontal_edge` keeps on screen, so a sprite put on the line stands
-    // beside the Dock and stays put rather than being set back a step.
-    let (left, right) = (
-        dock.x - EDGE_CLEARANCE,
-        dock.x + dock.width + EDGE_CLEARANCE,
-    );
-    if position.y <= dock.y || position.x <= left || position.x >= right {
-        return None;
-    }
-
-    // Behind the Dock's own display, not merely its x-range, or a display
-    // stacked below would keep every sprite on its floor behind the Dock. The
-    // Dock's center picks the display, whose bottom is the floor.
-    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
-    snapshot.displays.iter().find(|display| {
-        display.spans_x(center.0)
-            && center.1 >= display.y
-            && center.1 <= display.bottom()
-            && display.spans_x(position.x)
-            && position.y <= display.bottom()
-    })?;
-
-    // Nearer side, not the side it came from: the Dock can unhide around a
-    // resting sprite, and a dropped sprite arrives from above.
-    let nearer_left = position.x - left <= right - position.x;
-
-    // Strictly inside, so a sprite level with the Dock's own edge counts as
-    // out in the margin and may leave. It is the position stepping off the top
-    // lands on, and treating it as behind would keep the trap shut.
-    let behind = position.x > dock.x && position.x < dock.x + dock.width;
-    let into_dock = if nearer_left {
-        velocity_x > 0.0
-    } else {
-        velocity_x < 0.0
-    };
-    // In the margin the side is a wall only for a sprite moving into the Dock,
-    // as `wall_reached` treats a display edge. Strictly behind there is no such
-    // reprieve: the way out from under a real Dock is long and unseen.
-    if !behind && !into_dock {
-        return None;
-    }
-
-    Some(if nearer_left { left } else { right })
-}
-
-/// Where a climb beside the Dock steps onto its top, once the feet reach it:
-/// `EDGE_CLEARANCE` in from the side climbed, so the whole sprite stands where
-/// `perch_at` agrees is the Dock. `None` for a climb nowhere near the Dock.
-pub(super) fn dock_top_at(x: f64, dock: Rect) -> Option<f64> {
-    let (left, right) = (dock.x, dock.x + dock.width);
-    if (left - EDGE_CLEARANCE..=left + EDGE_CLEARANCE).contains(&x) {
-        Some((left + EDGE_CLEARANCE).min(right))
-    } else if (right - EDGE_CLEARANCE..=right + EDGE_CLEARANCE).contains(&x) {
-        Some((right - EDGE_CLEARANCE).max(left))
-    } else if dock.spans_x(x) {
-        Some(x)
-    } else {
-        None
-    }
 }
 
 /// Adjusted position and facing when at a horizontal display edge, so the full

@@ -152,7 +152,7 @@ mod tests {
     use crate::character::{Behavior, Primitive};
     use crate::director::{follow_up, Context};
     use crate::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
-    use crate::possession::{Arrow, Intent, Key, Possession};
+    use crate::possession::{Intent, Key, Possession, Walk};
 
     /// An Instance as the frame loop runs one: the Engine ticks, `Recency`
     /// hears every tick, and a wake reads it.
@@ -442,9 +442,9 @@ mod tests {
         };
         sprite.engine.set_possessed(true);
         for lap in 0..120 {
-            let arrow = [Arrow::Left, Arrow::Right][lap % 2];
+            let walk = [Walk::Left, Walk::Right][lap % 2];
             for _ in 0..5 {
-                sprite.tick(keys(Some(arrow), None));
+                sprite.tick(keys(Some(walk), None));
             }
             sprite.tick(keys(None, tap));
             sprite.wait(1_500);

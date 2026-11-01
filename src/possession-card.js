@@ -10,10 +10,12 @@ export const RESUME_LABEL = "Click to resume";
 // stays put while the sprite walks, so the background under it stays visible.
 export const POSSESSION_INSET = 16;
 
-// Up and Down are a later climb. Digit rows are the list the Shell already
-// mapped, in that order. The card only numbers them.
+// Digit rows are the list the Shell already mapped, in that order. The card
+// only numbers them.
 const KEYS = [
   ["← →", "Walk"],
+  ["↑", "Climb"],
+  ["↓", "Drop"],
   ["Space", "Jump"],
   ["Esc", "Release Possession"],
 ];

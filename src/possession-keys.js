@@ -1,10 +1,12 @@
-// The keys possession listens to. Up and Down are a later climb. Digits name
-// Behaviors. Letters stay free, so A and D do not collide with WASD. A repeat
-// is the platform holding the key down.
+// The keys possession listens to. Digits name Behaviors. Letters stay free,
+// so A and D do not collide with WASD. A repeat is the platform holding the
+// key down.
 
 const NAMES = {
   ArrowLeft: "left",
   ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
   " ": "space",
   Spacebar: "space",
   Escape: "escape",
@@ -19,8 +21,10 @@ function digitFromCode(code) {
 }
 
 // `down` is true for a keydown. A repeat, or any other key, is not an edge.
-export function possessionEdge(key, repeat, down, code) {
-  if (repeat) return null;
+// The pill's field keeps its keydowns, but not its keyups: the pill can take
+// focus while a key is held, and the walk must still end when it comes up.
+export function possessionEdge(key, repeat, down, code, inField = false) {
+  if (repeat || (down && inField)) return null;
   const digit = digitFromCode(code);
   if (digit) return { key: digit, down };
   const name = NAMES[key];
