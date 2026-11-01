@@ -5605,6 +5605,14 @@ mod tests {
                 PathBuf::from(r#"/tmp/say "hi"/data.dir"#),
                 r#"projects={'/tmp/say "hi"/data.dir'={trust_level='trusted'}}"#,
             ),
+            (
+                PathBuf::from(r"C:\Users\o'brien"),
+                r#"projects={"C:\\Users\\o'brien"={trust_level="trusted"}}"#,
+            ),
+            (
+                PathBuf::from(r#"/tmp/o'brien "hi""#),
+                r#"projects={"/tmp/o'brien \"hi\""={trust_level="trusted"}}"#,
+            ),
         ];
         for (dir, exact) in cases {
             let emitted = codex_trust_override(&dir);
