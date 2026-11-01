@@ -179,7 +179,6 @@ try {
     } elseif (-not (Invoke-Ax "click" @{ Command = "click"; X = $x; Y = $y })) {
         Fail "could not click the link; see $out\click.txt"
     }
-    # The click already returned, so the open log is already written.
     $script:Handed = ""
     $script:Outcome = $null
     $null = Wait-UiaChange 0 3 {
@@ -188,8 +187,10 @@ try {
         $script:Outcome = Get-LinkOutcome (Read-Dump (Join-Path $out "after.ax.txt")) $script:Handed
         [bool]$script:Outcome
     }
+    # Invoke returns before the open. The log is written over IPC, so the
+    # wait's last copy can still be empty.
     if ($script:Outcome -eq "opened" -or $script:Outcome -eq "wrong" -or -not $script:Outcome) {
-        Check-Handed $script:Handed
+        Check-Handed (Get-HandedText $opened)
     }
     Check-After (Join-Path $out "after.ax.txt")
     Write-Output "PASS: evidence in $out ($((Get-NowMs) - $startMs)ms)"
