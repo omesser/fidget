@@ -87,6 +87,7 @@ mod tests {
             contact: None,
             refused: None,
             charge: None,
+            possessed: false,
         }
     }
 

@@ -303,9 +303,11 @@ Space makes it jump, the digits 1 to 9 play its Behaviors in name order
 possesses a body, and the Director's prompt says so. Possession applies to one
 Character Instance. Possessing another releases the first. It is not a State,
 so a possessed sprite still falls, perches and can be grabbed, and it stays
-possessed when another window takes the keyboard. Users see it explained as
+possessed when another window takes the keyboard. The Director hears only
+that the fidget was possessed and released, never the moves in between, so
+it comes to dazed, not sure how it got where it is. Users see it explained as
 "Manually drive the fidget on your screen". Possessing plays the optional
-`possessed` Animation, or `react` in a package without it. #1655.
+`possessed` Animation, or `react` in a package without it. #1655, #1950.
 
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.
