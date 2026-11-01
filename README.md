@@ -176,7 +176,7 @@ Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packa
 
 <table>
 <tr>
-<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-react.gif" width="192" alt="Buddy Bot react" /><br><b>Poke</b><br><sub>One click and Buddy Bot jumps, then gets back to its business.</sub></td>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-react.gif" width="144" alt="Buddy Bot react" /><br><b>Poke</b><br><sub>One click and Buddy Bot jumps, then gets back to its business.</sub></td>
 <td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-throw.gif" width="400" alt="Buddy Bot is picked up, thrown in an arc, and lands on an editor window" /><br><b>Throw</b><br><sub>Grab it, fling it, and it arcs across the screen onto your editor.</sub></td>
 </tr>
 </table>
