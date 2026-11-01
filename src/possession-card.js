@@ -33,10 +33,11 @@ export function chargeFill(charge) {
   return Math.min(1, Math.max(0, charge));
 }
 
-// The card takes the resume click. The bar is only drawn.
-export function possessionRects(card, bar) {
+// The card takes the resume click only while paused. Otherwise a sprite
+// perched under it cannot be grabbed. The bar is only drawn.
+export function possessionRects(card, bar, paused) {
   const rects = [];
-  if (card) rects.push({ rect: card, clickable: true });
+  if (card) rects.push({ rect: card, clickable: Boolean(paused) });
   if (bar) rects.push({ rect: bar, clickable: false });
   return rects;
 }
@@ -89,9 +90,16 @@ export function paintPossession(card, bar, model, fill) {
   return rebuilt;
 }
 
-// Top-left of `bounds`, the display the possessed sprite is on. The sprite's
-// place on that display does not move the card.
-export function placePossession(_sprite, cardSize, barHeight, gap, bounds) {
+// The usable area when the shell has named one. The overlay frame includes
+// the menu bar, and a card inset from that frame covers the Apple menu.
+export function possessionBounds(work, frame) {
+  if (work && work.width > 0 && work.height > 0) return work;
+  return frame;
+}
+
+// Top-left of `bounds`, the usable area of the display the sprite is on.
+// Where the sprite stands on that display does not move the card.
+export function placePossession(cardSize, barHeight, gap, bounds) {
   const x = Math.round(bounds.x + POSSESSION_INSET);
   const y = Math.round(bounds.y + POSSESSION_INSET);
   return {

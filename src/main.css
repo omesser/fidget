@@ -534,8 +534,9 @@ body {
   }
 }
 
-/* The bindings card. Same panel tokens as the Speech bubble. The bar is
-   drawn and does not take the resume click. The card does. */
+/* The bindings card. Same panel tokens as the Speech bubble. Clicks pass
+   through so a sprite under the card can still be grabbed. Paused is the
+   resume click. The bar is drawn and never takes one. */
 .possession {
   position: absolute;
   top: 0;
@@ -555,8 +556,11 @@ body {
 }
 
 .possession.visible {
-  pointer-events: auto;
   opacity: 1;
+}
+
+.possession.visible.paused {
+  pointer-events: auto;
 }
 
 .possession.paused {

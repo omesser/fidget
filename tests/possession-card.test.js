@@ -8,6 +8,7 @@ import {
   chargeFill,
   paintPossession,
   placePossession,
+  possessionBounds,
   possessionCard,
   possessionRects,
 } from "../src/possession-card.js";
@@ -69,23 +70,36 @@ function onScreen(rect, bounds) {
 test("the card sits in the top-left inset and does not follow the sprite", () => {
   const bounds = { x: 0, y: 0, width: 800, height: 600 };
   const card = { width: 220, height: 88 };
-  const near = placePossession({ x: 40, y: 80, width: 128, height: 128 }, card, 8, 8, bounds);
-  const far = placePossession({ x: 600, y: 400, width: 128, height: 128 }, card, 8, 8, bounds);
-  assert.equal(near.card.x, 16);
-  assert.equal(near.card.y, 16);
-  assert.deepEqual(near.card, far.card);
-  assert.equal(near.bar.x, 16);
-  assert.equal(near.bar.y, 16 + card.height + 8);
-  assert.equal(onScreen({ ...near.card, width: card.width, height: card.height }, bounds), true);
-  assert.equal(onScreen(near.bar, bounds), true);
+  const placed = placePossession(card, 8, 8, bounds);
+  assert.equal(placed.card.x, 16);
+  assert.equal(placed.card.y, 16);
+  assert.equal(placed.bar.x, 16);
+  assert.equal(placed.bar.y, 16 + card.height + 8);
+  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(placed.bar, bounds), true);
+});
+
+test("the card is seated in the usable area, below a top menu bar", () => {
+  const frame = { x: 0, y: 0, width: 1440, height: 900 };
+  const menuBar = 24;
+  const work = { x: 0, y: menuBar, width: frame.width, height: frame.height - menuBar };
+  const card = { width: 220, height: 88 };
+  const placed = placePossession(card, 8, 8, possessionBounds(work, frame));
+  assert.equal(placed.card.x, 16);
+  assert.equal(placed.card.y, menuBar + 16);
+  assert.equal(placed.bar.y, placed.card.y + card.height + 8);
+  const cardRect = { ...placed.card, width: card.width, height: card.height };
+  assert.equal(onScreen(cardRect, work), true);
+  assert.equal(onScreen(placed.bar, work), true);
+  assert.equal(possessionBounds(null, frame).y, 0);
 });
 
 test("the card moves to the display the sprite crosses onto", () => {
   const card = { width: 220, height: 88 };
   const here = { x: 0, y: 0, width: 1920, height: 1080 };
   const next = { x: 1920, y: 0, width: 1440, height: 900 };
-  const onHere = placePossession({ x: 400, y: 700, width: 128, height: 128 }, card, 8, 8, here);
-  const onNext = placePossession({ x: 400, y: 700, width: 128, height: 128 }, card, 8, 8, next);
+  const onHere = placePossession(card, 8, 8, here);
+  const onNext = placePossession(card, 8, 8, next);
   assert.equal(onHere.card.x, 16);
   assert.equal(onHere.card.y, 16);
   assert.equal(onNext.card.x, 1920 + 16);
@@ -99,7 +113,7 @@ test("the card stays inside a display whose origin is not zero", () => {
   const left = { x: -1920, y: 0, width: 1920, height: 1080 };
   const above = { x: 0, y: -800, width: 1920, height: 800 };
   for (const bounds of [left, above]) {
-    const placed = placePossession({ x: bounds.x + 400, y: bounds.y + 400, width: 128, height: 128 }, card, 8, 8, bounds);
+    const placed = placePossession(card, 8, 8, bounds);
     const cardRect = { ...placed.card, width: card.width, height: card.height };
     assert.equal(placed.card.x, bounds.x + 16);
     assert.equal(placed.card.y, bounds.y + 16);
@@ -162,10 +176,16 @@ test("a charge-only change keeps the same card nodes", () => {
   }
 });
 
-test("the card takes a click and the charge bar does not", () => {
-  assert.deepEqual(possessionRects([10, 20, 220, 88], [10, 112, 220, 8]), [
-    { rect: [10, 20, 220, 88], clickable: true },
-    { rect: [10, 112, 220, 8], clickable: false },
+test("the card takes a click only while paused, and the charge bar never does", () => {
+  const card = [10, 20, 220, 88];
+  const bar = [10, 112, 220, 8];
+  assert.deepEqual(possessionRects(card, bar, true), [
+    { rect: card, clickable: true },
+    { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(null, null), []);
+  assert.deepEqual(possessionRects(card, bar, false), [
+    { rect: card, clickable: false },
+    { rect: bar, clickable: false },
+  ]);
+  assert.deepEqual(possessionRects(null, null, false), []);
 });

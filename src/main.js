@@ -15,6 +15,7 @@ import {
   chargeFill,
   paintPossession,
   placePossession,
+  possessionBounds,
   possessionCard,
   possessionRects,
 } from "./possession-card.js";
@@ -52,6 +53,9 @@ let petDrag = null;
 let gestureActive = false;
 // The pill's dwell in ms, from the latest frame, so a Settings change lands on the next hover.
 let hoverDelayMs;
+// The shell's usable area for this overlay, in overlay coordinates. Absent
+// until the first frame, and then the card is inset from the menu bar.
+let workArea = null;
 
 const views = new Map();
 
@@ -279,7 +283,7 @@ function speechRect(view) {
 const CHARGE_BAR_PX = 8;
 const POSSESSION_GAP_PX = 8;
 
-function positionPossession(view, sprite, latest) {
+function positionPossession(view, latest) {
   const model = possessionCard({
     possessed: Boolean(latest.possessed),
     paused: Boolean(latest.paused),
@@ -290,24 +294,36 @@ function positionPossession(view, sprite, latest) {
     view.cardSize = null;
     view.possessionRect = null;
     view.chargeRect = null;
+    view.possessionSeat = null;
     reportOverlayRects();
     return;
   }
-  // A charge tick only widens the fill. Measuring the card again forces layout.
-  if (rebuilt || !view.cardSize) {
+  const bounds = possessionBounds(workArea, currentDisplayBounds());
+  const seat = view.possessionSeat;
+  const sameSeat =
+    seat &&
+    seat.x === bounds.x &&
+    seat.y === bounds.y &&
+    seat.width === bounds.width &&
+    seat.height === bounds.height &&
+    seat.paused === model.paused;
+  // A charge tick only widens the fill. The card stays in the corner, so
+  // measuring it again would force layout for a seat that did not move.
+  if (!rebuilt && sameSeat && view.cardSize?.width) return;
+  if (rebuilt || !view.cardSize?.width) {
     view.cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
   }
-  const placed = placePossession(
-    sprite,
-    view.cardSize,
-    CHARGE_BAR_PX,
-    POSSESSION_GAP_PX,
-    currentDisplayBounds(),
-  );
+  const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
   view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
   view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
   view.bar.style.width = `${placed.bar.width}px`;
-  view.placedFrom = [sprite.x, sprite.y];
+  view.possessionSeat = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    paused: model.paused,
+  };
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
   view.chargeRect =
     fill == null ? null : [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
@@ -629,12 +645,13 @@ function reportOverlayRects() {
     const push = (rect, clickable) => rects.push(follows ? { rect, clickable, follows } : { rect, clickable });
     if (view.hotspot) push(view.hotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
-    const parts = possessionRects(view.possessionRect, view.chargeRect);
-    const card = parts.find((part) => part.clickable);
-    const bar = parts.find((part) => !part.clickable);
-    if (card) push(card.rect, card.clickable);
     if (view.bubbleRect) push(view.bubbleRect, false);
-    if (bar) push(bar.rect, bar.clickable);
+    // The card stays in the corner. `follows` would sweep its rect along the
+    // sprite's trail, and an unpaused card must not take the grab.
+    const paused = view.card.classList.contains("paused");
+    for (const part of possessionRects(view.possessionRect, view.chargeRect, paused)) {
+      rects.push({ rect: part.rect, clickable: part.clickable });
+    }
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedRects) return;
@@ -716,7 +733,7 @@ function drawView(view, now) {
     if (view.quickMachine.visible) {
       positionQuick(view, rect);
     }
-    positionPossession(view, rect, latest);
+    positionPossession(view, latest);
   } else {
     view.possessionRect = null;
     view.chargeRect = null;
@@ -846,6 +863,14 @@ async function start() {
     "frame",
     ({ payload }) => {
       hoverDelayMs = payload.hover_delay_ms;
+      const area = payload.work_area;
+      const areaMoved =
+        Boolean(area) &&
+        (workArea?.x !== area.x ||
+          workArea?.y !== area.y ||
+          workArea?.width !== area.width ||
+          workArea?.height !== area.height);
+      if (area && area.width > 0 && area.height > 0) workArea = area;
       const seen = new Set();
 
       possessed = payload.sprites.some((sprite) => sprite.possessed);
@@ -906,7 +931,7 @@ async function start() {
         }
         notePointerLeft(view);
 
-        if (changed && needsFrame(view)) arm();
+        if (areaMoved || (changed && needsFrame(view))) arm();
       });
 
       // An id that stopped arriving was dismissed, so its elements go. The Rust
