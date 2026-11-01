@@ -93,6 +93,12 @@ frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 10
 loop = "once"
 
+# Possession start plays this, or `react` when a package draws none. The
+# pack's split flash: the screen breaks, then blanks.
+[animations.possessed]
+frames = ["frames/possessed-0.png", "frames/possessed-1.png"]
+fps = 6
+
 # Gesture and rest: talking hands, standing up. The pack's grinning
 # lean-back frames read as sitting and were mistaken for the sit.
 [animations.talk]
