@@ -590,7 +590,7 @@ fn lock_interrupt() -> MutexGuard<'static, Option<InterruptOwned>> {
     INTERRUPT.lock().unwrap_or_else(|why| why.into_inner())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn forget_interrupt() {
     *lock_interrupt() = None;
 }
