@@ -200,9 +200,9 @@ pub struct Frame {
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 
-    /// The Behavior that started on this frame, if a proposal was taken. For
-    /// the Shell: what the Director suggested and what the user saw are
-    /// different lists, and repetition is suppressed on the second.
+    /// The Behavior that started on this frame, from a proposal or a digit.
+    /// For the Shell: what was asked and what the user saw are different
+    /// lists, and repetition is suppressed on the second.
     pub behavior: Option<String>,
 
     /// The Behavior whose Primitives are still playing, on every tick of the

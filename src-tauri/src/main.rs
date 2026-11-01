@@ -7445,7 +7445,7 @@ mod tests {
             paused: false,
             charge: None,
             possession_cue: false,
-            behaviors: vec!["nod".to_string(), "walk".to_string()],
+            behaviors: vec!["nod".to_string(), "sit".to_string()],
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
@@ -7453,8 +7453,8 @@ mod tests {
         let owner = SpritePlacement::new(&placed, right, 1);
         assert_eq!(
             owner.behaviors,
-            ["nod".to_string(), "walk".to_string()],
-            "the card's digits need the Behavior names"
+            ["nod".to_string(), "sit".to_string()],
+            "the card numbers the list the shell mapped"
         );
         assert_eq!(owner.dialogue.as_deref(), Some("Yare yare daze."));
         assert!(owner.thinking);

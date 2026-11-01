@@ -10,23 +10,25 @@ export const RESUME_LABEL = "Click to resume";
 // stays put while the sprite walks, so the background under it stays visible.
 export const POSSESSION_INSET = 16;
 
-// Up and Down are a later climb. Digits are filled from the Character.
+// Up and Down are a later climb. Digit rows are the list the Shell already
+// mapped, in that order. The card only numbers them.
 const KEYS = [
   ["← →", "Walk"],
   ["Space", "Jump"],
   ["Esc", "Release Possession"],
 ];
 
-// Same rule as `digit_behaviors`: name order, without walk or jump, nine at most.
-export function digitBehaviors(names) {
-  return [...(names ?? [])]
-    .filter((name) => name !== "walk" && name !== "jump")
-    .sort()
-    .slice(0, 9);
+// Walk and Jump are written as labels. A Behavior name is a key (`nod`).
+function behaviorLabel(name) {
+  if (!name) return name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function bindingRows(behaviors) {
-  const digits = digitBehaviors(behaviors).map((name, index) => [String(index + 1), name]);
+  const digits = [...(behaviors ?? [])].map((name, index) => [
+    String(index + 1),
+    behaviorLabel(name),
+  ]);
   return [...KEYS, ...digits];
 }
 

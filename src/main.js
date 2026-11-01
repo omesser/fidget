@@ -1000,7 +1000,7 @@ async function start() {
   const onPossessionKey = (event) => {
     if (!possessed) return;
     if (event.target?.closest?.("textarea, input")) return;
-    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown");
+    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown", event.code);
     if (!edge) return;
     event.preventDefault();
     window.__TAURI__.core.invoke("overlay_possession_key", { key: edge.key, down: edge.down }).catch((err) => {
