@@ -111,6 +111,26 @@ function Initialize-ScenarioData([string]$Out, [hashtable]$Settings = @{}) {
     return $data
 }
 
+function Save-FidgetThreadNote {
+    if ($script:ThreadDumpWritten) { return }
+    if (-not $script:proc -or $script:proc.HasExited) { return }
+    $script:ThreadDumpWritten = $true
+    $dir = $script:WatchDir
+    if (-not $dir) { $dir = [System.IO.Path]::GetTempPath() }
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $dest = Join-Path $dir "fidget-threads.txt"
+    $note = "thread dump skipped: Windows has no eu-stack or sample in this harness."
+    Set-Content -LiteralPath $dest -Value $note -Encoding utf8
+    [Console]::Error.WriteLine("thread dump in $dest")
+    $log = Get-ChildItem -LiteralPath $dir -Recurse -Filter process.log -Depth 4 -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($log) {
+        $tail = Join-Path $dir "fidget-log-tail.txt"
+        Get-Content -LiteralPath $log.FullName -Tail 80 | Set-Content -LiteralPath $tail -Encoding utf8
+        [Console]::Error.WriteLine("app log tail in $tail")
+    }
+}
+
 function Wait-OnChanges([double]$Seconds, [string]$Dir, [scriptblock]$Test) {
     if (-not $Dir) { $Dir = $script:WatchDir }
     if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { $Dir = [System.IO.Path]::GetTempPath() }
@@ -123,7 +143,11 @@ function Wait-OnChanges([double]$Seconds, [string]$Dir, [scriptblock]$Test) {
             if (& $Test) { return $true }
             if ($script:proc -and $script:proc.HasExited) { return $false }
             $left = [int]($deadline - (Get-Date)).TotalMilliseconds
-            if ($left -le 0 -or -not [FidgetSignal]::WaitPast($seen, $left)) { return [bool](& $Test) }
+            if ($left -le 0 -or -not [FidgetSignal]::WaitPast($seen, $left)) {
+                $ok = [bool](& $Test)
+                if (-not $ok) { Save-FidgetThreadNote }
+                return $ok
+            }
         }
     } finally {
         $watcher.Dispose()

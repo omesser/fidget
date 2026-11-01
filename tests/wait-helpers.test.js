@@ -40,6 +40,58 @@ test("wait_for_marks gives up within its seconds", (t) => {
   assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
 });
 
+test("a timed-out wait records a thread dump and the app log tail", (t) => {
+  const r = run(t, `sleep 30 & pid=$!
+out="$dir"
+echo "overlay overlay-0: showThinking instance=inst-1 dnd=off" > "$log"
+wait_for_trace 1 "$log" '^never-this$'
+status=$?
+kill "$pid" 2> /dev/null || true
+wait "$pid" 2> /dev/null || true
+[ "$status" -eq 1 ]
+[ -s "$out/fidget-threads.txt" ]
+grep -F "showThinking instance=inst-1" "$out/fidget-log-tail.txt"`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /thread dump in .*fidget-threads\.txt/);
+  assert.match(r.out, /app log tail in .*fidget-log-tail\.txt/);
+  assert.ok(r.ms < 12000, `took ${r.ms} ms`);
+});
+
+test("a wait_until that passes on its last check leaves no thread dump", (t) => {
+  const r = run(t, `sleep 30 & pid=$!
+out="$dir"
+: > "$log"
+cat > "$dir/probe.sh" << 'EOF'
+c=$(cat "$1" 2>/dev/null || echo 0)
+echo $((c + 1)) > "$1"
+[ "$c" -ge 1 ]
+EOF
+chmod +x "$dir/probe.sh"
+wait_until 1 "$dir/probe.sh" "$dir/n"
+status=$?
+kill "$pid" 2> /dev/null || true
+wait "$pid" 2> /dev/null || true
+[ "$status" -eq 0 ]
+[ ! -e "$out/fidget-threads.txt" ]`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /thread dump in/);
+});
+
+test("a wait that sees its line leaves no thread dump", (t) => {
+  const r = run(t, `sleep 30 & pid=$!
+out="$dir"
+echo "verbs: Poke" > "$log"
+wait_for_trace 2 "$log" '^verbs: .*Poke'
+status=$?
+kill "$pid" 2> /dev/null || true
+wait "$pid" 2> /dev/null || true
+[ "$status" -eq 0 ]
+[ ! -e "$out/fidget-threads.txt" ]
+[ ! -e "$out/fidget-log-tail.txt" ]`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /thread dump in/);
+});
+
 test("waits fail at once when Fidget has exited", (t) => {
   const r = run(t, `: > "$dir/log"; sleep 0 & pid=$!; wait "$pid"; wait_for_trace 2 "$dir/log" x`);
   assert.strictEqual(r.code, 1, r.out);

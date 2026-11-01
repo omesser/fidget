@@ -12,8 +12,12 @@ wait_for_file() { # <seconds> <file path>
     wait_until "$1" test -f "$2"
     return
   }
-  timeout "$1" inotifywait -q -m -e create,moved_to --format %f "$(dirname "$2")" 2> /dev/null |
-    grep -qxFm1 "$(basename "$2")" || [ -f "$2" ]
+  if timeout "$1" inotifywait -q -m -e create,moved_to --format %f "$(dirname "$2")" 2> /dev/null |
+    grep -qxFm1 "$(basename "$2")" || [ -f "$2" ]; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 
 # Wait for an AT-SPI dump to match a pattern. ax-wait-linux.py checks again

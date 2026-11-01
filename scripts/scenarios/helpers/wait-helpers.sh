@@ -13,6 +13,46 @@ fidget_alive() {
   [ -z "${pid:-}" ] || kill -0 "$pid" 2> /dev/null
 }
 
+dump_fidget_threads() {
+  local dest dir
+  [ -n "${pid:-}" ] || return 0
+  # Attaching to this shell samples the waiter, not Fidget.
+  if [ "$pid" -eq "$$" ] 2> /dev/null; then
+    return 0
+  fi
+  kill -0 "$pid" 2> /dev/null || return 0
+  [ -z "${thread_dump_written:-}" ] || return 0
+  thread_dump_written=1
+  dir=${out:-${TMPDIR:-/tmp}}
+  mkdir -p "$dir"
+  dest=$dir/fidget-threads.txt
+  if command -v eu-stack > /dev/null 2>&1; then
+    if command -v timeout > /dev/null 2>&1; then
+      timeout 8 eu-stack -p "$pid" > "$dest" 2>&1 || true
+    else
+      eu-stack -p "$pid" > "$dest" 2>&1 || true
+    fi
+  fi
+  if [ ! -s "$dest" ] && command -v gdb > /dev/null 2>&1; then
+    if command -v timeout > /dev/null 2>&1; then
+      timeout 8 gdb -batch -ex 'set pagination off' -ex 'thread apply all bt' -p "$pid" > "$dest" 2>&1 || true
+    else
+      gdb -batch -ex 'set pagination off' -ex 'thread apply all bt' -p "$pid" > "$dest" 2>&1 || true
+    fi
+  fi
+  if [ ! -s "$dest" ] && command -v sample > /dev/null 2>&1; then
+    sample "$pid" 1 -file "$dest" > /dev/null 2>&1 || true
+  fi
+  if [ ! -s "$dest" ]; then
+    echo "thread dump skipped: no eu-stack, gdb, or sample produced output" > "$dest"
+  fi
+  echo "thread dump in $dest" >&2
+  if [ -n "${log:-}" ] && [ -f "$log" ]; then
+    tail -n 80 "$log" > "$dir/fidget-log-tail.txt"
+    echo "app log tail in $dir/fidget-log-tail.txt" >&2
+  fi
+}
+
 # tail -F follows a file through kqueue (BSD) or inotify (GNU). GNU tail
 # treats some file systems as remote (overlayfs, NFS) and falls back to a
 # poll every second, so ask it for 50 ms there; it stops with Fidget, too.
@@ -60,7 +100,11 @@ wait_on_source() { # <seconds> <source command> <reader...>
 
 # Wait for a line matching an extended regex to land in a file.
 wait_for_line() { # <seconds> <file> <pattern>
-  wait_on_lines "$1" +1 "$2" grep -qEm1 "$3"
+  if wait_on_lines "$1" +1 "$2" grep -qEm1 "$3"; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 
 # Wait for a trace line in the app log or process.log.
@@ -98,7 +142,14 @@ wait_until() { # <seconds> <command...>
   local seconds=$1
   shift
   "$@" > /dev/null 2>&1 && return 0
-  wait_on_lines "$seconds" 0 "${wait_log:-${log:?wait_until needs \$log}}" probe_each_line "$@" || "$@" > /dev/null 2>&1
+  if wait_on_lines "$seconds" 0 "${wait_log:-${log:?wait_until needs \$log}}" probe_each_line "$@"; then
+    return 0
+  fi
+  if "$@" > /dev/null 2>&1; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 
 # Read lines and run the command after each, until it succeeds.
@@ -113,7 +164,11 @@ probe_each_line() { # <command...>
 # line that repeats (a second minimize, a second Poke). Take the count before
 # the trigger.
 wait_for_count() { # <seconds> <file> <pattern> <count before the trigger>
-  wait_on_lines "$1" +1 "$2" count_past "$3" "$4"
+  if wait_on_lines "$1" +1 "$2" count_past "$3" "$4"; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 
 # Read lines until more than <count> match the pattern.
@@ -138,13 +193,20 @@ line_count() { # <file> <pattern>
 # it (macOS), caffeinate -w watches the pid through kqueue. True once gone.
 wait_for_exit() { # <seconds> <pid> <lock>
   if command -v flock > /dev/null && [ -e "${3:-}" ]; then
-    flock -w "$1" "$3" true
-    return
+    if flock -w "$1" "$3" true; then
+      return 0
+    fi
+    dump_fidget_threads
+    return 1
   fi
   kill -0 "$2" 2> /dev/null || return 0
   local pid=$2 # wait_on_source fails at once if this pid is already gone
   exit_watched=$2
-  wait_on_source "$1" watch_exit read -r
+  if wait_on_source "$1" watch_exit read -r; then
+    return 0
+  fi
+  dump_fidget_threads
+  return 1
 }
 # No caffeinate (Linux without the lock) prints nothing, so the wait fails.
 watch_exit() {
@@ -197,10 +259,14 @@ wait_for_rest() { # <log>
     sprite_at_rest "$1" && result=0 && break
     if [ $(($(now_ms) - start)) -ge 10000 ]; then
       echo "sprite never came to rest within 10s" >&2
+      dump_fidget_threads
       result=1 && break
     fi
     : > "$flag"
-    wait_on_lines 3 0 "$1" rest_or_moved "$1" "$flag" || { result=1 && break; }
+    wait_on_lines 3 0 "$1" rest_or_moved "$1" "$flag" || {
+      dump_fidget_threads
+      result=1 && break
+    }
     [ -s "$flag" ] || { result=0 && break; }
   done
   rm -f "$flag"
