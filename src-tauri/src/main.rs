@@ -3690,9 +3690,12 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
 }
 
 /// The global shortcut for the configured hide chord.
-fn shortcut_from_hotkey(hotkey: &settings::Hotkey) -> Option<Shortcut> {
+fn shortcut_from_hotkey(hotkey: &settings::Hotkey) -> Shortcut {
     let hotkey = hotkey.in_force();
-    let code: Code = settings::key_code_name(hotkey.key)?.parse().ok()?;
+    let code: Code = settings::key_code_name(hotkey.key)
+        .expect("effective hotkeys always use supported letters")
+        .parse()
+        .expect("KeyA through KeyZ are shortcut codes");
     let mut modifiers = Modifiers::empty();
     if hotkey.control {
         modifiers |= Modifiers::CONTROL;
@@ -3706,7 +3709,7 @@ fn shortcut_from_hotkey(hotkey: &settings::Hotkey) -> Option<Shortcut> {
     if hotkey.command {
         modifiers |= Modifiers::SUPER;
     }
-    Some(Shortcut::new(Some(modifiers), code))
+    Shortcut::new(Some(modifiers), code)
 }
 
 fn install_hide_hotkey(
@@ -3748,11 +3751,12 @@ fn bind_hide_hotkey(app: &tauri::AppHandle, hotkey: &settings::Hotkey) {
     {
         return;
     }
-    let spec = hotkey.display(settings::ModifierWords::current());
-    let Some(shortcut) = shortcut_from_hotkey(hotkey) else {
-        eprintln!("hotkey: {spec} could not be parsed");
-        return;
-    };
+    let effective = hotkey.in_force();
+    let spec = effective.display(settings::ModifierWords::current());
+    if effective != hotkey {
+        eprintln!("hotkey: unsupported key {:?}; using {spec}", hotkey.key);
+    }
+    let shortcut = shortcut_from_hotkey(effective);
     let gs = app.global_shortcut();
     if let Err(why) = gs.unregister_all() {
         eprintln!("hotkey: could not drop the previous binding: {why}");
@@ -6622,10 +6626,9 @@ mod tests {
             shift: true,
             command: false,
             key: 'H',
-        })
-        .expect("valid hotkey");
+        });
         assert_eq!(shortcut.key, Code::KeyH);
-        let shipped = shortcut_from_hotkey(&settings::DEFAULT_HIDE_HOTKEY).expect("default");
+        let shipped = shortcut_from_hotkey(&settings::DEFAULT_HIDE_HOTKEY);
         assert_eq!(shipped.key, Code::KeyB);
         let unsupported = settings::Hotkey {
             control: false,
@@ -6634,7 +6637,7 @@ mod tests {
             command: false,
             key: '1',
         };
-        assert_eq!(shortcut_from_hotkey(&unsupported), Some(shipped));
+        assert_eq!(shortcut_from_hotkey(&unsupported), shipped);
     }
 
     /// A 2x2 RGBA frame whose top-left pixel is transparent.
