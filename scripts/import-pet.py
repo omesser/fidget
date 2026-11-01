@@ -703,13 +703,6 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
     notes = mapping_notes(mappings, animations, synthesized=not only_mapped and "sleep" not in overrides)
     if only_mapped:
         notes.append("Explicit source mappings; review animation timing and behavior in the manifest.")
-    if overrides:
-        remapped = ", ".join(
-            f"{animation}<-row {row}"
-            + (f"[{','.join(map(str, indices))}]" if indices else "")
-            for animation, (row, indices) in sorted(overrides.items())
-        )
-        notes.append(f"Remapped for this pet's art (--map): {remapped}.")
     # A pet.json may carry the key with nothing in it, which is the same
     # as not carrying it: one meaning of "undeclared" for every reader.
     license_line = (pet.get("pet_license") or pet.get("license") or "").strip()
