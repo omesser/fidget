@@ -81,6 +81,19 @@ test("every Windows leaf ends the app and its Harness as one tree", () => {
   );
 });
 
+// Windows has no gesture timing to hold, so a sleep there only stands in for
+// a wait on state.
+test("no Windows leaf or verifier sleeps between steps", () => {
+  const windows = [
+    ...leaves.filter((leaf) => leaf.endsWith(".ps1")),
+    path.join(root, "scripts", "verify-chat-perch-win.ps1"),
+  ];
+  assert.deepEqual(
+    missing(windows, (text) => !/\bStart-Sleep\b/i.test(text)),
+    [],
+  );
+});
+
 // The fixture's ask holds the turn until someone answers it.
 test("every script that starts the asking fixture answers the ask", () => {
   const asking = fs
