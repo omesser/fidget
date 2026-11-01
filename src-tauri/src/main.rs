@@ -4213,20 +4213,15 @@ fn quit_actions(orderly_platform: bool, already_quitting: bool) -> &'static [Qui
 }
 
 /// Ctrl+C is not `RunEvent::Exit`. The Harness child is in its own process
-/// group so that signal does not dump inside Node; this then kills it.
-/// Isolation waits until the handler is installed, or a failed catch leaves a tree Ctrl+C cannot reap.
+/// group so that signal does not dump inside Node; this then kills it. The
+/// handler goes in first, or `own_interrupt` refuses to isolate the child.
 fn quit_harness_on_interrupt(app: tauri::AppHandle) {
-    match ctrlc::set_handler(move || {
+    crate::harness::own_interrupt(move || {
         let already = crate::harness::interrupt_already_quitting();
         for action in quit_actions(cfg!(windows), already) {
             perform_quit_action(*action, &mut AppQuit(&app));
         }
-    }) {
-        Ok(()) => crate::harness::own_interrupt(),
-        Err(why) => eprintln!(
-            "harness: could not catch interrupt: {why}; child stays in this process group"
-        ),
-    }
+    });
 }
 
 /// What [`perform_quit_action`] asks the host to do. Tests record the calls.
