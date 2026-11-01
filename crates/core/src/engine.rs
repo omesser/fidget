@@ -987,39 +987,7 @@ impl Engine {
         // possessed: the cursor is not what the user is steering with.
         if self.cursor_near && !was_near && !self.possessed {
             self.rush_reported = false;
-            match self.near_reaction {
-                CursorReaction::Indifferent => {}
-                CursorReaction::Speak => {
-                    started |= self.play(&[Primitive::Talk]);
-                }
-                CursorReaction::Face => {
-                    self.facing = if snapshot.cursor.x > self.position.x {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                }
-                CursorReaction::Toward => {
-                    // A one-shot walk; Chase is what follows.
-                    self.facing = if snapshot.cursor.x > self.position.x {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    started |= self.play(&[Primitive::Walk]);
-                }
-                CursorReaction::Away => {
-                    self.facing = if snapshot.cursor.x < self.position.x {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    started |= self.play(&[Primitive::Walk]);
-                }
-                CursorReaction::React => {
-                    started |= self.play(&[Primitive::React]);
-                }
-            }
+            started |= self.react_to_cursor(self.near_reaction, snapshot.cursor);
         }
 
         // Leaving Near does not cancel a walk the reaction started. Chase is
@@ -1037,38 +1005,7 @@ impl Engine {
             let rushing = velocity_magnitude > RUSH_VELOCITY;
             if rushing {
                 self.rush_reported = true;
-                match self.rush_reaction {
-                    CursorReaction::Indifferent => {}
-                    CursorReaction::Speak => {
-                        started |= self.play(&[Primitive::Talk]);
-                    }
-                    CursorReaction::Face => {
-                        self.facing = if snapshot.cursor.x > self.position.x {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                    }
-                    CursorReaction::Toward => {
-                        self.facing = if snapshot.cursor.x > self.position.x {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                        started |= self.play(&[Primitive::Walk]);
-                    }
-                    CursorReaction::Away => {
-                        self.facing = if snapshot.cursor.x < self.position.x {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                        started |= self.play(&[Primitive::Walk]);
-                    }
-                    CursorReaction::React => {
-                        started |= self.play(&[Primitive::React]);
-                    }
-                }
+                started |= self.react_to_cursor(self.rush_reaction, snapshot.cursor);
             }
         }
 
@@ -1839,6 +1776,28 @@ impl Engine {
         self.playing_behavior = None;
         self.primitive_ms = 0;
         self.moment_holding = false;
+    }
+
+    fn react_to_cursor(&mut self, reaction: CursorReaction, cursor: Point) -> bool {
+        let facing = |right: bool| if right { 1.0 } else { -1.0 };
+        match reaction {
+            CursorReaction::Indifferent => false,
+            CursorReaction::Speak => self.play(&[Primitive::Talk]),
+            CursorReaction::Face => {
+                self.facing = facing(cursor.x > self.position.x);
+                false
+            }
+            CursorReaction::Toward => {
+                self.facing = facing(cursor.x > self.position.x);
+                // A one-shot walk; Chase is what follows.
+                self.play(&[Primitive::Walk])
+            }
+            CursorReaction::Away => {
+                self.facing = facing(cursor.x < self.position.x);
+                self.play(&[Primitive::Walk])
+            }
+            CursorReaction::React => self.play(&[Primitive::React]),
+        }
     }
 
     /// Start `primitives` unless the State forbids any of them. True when it
