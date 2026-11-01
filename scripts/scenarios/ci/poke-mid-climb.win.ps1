@@ -60,6 +60,8 @@ function Fail([string]$Message) {
 # process.log puts epoch seconds before each line; a saved stderr log does not.
 $framePattern = '^(?:\d+ )?frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) '
 $pokePattern = '^(?:\d+ )?verbs:.*Poke'
+$hitPattern = '^(?:\d+ )?hit-test: .* HIT +click-through OFF +<- flipped'
+$grabPattern = '^(?:\d+ )?verbs: .*\[Grab\]'
 
 # poke-mid-climb-check.py in PowerShell, so no Windows host needs Python. Case
 # sensitive and word for word like it: the same broken fixtures fail both.
@@ -132,6 +134,7 @@ $trace = Join-Path $data "process.log"
 
 $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_TRACE_HITTEST = "1"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
 # In-process, not ax-window-win.ps1 click: a new PowerShell compiles its
@@ -144,13 +147,9 @@ public class ClimbInput {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     const uint Down = 0x0002, Up = 0x0004;
-    public static void Place(int x, int y, int toX) {
-        SetCursorPos(x, y);
-        // The frame loop reads the cursor per tick and turns click-through off under it; 120 ms spans several ticks.
-        Thread.Sleep(120);
-        mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
-        // A press held past the drag threshold time becomes a grab, not a click.
-        Thread.Sleep(250);
+    public static void Press() { mouse_event(Down, 0, 0, 0, UIntPtr.Zero); }
+    public static void Release() { mouse_event(Up, 0, 0, 0, UIntPtr.Zero); }
+    public static void Slide(int x, int y, int toX) {
         for (int step = 1; step <= 10; step++) {
             SetCursorPos(x + (toX - x) * step / 10, y);
             // One step per frame tick or two, so the drag follows the path instead of one jump.
@@ -158,16 +157,11 @@ public class ClimbInput {
         }
         // Held still before release, so the release measures no speed and nothing is thrown.
         Thread.Sleep(300);
-        mouse_event(Up, 0, 0, 0, UIntPtr.Zero);
     }
     public static void Move(int x, int y) {
         SetCursorPos(x, y);
     }
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        // As in Place: ticks to turn click-through off under the cursor. A hit-test file
-        // wait from PowerShell is slower than the climbing sprite stays under it.
-        Thread.Sleep(120);
+    public static void Tap() {
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
         // A press and release in one tick read as no click; 60 ms spans a tick.
         Thread.Sleep(60);
@@ -271,9 +265,6 @@ try {
     if ($gapLine -and $gapLine -match 'double-click interval (\d+)ms') { $gapMs = [int]$Matches[1] }
     $clickGap = $gapMs + 100
 
-    $frame = Last-Frame
-    $sx = $frame.X; $sy = $frame.Y
-    $cx = $sx + $half
     $side = if ($env:FIDGET_SCENARIO_EDGE) { $env:FIDGET_SCENARIO_EDGE } else { "left" }
     # Held a quarter of its width inboard of centre, so at the edge the sprite's
     # centre is past it: it falls to the nearest edge and climbs, whatever speed
@@ -281,17 +272,44 @@ try {
     if ($side -ceq "left") {
         $edge = $edges.Left
         $into = 1
-        $grabX = $cx + [int][Math]::Floor($half / 2)
         $targetX = $edges.LeftTarget
     } elseif ($side -ceq "right") {
         $edge = $edges.Right
         $into = -1
-        $grabX = $cx - [int][Math]::Floor($half / 2)
         $targetX = $edges.RightTarget
     } else {
         Fail "FIDGET_SCENARIO_EDGE is '$side', want left or right"
     }
-    [ClimbInput]::Place($grabX, $sy + $half, $targetX)
+    # Each step waits for Fidget to log it: a resting sprite's loop polls up to 1 s
+    # apart, and an early tick can stall for 0.4-0.9 s. A sprite that set off
+    # walking meanwhile is let go and aimed at again, or the grab sits off-centre.
+    $grabbed = $false
+    for ($try = 0; $try -lt 3 -and -not $grabbed; $try++) {
+        if ($try -gt 0) {
+            # Off the sprite first, so the next aim logs a fresh flip.
+            [ClimbInput]::Move($grabX, $sy - 2 * $size)
+            if (-not (Wait-Still)) { Fail "the sprite never came to rest; see $trace" }
+        }
+        $frame = Last-Frame
+        $sx = $frame.X; $sy = $frame.Y
+        $grabX = $sx + $half + $into * [int][Math]::Floor($half / 2)
+        $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
+        [ClimbInput]::Move($grabX, $sy + $half)
+        if (-not (Wait-ForCount 3 $trace $hitPattern $hits)) { continue }
+        if ((Last-Frame).X -ne $sx) { continue }
+        $grabs = @(Select-String -LiteralPath $trace -Pattern $grabPattern -CaseSensitive).Count
+        [ClimbInput]::Press()
+        $grabbed = (Wait-ForCount 3 $trace $grabPattern $grabs) -and (Last-Frame).X -eq $sx
+        if (-not $grabbed) { [ClimbInput]::Release() }
+    }
+    if (-not $grabbed) { Fail "no Grab held the sprite where it rested, in 3 tries; see $trace" }
+    [ClimbInput]::Slide($grabX, $sy + $half, $targetX)
+    $past = Wait-OnChanges 3 (Split-Path -Parent $trace) {
+        $f = Last-Frame
+        $f -and $f.State -ceq "Dragged" -and ($into * ($edge - ($f.X + $half))) -gt 0
+    }
+    [ClimbInput]::Release()
+    if (-not $past) { Fail "the dragged sprite never crossed the $side edge; see $trace" }
     Add-Content -LiteralPath $inputLog -Value "placed from ($grabX,$($sy + $half)) to x=$targetX"
 
     if (-not (Wait-Climbing 20)) { Fail "the sprite let go over the $side edge and did not climb; see $trace" }
@@ -304,11 +322,11 @@ try {
     # Only the display's half of the sprite is drawn. Clicks a double-click
     # interval apart are separate Pokes, so stop at the first. Aim a quarter of
     # the sprite in from the edge, where Buddy Bot is solid from row 15 to 59:
-    # halfway in crosses its eye and misses. It climbs 27-65 px before the
-    # press lands, so aim 10 px above its top; `$sy -gt $size` keeps that on
-    # the display.
+    # halfway in crosses its eye and misses. The cursor waits just above the
+    # climbing sprite and taps once Fidget logs it under the cursor.
     $px = $edge + $into * [int][Math]::Floor($half / 4)
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
+    Skip-IfFullscreenOverClick $px $sy $script:proc.Id $out "click"
     $before = Pokes
     $poked = $false
     for ($i = 0; $i -lt 6; $i++) {
@@ -317,8 +335,10 @@ try {
         $sy = $frame.Y
         if ($sy -le $size) { break }
         $py = $sy - 10
-        Skip-IfFullscreenOverClick $px $py $script:proc.Id $out "click"
-        [ClimbInput]::Click($px, $py)
+        $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
+        [ClimbInput]::Move($px, $py)
+        if (-not (Wait-ForCount 1 $trace $hitPattern $hits)) { continue }
+        [ClimbInput]::Tap()
         Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
         if (Wait-ForCount ($clickGap / 1000) $trace $pokePattern $before) {
             $poked = $true

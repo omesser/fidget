@@ -372,7 +372,8 @@ the offending declaration.
 Required Animation Set is exactly nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`,
 `react`, `talk`, `hold`. A declared optional set is used when present and silently absent
 otherwise: `climb` falls back to `walk`, and `grab` — the sprite held by the cursor — and
-`jump` both fall back to `fall`.
+`jump` both fall back to `fall`. `possessed`, played when Possession starts, falls back
+to `react`.
 
 A Personality Prompt influences Director output only. It cannot reference Primitives that
 do not exist, cannot enable capabilities, and is never forwarded to the Harness as

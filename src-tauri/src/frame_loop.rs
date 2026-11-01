@@ -13,7 +13,9 @@ use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
-use fidget_core::overlay::{bubble_owner, display_index_for, drawn_frame, place_sprite};
+use fidget_core::overlay::{
+    bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
+};
 use fidget_core::possession::Intent;
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
@@ -36,7 +38,7 @@ use super::{
     push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
     switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
     FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
     SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
@@ -1084,39 +1086,31 @@ pub(crate) fn run_frame_loop(
                             if interval_moved {
                                 live.pace = paced(&config, &live.character);
                             }
-                            // Completer target changed, not Character. A Wake
-                            // still on the wire would propose against the old
-                            // host and session; drop it and open a new turn.
-                            completer::retarget_model(
+                            retarget_for_settings(
+                                &app,
                                 &mut slots,
-                                &live.id,
-                                &mut live.model,
-                                live.character.behaviors.keys().cloned(),
-                                live.character.name.clone(),
+                                live,
                                 &director,
                                 configured,
+                                first_connection,
+                                &mut pending_first_connection_message,
                             );
-                            // Defer the banner to the first successful wake, or a failed spawn
-                            // scrolls the chat away from its own error.
-                            if first_connection {
-                                pending_first_connection_message = true;
-                            } else {
-                                session_log::new_session(
-                                    &app,
-                                    &live.id,
-                                    "settings changed what answers",
-                                );
-                            }
                         }
                     }
                     SettingsOp::ReloadChat => reload_chat = true,
                     SettingsOp::NewSession => {
                         for live in &mut lives {
-                            // Same Completer, same Character, same Blank AI:
-                            // the only thing thrown away is the conversation
-                            // the Instance is in.
-                            replace_session(&mut slots, live, &director, config.configured);
-                            session_log::new_session(&app, &live.id, "a new session was started");
+                            // Same Completer, same Character, same Blank AI.
+                            // The only thing thrown away is the conversation.
+                            replace_session(
+                                &app,
+                                &mut slots,
+                                live,
+                                &director,
+                                config.configured,
+                                "a new session was started",
+                                HarnessSession::Drop,
+                            );
                         }
                     }
                     SettingsOp::ChatUIChanged { chat_ui } => {
@@ -1201,23 +1195,26 @@ pub(crate) fn run_frame_loop(
                         // the next launch mints another and loses it (ADR-0012).
                         remember_instances(&roster, &settings, &settings_path);
 
+                        // The Character Prompt is the opening turn. This session
+                        // opened without these words, so they take effect at the
+                        // next wake rather than by re-asking (ADR-0012).
+                        let why = "the Instance Prompt changed";
                         if let Some(live) =
                             lives.iter_mut().find(|live| live.id == written.instance)
                         {
-                            // The Character Prompt is the opening turn; this
-                            // session opened without these words. Takes
-                            // effect at the next wake, not by re-asking (ADR-0012).
-                            replace_session(&mut slots, live, &director, config.configured);
+                            replace_session(
+                                &app,
+                                &mut slots,
+                                live,
+                                &director,
+                                config.configured,
+                                why,
+                                HarnessSession::Drop,
+                            );
+                        } else {
+                            // No live Completer to retarget. The transcript still ends.
+                            session_log::new_session(&app, &written.instance, why);
                         }
-
-                        // Same session replacement a Character switch uses: the held turns
-                        // go, the open surface is told, and the Action Log keeps the boundary
-                        // (ADR-0012).
-                        session_log::new_session(
-                            &app,
-                            &written.instance,
-                            "the Instance Prompt changed",
-                        );
                         // A prompt layer changing is exactly what a user needs
                         // to find later. `chars` rather than the body, as the
                         // `prompt` event already does.
@@ -2633,12 +2630,21 @@ pub(crate) fn run_frame_loop(
                     .map(|instance| SpritePlacement::new(instance, *display, index))
                     .collect();
 
+                // No usable frame yet: the card insets from the overlay's own corner.
+                let usable = displays.usable_frames.get(index).copied().unwrap_or(*frame);
+                let local = usable_in_overlay(usable, *display);
                 let placement = Placement {
                     sprites,
                     visible: presence.visible,
                     fade_ms: presence.fade_ms,
                     sound: sound_allowed,
                     hover_delay_ms: crate::hover_delay_ms(),
+                    work_area: WorkArea {
+                        x: local.x,
+                        y: local.y,
+                        width: local.width,
+                        height: local.height,
+                    },
                 };
 
                 // Skip a repeated instruction: Tauri emit is JS eval
@@ -3245,10 +3251,16 @@ pub(crate) fn run_frame_loop(
     });
 }
 
-/// Throw this Instance's conversation away and leave it ready to open a new one
-/// on the same Completer. Both halves or neither (ADR-0012). Action Log and Chat
-/// stay with the caller: only it knows why the session was replaced.
-fn replace_session(
+/// What a Completer retarget does to the Harness conversation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HarnessSession {
+    /// Leave it. A Character switch and a settings retarget.
+    Keep,
+    /// Forget it, so the next wake opens `session/new`.
+    Drop,
+}
+
+fn retarget_live(
     slots: &mut completer::Slots,
     live: &mut InstanceState,
     director: &model::DirectorSettings,
@@ -3263,9 +3275,55 @@ fn replace_session(
         director,
         configured,
     );
-    if let Some(attached) = harness::attached() {
-        attached.drop_conversation(&live.id);
+}
+
+/// Retarget the Completer and record the new session in the same call.
+/// `Drop` forgets the Harness conversation. `Keep` leaves it. Sessions are
+/// keyed by Character, and changing host does not end one.
+pub(crate) fn replace_session(
+    host: &impl session_log::SessionSurface,
+    slots: &mut completer::Slots,
+    live: &mut InstanceState,
+    director: &model::DirectorSettings,
+    configured: bool,
+    why: &str,
+    harness_session: HarnessSession,
+) {
+    retarget_live(slots, live, director, configured);
+    if harness_session == HarnessSession::Drop {
+        if let Some(attached) = harness::attached() {
+            attached.drop_conversation(&live.id);
+        }
     }
+    session_log::new_session(host, &live.id, why);
+}
+
+/// Record the session a settings retarget ended, except on a first
+/// connection. Nothing could answer before that, so the banner waits
+/// for a wake that proves one can. Emitting now scrolls Chat off a spawn error.
+fn retarget_for_settings(
+    host: &impl session_log::SessionSurface,
+    slots: &mut completer::Slots,
+    live: &mut InstanceState,
+    director: &model::DirectorSettings,
+    configured: bool,
+    first_connection: bool,
+    pending_first_connection_message: &mut bool,
+) {
+    if first_connection {
+        retarget_live(slots, live, director, configured);
+        *pending_first_connection_message = true;
+        return;
+    }
+    replace_session(
+        host,
+        slots,
+        live,
+        director,
+        configured,
+        "settings changed what answers",
+        HarnessSession::Keep,
+    );
 }
 
 /// Dispatch one `tools/call` against the live Instances, not stubs, and answer
@@ -3889,5 +3947,216 @@ mod tests {
             None,
             "Chat has no dialogue to show when both sources are None"
         );
+    }
+
+    struct Recording {
+        log: Mutex<session_log::Log>,
+        shown: Mutex<Vec<(String, String)>>,
+    }
+
+    impl session_log::SessionSurface for Recording {
+        fn forget_turns(&self, instance: &str) {
+            self.log.lock().expect("session log").forget(instance);
+        }
+
+        fn announce_session(&self, instance: &str, why: &str) {
+            self.shown
+                .lock()
+                .expect("announced sessions")
+                .push((instance.to_string(), why.to_string()));
+        }
+    }
+
+    impl Recording {
+        fn holding(lines: &[(&str, &str)]) -> Self {
+            let mut log = session_log::Log::new();
+            for (instance, said) in lines {
+                log.log_you(instance, *said, UNIX_EPOCH);
+            }
+            Self {
+                log: Mutex::new(log),
+                shown: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn said(&self, instance: &str) -> Vec<String> {
+            self.log
+                .lock()
+                .expect("session log")
+                .replay(instance)
+                .into_iter()
+                .filter_map(|turn| turn.said)
+                .collect()
+        }
+    }
+
+    fn instance_state(id: &str, director: &model::DirectorSettings) -> InstanceState {
+        let character = Arc::new(character());
+        let config = model::config_from(director, harness::test_attached());
+        InstanceState {
+            id: id.to_string(),
+            director: fidget_core::director::StaticDirector::new(character.behaviors.clone(), 0),
+            pace: paced(&config, &character),
+            character,
+            model: None,
+            recent: Vec::new(),
+            recency: fidget_core::director::Recency::default(),
+            since_wake: Duration::ZERO,
+            since_proactive: Duration::ZERO,
+            previous_idle: Duration::MAX,
+            chat_turn: false,
+            happened_last: None,
+            since_state: Duration::ZERO,
+            last_state: None,
+            last_position: Point { x: 0.0, y: 0.0 },
+            addressed: false,
+            happened: Happened::Proactive,
+            pointer: fidget_core::input::Pointer::with_double_click_ms(500),
+            spoken: None,
+            speech: fidget_core::speech::SpeechBubble::default(),
+            drawn_last: None,
+            hovering: false,
+            qm: None,
+            verbs: Vec::new(),
+            menu_hold: None,
+            traced_last: None,
+            status_last: None,
+            status_wake_ms: None,
+        }
+    }
+
+    fn session_line(dir: &std::path::Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(dir.join(crate::action_log::FILE)).expect("action log");
+        serde_json::from_str(text.lines().next().expect("one session line")).expect("json")
+    }
+
+    /// Production change that would fail this: a settings change that installs
+    /// a new Completer and leaves the old turns on screen, or a first connection
+    /// that tells Chat the session ended before a wake has proved one can answer.
+    #[test]
+    fn a_settings_retarget_records_the_session_only_once_something_could_answer() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let configured = model::config_from(&director, harness::test_attached()).configured;
+            assert!(configured, "a local endpoint needs no key");
+            let id = "buddy-1".to_string();
+
+            let first_dir =
+                std::env::temp_dir().join(format!("fidget-session-first-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&first_dir).expect("temp dir");
+            session_log::with_session_dir(first_dir.clone(), || {
+                let mut slots = completer::tests::slots_awaiting_a_wake(&id);
+                let mut live = instance_state(&id, &director);
+                let host =
+                    Recording::holding(&[("buddy-1", "still talking"), ("buddy-2", "other")]);
+                let mut pending = false;
+
+                retarget_for_settings(
+                    &host,
+                    &mut slots,
+                    &mut live,
+                    &director,
+                    configured,
+                    true,
+                    &mut pending,
+                );
+
+                assert!(pending, "the banner waits for a wake that succeeds");
+                assert!(host.shown.lock().expect("shown").is_empty());
+                assert_eq!(host.said("buddy-1"), ["still talking"]);
+                assert_eq!(host.said("buddy-2"), ["other"]);
+                assert!(!slots.waiting(&id), "the wake on the old target is dropped");
+                assert!(live.model.is_some(), "the new Completer is installed");
+                assert!(
+                    !first_dir.join(crate::action_log::FILE).exists(),
+                    "no session line before anything can answer"
+                );
+            });
+            std::fs::remove_dir_all(&first_dir).ok();
+
+            let later_dir =
+                std::env::temp_dir().join(format!("fidget-session-later-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&later_dir).expect("temp dir");
+            session_log::with_session_dir(later_dir.clone(), || {
+                let mut slots = completer::tests::slots_awaiting_a_wake(&id);
+                let mut live = instance_state(&id, &director);
+                let host =
+                    Recording::holding(&[("buddy-1", "still talking"), ("buddy-2", "other")]);
+                let mut pending = false;
+
+                retarget_for_settings(
+                    &host,
+                    &mut slots,
+                    &mut live,
+                    &director,
+                    configured,
+                    false,
+                    &mut pending,
+                );
+
+                assert!(!pending);
+                assert_eq!(
+                    host.shown.lock().expect("shown").as_slice(),
+                    [(
+                        "buddy-1".to_string(),
+                        "settings changed what answers".to_string()
+                    )]
+                );
+                assert!(host.said("buddy-1").is_empty(), "the old turns go");
+                assert_eq!(host.said("buddy-2"), ["other"]);
+                assert!(!slots.waiting(&id));
+                assert!(live.model.is_some());
+                let line = session_line(&later_dir);
+                assert_eq!(line["event"], "session");
+                assert_eq!(line["instance"], "buddy-1");
+                assert_eq!(line["why"], "settings changed what answers");
+            });
+            std::fs::remove_dir_all(&later_dir).ok();
+        });
+    }
+
+    /// Production change that would fail this: New Session retargets the
+    /// Completer and leaves Chat and the Action Log on the conversation it ended.
+    #[test]
+    fn replacing_a_session_drops_the_wake_and_records_why() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let configured = model::config_from(&director, harness::test_attached()).configured;
+            let id = "buddy-1".to_string();
+            let dir =
+                std::env::temp_dir().join(format!("fidget-session-new-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            session_log::with_session_dir(dir.clone(), || {
+                let mut slots = completer::tests::slots_awaiting_a_wake(&id);
+                let mut live = instance_state(&id, &director);
+                let host = Recording::holding(&[("buddy-1", "old conversation")]);
+
+                replace_session(
+                    &host,
+                    &mut slots,
+                    &mut live,
+                    &director,
+                    configured,
+                    "a new session was started",
+                    HarnessSession::Drop,
+                );
+
+                assert!(
+                    !slots.waiting(&id),
+                    "the wake on the old session is dropped"
+                );
+                assert!(live.model.is_some());
+                assert!(host.said("buddy-1").is_empty());
+                assert_eq!(
+                    host.shown.lock().expect("shown").as_slice(),
+                    [(
+                        "buddy-1".to_string(),
+                        "a new session was started".to_string()
+                    )]
+                );
+                assert_eq!(session_line(&dir)["why"], "a new session was started");
+            });
+            std::fs::remove_dir_all(&dir).ok();
+        });
     }
 }

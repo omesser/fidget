@@ -766,11 +766,16 @@ impl Engine {
 
     /// Hand the sprite to the keyboard, or give it back. Either way the walk
     /// under way ends, chosen or from the keys, or it would stride on with no arrow
-    /// held. The keys own the feet from the next tick.
+    /// held. The keys own the feet from the next tick, and possession start
+    /// plays `possessed`.
     pub fn set_possessed(&mut self, possessed: bool) {
+        let starting = possessed && !self.possessed;
         self.possessed = possessed;
         if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
             self.stop_playing();
+        }
+        if starting {
+            self.play(&[Primitive::Possessed]);
         }
         // Walk velocity outlives what set it, a Primitive or a held arrow.
         if self.is_walking() || self.steering {
@@ -919,7 +924,8 @@ impl Engine {
 
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
-        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
+        let (state, woke, dragged) =
+            transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
 
         // A grab or a release ends the cooldown, or it would refuse the first
         // walk after landing. A fall the world causes clears it a tick late, at
@@ -935,33 +941,30 @@ impl Engine {
             self.chase_ms = 0;
         }
 
-        // A Grab outranks the world, usable floor included. The Dragged edge is
-        // the cue: `Verb::Grab` repeats while held; a slow release emits none.
-        // Both States are in hand only between `on_verbs` and `on_contact`.
-        let mut cue = None;
         let mut thrown_now = false;
-        if state == State::Dragged {
-            if self.state != State::Dragged {
-                cue = Some(Cue::Pickup);
-                self.release_cue = None;
-                // The press lands on the art, not the feet. That point stays
-                // under the pointer; snapping the feet to it hangs the cursor
-                // below the sprite. A snapshot with no press point falls back to
-                // the cursor.
+        match dragged {
+            Some(transition::Edge::PickedUp) => {
+                // The press lands on the art, not the feet, and that point stays
+                // under the pointer. Snapping the feet to it hangs the cursor
+                // below the sprite. With no press point, the cursor is used.
                 let pressed = snapshot.pressed_at.unwrap_or(snapshot.cursor);
                 self.grab_offset = Point {
                     x: self.position.x - pressed.x,
                     y: self.position.y - pressed.y,
                 };
             }
+            Some(transition::Edge::LetGo) => {
+                let thrown = thrown_velocity(snapshot);
+                thrown_now = thrown.is_some();
+                self.velocity = thrown.unwrap_or_default();
+            }
+            None => {}
+        }
+        // A Grab outranks the world, usable floor included.
+        if state == State::Dragged {
             self.position.x = snapshot.cursor.x + self.grab_offset.x;
             self.position.y = snapshot.cursor.y + self.grab_offset.y;
             self.velocity = Point::default();
-        } else if self.state == State::Dragged {
-            let thrown = thrown_velocity(snapshot);
-            thrown_now = thrown.is_some();
-            self.velocity = thrown.unwrap_or_default();
-            self.release_cue = Some(if thrown_now { Cue::Throw } else { Cue::Drop });
         }
 
         // The cursor already arrives every tick for hit-testing, so noticing
@@ -1095,6 +1098,20 @@ impl Engine {
         self.steering = self.possessed
             && self.state == State::Falling
             && (self.steering || matches!(state, State::Grounded | State::Perched));
+
+        // State is already stored, so it no longer says whether the hand
+        // picked the sprite up or let go. The edge does.
+        let mut cue = None;
+        match dragged {
+            Some(transition::Edge::PickedUp) => {
+                cue = Some(Cue::Pickup);
+                self.release_cue = None;
+            }
+            Some(transition::Edge::LetGo) => {
+                self.release_cue = Some(if thrown_now { Cue::Throw } else { Cue::Drop });
+            }
+            None => {}
+        }
 
         // The release's cue sounds on arrival: floor, Perch, or wall, once.
         // Every landing reports where it touched for the cue ripple.
@@ -1546,8 +1563,14 @@ impl Engine {
                 }
 
                 // A walk beside the Dock stops clear of its side once, then
-                // climbs; a per-tick step back stutters under a held walk. The
-                // assembler caps `elapsed_ms`, or a long step crosses the Dock.
+                // climbs; a per-tick step back stutters under a held walk.
+                debug_assert!(
+                    snapshot.elapsed_ms <= crate::snapshot::MAX_ELAPSED_MS
+                        || dock_in(snapshot).is_none(),
+                    "Dock walk step is {} ms, over the {} ms poll cap",
+                    snapshot.elapsed_ms,
+                    crate::snapshot::MAX_ELAPSED_MS,
+                );
                 if let Some(x) = dock_side_reached(self.position, self.velocity.x, snapshot) {
                     let side = self.velocity.x.signum();
                     self.position.x = x;
@@ -1834,7 +1857,7 @@ impl Engine {
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
-            Primitive::React | Primitive::Talk => true,
+            Primitive::React | Primitive::Talk | Primitive::Possessed => true,
             Primitive::Walk | Primitive::Chase => {
                 on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
@@ -1884,6 +1907,8 @@ fn animation_of(primitive: Primitive) -> &'static str {
         // Optional art: the renderer resolves it to `fall` when a package
         // draws none, so the required set stays at nine (ADR-0007).
         Primitive::Jump => "jump",
+        // Optional art too, resolved to `react` when a package draws none.
+        Primitive::Possessed => "possessed",
     }
 }
 
@@ -3318,7 +3343,7 @@ mod tests {
 
     /// `Verb::Grab` is present on every tick the sprite is held, so a cue
     /// keyed on the verb would sound sixty times a second for as long as the
-    /// drag lasts. The pickup cue keys on entering `Dragged`.
+    /// drag lasts. The pickup cue is the pick-up edge, once.
     #[test]
     fn the_pickup_cue_fires_on_the_transition_and_not_every_held_tick() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -3340,6 +3365,46 @@ mod tests {
             carried.iter().all(Option::is_none),
             "held, and cued once: {carried:?}"
         );
+    }
+
+    /// Pickup is the edge `on_verbs` reports for the grab that takes hold.
+    /// A Grab that continues is not an edge. Letting go is, and the drop
+    /// sounds on landing rather than on that edge's own tick.
+    #[test]
+    fn the_pickup_and_release_cues_read_the_dragged_edge() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let world = snapshot(100);
+        settle(&mut engine, &world);
+
+        let press = WorldSnapshot {
+            cursor: engine.feet(),
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let (_, _, picked_up) = transition::on_verbs(engine.state, &press.verbs, engine.possessed);
+        assert_eq!(picked_up, Some(transition::Edge::PickedUp));
+        assert_eq!(engine.tick(&press).cue, Some(Cue::Pickup));
+
+        let at = Point { x: 200.0, y: 200.0 };
+        let held = WorldSnapshot {
+            cursor: at,
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let (_, _, held_edge) = transition::on_verbs(engine.state, &held.verbs, engine.possessed);
+        assert_eq!(held_edge, None);
+        assert_eq!(engine.tick(&held).cue, None);
+
+        let release = WorldSnapshot {
+            cursor: at,
+            ..world.clone()
+        };
+        let (_, _, let_go) = transition::on_verbs(engine.state, &release.verbs, engine.possessed);
+        assert_eq!(let_go, Some(transition::Edge::LetGo));
+        assert_eq!(engine.tick(&release).cue, None, "silent until it lands");
+
+        let landed: Vec<Cue> = (0..60).filter_map(|_| engine.tick(&world).cue).collect();
+        assert_eq!(landed, vec![Cue::Drop]);
     }
 
     /// Release from `at` with `verbs`, then tick until the sprite rests.
@@ -9722,7 +9787,11 @@ mod tests {
                 ..world.clone()
             });
             assert_eq!(frame.behavior, None, "{frame:?}");
-            assert_eq!(frame.playing_primitive, None, "{frame:?}");
+            assert_eq!(
+                frame.playing_primitive,
+                Some(Primitive::Possessed),
+                "the start's own moment, not the walk: {frame:?}"
+            );
             assert_eq!(frame.dialogue.as_deref(), Some("hands off the wheel"));
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
         }
@@ -9789,6 +9858,46 @@ mod tests {
                 assert_eq!(last.velocity.x, 0.0, "stopped at the wall: {last:?}");
                 assert_eq!(last.animation, "idle", "standing, not striding: {last:?}");
             }
+        }
+
+        /// Possession start plays `possessed`, which a package without that art
+        /// draws as its `react`. Only the start plays it, not a repeat or the end.
+        #[test]
+        fn possession_start_plays_possessed_art_or_react() {
+            use crate::character::tests::{declaring, load_manifest};
+            use crate::character::REQUIRED_ANIMATIONS;
+
+            let without = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+            let with = load_manifest(&format!(
+                "{}[animations.possessed]\nframes = [\"idle-0.png\"]\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            ))
+            .expect("loads");
+
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let started = engine.tick(&world);
+            assert_eq!(started.animation, "possessed", "{started:?}");
+            let drawn = |character: &crate::character::Character| {
+                character
+                    .draw(started.animation, started.animation_ms, 0, 1.0)
+                    .expect("draws")
+                    .animation
+                    .to_string()
+            };
+            assert_eq!(drawn(&with), "possessed");
+            assert_eq!(drawn(&without), "react");
+
+            for _ in 0..60 {
+                engine.tick(&world);
+            }
+            engine.set_possessed(true);
+            let again = engine.tick(&world);
+            assert_ne!(again.animation, "possessed", "already possessed: {again:?}");
+
+            engine.set_possessed(false);
+            let released = engine.tick(&world);
+            assert_ne!(released.animation, "possessed", "{released:?}");
         }
 
         #[test]

@@ -42,7 +42,7 @@ body {
   border: 2px solid var(--shared-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
-  font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
+  font-family: var(--shared-sans);
   font-size: var(--shared-type-size);
   line-height: var(--shared-type-leading);
 
@@ -532,6 +532,85 @@ body {
     transform: translate(-50%, -50%) scaleX(6.5) scaleY(var(--puff-final-scale));
     opacity: 0;
   }
+}
+
+/* The bindings card. Same panel tokens as the Speech bubble. Clicks pass
+   through so a sprite under the card can still be grabbed. Paused is the
+   resume click. The bar is drawn and never takes one. */
+.possession {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 280px;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--shared-panel);
+  color: var(--shared-ink);
+  border-radius: var(--shared-radius);
+  font-family: var(--shared-sans);
+  font-size: var(--shared-type-size);
+  line-height: var(--shared-type-leading);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.possession.visible {
+  opacity: 1;
+}
+
+.possession.visible.paused {
+  pointer-events: auto;
+}
+
+.possession.paused {
+  /* Fading the whole card blends the line into a light page. The panel
+     stays dark enough to hold the type; the type stays the shared ink. */
+  opacity: 1;
+  background: color-mix(in srgb, var(--shared-panel) 78%, transparent);
+}
+
+.possession-heading {
+  margin: 0;
+}
+
+.possession ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.possession li {
+  display: flex;
+  gap: 12px;
+}
+
+.possession-keys {
+  min-width: 4.2em;
+  color: var(--shared-accent);
+}
+
+.possession-charge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(232, 235, 242, 0.18);
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.possession-charge.visible {
+  opacity: 1;
+}
+
+.possession-charge-fill {
+  height: 100%;
+  width: 0;
+  background: var(--shared-accent);
 }
 
 /* Collapsed rather than removed. The cue still marks the gesture, and

@@ -716,6 +716,18 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
+    /// The display's usable area in this overlay's coordinates. The window
+    /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
+    work_area: WorkArea,
+}
+
+/// Usable area in one overlay's coordinates. See `usable_in_overlay`.
+#[derive(Clone, Copy, Serialize)]
+struct WorkArea {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
 
 struct Spoken {
@@ -826,23 +838,37 @@ struct ArtUrls {
     characters: BTreeMap<String, CharacterArt>,
 }
 
-/// Cached `ArtUrls` JSON. A newtype so managed state cannot collide with another String.
-struct ArtJson(String);
-
-fn encode_art_json(art: &ArtUrls) -> ArtJson {
-    ArtJson(serde_json::to_string(art).expect("ArtUrls always serializes"))
+/// `ArtUrls` and its JSON, encoded once by whichever asks first: setup's own
+/// thread, or a `character` call that arrives before it is done.
+struct ArtJson {
+    art: ArtUrls,
+    json: std::sync::OnceLock<String>,
 }
 
-fn character_response(json: &ArtJson) -> tauri::ipc::Response {
-    tauri::ipc::Response::new(json.0.clone())
+impl ArtJson {
+    fn new(art: ArtUrls) -> Self {
+        Self {
+            art,
+            json: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn json(&self) -> &str {
+        self.json
+            .get_or_init(|| serde_json::to_string(&self.art).expect("ArtUrls always serializes"))
+    }
+}
+
+fn character_response(art: &ArtJson) -> tauri::ipc::Response {
+    tauri::ipc::Response::new(art.json().to_owned())
 }
 
 /// The art of every Character on screen, fetched once when the webview
 /// loads. A command rather than an event: setup would race the overlay's
-/// listener. Encoded once; the art does not change while the app runs.
+/// listener. Async, so waiting on the encode never holds the main thread.
 #[tauri::command]
-fn character(json: tauri::State<'_, ArtJson>) -> tauri::ipc::Response {
-    character_response(json.inner())
+async fn character(art: tauri::State<'_, Arc<ArtJson>>) -> Result<tauri::ipc::Response, ()> {
+    Ok(character_response(art.inner()))
 }
 
 /// The Settings window's handle on the running app. `SettingsSession::apply`
@@ -4278,9 +4304,8 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
     )
 }
 
-// One over the clippy cap, for the same reason `apply_menu_action` is: the new
-// session belongs beside the `retarget_model` that opens it, and the Chat
-// surface it has to tell is reached through the app handle.
+// One over the clippy cap. Roster, Completer, and Chat all hear one switch,
+// and splitting them would hide that they move together.
 #[allow(clippy::too_many_arguments)]
 fn switch_instance(
     roster: &mut Roster,
@@ -4297,18 +4322,17 @@ fn switch_instance(
         live.character = character;
         live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
         live.pace = paced(config, &live.character);
-        // The old session is the previous Character's. A Wake still on the
-        // wire would propose as them; drop it and ask for this opening turn.
-        completer::retarget_model(
+        // The previous Character's Harness session stays. It is keyed by
+        // Character, so switching back still has it.
+        frame_loop::replace_session(
+            app,
             slots,
-            instance_id,
-            &mut live.model,
-            live.character.behaviors.keys().cloned(),
-            live.character.name.clone(),
+            live,
             settings,
             config.configured,
+            "the Character changed",
+            frame_loop::HarnessSession::Keep,
         );
-        session_log::new_session(app, instance_id, "the Character changed");
         live.recent.clear();
         live.happened = Happened::Proactive;
         live.addressed = true;
@@ -4525,30 +4549,61 @@ fn characters_in(
     BTreeMap<String, CharacterArt>,
     BTreeMap<String, Arc<Character>>,
 ) {
+    // Earlier directories win, so a package the user added is the one a
+    // switch loads. Grouped by name before any load, so a shadowed copy's art
+    // is decoded only when every earlier copy fails to load.
+    let mut groups: Vec<(Option<String>, Vec<_>)> = Vec::new();
+    for path in package::installed(search_paths) {
+        let Ok(files) = package::read(&path) else {
+            continue;
+        };
+        let name = fidget_core::character::declared_name(&files);
+        match groups
+            .iter_mut()
+            .find(|(seen, _)| name.is_some() && *seen == name)
+        {
+            Some((_, copies)) => copies.push(files),
+            None => groups.push((name, vec![files])),
+        }
+    }
+
+    // One thread per Character: decoding every installed Character's art one
+    // after another is most of a debug launch on a CI runner (#1765).
+    let loaded: Vec<_> = std::thread::scope(|scope| {
+        let loads: Vec<_> = groups
+            .iter()
+            .map(|(_, copies)| {
+                scope.spawn(|| {
+                    let character = copies
+                        .iter()
+                        .find_map(|files| fidget_core::character::load(files).ok())?;
+                    Some((art_urls(&character), character))
+                })
+            })
+            .collect();
+        loads
+            .into_iter()
+            .map(|load| {
+                load.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
+
     let mut art = BTreeMap::new();
     let mut cache = BTreeMap::new();
-    for path in package::installed(search_paths) {
-        let files = match package::read(&path) {
-            Ok(files) => files,
-            Err(_) => continue,
-        };
-        // Earlier directories win, so a package the user added is the one a
-        // switch loads. Checked before the load, so a shadowed copy's art is
-        // never decoded only to be discarded.
-        let name = fidget_core::character::declared_name(&files);
-        if name.is_some_and(|name| cache.contains_key(&name)) {
+    for (urls, character) in loaded.into_iter().flatten() {
+        if cache.contains_key(&character.name) {
             continue;
         }
-        if let Ok(character) = fidget_core::character::load(&files) {
-            art.insert(
-                character.name.clone(),
-                CharacterArt {
-                    art: art_urls(&character),
-                    smooth: character.smooth,
-                },
-            );
-            cache.insert(character.name.clone(), Arc::new(character));
-        }
+        art.insert(
+            character.name.clone(),
+            CharacterArt {
+                art: urls,
+                smooth: character.smooth,
+            },
+        );
+        cache.insert(character.name.clone(), Arc::new(character));
     }
     (art, cache)
 }
@@ -4983,7 +5038,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: module: {}", std::io::Error::last_os_error()).into());
     }
 
-    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
+    let (icon, small_icon) = anchor_icons();
     let class_name = windows_sys::w!("FidgetAnchor");
     let class = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -4997,7 +5052,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         hbrBackground: std::ptr::null_mut(),
         lpszMenuName: std::ptr::null(),
         lpszClassName: class_name,
-        hIconSm: icon,
+        hIconSm: small_icon,
     };
     if unsafe { RegisterClassExW(&class) } == 0 {
         let err = std::io::Error::last_os_error();
@@ -5030,10 +5085,12 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: create window: {}", std::io::Error::last_os_error()).into());
     }
 
-    if !icon.is_null() {
-        unsafe {
+    unsafe {
+        if !icon.is_null() {
             SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon as isize);
+        }
+        if !small_icon.is_null() {
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small_icon as isize);
         }
     }
 
@@ -5120,47 +5177,46 @@ unsafe extern "system" fn anchor_wndproc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Taskbar icon from the same PNG the bundle uses. The class stores the handle
-/// until process exit, and `DestroyIcon` would blank the button.
+/// Taskbar icons, big and small, from the `.ico` tauri-build links into the exe.
+/// The class keeps both handles until process exit, and `DestroyIcon` would
+/// blank the button. A null handle leaves that slot to the system default.
 #[cfg(target_os = "windows")]
-fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::CreateIcon;
+fn anchor_icons() -> (
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+) {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON, SM_CYSMICON,
+    };
+    const APP_ICON: windows_sys::core::PCWSTR =
+        tauri::utils::platform::WINDOWS_APP_ICON_RESOURCE_ID as usize as windows_sys::core::PCWSTR;
+    // The shell's largest icon slot; a bigger one only costs memory.
+    const JUMBO: i32 = 256;
 
-    let decoded = match image::load_from_memory(include_bytes!("../icons/icon.png")) {
-        Ok(decoded) => decoded,
-        Err(why) => {
-            eprintln!("anchor: icon: {why}");
-            return None;
+    // Not LR_SHARED: it caches one handle per resource, so the second size could be the first.
+    let load = |width, height| {
+        let icon = unsafe {
+            LoadImageW(
+                GetModuleHandleW(std::ptr::null()),
+                APP_ICON,
+                IMAGE_ICON,
+                width,
+                height,
+                LR_DEFAULTCOLOR,
+            )
+        };
+        if icon.is_null() {
+            eprintln!(
+                "anchor: icon {width}x{height}: {}",
+                std::io::Error::last_os_error()
+            );
         }
+        icon
     };
-    // The PNG is 512. The shell's jumbo slot is 256, and a larger icon is only memory.
-    let rgba = decoded.thumbnail(256, 256).to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let mut pixels = rgba.into_raw();
-    let mut mask = Vec::with_capacity(pixels.len() / 4);
-    // CreateIcon's color plane is BGRA. The mask byte is inverted alpha so a
-    // transparent pixel stays transparent on the taskbar.
-    for chunk in pixels.as_chunks_mut::<4>().0 {
-        mask.push(chunk[3].wrapping_sub(u8::MAX));
-        chunk.swap(0, 2);
-    }
-    let icon = unsafe {
-        CreateIcon(
-            std::ptr::null_mut(),
-            width as i32,
-            height as i32,
-            1,
-            32,
-            mask.as_ptr(),
-            pixels.as_ptr(),
-        )
-    };
-    if icon.is_null() {
-        eprintln!("anchor: icon: {}", std::io::Error::last_os_error());
-        None
-    } else {
-        Some(icon)
-    }
+    let (small_width, small_height) =
+        unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+    (load(JUMBO, JUMBO), load(small_width, small_height))
 }
 
 fn main() {
@@ -5282,7 +5338,13 @@ fn main() {
                         smooth: character.smooth,
                     });
             }
-            app.manage(encode_art_json(&ArtUrls { characters }));
+            // Off the main thread: a debug build spends ~300 ms on the JSON,
+            // and the overlay page asks for it only after it loads.
+            let art = Arc::new(ArtJson::new(ArtUrls { characters }));
+            app.manage(Arc::clone(&art));
+            std::thread::spawn(move || {
+                art.json();
+            });
             let installed: Vec<String> = character_cache.keys().cloned().collect();
 
             // Show in the Dock so users have a findable anchor when the menu
@@ -5684,6 +5746,42 @@ fn main() {
                 harness::shutdown();
             }
         });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod anchor_icon_tests {
+    use windows_sys::Win32::Graphics::Gdi::{DeleteObject, GetObjectW, BITMAP};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetIconInfo, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
+    };
+
+    fn icon_size(icon: HICON) -> (i32, i32) {
+        let mut info: ICONINFO = unsafe { std::mem::zeroed() };
+        assert_ne!(unsafe { GetIconInfo(icon, &mut info) }, 0, "GetIconInfo");
+        let mut bitmap: BITMAP = unsafe { std::mem::zeroed() };
+        let read = unsafe {
+            GetObjectW(
+                info.hbmColor,
+                std::mem::size_of::<BITMAP>() as i32,
+                (&raw mut bitmap).cast(),
+            )
+        };
+        unsafe {
+            DeleteObject(info.hbmColor);
+            DeleteObject(info.hbmMask);
+        }
+        assert_ne!(read, 0, "GetObjectW");
+        (bitmap.bmWidth, bitmap.bmHeight)
+    }
+
+    #[test]
+    fn the_taskbar_gets_a_256px_icon_and_a_small_icon_sized_for_the_shell() {
+        let (big, small) = super::anchor_icons();
+        assert!(!big.is_null() && !small.is_null());
+        assert_eq!(icon_size(big), (256, 256));
+        let small_size = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+        assert_eq!(icon_size(small), small_size);
+    }
 }
 
 #[cfg(test)]
@@ -6682,6 +6780,29 @@ mod tests {
     }
 
     #[test]
+    fn a_later_copy_stands_in_for_an_earlier_one_that_fails_to_load() {
+        let user = tempfile::tempdir().expect("temp dir");
+        let broken = user.path().join("bmo");
+        std::fs::create_dir_all(&broken).expect("package dir");
+        std::fs::copy(
+            shipped_characters().join("bmo").join("character.manifest"),
+            broken.join("character.manifest"),
+        )
+        .expect("manifest without its frames");
+
+        let (art, cache) = characters_in(&[user.path().to_path_buf(), shipped_characters()]);
+        assert!(
+            cache["BMO"].smooth,
+            "the shipped copy, since the user's has no art"
+        );
+        assert!(art["BMO"].smooth);
+        assert!(
+            cache.contains_key("Buddy Bot"),
+            "every other Character still loads"
+        );
+    }
+
+    #[test]
     fn an_installed_character_is_the_one_that_starts() {
         let chosen = choose_character(&[shipped_characters()], Some(OsStr::new("bmo")))
             .expect("bmo is shipped");
@@ -6802,8 +6923,8 @@ mod tests {
         }
     }
 
-    /// `character` copies this string onto the wire. Encoding it on each invoke
-    /// is 90–118 ms on the main thread in a debug build (as of 2026-10).
+    /// `character` copies this string onto the wire, encoded once by the first
+    /// call: the art does not change while the app runs.
     #[test]
     fn characters_response_matches_the_json_of_the_bundled_art() {
         let characters = bundled_character_art();
@@ -6822,7 +6943,7 @@ mod tests {
             );
         }
         let expected = serde_json::json!({ "characters": named });
-        let response = character_response(&encode_art_json(&ArtUrls { characters }));
+        let response = character_response(&ArtJson::new(ArtUrls { characters }));
         let body: serde_json::Value =
             serde_json::from_str(&character_json_body(response)).expect("character returns JSON");
         assert_eq!(body, expected);

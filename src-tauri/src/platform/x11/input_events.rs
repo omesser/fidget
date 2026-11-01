@@ -77,6 +77,43 @@ impl Buttons {
         }
     }
 
+    /// A removed or disabled pointer sends no release, so the button would
+    /// stay down until restart.
+    fn release_device(&self, device: u16) {
+        let (release_primary, release_secondary) = {
+            let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut release_primary = false;
+            let mut release_secondary = false;
+            held.retain(|&(button, owner)| {
+                if owner != device {
+                    return true;
+                }
+                match button {
+                    1 => release_primary = true,
+                    3 => release_secondary = true,
+                    _ => {}
+                }
+                false
+            });
+            // A second mouse still holding it must not store another press edge.
+            if release_primary && held.iter().any(|&(button, _)| button == 1) {
+                release_primary = false;
+            }
+            if release_secondary && held.iter().any(|&(button, _)| button == 3) {
+                release_secondary = false;
+            }
+            (release_primary, release_secondary)
+        };
+        if release_primary {
+            trace_edge("xi2", "left", false);
+            self.primary.report(false);
+        }
+        if release_secondary {
+            trace_edge("xi2", "right", false);
+            self.secondary.report(false);
+        }
+    }
+
     fn take(&self) -> ButtonsDown {
         ButtonsDown {
             primary: self.primary.take(),
@@ -145,11 +182,13 @@ fn setup_xi2(
         return Err("XI2 not available".into());
     }
 
-    // One mask word holding all three bits; a word per event is BadValue.
+    // One mask word. A word per event is BadValue, and hierarchy fits beside
+    // the raw bits. Without it, an unplugged mouse never releases.
     let mask = vec![
         xinput::XIEventMask::RAW_BUTTON_PRESS
             | xinput::XIEventMask::RAW_BUTTON_RELEASE
-            | xinput::XIEventMask::RAW_MOTION,
+            | xinput::XIEventMask::RAW_MOTION
+            | xinput::XIEventMask::HIERARCHY,
     ];
 
     display.xinput_xi_select_events(
@@ -180,6 +219,11 @@ fn listen_loop(sender: SyncSender<InputEvent>) {
         if let x11rb::protocol::Event::MappingNotify(notify) = &event {
             if notify.request == xproto::Mapping::POINTER {
                 map = pointer_mapping(display);
+            }
+        }
+        if let x11rb::protocol::Event::XinputHierarchy(hierarchy) = &event {
+            for device in devices_unplugged(&hierarchy.infos) {
+                BUTTONS.release_device(device);
             }
         }
         let input_event = classify_event(&event, &map)?;
@@ -236,6 +280,22 @@ fn pointer_mapping(display: &impl Connection) -> Vec<u8> {
         .unwrap_or_default()
 }
 
+/// Slave pointers that left. A master is omitted, because a slave that left
+/// is its own entry in the same event.
+fn devices_unplugged(infos: &[xinput::HierarchyInfo]) -> impl Iterator<Item = u16> + '_ {
+    infos.iter().filter_map(|info| {
+        // A detached mouse is a floating slave. A floating keyboard holds no buttons.
+        let pointer = matches!(
+            info.type_,
+            xinput::DeviceType::SLAVE_POINTER | xinput::DeviceType::FLOATING_SLAVE
+        );
+        let gone = info.flags.intersects(
+            xinput::HierarchyMask::SLAVE_REMOVED | xinput::HierarchyMask::DEVICE_DISABLED,
+        );
+        (pointer && gone).then_some(info.deviceid)
+    })
+}
+
 /// The button the core events would report for a physical one. Entry n - 1
 /// of `map` is the button physical n sends; 0 disables it.
 fn logical_button(map: &[u8], physical: u32) -> u32 {
@@ -275,6 +335,7 @@ mod tests {
     use super::*;
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
+    use x11rb::protocol::xinput;
     use x11rb::protocol::xtest::ConnectionExt as _;
     use x11rb::wrapper::ConnectionExt as _;
 
@@ -392,6 +453,102 @@ mod tests {
         let events = [2, 4, 5, 6, 7].map(|button| edge(button, true));
         forward_wakes(events, &buttons, &sender);
         assert_eq!(buttons.take(), ButtonsDown::default());
+    }
+
+    #[test]
+    fn an_unplugged_mouse_releases_only_the_buttons_it_held() {
+        let buttons = Buttons::new();
+        let (sender, _receiver) = wake_channel();
+
+        forward_wakes(
+            [from_device(10, 1, true), from_device(10, 3, true)],
+            &buttons,
+            &sender,
+        );
+        let pressed = buttons.take();
+        assert!(pressed.primary && pressed.secondary, "pressed");
+        buttons.release_device(10);
+        assert_eq!(
+            buttons.take(),
+            ButtonsDown::default(),
+            "device A left mid-press"
+        );
+
+        forward_wakes(
+            [
+                from_device(10, 1, true),
+                from_device(10, 3, true),
+                from_device(11, 1, true),
+            ],
+            &buttons,
+            &sender,
+        );
+        let pressed = buttons.take();
+        assert!(pressed.primary && pressed.secondary, "pressed again");
+        buttons.release_device(10);
+        assert_eq!(
+            buttons.take(),
+            ButtonsDown {
+                primary: true,
+                secondary: false,
+            },
+            "device B still holds primary"
+        );
+        buttons.release_device(11);
+        assert_eq!(buttons.take(), ButtonsDown::default(), "device B left");
+
+        forward_wakes(
+            [from_device(10, 1, true), from_device(11, 1, true)],
+            &buttons,
+            &sender,
+        );
+        assert!(buttons.take().primary, "held");
+        buttons.release_device(10);
+        buttons.release_device(11);
+        assert_eq!(
+            buttons.take(),
+            ButtonsDown::default(),
+            "both left before the next tick"
+        );
+    }
+
+    fn hierarchy(
+        device: u16,
+        type_: xinput::DeviceType,
+        flags: xinput::HierarchyMask,
+    ) -> xinput::HierarchyInfo {
+        xinput::HierarchyInfo {
+            deviceid: device,
+            attachment: 0,
+            type_,
+            // Left true so a filter on `enabled` cannot pass this test.
+            enabled: true,
+            flags,
+        }
+    }
+
+    #[test]
+    fn a_removed_or_disabled_pointer_slave_is_unplugged() {
+        use xinput::DeviceType;
+        use xinput::HierarchyMask;
+
+        let infos = [
+            hierarchy(10, DeviceType::SLAVE_POINTER, HierarchyMask::SLAVE_REMOVED),
+            hierarchy(
+                11,
+                DeviceType::FLOATING_SLAVE,
+                HierarchyMask::DEVICE_DISABLED,
+            ),
+            hierarchy(12, DeviceType::SLAVE_POINTER, HierarchyMask::SLAVE_DETACHED),
+            hierarchy(
+                13,
+                DeviceType::SLAVE_KEYBOARD,
+                HierarchyMask::DEVICE_DISABLED,
+            ),
+            hierarchy(2, DeviceType::MASTER_POINTER, HierarchyMask::MASTER_REMOVED),
+        ];
+        let gone: Vec<u16> = devices_unplugged(&infos).collect();
+        assert_eq!(gone, vec![10, 11]);
     }
 
     #[test]

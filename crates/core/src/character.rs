@@ -202,6 +202,9 @@ pub enum Primitive {
     /// velocity and nothing more. `Falling` carries the arc and the existing
     /// landing path ends it, so a jump reuses the Throw's physics.
     Jump,
+    /// The moment possession starts. The Engine plays it itself and no
+    /// Behavior composes it, so it is not in the manifest's names.
+    Possessed,
 }
 
 const PRIMITIVES: [(&str, Primitive); 10] = [
@@ -482,12 +485,13 @@ impl Character {
 
 /// Optional Animations, and what draws when a package does not declare them:
 /// used when present, and absent silently, never as a missing sprite.
-const OPTIONAL_FALLBACKS: [(&str, &str); 3] = [
+const OPTIONAL_FALLBACKS: [(&str, &str); 4] = [
     ("climb", "walk"),
     ("grab", "fall"),
     // The Required Animation Set is closed at nine, so a jump is optional art.
     // A Character without it rises and falls in its `fall`.
     ("jump", "fall"),
+    ("possessed", "react"),
 ];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
@@ -620,7 +624,7 @@ fn personality(package: &PackageBytes, errors: &mut Vec<String>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use crate::overlay::SpriteRect;
@@ -646,7 +650,7 @@ mod tests {
     }
 
     /// A Character Manifest declaring exactly `animations`, one frame each.
-    pub(super) fn declaring(animations: &[&str]) -> String {
+    pub(crate) fn declaring(animations: &[&str]) -> String {
         let mut manifest = String::from("name = \"Blip\"\n");
         for animation in animations {
             manifest.push_str(&format!(
@@ -656,7 +660,7 @@ mod tests {
         manifest
     }
 
-    pub(super) fn load_manifest(manifest: &str) -> Result<Character, Vec<String>> {
+    pub(crate) fn load_manifest(manifest: &str) -> Result<Character, Vec<String>> {
         let mut package = art();
         package.insert(
             CHARACTER_MANIFEST_FILE.to_string(),
@@ -1456,6 +1460,33 @@ mod tests {
         assert_eq!(
             character.draw("grab", 0, 0, 1.0).expect("draws").animation,
             "grab"
+        );
+    }
+
+    /// Possessed art is optional and outside the Required Animation Set
+    /// (ADR-0007). A package without it shows the moment in its `react`.
+    #[test]
+    fn possessed_is_optional_and_falls_back_to_react() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(
+            character
+                .draw("possessed", 0, 0, 1.0)
+                .expect("draws")
+                .animation,
+            "react"
+        );
+
+        let manifest = format!(
+            "{}[animations.possessed]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+        assert_eq!(
+            character
+                .draw("possessed", 0, 0, 1.0)
+                .expect("draws")
+                .animation,
+            "possessed"
         );
     }
 
