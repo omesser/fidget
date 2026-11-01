@@ -26,7 +26,11 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 
 ## What It Does
 
-<img src="./docs/readme/buddy-bot-perch-poke.gif" width="640" alt="Buddy Bot walks off a terminal window, drops onto another window, and reacts when poked" />
+<p align="center">
+<img src="./docs/readme/buddy-bot-perch-poke.gif" width="480" alt="Buddy Bot walks off a terminal window, drops onto another window, and reacts when poked" /><br>
+<b>Perch and poke</b><br>
+<sub>Buddy Bot hops off a terminal, lands on the next window, and flinches when you poke it.</sub>
+</p>
 
 - **Keeps you company:** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
 - **Pick a built-in character, or build your own:** Each character has its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
@@ -65,7 +69,11 @@ Buddy Bot is the default. Eleven Characters ship; each moves and speaks differen
 
 See them all in the [Character Gallery](https://omesser.github.io/fidget/characters.html).
 
-<img src="./docs/readme/rubber-duck-import.gif" width="640" alt="Settings imports a Rubber Duck character ZIP, and Rubber Duck replaces Buddy Bot on the desktop" />
+<p align="center">
+<img src="./docs/readme/rubber-duck-import.gif" width="480" alt="Settings imports a Rubber Duck character ZIP, and Rubber Duck replaces Buddy Bot on the desktop" /><br>
+<b>Bring your own character</b><br>
+<sub>Import a character ZIP in Settings, and Rubber Duck clocks in for Buddy Bot.</sub>
+</p>
 
 ### Trump takes the stage
 
@@ -148,7 +156,11 @@ The full variable list, including `FIDGET_DIRECTOR_*`, is in [harness.md](./docs
 
 ### First Run
 
-<img src="./docs/readme/settings-switch-character.gif" width="640" alt="Right-click menu opens Settings, and the Character tab switches Buddy Bot to Cat" />
+<p align="center">
+<img src="./docs/readme/settings-switch-character.gif" width="480" alt="Right-click menu opens Settings, and the Character tab switches Buddy Bot to Cat" /><br>
+<b>Swap who lives on your desktop</b><br>
+<sub>Right-click, open Settings, and trade Buddy Bot for Cat in the Character tab.</sub>
+</p>
 
 It works offline with no key. With nothing configured, Static weights pick idle Behaviors from the Character.
 
@@ -162,7 +174,12 @@ Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packa
 
 ## Interact
 
-![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
+<table>
+<tr>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-react.gif" width="192" alt="Buddy Bot react" /><br><b>Poke</b><br><sub>One click and Buddy Bot jumps, then gets back to its business.</sub></td>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-throw.gif" width="400" alt="Buddy Bot is picked up, thrown in an arc, and lands on an editor window" /><br><b>Throw</b><br><sub>Grab it, fling it, and it arcs across the screen onto your editor.</sub></td>
+</tr>
+</table>
 
 - **Poke** - click once for a react, then it resumes.
 - **Summon** - double-click to open a chat window for that fidget.
@@ -172,18 +189,19 @@ Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packa
 - **Hide** - Control-Option-Command-B (the default; change it in Settings) toggles the fidget instantly.
 - **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
 
-<img src="./docs/readme/buddy-bot-throw.gif" width="640" alt="Buddy Bot is picked up, thrown in an arc, and lands on an editor window" />
-
 ### Talk to It
-
-<img src="./docs/readme/buddy-bot-chat.gif" width="640" alt="Double-clicking Buddy Bot opens its chat; asked for its best dance move, it answers in the chat and a speech bubble" />
 
 Summon opens that fidget's chat window. What you type joins the same
 conversation that decides what it does on your desktop, so an answer arrives as
 words and a Behavior, not only as text. Lines it says unprompted appear here
 too, labelled with what it was reacting to.
 
-<img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
+<table>
+<tr>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-chat.gif" width="400" alt="Double-clicking Buddy Bot opens its chat; asked for its best dance move, it answers in the chat and a speech bubble" /><br><b>Ask it anything</b><br><sub>Double-click to chat; ask for its best dance move and it answers in the chat and a speech bubble.</sub></td>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/chat-surface.png" width="240" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" /><br><b>Inside the chat</b><br><sub>A line it said on its own, your question, BMO's answer, and a status bar showing what it's up to.</sub></td>
+</tr>
+</table>
 
 The bar at the bottom says what the fidget is doing and when it next thinks.
 Advanced opens the ladder: Behavior, Primitive, Animation, State, Facing, and
@@ -205,7 +223,11 @@ The examples below need this setup:
 | `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. |
 | `When I tell you how my day's going, give it as a weather report.` | Tell it how your day is going and it answers with a forecast. |
 
-<img src="./docs/readme/buddy-bot-instance-prompt.gif" width="640" alt="The movie-stunt Instance Prompt is saved in the Prompt tab, then Buddy Bot is thrown and calls out its mid-air stunt" />
+<p align="center">
+<img src="./docs/readme/buddy-bot-instance-prompt.gif" width="480" alt="The movie-stunt Instance Prompt is saved in the Prompt tab, then Buddy Bot is thrown and calls out its mid-air stunt" /><br>
+<b>Give it a stunt to brag about</b><br>
+<sub>Save the movie-stunt Instance Prompt, throw Buddy Bot, and it calls out its own mid-air stunt.</sub>
+</p>
 
 ## How It Works
 
