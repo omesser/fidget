@@ -223,7 +223,7 @@ impl Launch {
     /// `CLAUDE_CONFIG_DIR`, or `--bare`; each overrides or cuts the login.
     /// `pi` gets the token via `process.env`; `own_interrupt` isolates it.
     fn command(&self, cwd: &AttachCwd, mcp_available: bool) -> Command {
-        let mut command = Command::new(resolved_program(&self.argv[0], None));
+        let mut command = Command::new(resolved_program(&self.argv[0]));
         let endpoint = crate::mcp_http::endpoint();
         let mut args = self.argv[1..].to_vec();
         if endpoint.is_some() && mcp_available {
@@ -629,7 +629,7 @@ fn timed_command(
     args: &[&str],
     timeout: Duration,
 ) -> Result<std::process::Output, TimedCommandError> {
-    let mut command = Command::new(resolved_program(program, None));
+    let mut command = Command::new(resolved_program(program));
     command
         .args(args)
         .stdin(Stdio::null())
@@ -661,8 +661,15 @@ fn timed_command(
 /// On Windows, resolves stand-in executables (.cmd, .bat, .exe) to absolute
 /// paths because CreateProcess with a bare name + PATH override does not find
 /// them as the shell does. Rust wraps .cmd/.bat when given an absolute path.
-fn resolved_program(program: &str, path_override: Option<&Path>) -> OsString {
-    windows_program(program, path_override).unwrap_or_else(|| OsString::from(program))
+fn resolved_program(program: &str) -> OsString {
+    #[cfg(windows)]
+    {
+        windows_program(program, None).unwrap_or_else(|| OsString::from(program))
+    }
+    #[cfg(not(windows))]
+    {
+        OsString::from(program)
+    }
 }
 
 #[cfg(windows)]
@@ -696,11 +703,6 @@ fn windows_candidates(dir: &Path, program: &str) -> Vec<PathBuf> {
         .into_iter()
         .map(|extension| base.with_extension(extension))
         .collect()
-}
-
-#[cfg(not(windows))]
-fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsString> {
-    None
 }
 
 /// Spawns the child with no console window. A release build has no console to
