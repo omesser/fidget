@@ -153,21 +153,58 @@ func press(_ element: AXUIElement) -> Bool {
     return click(element)
 }
 
-func window(titled title: String) -> AXUIElement? {
+var windowsError = AXError.success
+
+func appWindows() -> [AXUIElement] {
     var value: CFTypeRef?
-    var err = AXError.cannotComplete
     // A busy main thread answers cannotComplete at once, so ask again.
     let deadline = Date().addingTimeInterval(3)
     repeat {
-        err = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
-        if err != .cannotComplete { break }
+        windowsError = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+        if windowsError != .cannotComplete { break }
         usleep(100_000)
     } while Date() < deadline
-    let windows = value as? [AXUIElement] ?? []
+    return value as? [AXUIElement] ?? []
+}
+
+func window(titled title: String) -> AXUIElement? {
+    let windows = appWindows()
     if let hit = windows.first(where: { string($0, kAXTitleAttribute) == title }) { return hit }
     let titles = windows.map { string($0, kAXTitleAttribute) ?? "?" }
-    lastError = "AXWindows -> \(err.rawValue), titles \(titles)"
+    lastError = "AXWindows -> \(windowsError.rawValue), titles \(titles)"
     return nil
+}
+
+/// Says why a window the caller saw open was not found (#1796): whether AX or
+/// the window server lost it, and, when AX gave up, what the app was doing.
+func notOpen(_ title: String) -> Never {
+    var value: CFTypeRef?
+    let childrenError = AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &value)
+    let info = CGWindowListCopyWindowInfo([], kCGNullWindowID) as? [[String: Any]] ?? []
+    let server = info.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid }.map {
+        let name = $0[kCGWindowName as String] as? String ?? "?"
+        let layer = $0[kCGWindowLayer as String] as? Int ?? 0
+        let shown = $0[kCGWindowIsOnscreen as String] as? Bool ?? false
+        return "\(name)@\(layer)\(shown ? "" : " offscreen")"
+    }
+    var sampled = ""
+    if windowsError != .success {
+        let dir = ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()
+        let path = (dir as NSString).appendingPathComponent(
+            "ax-miss-\(pid)-\(Int(Date().timeIntervalSince1970)).sample.txt")
+        let sample = Process()
+        sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sample.arguments = [String(pid), "1", "-file", path]
+        sample.standardOutput = FileHandle.nullDevice
+        sample.standardError = FileHandle.nullDevice
+        if (try? sample.run()) != nil {
+            sample.waitUntilExit()
+            if sample.terminationStatus == 0 { sampled = ", sample \(path)" }
+        }
+    }
+    die(
+        "\(title) is not open (\(lastError), AXChildren -> \(childrenError.rawValue)"
+            + ", window server \(server)\(sampled))")
 }
 
 func settingsWindow() -> AXUIElement? { window(titled: "Settings") }
@@ -306,7 +343,7 @@ case "open":
 
 case "tab":
     guard args.count >= 3 else { die("usage: ax-settings tab <pid> <title>") }
-    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
+    guard let window = settledWindow(titled: "Settings") else { notOpen("Settings") }
     guard let tab = find(window, where: { string($0, kAXTitleAttribute) == args[2] }),
         press(tab)
     else {
@@ -425,7 +462,7 @@ case "move":
     guard args.count >= 4, let x = Double(args[2]), let y = Double(args[3]) else {
         die("usage: ax-settings move <pid> <x> <y>")
     }
-    guard let window = settingsWindow() else { die("Settings is not open") }
+    guard let window = settingsWindow() else { notOpen("Settings") }
     var origin = CGPoint(x: x, y: y)
     guard let value = AXValueCreate(.cgPoint, &origin),
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
@@ -437,7 +474,7 @@ case "size":
     guard args.count >= 5, let w = Double(args[3]), let h = Double(args[4]) else {
         die("usage: ax-settings size <pid> <window title> <width> <height>")
     }
-    guard let window = window(titled: args[2]) else { die("\(args[2]) is not open") }
+    guard let window = window(titled: args[2]) else { notOpen(args[2]) }
     var size = CGSize(width: w, height: h)
     guard let value = AXValueCreate(.cgSize, &size),
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success,
@@ -451,7 +488,7 @@ case "minimize":
     guard args.count >= 4, let on = Bool(args[3]) else {
         die("usage: ax-settings minimize <pid> <window title> <true|false>")
     }
-    guard let window = window(titled: args[2]) else { die("\(args[2]) is not open") }
+    guard let window = window(titled: args[2]) else { notOpen(args[2]) }
     guard
         AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, on as CFBoolean)
             == .success
@@ -461,9 +498,8 @@ case "minimize":
 
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
-    guard let window = settingsWindow(), let rect = frame(window) else {
-        die("Settings is not open")
-    }
+    guard let window = settingsWindow() else { notOpen("Settings") }
+    guard let rect = frame(window) else { die("Settings has no frame") }
     printRect(rect)
 
 case "key":
@@ -511,7 +547,7 @@ case "value":
 
 case "focused":
     // The control Tab last landed on: dump's columns minus placeholder, settable and focusable.
-    guard let window = settledWindow(titled: "Settings") else { die("Settings is not open") }
+    guard let window = settledWindow(titled: "Settings") else { notOpen("Settings") }
     var focusedRef: CFTypeRef?
     let err = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef)
     guard err == .success, let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID()
@@ -524,9 +560,8 @@ case "focused":
 case "focus-window":
     // Click the title bar, not a control, so the webview is key without
     // changing a row.
-    guard let window = settingsWindow(), let rect = frame(window) else {
-        die("Settings is not open")
-    }
+    guard let window = settingsWindow() else { notOpen("Settings") }
+    guard let rect = frame(window) else { die("Settings has no frame") }
     activateSettings()
     let point = CGPoint(x: rect.midX, y: rect.minY + 12)
     guard
@@ -556,7 +591,7 @@ case "press-button":
     let index = args.count >= 4 ? (Int(args[3]) ?? 1) : 1
     guard index >= 1 else { die("button index must be >= 1") }
     let windowTitle = args.count >= 5 ? args[4] : "Settings"
-    guard let window = settledWindow(titled: windowTitle) else { die("\(windowTitle) is not open") }
+    guard let window = settledWindow(titled: windowTitle) else { notOpen(windowTitle) }
     var matches: [AXUIElement] = []
     func collect(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
@@ -583,7 +618,7 @@ case "dump":
     let wanted = args.count >= 3 ? args[2] : "Settings"
     // `frames` appends each element's x,y,w,h, for a layout assertion.
     let withFrames = args.count >= 4 && args[3] == "frames"
-    guard settledWindow(titled: wanted) != nil else { die("\(wanted) is not open (\(lastError))") }
+    guard settledWindow(titled: wanted) != nil else { notOpen(wanted) }
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }
         let role = string(element, kAXRoleAttribute) ?? "?"
@@ -620,7 +655,7 @@ case "dump":
     }
     // Every window with the title: each display's overlay and the quick-message
     // pill are all titled Fidget.
-    for window in attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    for window in appWindows()
     where string(window, kAXTitleAttribute) == wanted {
         walk(window, depth: 0)
     }
