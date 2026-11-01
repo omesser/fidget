@@ -542,9 +542,10 @@ impl Target {
 #[derive(Clone, Copy)]
 pub(crate) struct InterruptOwned(());
 
-/// False until `own_interrupt` installs the handler. A test binary catches no
-/// Ctrl+C, so it stays false there too and no test child leaves our group.
-static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(false);
+/// The witness from the successful install. A bare flag could be set by a
+/// refused install; only a stored witness can be minted, and `Session` reads
+/// this one.
+static INTERRUPT: Mutex<Option<InterruptOwned>> = Mutex::new(None);
 static INTERRUPT_QUITTING: AtomicBool = AtomicBool::new(false);
 
 /// Forces the refusal arm, so a test can prove a failed install isolates nothing.
@@ -564,7 +565,7 @@ pub(crate) fn own_interrupt(handler: impl FnMut() + Send + 'static) -> Option<In
     let installed = ctrlc::set_handler(handler);
     match installed {
         Ok(()) => {
-            INTERRUPT_OWNED.store(true, Ordering::SeqCst);
+            *lock_interrupt() = Some(InterruptOwned(()));
             Some(InterruptOwned(()))
         }
         Err(why) => {
@@ -582,9 +583,16 @@ pub fn interrupt_already_quitting() -> bool {
 }
 
 fn owned_interrupt() -> Option<InterruptOwned> {
-    INTERRUPT_OWNED
-        .load(Ordering::SeqCst)
-        .then_some(InterruptOwned(()))
+    *lock_interrupt()
+}
+
+fn lock_interrupt() -> MutexGuard<'static, Option<InterruptOwned>> {
+    INTERRUPT.lock().unwrap_or_else(|why| why.into_inner())
+}
+
+#[cfg(test)]
+fn forget_interrupt() {
+    *lock_interrupt() = None;
 }
 
 #[cfg(all(test, unix))]
@@ -6588,10 +6596,15 @@ mod tests {
     #[test]
     fn a_failed_interrupt_install_leaves_the_child_in_the_app_group() {
         FAIL_INTERRUPT_INSTALL.store(true, Ordering::SeqCst);
-        let interrupt = own_interrupt(|| {});
+        forget_interrupt();
+        assert!(
+            own_interrupt(|| {}).is_none(),
+            "a refused handler claimed the interrupt"
+        );
+        let interrupt = owned_interrupt();
         assert!(
             interrupt.is_none(),
-            "a refused handler claimed the interrupt"
+            "a refused handler left a witness Session could mint"
         );
         let launch = Launch {
             name: "sleep".into(),
