@@ -278,8 +278,7 @@ test("the site header stays at the top, flush left, on every page", { skip: chro
         assert.ok(at.scrolled, `${page} at ${width}px did not scroll`);
         assert.equal(at.top, 0, `${page} at ${width}px left the header at ${at.top}`);
         assert.equal(at.left, 0, `${page} at ${width}px set the header ${at.left}px in`);
-        // bubble.html runs 140px wider than a 390px screen on main too.
-        if (page !== "bubble.html") assert.ok(at.overflow <= 0, `${page} at ${width}px runs ${at.overflow}px wider than the screen`);
+        assert.ok(at.overflow <= 0, `${page} at ${width}px runs ${at.overflow}px wider than the screen`);
       }
     }
   });
