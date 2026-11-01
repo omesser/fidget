@@ -137,6 +137,8 @@ echo "perch_layer_seam=pass (no ABOVE => layer 0 => perch_eligible)" >> "$RESULT
 
 log_info "Focusing Chat..."
 xdotool windowactivate --sync "$CHAT_ID" 2> /dev/null || true
+# A check that ABOVE never shows up has no event to wait on: give the focus
+# handler a fixed half second to set it, then read.
 sleep 0.5
 CHAT_PROPS=$(xprop -id "$CHAT_ID" _NET_WM_STATE 2> /dev/null || true)
 if echo "$CHAT_PROPS" | grep -q "_NET_WM_STATE_ABOVE"; then
@@ -241,11 +243,16 @@ if [ "$COMPOSER_Y" -le "$CHAT_Y" ]; then
   COMPOSER_Y=$((CHAT_Y + 40))
 fi
 log_info "Clicking composer at ($COMPOSER_X, $COMPOSER_Y) with Character beside..."
+chat_active() {
+  xprop -root _NET_ACTIVE_WINDOW 2> /dev/null | grep -qiE "$(printf '0x%x' "$CHAT_ID")([^0-9a-f]|$)"
+}
+chat_inactive() { ! chat_active; }
 # Defocus Chat so a no-op click cannot inherit prior focus.
 xdotool windowactivate --sync "$OVERLAY_ID" 2> /dev/null || true
-sleep 0.25
+wait_on_source 2 root_events probe_each_line chat_inactive || true
 xdotool mousemove --sync "$COMPOSER_X" "$COMPOSER_Y" click 1
-sleep 0.5
+# Not reaching Chat is recorded below, not failed here.
+wait_on_source 2 root_events probe_each_line chat_active || true
 
 FOCUS_ID=$(xdotool getwindowfocus 2> /dev/null || true)
 ACTIVE_RAW=$(xprop -root _NET_ACTIVE_WINDOW 2> /dev/null || true)
