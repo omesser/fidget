@@ -437,7 +437,7 @@ The port is OS-assigned and the token is minted in memory at every launch (ADR-0
 
 ### Not served
 
-- **Pixels:** `describe_screen` is window metadata only; Fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like cua-driver.
+- **Pixels:** `describe_screen` is window metadata only; Fidget takes no screenshots and runs no OCR or vision ([ADR-0031](./adr/0031-drop-capture-tiers.md)). Agents that need pixels use Harness-native computer use or an MCP server like [cua-driver](./computer-use.md).
 - **Input events:** No click, type, or mouse tools (ADR-0003). The Harness owns desktop control.
 - **Non-loopback MCP** (ADR-0023).
 
