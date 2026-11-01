@@ -2301,24 +2301,34 @@ impl ModifierWords {
 }
 
 impl Hotkey {
+    /// The configured chord, or the shipped default for an unsupported key.
+    pub fn in_force(&self) -> &Self {
+        if key_code_name(self.key).is_some() {
+            self
+        } else {
+            &DEFAULT_HIDE_HOTKEY
+        }
+    }
+
     /// Print the chord in `words`, e.g. `Control-Option-Command-B` or
     /// `Ctrl-Alt-Super-B`.
     pub fn display(&self, words: ModifierWords) -> String {
+        let hotkey = self.in_force();
         let (control, option, command) = words.names();
         let mut parts = Vec::with_capacity(5);
-        if self.control {
+        if hotkey.control {
             parts.push(control);
         }
-        if self.option {
+        if hotkey.option {
             parts.push(option);
         }
-        if self.shift {
+        if hotkey.shift {
             parts.push("Shift");
         }
-        if self.command {
+        if hotkey.command {
             parts.push(command);
         }
-        let letter = self.key.to_ascii_uppercase().to_string();
+        let letter = hotkey.key.to_ascii_uppercase().to_string();
         parts.push(&letter);
         parts.join("-")
     }
@@ -4624,21 +4634,36 @@ mod tests {
     /// in this machine's words.
     #[test]
     fn the_view_shows_the_hotkey_in_this_machines_words() {
-        let settings = Settings {
-            hide_hotkey: DEFAULT_HIDE_HOTKEY,
-            ..Settings::default()
-        };
-        let view = SettingsView::from_parts(
-            &settings,
-            Path::new("/tmp/memory.md"),
-            None,
-            Vec::new(),
-            Vec::new(),
-            (false, String::new(), String::new()),
-            None,
-        );
-        let expected = DEFAULT_HIDE_HOTKEY.display(ModifierWords::current());
-        assert_eq!(view.hide_hotkey, expected);
+        for hotkey in [
+            DEFAULT_HIDE_HOTKEY,
+            Hotkey {
+                control: false,
+                option: false,
+                shift: true,
+                command: false,
+                key: '1',
+            },
+        ] {
+            let settings = Settings {
+                hide_hotkey: hotkey,
+                ..Settings::default()
+            };
+            let view = SettingsView::from_parts(
+                &settings,
+                Path::new("/tmp/memory.md"),
+                None,
+                Vec::new(),
+                Vec::new(),
+                (false, String::new(), String::new()),
+                None,
+            );
+            let expected = match ModifierWords::current() {
+                ModifierWords::Mac => "Control-Option-Command-B",
+                ModifierWords::Linux => "Ctrl-Alt-Super-B",
+                ModifierWords::Windows => "Ctrl-Alt-Win-B",
+            };
+            assert_eq!(view.hide_hotkey, expected);
+        }
     }
 
     #[test]
