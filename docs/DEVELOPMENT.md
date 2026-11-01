@@ -219,7 +219,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 
    `FIDGET_CHARACTERS` is searched first and the other directories stay, so this copy wins when names collide and the shipped characters remain available. Drop a package in the user directory from the table above and leave the variable unset to have it read from there.
 
-2. Replace the PNGs in `frames/` with your own 8-bit RGBA art, facing right. Keep one size per Animation.
+2. Replace the PNGs in `frames/` with your own 8-bit RGBA art. Keep one size per Animation. If your art faces left, say so with `facing`, as [Which way the art faces](#which-way-the-art-faces) describes.
 3. Edit `character.manifest`: set `name`, point each Animation's `frames` at your files, and delete `[source]` or rewrite it for your art.
 4. Rewrite `personality.txt`, as [Writing a personality](#writing-a-personality) describes.
 5. Start it by folder name:
@@ -240,6 +240,8 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 | `render_mode` | No | `"pixelated"` keeps hard pixels when scaling; `"smooth"` filters drawn art. | `"pixelated"` |
 | `scale` | No | Whole number from 1 to 4: the factor the art is drawn at. | 4 |
 | `gravity` | No | Number from 0.25 to 2: how hard the Character falls, as a multiple of the default. Below 1, falls are slower and Jumps and Throws go higher. | 1 |
+| `facing` | No | `"left"` or `"right"`: the way the Character's frames face as drawn. See [Which way the art faces](#which-way-the-art-faces). | `"right"` |
+| `[frame_facing]` | No | Frame files that face the other way from `facing`. | |
 | `[source]` | No | Where the art came from. See [Declaring where the art came from](#declaring-where-the-art-came-from). | |
 | `[director]` | No | How proactive model calls space themselves. | |
 | `[cursor]` | No | How the Character reacts to the cursor. | |
@@ -277,7 +279,26 @@ The loader checks each frame against the art:
 - A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
 - A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
 
-Draw every Animation facing right. The renderer mirrors it for leftward travel unless another Animation declares `left_of` for it. Pixels with alpha below 128 do not catch clicks.
+Pixels with alpha below 128 do not catch clicks.
+
+#### Which way the art faces
+
+Each frame faces left or right, declared in two layers:
+
+1. `facing` at the top of the manifest is the Character's default, `"right"` when unset.
+2. `[frame_facing]` overrides it for single frames, keyed by the frame's path as `frames` lists it.
+
+```toml
+facing = "left"
+
+[frame_facing]
+"frames/walk-0.png" = "right"
+"frames/walk-1.png" = "right"
+```
+
+The renderer mirrors a frame exactly when its facing is not the way the sprite travels. One Animation may mix left- and right-facing frames. A frame belongs to the file, not the Animation, so a frame two Animations share faces one way in both. A Left Strip draws in place of its base for leftward travel and mirrors by the same rule, so declare its frames `"left"` unless the default already is. A frame facing the viewer needs no declaration: mirroring it changes nothing anyone sees.
+
+The loader rejects any other value, and a `[frame_facing]` entry naming a frame no Animation plays.
 
 #### Behaviors
 

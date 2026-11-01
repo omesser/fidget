@@ -88,7 +88,7 @@ travels left instead of the renderer mirroring the base. The same number of
 frames and the same frame size as the base, so turning round changes only which
 art plays. For asymmetric art: a mark on one cheek survives the turn, where a
 mirror would move it to the other. Optional — an Animation with no strip is
-mirrored as every Character's has always been. #345.
+mirrored to the travel by its frames' declared facing. #345.
 _Avoid_: Flipped animation, left walk, direction variant
 
 **Required Animation Set**:
