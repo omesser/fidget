@@ -570,6 +570,42 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
     }
 }
 
+/// How far right of the cap's middle Jotaro's gold badge sits, in pixels. The
+/// badge is on the cap's front, so it sits right of middle when he faces right.
+fn jotaro_badge_offset(bytes: &[u8]) -> f32 {
+    let (width, height, rgba) = frame_rgba(bytes);
+    let alpha: Vec<u8> = rgba.iter().map(|p| p[3]).collect();
+    let (top, bottom, _) = silhouette(width, height, &alpha);
+    let cap = top..top + (bottom - top) * 3 / 10;
+    let (mut x_min, mut x_max, mut badge, mut n) = (width, 0, 0.0f32, 0.0f32);
+    for row in cap {
+        for x in 0..width {
+            let [r, g, b, a] = rgba[row * width + x];
+            if a > 128 {
+                (x_min, x_max) = (x_min.min(x), x_max.max(x));
+                if r > 170 && g > 120 && b < 90 {
+                    badge += x as f32;
+                    n += 1.0;
+                }
+            }
+        }
+    }
+    assert!(n > 20.0, "the cap badge shows");
+    badge / n - (x_min + x_max) as f32 / 2.0
+}
+
+/// Art faces right and leftward travel mirrors it. Jump draws `fall`, so a
+/// fall drawn facing left turned every jump the wrong way.
+#[test]
+fn jotaro_falls_facing_the_way_he_walks() {
+    for (animation, frame, bytes) in frames_of("jotaro-kujo") {
+        if animation == "walk" || animation == "fall" {
+            let offset = jotaro_badge_offset(&bytes);
+            assert!(offset > 2.0, "{frame} faces right, badge offset {offset}");
+        }
+    }
+}
+
 #[test]
 fn rubber_duck_uses_its_drawn_left_walk() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");

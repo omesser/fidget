@@ -9727,6 +9727,33 @@ mod tests {
             assert!(launched.velocity.y < 0.0, "{launched:?}");
         }
 
+        /// A jump faces the way the sprite last went: the walk before it, or an
+        /// arrow held mid-flight.
+        #[test]
+        fn a_jump_keeps_the_last_heading_through_the_flight() {
+            let world = on(one_display());
+            for (walk, turn, heading) in [
+                (Walk::Right, Walk::Left, 1.0),
+                (Walk::Left, Walk::Right, -1.0),
+            ] {
+                let mut engine = possessed_at(500.0, &world);
+                for _ in 0..5 {
+                    engine.tick(&with_possession(holding(walk), &world));
+                }
+                engine.tick(&world);
+                engine.tick(&with_possession(launching(released_after(500)), &world));
+                for frame in flight(&mut engine, &world) {
+                    assert_eq!(frame.facing, heading, "walked {walk:?}: {frame:?}");
+                }
+
+                engine.tick(&with_possession(launching(released_after(500)), &world));
+                engine.tick(&with_possession(holding(turn), &world));
+                for frame in flight(&mut engine, &world) {
+                    assert_eq!(frame.facing, -heading, "turned {turn:?}: {frame:?}");
+                }
+            }
+        }
+
         /// A Grab wins: the keys move nothing in hand, the release falls and
         /// lands as usual, and the sprite is still possessed after.
         #[test]
