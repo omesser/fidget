@@ -239,6 +239,8 @@ pub struct Frame {
     /// How full the jump bar is while a possessed sprite's Space is held, from
     /// 0 to 1. `None` hides the bar.
     pub charge: Option<f64>,
+    /// The keys drive the sprite this frame, so what it does is not its own.
+    pub possessed: bool,
 }
 
 /// How long one Primitive holds the screen.
@@ -1368,6 +1370,7 @@ impl Engine {
                 .charging
                 .filter(|_| self.possessed)
                 .map(Charge::fraction),
+            possessed: self.possessed,
         }
     }
 
@@ -9403,6 +9406,27 @@ mod tests {
             assert_eq!(stopped.facing, -1.0, "it keeps the heading it walked");
             let there = stopped.position.x;
             assert_eq!(engine.tick(&world).position.x, there, "and stays put");
+        }
+
+        /// What the Shell remembers in `recent:` is `Frame::behavior`, so a
+        /// drive that plays none leaves the Behavior history as it was.
+        #[test]
+        fn a_drive_hands_the_director_no_behavior_to_remember() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let mut played = Vec::new();
+            for lap in 0..20 {
+                let arrow = [Arrow::Left, Arrow::Right][lap % 2];
+                for intent in [holding(arrow), launching(released_after(0))] {
+                    played.extend(engine.tick(&with_possession(intent, &world)).behavior);
+                }
+                played.extend(
+                    flight(&mut engine, &world)
+                        .into_iter()
+                        .filter_map(|f| f.behavior),
+                );
+            }
+            assert_eq!(played, Vec::<String>::new());
         }
 
         #[test]

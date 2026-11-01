@@ -418,6 +418,13 @@ also carries the last few seconds, with no timestamps or ages, from
 - `lately:` the States and Behaviors entered in the last 12 seconds, oldest
   first, at most five, when there are at least two.
 
+Possession reaches the Director as two wakes and nothing between them. The
+moves the keys make add no step to `lately:` and nothing to `recent:`, so the
+Behavior history after a release is the one from before it. The possessed wake
+reads `possessed: yes`. The release wake reads `released from possession` and
+`feeling: dazed and confused, not sure how you got here`, and its whereabouts
+line, `on display: 1; placement: (80, 100)`, says where the drive left it.
+
 Two implementations ship:
 
 - **Static** — weighted selection over the Character's declared Behaviors using their

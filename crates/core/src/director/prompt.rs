@@ -162,8 +162,12 @@ pub(crate) fn follow_up(context: &Context) -> String {
         Some(fact) => format!("{}\n", fact.prompt_line()),
         None => String::new(),
     };
+    // A release reads as waking from a haunting: the Director never heard
+    // the moves, so the sprite does not know how it got where it stands.
     let possessed = if context.possessed {
         "possessed: yes\n"
+    } else if context.happened == Happened::PossessionEnd {
+        "feeling: dazed and confused, not sure how you got here\n"
     } else {
         ""
     };

@@ -302,8 +302,10 @@ Space makes it jump and Escape releases it. The fidget is possessed, the way a g
 possesses a body, and the Director's prompt says so. Possession applies to one
 Character Instance. Possessing another releases the first. It is not a State,
 so a possessed sprite still falls, perches and can be grabbed, and it stays
-possessed when another window takes the keyboard. Users see it explained as
-"Manually drive the fidget on your screen". #1655.
+possessed when another window takes the keyboard. The Director hears only
+that the fidget was possessed and released, never the moves in between, so
+it comes to dazed, not sure how it got where it is. Users see it explained as
+"Manually drive the fidget on your screen". #1655, #1950.
 
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.

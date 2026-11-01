@@ -91,6 +91,13 @@ impl Recency {
             behavior: frame.playing_behavior.clone(),
         };
         let before = self.last.replace(now.clone());
+        // The Director hears a possession start and end, never the moves
+        // between, so a drive leaves no steps and no gesture snapshot.
+        if frame.possessed {
+            self.steps.clear();
+            self.was = None;
+            return;
+        }
         if before.as_ref().map(|doing| doing.state) != Some(now.state) {
             self.step(Step::State(now.state));
         }
@@ -147,6 +154,7 @@ mod tests {
     use crate::character::{Behavior, Primitive};
     use crate::director::{follow_up, Context};
     use crate::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+    use crate::possession::{Arrow, Intent, Key, Possession};
 
     /// An Instance as the frame loop runs one: the Engine ticks, `Recency`
     /// hears every tick, and a wake reads it.
@@ -361,6 +369,47 @@ mod tests {
             format!(
                 "{}state: climbing\nlately: climbing → held → climbing → held → climbing\nstanding on: nothing\n",
                 floor("what just happened: time passed\n")
+            )
+        );
+    }
+
+    /// Minutes of driving reach the Director as the release alone: no step
+    /// the keys caused, however many there were.
+    #[test]
+    fn a_long_drive_reaches_the_release_wake_as_the_release_alone() {
+        let mut sprite = Instance::at(500.0, 0.0);
+        let keys = |walk, launch| WorldSnapshot {
+            possession: Intent {
+                walk,
+                launch,
+                ..Intent::default()
+            },
+            ..snapshot(100, vec![])
+        };
+        let tap = {
+            let mut space = Possession::default();
+            space.key(Key::Space, true);
+            space.key(Key::Space, false);
+            space.tick(0).launch
+        };
+        sprite.engine.set_possessed(true);
+        for lap in 0..120 {
+            let arrow = [Arrow::Left, Arrow::Right][lap % 2];
+            for _ in 0..5 {
+                sprite.tick(keys(Some(arrow), None));
+            }
+            sprite.tick(keys(None, tap));
+            sprite.wait(1_500);
+        }
+        sprite.engine.set_possessed(false);
+        sprite.wait(100);
+
+        assert_eq!(
+            sprite.wake(Happened::PossessionEnd),
+            format!(
+                "{}state: idle\nfeeling: dazed and confused, not sure how you got here\n\
+                 standing on: nothing\n",
+                floor("what just happened: released from possession\n")
             )
         );
     }
