@@ -396,6 +396,10 @@
   th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
   th { font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
   td.tok { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  /* nowrap tokens are wider than a phone. 720px is where the desks stack. */
+  @media (max-width: 720px) {
+    td.tok { white-space: normal; }
+  }
   .yes { color: var(--accent); font-weight: 700; }
   .no  { color: var(--ink-2); font-weight: 700; }
   footer { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
