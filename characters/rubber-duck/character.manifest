@@ -286,7 +286,9 @@ when = "idle over 5m"
 play = ["react"]
 weight = 0
 
-# The walk faces right; every resting pose faces left.
+# The walk faces right; every resting pose faces left. look-right keeps the
+# default although it ends facing right, so look-left and look-right mirror
+# together and stay two different looks whichever way the duck heads.
 [frame_facing]
 "frames/walk-0.png" = "right"
 "frames/walk-1.png" = "right"

@@ -87,9 +87,16 @@ An Animation declared `left_of` another, drawn in its place while the sprite
 travels left instead of the renderer mirroring the base. The same number of
 frames and the same frame size as the base, so turning round changes only which
 art plays. For asymmetric art: a mark on one cheek survives the turn, where a
-mirror would move it to the other. Optional — an Animation with no strip is
-mirrored to the travel by its frames' declared facing. #345.
+mirror would move it to the other. Optional. A strip's frames mirror by their
+Facing like any other frame, so a strip drawn facing left declares it. #345.
 _Avoid_: Flipped animation, left walk, direction variant
+
+**Facing**:
+Which way a frame's art faces as drawn, left or right: the Character
+Manifest's `facing` default, or the frame's own `[frame_facing]` entry. The
+renderer mirrors a frame exactly when its Facing is not the way the sprite
+travels. A frame facing the viewer keeps the default. #2069.
+_Avoid_: Direction, orientation, heading (the way the sprite travels)
 
 **Required Animation Set**:
 The animations every Character Package must supply for the engine to drive it.

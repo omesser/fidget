@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::overlay::AlphaMask;
 
-use super::manifest::{DeclaredAnimation, DeclaredBehavior};
+use super::manifest::{Declared, DeclaredAnimation, DeclaredBehavior};
 use super::{
     Animation, Art, Behavior, Facing, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
     MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS,
@@ -121,6 +121,19 @@ pub(super) fn resolve_animations(
     }
 
     (animations, art)
+}
+
+/// Every `[frame_facing]` entry names a frame some Animation plays, so a typo
+/// cannot leave the real frame quietly facing the default.
+pub(super) fn check_frame_facing(declared: &Declared, errors: &mut Vec<String>) {
+    for frame in declared.frame_facing.keys() {
+        let mut played = declared.animations.values().flat_map(|a| &a.frames);
+        if !played.any(|f| f == frame) {
+            errors.push(format!(
+                "frame_facing names {frame:?}, which no animation plays"
+            ));
+        }
+    }
 }
 
 /// Validate every `variant_of` and hand back the (variant, base) pairs.

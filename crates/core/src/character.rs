@@ -76,7 +76,9 @@ use crate::overlay::AlphaMask;
 mod manifest;
 mod resolve;
 use manifest::parse;
-use resolve::{check_left_strips, check_variants, resolve_animations, resolve_behaviors};
+use resolve::{
+    check_frame_facing, check_left_strips, check_variants, resolve_animations, resolve_behaviors,
+};
 
 /// A Character Package as bytes: file name to contents. The Shell does the
 /// reading; the loader never touches a path.
@@ -439,10 +441,10 @@ impl Character {
         animation: &str,
         animation_ms: u32,
         variant_draw: u64,
-        facing: f64,
+        heading: f64,
     ) -> Option<Drawn<'_>> {
         let (name, animation) = self.resolve(animation, variant_draw)?;
-        let travel = if facing < 0.0 {
+        let travel = if heading < 0.0 {
             Facing::Left
         } else {
             Facing::Right
@@ -571,17 +573,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
     let left_pairs = check_left_strips(&declared.animations, &mut errors);
-    for frame in declared.frame_facing.keys() {
-        let played = declared.animations.values();
-        if !played
-            .flat_map(|animation| &animation.frames)
-            .any(|f| f == frame)
-        {
-            errors.push(format!(
-                "frame_facing names {frame:?}, which no animation plays"
-            ));
-        }
-    }
+    check_frame_facing(&declared, &mut errors);
     let (mut animations, art) = resolve_animations(
         package,
         declared.animations,
@@ -1588,22 +1580,22 @@ pub(crate) mod tests {
         // The Character's default, walk-0's override, travel, and whether
         // walk and idle (which takes the default) are drawn mirrored.
         for (default, frame, travel, walk, idle) in [
-            ("", "", 1.0, false, false),
-            ("", "", -1.0, true, true),
-            ("right", "", 1.0, false, false),
-            ("left", "", 1.0, true, true),
-            ("left", "", -1.0, false, false),
-            ("left", "right", 1.0, false, true),
-            ("left", "right", -1.0, true, false),
-            ("", "left", 1.0, true, false),
-            ("", "left", -1.0, false, true),
+            (None, None, 1.0, false, false),
+            (None, None, -1.0, true, true),
+            (Some("right"), None, 1.0, false, false),
+            (Some("left"), None, 1.0, true, true),
+            (Some("left"), None, -1.0, false, false),
+            (Some("left"), Some("right"), 1.0, false, true),
+            (Some("left"), Some("right"), -1.0, true, false),
+            (None, Some("left"), 1.0, true, false),
+            (None, Some("left"), -1.0, false, true),
         ] {
             let mut manifest = String::from("name = \"Blip\"\n");
-            if !default.is_empty() {
+            if let Some(default) = default {
                 manifest.push_str(&format!("facing = \"{default}\"\n"));
             }
             manifest.push_str(&base);
-            if !frame.is_empty() {
+            if let Some(frame) = frame {
                 manifest.push_str(&format!("[frame_facing]\n\"walk-0.png\" = \"{frame}\"\n"));
             }
             let character = load_manifest(&manifest).expect("loads");
