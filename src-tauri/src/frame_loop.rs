@@ -2504,6 +2504,11 @@ pub(crate) fn run_frame_loop(
                     paused,
                     charge: frame.charge,
                     possession_cue,
+                    behaviors: if possessed {
+                        live.character.behaviors.keys().cloned().collect()
+                    } else {
+                        Vec::new()
+                    },
                     mask: drawn.mask.clone(),
                 });
             }

@@ -633,6 +633,9 @@ struct SpritePlacement<'a> {
     paused: bool,
     /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
     charge: Option<f64>,
+    /// Behavior names for the digit rows. Only the bubble owner, and only
+    /// while possessed: the card is not drawn anywhere else.
+    behaviors: &'a [String],
 }
 
 /// What the Chat button and the menu row show.
@@ -694,6 +697,11 @@ impl<'a> SpritePlacement<'a> {
             possessed: bubble && instance.possessed,
             paused: bubble && instance.paused,
             charge: instance.charge.filter(|_| bubble),
+            behaviors: if bubble && instance.possessed {
+                instance.behaviors.as_slice()
+            } else {
+                &[]
+            },
         }
     }
 }
@@ -795,6 +803,8 @@ struct Placed {
     charge: Option<f64>,
     /// This tick started the possession, so the overlay plays its cue.
     possession_cue: bool,
+    /// The Character's Behavior names, so the card can label digits 1 to 9.
+    behaviors: Vec<String>,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -7431,15 +7441,21 @@ mod tests {
             }),
             owner: Some(1),
             qm: None,
-            possessed: false,
+            possessed: true,
             paused: false,
             charge: None,
             possession_cue: false,
+            behaviors: vec!["nod".to_string(), "walk".to_string()],
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
 
         let owner = SpritePlacement::new(&placed, right, 1);
+        assert_eq!(
+            owner.behaviors,
+            ["nod".to_string(), "walk".to_string()],
+            "the card's digits need the Behavior names"
+        );
         assert_eq!(owner.dialogue.as_deref(), Some("Yare yare daze."));
         assert!(owner.thinking);
         assert!(owner.asking);
@@ -7456,6 +7472,10 @@ mod tests {
         );
 
         let elsewhere = SpritePlacement::new(&placed, left, 0);
+        assert!(
+            elsewhere.behaviors.is_empty(),
+            "one card, on the display that owns the bubble"
+        );
         assert_eq!(elsewhere.dialogue, None, "no line to latch off the owner");
         assert!(!elsewhere.thinking, "no indicator to arm off the owner");
         assert!(
@@ -7534,6 +7554,7 @@ mod tests {
             paused: false,
             charge: None,
             possession_cue: false,
+            behaviors: Vec::new(),
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };

@@ -23,8 +23,12 @@ test("arrows, space and escape are the possession keys, and a repeat is ignored"
   assert.equal(possessionEdge("ArrowLeft", true, true), null);
   assert.equal(possessionEdge("ArrowUp", false, true), null);
   assert.equal(possessionEdge("ArrowDown", false, true), null);
-  assert.equal(possessionEdge("1", false, true), null);
+  assert.deepEqual(possessionEdge("1", false, true), { key: "1", down: true });
+  assert.deepEqual(possessionEdge("9", false, false), { key: "9", down: false });
+  assert.equal(possessionEdge("1", true, true), null);
+  assert.equal(possessionEdge("0", false, true), null);
   assert.equal(possessionEdge("a", false, true), null);
+  assert.equal(possessionEdge("d", false, true), null);
 });
 
 test("the card lists the bound keys under the explanation", () => {
@@ -35,6 +39,41 @@ test("the card lists the bound keys under the explanation", () => {
     ["← →", "Walk"],
     ["Space", "Jump"],
     ["Esc", "Release Possession"],
+  ]);
+});
+
+test("the card lists digits for the character's behaviors, skipping walk and jump", () => {
+  const card = possessionCard({
+    possessed: true,
+    paused: false,
+    behaviors: ["jump", "walk", "wave", "nod", "sit"],
+  });
+  assert.deepEqual(card.keys, [
+    ["← →", "Walk"],
+    ["Space", "Jump"],
+    ["Esc", "Release Possession"],
+    ["1", "nod"],
+    ["2", "sit"],
+    ["3", "wave"],
+  ]);
+});
+
+test("a character with more than nine behaviors gets digits for the first nine", () => {
+  const card = possessionCard({
+    possessed: true,
+    paused: false,
+    behaviors: ["walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"],
+  });
+  assert.deepEqual(card.keys.slice(3), [
+    ["1", "a"],
+    ["2", "b"],
+    ["3", "c"],
+    ["4", "d"],
+    ["5", "e"],
+    ["6", "f"],
+    ["7", "g"],
+    ["8", "h"],
+    ["9", "i"],
   ]);
 });
 
