@@ -1,4 +1,5 @@
-// pill-dual-display.win.ps1 checks FIDGET_SCENARIO_TRACE and launches nothing.
+// pill-dual-display.win.ps1 checks FIDGET_SCENARIO_TRACE, or plans its drag from
+// FIDGET_SCENARIO_PLAN_LOG, and launches nothing.
 // A line that only contains showThinking or hideThinking is not a bubble event.
 // An overlay show or hide line is.
 
@@ -56,7 +57,7 @@ function pwshHostAborted(run) {
   return PWSH_HOST_ABORT.test(`${run?.stdout ?? ""}\n${run?.stderr ?? ""}`);
 }
 
-function checkTrace(t, lines) {
+function checkTrace(t, lines, fixture = "FIDGET_SCENARIO_TRACE") {
   const dir = tempDir(t, "pill-dual-");
   const trace = join(dir, "trace.txt");
   writeFileSync(trace, `${lines.join("\n")}\n`);
@@ -65,7 +66,7 @@ function checkTrace(t, lines) {
     [...(resolved.args ?? []), "-NoProfile", "-NonInteractive", "-File", script, "--go", "fidget"],
     {
       encoding: "utf8",
-      env: { ...process.env, FIDGET_SCENARIO_TRACE: trace },
+      env: { ...process.env, [fixture]: trace },
     },
   );
   if (run.status !== 0 && pwshHostAborted(run)) {
@@ -87,4 +88,31 @@ test("a line that only contains showThinking or hideThinking is not a bubble eve
   if (run == null) return;
   assert.notEqual(run.status, 0, run.stdout);
   assert.match(run.stderr, /painted rects not included while bubble visible/);
+});
+
+const DISPLAYS = [
+  "0.1 overlay: 2 display(s); sprite 64x80; dpr 1",
+  "0.1 overlay: overlay-0 covers 1920x1080 at (0,0)",
+  "0.1 overlay: overlay-1 covers 2560x1440 at (1920,-200)",
+];
+const resting = (x) =>
+  Array.from({ length: 5 }, (_, i) => `1.${i} frame: 16 Grounded pos(0,0) sprite(${x},1000) idle#0 id`);
+
+test("the drag starts mid-sprite and ends mid-way across the other display", { skip }, (t) => {
+  const run = checkTrace(t, [...DISPLAYS, ...resting(100)], "FIDGET_SCENARIO_PLAN_LOG");
+  if (run == null) return;
+  assert.equal(run.stdout.trim(), "plan: (132,1040) -> (3200,520)", run.stderr);
+});
+
+test("a sprite on the second display is dragged back to the first", { skip }, (t) => {
+  const run = checkTrace(t, [...DISPLAYS, ...resting(2000)], "FIDGET_SCENARIO_PLAN_LOG");
+  if (run == null) return;
+  assert.equal(run.stdout.trim(), "plan: (2032,1040) -> (960,540)", run.stderr);
+});
+
+test("no drag is planned while the sprite walks", { skip }, (t) => {
+  const walking = resting(100).map((line) => line.replace("idle#0", "walk#0"));
+  const run = checkTrace(t, [...DISPLAYS, ...walking], "FIDGET_SCENARIO_PLAN_LOG");
+  if (run == null) return;
+  assert.equal(run.stdout.trim(), "plan: none", run.stderr);
 });
