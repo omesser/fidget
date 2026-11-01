@@ -24,25 +24,37 @@ pub enum Contact {
     Ceiling,
 }
 
-/// Where the user's hand leaves the sprite before any physics runs, and
-/// whether a verb woke it. The wake is reported rather than left for the
-/// caller to re-derive, so what waking means is written here once. Being
-/// possessed wakes it too: the keys move a sprite on its feet.
-pub fn on_verbs(state: State, verbs: &[Verb], possessed: bool) -> (State, bool) {
+/// The hand picked the sprite up or let it go. A continued Grab is not an
+/// edge: the verb repeats every held tick, and a slow release emits no verb,
+/// so the cue cannot key on one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edge {
+    PickedUp,
+    LetGo,
+}
+
+/// State after the verbs, whether they woke the sprite, and the [`Edge`] when
+/// the hand picked it up or let go. Reported here so a caller does not
+/// re-derive them. Possession wakes it: the keys move a sprite on its feet.
+pub fn on_verbs(state: State, verbs: &[Verb], possessed: bool) -> (State, bool, Option<Edge>) {
     let woke = state == State::Asleep && (!verbs.is_empty() || possessed);
 
     if verbs.contains(&Verb::Grab) {
-        return (State::Dragged, woke);
+        let edge = match state {
+            State::Dragged => None,
+            _ => Some(Edge::PickedUp),
+        };
+        return (State::Dragged, woke, edge);
     }
-    let state = match state {
+    let (state, edge) = match state {
         // Let go. Thrown or simply dropped, what follows is a fall.
-        State::Dragged => State::Falling,
+        State::Dragged => (State::Falling, Some(Edge::LetGo)),
         // Woken. Whether it is still standing on anything is settled by
         // falling, the same as any other loss of footing.
-        _ if woke => State::Falling,
-        _ => state,
+        _ if woke => (State::Falling, None),
+        other => (other, None),
     };
-    (state, woke)
+    (state, woke, edge)
 }
 
 /// Where this tick's physics leaves the sprite. `rested` is whether it
@@ -60,5 +72,59 @@ pub fn on_contact(state: State, contact: Option<Contact>, rested: bool) -> State
         },
         Some(Contact::Standing) if rested => State::Asleep,
         Some(Contact::Standing) => state,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Point, State, Verb};
+    use super::on_verbs;
+
+    #[test]
+    fn a_grab_is_picked_up_once_and_a_repeat_is_not_an_edge() {
+        let (state, woke, edge) = on_verbs(State::Grounded, &[Verb::Grab], false);
+        assert_eq!(
+            (state, woke, edge),
+            (State::Dragged, false, Some(super::Edge::PickedUp))
+        );
+
+        let (state, woke, edge) = on_verbs(State::Dragged, &[Verb::Grab], false);
+        assert_eq!((state, woke, edge), (State::Dragged, false, None));
+
+        let (state, woke, edge) = on_verbs(State::Asleep, &[Verb::Grab], false);
+        assert_eq!(
+            (state, woke, edge),
+            (State::Dragged, true, Some(super::Edge::PickedUp))
+        );
+    }
+
+    #[test]
+    fn letting_go_without_a_verb_is_the_edge_and_a_throw_is_the_same_edge() {
+        let (state, woke, edge) = on_verbs(State::Dragged, &[], false);
+        assert_eq!(
+            (state, woke, edge),
+            (State::Falling, false, Some(super::Edge::LetGo))
+        );
+
+        let thrown = Verb::Throw {
+            velocity: Point {
+                x: 100.0,
+                y: -200.0,
+            },
+        };
+        let (state, woke, edge) = on_verbs(State::Dragged, &[thrown], false);
+        assert_eq!(
+            (state, woke, edge),
+            (State::Falling, false, Some(super::Edge::LetGo))
+        );
+    }
+
+    #[test]
+    fn a_verb_that_is_not_a_grab_has_no_dragged_edge() {
+        let (state, woke, edge) = on_verbs(State::Grounded, &[Verb::Poke], false);
+        assert_eq!((state, woke, edge), (State::Grounded, false, None));
+
+        let (state, woke, edge) = on_verbs(State::Asleep, &[], true);
+        assert_eq!((state, woke, edge), (State::Falling, true, None));
     }
 }

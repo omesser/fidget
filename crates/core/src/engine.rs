@@ -922,7 +922,8 @@ impl Engine {
 
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
-        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
+        let (state, woke, dragged) =
+            transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
 
         // A grab or a release ends the cooldown, or it would refuse the first
         // walk after landing. A fall the world causes clears it a tick late, at
@@ -938,33 +939,30 @@ impl Engine {
             self.chase_ms = 0;
         }
 
-        // A Grab outranks the world, usable floor included. The Dragged edge is
-        // the cue: `Verb::Grab` repeats while held; a slow release emits none.
-        // Both States are in hand only between `on_verbs` and `on_contact`.
-        let mut cue = None;
         let mut thrown_now = false;
-        if state == State::Dragged {
-            if self.state != State::Dragged {
-                cue = Some(Cue::Pickup);
-                self.release_cue = None;
-                // The press lands on the art, not the feet. That point stays
-                // under the pointer; snapping the feet to it hangs the cursor
-                // below the sprite. A snapshot with no press point falls back to
-                // the cursor.
+        match dragged {
+            Some(transition::Edge::PickedUp) => {
+                // The press lands on the art, not the feet, and that point stays
+                // under the pointer. Snapping the feet to it hangs the cursor
+                // below the sprite. With no press point, the cursor is used.
                 let pressed = snapshot.pressed_at.unwrap_or(snapshot.cursor);
                 self.grab_offset = Point {
                     x: self.position.x - pressed.x,
                     y: self.position.y - pressed.y,
                 };
             }
+            Some(transition::Edge::LetGo) => {
+                let thrown = thrown_velocity(snapshot);
+                thrown_now = thrown.is_some();
+                self.velocity = thrown.unwrap_or_default();
+            }
+            None => {}
+        }
+        // A Grab outranks the world, usable floor included.
+        if state == State::Dragged {
             self.position.x = snapshot.cursor.x + self.grab_offset.x;
             self.position.y = snapshot.cursor.y + self.grab_offset.y;
             self.velocity = Point::default();
-        } else if self.state == State::Dragged {
-            let thrown = thrown_velocity(snapshot);
-            thrown_now = thrown.is_some();
-            self.velocity = thrown.unwrap_or_default();
-            self.release_cue = Some(if thrown_now { Cue::Throw } else { Cue::Drop });
         }
 
         // The cursor already arrives every tick for hit-testing, so noticing
@@ -1098,6 +1096,20 @@ impl Engine {
         self.steering = self.possessed
             && self.state == State::Falling
             && (self.steering || matches!(state, State::Grounded | State::Perched));
+
+        // State is already stored, so it no longer says whether the hand
+        // picked the sprite up or let go. The edge does.
+        let mut cue = None;
+        match dragged {
+            Some(transition::Edge::PickedUp) => {
+                cue = Some(Cue::Pickup);
+                self.release_cue = None;
+            }
+            Some(transition::Edge::LetGo) => {
+                self.release_cue = Some(if thrown_now { Cue::Throw } else { Cue::Drop });
+            }
+            None => {}
+        }
 
         // The release's cue sounds on arrival: floor, Perch, or wall, once.
         // Every landing reports where it touched for the cue ripple.
@@ -3328,7 +3340,7 @@ mod tests {
 
     /// `Verb::Grab` is present on every tick the sprite is held, so a cue
     /// keyed on the verb would sound sixty times a second for as long as the
-    /// drag lasts. The pickup cue keys on entering `Dragged`.
+    /// drag lasts. The pickup cue is the pick-up edge, once.
     #[test]
     fn the_pickup_cue_fires_on_the_transition_and_not_every_held_tick() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -3350,6 +3362,46 @@ mod tests {
             carried.iter().all(Option::is_none),
             "held, and cued once: {carried:?}"
         );
+    }
+
+    /// Pickup is the edge `on_verbs` reports for the grab that takes hold.
+    /// A Grab that continues is not an edge. Letting go is, and the drop
+    /// sounds on landing rather than on that edge's own tick.
+    #[test]
+    fn the_pickup_and_release_cues_read_the_dragged_edge() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let world = snapshot(100);
+        settle(&mut engine, &world);
+
+        let press = WorldSnapshot {
+            cursor: engine.feet(),
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let (_, _, picked_up) = transition::on_verbs(engine.state, &press.verbs, engine.possessed);
+        assert_eq!(picked_up, Some(transition::Edge::PickedUp));
+        assert_eq!(engine.tick(&press).cue, Some(Cue::Pickup));
+
+        let at = Point { x: 200.0, y: 200.0 };
+        let held = WorldSnapshot {
+            cursor: at,
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let (_, _, held_edge) = transition::on_verbs(engine.state, &held.verbs, engine.possessed);
+        assert_eq!(held_edge, None);
+        assert_eq!(engine.tick(&held).cue, None);
+
+        let release = WorldSnapshot {
+            cursor: at,
+            ..world.clone()
+        };
+        let (_, _, let_go) = transition::on_verbs(engine.state, &release.verbs, engine.possessed);
+        assert_eq!(let_go, Some(transition::Edge::LetGo));
+        assert_eq!(engine.tick(&release).cue, None, "silent until it lands");
+
+        let landed: Vec<Cue> = (0..60).filter_map(|_| engine.tick(&world).cue).collect();
+        assert_eq!(landed, vec![Cue::Drop]);
     }
 
     /// Release from `at` with `verbs`, then tick until the sprite rests.
