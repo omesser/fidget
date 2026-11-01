@@ -6575,9 +6575,12 @@ mod tests {
             )
             .expect("copy frame");
         }
-        let manifest = std::fs::read_to_string(shipped.join("character.manifest"))
+        let manifest: String = std::fs::read_to_string(shipped.join("character.manifest"))
             .expect("manifest")
-            .replace("render_mode = \"smooth\"\n", "");
+            .lines()
+            .filter(|line| !line.starts_with("render_mode"))
+            .map(|line| format!("{line}\n"))
+            .collect();
         std::fs::write(copy.join("character.manifest"), manifest).expect("manifest");
 
         let (art, cache) = characters_in(&[user.path().to_path_buf(), shipped_characters()]);
