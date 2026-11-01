@@ -146,7 +146,7 @@ Merge into `~/.cursor/mcp.json`:
 Cursor records an approval per project, so approve it in the folder Fidget attaches from:
 
 ```sh
-# macOS. Linux: ~/.local/share/fidget; Windows: %APPDATA%\fidget
+# macOS. Linux: ~/.local/share/fidget; Windows: $env:APPDATA\fidget (PowerShell)
 cd "$HOME/Library/Application Support/fidget"
 cursor-agent mcp enable cua-driver
 ```
