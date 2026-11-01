@@ -498,9 +498,8 @@ case "minimize":
 
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
-    guard let window = settingsWindow(), let rect = frame(window) else {
-        notOpen("Settings")
-    }
+    guard let window = settingsWindow() else { notOpen("Settings") }
+    guard let rect = frame(window) else { die("Settings has no frame") }
     printRect(rect)
 
 case "key":
@@ -561,9 +560,8 @@ case "focused":
 case "focus-window":
     // Click the title bar, not a control, so the webview is key without
     // changing a row.
-    guard let window = settingsWindow(), let rect = frame(window) else {
-        notOpen("Settings")
-    }
+    guard let window = settingsWindow() else { notOpen("Settings") }
+    guard let rect = frame(window) else { die("Settings has no frame") }
     activateSettings()
     let point = CGPoint(x: rect.midX, y: rect.minY + 12)
     guard
