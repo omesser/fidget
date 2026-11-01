@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.x11.sh
+source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.x11.sh"
+root_events() { stdbuf -oL xprop -root -spy; }
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -38,11 +41,8 @@ if ! has_supporting_wm; then
   WM_PID=$!
   # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
-  for _ in $(seq 1 40); do
-    has_supporting_wm && break
-    sleep 0.25
-  done
-  has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
+  wait_on_source 10 root_events grep -qEm1 '^_NET_SUPPORTING_WM_CHECK\(.*window id' ||
+    fail "openbox did not publish _NET_SUPPORTING_WM_CHECK within 10 s"
 fi
 
 trap cleanup EXIT
@@ -79,8 +79,10 @@ env -u FIDGET_DIRECTOR_API_KEY \
   LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE" \
   "$BIN" > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
+# shellcheck disable=SC2034  # read by the sourced wait helpers
+pid=$APP_PID wait_log=$TRACE_LOG
 
-await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line within 20 s"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
@@ -109,23 +111,15 @@ find_chat_window() {
 }
 
 log_info "Waiting for overlay window..."
-OVERLAY_ID=""
-for _ in $(seq 1 60); do
-  OVERLAY_ID=$(find_overlay_window || true)
-  [ -n "$OVERLAY_ID" ] && break
-  sleep 0.25
-done
-[ -n "$OVERLAY_ID" ] || fail "Could not find fidget overlay window"
+wait_on_source 15 root_events probe_each_line find_overlay_window ||
+  fail "Could not find fidget overlay window within 15 s"
+OVERLAY_ID=$(find_overlay_window)
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for Chat window titled '$CHAT_TITLE'..."
-CHAT_ID=""
-for _ in $(seq 1 80); do
-  CHAT_ID=$(find_chat_window || true)
-  [ -n "$CHAT_ID" ] && break
-  sleep 0.25
-done
-[ -n "$CHAT_ID" ] || fail "Could not find Chat window titled $CHAT_TITLE"
+wait_on_source 20 root_events probe_each_line find_chat_window ||
+  fail "Could not find Chat window titled $CHAT_TITLE within 20 s"
+CHAT_ID=$(find_chat_window)
 log_info "Found Chat window ID: $CHAT_ID"
 xprop -id "$CHAT_ID" WM_NAME _NET_WM_STATE WM_CLASS > "$OUT/chat-xprop.txt" || true
 
@@ -143,6 +137,8 @@ echo "perch_layer_seam=pass (no ABOVE => layer 0 => perch_eligible)" >> "$RESULT
 
 log_info "Focusing Chat..."
 xdotool windowactivate --sync "$CHAT_ID" 2> /dev/null || true
+# A check that ABOVE never shows up has no event to wait on: give the focus
+# handler a fixed half second to set it, then read.
 sleep 0.5
 CHAT_PROPS=$(xprop -id "$CHAT_ID" _NET_WM_STATE 2> /dev/null || true)
 if echo "$CHAT_PROPS" | grep -q "_NET_WM_STATE_ABOVE"; then
@@ -187,11 +183,9 @@ TARGET_CLIENT_Y=$((ROOT_H * 2 / 5))
 if [ "$CHAT_LEDGE_Y" -lt "$TARGET_CLIENT_Y" ]; then
   log_info "Moving Chat down for clearance (ledge $CHAT_LEDGE_Y -> client y $TARGET_CLIENT_Y)..."
   xdotool windowmove "$CHAT_ID" "$CHAT_X" "$TARGET_CLIENT_Y"
-  for _ in $(seq 1 20); do
-    chat_geom
-    [ "$CHAT_Y" -ge $((TARGET_CLIENT_Y - 2)) ] && break
-    sleep 0.1
-  done
+  chat_moved() { chat_geom && [ "$CHAT_Y" -ge $((TARGET_CLIENT_Y - 2)) ]; }
+  wait_until 2 chat_moved || fail "Chat did not move down to client y $TARGET_CLIENT_Y within 2 s"
+  chat_geom
 fi
 log_info "Chat client +${CHAT_X}+${CHAT_Y} ${CHAT_W}x${CHAT_H}; frame top=$FRAME_TOP; ledge y=$CHAT_LEDGE_Y"
 
@@ -201,35 +195,26 @@ PLACE_Y=$CHAT_LEDGE_Y
 log_info "Placing Character on Chat ledge at ($PLACE_X, $PLACE_Y)..."
 CMD_PATH="$HOME_DIR/.fidget-debug-cmd"
 RES_PATH="$HOME_DIR/.fidget-debug-result"
-rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$PLACE_X" "$PLACE_Y" > "$CMD_PATH"
-PLACE_OK=0
-for _ in $(seq 1 40); do
-  if [ -f "$RES_PATH" ]; then
-    PLACE_REPLY=$(cat "$RES_PATH" 2> /dev/null || true)
-    echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
-    echo "$PLACE_REPLY" | grep -q '^placed:' && PLACE_OK=1 && break
-    echo "$PLACE_REPLY" | grep -q '^error:' && fail "debug place failed: $PLACE_REPLY"
-  fi
-  sleep 0.25
-done
-[ "$PLACE_OK" -eq 1 ] || fail "debug place timed out (is FIDGET_DEBUG_IPC on?)"
+# Place the Character through the debug IPC and fail unless it answers placed:.
+debug_place() { # <x> <y>
+  rm -f "$RES_PATH"
+  printf 'place x=%s y=%s\n' "$1" "$2" > "$CMD_PATH.tmp"
+  mv "$CMD_PATH.tmp" "$CMD_PATH"
+  wait_for_file 10 "$RES_PATH" ||
+    fail "debug place to ($1, $2) timed out (is FIDGET_DEBUG_IPC on?)"
+  PLACE_REPLY=$(cat "$RES_PATH")
+  echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
+  echo "$PLACE_REPLY" | grep -q '^placed:' || fail "debug place failed: $PLACE_REPLY"
+}
+debug_place "$PLACE_X" "$PLACE_Y"
 log_info "Placed: $(cat "$OUT/place-reply.txt")"
 
 # stand_at leaves State::Grounded. Perched is the land-from-fall path. Holding
 # the ledge y (not falling to the floor) is the Engine proof Chat is a Perch.
 log_info "Waiting for feet to hold Chat ledge y=$PLACE_Y..."
-HOLD_OK=0
 # Frame logs omit the space after the comma: pos(109,288).
 LEDGE_RE="frame: [0-9]+ (Grounded|Perched) pos\\([0-9]+, ?${PLACE_Y}\\)"
-for _ in $(seq 1 80); do
-  if grep -qE "$LEDGE_RE" "$TRACE_LOG" 2> /dev/null; then
-    HOLD_OK=1
-    break
-  fi
-  sleep 0.25
-done
-if [ "$HOLD_OK" -eq 1 ]; then
+if wait_for_line 20 "$TRACE_LOG" "$LEDGE_RE"; then
   log_info "Feet held Chat ledge y=$PLACE_Y (Chat is in the Perch list)"
   echo "ledge_hold=pass y=$PLACE_Y" >> "$RESULT_LOG"
   grep -E "$LEDGE_RE" "$TRACE_LOG" | tail -5 > "$OUT/ledge-frames.txt" || true
@@ -242,12 +227,7 @@ if [ "$BESIDE_X" -lt 40 ]; then
   BESIDE_X=$((CHAT_X + CHAT_W + 80))
 fi
 BESIDE_Y=$((CHAT_Y + CHAT_H / 2))
-rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$BESIDE_X" "$BESIDE_Y" > "$CMD_PATH"
-for _ in $(seq 1 40); do
-  [ -f "$RES_PATH" ] && grep -q '^placed:' "$RES_PATH" 2> /dev/null && break
-  sleep 0.25
-done
+debug_place "$BESIDE_X" "$BESIDE_Y"
 log_info "Character beside Chat at ($BESIDE_X, $BESIDE_Y)"
 
 # Composer sits near the bottom of the visible Chat band. Raise nothing first:
@@ -263,11 +243,16 @@ if [ "$COMPOSER_Y" -le "$CHAT_Y" ]; then
   COMPOSER_Y=$((CHAT_Y + 40))
 fi
 log_info "Clicking composer at ($COMPOSER_X, $COMPOSER_Y) with Character beside..."
+chat_active() {
+  xprop -root _NET_ACTIVE_WINDOW 2> /dev/null | grep -qiE "$(printf '0x%x' "$CHAT_ID")([^0-9a-f]|$)"
+}
+chat_inactive() { ! chat_active; }
 # Defocus Chat so a no-op click cannot inherit prior focus.
 xdotool windowactivate --sync "$OVERLAY_ID" 2> /dev/null || true
-sleep 0.25
+wait_on_source 2 root_events probe_each_line chat_inactive || true
 xdotool mousemove --sync "$COMPOSER_X" "$COMPOSER_Y" click 1
-sleep 0.5
+# Not reaching Chat is recorded below, not failed here.
+wait_on_source 2 root_events probe_each_line chat_active || true
 
 FOCUS_ID=$(xdotool getwindowfocus 2> /dev/null || true)
 ACTIVE_RAW=$(xprop -root _NET_ACTIVE_WINDOW 2> /dev/null || true)

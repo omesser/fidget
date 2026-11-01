@@ -78,7 +78,7 @@ pub fn check_debug_commands(
         }
     };
 
-    let _ = fs::write(&result_path, &response);
+    let _ = fidget_core::debug::write_whole_file_at_once(&result_path, &response);
 }
 
 #[cfg(test)]
