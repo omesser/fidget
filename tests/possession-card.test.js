@@ -31,6 +31,14 @@ test("arrows, space, escape and digits are the possession keys, and a repeat is 
   assert.equal(possessionEdge("d", false, true, "KeyD"), null);
 });
 
+test("the pill's field keeps its keydowns, but every keyup still lets go", () => {
+  assert.equal(possessionEdge("ArrowLeft", false, true, "ArrowLeft", true), null);
+  assert.equal(possessionEdge("1", false, true, "Digit1", true), null);
+  assert.deepEqual(possessionEdge("ArrowLeft", false, false, "ArrowLeft", true), { key: "left", down: false });
+  assert.deepEqual(possessionEdge(" ", false, false, "Space", true), { key: "space", down: false });
+  assert.deepEqual(possessionEdge("1", false, false, "Digit1", true), { key: "1", down: false });
+});
+
 test("the card lists the bound keys under the explanation", () => {
   const card = possessionCard({ possessed: true, paused: false });
   assert.equal(card.paused, false);
