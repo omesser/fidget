@@ -5586,21 +5586,42 @@ mod tests {
 
     #[test]
     fn codex_trust_override_uses_an_inline_table_and_survives_dots() {
-        let dir = PathBuf::from("/tmp/ct/data.dir");
-        assert_eq!(
-            codex_trust_override(&dir),
-            "projects={'/tmp/ct/data.dir'={trust_level='trusted'}}"
-        );
-        let win = PathBuf::from(r"C:\Users\demo\.local\share\fidget");
-        assert_eq!(
-            codex_trust_override(&win),
-            r"projects={'C:\Users\demo\.local\share\fidget'={trust_level='trusted'}}"
-        );
-        let odd = PathBuf::from("/tmp/o'brian/data.dir");
-        assert_eq!(
-            codex_trust_override(&odd),
-            r#"projects={"/tmp/o'brian/data.dir"={trust_level="trusted"}}"#
-        );
+        let cases = [
+            (
+                PathBuf::from("/tmp/ct/data.dir"),
+                "projects={'/tmp/ct/data.dir'={trust_level='trusted'}}",
+            ),
+            (
+                PathBuf::from(r"C:\Users\demo\.local\share\fidget"),
+                r"projects={'C:\Users\demo\.local\share\fidget'={trust_level='trusted'}}",
+            ),
+            (
+                PathBuf::from("/tmp/o'brian/data.dir"),
+                r#"projects={"/tmp/o'brian/data.dir"={trust_level="trusted"}}"#,
+            ),
+            (
+                PathBuf::from(r#"/tmp/say "hi"/data.dir"#),
+                r#"projects={'/tmp/say "hi"/data.dir'={trust_level='trusted'}}"#,
+            ),
+        ];
+        for (dir, exact) in cases {
+            let emitted = codex_trust_override(&dir);
+            assert_eq!(emitted, exact);
+            let doc = emitted
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap_or_else(|err| panic!("{err}\n{emitted}"));
+            let projects = doc
+                .get("projects")
+                .and_then(toml_edit::Item::as_inline_table)
+                .unwrap_or_else(|| panic!("projects is not an inline table\n{emitted}"));
+            let path = dir.to_string_lossy();
+            let trust = projects
+                .get(path.as_ref())
+                .and_then(toml_edit::Value::as_inline_table)
+                .and_then(|table| table.get("trust_level"))
+                .and_then(toml_edit::Value::as_str);
+            assert_eq!(trust, Some("trusted"), "{emitted}");
+        }
     }
 
     /// Detach takes the token back out of `.cursor/mcp.json` and leaves the
