@@ -669,8 +669,11 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
         }
 
     heading = "right" if walk_row == 2 else "left"
-    if "walk" in animations and "walk" not in overrides:
-        animations["walk"]["facing"] = heading
+    # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
+    # cut from any other row (--map) faces no way the importer can see.
+    drawn = {1: "left", 2: "right"}
+    if "walk" in mappings and mappings["walk"][0] in drawn:
+        animations["walk"]["facing"] = drawn[mappings["walk"][0]]
 
     if "sleep" in overrides:
         animations["sleep"]["fps"] = 1
@@ -1262,6 +1265,9 @@ def self_test():
             f"frames/walk-{i}.png": "left"
             for i in range(len(other["animations"]["walk"]["frames"]))
         }
+        # A walk remapped onto a walk row reads that row's heading.
+        remapped = read_petscodex(source, overrides={"walk": (1, None)})
+        assert remapped["animations"]["walk"]["facing"] == "left"
 
         out = tmp / "character"
         emit(pet, out, validate=False)
