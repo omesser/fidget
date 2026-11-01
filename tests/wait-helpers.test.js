@@ -40,6 +40,28 @@ test("wait_for_marks gives up within its seconds", (t) => {
   assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
 });
 
+// A fake eu-stack on PATH stands in for the real one, which needs Linux and
+// ptrace rights over the live Fidget.
+const fakeEuStack = `mkdir "$dir/bin"; printf '#!/bin/sh\\necho "stacks of $2"\\n' > "$dir/bin/eu-stack"; chmod +x "$dir/bin/eu-stack"
+PATH="$dir/bin:$PATH"; out="$dir/out"; mkdir "$out"; sleep 30 & pid=$!`;
+
+test("a wait that runs out saves the live Fidget's thread stacks in $out", (t) => {
+  const r = run(t, `${fakeEuStack}
+wait_for_marks 1 "$log" '^never$'; rc=$?; kill "$pid"
+[ "$rc" = 1 ] || { echo "wait returned $rc"; exit 1; }
+cat "$out"/stacks-*.txt`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /^stacks of \d+$/m);
+});
+
+test("a wait that ends without running out saves no stacks", (t) => {
+  const r = run(t, `${fakeEuStack}
+echo hit > "$log"; wait_for_marks 1 "$log" '^hit$' || exit 1
+wait_on_source 1 true read -r && exit 1
+kill "$pid"; ls "$out" | grep . && exit 1; exit 0`);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
 test("waits fail at once when Fidget has exited", (t) => {
   const r = run(t, `: > "$dir/log"; sleep 0 & pid=$!; wait "$pid"; wait_for_trace 2 "$dir/log" x`);
   assert.strictEqual(r.code, 1, r.out);
