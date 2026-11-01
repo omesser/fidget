@@ -36,7 +36,7 @@ pub struct ConsentRow {
     pub costs: &'static str,
     /// Settings has this capability on. Separate from the OS grant: flipping
     /// on prompts if needed; flipping off stops using it and does not revoke.
-    pub granted: bool,
+    pub wanted: bool,
 }
 
 impl ConsentRow {
@@ -463,7 +463,7 @@ pub fn rows(wanted: impl Fn(CapabilityId) -> bool) -> Vec<ConsentRow> {
             title: cap.title,
             buys: cap.buys,
             costs: cap.costs,
-            granted: wanted(cap.id),
+            wanted: wanted(cap.id),
         })
         .collect()
 }
@@ -603,7 +603,7 @@ mod tests {
                 "ScreenCast has to name the portal, got {:?}",
                 rows[0].costs
             );
-            assert!(!rows[0].granted);
+            assert!(!rows[0].wanted);
         }
 
         #[cfg(target_os = "windows")]
@@ -621,7 +621,7 @@ mod tests {
                 "WindowNames has to say no system permission required, got {:?}",
                 rows[0].costs
             );
-            assert!(!rows[0].granted);
+            assert!(!rows[0].wanted);
         }
 
         #[cfg(target_os = "macos")]
@@ -640,7 +640,7 @@ mod tests {
                 "Accessibility has to name the macOS grant, got {:?}",
                 rows[0].costs
             );
-            assert!(!rows[0].granted);
+            assert!(!rows[0].wanted);
 
             assert_eq!(rows[1].id, CapabilityId::WindowNames);
             assert_eq!(
@@ -650,7 +650,7 @@ mod tests {
                     "title": "Window and application names",
                     "buys": "Window titles, and which application each window belongs to.",
                     "costs": "macOS Screen Recording. The fidget reads the names of what is open; it does not capture the screen.",
-                    "granted": false,
+                    "wanted": false,
                 })
             );
 
@@ -671,7 +671,7 @@ mod tests {
                 "the row has to say the tap is mouse-only, got {:?}",
                 rows[2].costs
             );
-            assert!(!rows[2].granted);
+            assert!(!rows[2].wanted);
         }
     }
 
@@ -681,7 +681,7 @@ mod tests {
     #[test]
     fn rows_report_wanted_capabilities() {
         for row in rows(|id| id == CapabilityId::WindowNames) {
-            assert_eq!(row.granted, row.id == CapabilityId::WindowNames, "{row:?}");
+            assert_eq!(row.wanted, row.id == CapabilityId::WindowNames, "{row:?}");
         }
     }
 
