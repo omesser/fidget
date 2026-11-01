@@ -60,6 +60,7 @@ function Fail([string]$Message) {
 # process.log puts epoch seconds before each line; a saved stderr log does not.
 $framePattern = '^(?:\d+ )?frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) '
 $pokePattern = '^(?:\d+ )?verbs:.*Poke'
+$hitPattern = '^(?:\d+ )?hit-test: .* HIT click-through OFF'
 
 # poke-mid-climb-check.py in PowerShell, so no Windows host needs Python. Case
 # sensitive and word for word like it: the same broken fixtures fail both.
@@ -132,6 +133,7 @@ $trace = Join-Path $data "process.log"
 
 $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_TRACE_FRAMES = "1"
+$env:FIDGET_TRACE_HITTEST = "1"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
 # In-process, not ax-window-win.ps1 click: a new PowerShell compiles its
@@ -144,11 +146,7 @@ public class ClimbInput {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     const uint Down = 0x0002, Up = 0x0004;
-    public static void Place(int x, int y, int toX) {
-        SetCursorPos(x, y);
-        // A resting sprite's loop polls up to 1 s apart while the cursor is away, and
-        // 100 ms once it is near. Pressing sooner can be read after the drag moved off.
-        Thread.Sleep(1100);
+    public static void Drag(int x, int y, int toX) {
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
         // A press held past the drag threshold time becomes a grab, not a click.
         Thread.Sleep(250);
@@ -166,8 +164,8 @@ public class ClimbInput {
     }
     public static void Click(int x, int y) {
         SetCursorPos(x, y);
-        // As in Place: ticks to turn click-through off under the cursor. A hit-test file
-        // wait from PowerShell is slower than the climbing sprite stays under it.
+        // A climbing sprite's loop ticks every frame, so 120 ms turns click-through off
+        // under the cursor. Drag's hit-test file wait is slower than the climb stays under it.
         Thread.Sleep(120);
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
         // A press and release in one tick read as no click; 60 ms spans a tick.
@@ -292,7 +290,12 @@ try {
     } else {
         Fail "FIDGET_SCENARIO_EDGE is '$side', want left or right"
     }
-    [ClimbInput]::Place($grabX, $sy + $half, $targetX)
+    # A resting sprite's loop polls up to 1 s apart until it sees the cursor near
+    # the sprite, then 100 ms apart. A press before that is read after the drag.
+    $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
+    [ClimbInput]::Move($grabX, $sy + $half)
+    if (-not (Wait-ForCount 3 $trace $hitPattern $hits)) { Fail "Fidget never saw the cursor over the sprite; see $trace" }
+    [ClimbInput]::Drag($grabX, $sy + $half, $targetX)
     Add-Content -LiteralPath $inputLog -Value "placed from ($grabX,$($sy + $half)) to x=$targetX"
 
     if (-not (Wait-Climbing 20)) { Fail "the sprite let go over the $side edge and did not climb; see $trace" }
