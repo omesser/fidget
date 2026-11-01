@@ -483,7 +483,7 @@ npx petscodex install labubu
 uv run scripts/import-pet.py ~/.codex/pets/labubu --format petscodex -o characters/labubu
 ```
 
-`[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Also check every animation reads as its name, and that walk heads right. A pet whose art strays from petdex's row semantics is recut with `--walk-row`, `--mirror-walk`, or `--map`.
+`[source]` is filled from the pet's `pet.json`, with `url` pointing at its page. Also check every animation reads as its name, and that every frame faces the way the manifest declares. The importer keeps the art as drawn: it declares the walk facing the way its row is drawn (row 2 right, row 1 left) and leaves the rest at the default `"right"`, and prints what it declared. Correct `facing` or `[frame_facing]` where the art says otherwise; see [Which way the art faces](#which-way-the-art-faces). A pet whose art strays from petdex's row semantics is recut with `--walk-row` or `--map`.
 
 Inspect the sheet row by row before choosing mappings. A person or coding agent
 can construct an import command for the art instead of adding a character-specific
@@ -584,7 +584,7 @@ Download the pack's `.zip` from its gallery page. The importer wants per-pose PN
 uv run scripts/import-pet.py ~/Downloads/my-pet.zip --format shimeji -o characters/my-pet
 ```
 
-Every frame is mirrored to head right, and the manifest's leading comment records which Shimeji action fed each animation. Also edit:
+Frames are kept as drawn. Shimeji art faces left, so the manifest declares `facing = "left"` and the renderer mirrors it for rightward travel. The manifest's leading comment records which Shimeji action fed each animation. Also edit:
 
 - `name` is the zip's file name. Set the display name.
 - `[source]` has no `url` and a generic `art` line. Add the gallery page's URL and say what the art is.
