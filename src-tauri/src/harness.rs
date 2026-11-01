@@ -6577,7 +6577,8 @@ mod tests {
             argv: vec![
                 "/bin/sh".into(),
                 "-c".into(),
-                r#"trap "" HUP; sleep 30 & wait"#.into(),
+                // TERM as well as HUP: a SIGTERM kill would leave the grandchild running.
+                r#"trap "" HUP TERM; sleep 30 & wait"#.into(),
             ],
         };
         let mut command = launch.command(&tmp_attach(), false);

@@ -1201,6 +1201,11 @@ pub(crate) fn killable_group(pgid: libc::pid_t) -> bool {
     pgid > 0 && pgid != unsafe { libc::getpgrp() }
 }
 
+/// SIGKILL, not SIGTERM. Claude's ACP adapter dumps
+/// `Query closed before response received` on a polite signal.
+#[cfg(unix)]
+const HARNESS_KILL_SIGNAL: i32 = libc::SIGKILL;
+
 /// SIGKILL the Harness's process group. `npx` grandchildren share it, and a
 /// direct `Child::kill` leaves them running. Never our own group.
 /// On Windows this terminates the Job Object so grandchildren die too.
@@ -1210,10 +1215,8 @@ pub(crate) fn kill_harness_tree(pid: u32) {
         // SAFETY: getpgid queries the child's group; errors yield pgid <= 0 and skip killpg.
         let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
         if killable_group(pgid) {
-            // SIGKILL, not SIGTERM: Claude's ACP adapter dumps
-            // `Query closed before response received` on a polite signal.
             // SAFETY: killable_group verified pgid is not our own process group.
-            let _ = unsafe { libc::killpg(pgid, libc::SIGKILL) };
+            let _ = unsafe { libc::killpg(pgid, HARNESS_KILL_SIGNAL) };
         }
     }
     #[cfg(windows)]
