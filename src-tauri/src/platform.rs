@@ -719,7 +719,29 @@ pub fn open_url(url: &str) -> Result<(), String> {
     // A parsed URL always starts with its scheme, so it can never be read as an
     // option by `open` or `xdg-open`. `Command` execs directly with no shell,
     // so there is no metacharacter to quote either.
-    hand_over(std::ffi::OsStr::new(&openable(url)?))
+    let log = std::env::var("FIDGET_OPEN_URL_LOG").ok();
+    hand_over(std::ffi::OsStr::new(&open_handed(url, log.as_deref())?))
+}
+
+/// The parsed URL handed to the opener, after appending it to `log` when that
+/// path is set. ShellExecuteW is not a program on PATH, so a Windows scenario
+/// cannot replace it the way a fake `open` replaces the macOS one.
+fn open_handed(url: &str, log: Option<&str>) -> Result<String, String> {
+    let handed = openable(url)?;
+    if let Some(path) = log.filter(|path| !path.is_empty()) {
+        append_handoff(path, &handed)?;
+    }
+    Ok(handed)
+}
+
+fn append_handoff(path: &str, target: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("could not record the opened URL: {error}"))?;
+    writeln!(file, "{target}").map_err(|error| format!("could not record the opened URL: {error}"))
 }
 
 /// The URL to hand over, or why this one is not handed over.
@@ -1644,6 +1666,41 @@ mod tests {
         ] {
             assert!(openable(url).is_err(), "{url:?} must not open");
         }
+    }
+
+    /// The scenario log is the string the opener receives, not the caller's
+    /// text. A refused scheme must not append a line.
+    #[test]
+    fn the_open_log_is_the_parsed_url_and_skips_a_refused_scheme() {
+        let path = std::env::temp_dir().join(format!(
+            "fidget-open-url-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let _ = fs::remove_file(&path);
+        let path_str = path.to_str().expect("temp path is UTF-8");
+
+        let handed = open_handed("https://nodejs.org", Some(path_str)).expect("https opens");
+        assert_eq!(handed, "https://nodejs.org/");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "https://nodejs.org/\n");
+
+        let other = open_handed("https://example.test/nope", Some(path_str)).expect("https opens");
+        assert_eq!(other, "https://example.test/nope");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "https://nodejs.org/\nhttps://example.test/nope\n"
+        );
+
+        assert!(open_handed("javascript:alert(1)", Some(path_str)).is_err());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "https://nodejs.org/\nhttps://example.test/nope\n",
+            "a refused scheme must not be recorded"
+        );
+        let _ = fs::remove_file(&path);
     }
 
     /// What is handed to the OS is the parsed form, never the caller's string.

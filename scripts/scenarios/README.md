@@ -181,8 +181,9 @@ Chat from the tray's Chat… row. X11 clicks it over the tray's dbusmenu
 without one. Windows clicks the taskbar icon and invokes the row
 (`ax-window-win.ps1 tray`), so the icon must not sit in the hidden-icons
 overflow. On X11 a recording `xdg-open` on `PATH` takes the URL, as `open`
-does on macOS. Windows hands it to `ShellExecuteW`, so its leaves do not
-record the URL and a real browser opens.
+does on macOS. Windows hands it to `ShellExecuteW`, which is not a program
+on `PATH`. `landing-link-click` records the URL passed to `ShellExecuteW`
+and still opens the browser. `sign-in-button` does not record its URL.
 
 `question-bubble` and `control-click-menu` find the sprite from the frame
 trace, as on macOS. `question-bubble` pokes it with a real click and dumps the

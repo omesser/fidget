@@ -719,7 +719,8 @@ mod tests {
     const LANDING: &str = "FIDGET_SCENARIO_AX_LANDING";
     const AFTER: &str = "FIDGET_SCENARIO_AX_AFTER";
     const OPENED: &str = "FIDGET_SCENARIO_OPENED";
-    /// OPENED last: the Windows leaves record no hand-off and drop it.
+    /// Recorded hand-off. `sign-in-button` on Windows still has none and drops
+    /// this entry. `landing-link-click` reads it.
     const LANDING_GOOD: &[(&str, &str)] = &[
         (LANDING, "fixtures/landing-link-click-landing.txt"),
         (AFTER, "fixtures/landing-link-click-landing.txt"),
@@ -830,7 +831,7 @@ mod tests {
     const NEEDS_LOGIN: &str = "FIDGET_SCENARIO_AX_NEEDS_LOGIN";
     const WAITING: &str = "FIDGET_SCENARIO_AX_WAITING";
     const SIGNED_IN: &str = "FIDGET_SCENARIO_AX_SIGNED_IN";
-    /// OPENED last: the Windows leaves record no hand-off and drop it.
+    /// Last, and unused on Windows. That leaf records no hand-off.
     const SIGN_IN_GOOD: &[(&str, &str)] = &[
         (NEEDS_LOGIN, "fixtures/sign-in-button-needs-login.txt"),
         (WAITING, "fixtures/sign-in-button-waiting.txt"),
@@ -1059,15 +1060,27 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn landing_link_click_win_fails_on_each_broken_assertion() {
-        let refused: &[(&str, Mutate, &str)] = &[(
-            AFTER,
-            |t| format!("{t}label|That link did not open: boom.|0,0,1,1\n"),
-            "the click did not reach ShellExecuteW",
-        )];
+        let handed: &[(&str, Mutate, &str)] = &[
+            (
+                OPENED,
+                |_| "https://example.test/\n".into(),
+                "the click handed 'https://example.test/' to ShellExecuteW, want https://nodejs.org/",
+            ),
+            (
+                OPENED,
+                |_| String::new(),
+                "the click handed '' to ShellExecuteW, want https://nodejs.org/",
+            ),
+            (
+                AFTER,
+                |t| format!("{t}label|That link did not open: boom.|0,0,1,1\n"),
+                "the click did not reach ShellExecuteW",
+            ),
+        ];
         fixture_cases(
             "landing-link-click.win.ps1",
-            &LANDING_GOOD[..2],
-            &[LANDING_CASES, refused].concat(),
+            LANDING_GOOD,
+            &[LANDING_CASES, handed].concat(),
         );
     }
 
