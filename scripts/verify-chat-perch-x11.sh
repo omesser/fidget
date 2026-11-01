@@ -118,7 +118,7 @@ log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for Chat window titled '$CHAT_TITLE'..."
 wait_on_source 20 root_events probe_each_line find_chat_window ||
-  fail "Could not find Chat window titled $CHAT_TITLE "
+  fail "Could not find Chat window titled $CHAT_TITLE within 20 s"
 CHAT_ID=$(find_chat_window)
 log_info "Found Chat window ID: $CHAT_ID"
 xprop -id "$CHAT_ID" WM_NAME _NET_WM_STATE WM_CLASS > "$OUT/chat-xprop.txt" || true

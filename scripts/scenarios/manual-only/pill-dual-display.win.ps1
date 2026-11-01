@@ -195,8 +195,8 @@ function Aim-AtSprite($p, [string]$What) {
         $script:aim = @{ X = $x; Y = $y; At = $at }
         [PillDrag]::OwnerAt($x, $y) -eq $script:proc.Id
     }
-    if (-not $script:aim) { Fail "no sprite position to $What at; see $log" }
-    if (-not $owned) { Fail "refusing to $What at ($($script:aim.X),$($script:aim.Y)): Fidget did not own the window there; see $log" }
+    if (-not $script:aim) { Fail "no sprite position to $What at in 3 s; see $log" }
+    if (-not $owned) { Fail "refusing to $What at ($($script:aim.X),$($script:aim.Y)): Fidget did not own the window there in 3 s; see $log" }
     $script:aim
 }
 
@@ -207,7 +207,7 @@ function Assert-Still($a, [string]$What) {
 
 function Drive-PillAcrossSeam {
     if ([PillDrag]::SetThreadDpiAwarenessContext([IntPtr]-4) -eq [IntPtr]::Zero) { Fail "could not make this thread per-monitor DPI aware, so its pixels would not match Fidget's" }
-    if (-not (Wait-Until 3 { ($script:plan = Get-DragPlan $log) })) { Fail "no sprite at rest with a display to carry it to; see $log" }
+    if (-not (Wait-Until 3 { ($script:plan = Get-DragPlan $log) })) { Fail "no sprite at rest with a display to carry it to in 3 s; see $log" }
     $p = $script:plan
 
     $a = Aim-AtSprite $p "poke"
@@ -216,21 +216,21 @@ function Drive-PillAcrossSeam {
     $presses = Count $pressPattern
     [PillDrag]::Button($false)
     try {
-        if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the poke's press; see $log" }
+        if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the poke's press in 3 s; see $log" }
     } finally {
         $releases = Count $releasePattern
         [PillDrag]::Button($true)
     }
-    if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the poke's release; see $log" }
-    if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble; see $traceFile" }
+    if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the poke's release in 3 s; see $log" }
+    if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble in 3 s; see $traceFile" }
     # Settled after the double-click interval, so the drag press is not a double-click.
-    if (-not (Wait-ForTrace 3 $log $pokePattern)) { Fail "Fidget never settled the click as a Poke; see $log" }
+    if (-not (Wait-ForTrace 3 $log $pokePattern)) { Fail "Fidget never settled the click as a Poke in 3 s; see $log" }
 
     $a = Aim-AtSprite $p "hover"
-    if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($a.X),$($a.Y)) did not open a focused pill; see $log" }
+    if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($a.X),$($a.Y)) did not open a focused pill in 3 s; see $log" }
     if (-not (Wait-Until 3 { [PillDrag]::ForegroundOwner() -eq $script:proc.Id })) { Fail "the pill opened but Fidget never took the foreground, so nothing was typed; see $log" }
     [PillDrag]::Text("hi")
-    if (-not (Wait-ForTrace 3 $log $pillTypedPattern)) { Fail "the pill never showed text=`"hi`"; see $log" }
+    if (-not (Wait-ForTrace 3 $log $pillTypedPattern)) { Fail "the pill never showed text=`"hi`" in 3 s; see $log" }
 
     $a = Aim-AtSprite $p "press"
     Assert-Still $a "press"
@@ -238,14 +238,14 @@ function Drive-PillAcrossSeam {
     $presses = Count $pressPattern
     [PillDrag]::Button($false)
     try {
-        if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the press on the sprite; see $log" }
+        if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the press on the sprite in 3 s; see $log" }
         $null = [PillDrag]::SetCursorPos($p.ToX, $p.ToY)
-        if (-not (Wait-ForTrace 3 $log $draggedPattern)) { Fail "the press did not grab the sprite; see $log" }
+        if (-not (Wait-ForTrace 3 $log $draggedPattern)) { Fail "the press did not grab the sprite in 3 s; see $log" }
     } finally {
         $releases = Count $releasePattern
         [PillDrag]::Button($true)
     }
-    if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the release at ($($p.ToX),$($p.ToY)); see $log" }
+    if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the release at ($($p.ToX),$($p.ToY)) in 3 s; see $log" }
     if (-not (Wait-ForTrace 3 $traceFile $followPattern)) { Fail "the pill never reopened on another overlay within 3 s of the drop; see $traceFile" }
     $end = Get-LastSpriteSpot $log; $cx = $end.X + $p.X - $p.At.X; $cy = $end.Y + $p.Y - $p.At.Y
     Write-Host "dropped at ($($p.ToX),$($p.ToY)); sprite middle at ($cx,$cy) on the display at ($($p.Left),$($p.Top)) $($p.W)x$($p.H)"
