@@ -612,7 +612,7 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def mapping_notes(mappings, animations, synthesized):
+def mapping_notes(mappings, animations, rows, synthesized):
     """The manifest's mapping comment, written from the mapping that cut the
     frames, so it names the rows and headings the manifest actually uses."""
     states = {row: state for state, (row, _, _) in PETSCODEX_ROWS.items()}
@@ -625,6 +625,14 @@ def mapping_notes(mappings, animations, synthesized):
             part += f" (drawn heading {animations[animation]['facing']})"
         parts.append(part)
     text = "Mapping: " + ", ".join(parts) + "."
+    used = {row for row, _ in mappings.values()}
+    unused = [
+        f"{row} ({states[row]})" if row in states else str(row)
+        for row in range(rows)
+        if row not in used
+    ]
+    if unused:
+        text += f" Unused rows: {', '.join(unused)}."
     if synthesized:
         text += " Sleep is idle's stillest frame with a one-pixel breath."
     text += " Frames face right unless declared otherwise."
@@ -700,7 +708,7 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
     described = pet.get("description", "").strip()
-    notes = mapping_notes(mappings, animations, synthesized=not only_mapped and "sleep" not in overrides)
+    notes = mapping_notes(mappings, animations, rows, synthesized=not only_mapped and "sleep" not in overrides)
     if only_mapped:
         notes.append("Explicit source mappings; review animation timing and behavior in the manifest.")
     # A pet.json may carry the key with nothing in it, which is the same
@@ -1274,6 +1282,8 @@ def self_test():
         # mapping comment names the row the frames were cut from.
         remapped = read_petscodex(source, overrides={"walk": (1, None)})
         assert remapped["animations"]["walk"]["facing"] == "left"
+        noted = " ".join(pet["notes"])
+        assert "Unused rows: 1 (running-right), 7 (running)." in noted, noted
         noted = " ".join(remapped["notes"])
         assert "walk<-running-right row 1 (drawn heading left)" in noted, noted
         assert "row 2" not in noted, noted
