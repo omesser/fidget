@@ -4384,17 +4384,16 @@ mod windows_job {
         CREATE_SUSPENDED, PROCESS_ALL_ACCESS, THREAD_SUSPEND_RESUME,
     };
 
-    /// A Job Object handle, parked in `JOBS` until the process exits.
-    /// The job carries `KILL_ON_JOB_CLOSE`, so closing the handle kills
-    /// the child. `Drop` would be a bug. The leak is intentional.
-    struct SafeHandle(HANDLE);
+    /// Closing the handle kills the child, so `Drop` must not run.
+    struct LeakedJobHandle(HANDLE);
 
     // SAFETY: a Job Object handle is process-wide and thread-agnostic, so
     // moving it between threads reaches the same object. `HANDLE` is `!Send`
-    // only as a raw pointer. Anything in `SafeHandle` has to be that kind too.
-    unsafe impl Send for SafeHandle {}
+    // only as a raw pointer. Anything in `LeakedJobHandle` has to be that
+    // kind too.
+    unsafe impl Send for LeakedJobHandle {}
 
-    static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
+    static JOBS: Mutex<Option<HashMap<u32, LeakedJobHandle>>> = Mutex::new(None);
 
     const SPAWN_IN_JOB_CREATION_FLAGS: u32 =
         CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED;
@@ -4491,7 +4490,7 @@ mod windows_job {
             match JOBS.lock() {
                 Ok(mut slot) => {
                     let map = slot.get_or_insert_with(HashMap::new);
-                    map.insert(pid, SafeHandle(job));
+                    map.insert(pid, LeakedJobHandle(job));
                 }
                 Err(_) => {
                     eprintln!("harness: JOBS lock poisoned, handle leaked for pid {pid}");
@@ -4574,7 +4573,7 @@ mod windows_job {
             map.remove(&pid)
         };
 
-        let Some(SafeHandle(job)) = job else {
+        let Some(LeakedJobHandle(job)) = job else {
             return;
         };
 
@@ -4593,13 +4592,28 @@ mod windows_job {
             terminate_job(0xFFFF_FFFE);
         }
 
-        #[cfg(windows)]
         #[test]
         fn spawn_in_job_creation_flags_include_create_suspended() {
             assert_eq!(
                 SPAWN_IN_JOB_CREATION_FLAGS & CREATE_SUSPENDED,
                 CREATE_SUSPENDED
             );
+        }
+
+        #[test]
+        fn spawn_in_job_keeps_the_pid_handle() {
+            let mut command = std::process::Command::new("cmd.exe");
+            command.args(["/d", "/c", "exit"]);
+            let child = spawn_in_job(command, std::process::Stdio::null())
+                .unwrap_or_else(|err| panic!("spawn_in_job failed: {err}"));
+            let pid = child.id();
+            let kept = JOBS
+                .lock()
+                .expect("JOBS lock")
+                .as_ref()
+                .is_some_and(|map| map.contains_key(&pid));
+            terminate_job(pid);
+            assert!(kept, "JOBS did not keep a handle for pid {pid}");
         }
 
         /// #1671: a second suspended thread owned by the child must resume too.
