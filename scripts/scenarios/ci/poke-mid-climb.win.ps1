@@ -60,7 +60,7 @@ function Fail([string]$Message) {
 # process.log puts epoch seconds before each line; a saved stderr log does not.
 $framePattern = '^(?:\d+ )?frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\) \S+ (\S+)#(\d+) '
 $pokePattern = '^(?:\d+ )?verbs:.*Poke'
-$hitPattern = '^(?:\d+ )?hit-test: .* HIT +click-through OFF'
+$hitPattern = '^(?:\d+ )?hit-test: .* HIT +click-through OFF +<- flipped'
 $grabPattern = '^(?:\d+ )?verbs: .*\[Grab\]'
 
 # poke-mid-climb-check.py in PowerShell, so no Windows host needs Python. Case
@@ -285,7 +285,11 @@ try {
     # walking meanwhile is let go and aimed at again, or the grab sits off-centre.
     $grabbed = $false
     for ($try = 0; $try -lt 3 -and -not $grabbed; $try++) {
-        if ($try -gt 0 -and -not (Wait-Still)) { Fail "the sprite never came to rest; see $trace" }
+        if ($try -gt 0) {
+            # Off the sprite first, so the next aim logs a fresh flip.
+            [ClimbInput]::Move($grabX, $sy - 2 * $size)
+            if (-not (Wait-Still)) { Fail "the sprite never came to rest; see $trace" }
+        }
         $frame = Last-Frame
         $sx = $frame.X; $sy = $frame.Y
         $grabX = $sx + $half + $into * [int][Math]::Floor($half / 2)
