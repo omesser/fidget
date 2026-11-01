@@ -49,13 +49,25 @@ wait_on_source() { # <seconds> <source command> <reader...>
   reader_pid=$!
   { sleep "$seconds" && kill "$reader_pid"; } > /dev/null 2>&1 &
   timer_pid=$!
-  wait "$reader_pid" 2> /dev/null && result=0 || result=1
+  wait "$reader_pid" 2> /dev/null && result=0 || result=$?
   pkill -P "$timer_pid" 2> /dev/null || true
   pkill -P "$source_pid" 2> /dev/null || true
   kill "$timer_pid" "$source_pid" 2> /dev/null || true
   wait "$timer_pid" "$source_pid" 2> /dev/null || true
   rm -f "$fifo"
-  return "$result"
+  # 143: the timer's TERM ended the reader, so the seconds ran out.
+  [ "$result" != 143 ] || dump_stacks
+  [ "$result" = 0 ]
+}
+
+# A wait that ran out with Fidget still up saves every thread's stack in the
+# evidence folder ($out): a stall that never reproduces leaves no other trace.
+dump_stacks() {
+  fidget_alive && [ -n "${pid:-}" ] && command -v eu-stack > /dev/null || return 0
+  local file
+  file="${out:-${TMPDIR:-/tmp}}/stacks-$(now_ms).txt"
+  eu-stack -p "$pid" > "$file" 2>&1 || true
+  echo "a wait ran out; Fidget's thread stacks are in $file" >&2
 }
 
 # Wait for a line matching an extended regex to land in a file.

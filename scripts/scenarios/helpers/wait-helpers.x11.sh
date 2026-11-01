@@ -13,7 +13,10 @@ wait_for_file() { # <seconds> <file path>
     return
   }
   timeout "$1" inotifywait -q -m -e create,moved_to --format %f "$(dirname "$2")" 2> /dev/null |
-    grep -qxFm1 "$(basename "$2")" || [ -f "$2" ]
+    grep -qxFm1 "$(basename "$2")" || [ -f "$2" ] || {
+    dump_stacks
+    return 1
+  }
 }
 
 # Wait for an AT-SPI dump to match a pattern. ax-wait-linux.py checks again
@@ -22,7 +25,11 @@ wait_for_file() { # <seconds> <file path>
 wait_for_ax_dump() { # <seconds> <pid> <window title> <pattern> [<file>]
   fidget_alive || return 1
   # shellcheck disable=SC2154
-  python3 "${root}/scripts/ax-wait-linux.py" "$2" "$3" "$1" "$4" ${5:+"$5"} 2> /dev/null
+  # It exits 3 when the seconds run out; 2 is bad input, 1 a crash.
+  python3 "${root}/scripts/ax-wait-linux.py" "$2" "$3" "$1" "$4" ${5:+"$5"} 2> /dev/null || {
+    [ $? != 3 ] || dump_stacks
+    return 1
+  }
 }
 
 # Answer a permission ask by pressing the named button (Allow or Reject) in

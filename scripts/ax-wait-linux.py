@@ -2,8 +2,9 @@
 """Wait for a Fidget window's AT-SPI tree to match a pattern.
 
 Checks once, then again on each AT-SPI change event from PID (children,
-names, text, states, new windows), and exits 0 on the first match or 1 when
-SECONDS pass. Nothing polls: the GLib main loop sleeps until an event.
+names, text, states, new windows), and exits 0 on the first match or 3 when
+SECONDS pass; 3, not 1, so a crash (Python exits 1) never reads as a
+timeout. Nothing polls: the GLib main loop sleeps until an event.
 
 Usage:
   ax-wait-linux.py PID TITLE SECONDS PATTERN [OUT]
@@ -66,7 +67,7 @@ def main(argv):
                 f.write(out.getvalue())
         return True
 
-    return 0 if ax.wait_until(pid, matches, seconds, EVENTS) else 1
+    return 0 if ax.wait_until(pid, matches, seconds, EVENTS) else 3
 
 
 if __name__ == "__main__":
