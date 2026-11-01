@@ -81,7 +81,7 @@ impl Recency {
             *age += elapsed;
         }
 
-        if !verbs.is_empty() && !self.gesturing {
+        if !frame.possessed && !verbs.is_empty() && !self.gesturing {
             self.was = self.last.clone().map(|found| (found, Duration::ZERO));
         }
         self.gesturing = !verbs.is_empty();
@@ -92,10 +92,8 @@ impl Recency {
         };
         let before = self.last.replace(now.clone());
         // The Director hears a possession start and end, never the moves
-        // between, so a drive leaves no steps and no gesture snapshot.
+        // between; earlier steps still age out through the usual window.
         if frame.possessed {
-            self.steps.clear();
-            self.was = None;
             return;
         }
         if before.as_ref().map(|doing| doing.state) != Some(now.state) {
@@ -213,6 +211,7 @@ mod tests {
         fn wake(&mut self, happened: Happened) -> String {
             follow_up(&Context {
                 state: self.frame.state,
+                possessed: self.frame.possessed,
                 lately: self.recency.take(&happened),
                 happened,
                 ..Context::quiet()
@@ -369,6 +368,55 @@ mod tests {
             format!(
                 "{}state: climbing\nlately: climbing → held → climbing → held → climbing\nstanding on: nothing\n",
                 floor("what just happened: time passed\n")
+            )
+        );
+    }
+
+    #[test]
+    fn the_possessed_wake_remembers_the_fall_before_possession() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let mut sprite = Instance {
+            frame: engine.tick(&snapshot(0, vec![])),
+            engine,
+            recency: Recency::default(),
+        };
+        sprite.wait(1_500);
+        sprite.engine.set_possessed(true);
+        sprite.wait(100);
+
+        assert_eq!(
+            sprite.wake(Happened::PossessionStart),
+            format!(
+                "{}state: idle\npossessed: yes\nlately: falling → idle\nstanding on: nothing\n",
+                floor("what just happened: possessed\n")
+            )
+        );
+
+        sprite.wait(13_000);
+        assert_eq!(
+            sprite.wake(Happened::PossessionStart),
+            format!(
+                "{}state: idle\npossessed: yes\nstanding on: nothing\n",
+                floor("what just happened: possessed\n")
+            )
+        );
+    }
+
+    #[test]
+    fn possession_preserves_the_gesture_snapshot_from_before_it() {
+        let mut sprite = Instance::at(500.0, 0.0);
+        sprite.tick(snapshot(60_000, vec![]));
+        sprite.wait(30_000);
+        sprite.verb(Verb::Poke);
+        sprite.wait(100);
+        sprite.engine.set_possessed(true);
+        sprite.verb(Verb::Grab);
+
+        assert_eq!(
+            sprite.wake(Happened::PossessionStart),
+            format!(
+                "{}state: held\npossessed: yes\nstanding on: nothing\n",
+                floor("what just happened: possessed\nwas: asleep\n")
             )
         );
     }
