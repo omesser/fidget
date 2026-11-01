@@ -14,6 +14,20 @@ pub enum Key {
     Arrow(Arrow),
     Space,
     Escape,
+    /// 1 through 9. Letters stay unbound, so A and D do not collide with WASD.
+    Digit(u8),
+}
+
+/// Behaviors the digits play, in name order, without `walk` or `jump`.
+/// A Character with more than nine leaves the rest unbound.
+pub fn digit_behaviors<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut names: Vec<&str> = names
+        .into_iter()
+        .filter(|name| *name != "walk" && *name != "jump")
+        .collect();
+    names.sort_unstable();
+    names.truncate(9);
+    names
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -53,6 +67,9 @@ pub struct Intent {
     pub launch: Option<Charge>,
     /// Escape was pressed: end the possession.
     pub end_possession: bool,
+    /// A digit pressed since the last tick, 1 to 9. The Engine plays the
+    /// Behavior at that place in [`digit_behaviors`].
+    pub play: Option<u8>,
 }
 
 /// Held keys, between key edges and ticks.
@@ -67,6 +84,10 @@ pub struct Possession {
     /// straight after a keyup, inside one tick, still launches the first.
     launch: Option<Charge>,
     end_possession: bool,
+    /// Digits 1 to 9 currently down. A keydown for one already down is a repeat.
+    digits: u16,
+    /// The digit the next tick plays.
+    play: Option<u8>,
 }
 
 impl Possession {
@@ -85,7 +106,22 @@ impl Possession {
                 self.pause();
                 self.end_possession = true;
             }
+            (Key::Digit(digit), down) => self.digit(digit, down),
             _ => {}
+        }
+    }
+
+    fn digit(&mut self, digit: u8, down: bool) {
+        let Some(bit) = (1..=9).contains(&digit).then_some(1u16 << digit) else {
+            return;
+        };
+        if down {
+            if self.digits & bit == 0 {
+                self.digits |= bit;
+                self.play = Some(digit);
+            }
+        } else {
+            self.digits &= !bit;
         }
     }
 
@@ -108,6 +144,7 @@ impl Possession {
             charging: self.space_ms.map(Charge::held),
             launch: self.launch.take(),
             end_possession: std::mem::take(&mut self.end_possession),
+            play: self.play.take(),
         }
     }
 }
@@ -258,5 +295,50 @@ mod tests {
         keys.key(Key::Escape, true);
         keys.pause();
         assert!(keys.tick(FRAME_MS).end_possession);
+    }
+
+    #[test]
+    fn digits_follow_behavior_names_skipping_walk_and_jump() {
+        let names = ["jump", "walk", "wave", "nod", "sit"];
+        assert_eq!(digit_behaviors(names), ["nod", "sit", "wave"]);
+    }
+
+    #[test]
+    fn only_the_first_nine_behaviors_get_digits() {
+        let names = [
+            "walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a",
+        ];
+        assert_eq!(
+            digit_behaviors(names),
+            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+        );
+    }
+
+    #[test]
+    fn a_digit_press_asks_once_to_play_and_a_repeat_does_not() {
+        let mut keys = Possession::default();
+        keys.key(Key::Digit(3), true);
+        assert_eq!(keys.tick(FRAME_MS).play, Some(3));
+        keys.key(Key::Digit(3), true);
+        assert_eq!(keys.tick(FRAME_MS).play, None);
+        keys.key(Key::Digit(3), false);
+        keys.key(Key::Digit(3), true);
+        assert_eq!(keys.tick(FRAME_MS).play, Some(3));
+    }
+
+    #[test]
+    fn a_digit_outside_1_to_9_asks_for_nothing() {
+        let mut keys = Possession::default();
+        keys.key(Key::Digit(0), true);
+        keys.key(Key::Digit(10), true);
+        assert_eq!(keys.tick(FRAME_MS).play, None);
+    }
+
+    #[test]
+    fn a_pause_drops_a_digit_not_yet_played() {
+        let mut keys = Possession::default();
+        keys.key(Key::Digit(1), true);
+        keys.pause();
+        assert_eq!(keys.tick(FRAME_MS).play, None);
     }
 }

@@ -16,7 +16,7 @@ use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{
     bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
 };
-use fidget_core::possession::Intent;
+use fidget_core::possession::{digit_behaviors, Intent};
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
@@ -2295,7 +2295,13 @@ pub(crate) fn run_frame_loop(
                 if let Some(played) = &frame.behavior {
                     director::remember(&mut live.recent, played.clone());
                     if tracing_frames {
-                        eprintln!("director: {} {played}", live.id);
+                        // A digit and a proposal both start a Behavior. The
+                        // word says which, so a log can tell a key from the Director.
+                        if world.possession.play.is_some() {
+                            eprintln!("possession: {} {played}", live.id);
+                        } else {
+                            eprintln!("director: {} {played}", live.id);
+                        }
                     }
                 }
 
@@ -2304,10 +2310,12 @@ pub(crate) fn run_frame_loop(
                 // the Poke cooldown also refuses, on the sprite's feet.
                 if let Some(refused) = &frame.refused {
                     if model::tracing() {
-                        eprintln!(
-                            "director: {} {refused} refused in {:?}",
-                            live.id, frame.state
-                        );
+                        let via = if world.possession.play.is_some() {
+                            "possession"
+                        } else {
+                            "director"
+                        };
+                        eprintln!("{via}: {} {refused} refused in {:?}", live.id, frame.state);
                     }
                 }
 
@@ -2504,6 +2512,14 @@ pub(crate) fn run_frame_loop(
                     paused,
                     charge: frame.charge,
                     possession_cue,
+                    behaviors: if possessed {
+                        digit_behaviors(live.character.behaviors.keys().map(String::as_str))
+                            .into_iter()
+                            .map(str::to_string)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    },
                     mask: drawn.mask.clone(),
                 });
             }

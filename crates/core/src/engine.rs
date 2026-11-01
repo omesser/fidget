@@ -8,7 +8,7 @@
 use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
-use crate::possession::{Arrow, Charge, Intent};
+use crate::possession::{digit_behaviors, Arrow, Charge, Intent};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
@@ -200,9 +200,9 @@ pub struct Frame {
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 
-    /// The Behavior that started on this frame, if a proposal was taken. For
-    /// the Shell: what the Director suggested and what the user saw are
-    /// different lists, and repetition is suppressed on the second.
+    /// The Behavior that started on this frame, from a proposal or a digit.
+    /// For the Shell: what was asked and what the user saw are different
+    /// lists, and repetition is suppressed on the second.
     pub behavior: Option<String>,
 
     /// The Behavior whose Primitives are still playing, on every tick of the
@@ -1215,25 +1215,37 @@ impl Engine {
         // Frame carries the proposal's dialogue whatever happens here.
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb && !self.possessed {
-                if let Some(primitives) = self.chain(&proposal.behavior) {
+                match self.start_behavior(&proposal.behavior) {
+                    Some(true) => {
+                        started = true;
+                        behavior = Some(proposal.behavior.clone());
+                    }
                     // Mid-cooldown, `play` refuses a moving chain whole,
                     // greeting included. A lone line or gesture plays. After
                     // the cooldown the Director calls afresh; nothing resumes.
-                    if self.play(&primitives) {
+                    Some(false) => refused = Some(proposal.behavior.clone()),
+                    None if proposal.behavior.is_empty()
+                        && proposal.dialogue.is_some()
+                        && self.play(&[Primitive::Talk]) =>
+                    {
                         started = true;
-                        behavior = Some(proposal.behavior.clone());
-                        // The only place a name is attached: `play` is reached
-                        // by Engine-played moments too, and it clears the name
-                        // so that they cannot inherit the last proposal's.
-                        self.playing_behavior = behavior.clone();
-                    } else {
-                        refused = Some(proposal.behavior.clone());
                     }
-                } else if proposal.behavior.is_empty()
-                    && proposal.dialogue.is_some()
-                    && self.play(&[Primitive::Talk])
-                {
-                    started = true;
+                    None => {}
+                }
+            }
+        }
+
+        // Director proposals stay out while possessed. A digit is the user
+        // asking, so it takes the same `permitted` gate.
+        if self.possessed {
+            if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
+                match self.start_behavior(&name) {
+                    Some(true) => {
+                        started = true;
+                        behavior = Some(name);
+                    }
+                    Some(false) => refused = Some(name),
+                    None => {}
                 }
             }
         }
@@ -1821,6 +1833,26 @@ impl Engine {
             }
             CursorReaction::React => self.play(&[Primitive::React]),
         }
+    }
+
+    /// Start `name` through `permitted`. `None` means the Character does not
+    /// declare it. `play` clears the Behavior name, so only this puts it back.
+    fn start_behavior(&mut self, name: &str) -> Option<bool> {
+        let primitives = self.chain(name)?;
+        let started = self.play(&primitives);
+        if started {
+            self.playing_behavior = Some(name.to_string());
+        }
+        Some(started)
+    }
+
+    /// The Behavior digit `play` names, or nothing past the list.
+    fn behavior_for_digit(&self, play: Option<u8>) -> Option<String> {
+        let index = usize::from(play?).checked_sub(1)?;
+        let names: Vec<&str> = self.behaviors.keys().map(String::as_str).collect();
+        digit_behaviors(names)
+            .get(index)
+            .map(|name| (*name).to_string())
     }
 
     /// Start `primitives` unless the State forbids any of them. True when it
@@ -9396,6 +9428,13 @@ mod tests {
             }
         }
 
+        fn playing(digit: u8) -> Intent {
+            Intent {
+                play: Some(digit),
+                ..Intent::default()
+            }
+        }
+
         fn on(display: Rect) -> WorldSnapshot {
             WorldSnapshot {
                 displays: vec![display],
@@ -9770,6 +9809,83 @@ mod tests {
             );
             assert_eq!(frame.dialogue.as_deref(), Some("hands off the wheel"));
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
+        }
+
+        #[test]
+        fn a_digit_plays_that_behavior_and_one_past_the_list_does_nothing() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(played.behavior.as_deref(), Some("greet"), "{played:?}");
+            assert_eq!(played.playing_behavior.as_deref(), Some("greet"));
+            assert_eq!(played.animation, "react");
+            assert_eq!(played.refused, None);
+
+            let unbound = engine.tick(&with_possession(playing(3), &world));
+            assert_eq!(unbound.behavior, None, "{unbound:?}");
+            assert_eq!(
+                unbound.refused, None,
+                "a digit past the list is not a proposal that missed: {unbound:?}"
+            );
+            assert_eq!(unbound.playing_behavior.as_deref(), Some("greet"));
+        }
+
+        #[test]
+        fn a_digit_the_state_forbids_is_refused_like_a_proposal() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let launched = engine.tick(&with_possession(launching(released_after(0)), &world));
+            assert_eq!(launched.state, State::Falling, "{launched:?}");
+
+            let refused = engine.tick(&with_possession(playing(2), &world));
+            assert_eq!(refused.behavior, None, "{refused:?}");
+            assert_eq!(refused.refused.as_deref(), Some("settle"));
+            assert_eq!(
+                refused.animation, "jump",
+                "the refusal does not replace the flight"
+            );
+        }
+
+        #[test]
+        fn a_character_with_more_than_nine_behaviors_binds_only_the_first_nine() {
+            let names = [
+                "walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a",
+            ];
+            let behaviors = names
+                .iter()
+                .map(|name| {
+                    (
+                        (*name).to_string(),
+                        Behavior {
+                            primitives: vec![Primitive::Sit],
+                            then: None,
+                            weight: DEFAULT_WEIGHT,
+                            trigger: None,
+                        },
+                    )
+                })
+                .collect();
+            let world = on(one_display());
+            let mut engine = Engine::new(Point { x: 500.0, y: 0.0 }).with_behaviors(behaviors);
+            settle(
+                &mut engine,
+                &WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                },
+            );
+            engine.set_possessed(true);
+
+            let first = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(first.behavior.as_deref(), Some("a"), "{first:?}");
+            assert_eq!(first.animation, "sit");
+
+            let ninth = engine.tick(&with_possession(playing(9), &world));
+            assert_eq!(ninth.behavior.as_deref(), Some("i"), "{ninth:?}");
+            assert_ne!(ninth.playing_behavior.as_deref(), Some("j"));
+            assert_ne!(ninth.playing_behavior.as_deref(), Some("walk"));
         }
 
         #[test]
