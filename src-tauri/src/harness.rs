@@ -9596,11 +9596,13 @@ mod tests {
         assert_eq!(failed.command, Some(session.launch.line()));
         // Linux appends " (core dumped)" when the runner keeps cores.
         #[cfg(unix)]
-        let reason = failed
-            .reason
-            .strip_suffix(" (core dumped)")
-            .unwrap_or(&failed.reason);
-        assert_eq!(reason, "exited before initialize, signal: 6 (SIGABRT)");
+        {
+            let reason = failed
+                .reason
+                .strip_suffix(" (core dumped)")
+                .unwrap_or(&failed.reason);
+            assert_eq!(reason, "exited before initialize, signal: 6 (SIGABRT)");
+        }
         // Its stderr, and libtest's own stdout from before the fixture ran.
         assert!(
             failed.output.contains(
