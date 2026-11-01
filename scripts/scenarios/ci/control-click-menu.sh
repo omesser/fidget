@@ -58,7 +58,7 @@ trap 'exit 130' INT TERM
 
 # The overlay spans the display, so its centre is not the sprite. The newest
 # frame trace line says where the sprite is drawn, in global points.
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_trace 3 "$log" '^frame: .* sprite\(' || fail "Fidget traced no frame; see $log"
 # A click on a walking sprite lands where it was, so wait for it to rest.
 wait_for_rest "$log" || fail "the sprite never came to rest; see $log"

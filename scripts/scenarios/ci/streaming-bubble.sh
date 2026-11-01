@@ -87,7 +87,7 @@ release() { # <word the stream resumes with>
   exec 3>&-
 }
 
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
 # The fixture sends a word every 700 ms, so each wait below ends within 3 s.
 wait_for_marks 3 "$marks" '^word 2$' || fail "no streamed turn reached the Harness; see $log"

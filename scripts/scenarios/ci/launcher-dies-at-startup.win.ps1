@@ -187,7 +187,7 @@ $ax = Join-Path $root "scripts\ax-window-win.ps1"
 $startMs = Get-NowMs
 $proc = Start-FidgetPiped $Bin @() $log $errLog
 try {
-    if (-not (Wait-ForUp 5 $errLog)) { Fail "Fidget never wrote its overlay line; see $errLog" }
+    if (-not (Wait-ForUp $errLog)) { Fail "Fidget never wrote its overlay line; see $errLog" }
     function Invoke-Ax([string]$Label, [hashtable]$AxArgs) {
         return (Invoke-AxWin (Join-Path $out "$Label.txt") $AxArgs)
     }

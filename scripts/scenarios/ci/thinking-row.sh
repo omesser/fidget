@@ -74,7 +74,7 @@ capture() { # <name> <glyph the first Thinking row starts with>
   echo "ok: $1: $row"
 }
 
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 # `chat: <label> is open` is the line a fresh Chat writes; it never writes
 # `is not minimized`, which is a deminiaturize transition.

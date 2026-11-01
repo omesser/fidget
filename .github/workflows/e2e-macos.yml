@@ -50,9 +50,9 @@ jobs:
           cargo test -p fidget --no-run
 
       - name: Warm up WebKit
-        # A fresh runner draws Fidget's first frame seconds late, past a leaf's
-        # 3 s launch wait. One launch here takes that cold start, which ran past
-        # 3 s itself on macOS, so this one wait gets 30 s.
+        # A fresh runner draws Fidget's first frame seconds late. One launch
+        # here takes that cold start, which ran past 3 s itself on macOS, so
+        # this wait gets the same 30 s budget as a leaf's startup wait.
         env:
           FIDGET_DIRECTOR_API_KEY: x
         run: |
