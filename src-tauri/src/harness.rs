@@ -664,10 +664,12 @@ fn timed_command(
 fn resolved_program(program: &str) -> OsString {
     #[cfg(windows)]
     {
-        return windows_program(program, None).unwrap_or_else(|| OsString::from(program));
+        windows_program(program, None).unwrap_or_else(|| OsString::from(program))
     }
     #[cfg(not(windows))]
-    OsString::from(program)
+    {
+        OsString::from(program)
+    }
 }
 
 #[cfg(windows)]
