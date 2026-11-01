@@ -807,8 +807,8 @@ struct ArtUrls {
     characters: BTreeMap<String, CharacterArt>,
 }
 
-/// `ArtUrls` and its JSON, encoded by the first `character` call rather than
-/// in setup: a debug build spends ~300 ms on it, and setup holds the overlay.
+/// `ArtUrls` and its JSON, encoded once by whichever asks first: setup's own
+/// thread, or a `character` call that arrives before it is done.
 struct ArtJson {
     art: ArtUrls,
     json: std::sync::OnceLock<String>,
@@ -821,20 +821,22 @@ impl ArtJson {
             json: std::sync::OnceLock::new(),
         }
     }
+
+    fn json(&self) -> &str {
+        self.json
+            .get_or_init(|| serde_json::to_string(&self.art).expect("ArtUrls always serializes"))
+    }
 }
 
 fn character_response(art: &ArtJson) -> tauri::ipc::Response {
-    let json = art
-        .json
-        .get_or_init(|| serde_json::to_string(&art.art).expect("ArtUrls always serializes"));
-    tauri::ipc::Response::new(json.clone())
+    tauri::ipc::Response::new(art.json().to_owned())
 }
 
 /// The art of every Character on screen, fetched once when the webview
 /// loads. A command rather than an event: setup would race the overlay's
-/// listener. Async so the one-time encode runs off the main thread.
+/// listener. Async, so waiting on the encode never holds the main thread.
 #[tauri::command]
-async fn character(art: tauri::State<'_, ArtJson>) -> Result<tauri::ipc::Response, ()> {
+async fn character(art: tauri::State<'_, Arc<ArtJson>>) -> Result<tauri::ipc::Response, ()> {
     Ok(character_response(art.inner()))
 }
 
@@ -5231,7 +5233,13 @@ fn main() {
                         smooth: character.smooth,
                     });
             }
-            app.manage(ArtJson::new(ArtUrls { characters }));
+            // Off the main thread: a debug build spends ~300 ms on the JSON,
+            // and the overlay page asks for it only after it loads.
+            let art = Arc::new(ArtJson::new(ArtUrls { characters }));
+            app.manage(Arc::clone(&art));
+            std::thread::spawn(move || {
+                art.json();
+            });
             let installed: Vec<String> = character_cache.keys().cloned().collect();
 
             // Show in the Dock so users have a findable anchor when the menu
