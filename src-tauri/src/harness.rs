@@ -222,7 +222,12 @@ impl Launch {
     /// The child inherits our environment without a provider key,
     /// `CLAUDE_CONFIG_DIR`, or `--bare`; each overrides or cuts the login.
     /// `pi` gets the token via `process.env`; `own_interrupt` isolates it.
-    fn command(&self, cwd: &AttachCwd, mcp_available: bool) -> Command {
+    fn command(
+        &self,
+        cwd: &AttachCwd,
+        mcp_available: bool,
+        interrupt: Option<InterruptOwned>,
+    ) -> Command {
         let mut command = Command::new(resolved_program(&self.argv[0]));
         let endpoint = crate::mcp_http::endpoint();
         let mut args = self.argv[1..].to_vec();
@@ -255,7 +260,7 @@ impl Launch {
             command.env("CODEX_CONFIG", config);
             command.env(fidget_mcp_server::TOKEN_VAR, token.expose_to_code());
         }
-        isolate_from_interrupt(&mut command);
+        apply_isolation(&mut command, interrupt.is_some());
         command
     }
 
@@ -532,15 +537,43 @@ impl Target {
     }
 }
 
-/// Tests isolate without installing a `ctrlc` handler. Production stays
-/// false until `own_interrupt`. A failed handler must not orphan a tree
-/// Ctrl+C can no longer reach.
-static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(cfg!(test));
+/// Witness that Ctrl+C is ours. Only a successful handler install makes one,
+/// so a child leaves our process group only when Ctrl+C can still reach it.
+#[derive(Clone, Copy)]
+pub(crate) struct InterruptOwned(());
+
+/// False until `own_interrupt` installs the handler. A test binary catches no
+/// Ctrl+C, so it stays false there too and no test child leaves our group.
+static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(false);
 static INTERRUPT_QUITTING: AtomicBool = AtomicBool::new(false);
 
-/// Isolation is on. Ctrl+C is ours, so the child may leave this process group.
-pub fn own_interrupt() {
-    INTERRUPT_OWNED.store(true, Ordering::SeqCst);
+/// Forces the refusal arm, so a test can prove a failed install isolates nothing.
+#[cfg(test)]
+static FAIL_INTERRUPT_INSTALL: AtomicBool = AtomicBool::new(false);
+
+/// Install the Ctrl+C handler, then claim the interrupt. `None` when `ctrlc`
+/// refuses: isolation stays off and the child stays where Ctrl+C reaches it.
+pub(crate) fn own_interrupt(handler: impl FnMut() + Send + 'static) -> Option<InterruptOwned> {
+    #[cfg(test)]
+    let installed = if FAIL_INTERRUPT_INSTALL.swap(false, Ordering::SeqCst) {
+        Err(ctrlc::Error::MultipleHandlers)
+    } else {
+        ctrlc::set_handler(handler)
+    };
+    #[cfg(not(test))]
+    let installed = ctrlc::set_handler(handler);
+    match installed {
+        Ok(()) => {
+            INTERRUPT_OWNED.store(true, Ordering::SeqCst);
+            Some(InterruptOwned(()))
+        }
+        Err(why) => {
+            eprintln!(
+                "harness: could not catch interrupt: {why}; child stays in this process group"
+            );
+            None
+        }
+    }
 }
 
 /// True on the second Ctrl+C, which should `exit` rather than nest `shutdown`.
@@ -548,8 +581,18 @@ pub fn interrupt_already_quitting() -> bool {
     INTERRUPT_QUITTING.swap(true, Ordering::SeqCst)
 }
 
-fn isolate_from_interrupt(command: &mut Command) {
-    apply_isolation(command, INTERRUPT_OWNED.load(Ordering::SeqCst));
+fn owned_interrupt() -> Option<InterruptOwned> {
+    INTERRUPT_OWNED
+        .load(Ordering::SeqCst)
+        .then_some(InterruptOwned(()))
+}
+
+#[cfg(test)]
+impl InterruptOwned {
+    /// Stands in for a successful install in a test that sends no signal.
+    fn for_test() -> Self {
+        Self(())
+    }
 }
 
 /// Version probe timeout. Short enough not to block the UI thread, long
@@ -2267,7 +2310,9 @@ impl Session {
         let owners = Arc::clone(&self.owners);
         let serving = Arc::clone(&self.serving_instance);
         let plays = Arc::clone(&self.plays);
-        let mut command = self.launch.command(cwd, mcp_stdio().is_some());
+        let mut command = self
+            .launch
+            .command(cwd, mcp_stdio().is_some(), owned_interrupt());
         if self.launch.name == "codex" {
             let inputs = self.open_inputs();
             apply_codex_project_config(
@@ -2820,15 +2865,10 @@ pub fn run_probe() -> i32 {
     // `kill_harness_tree` can reap `npx` grandchildren. The handler shuts the
     // session down. 130 is the shell's SIGINT code, not a probe verdict.
     let interrupted = session.clone();
-    match ctrlc::set_handler(move || {
+    own_interrupt(move || {
         interrupted.shutdown();
         std::process::exit(130);
-    }) {
-        Ok(()) => own_interrupt(),
-        Err(why) => eprintln!(
-            "probe-harness: could not catch interrupt: {why}; the Harness stays in this process group"
-        ),
-    }
+    });
     // An Apply step leaves its settings here. The next probe starts without them.
     let _ = std::fs::remove_file(crate::settings::settings_path(session.data.as_path()));
     let code = match ProbeThen::from_env() {
@@ -5445,7 +5485,7 @@ mod tests {
     fn a_codex_acp_launch_carries_the_exact_trust_argument() {
         let data = PathBuf::from("/tmp/ct/data.dir");
         let launch = launch(Some("codex")).unwrap();
-        let mut command = launch.command(&tmp_attach(), false);
+        let mut command = launch.command(&tmp_attach(), false, None);
         apply_codex_launch_trust(&mut command, &launch.argv, &data);
         let args: Vec<String> = command
             .get_args()
@@ -5468,7 +5508,7 @@ mod tests {
                 "script=hello".into(),
             ],
         };
-        let mut command = launch.command(&tmp_attach(), false);
+        let mut command = launch.command(&tmp_attach(), false, None);
         apply_codex_launch_trust(&mut command, &launch.argv, &data);
         let args: Vec<_> = command.get_args().collect();
         assert!(!args.iter().any(|arg| *arg == "-c"), "{args:?}");
@@ -5525,7 +5565,7 @@ mod tests {
                 "@agentclientprotocol/codex-acp@latest".into(),
             ],
         };
-        let mut command = launch.command(&AttachCwd(root.clone()), false);
+        let mut command = launch.command(&AttachCwd(root.clone()), false, None);
         apply_codex_launch_trust(&mut command, &launch.argv, &data);
         command.env("FIDGET_ARGV_OUT", &out);
         without_console_window(&mut command);
@@ -5567,7 +5607,7 @@ mod tests {
                 "@agentclientprotocol/codex-acp@latest".into(),
             ],
         };
-        let mut command = launch.command(&AttachCwd(root.clone()), false);
+        let mut command = launch.command(&AttachCwd(root.clone()), false, None);
         apply_codex_launch_trust(&mut command, &launch.argv, &data);
         command.env("FIDGET_ARGV_OUT", &out);
         without_console_window(&mut command);
@@ -5704,7 +5744,7 @@ mod tests {
         let args = |name, mcp_available| {
             launch(Some(name))
                 .unwrap()
-                .command(&tmp_attach(), mcp_available)
+                .command(&tmp_attach(), mcp_available, None)
                 .get_args()
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect::<Vec<_>>()
@@ -6397,7 +6437,7 @@ mod tests {
             let endpoint_was_served = crate::mcp_http::endpoint().is_some();
             let inline_config = std::env::var("OPENCODE_CONFIG_CONTENT").ok();
             let codex_config = launch.codex_mcp_config();
-            let command = launch.command(&tmp_attach(), true);
+            let command = launch.command(&tmp_attach(), true, None);
             let mut env: Vec<_> = command
                 .get_envs()
                 .map(|(key, _)| key.to_string_lossy().into_owned())
@@ -6505,7 +6545,7 @@ mod tests {
             name: "sleep".into(),
             argv: vec!["/bin/sleep".into(), "8".into()],
         };
-        let mut command = launch.command(&tmp_attach(), false);
+        let mut command = launch.command(&tmp_attach(), false, Some(InterruptOwned::for_test()));
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sleep");
@@ -6519,14 +6559,47 @@ mod tests {
         );
     }
 
+    /// Nothing in this binary catches Ctrl+C, so the production path has to
+    /// leave the child where a terminal Ctrl+C still reaches it.
     #[cfg(unix)]
     #[test]
     fn an_unowned_interrupt_leaves_the_child_in_the_app_group() {
-        let mut command = std::process::Command::new("/bin/sleep");
-        command.arg("8");
+        let launch = Launch {
+            name: "sleep".into(),
+            argv: vec!["/bin/sleep".into(), "8".into()],
+        };
+        let mut command = launch.command(&tmp_attach(), false, None);
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
-        apply_isolation(&mut command, false);
+        let mut child = command.spawn().expect("sleep");
+        let child_pgid = pgid_of(child.id()).expect("child pgid");
+        let app_pgid = pgid_of(std::process::id()).expect("app pgid");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(
+            child_pgid, app_pgid,
+            "a failed ctrlc handler must not orphan a tree Ctrl+C can no longer reap"
+        );
+    }
+
+    /// A refused handler reaps nothing, so a child spawned after it must stay
+    /// where Ctrl+C still reaches it.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_interrupt_install_leaves_the_child_in_the_app_group() {
+        FAIL_INTERRUPT_INSTALL.store(true, Ordering::SeqCst);
+        let interrupt = own_interrupt(|| {});
+        assert!(
+            interrupt.is_none(),
+            "a refused handler claimed the interrupt"
+        );
+        let launch = Launch {
+            name: "sleep".into(),
+            argv: vec!["/bin/sleep".into(), "8".into()],
+        };
+        let mut command = launch.command(&tmp_attach(), false, interrupt);
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sleep");
         let child_pgid = pgid_of(child.id()).expect("child pgid");
         let app_pgid = pgid_of(std::process::id()).expect("app pgid");
@@ -6602,7 +6675,7 @@ mod tests {
                 r#"trap "" HUP TERM; sleep 30 & wait"#.into(),
             ],
         };
-        let mut command = launch.command(&tmp_attach(), false);
+        let mut command = launch.command(&tmp_attach(), false, Some(InterruptOwned::for_test()));
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
         let mut child = command.spawn().expect("sh");
