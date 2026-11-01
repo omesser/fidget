@@ -12,6 +12,14 @@ import {
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import { possessionEdge } from "./possession-keys.js";
 import {
+  chargeFill,
+  paintPossession,
+  placePossession,
+  possessionBounds,
+  possessionCard,
+  possessionRects,
+} from "./possession-card.js";
+import {
   CONNECT_HINT,
   applyQuickMessageGate,
   createDraftReporter,
@@ -45,6 +53,9 @@ let petDrag = null;
 let gestureActive = false;
 // The pill's dwell in ms, from the latest frame, so a Settings change lands on the next hover.
 let hoverDelayMs;
+// The shell's usable area for this overlay, in overlay coordinates. Absent
+// until the first frame, and then the card is inset from the menu bar.
+let workArea = null;
 
 const views = new Map();
 
@@ -269,6 +280,65 @@ function speechRect(view) {
   };
 }
 
+const CHARGE_BAR_PX = 8;
+const POSSESSION_GAP_PX = 8;
+
+function chargeRectFor(fill, placed) {
+  if (fill == null) return null;
+  return [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
+}
+
+function positionPossession(view, latest) {
+  const model = possessionCard({
+    possessed: Boolean(latest.possessed),
+    paused: Boolean(latest.paused),
+  });
+  const fill = chargeFill(latest.charge);
+  const rebuilt = paintPossession(view.card, view.bar, model, fill);
+  if (!model) {
+    view.cardSize = null;
+    view.possessionRect = null;
+    view.chargeRect = null;
+    view.possessionSeat = null;
+    reportOverlayRects();
+    return;
+  }
+  const bounds = possessionBounds(workArea, currentDisplayBounds());
+  const seat = view.possessionSeat;
+  const sameSeat =
+    seat &&
+    seat.x === bounds.x &&
+    seat.y === bounds.y &&
+    seat.width === bounds.width &&
+    seat.height === bounds.height &&
+    seat.paused === model.paused;
+  // Skip the measure: a charge tick only widens the fill. Still publish the
+  // bar. Windows clips to the reported region, so a bar that appears after
+  // the card is seated stays invisible until its rect is sent.
+  if (!rebuilt && sameSeat && view.cardSize?.width) {
+    const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
+    view.chargeRect = chargeRectFor(fill, placed);
+    return;
+  }
+  if (rebuilt || !view.cardSize?.width) {
+    view.cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
+  }
+  const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
+  view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
+  view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
+  view.bar.style.width = `${placed.bar.width}px`;
+  view.possessionSeat = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    paused: model.paused,
+  };
+  view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
+  view.chargeRect = chargeRectFor(fill, placed);
+  reportOverlayRects();
+}
+
 function positionQuick(view, spriteRect) {
   const size = { width: view.quick.offsetWidth, height: view.quick.offsetHeight };
   const pos = placeQuickMessage(spriteRect, size, currentDisplayBounds(), speechRect(view));
@@ -471,6 +541,29 @@ function attachQuickMessage(view, id) {
   view.quickField = field;
   view.quickMirror = mirror;
 
+  const card = document.createElement("div");
+  card.className = "possession";
+  const bar = document.createElement("div");
+  bar.className = "possession-charge";
+  const charge = document.createElement("div");
+  charge.className = "possession-charge-fill";
+  bar.append(charge);
+  // A press here resumes. It is not a press on the art, so it must not poke.
+  const resume = (event) => {
+    event.stopPropagation();
+    window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
+      console.error("overlay_request_focus", err);
+    });
+  };
+  card.addEventListener("pointerdown", resume);
+  card.addEventListener("pointerup", (event) => event.stopPropagation());
+  card.addEventListener("click", (event) => event.stopPropagation());
+  stage.append(card, bar);
+  view.card = card;
+  view.bar = bar;
+  view.possessionRect = null;
+  view.chargeRect = null;
+
   let machine;
   machine = createQuickMessage({
     schedule: (fn, ms) => window.setTimeout(fn, ms),
@@ -562,6 +655,12 @@ function reportOverlayRects() {
     if (view.hotspot) push(view.hotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
     if (view.bubbleRect) push(view.bubbleRect, false);
+    // The card stays in the corner. `follows` would sweep its rect along the
+    // sprite's trail, and an unpaused card must not take the grab.
+    const paused = view.card.classList.contains("paused");
+    for (const part of possessionRects(view.possessionRect, view.chargeRect, paused)) {
+      rects.push({ rect: part.rect, clickable: part.clickable });
+    }
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedRects) return;
@@ -582,6 +681,8 @@ function removeView(id) {
   view.sprite.remove();
   view.bubble.remove();
   view.quick.remove();
+  view.card.remove();
+  view.bar.remove();
   view.cueLayer.remove();
   views.delete(id);
   // After the view is gone, so a scan cannot still name it. dispose already
@@ -616,6 +717,9 @@ function drawView(view, now) {
     // still `.visible`, so this is cleared here as well as in `hide`.
     view.hotspot = null;
     view.bubbleRect = null;
+    view.possessionRect = null;
+    view.chargeRect = null;
+    paintPossession(view.card, view.bar, null, null);
     reportOverlayRects();
     if (view.quickMachine.visible) view.quickMachine.dismiss();
     if (latest.fade_ms === 0) {
@@ -638,6 +742,11 @@ function drawView(view, now) {
     if (view.quickMachine.visible) {
       positionQuick(view, rect);
     }
+    positionPossession(view, latest);
+  } else {
+    view.possessionRect = null;
+    view.chargeRect = null;
+    paintPossession(view.card, view.bar, null, null);
   }
 
   const placement = `${latest.character} ${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
@@ -763,6 +872,14 @@ async function start() {
     "frame",
     ({ payload }) => {
       hoverDelayMs = payload.hover_delay_ms;
+      const area = payload.work_area;
+      const areaMoved =
+        Boolean(area) &&
+        (workArea?.x !== area.x ||
+          workArea?.y !== area.y ||
+          workArea?.width !== area.width ||
+          workArea?.height !== area.height);
+      if (area && area.width > 0 && area.height > 0) workArea = area;
       const seen = new Set();
 
       possessed = payload.sprites.some((sprite) => sprite.possessed);
@@ -780,6 +897,8 @@ async function start() {
         // a line clamped onto the head near a display's top stays readable.
         view.bubble.style.zIndex = `${index * 2 + 1}`;
         view.quick.style.zIndex = `${index * 2 + 2}`;
+        view.card.style.zIndex = `${index * 2 + 3}`;
+        view.bar.style.zIndex = `${index * 2 + 3}`;
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
 
@@ -821,7 +940,7 @@ async function start() {
         }
         notePointerLeft(view);
 
-        if (changed && needsFrame(view)) arm();
+        if (areaMoved || (changed && needsFrame(view))) arm();
       });
 
       // An id that stopped arriving was dismissed, so its elements go. The Rust

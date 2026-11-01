@@ -716,6 +716,18 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
+    /// The display's usable area in this overlay's coordinates. The window
+    /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
+    work_area: WorkArea,
+}
+
+/// Usable area in one overlay's coordinates. See `usable_in_overlay`.
+#[derive(Clone, Copy, Serialize)]
+struct WorkArea {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
 
 struct Spoken {

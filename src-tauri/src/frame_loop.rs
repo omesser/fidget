@@ -13,7 +13,9 @@ use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
-use fidget_core::overlay::{bubble_owner, display_index_for, drawn_frame, place_sprite};
+use fidget_core::overlay::{
+    bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
+};
 use fidget_core::possession::Intent;
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
@@ -36,7 +38,7 @@ use super::{
     push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
     switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
     FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
     SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
@@ -2633,12 +2635,21 @@ pub(crate) fn run_frame_loop(
                     .map(|instance| SpritePlacement::new(instance, *display, index))
                     .collect();
 
+                // No usable frame yet: the card insets from the overlay's own corner.
+                let usable = displays.usable_frames.get(index).copied().unwrap_or(*frame);
+                let local = usable_in_overlay(usable, *display);
                 let placement = Placement {
                     sprites,
                     visible: presence.visible,
                     fade_ms: presence.fade_ms,
                     sound: sound_allowed,
                     hover_delay_ms: crate::hover_delay_ms(),
+                    work_area: WorkArea {
+                        x: local.x,
+                        y: local.y,
+                        width: local.width,
+                        height: local.height,
+                    },
                 };
 
                 // Skip a repeated instruction: Tauri emit is JS eval
