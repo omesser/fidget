@@ -3691,6 +3691,7 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
 
 /// The global shortcut for the configured hide chord.
 fn shortcut_from_hotkey(hotkey: &settings::Hotkey) -> Option<Shortcut> {
+    let hotkey = hotkey.in_force();
     let code: Code = settings::key_code_name(hotkey.key)?.parse().ok()?;
     let mut modifiers = Modifiers::empty();
     if hotkey.control {
@@ -6626,6 +6627,14 @@ mod tests {
         assert_eq!(shortcut.key, Code::KeyH);
         let shipped = shortcut_from_hotkey(&settings::DEFAULT_HIDE_HOTKEY).expect("default");
         assert_eq!(shipped.key, Code::KeyB);
+        let unsupported = settings::Hotkey {
+            control: false,
+            option: false,
+            shift: true,
+            command: false,
+            key: '1',
+        };
+        assert_eq!(shortcut_from_hotkey(&unsupported), Some(shipped));
     }
 
     /// A 2x2 RGBA frame whose top-left pixel is transparent.
