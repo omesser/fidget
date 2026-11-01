@@ -9799,6 +9799,47 @@ mod tests {
             assert_eq!(climbing.facing, -1.0, "{climbing:?}");
         }
 
+        /// Climbing the right wall, Left lets go and Space jumps off it. Both
+        /// carry the sprite away from the wall and land it on the floor.
+        #[test]
+        fn an_arrow_away_or_space_takes_a_climber_off_the_wall() {
+            let world = on(one_display());
+            let floor = one_display().bottom();
+            let climbing = || {
+                let mut engine = possessed_at(1000.0 - EDGE_CLEARANCE, &world);
+                engine.tick(&world);
+                let climbing = engine.tick(&with_possession(UP, &world));
+                assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+                for _ in 0..20 {
+                    engine.tick(&world);
+                }
+                engine
+            };
+
+            let mut engine = climbing();
+            let into = engine.tick(&with_possession(holding(Walk::Right), &world));
+            assert_eq!(into.state, State::Climbing, "into the wall: {into:?}");
+
+            let mut engine = climbing();
+            let let_go = engine.tick(&with_possession(holding(Walk::Left), &world));
+            assert_eq!(let_go.state, State::Falling, "{let_go:?}");
+            assert_eq!(let_go.facing, -1.0, "{let_go:?}");
+            let landed = flight(&mut engine, &world).pop().unwrap();
+            assert_eq!(landed.position.y, floor, "{landed:?}");
+            assert!(landed.position.x < 1000.0, "off the wall: {landed:?}");
+
+            let mut engine = climbing();
+            let jumped = engine.tick(&with_possession(launching(released_after(500)), &world));
+            assert_eq!(jumped.state, State::Falling, "{jumped:?}");
+            assert!(jumped.velocity.y < 0.0, "it jumps up: {jumped:?}");
+            assert_eq!(jumped.facing, -1.0, "{jumped:?}");
+            let frames = flight(&mut engine, &world);
+            assert!(peak(&frames) < jumped.position.y, "it rose: {jumped:?}");
+            let landed = frames.last().unwrap();
+            assert_eq!(landed.position.y, floor, "{landed:?}");
+            assert!(landed.position.x < 1000.0 - WALK_SPEED / 4.0, "{landed:?}");
+        }
+
         #[test]
         fn up_with_no_wall_beside_does_nothing() {
             let world = on(one_display());
