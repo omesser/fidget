@@ -269,9 +269,6 @@ try {
     if ($gapLine -and $gapLine -match 'double-click interval (\d+)ms') { $gapMs = [int]$Matches[1] }
     $clickGap = $gapMs + 100
 
-    $frame = Last-Frame
-    $sx = $frame.X; $sy = $frame.Y
-    $cx = $sx + $half
     $side = if ($env:FIDGET_SCENARIO_EDGE) { $env:FIDGET_SCENARIO_EDGE } else { "left" }
     # Held a quarter of its width inboard of centre, so at the edge the sprite's
     # centre is past it: it falls to the nearest edge and climbs, whatever speed
@@ -279,28 +276,33 @@ try {
     if ($side -ceq "left") {
         $edge = $edges.Left
         $into = 1
-        $grabX = $cx + [int][Math]::Floor($half / 2)
         $targetX = $edges.LeftTarget
     } elseif ($side -ceq "right") {
         $edge = $edges.Right
         $into = -1
-        $grabX = $cx - [int][Math]::Floor($half / 2)
         $targetX = $edges.RightTarget
     } else {
         Fail "FIDGET_SCENARIO_EDGE is '$side', want left or right"
     }
     # Each step waits for Fidget to log it: a resting sprite's loop polls up to 1 s
-    # apart, and an early tick can stall for 0.4-0.9 s, so a timed drag can move off
-    # the sprite before the press is read, or let go before the sprite has followed.
-    $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
-    [ClimbInput]::Move($grabX, $sy + $half)
-    if (-not (Wait-ForCount 3 $trace $hitPattern $hits)) { Fail "Fidget never saw the cursor over the sprite; see $trace" }
-    $grabs = @(Select-String -LiteralPath $trace -Pattern $grabPattern -CaseSensitive).Count
-    [ClimbInput]::Press()
-    if (-not (Wait-ForCount 3 $trace $grabPattern $grabs)) {
-        [ClimbInput]::Release()
-        Fail "the press over the sprite started no Grab; see $trace"
+    # apart, and an early tick can stall for 0.4-0.9 s. A sprite that set off
+    # walking meanwhile is let go and aimed at again, or the grab sits off-centre.
+    $grabbed = $false
+    for ($try = 0; $try -lt 3 -and -not $grabbed; $try++) {
+        if ($try -gt 0 -and -not (Wait-Still)) { Fail "the sprite never came to rest; see $trace" }
+        $frame = Last-Frame
+        $sx = $frame.X; $sy = $frame.Y
+        $grabX = $sx + $half + $into * [int][Math]::Floor($half / 2)
+        $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
+        [ClimbInput]::Move($grabX, $sy + $half)
+        if (-not (Wait-ForCount 3 $trace $hitPattern $hits)) { continue }
+        if ((Last-Frame).X -ne $sx) { continue }
+        $grabs = @(Select-String -LiteralPath $trace -Pattern $grabPattern -CaseSensitive).Count
+        [ClimbInput]::Press()
+        $grabbed = (Wait-ForCount 3 $trace $grabPattern $grabs) -and (Last-Frame).X -eq $sx
+        if (-not $grabbed) { [ClimbInput]::Release() }
     }
+    if (-not $grabbed) { Fail "no Grab held the sprite where it rested, in 3 tries; see $trace" }
     [ClimbInput]::Slide($grabX, $sy + $half, $targetX)
     $past = Wait-OnChanges 3 (Split-Path -Parent $trace) {
         $f = Last-Frame
