@@ -43,4 +43,4 @@ The app icon (`src-tauri/icons/icon.png`) is 512×512 RGBA, cut to Apple's macOS
 
 `python3 scripts/make-app-icon.py` regenerates this file, `logo-art/app-icon-1024.png` and `src-tauri/icons/icon.ico` from `logo-art/logo-512.png`.
 
-The tray icon (`src-tauri/icons/tray.png`) is `logo-art/tray-64.png`, a 64×64 template icon for the system menu bar, designed to adapt to light/dark themes. `tauri::include_image!` embeds it as raw RGBA (16 KB at 64 px, 256 KB at 256), and 64 covers the largest tray any shell draws, 44 px on a Retina menu bar, so the OS only ever scales it down.
+The tray icon (`src-tauri/icons/tray.png`) is `logo-art/tray-64.png`, a 64×64 white mark on a transparent background. It is not set as a macOS template icon, so the OS draws it white in light and dark menu bars alike. `tauri::include_image!` embeds it as raw RGBA (16 KB at 64 px, 256 KB at 256), and 64 covers the largest tray any shell draws, 44 px on a Retina menu bar, so the OS only ever scales it down.
