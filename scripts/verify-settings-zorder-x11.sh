@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/x11.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.x11.sh
+source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.x11.sh"
+root_events() { stdbuf -oL xprop -root -spy; }
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -36,10 +39,9 @@ if ! has_supporting_wm; then
   WM_PID=$!
   # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
-  for _ in $(seq 1 40); do
-    has_supporting_wm && break
-    sleep 0.25
-  done
+  # set -e must not skip the read below, so a timed-out wait still reaches it.
+  # That read is what passes or fails.
+  wait_on_source 10 root_events grep -qEm1 '^_NET_SUPPORTING_WM_CHECK\(.*window id' || true
   has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
 fi
 
@@ -77,8 +79,10 @@ env -u FIDGET_DIRECTOR_API_KEY \
   LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE" \
   "$BIN" > "$TRACE_LOG" 2>&1 &
 APP_PID=$!
+# shellcheck disable=SC2034  # read by the sourced wait helpers
+pid=$APP_PID
 
-await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
@@ -98,42 +102,28 @@ find_settings_window() {
 }
 
 log_info "Waiting for overlay window..."
-OVERLAY_ID=""
-for _ in $(seq 1 60); do
-  OVERLAY_ID=$(find_overlay_window || true)
-  [ -n "$OVERLAY_ID" ] && break
-  sleep 0.25
-done
+wait_on_source 15 root_events probe_each_line find_overlay_window || true
+OVERLAY_ID=$(find_overlay_window || true)
 [ -n "$OVERLAY_ID" ] || fail "Could not find fidget overlay window"
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for overlay EWMH ABOVE..."
-OVERLAY_PROPS=""
-for _ in $(seq 1 80); do
-  OVERLAY_PROPS=$(xprop -id "$OVERLAY_ID" _NET_WM_STATE 2> /dev/null || true)
-  echo "$OVERLAY_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && break
-  sleep 0.25
-done
+overlay_state_events() { stdbuf -oL xprop -id "$OVERLAY_ID" -spy _NET_WM_STATE; }
+wait_on_source 20 overlay_state_events grep -qEm1 '_NET_WM_STATE_ABOVE' || true
+OVERLAY_PROPS=$(xprop -id "$OVERLAY_ID" _NET_WM_STATE 2> /dev/null || true)
 echo "$OVERLAY_PROPS" | grep -q "_NET_WM_STATE_ABOVE" ||
   fail "overlay missing _NET_WM_STATE_ABOVE (${OVERLAY_PROPS:-empty})"
 
 log_info "Waiting for Settings window..."
-SETTINGS_ID=""
-for _ in $(seq 1 60); do
-  SETTINGS_ID=$(find_settings_window || true)
-  [ -n "$SETTINGS_ID" ] && break
-  sleep 0.25
-done
+wait_on_source 15 root_events probe_each_line find_settings_window || true
+SETTINGS_ID=$(find_settings_window || true)
 [ -n "$SETTINGS_ID" ] || fail "Could not find Settings window"
 log_info "Found Settings window ID: $SETTINGS_ID"
 
 log_info "Waiting for Settings _NET_WM_STATE_ABOVE..."
-SETTINGS_PROPS=""
-for _ in $(seq 1 40); do
-  SETTINGS_PROPS=$(xprop -id "$SETTINGS_ID" _NET_WM_STATE 2> /dev/null || true)
-  echo "$SETTINGS_PROPS" | grep -q "_NET_WM_STATE_ABOVE" && break
-  sleep 0.25
-done
+settings_state_events() { stdbuf -oL xprop -id "$SETTINGS_ID" -spy _NET_WM_STATE; }
+wait_on_source 10 settings_state_events grep -qEm1 '_NET_WM_STATE_ABOVE' || true
+SETTINGS_PROPS=$(xprop -id "$SETTINGS_ID" _NET_WM_STATE 2> /dev/null || true)
 echo "$SETTINGS_PROPS" | grep -q "_NET_WM_STATE_ABOVE" ||
   fail "Settings missing _NET_WM_STATE_ABOVE (${SETTINGS_PROPS:-empty})"
 log_info "Settings is in the ABOVE band: $SETTINGS_PROPS"
@@ -149,20 +139,18 @@ stacking_ids() {
     done
 }
 
-log_info "Checking stacking order..."
-STACK_OK=0
-for _ in $(seq 1 40); do
-  STACK=$(stacking_ids)
-  OVERLAY_POS=$(echo "$STACK" | grep -n "^${OVERLAY_ID}$" | head -1 | cut -d: -f1 || true)
-  SETTINGS_POS=$(echo "$STACK" | grep -n "^${SETTINGS_ID}$" | head -1 | cut -d: -f1 || true)
-  if [ -n "$OVERLAY_POS" ] && [ -n "$SETTINGS_POS" ] && [ "$SETTINGS_POS" -gt "$OVERLAY_POS" ]; then
-    STACK_OK=1
-    break
-  fi
-  sleep 0.25
-done
+# _NET_CLIENT_LIST_STACKING is bottom-up, so a later row is in front.
+settings_stacks_above() {
+  local stack
+  stack=$(stacking_ids)
+  OVERLAY_POS=$(echo "$stack" | grep -n "^${OVERLAY_ID}$" | head -1 | cut -d: -f1 || true)
+  SETTINGS_POS=$(echo "$stack" | grep -n "^${SETTINGS_ID}$" | head -1 | cut -d: -f1 || true)
+  [ -n "$OVERLAY_POS" ] && [ -n "$SETTINGS_POS" ] && [ "$SETTINGS_POS" -gt "$OVERLAY_POS" ]
+}
 
-if [ "$STACK_OK" -ne 1 ]; then
+log_info "Checking stacking order..."
+wait_on_source 10 root_events probe_each_line settings_stacks_above || true
+if ! settings_stacks_above; then
   log_error "stacking overlay=$OVERLAY_ID pos=${OVERLAY_POS:-missing} settings=$SETTINGS_ID pos=${SETTINGS_POS:-missing}"
   log_error "stack:"
   stacking_ids >&2 || true
