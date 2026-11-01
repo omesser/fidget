@@ -9985,6 +9985,21 @@ mod tests {
             }
         }
 
+        /// A sprite standing at the left edge, still facing right, turns to the
+        /// wall it climbs.
+        #[test]
+        fn up_climbs_a_left_wall_facing_it() {
+            let world = on(one_display());
+            let mut engine = possessed_at(EDGE_CLEARANCE, &world);
+            let standing = engine.tick(&world);
+            assert_eq!(standing.facing, 1.0, "{standing:?}");
+
+            let climbing = engine.tick(&with_possession(UP, &world));
+            assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+            assert_eq!(climbing.position.x, 0.0, "{climbing:?}");
+            assert_eq!(climbing.facing, -1.0, "{climbing:?}");
+        }
+
         #[test]
         fn up_with_no_wall_beside_does_nothing() {
             let world = on(one_display());
