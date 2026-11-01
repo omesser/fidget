@@ -201,20 +201,23 @@ PLACE_Y=$CHAT_LEDGE_Y
 log_info "Placing Character on Chat ledge at ($PLACE_X, $PLACE_Y)..."
 CMD_PATH="$HOME_DIR/.fidget-debug-cmd"
 RES_PATH="$HOME_DIR/.fidget-debug-result"
-rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$PLACE_X" "$PLACE_Y" > "$CMD_PATH.tmp"
-mv "$CMD_PATH.tmp" "$CMD_PATH"
-PLACE_OK=0
-for _ in $(seq 1 40); do
-  if [ -f "$RES_PATH" ]; then
-    PLACE_REPLY=$(cat "$RES_PATH" 2> /dev/null || true)
-    echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
-    echo "$PLACE_REPLY" | grep -q '^placed:' && PLACE_OK=1 && break
-    echo "$PLACE_REPLY" | grep -q '^error:' && fail "debug place failed: $PLACE_REPLY"
-  fi
-  sleep 0.25
-done
-[ "$PLACE_OK" -eq 1 ] || fail "debug place timed out (is FIDGET_DEBUG_IPC on?)"
+# Place the Character through the debug IPC and fail unless it answers placed:.
+debug_place() { # <x> <y>
+  rm -f "$RES_PATH"
+  printf 'place x=%s y=%s\n' "$1" "$2" > "$CMD_PATH.tmp"
+  mv "$CMD_PATH.tmp" "$CMD_PATH"
+  for _ in $(seq 1 40); do
+    if [ -f "$RES_PATH" ]; then
+      PLACE_REPLY=$(cat "$RES_PATH" 2> /dev/null || true)
+      echo "$PLACE_REPLY" > "$OUT/place-reply.txt"
+      echo "$PLACE_REPLY" | grep -q '^placed:' && return 0
+      echo "$PLACE_REPLY" | grep -q '^error:' && fail "debug place failed: $PLACE_REPLY"
+    fi
+    sleep 0.25
+  done
+  fail "debug place to ($1, $2) timed out (is FIDGET_DEBUG_IPC on?)"
+}
+debug_place "$PLACE_X" "$PLACE_Y"
 log_info "Placed: $(cat "$OUT/place-reply.txt")"
 
 # stand_at leaves State::Grounded. Perched is the land-from-fall path. Holding
@@ -243,13 +246,7 @@ if [ "$BESIDE_X" -lt 40 ]; then
   BESIDE_X=$((CHAT_X + CHAT_W + 80))
 fi
 BESIDE_Y=$((CHAT_Y + CHAT_H / 2))
-rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$BESIDE_X" "$BESIDE_Y" > "$CMD_PATH.tmp"
-mv "$CMD_PATH.tmp" "$CMD_PATH"
-for _ in $(seq 1 40); do
-  [ -f "$RES_PATH" ] && grep -q '^placed:' "$RES_PATH" 2> /dev/null && break
-  sleep 0.25
-done
+debug_place "$BESIDE_X" "$BESIDE_Y"
 log_info "Character beside Chat at ($BESIDE_X, $BESIDE_Y)"
 
 # Composer sits near the bottom of the visible Chat band. Raise nothing first:
