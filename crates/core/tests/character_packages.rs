@@ -606,6 +606,38 @@ fn jotaro_falls_facing_the_way_he_walks() {
     }
 }
 
+/// How far right of BMO's screen its dark side panel sits, in pixels. Facing
+/// right, the lettered side panel shows on the left of the screen.
+fn bmo_panel_offset(bytes: &[u8]) -> f32 {
+    let (width, _, rgba) = frame_rgba(bytes);
+    let centroid = |color: [u8; 3]| {
+        let (mut sum, mut n) = (0.0f32, 0.0f32);
+        for (i, [r, g, b, a]) in rgba.iter().enumerate() {
+            let near = [*r, *g, *b]
+                .iter()
+                .zip(color)
+                .all(|(p, c)| p.abs_diff(c) <= 18);
+            if *a > 128 && near {
+                sum += (i % width) as f32;
+                n += 1.0;
+            }
+        }
+        assert!(n > 200.0, "BMO's {color:?} shows");
+        sum / n
+    };
+    centroid([55, 103, 91]) - centroid([222, 255, 239])
+}
+
+#[test]
+fn bmo_falls_facing_the_way_it_walks() {
+    for (animation, frame, bytes) in frames_of("bmo") {
+        if animation == "walk" || animation == "fall" {
+            let offset = bmo_panel_offset(&bytes);
+            assert!(offset < -5.0, "{frame} faces right, panel offset {offset}");
+        }
+    }
+}
+
 #[test]
 fn rubber_duck_uses_its_drawn_left_walk() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");
