@@ -94,6 +94,22 @@ test("no Windows leaf or verifier sleeps between steps", () => {
   );
 });
 
+// A wait starts at its trigger and fails fast. 5 s is the launch budget; a
+// person's pace is no trigger, so a leaf drives its own steps.
+test("no Windows leaf waits longer than 5 s on one trigger", () => {
+  const long = (text) =>
+    [...text.matchAll(/\bWait-(?:For\w+|Until|OnChanges) +(\d+(?:\.\d+)?)\b/g)].filter(
+      ([, seconds]) => Number(seconds) > 5,
+    );
+  assert.deepEqual(
+    missing(
+      leaves.filter((leaf) => leaf.endsWith(".ps1")),
+      (text) => long(text).length === 0,
+    ),
+    [],
+  );
+});
+
 // The fixture's ask holds the turn until someone answers it.
 test("every script that starts the asking fixture answers the ask", () => {
   const asking = fs
