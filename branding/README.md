@@ -32,7 +32,7 @@ Reference PNG assets:
 - `app-icon-1024.png` — The app icon on Apple's macOS grid, 1024×1024 RGBA,
   318 KB. Generated from `logo-512.png`, not drawn.
 - `tray-256.png` — Tray mark, 256×256 RGBA, 23 KB
-- `tray-64.png` — Tray mark, 64×64 RGBA, 4.1 KB
+- `tray-64.png` — Tray mark, 64×64 RGBA, 4.0 KB. `tray-256.png` downscaled once with Lanczos
 - `tray-32.png` — Tray mark, 32×32 RGBA, 1.8 KB
 
 ## Usage
@@ -43,4 +43,4 @@ The app icon (`src-tauri/icons/icon.png`) is 512×512 RGBA, cut to Apple's macOS
 
 `python3 scripts/make-app-icon.py` regenerates this file, `logo-art/app-icon-1024.png` and `src-tauri/icons/icon.ico` from `logo-art/logo-512.png`.
 
-The tray icon (`src-tauri/icons/tray.png`) is a 256×256 template icon for the system menu bar, designed to adapt to light/dark themes.
+The tray icon (`src-tauri/icons/tray.png`) is `logo-art/tray-64.png`, a 64×64 white mark on a transparent background. It is not set as a macOS template icon, so the OS draws it white in light and dark menu bars alike. `tauri::include_image!` embeds it as raw RGBA (16 KB at 64 px, 256 KB at 256), and 64 covers the largest tray any shell draws, 44 px on a Retina menu bar, so the OS only ever scales it down.

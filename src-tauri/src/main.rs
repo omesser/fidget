@@ -4983,7 +4983,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: module: {}", std::io::Error::last_os_error()).into());
     }
 
-    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
+    let (icon, small_icon) = anchor_icons();
     let class_name = windows_sys::w!("FidgetAnchor");
     let class = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -4997,7 +4997,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         hbrBackground: std::ptr::null_mut(),
         lpszMenuName: std::ptr::null(),
         lpszClassName: class_name,
-        hIconSm: icon,
+        hIconSm: small_icon,
     };
     if unsafe { RegisterClassExW(&class) } == 0 {
         let err = std::io::Error::last_os_error();
@@ -5030,10 +5030,12 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: create window: {}", std::io::Error::last_os_error()).into());
     }
 
-    if !icon.is_null() {
-        unsafe {
+    unsafe {
+        if !icon.is_null() {
             SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon as isize);
+        }
+        if !small_icon.is_null() {
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small_icon as isize);
         }
     }
 
@@ -5120,47 +5122,46 @@ unsafe extern "system" fn anchor_wndproc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Taskbar icon from the same PNG the bundle uses. The class stores the handle
-/// until process exit, and `DestroyIcon` would blank the button.
+/// Taskbar icons, big and small, from the `.ico` tauri-build links into the exe.
+/// The class keeps both handles until process exit, and `DestroyIcon` would
+/// blank the button. A null handle leaves that slot to the system default.
 #[cfg(target_os = "windows")]
-fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::CreateIcon;
+fn anchor_icons() -> (
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+) {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON, SM_CYSMICON,
+    };
+    const APP_ICON: windows_sys::core::PCWSTR =
+        tauri::utils::platform::WINDOWS_APP_ICON_RESOURCE_ID as usize as windows_sys::core::PCWSTR;
+    // The shell's largest icon slot; a bigger one only costs memory.
+    const JUMBO: i32 = 256;
 
-    let decoded = match image::load_from_memory(include_bytes!("../icons/icon.png")) {
-        Ok(decoded) => decoded,
-        Err(why) => {
-            eprintln!("anchor: icon: {why}");
-            return None;
+    // Not LR_SHARED: it caches one handle per resource, so the second size could be the first.
+    let load = |width, height| {
+        let icon = unsafe {
+            LoadImageW(
+                GetModuleHandleW(std::ptr::null()),
+                APP_ICON,
+                IMAGE_ICON,
+                width,
+                height,
+                LR_DEFAULTCOLOR,
+            )
+        };
+        if icon.is_null() {
+            eprintln!(
+                "anchor: icon {width}x{height}: {}",
+                std::io::Error::last_os_error()
+            );
         }
+        icon
     };
-    // The PNG is 512. The shell's jumbo slot is 256, and a larger icon is only memory.
-    let rgba = decoded.thumbnail(256, 256).to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let mut pixels = rgba.into_raw();
-    let mut mask = Vec::with_capacity(pixels.len() / 4);
-    // CreateIcon's color plane is BGRA. The mask byte is inverted alpha so a
-    // transparent pixel stays transparent on the taskbar.
-    for chunk in pixels.as_chunks_mut::<4>().0 {
-        mask.push(chunk[3].wrapping_sub(u8::MAX));
-        chunk.swap(0, 2);
-    }
-    let icon = unsafe {
-        CreateIcon(
-            std::ptr::null_mut(),
-            width as i32,
-            height as i32,
-            1,
-            32,
-            mask.as_ptr(),
-            pixels.as_ptr(),
-        )
-    };
-    if icon.is_null() {
-        eprintln!("anchor: icon: {}", std::io::Error::last_os_error());
-        None
-    } else {
-        Some(icon)
-    }
+    let (small_width, small_height) =
+        unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+    (load(JUMBO, JUMBO), load(small_width, small_height))
 }
 
 fn main() {
@@ -5684,6 +5685,42 @@ fn main() {
                 harness::shutdown();
             }
         });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod anchor_icon_tests {
+    use windows_sys::Win32::Graphics::Gdi::{DeleteObject, GetObjectW, BITMAP};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetIconInfo, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
+    };
+
+    fn icon_size(icon: HICON) -> (i32, i32) {
+        let mut info: ICONINFO = unsafe { std::mem::zeroed() };
+        assert_ne!(unsafe { GetIconInfo(icon, &mut info) }, 0, "GetIconInfo");
+        let mut bitmap: BITMAP = unsafe { std::mem::zeroed() };
+        let read = unsafe {
+            GetObjectW(
+                info.hbmColor,
+                std::mem::size_of::<BITMAP>() as i32,
+                (&raw mut bitmap).cast(),
+            )
+        };
+        unsafe {
+            DeleteObject(info.hbmColor);
+            DeleteObject(info.hbmMask);
+        }
+        assert_ne!(read, 0, "GetObjectW");
+        (bitmap.bmWidth, bitmap.bmHeight)
+    }
+
+    #[test]
+    fn the_taskbar_gets_a_256px_icon_and_a_small_icon_sized_for_the_shell() {
+        let (big, small) = super::anchor_icons();
+        assert!(!big.is_null() && !small.is_null());
+        assert_eq!(icon_size(big), (256, 256));
+        let small_size = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+        assert_eq!(icon_size(small), small_size);
+    }
 }
 
 #[cfg(test)]
