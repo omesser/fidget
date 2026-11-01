@@ -3689,24 +3689,20 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
     }
 }
 
-/// The hide-hotkey Shortcut. Three modifiers, because a global shortcut is
-/// taken from every application on the machine and B alone belongs to most
-/// of them.
-fn shortcut_from_spec(spec: &str) -> Option<Shortcut> {
-    let parsed = settings::parse_hotkey(spec)
-        .or_else(|| settings::parse_hotkey(settings::DEFAULT_HIDE_HOTKEY))?;
-    let code: Code = settings::key_code_name(parsed.key)?.parse().ok()?;
+/// The global shortcut for the configured hide chord.
+fn shortcut_from_hotkey(hotkey: &settings::Hotkey) -> Option<Shortcut> {
+    let code: Code = settings::key_code_name(hotkey.key)?.parse().ok()?;
     let mut modifiers = Modifiers::empty();
-    if parsed.control {
+    if hotkey.control {
         modifiers |= Modifiers::CONTROL;
     }
-    if parsed.option {
+    if hotkey.option {
         modifiers |= Modifiers::ALT;
     }
-    if parsed.shift {
+    if hotkey.shift {
         modifiers |= Modifiers::SHIFT;
     }
-    if parsed.command {
+    if hotkey.command {
         modifiers |= Modifiers::SUPER;
     }
     Some(Shortcut::new(Some(modifiers), code))
@@ -3744,14 +3740,15 @@ fn install_hide_hotkey(
 /// Bind the hide hotkey. A hotkey another application already holds is
 /// reported and let go: losing it costs one way to hide the Character, which
 /// is not worth losing the Character over.
-fn bind_hide_hotkey(app: &tauri::AppHandle, spec: &str) {
+fn bind_hide_hotkey(app: &tauri::AppHandle, hotkey: &settings::Hotkey) {
     if app
         .try_state::<tauri_plugin_global_shortcut::GlobalShortcut<tauri::Wry>>()
         .is_none()
     {
         return;
     }
-    let Some(shortcut) = shortcut_from_spec(spec) else {
+    let spec = hotkey.display(settings::ModifierWords::current());
+    let Some(shortcut) = shortcut_from_hotkey(hotkey) else {
         eprintln!("hotkey: {spec} could not be parsed");
         return;
     };
@@ -4372,7 +4369,9 @@ fn describe_menu(
     caffeinate: menu::CaffeinateRow,
 ) -> menu::MenuDescription {
     let instances = roster.list();
-    let hide_hotkey = settings::display_hotkey(&settings.hide_hotkey);
+    let hide_hotkey = settings
+        .hide_hotkey
+        .display(settings::ModifierWords::current());
     menu::describe(menu::MenuSnapshot {
         installed,
         current_character: current,
@@ -5434,8 +5433,8 @@ fn main() {
                 let spec = settings
                     .lock()
                     .ok()
-                    .map(|s| s.hide_hotkey.clone())
-                    .unwrap_or_default();
+                    .map(|s| s.hide_hotkey)
+                    .unwrap_or(settings::DEFAULT_HIDE_HOTKEY);
                 bind_hide_hotkey(app.handle(), &spec);
             }
             let instance_rows = Arc::new(Mutex::new(Vec::new()));
@@ -6615,10 +6614,17 @@ mod tests {
 
     /// A rebound hide hotkey must register the letter the user named, not B.
     #[test]
-    fn a_rebound_spec_registers_its_letter() {
-        let shortcut = shortcut_from_spec("Control-Shift-H").expect("parses");
+    fn a_rebound_hotkey_registers_its_letter() {
+        let shortcut = shortcut_from_hotkey(&settings::Hotkey {
+            control: true,
+            option: false,
+            shift: true,
+            command: false,
+            key: 'H',
+        })
+        .expect("valid hotkey");
         assert_eq!(shortcut.key, Code::KeyH);
-        let shipped = shortcut_from_spec(settings::DEFAULT_HIDE_HOTKEY).expect("default");
+        let shipped = shortcut_from_hotkey(&settings::DEFAULT_HIDE_HOTKEY).expect("default");
         assert_eq!(shipped.key, Code::KeyB);
     }
 
