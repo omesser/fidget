@@ -4595,7 +4595,7 @@ mod windows_job {
 
         #[cfg(windows)]
         #[test]
-        fn test_spawn_in_job_creation_flags_include_create_suspended() {
+        fn spawn_in_job_creation_flags_include_create_suspended() {
             assert_eq!(
                 SPAWN_IN_JOB_CREATION_FLAGS & CREATE_SUSPENDED,
                 CREATE_SUSPENDED
