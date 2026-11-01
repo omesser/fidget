@@ -146,8 +146,9 @@ public class ClimbInput {
     const uint Down = 0x0002, Up = 0x0004;
     public static void Place(int x, int y, int toX) {
         SetCursorPos(x, y);
-        // The frame loop reads the cursor per tick and turns click-through off under it; 120 ms spans several ticks.
-        Thread.Sleep(120);
+        // A resting sprite's loop polls up to 1 s apart while the cursor is away, and
+        // 100 ms once it is near. Pressing sooner can be read after the drag moved off.
+        Thread.Sleep(1100);
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
         // A press held past the drag threshold time becomes a grab, not a click.
         Thread.Sleep(250);
