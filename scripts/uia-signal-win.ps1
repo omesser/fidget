@@ -62,8 +62,9 @@ public class FidgetUiaSignal : IDisposable {
 # Run a check now and again on each UI Automation change until it returns
 # true or the seconds run out. A caller's own $Shared signal is reused, not disposed.
 function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, $Shared = $null) {
-    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    # The clock starts once the handlers are registered, which can be slow.
     $signal = if ($Shared) { $Shared } else { [FidgetUiaSignal]::new($ProcessId) }
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     try {
         while ($true) {
             $result = & $Check

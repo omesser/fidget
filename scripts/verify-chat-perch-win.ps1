@@ -100,6 +100,7 @@ Set-Content -LiteralPath $result -Value "" -Encoding ascii
 $proc = $null
 
 function Fail([string]$Message) {
+    if ($proc -and $proc.HasExited) { $Message += " (Fidget exited early; see $stderr)" }
     Add-Content -LiteralPath $result -Value "FAIL: $Message"
     [Console]::Error.WriteLine("FAIL: $Message")
     [Console]::Error.WriteLine("Evidence: $out")
@@ -186,14 +187,6 @@ public class ChatPerchWin {
 [ChatPerchWin]::SetProcessDPIAware() | Out-Null
 $UIA = [System.Windows.Automation.AutomationElement]
 
-function Wait-For([int]$Seconds, [scriptblock]$Probe) {
-    for ($n = $Seconds * 4; $n -gt 0; $n--) {
-        if (& $Probe) { return $true }
-        if ($proc.HasExited) { Fail "Fidget exited early; see $stderr" }
-        Start-Sleep -Milliseconds 250
-    }
-    return $false
-}
 function Lines([string]$File) { if (Test-Path -LiteralPath $File) { @(Get-Content -LiteralPath $File) } else { @() } }
 function Rect([IntPtr]$Hwnd) {
     $r = New-Object ChatPerchWin+RECT
@@ -262,17 +255,17 @@ $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 
 $startMs = Get-NowMs
-$proc = Start-Process -FilePath $Bin -WorkingDirectory $out -PassThru -WindowStyle Hidden `
-    -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$script:WatchDir = $out
+$proc = Start-FidgetPiped $Bin @() $stdout $stderr $out
 @("pid=$($proc.Id)", "commit=$(git -C $root rev-parse HEAD)", "bin=$Bin") |
     Set-Content -LiteralPath (Join-Path $out "run.txt")
 try {
     $script:chat = [IntPtr]::Zero
-    if (-not (Wait-For 30 { $script:chat = [ChatPerchWin]::Find([uint32]$proc.Id, "BMO", 300); $script:chat -ne [IntPtr]::Zero })) {
+    if (-not (Wait-ForUia 30 $proc.Id { $script:chat = [ChatPerchWin]::Find([uint32]$proc.Id, "BMO", 300); $script:chat -ne [IntPtr]::Zero })) {
         Fail "Chat window did not open"
     }
     $chat = $script:chat
-    if (-not (Wait-For 30 { (Lines $marks) -contains "asked" })) { Fail "fixture did not ask its question" }
+    if (-not (Wait-ForMarks 30 $marks '^asked$')) { Fail "fixture did not ask its question" }
 
     $work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $r = Rect $chat
@@ -281,17 +274,20 @@ try {
     # SetForegroundWindow is refused while another app holds the foreground,
     # so a click on Chat's title bar focuses it, as a user would.
     [ChatPerchWin]::SetForegroundWindow($chat) | Out-Null
-    if (-not (Wait-For 1 { [ChatPerchWin]::GetForegroundWindow() -eq $chat })) {
+    # Pid 0 wakes on any process: msedgewebview2.exe owns the page elements
+    # that take focus and change, not Fidget.
+    if (-not (Wait-ForUia 1 0 { [ChatPerchWin]::GetForegroundWindow() -eq $chat })) {
         $r = Rect $chat
         [ChatPerchWin]::Click($r[0] + [int]($r[2] / 2), $r[1] + 12)
     }
-    if (-not (Wait-For 5 { [ChatPerchWin]::GetForegroundWindow() -eq $chat })) {
+    if (-not (Wait-ForUia 5 0 { [ChatPerchWin]::GetForegroundWindow() -eq $chat })) {
         Fail "Chat did not take the foreground: $(Chat-State)"
     }
-    Start-Sleep -Milliseconds 500
+    $levelSecs = 2
+    $normal = Wait-ForUia $levelSecs 0 { [ChatPerchWin]::GetForegroundWindow() -eq $chat -and -not (Topmost $chat) }
     $state = Chat-State
     Set-Content -LiteralPath (Join-Path $out "initial-chat-state.txt") -Value $state
-    if (Topmost $chat) { Fail "focused Chat is WS_EX_TOPMOST: $state" }
+    if (-not $normal) { Fail "focused Chat is not at normal level after ${levelSecs}s: $state" }
     Pass "normal_level" $state
 
     $chatRect = Rect $chat
@@ -302,7 +298,7 @@ try {
     & $VerifyBin --evidence-dir (Join-Path $out "verify") place --x $ledgeX --y ($ledgeY - 60) *>> (Join-Path $out "place.txt")
     if ($LASTEXITCODE -ne 0) { Fail "fidget-verify place failed; see $out\place.txt" }
     $script:perched = $null
-    if (-not (Wait-For 10 { $script:perched = Test-PerchedFrames (Lines $trace | Select-Object -Skip $before) $ledgeY $chatRect[0] $chatRect[2]; $null -ne $script:perched })) {
+    if (-not (Wait-Until 10 { $script:perched = Test-PerchedFrames (Lines $trace | Select-Object -Skip $before) $ledgeY $chatRect[0] $chatRect[2]; $null -ne $script:perched })) {
         Fail "Character did not settle Perched on Chat at y=$ledgeY; see $trace"
     }
     $script:perched | Set-Content -LiteralPath (Join-Path $out "ledge-frames.txt")
@@ -312,7 +308,7 @@ try {
     $overlay = [ChatPerchWin]::FindAt([uint32]$proc.Id, "Fidget", $ledgeX, $ledgeY)
     if ($overlay -eq [IntPtr]::Zero) { Fail "no overlay window titled Fidget over Chat's ledge" }
     $script:button = $null
-    if (-not (Wait-For 10 { $script:button = Get-ButtonRect (Dump $overlay "bubble") "chat"; $null -ne $script:button })) {
+    if (-not (Wait-ForUia 10 0 { $script:button = Get-ButtonRect (Dump $overlay "bubble") "chat"; $null -ne $script:button })) {
         Fail "question bubble has no chat button; see $out\bubble.ax.txt"
     }
     $button = $script:button
@@ -329,10 +325,10 @@ try {
     if (-not $ask) { Fail "no showAsk trace names the asking Character; see $stderr" }
     $beforeClick = (Lines $stderr).Count
     [ChatPerchWin]::Click($bx, $by)
-    if (-not (Wait-For 5 { Test-ClickTraced (Lines $stderr | Select-Object -Skip $beforeClick) $ask })) {
+    if (-not (Wait-Until 5 { Test-ClickTraced (Lines $stderr | Select-Object -Skip $beforeClick) $ask })) {
         Fail "chat button click did not invoke open Chat for $ask; see $stderr"
     }
-    if (-not (Wait-For 5 { [ChatPerchWin]::GetForegroundWindow() -eq $chat -and -not (Topmost $chat) })) {
+    if (-not (Wait-ForUia 5 0 { [ChatPerchWin]::GetForegroundWindow() -eq $chat -and -not (Topmost $chat) })) {
         Fail "Chat was not focused at normal level after the bubble click: $(Chat-State)"
     }
     Pass "bubble_button_click" "button=$($button -join ',') instance=$ask"
@@ -356,7 +352,7 @@ try {
     $marker = "Windows Chat perch"
     [System.Windows.Forms.SendKeys]::SendWait($marker)
     $value = $focus.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    $null = Wait-ForUia 2 $proc.Id { $value.Current.Value -eq $marker }
+    $null = Wait-ForUia 2 0 { $value.Current.Value -eq $marker }
     $typed = $value.Current.Value
     Set-Content -LiteralPath (Join-Path $out "composer-value.txt") -Value $typed
     if ($typed -ne $marker) { Fail "composer holds '$typed', expected '$marker'" }
