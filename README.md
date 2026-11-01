@@ -26,6 +26,8 @@ Try the gestures in your browser: [Fidget Cues](https://omesser.github.io/fidget
 
 ## What It Does
 
+<img src="./docs/readme/buddy-bot-perch-poke.gif" width="640" alt="Buddy Bot walks off a terminal window, drops onto another window, and reacts when poked" />
+
 - **Keeps you company:** It walks, naps, and reacts to your open windows. It works offline, with no AI account or subscription, for presence and play; hook it up to an AI and it takes on a life of its own, with full conversation and tool use.
 - **Pick a built-in character, or build your own:** Each character has its own sprites, animation loops, and personality. Edit any character's prompt or behavior using a plain-text personality file and a simple [manifest format](./docs/DEVELOPMENT.md#character-packages). Create your own characters, or [import and convert](./docs/DEVELOPMENT.md#importing-pets) one from the [Pets Codex](https://petscodex.com/) and [Shimeji Shop](https://shimejishop.com/) galleries.
 - **Personalize your Fidget's behavior:** Write your own text for any fidget's behavior through its Instance Prompt. It holds on top of its Character's personality, and changes how that fidget reacts. See [Give It an Instance Prompt](#give-it-an-instance-prompt) for examples.
@@ -62,6 +64,8 @@ Buddy Bot is the default. Eleven Characters ship; each moves and speaks differen
 </table>
 
 See them all in the [Character Gallery](https://omesser.github.io/fidget/characters.html).
+
+<img src="./docs/readme/rubber-duck-import.gif" width="640" alt="Settings imports a Rubber Duck character ZIP, and Rubber Duck replaces Buddy Bot on the desktop" />
 
 ### Trump takes the stage
 
@@ -144,6 +148,8 @@ The full variable list, including `FIDGET_DIRECTOR_*`, is in [harness.md](./docs
 
 ### First Run
 
+<img src="./docs/readme/settings-switch-character.gif" width="640" alt="Right-click menu opens Settings, and the Character tab switches Buddy Bot to Cat" />
+
 It works offline with no key. With nothing configured, Static weights pick idle Behaviors from the Character.
 
 Right-click the fidget, or click the tray icon, and choose Settings….
@@ -166,7 +172,11 @@ Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packa
 - **Hide** - Control-Option-Command-B (the default; change it in Settings) toggles the fidget instantly.
 - **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
 
+<img src="./docs/readme/buddy-bot-throw.gif" width="640" alt="Buddy Bot is picked up, thrown in an arc, and lands on an editor window" />
+
 ### Talk to It
+
+<img src="./docs/readme/buddy-bot-chat.gif" width="640" alt="Double-clicking Buddy Bot opens its chat; asked for its best dance move, it answers in the chat and a speech bubble" />
 
 Summon opens that fidget's chat window. What you type joins the same
 conversation that decides what it does on your desktop, so an answer arrives as
@@ -194,6 +204,8 @@ The examples below need this setup:
 | `When I tell you what I'm eating, review it like a food critic, in one dramatic line.` | Tell it what you're eating in the chat and it reviews the dish in one line. |
 | `You're a theatre critic. When you're perched on a window, review that app in one dramatic line.` | Perch it on a window and it reviews the app it's standing on. |
 | `When I tell you how my day's going, give it as a weather report.` | Tell it how your day is going and it answers with a forecast. |
+
+<img src="./docs/readme/buddy-bot-instance-prompt.gif" width="640" alt="The movie-stunt Instance Prompt is saved in the Prompt tab, then Buddy Bot is thrown and calls out its mid-air stunt" />
 
 ## How It Works
 
