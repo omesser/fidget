@@ -119,6 +119,7 @@ $pressPattern = '(?:^|\s)click: down '
 $releasePattern = '(?:^|\s)click: up '
 $draggedPattern = '(?:^|\s)frame: \d+ Dragged '
 $landedPattern = '(?:^|\s)frame: \d+ (?:Grounded|Perched) '
+$pokePattern = '(?:^|\s)verbs: \S+ \[[^\]]*\bPoke\b'
 
 # The middle of the sprite at rest, and of a display it is not on.
 function Get-DragPlan([string]$LogFile) {
@@ -183,24 +184,55 @@ public static class PillDrag {
 
 function Count([string]$Pattern) { @(Get-Content -LiteralPath $log | Where-Object { $_ -match $Pattern }).Count }
 
+# Hover the sprite's newest spot until Fidget owns the window there, chasing it
+# if it walks. The region is art-shaped, so a landing frame can leave it bare.
+function Aim-AtSprite($p, [string]$What) {
+    $script:aim = $null
+    $owned = Wait-Until 3 {
+        if (-not ($at = Get-LastSpriteSpot $log)) { return $false }
+        $x = $at.X + $p.X - $p.At.X; $y = $at.Y + $p.Y - $p.At.Y
+        $null = [PillDrag]::SetCursorPos($x, $y)
+        $script:aim = @{ X = $x; Y = $y; At = $at }
+        [PillDrag]::OwnerAt($x, $y) -eq $script:proc.Id
+    }
+    if (-not $owned) { Fail "refusing to $What at ($($script:aim.X),$($script:aim.Y)): Fidget did not own the window there in 3 s; see $log" }
+    $script:aim
+}
+
+function Assert-Still($a, [string]$What) {
+    $now = Get-LastSpriteSpot $log
+    if (-not $now -or [Math]::Abs($now.X - $a.At.X) -gt 2 -or [Math]::Abs($now.Y - $a.At.Y) -gt 2) { Fail "the sprite kept moving between aiming and the $What, from ($($a.At.X),$($a.At.Y)) to ($($now.X),$($now.Y)); see $log" }
+}
+
 function Drive-PillAcrossSeam {
     if ([PillDrag]::SetThreadDpiAwarenessContext([IntPtr]-4) -eq [IntPtr]::Zero) { Fail "could not make this thread per-monitor DPI aware, so its pixels would not match Fidget's" }
     if (-not (Wait-Until 3 { ($script:plan = Get-DragPlan $log) })) { Fail "no sprite at rest with a display to carry it to in 3 s; see $log" }
     $p = $script:plan
 
-    $null = [PillDrag]::SetCursorPos($p.X, $p.Y)
-    # The region is art-shaped and a landing frame can leave the middle bare.
-    if (-not (Wait-Until 3 { [PillDrag]::OwnerAt($p.X, $p.Y) -eq $script:proc.Id })) { Fail "refusing to poke at ($($p.X),$($p.Y)): Fidget did not own the window there in 3 s" }
-    [PillDrag]::Button($false); [PillDrag]::Button($true)
+    $a = Aim-AtSprite $p "poke"
+    Assert-Still $a "poke"
+    # Fidget samples the button each frame, so an instant click is never seen.
+    $presses = Count $pressPattern
+    [PillDrag]::Button($false)
+    try {
+        if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the poke's press in 3 s; see $log" }
+    } finally {
+        $releases = Count $releasePattern
+        [PillDrag]::Button($true)
+    }
+    if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the poke's release in 3 s; see $log" }
     if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble in 3 s; see $traceFile" }
-    if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($p.X),$($p.Y)) did not open a focused pill in 3 s; see $log" }
+    # Settled after the double-click interval, so the drag press is not a double-click.
+    if (-not (Wait-ForTrace 3 $log $pokePattern)) { Fail "Fidget never settled the click as a Poke in 3 s; see $log" }
+
+    $a = Aim-AtSprite $p "hover"
+    if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($a.X),$($a.Y)) did not open a focused pill in 3 s; see $log" }
     if (-not (Wait-Until 3 { [PillDrag]::ForegroundOwner() -eq $script:proc.Id })) { Fail "the pill opened but Fidget never took the foreground, so nothing was typed; see $log" }
     [PillDrag]::Text("hi")
     if (-not (Wait-ForTrace 3 $log $pillTypedPattern)) { Fail "the pill never showed text=`"hi`" in 3 s; see $log" }
 
-    $now = Get-LastSpriteSpot $log
-    if (-not $now -or [Math]::Abs($now.X - $p.At.X) -gt 2 -or [Math]::Abs($now.Y - $p.At.Y) -gt 2) { Fail "the sprite moved off the planned press point, from ($($p.At.X),$($p.At.Y)) to ($($now.X),$($now.Y)); see $log" }
-    if ([PillDrag]::OwnerAt($p.X, $p.Y) -ne $script:proc.Id) { Fail "refusing to press at ($($p.X),$($p.Y)): Fidget does not own the window there" }
+    $a = Aim-AtSprite $p "press"
+    Assert-Still $a "press"
     # The press must land before the move, or Fidget sees it off the sprite.
     $presses = Count $pressPattern
     [PillDrag]::Button($false)
