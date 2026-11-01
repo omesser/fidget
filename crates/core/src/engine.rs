@@ -1551,7 +1551,10 @@ impl Engine {
                 // climbs; a per-tick step back stutters under a held walk.
                 debug_assert!(
                     snapshot.elapsed_ms <= crate::snapshot::MAX_ELAPSED_MS
-                        || dock_in(snapshot).is_none()
+                        || dock_in(snapshot).is_none(),
+                    "Dock walk step is {} ms, over the {} ms poll cap",
+                    snapshot.elapsed_ms,
+                    crate::snapshot::MAX_ELAPSED_MS,
                 );
                 if let Some(x) = dock_side_reached(self.position, self.velocity.x, snapshot) {
                     let side = self.velocity.x.signum();
