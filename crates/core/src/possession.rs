@@ -12,6 +12,8 @@ pub enum Arrow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Arrow(Arrow),
+    Up,
+    Down,
     Space,
     Escape,
 }
@@ -47,6 +49,10 @@ impl Charge {
 pub struct Intent {
     /// The arrow to walk towards, or `None` to stand.
     pub walk: Option<Arrow>,
+    /// Up is held: climb the Wall the sprite stands against.
+    pub climb: bool,
+    /// Down is held: drop through the Perch the sprite stands on.
+    pub drop: bool,
     /// Space is down, and the bar shows this.
     pub charging: Option<Charge>,
     /// Space came up since the last tick: jump with this charge.
@@ -61,6 +67,8 @@ pub struct Possession {
     /// Held arrows in press order. The latest walks, and letting it go hands
     /// the walk back to the other.
     arrows: Vec<Arrow>,
+    up: bool,
+    down: bool,
     /// How long Space has been down, or `None` while it is up.
     space_ms: Option<u32>,
     /// A Space keyup the next tick launches. Apart from `space_ms` so a press
@@ -77,6 +85,8 @@ impl Possession {
         match (key, down) {
             (Key::Arrow(arrow), true) if !self.arrows.contains(&arrow) => self.arrows.push(arrow),
             (Key::Arrow(arrow), false) => self.arrows.retain(|held| *held != arrow),
+            (Key::Up, down) => self.up = down,
+            (Key::Down, down) => self.down = down,
             (Key::Space, true) if self.space_ms.is_none() => self.space_ms = Some(0),
             (Key::Space, false) => {
                 self.launch = self.space_ms.take().map(Charge::held).or(self.launch);
@@ -105,6 +115,8 @@ impl Possession {
         }
         Intent {
             walk: self.arrows.last().copied(),
+            climb: self.up,
+            drop: self.down,
             charging: self.space_ms.map(Charge::held),
             launch: self.launch.take(),
             end_possession: std::mem::take(&mut self.end_possession),
@@ -145,6 +157,27 @@ mod tests {
         keys.key(Key::Arrow(Arrow::Right), true);
         keys.key(Key::Arrow(Arrow::Left), true);
         assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Right));
+    }
+
+    #[test]
+    fn up_and_down_ask_while_held() {
+        let mut keys = Possession::default();
+        keys.key(Key::Up, true);
+        keys.key(Key::Down, true);
+        let held = keys.tick(FRAME_MS);
+        assert!(held.climb && held.drop, "{held:?}");
+        keys.key(Key::Up, false);
+        keys.key(Key::Down, false);
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
+    }
+
+    #[test]
+    fn a_pause_lets_go_of_up_and_down() {
+        let mut keys = Possession::default();
+        keys.key(Key::Up, true);
+        keys.key(Key::Down, true);
+        keys.pause();
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
     #[test]

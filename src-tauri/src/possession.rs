@@ -114,6 +114,8 @@ pub fn parse_key(name: &str) -> Option<Key> {
     match name {
         "left" => Some(Key::Arrow(Arrow::Left)),
         "right" => Some(Key::Arrow(Arrow::Right)),
+        "up" => Some(Key::Up),
+        "down" => Some(Key::Down),
         "space" => Some(Key::Space),
         "escape" => Some(Key::Escape),
         _ => None,
@@ -176,7 +178,8 @@ mod tests {
         assert!(parse_key("right").is_some());
         assert!(parse_key("space").is_some());
         assert!(parse_key("escape").is_some());
-        assert!(parse_key("up").is_none());
+        assert!(parse_key("up").is_some());
+        assert!(parse_key("down").is_some());
         assert!(parse_key("1").is_none());
         assert!(parse_key("a").is_none());
     }

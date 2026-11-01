@@ -1,9 +1,11 @@
-// The keys possession listens to. Digits are a later binding, and Up and
-// Down are a later climb. A repeat is the platform holding the key down.
+// The keys possession listens to. Digits are a later binding. A repeat is
+// the platform holding the key down.
 
 const NAMES = {
   ArrowLeft: "left",
   ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
   " ": "space",
   Spacebar: "space",
   Escape: "escape",

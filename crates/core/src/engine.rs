@@ -427,8 +427,8 @@ pub struct Engine {
     /// Character stays visible.
     do_not_disturb: bool,
     /// The user possesses this sprite from the keyboard. A switch, not a State: it
-    /// still falls and is grabbed the usual way, but never sleeps or climbs, and
-    /// refuses proposals while their Speech still shows.
+    /// still falls and is grabbed the usual way, but never sleeps, climbs only
+    /// on Up, and refuses proposals while their Speech still shows.
     possessed: bool,
     /// This fall left the feet while possessed, so a held arrow steers it. A
     /// release from the hand is not one: a throw flies as thrown.
@@ -1553,6 +1553,26 @@ impl Engine {
                 if self.velocity.y < 0.0 {
                     return Some(Contact::Airborne);
                 }
+                if self.possessed {
+                    let keys = snapshot.possession;
+                    if let Some((x, side)) = keys
+                        .climb
+                        .then(|| wall_beside(self.position, snapshot))
+                        .flatten()
+                    {
+                        self.position.x = x;
+                        self.facing = side;
+                        self.velocity = Point::default();
+                        return Some(Contact::Wall { side });
+                    }
+                    // A point under the edge, so the fall that follows does
+                    // not land straight back on the Perch it left.
+                    if keys.drop && state == State::Perched {
+                        self.position.y += 1.0;
+                        self.rest_perch();
+                        return Some(Contact::Airborne);
+                    }
+                }
                 let dx = self.velocity.x * dt;
                 self.position.x += dx;
                 if self.last_perch.is_some() {
@@ -1572,7 +1592,7 @@ impl Engine {
                     let side = self.velocity.x.signum();
                     self.position.x = x;
                     self.velocity = Point::default();
-                    // While possessed, the side stops the walk and is not climbed.
+                    // While possessed, the side stops the walk, and Up climbs it.
                     if !self.possessed {
                         return Some(Contact::Wall { side });
                     }
@@ -9874,6 +9894,105 @@ mod tests {
             engine.set_possessed(false);
             let released = engine.tick(&world);
             assert_ne!(released.animation, "possessed", "{released:?}");
+        }
+
+        /// Up at the screen edge or the Dock's side, where a possessed walk
+        /// stops, climbs it.
+        #[test]
+        fn up_against_a_wall_climbs_it() {
+            let worlds = [
+                on(one_display()),
+                WorldSnapshot {
+                    windows: vec![window(
+                        DOCK_PERCH_ID,
+                        Rect {
+                            x: 700.0,
+                            y: 740.0,
+                            width: 200.0,
+                            height: 60.0,
+                        },
+                    )],
+                    ..on(one_display())
+                },
+            ];
+            for world in worlds {
+                let mut engine = possessed_at(500.0, &world);
+                for _ in 0..400 {
+                    engine.tick(&with_possession(holding(Arrow::Right), &world));
+                }
+                let against = engine.tick(&world);
+                assert_eq!(against.state, State::Grounded, "{against:?}");
+
+                let up = Intent {
+                    climb: true,
+                    ..Intent::default()
+                };
+                let climbing = engine.tick(&with_possession(up, &world));
+                assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+                assert_eq!(climbing.facing, 1.0, "it faces the wall: {climbing:?}");
+                let higher = engine.tick(&world);
+                assert!(higher.position.y < climbing.position.y, "{higher:?}");
+            }
+        }
+
+        #[test]
+        fn up_with_no_wall_beside_does_nothing() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let standing = engine.tick(&world);
+            let up = Intent {
+                climb: true,
+                ..Intent::default()
+            };
+            let frame = engine.tick(&with_possession(up, &world));
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            assert_eq!(frame.position, standing.position, "{frame:?}");
+        }
+
+        /// Down drops through the Perch underfoot, and the fall lands as any
+        /// fall does, on the floor below.
+        #[test]
+        fn down_on_a_perch_drops_through_it() {
+            let world = WorldSnapshot {
+                windows: vec![window(
+                    1,
+                    Rect {
+                        x: 300.0,
+                        y: 400.0,
+                        width: 400.0,
+                        height: 200.0,
+                    },
+                )],
+                ..on(one_display())
+            };
+            let mut engine = possessed_at(500.0, &world);
+            let perched = engine.tick(&world);
+            assert_eq!(perched.state, State::Perched, "{perched:?}");
+
+            let down = Intent {
+                drop: true,
+                ..Intent::default()
+            };
+            let dropped = engine.tick(&with_possession(down, &world));
+            assert_eq!(dropped.state, State::Falling, "{dropped:?}");
+            let landed = flight(&mut engine, &world).pop().unwrap();
+            assert_eq!(landed.state, State::Grounded, "{landed:?}");
+            assert_eq!(landed.position.y, one_display().height, "{landed:?}");
+            assert_eq!(landed.animation, "land", "{landed:?}");
+        }
+
+        #[test]
+        fn down_on_the_floor_does_nothing() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let standing = engine.tick(&world);
+            let down = Intent {
+                drop: true,
+                ..Intent::default()
+            };
+            let frame = engine.tick(&with_possession(down, &world));
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            assert_eq!(frame.position, standing.position, "{frame:?}");
         }
 
         #[test]

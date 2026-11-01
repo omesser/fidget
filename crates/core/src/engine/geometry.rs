@@ -185,6 +185,23 @@ pub(super) fn edge_ahead(x: f64, direction: f64, snapshot: &WorldSnapshot) -> bo
     }
 }
 
+/// The Wall a standing sprite is against, as the x a climb holds and the side:
+/// the outermost display edge inside the inset a walk stops at, or the Dock's
+/// side from the margin a walk stops on.
+pub(super) fn wall_beside(feet: Point, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
+    [-1.0, 1.0].into_iter().find_map(|side| {
+        let edge = edge_ahead(feet.x, side, snapshot)
+            .then(|| nearest_edge(feet.x, snapshot))
+            .flatten();
+        let step = Point {
+            x: feet.x + side,
+            ..feet
+        };
+        edge.or_else(|| dock_side_reached(step, side, snapshot))
+            .map(|x| (x, side))
+    })
+}
+
 /// The clearance actually applied on one display: no display gives up more
 /// than half its height to the ceiling, or art taller than the screen would
 /// leave nowhere to stand.
