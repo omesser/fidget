@@ -1566,8 +1566,12 @@ impl Engine {
                         return Some(Contact::Wall { side });
                     }
                     // A point under the edge, so the fall that follows does
-                    // not land straight back on the Perch it left.
-                    if keys.drop && state == State::Perched {
+                    // not land straight back on the Perch it left. Not the
+                    // Dock: it hides what falls behind it, and pushes it out.
+                    let on_dock = dock_in(snapshot).is_some_and(|dock| {
+                        dock.y == self.position.y && dock.spans_x(self.position.x)
+                    });
+                    if keys.drop && state == State::Perched && !on_dock {
                         self.position.y += 1.0;
                         self.rest_perch();
                         return Some(Contact::Airborne);
@@ -9896,39 +9900,85 @@ mod tests {
             assert_ne!(released.animation, "possessed", "{released:?}");
         }
 
-        /// Up at the screen edge or the Dock's side, where a possessed walk
-        /// stops, climbs it.
+        const UP: Intent = Intent {
+            climb: true,
+            walk: None,
+            drop: false,
+            charging: None,
+            launch: None,
+            end_possession: false,
+        };
+
+        const DOWN: Intent = Intent {
+            drop: true,
+            climb: false,
+            ..UP
+        };
+
+        /// Up climbs where a possessed walk stops: the screen edge, from the
+        /// floor or a Perch, the outermost edge when a display above juts out
+        /// past it, and the Dock's side.
         #[test]
         fn up_against_a_wall_climbs_it() {
-            let worlds = [
-                on(one_display()),
-                WorldSnapshot {
-                    windows: vec![window(
-                        DOCK_PERCH_ID,
-                        Rect {
-                            x: 700.0,
-                            y: 740.0,
-                            width: 200.0,
-                            height: 60.0,
-                        },
-                    )],
-                    ..on(one_display())
+            let dock = window(
+                DOCK_PERCH_ID,
+                Rect {
+                    x: 700.0,
+                    y: 740.0,
+                    width: 200.0,
+                    height: 60.0,
                 },
+            );
+            let ledge = window(
+                1,
+                Rect {
+                    x: 300.0,
+                    y: 400.0,
+                    width: 700.0,
+                    height: 200.0,
+                },
+            );
+            let jutting = Rect {
+                x: 0.0,
+                y: -600.0,
+                width: 1020.0,
+                height: 600.0,
+            };
+            let worlds = [
+                (on(one_display()), 1000.0),
+                (
+                    WorldSnapshot {
+                        windows: vec![ledge],
+                        ..on(one_display())
+                    },
+                    1000.0,
+                ),
+                (
+                    WorldSnapshot {
+                        displays: vec![one_display(), jutting],
+                        ..on(one_display())
+                    },
+                    1020.0,
+                ),
+                (
+                    WorldSnapshot {
+                        windows: vec![dock],
+                        ..on(one_display())
+                    },
+                    700.0 - EDGE_CLEARANCE,
+                ),
             ];
-            for world in worlds {
+            for (world, wall) in worlds {
                 let mut engine = possessed_at(500.0, &world);
                 for _ in 0..400 {
                     engine.tick(&with_possession(holding(Arrow::Right), &world));
                 }
                 let against = engine.tick(&world);
-                assert_eq!(against.state, State::Grounded, "{against:?}");
+                assert_eq!(against.velocity.x, 0.0, "stopped: {against:?}");
 
-                let up = Intent {
-                    climb: true,
-                    ..Intent::default()
-                };
-                let climbing = engine.tick(&with_possession(up, &world));
+                let climbing = engine.tick(&with_possession(UP, &world));
                 assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+                assert_eq!(climbing.position.x, wall, "{climbing:?}");
                 assert_eq!(climbing.facing, 1.0, "it faces the wall: {climbing:?}");
                 let higher = engine.tick(&world);
                 assert!(higher.position.y < climbing.position.y, "{higher:?}");
@@ -9940,11 +9990,7 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             let standing = engine.tick(&world);
-            let up = Intent {
-                climb: true,
-                ..Intent::default()
-            };
-            let frame = engine.tick(&with_possession(up, &world));
+            let frame = engine.tick(&with_possession(UP, &world));
             assert_eq!(frame.state, State::Grounded, "{frame:?}");
             assert_eq!(frame.position, standing.position, "{frame:?}");
         }
@@ -9969,11 +10015,7 @@ mod tests {
             let perched = engine.tick(&world);
             assert_eq!(perched.state, State::Perched, "{perched:?}");
 
-            let down = Intent {
-                drop: true,
-                ..Intent::default()
-            };
-            let dropped = engine.tick(&with_possession(down, &world));
+            let dropped = engine.tick(&with_possession(DOWN, &world));
             assert_eq!(dropped.state, State::Falling, "{dropped:?}");
             let landed = flight(&mut engine, &world).pop().unwrap();
             assert_eq!(landed.state, State::Grounded, "{landed:?}");
@@ -9981,18 +10023,21 @@ mod tests {
             assert_eq!(landed.animation, "land", "{landed:?}");
         }
 
+        /// Down on the floor or the Dock does nothing: the Dock hides what
+        /// falls behind it.
         #[test]
-        fn down_on_the_floor_does_nothing() {
-            let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
-            let standing = engine.tick(&world);
-            let down = Intent {
-                drop: true,
-                ..Intent::default()
+        fn down_on_the_floor_or_the_dock_does_nothing() {
+            let dock = WorldSnapshot {
+                windows: vec![window(DOCK_PERCH_ID, dock())],
+                ..on(one_display())
             };
-            let frame = engine.tick(&with_possession(down, &world));
-            assert_eq!(frame.state, State::Grounded, "{frame:?}");
-            assert_eq!(frame.position, standing.position, "{frame:?}");
+            for world in [on(one_display()), dock] {
+                let mut engine = possessed_at(500.0, &world);
+                let standing = engine.tick(&world);
+                let frame = engine.tick(&with_possession(DOWN, &world));
+                assert_eq!(frame.state, standing.state, "{frame:?}");
+                assert_eq!(frame.position, standing.position, "{frame:?}");
+            }
         }
 
         #[test]

@@ -185,14 +185,24 @@ pub(super) fn edge_ahead(x: f64, direction: f64, snapshot: &WorldSnapshot) -> bo
     }
 }
 
-/// The Wall a standing sprite is against, as the x a climb holds and the side:
+/// The wall a standing sprite is against, as the x a climb holds and the side:
 /// the outermost display edge inside the inset a walk stops at, or the Dock's
 /// side from the margin a walk stops on.
 pub(super) fn wall_beside(feet: Point, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
     [-1.0, 1.0].into_iter().find_map(|side| {
-        let edge = edge_ahead(feet.x, side, snapshot)
-            .then(|| nearest_edge(feet.x, snapshot))
-            .flatten();
+        let edges = snapshot.displays.iter().map(|display| {
+            if side < 0.0 {
+                display.x
+            } else {
+                display.x + display.width
+            }
+        });
+        let outermost = if side < 0.0 {
+            edges.min_by(f64::total_cmp)
+        } else {
+            edges.max_by(f64::total_cmp)
+        };
+        let edge = outermost.filter(|_| edge_ahead(feet.x, side, snapshot));
         let step = Point {
             x: feet.x + side,
             ..feet
