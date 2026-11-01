@@ -11,6 +11,7 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/x11.sh"
 # shellcheck source=scripts/scenarios/helpers/wait-helpers.x11.sh
 source "$SCRIPT_DIR/scenarios/helpers/wait-helpers.x11.sh"
+root_events() { stdbuf -oL xprop -root -spy; }
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
@@ -40,11 +41,8 @@ if ! has_supporting_wm; then
   WM_PID=$!
   # shellcheck disable=SC2034  # read by the sourced cleanup()
   WM_STARTED=1
-  for _ in $(seq 1 40); do
-    has_supporting_wm && break
-    sleep 0.25
-  done
-  has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
+  wait_on_source 10 root_events grep -qEm1 '^_NET_SUPPORTING_WM_CHECK\(.*window id' ||
+    fail "openbox did not publish _NET_SUPPORTING_WM_CHECK within 10 s"
 fi
 
 trap cleanup EXIT
@@ -84,7 +82,7 @@ APP_PID=$!
 # shellcheck disable=SC2034  # read by the sourced wait helpers
 pid=$APP_PID wait_log=$TRACE_LOG
 
-await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line within 20 s"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
@@ -113,23 +111,15 @@ find_chat_window() {
 }
 
 log_info "Waiting for overlay window..."
-OVERLAY_ID=""
-for _ in $(seq 1 60); do
-  OVERLAY_ID=$(find_overlay_window || true)
-  [ -n "$OVERLAY_ID" ] && break
-  sleep 0.25
-done
-[ -n "$OVERLAY_ID" ] || fail "Could not find fidget overlay window"
+wait_on_source 15 root_events probe_each_line find_overlay_window ||
+  fail "Could not find fidget overlay window within 15 s"
+OVERLAY_ID=$(find_overlay_window)
 log_info "Found overlay window ID: $OVERLAY_ID"
 
 log_info "Waiting for Chat window titled '$CHAT_TITLE'..."
-CHAT_ID=""
-for _ in $(seq 1 80); do
-  CHAT_ID=$(find_chat_window || true)
-  [ -n "$CHAT_ID" ] && break
-  sleep 0.25
-done
-[ -n "$CHAT_ID" ] || fail "Could not find Chat window titled $CHAT_TITLE"
+wait_on_source 20 root_events probe_each_line find_chat_window ||
+  fail "Could not find Chat window titled $CHAT_TITLE within 20 s"
+CHAT_ID=$(find_chat_window)
 log_info "Found Chat window ID: $CHAT_ID"
 xprop -id "$CHAT_ID" WM_NAME _NET_WM_STATE WM_CLASS > "$OUT/chat-xprop.txt" || true
 
@@ -191,11 +181,9 @@ TARGET_CLIENT_Y=$((ROOT_H * 2 / 5))
 if [ "$CHAT_LEDGE_Y" -lt "$TARGET_CLIENT_Y" ]; then
   log_info "Moving Chat down for clearance (ledge $CHAT_LEDGE_Y -> client y $TARGET_CLIENT_Y)..."
   xdotool windowmove "$CHAT_ID" "$CHAT_X" "$TARGET_CLIENT_Y"
-  for _ in $(seq 1 20); do
-    chat_geom
-    [ "$CHAT_Y" -ge $((TARGET_CLIENT_Y - 2)) ] && break
-    sleep 0.1
-  done
+  chat_moved() { chat_geom && [ "$CHAT_Y" -ge $((TARGET_CLIENT_Y - 2)) ]; }
+  wait_until 2 chat_moved || fail "Chat did not move down to client y $TARGET_CLIENT_Y within 2 s"
+  chat_geom
 fi
 log_info "Chat client +${CHAT_X}+${CHAT_Y} ${CHAT_W}x${CHAT_H}; frame top=$FRAME_TOP; ledge y=$CHAT_LEDGE_Y"
 
@@ -222,17 +210,9 @@ log_info "Placed: $(cat "$OUT/place-reply.txt")"
 # stand_at leaves State::Grounded. Perched is the land-from-fall path. Holding
 # the ledge y (not falling to the floor) is the Engine proof Chat is a Perch.
 log_info "Waiting for feet to hold Chat ledge y=$PLACE_Y..."
-HOLD_OK=0
 # Frame logs omit the space after the comma: pos(109,288).
 LEDGE_RE="frame: [0-9]+ (Grounded|Perched) pos\\([0-9]+, ?${PLACE_Y}\\)"
-for _ in $(seq 1 80); do
-  if grep -qE "$LEDGE_RE" "$TRACE_LOG" 2> /dev/null; then
-    HOLD_OK=1
-    break
-  fi
-  sleep 0.25
-done
-if [ "$HOLD_OK" -eq 1 ]; then
+if wait_for_line 20 "$TRACE_LOG" "$LEDGE_RE"; then
   log_info "Feet held Chat ledge y=$PLACE_Y (Chat is in the Perch list)"
   echo "ledge_hold=pass y=$PLACE_Y" >> "$RESULT_LOG"
   grep -E "$LEDGE_RE" "$TRACE_LOG" | tail -5 > "$OUT/ledge-frames.txt" || true
