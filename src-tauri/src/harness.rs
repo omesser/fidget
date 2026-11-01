@@ -6560,6 +6560,18 @@ mod tests {
         );
     }
 
+    /// `killpg(0)` is our group, and a negative id is not a group.
+    #[cfg(unix)]
+    #[test]
+    fn killable_group_refuses_our_own_group() {
+        let ours = unsafe { libc::getpgrp() };
+        assert!(!crate::acp_wire::killable_group(ours));
+        let other: libc::pid_t = if ours == 1 { 2 } else { 1 };
+        assert!(crate::acp_wire::killable_group(other));
+        assert!(!crate::acp_wire::killable_group(0));
+        assert!(!crate::acp_wire::killable_group(-1));
+    }
+
     /// The process group a `/bin/sleep` spawned under
     /// `apply_isolation(isolate)` landed in. The child is reaped before this
     /// returns; only its group is of interest.
