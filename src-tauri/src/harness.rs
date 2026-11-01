@@ -662,7 +662,12 @@ fn timed_command(
 /// paths because CreateProcess with a bare name + PATH override does not find
 /// them as the shell does. Rust wraps .cmd/.bat when given an absolute path.
 fn resolved_program(program: &str) -> OsString {
-    windows_program(program, None).unwrap_or_else(|| OsString::from(program))
+    #[cfg(windows)]
+    {
+        return windows_program(program, None).unwrap_or_else(|| OsString::from(program));
+    }
+    #[cfg(not(windows))]
+    OsString::from(program)
 }
 
 #[cfg(windows)]
@@ -696,11 +701,6 @@ fn windows_candidates(dir: &Path, program: &str) -> Vec<PathBuf> {
         .into_iter()
         .map(|extension| base.with_extension(extension))
         .collect()
-}
-
-#[cfg(not(windows))]
-fn windows_program(_program: &str, _path_override: Option<&Path>) -> Option<OsString> {
-    None
 }
 
 /// Spawns the child with no console window. A release build has no console to
