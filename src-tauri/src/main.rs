@@ -826,23 +826,37 @@ struct ArtUrls {
     characters: BTreeMap<String, CharacterArt>,
 }
 
-/// Cached `ArtUrls` JSON. A newtype so managed state cannot collide with another String.
-struct ArtJson(String);
-
-fn encode_art_json(art: &ArtUrls) -> ArtJson {
-    ArtJson(serde_json::to_string(art).expect("ArtUrls always serializes"))
+/// `ArtUrls` and its JSON, encoded once by whichever asks first: setup's own
+/// thread, or a `character` call that arrives before it is done.
+struct ArtJson {
+    art: ArtUrls,
+    json: std::sync::OnceLock<String>,
 }
 
-fn character_response(json: &ArtJson) -> tauri::ipc::Response {
-    tauri::ipc::Response::new(json.0.clone())
+impl ArtJson {
+    fn new(art: ArtUrls) -> Self {
+        Self {
+            art,
+            json: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn json(&self) -> &str {
+        self.json
+            .get_or_init(|| serde_json::to_string(&self.art).expect("ArtUrls always serializes"))
+    }
+}
+
+fn character_response(art: &ArtJson) -> tauri::ipc::Response {
+    tauri::ipc::Response::new(art.json().to_owned())
 }
 
 /// The art of every Character on screen, fetched once when the webview
 /// loads. A command rather than an event: setup would race the overlay's
-/// listener. Encoded once; the art does not change while the app runs.
+/// listener. Async, so waiting on the encode never holds the main thread.
 #[tauri::command]
-fn character(json: tauri::State<'_, ArtJson>) -> tauri::ipc::Response {
-    character_response(json.inner())
+async fn character(art: tauri::State<'_, Arc<ArtJson>>) -> Result<tauri::ipc::Response, ()> {
+    Ok(character_response(art.inner()))
 }
 
 /// The Settings window's handle on the running app. `SettingsSession::apply`
@@ -4525,30 +4539,61 @@ fn characters_in(
     BTreeMap<String, CharacterArt>,
     BTreeMap<String, Arc<Character>>,
 ) {
+    // Earlier directories win, so a package the user added is the one a
+    // switch loads. Grouped by name before any load, so a shadowed copy's art
+    // is decoded only when every earlier copy fails to load.
+    let mut groups: Vec<(Option<String>, Vec<_>)> = Vec::new();
+    for path in package::installed(search_paths) {
+        let Ok(files) = package::read(&path) else {
+            continue;
+        };
+        let name = fidget_core::character::declared_name(&files);
+        match groups
+            .iter_mut()
+            .find(|(seen, _)| name.is_some() && *seen == name)
+        {
+            Some((_, copies)) => copies.push(files),
+            None => groups.push((name, vec![files])),
+        }
+    }
+
+    // One thread per Character: decoding every installed Character's art one
+    // after another is most of a debug launch on a CI runner (#1765).
+    let loaded: Vec<_> = std::thread::scope(|scope| {
+        let loads: Vec<_> = groups
+            .iter()
+            .map(|(_, copies)| {
+                scope.spawn(|| {
+                    let character = copies
+                        .iter()
+                        .find_map(|files| fidget_core::character::load(files).ok())?;
+                    Some((art_urls(&character), character))
+                })
+            })
+            .collect();
+        loads
+            .into_iter()
+            .map(|load| {
+                load.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
+
     let mut art = BTreeMap::new();
     let mut cache = BTreeMap::new();
-    for path in package::installed(search_paths) {
-        let files = match package::read(&path) {
-            Ok(files) => files,
-            Err(_) => continue,
-        };
-        // Earlier directories win, so a package the user added is the one a
-        // switch loads. Checked before the load, so a shadowed copy's art is
-        // never decoded only to be discarded.
-        let name = fidget_core::character::declared_name(&files);
-        if name.is_some_and(|name| cache.contains_key(&name)) {
+    for (urls, character) in loaded.into_iter().flatten() {
+        if cache.contains_key(&character.name) {
             continue;
         }
-        if let Ok(character) = fidget_core::character::load(&files) {
-            art.insert(
-                character.name.clone(),
-                CharacterArt {
-                    art: art_urls(&character),
-                    smooth: character.smooth,
-                },
-            );
-            cache.insert(character.name.clone(), Arc::new(character));
-        }
+        art.insert(
+            character.name.clone(),
+            CharacterArt {
+                art: urls,
+                smooth: character.smooth,
+            },
+        );
+        cache.insert(character.name.clone(), Arc::new(character));
     }
     (art, cache)
 }
@@ -5283,7 +5328,13 @@ fn main() {
                         smooth: character.smooth,
                     });
             }
-            app.manage(encode_art_json(&ArtUrls { characters }));
+            // Off the main thread: a debug build spends ~300 ms on the JSON,
+            // and the overlay page asks for it only after it loads.
+            let art = Arc::new(ArtJson::new(ArtUrls { characters }));
+            app.manage(Arc::clone(&art));
+            std::thread::spawn(move || {
+                art.json();
+            });
             let installed: Vec<String> = character_cache.keys().cloned().collect();
 
             // Show in the Dock so users have a findable anchor when the menu
@@ -6719,6 +6770,29 @@ mod tests {
     }
 
     #[test]
+    fn a_later_copy_stands_in_for_an_earlier_one_that_fails_to_load() {
+        let user = tempfile::tempdir().expect("temp dir");
+        let broken = user.path().join("bmo");
+        std::fs::create_dir_all(&broken).expect("package dir");
+        std::fs::copy(
+            shipped_characters().join("bmo").join("character.manifest"),
+            broken.join("character.manifest"),
+        )
+        .expect("manifest without its frames");
+
+        let (art, cache) = characters_in(&[user.path().to_path_buf(), shipped_characters()]);
+        assert!(
+            cache["BMO"].smooth,
+            "the shipped copy, since the user's has no art"
+        );
+        assert!(art["BMO"].smooth);
+        assert!(
+            cache.contains_key("Buddy Bot"),
+            "every other Character still loads"
+        );
+    }
+
+    #[test]
     fn an_installed_character_is_the_one_that_starts() {
         let chosen = choose_character(&[shipped_characters()], Some(OsStr::new("bmo")))
             .expect("bmo is shipped");
@@ -6839,8 +6913,8 @@ mod tests {
         }
     }
 
-    /// `character` copies this string onto the wire. Encoding it on each invoke
-    /// is 90–118 ms on the main thread in a debug build (as of 2026-10).
+    /// `character` copies this string onto the wire, encoded once by the first
+    /// call: the art does not change while the app runs.
     #[test]
     fn characters_response_matches_the_json_of_the_bundled_art() {
         let characters = bundled_character_art();
@@ -6859,7 +6933,7 @@ mod tests {
             );
         }
         let expected = serde_json::json!({ "characters": named });
-        let response = character_response(&encode_art_json(&ArtUrls { characters }));
+        let response = character_response(&ArtJson::new(ArtUrls { characters }));
         let body: serde_json::Value =
             serde_json::from_str(&character_json_body(response)).expect("character returns JSON");
         assert_eq!(body, expected);
