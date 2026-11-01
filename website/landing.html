@@ -198,8 +198,9 @@
   .moment-cast { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
   .moment-cast figure { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* The hero's bubble, set in the column instead of on the desk. */
-  .moment-cast .say { position: relative; left: auto; bottom: auto; max-width: none; align-self: stretch;
-    margin-bottom: 16px; text-align: left; }
+  .moment-cast .say, .twist-scene .say { position: relative; left: auto; bottom: auto; max-width: none;
+    align-self: stretch; margin-bottom: 16px; }
+  .moment-cast .say { text-align: left; }
   .moment-cast .say::before, .moment-cast .say::after { right: auto; left: calc(50% - 10px); }
   .moment-cast .say::after { margin: 0 0 0 2px; }
   .moment-art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
@@ -249,9 +250,7 @@
   .twist-scene { margin: 0 auto; max-width: 28rem; display: flex; flex-direction: column; align-items: center; }
   .twist-when { align-self: flex-start; margin: .15rem 0 .6rem; font-size: .85rem; font-style: italic; color: var(--ink-2); }
   .twist-what { font-style: normal; font-weight: 600; }
-  /* The hero's bubble, set in the column instead of on the desk. */
-  .twist-scene .say { position: relative; left: auto; bottom: auto; max-width: none; align-self: stretch;
-    min-height: calc(1.55em * 2 + 20px); margin-bottom: 16px; }
+  .twist-scene .say { min-height: calc(1.55em * 2 + 20px); }
   .twist-scene .say::before, .twist-scene .say::after { right: auto; left: calc(50% - 10px); }
   .twist-scene .say::after { margin: 0 0 0 2px; }
   .twist-art { height: 96px; display: flex; align-items: flex-end; justify-content: center; }
