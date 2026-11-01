@@ -616,22 +616,33 @@ fn bmo_panel_offset(bytes: &[u8]) -> f32 {
     centroid([222, 255, 239]) - centroid([55, 103, 91])
 }
 
-/// Every walk and fall frame as drawn for both ways of travel faces that way.
-/// `faces_right` reads the art: positive when the PNG faces right.
-fn assert_walk_and_fall_face_the_travel(package: &str, faces_right: fn(&[u8]) -> f32) {
+/// Every frame of `names` as drawn for both ways of travel faces that way,
+/// left strip included. `faces_right` reads the art: positive past `margin`
+/// when the PNG faces right, negative past it when it faces left.
+fn assert_drawn_facing_the_travel(
+    package: &str,
+    names: &[&str],
+    faces_right: fn(&[u8]) -> f32,
+    margin: f32,
+) {
     let character = load_package(package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
     let files = package_bytes(package);
-    for name in ["walk", "fall"] {
+    for &name in names {
         let animation = &character.animations[name];
-        for (index, frame) in animation.frames.iter().enumerate() {
+        // A variant ring's base draws only on some draws; find one.
+        let base = (0..)
+            .find(|&seed| character.draw(name, 0, seed, 1.0).expect("draws").animation == name)
+            .expect("the base draws");
+        for index in 0..animation.frames.len() {
             let at = ((index as u32 * 2 + 1) * 500) / animation.fps;
             for travel in [1.0, -1.0] {
-                let drawn = character.draw(name, at, 0, travel).expect("draws");
-                assert_eq!(drawn.index, index, "{package} {name} reaches {frame}");
+                let drawn = character.draw(name, at, base, travel).expect("draws");
+                assert_eq!(drawn.index, index, "{package} {name} reaches frame {index}");
+                let frame = &character.animations[drawn.animation].frames[index];
                 let offset = faces_right(&files[frame]);
                 let shown = if drawn.mirrored { -offset } else { offset };
                 assert!(
-                    shown * travel as f32 > 2.0,
+                    shown * travel as f32 > margin,
                     "{package} {frame} drawn for travel {travel} faces it, offset {shown}"
                 );
             }
@@ -639,17 +650,91 @@ fn assert_walk_and_fall_face_the_travel(package: &str, faces_right: fn(&[u8]) ->
     }
 }
 
+/// How far right of the duck's middle its orange beak sits, in pixels. The
+/// feet are orange too, so only the top six tenths are read.
+fn duck_beak_offset(bytes: &[u8]) -> f32 {
+    let (width, height, rgba) = frame_rgba(bytes);
+    let alpha: Vec<u8> = rgba.iter().map(|p| p[3]).collect();
+    let (top, bottom, _) = silhouette(width, height, &alpha);
+    let (mut x_min, mut x_max, mut beak, mut n) = (width, 0, 0.0f32, 0.0f32);
+    for row in top..top + (bottom - top) * 6 / 10 {
+        for x in 0..width {
+            let [r, g, b, a] = rgba[row * width + x];
+            if a > 128 {
+                (x_min, x_max) = (x_min.min(x), x_max.max(x));
+                if r > 200 && (91..180).contains(&g) && b < 90 {
+                    beak += x as f32;
+                    n += 1.0;
+                }
+            }
+        }
+    }
+    assert!(n > 10.0, "the beak shows");
+    beak / n - (x_min + x_max) as f32 / 2.0
+}
+
+/// How far left of the mech's middle Timber Wolf's missile racks sit, in
+/// pixels: the top of the silhouette is the racks, mounted behind the cockpit.
+fn timber_wolf_rack_offset(bytes: &[u8]) -> f32 {
+    let (width, height, rgba) = frame_rgba(bytes);
+    let alpha: Vec<u8> = rgba.iter().map(|p| p[3]).collect();
+    let (top, bottom, _) = silhouette(width, height, &alpha);
+    let (mut x_min, mut x_max) = (width, 0);
+    let (mut racks, mut n) = (0.0f32, 0.0f32);
+    for row in 0..height {
+        for x in 0..width {
+            if alpha[row * width + x] > 128 {
+                (x_min, x_max) = (x_min.min(x), x_max.max(x));
+                if row < top + (bottom - top) * 15 / 100 {
+                    racks += x as f32;
+                    n += 1.0;
+                }
+            }
+        }
+    }
+    (x_min + x_max) as f32 / 2.0 - racks / n
+}
+
 /// Jump draws `fall`, and Jotaro's fall frames face left while his walk faces
 /// right. The manifest says so, and the renderer mirrors each to the travel.
 #[test]
 fn jotaro_falls_facing_the_way_he_walks() {
-    assert_walk_and_fall_face_the_travel("jotaro-kujo", jotaro_badge_offset);
+    assert_drawn_facing_the_travel("jotaro-kujo", &["walk", "fall"], jotaro_badge_offset, 2.0);
 }
 
 /// BMO's fall frames are drawn turned the other way from its walk.
 #[test]
 fn bmo_falls_facing_the_way_it_walks() {
-    assert_walk_and_fall_face_the_travel("bmo", bmo_panel_offset);
+    assert_drawn_facing_the_travel("bmo", &["walk", "fall"], bmo_panel_offset, 2.0);
+}
+
+/// The duck rests facing left and walks facing right, with a drawn left walk.
+/// `look-left` and `look-right` turn on purpose and are left out.
+#[test]
+fn rubber_duck_faces_the_way_it_travels() {
+    let resting = [
+        "idle",
+        "wave",
+        "thinking",
+        "pondering",
+        "talk",
+        "jump",
+        "sleep",
+    ];
+    let names: Vec<&str> = resting.iter().copied().chain(["walk"]).collect();
+    assert_drawn_facing_the_travel("rubber-duck", &names, duck_beak_offset, 2.0);
+}
+
+/// Timber Wolf sleeps with its cockpit pointing left and walks to the right.
+/// Some walk frames sit near upright, hence the small margin.
+#[test]
+fn timber_wolf_sleeps_facing_the_way_it_walks() {
+    assert_drawn_facing_the_travel(
+        "timber-wolf",
+        &["walk", "sleep"],
+        timber_wolf_rack_offset,
+        0.5,
+    );
 }
 
 #[test]
