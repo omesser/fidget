@@ -4497,6 +4497,9 @@ mod windows_job {
                         "harness: JOBS lock poisoned for pid {pid}; closing the job, which kills the child"
                     );
                     CloseHandle(job);
+                    return Err(std::io::Error::other(format!(
+                        "JOBS lock poisoned for pid {pid}; the job was closed"
+                    )));
                 }
             }
         }
