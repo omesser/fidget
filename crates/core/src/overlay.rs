@@ -122,6 +122,18 @@ pub fn drawn_frame(asked: Rect, reported_origin: Option<(f64, f64)>) -> Rect {
     }
 }
 
+/// The usable area in one overlay's coordinates. The window covers the whole
+/// frame, so this origin sits below a menu bar. A window already shifted out
+/// of a panel is measured from where it was drawn, not from where it was asked.
+pub fn usable_in_overlay(usable: Rect, overlay: Rect) -> Rect {
+    Rect {
+        x: usable.x - overlay.x,
+        y: usable.y - overlay.y,
+        width: usable.width,
+        height: usable.height,
+    }
+}
+
 /// Which pixels of an Animation frame are drawn, at the art's own resolution.
 /// `PartialEq` and `Clone` because `character::Character` derives both.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -638,6 +650,23 @@ mod tests {
             width,
             height,
         }
+    }
+
+    /// A 24px menu bar is the top of the frame the overlay covers. The card
+    /// inset from (0, 0) would sit on the Apple menu.
+    #[test]
+    fn the_usable_area_starts_below_a_menu_bar_in_overlay_coordinates() {
+        let frame = rect(0.0, 0.0, 1440.0, 900.0);
+        let usable = rect(0.0, 24.0, 1440.0, 876.0);
+        assert_eq!(
+            usable_in_overlay(usable, drawn_frame(frame, None)),
+            rect(0.0, 24.0, 1440.0, 876.0)
+        );
+        assert_eq!(
+            usable_in_overlay(usable, drawn_frame(frame, Some((0.0, 24.0)))).y,
+            0.0,
+            "a window already below the bar is not inset again"
+        );
     }
 
     /// Two displays side by side: the sizes `window_source` produces for a 1080p

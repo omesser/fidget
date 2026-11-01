@@ -8,4 +8,6 @@
   --shared-radius: 12px;
   --shared-type-size: 13.5px;
   --shared-type-leading: 1.55;
+  /* The overlay loads no chat-ui.css, so this is that file's --chat-sans. */
+  --shared-sans: system-ui, -apple-system, sans-serif;
 }
