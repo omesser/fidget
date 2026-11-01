@@ -2,6 +2,7 @@
 // Layout and pixels stay in the overlay. This is the model the page paints.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -42,6 +43,21 @@ test("a paused card dims and asks for a click", () => {
   assert.equal(card.paused, true);
   assert.equal(card.heading, "Click to resume");
   assert.equal(card.dimmed, true);
+});
+
+test("the bindings card uses the shared sans stack", () => {
+  const shared = readFileSync(new URL("../src/chat-shared.css", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
+  const sans = shared.match(/--shared-sans:\s*([^;]+);/);
+  assert.ok(sans, "chat-shared.css names the sans stack once");
+  assert.equal(sans[1].trim(), "system-ui, -apple-system, sans-serif");
+  const block = (selector) => {
+    const found = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`));
+    assert.ok(found, `${selector} has a block`);
+    return found[1];
+  };
+  assert.match(block("\\.possession"), /font-family:\s*var\(--shared-sans\)/);
+  assert.match(block("\\.bubble"), /font-family:\s*var\(--shared-sans\)/);
 });
 
 test("the card is absent until the sprite is possessed", () => {

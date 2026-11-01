@@ -45,6 +45,18 @@ const charging = {
   work_area: workArea,
 };
 
+// The card is seated before Space goes down. A bar that only arrives with the
+// first charging frame is what a Windows region misses.
+const seated = {
+  ...charging,
+  sprites: [possessed(120, { charge: null })],
+};
+
+const released = {
+  ...charging,
+  sprites: [possessed(120, { charge: null })],
+};
+
 const walked = {
   ...charging,
   sprites: [possessed(640)],
@@ -112,11 +124,30 @@ async function launch() {
   async function drive() {
     try {
       console.log("__PROBE_READY__");
+      const barEl = () => document.querySelector(".possession-charge");
+      const fillEl = () => barEl()?.querySelector(".possession-charge-fill");
+      const fontOf = (selector) => {
+        const el = document.querySelector(selector);
+        return el ? getComputedStyle(el).fontFamily : null;
+      };
       await until(() => handlers.frame);
-      handlers.frame({ payload: ${JSON.stringify(charging)} });
+      handlers.frame({ payload: ${JSON.stringify(seated)} });
       await until(() => cardEl() && last());
+      const seatedReported = last();
+      const fonts = {
+        card: fontOf(".possession"),
+        heading: fontOf(".possession-heading"),
+        keys: fontOf(".possession-keys"),
+        label: fontOf(".possession li span:last-child"),
+      };
+      handlers.frame({ payload: ${JSON.stringify(charging)} });
+      await until(() => fillEl()?.style.width === "40%");
       const chargingCard = box(cardEl());
+      const chargingBar = box(barEl());
       const chargingReported = last();
+      handlers.frame({ payload: ${JSON.stringify(released)} });
+      await until(() => fillEl() && !barEl().classList.contains("visible"));
+      const releasedReported = last();
       handlers.frame({ payload: ${JSON.stringify(walked)} });
       await until(() => (document.querySelector(".sprite")?.style.transform || "").includes("640"));
       const walkedCard = box(cardEl());
@@ -125,13 +156,23 @@ async function launch() {
       await until(() => cardEl()?.classList.contains("paused") && last());
       const pausedCard = box(cardEl());
       const pausedReported = last();
+      const pausedStyle = getComputedStyle(cardEl());
       console.log("__PROBE_RESULT__" + JSON.stringify({
+        seatedReported,
+        fonts,
         chargingCard,
+        chargingBar,
         chargingReported,
+        releasedReported,
         walkedCard,
         walkedReported,
         pausedCard,
         pausedReported,
+        pausedStyle: {
+          color: pausedStyle.color,
+          backgroundColor: pausedStyle.backgroundColor,
+          opacity: pausedStyle.opacity,
+        },
       }));
     } catch (err) {
       console.log("__PROBE_RESULT__" + JSON.stringify({ error: String(err && err.stack || err) }));
@@ -142,6 +183,68 @@ async function launch() {
 
   const html = readFileSync(join(SRC, "index.html"), "utf8").replace("<head>", `<head>${stub}`);
   return probePage(html, { args: ["--window-size=1400,900"], timeout: 8000 });
+}
+
+function channel(value) {
+  const s = value / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function luminance(rgb) {
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+function contrast(a, b) {
+  const left = luminance(a);
+  const right = luminance(b);
+  const [hi, lo] = left > right ? [left, right] : [right, left];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function parseCssColor(value) {
+  const modern = String(value).match(
+    /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/,
+  );
+  if (modern) {
+    return {
+      r: Number(modern[1]) * 255,
+      g: Number(modern[2]) * 255,
+      b: Number(modern[3]) * 255,
+      a: modern[4] === undefined ? 1 : Number(modern[4]),
+    };
+  }
+  const match = String(value).match(
+    /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/,
+  );
+  assert.ok(match, `unparsed color ${value}`);
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: match[4] === undefined ? 1 : Number(match[4]),
+  };
+}
+
+function over(src, dst) {
+  const a = src.a + dst.a * (1 - src.a);
+  return {
+    r: (src.r * src.a + dst.r * dst.a * (1 - src.a)) / a,
+    g: (src.g * src.a + dst.g * dst.a * (1 - src.a)) / a,
+    b: (src.b * src.a + dst.b * dst.a * (1 - src.a)) / a,
+    a,
+  };
+}
+
+// What a pixel of `layer` looks like after the card's opacity, on `backdrop`.
+function seen(layer, opacity, backdrop) {
+  return over({ ...layer, a: layer.a * opacity }, { ...backdrop, a: 1 });
+}
+
+function pausedContrast(style, backdrop) {
+  const text = parseCssColor(style.color);
+  const panel = parseCssColor(style.backgroundColor);
+  const opacity = Number(style.opacity);
+  return contrast(seen(over(text, panel), opacity, backdrop), seen(panel, opacity, backdrop));
 }
 
 function reportedFor(rects, measured) {
@@ -178,5 +281,51 @@ test(
     assert.ok(pausedRow, `paused card reported in ${JSON.stringify(result.pausedReported)}`);
     assert.equal(pausedRow.clickable, true, "paused is the resume click");
     assert.equal(pausedRow.follows, undefined);
+  },
+);
+
+test(
+  "a charge that starts after the card is seated is drawn under it and then leaves",
+  { skip: chromeSkip, timeout: 60000 },
+  async () => {
+    const result = await drive();
+    const bar = reportedFor(result.chargingReported, result.chargingBar);
+    assert.ok(bar, `charge bar missing from ${JSON.stringify(result.chargingReported)}`);
+    assert.equal(bar.clickable, false, "the bar is drawn and never takes a click");
+    assert.equal(bar.follows, undefined, "the bar stays in the corner");
+    assert.equal(reportedFor(result.seatedReported, result.chargingBar), undefined);
+    assert.ok(result.chargingBar[1] >= result.chargingCard[1] + result.chargingCard[3]);
+    assert.ok(result.chargingBar[1] + result.chargingBar[3] < 900, "the bar is inside the window");
+    assert.equal(reportedFor(result.releasedReported, result.chargingBar), undefined);
+  },
+);
+
+const SANS = "system-ui, -apple-system, sans-serif";
+
+test(
+  "the bindings card, its heading, its keys and its labels render in the shared sans",
+  { skip: chromeSkip, timeout: 60000 },
+  async () => {
+    const result = await drive();
+    const flat = (family) => family.replace(/["']/g, "").replace(/\s+/g, " ").trim();
+    assert.equal(flat(result.fonts.card), SANS);
+    assert.equal(flat(result.fonts.heading), SANS);
+    assert.equal(flat(result.fonts.keys), SANS);
+    assert.equal(flat(result.fonts.label), SANS);
+  },
+);
+
+test(
+  "a paused card keeps the line readable on a light page and a dark one",
+  { skip: chromeSkip, timeout: 60000 },
+  async () => {
+    const result = await drive();
+    const white = pausedContrast(result.pausedStyle, { r: 255, g: 255, b: 255 });
+    const black = pausedContrast(result.pausedStyle, { r: 0, g: 0, b: 0 });
+    assert.ok(white >= 4.5, `light ground contrast ${white.toFixed(2)} from ${JSON.stringify(result.pausedStyle)}`);
+    assert.ok(black >= 4.5, `dark ground contrast ${black.toFixed(2)} from ${JSON.stringify(result.pausedStyle)}`);
+    const panel = parseCssColor(result.pausedStyle.backgroundColor);
+    const opacity = Number(result.pausedStyle.opacity);
+    assert.ok(panel.a < 1 || opacity < 1, "a paused card stays dimmer than the live one");
   },
 );

@@ -42,7 +42,7 @@ body {
   border: 2px solid var(--shared-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
-  font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
+  font-family: var(--shared-sans);
   font-size: var(--shared-type-size);
   line-height: var(--shared-type-leading);
 
@@ -549,6 +549,7 @@ body {
   background: var(--shared-panel);
   color: var(--shared-ink);
   border-radius: var(--shared-radius);
+  font-family: var(--shared-sans);
   font-size: var(--shared-type-size);
   line-height: var(--shared-type-leading);
   pointer-events: none;
@@ -564,7 +565,10 @@ body {
 }
 
 .possession.paused {
-  opacity: 0.45;
+  /* Fading the whole card blends the line into a light page. The panel
+     stays dark enough to hold the type; the type stays the shared ink. */
+  opacity: 1;
+  background: color-mix(in srgb, var(--shared-panel) 78%, transparent);
 }
 
 .possession-heading {

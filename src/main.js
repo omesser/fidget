@@ -283,6 +283,11 @@ function speechRect(view) {
 const CHARGE_BAR_PX = 8;
 const POSSESSION_GAP_PX = 8;
 
+function chargeRectFor(fill, placed) {
+  if (fill == null) return null;
+  return [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
+}
+
 function positionPossession(view, latest) {
   const model = possessionCard({
     possessed: Boolean(latest.possessed),
@@ -307,9 +312,14 @@ function positionPossession(view, latest) {
     seat.width === bounds.width &&
     seat.height === bounds.height &&
     seat.paused === model.paused;
-  // A charge tick only widens the fill. The card stays in the corner, so
-  // measuring it again would force layout for a seat that did not move.
-  if (!rebuilt && sameSeat && view.cardSize?.width) return;
+  // Skip the measure: a charge tick only widens the fill. Still publish the
+  // bar. Windows clips to the reported region, so a bar that appears after
+  // the card is seated stays invisible until its rect is sent.
+  if (!rebuilt && sameSeat && view.cardSize?.width) {
+    const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
+    view.chargeRect = chargeRectFor(fill, placed);
+    return;
+  }
   if (rebuilt || !view.cardSize?.width) {
     view.cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
   }
@@ -325,8 +335,7 @@ function positionPossession(view, latest) {
     paused: model.paused,
   };
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
-  view.chargeRect =
-    fill == null ? null : [placed.bar.x, placed.bar.y, placed.bar.width, placed.bar.height];
+  view.chargeRect = chargeRectFor(fill, placed);
   reportOverlayRects();
 }
 
