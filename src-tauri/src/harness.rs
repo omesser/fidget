@@ -9594,15 +9594,15 @@ mod tests {
         assert!(!inspect.alive && !inspect.initializing && inspect.missing.is_none());
         let failed = inspect.failed.expect("the landing has no reason to show");
         assert_eq!(failed.command, Some(session.launch.line()));
-        // Linux adds " (core dumped)" when the runner keeps cores; macOS does not.
+        // Linux appends " (core dumped)" when the runner keeps cores.
         #[cfg(unix)]
-        assert!(
-            failed
+        {
+            let reason = failed
                 .reason
-                .starts_with("exited before initialize, signal: 6 (SIGABRT)"),
-            "{}",
-            failed.reason
-        );
+                .strip_suffix(" (core dumped)")
+                .unwrap_or(&failed.reason);
+            assert_eq!(reason, "exited before initialize, signal: 6 (SIGABRT)");
+        }
         // Its stderr, and libtest's own stdout from before the fixture ran.
         assert!(
             failed.output.contains(
