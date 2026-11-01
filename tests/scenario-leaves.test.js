@@ -96,15 +96,24 @@ test("no Windows leaf or verifier sleeps between steps", () => {
 
 // A wait starts at its trigger and fails fast. 5 s is the launch budget; a
 // person's pace is no trigger, so a leaf drives its own steps.
+// -S* is -Seconds or any prefix of it, which PowerShell accepts.
+const longWaits = (text) =>
+  [...text.matchAll(/\bWait-(?:For\w+|Until|OnChanges) +(?:-S\w* +)?(\d+(?:\.\d+)?)\b/gi)].filter(
+    ([, seconds]) => Number(seconds) > 5,
+  );
+
+test("the 5 s wait rule catches the positional and the named form", () => {
+  assert.equal(longWaits("Wait-ForTrace 60 $f $p").length, 1);
+  assert.equal(longWaits("Wait-ForTrace -Seconds 60 $f $p").length, 1);
+  assert.equal(longWaits("Wait-Until -Sec 5.5 { $x }").length, 1);
+  assert.equal(longWaits("Wait-ForTrace -Seconds 3 $f $p").length, 0);
+});
+
 test("no Windows leaf waits longer than 5 s on one trigger", () => {
-  const long = (text) =>
-    [...text.matchAll(/\bWait-(?:For\w+|Until|OnChanges) +(\d+(?:\.\d+)?)\b/g)].filter(
-      ([, seconds]) => Number(seconds) > 5,
-    );
   assert.deepEqual(
     missing(
       leaves.filter((leaf) => leaf.endsWith(".ps1")),
-      (text) => long(text).length === 0,
+      (text) => longWaits(text).length === 0,
     ),
     [],
   );
