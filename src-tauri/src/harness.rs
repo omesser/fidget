@@ -658,9 +658,7 @@ fn timed_command(
     }
 }
 
-/// On Windows, resolves stand-in executables (.cmd, .bat, .exe) to absolute
-/// paths because CreateProcess with a bare name + PATH override does not find
-/// them as the shell does. Rust wraps .cmd/.bat when given an absolute path.
+/// On Windows, asks `windows_program` for an absolute stand-in.
 fn resolved_program(program: &str) -> OsString {
     #[cfg(windows)]
     {
@@ -672,6 +670,9 @@ fn resolved_program(program: &str) -> OsString {
     }
 }
 
+/// CreateProcess with a bare name does not find `.cmd`, `.bat`, or `.exe`
+/// the way the shell does. Rust wraps `.cmd` and `.bat` when given an
+/// absolute path.
 #[cfg(windows)]
 fn windows_program(program: &str, path_override: Option<&Path>) -> Option<OsString> {
     if program.contains(['/', '\\']) {
@@ -12094,6 +12095,21 @@ mod tests {
         assert_eq!(
             windows_program("npx", Some(&dir)).as_deref(),
             Some(dir.join("npx.cmd").as_os_str())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Some installs ship only `npx.bat`. The launcher has to name that file
+    /// or the Windows run is `NotFound`.
+    #[cfg(windows)]
+    #[test]
+    fn a_bat_stand_in_is_the_program_when_the_fixture_has_only_that_file() {
+        let dir = std::env::temp_dir().join(format!("fidget-bat-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("npx.bat"), "@echo off\r\n").unwrap();
+        assert_eq!(
+            windows_program("npx", Some(&dir)).as_deref(),
+            Some(dir.join("npx.bat").as_os_str())
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
