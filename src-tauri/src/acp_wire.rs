@@ -4396,9 +4396,11 @@ mod windows_job {
 
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
 
-    /// Spawn with create-time Job Object association via `CREATE_SUSPENDED`.
-    /// The process cannot fork children until after job assignment, which
-    /// closes the post-spawn race.
+    const SPAWN_IN_JOB_CREATION_FLAGS: u32 =
+        CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED;
+
+    /// The child is suspended until `AssignProcessToJobObject` returns, so
+    /// the process cannot fork children until after job assignment.
     pub(super) fn spawn_in_job(
         mut command: std::process::Command,
         stderr: std::process::Stdio,
@@ -4429,8 +4431,7 @@ mod windows_job {
             job
         };
 
-        let creation_flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED;
-        command.creation_flags(creation_flags);
+        command.creation_flags(SPAWN_IN_JOB_CREATION_FLAGS);
 
         let mut async_command = async_process::Command::from(command);
         async_command
@@ -4590,6 +4591,15 @@ mod windows_job {
         #[test]
         fn test_terminate_job_missing_pid_is_noop() {
             terminate_job(0xFFFF_FFFE);
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn spawn_in_job_creation_flags_include_create_suspended() {
+            assert_eq!(
+                SPAWN_IN_JOB_CREATION_FLAGS & CREATE_SUSPENDED,
+                CREATE_SUSPENDED
+            );
         }
 
         /// #1671: a second suspended thread owned by the child must resume too.
