@@ -8,6 +8,32 @@ pub enum Arrow {
     Right,
 }
 
+/// A move the keys made a possessed sprite play. Logged apart from Behaviors:
+/// cat declares a `jump` Behavior, and a driven jump never played its chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Move {
+    Walk(Arrow),
+    Jump,
+}
+
+impl Move {
+    pub fn name(self) -> &'static str {
+        match self {
+            Move::Walk(Arrow::Left) => "walk-left",
+            Move::Walk(Arrow::Right) => "walk-right",
+            Move::Jump => "jump",
+        }
+    }
+}
+
+/// How `recent:` and `lately:` name the move: marked, so no wake reads it as
+/// a Behavior.
+impl std::fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (driven)", self.name())
+    }
+}
+
 /// A key possession hears. The Shell drops every other key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {

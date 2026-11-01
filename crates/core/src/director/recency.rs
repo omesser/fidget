@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use super::Happened;
 use crate::engine::{Frame, State, Verb};
+use crate::possession::Move;
 
 /// How far back the window reaches, and how long a verb's snapshot or a
 /// streak lasts without a wake to read it.
@@ -28,11 +29,13 @@ pub struct Doing {
     pub behavior: Option<String>,
 }
 
-/// One change the sprite went through: into a State, or into a Behavior.
+/// One change the sprite went through: into a State, into a Behavior, or a
+/// move the user drove.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
     State(State),
     Behavior(String),
+    Driven(Move),
 }
 
 /// What a wake is told about the last few seconds.
@@ -47,6 +50,9 @@ pub struct Lately {
     pub streak: u32,
     /// The steps inside `WINDOW`, oldest first, at most `STEPS`.
     pub steps: Vec<Step>,
+    /// Every move a possession drove and how often, first driven first.
+    /// Filled only for the wake answering its end.
+    pub driven: Vec<(Move, u32)>,
 }
 
 /// One Instance's last few seconds. Fed by `tick` and `heard`, read by `take`.
@@ -63,6 +69,9 @@ pub struct Recency {
     streak: Option<(Happened, u32, Duration)>,
     /// Steps with their ages, oldest first.
     steps: VecDeque<(Step, Duration)>,
+    /// The moves driven since possession started, outside `WINDOW`: a
+    /// release sums up the whole possession.
+    driven: Vec<(Move, u32)>,
 }
 
 impl Recency {
@@ -85,6 +94,15 @@ impl Recency {
             self.was = self.last.clone().map(|found| (found, Duration::ZERO));
         }
         self.gesturing = !verbs.is_empty();
+
+        // Ahead of the State it leads to: a launch is airborne the same tick.
+        if let Some(moved) = frame.driven {
+            self.step(Step::Driven(moved));
+            match self.driven.iter_mut().find(|(seen, _)| *seen == moved) {
+                Some((_, times)) => *times += 1,
+                None => self.driven.push((moved, 1)),
+            }
+        }
 
         let now = Doing {
             state: frame.state,
@@ -118,7 +136,12 @@ impl Recency {
             _ => 0,
         };
         let skip = self.steps.len().saturating_sub(STEPS);
+        let driven = match happened {
+            Happened::PossessionEnd => std::mem::take(&mut self.driven),
+            _ => Vec::new(),
+        };
         Lately {
+            driven,
             was: self.was.take().map(|(found, _)| found),
             doing: self.last.as_ref().and_then(|now| now.behavior.clone()),
             streak,
@@ -147,6 +170,7 @@ mod tests {
     use crate::character::{Behavior, Primitive};
     use crate::director::{follow_up, Context};
     use crate::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+    use crate::possession::{Arrow, Intent, Key, Possession};
 
     /// An Instance as the frame loop runs one: the Engine ticks, `Recency`
     /// hears every tick, and a wake reads it.
@@ -321,6 +345,49 @@ mod tests {
                 "{}state: idle\nstanding on: nothing\n",
                 floor("what just happened: poked\nwas: idle, doing walk\n")
             )
+        );
+    }
+
+    #[test]
+    fn a_release_hears_the_drive_marked_and_summed() {
+        let mut sprite = Instance::at(500.0, 0.0);
+        sprite.engine.set_possessed(true);
+        let keys = |walk, launch| WorldSnapshot {
+            possession: Intent {
+                walk,
+                launch,
+                ..Intent::default()
+            },
+            ..snapshot(100, vec![])
+        };
+        let tap = {
+            let mut space = Possession::default();
+            space.key(Key::Space, true);
+            space.key(Key::Space, false);
+            space.tick(0).launch
+        };
+        for _ in 0..3 {
+            sprite.tick(keys(Some(Arrow::Left), None));
+        }
+        sprite.tick(keys(Some(Arrow::Right), None));
+        sprite.tick(keys(None, None));
+        sprite.tick(keys(Some(Arrow::Left), None));
+        sprite.tick(keys(None, tap));
+        sprite.wait(2_000);
+        sprite.engine.set_possessed(false);
+
+        assert_eq!(
+            sprite.wake(Happened::PossessionEnd),
+            format!(
+                "{}state: idle\ndriven: walk-left ×2, walk-right ×1, jump ×1\n\
+                 lately: walk-right (driven) → walk-left (driven) → jump (driven) → \
+                 falling → idle\nstanding on: nothing\n",
+                floor("what just happened: released from possession\n")
+            )
+        );
+        assert!(
+            !sprite.wake(Happened::PossessionEnd).contains("×"),
+            "the summary is spent by the wake that reads it"
         );
     }
 

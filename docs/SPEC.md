@@ -418,6 +418,12 @@ also carries the last few seconds, with no timestamps or ages, from
 - `lately:` the States and Behaviors entered in the last 12 seconds, oldest
   first, at most five, when there are at least two.
 
+While possessed, `walk-left`, `walk-right` and `jump` are driven moves. They
+read `jump (driven)` in `recent:` and `lately:`, so a driven jump is never the
+`jump` Behavior. `recent:` keeps three of each, so a possession cannot push the
+real Behaviors out. The wake for the release adds one line counting the whole
+possession, `driven: walk-left ×3, jump ×1`, or `driven: nothing`.
+
 Two implementations ship:
 
 - **Static** — weighted selection over the Character's declared Behaviors using their

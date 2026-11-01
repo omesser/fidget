@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fidget_core::director::{self, Context, Happened, Lately, Wake};
+use fidget_core::director::{self, Context, Happened, Lately, Played, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
@@ -2295,8 +2295,11 @@ pub(crate) fn run_frame_loop(
                 // What the user has seen is what the Engine played, not what
                 // the Director asked for: a refused proposal never reaches
                 // the screen, and suppressing it would silence a Behavior nobody watched.
+                if let Some(moved) = frame.driven {
+                    director::remember(&mut live.recent, Played::Driven(moved));
+                }
                 if let Some(played) = &frame.behavior {
-                    director::remember(&mut live.recent, played.clone());
+                    director::remember(&mut live.recent, Played::Behavior(played.clone()));
                     if tracing_frames {
                         eprintln!("director: {} {played}", live.id);
                     }

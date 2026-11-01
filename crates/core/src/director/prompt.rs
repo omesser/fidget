@@ -1,4 +1,5 @@
 use super::{Context, Doing, Happened, Lately, State, Step, CHAT_LIMIT};
+use crate::possession::Move;
 
 /// The opening turn: Personality Prompt, Instance Prompt (ADR-0012), roster,
 /// the Instance's own id and moment; later wakes send `named_moment`. `blank`
@@ -153,7 +154,8 @@ pub(crate) fn follow_up(context: &Context) -> String {
     let recent = if context.recent.is_empty() {
         "(none)".to_string()
     } else {
-        context.recent.join(", ")
+        let played: Vec<String> = context.recent.iter().map(ToString::to_string).collect();
+        played.join(", ")
     };
     let clock = format_clock(context.activity.hour, context.activity.minute);
     let happened = happened_word(&context.happened);
@@ -163,9 +165,11 @@ pub(crate) fn follow_up(context: &Context) -> String {
         None => String::new(),
     };
     let possessed = if context.possessed {
-        "possessed: yes\n"
+        "possessed: yes\n".to_string()
+    } else if context.happened == Happened::PossessionEnd {
+        driven_line(&context.lately.driven)
     } else {
-        ""
+        String::new()
     };
     let weekday = WEEKDAYS[usize::from(context.activity.weekday % 7)];
     let desktop = desktop_lines(context);
@@ -219,6 +223,7 @@ fn lately_lines(context: &Context) -> (String, String, String) {
         doing,
         streak,
         steps,
+        ..
     } = &context.lately;
     let streak = match streak {
         0 | 1 => String::new(),
@@ -237,16 +242,29 @@ fn lately_lines(context: &Context) -> (String, String, String) {
         lines.push_str(&format!("doing: {name}\n"));
     }
     if steps.len() > 1 {
-        let words: Vec<&str> = steps
+        let words: Vec<String> = steps
             .iter()
             .map(|step| match step {
-                Step::State(state) => state_word(*state),
-                Step::Behavior(name) => name.as_str(),
+                Step::Behavior(name) => name.clone(),
+                Step::Driven(moved) => moved.to_string(),
+                Step::State(state) => state_word(*state).to_string(),
             })
             .collect();
         lines.push_str(&format!("lately: {}\n", words.join(" → ")));
     }
     (streak, was, lines)
+}
+
+/// The one line a release adds: every move the possession drove, counted.
+fn driven_line(driven: &[(Move, u32)]) -> String {
+    if driven.is_empty() {
+        return "driven: nothing\n".to_string();
+    }
+    let counted: Vec<String> = driven
+        .iter()
+        .map(|(moved, times)| format!("{} ×{times}", moved.name()))
+        .collect();
+    format!("driven: {}\n", counted.join(", "))
 }
 
 fn doing_words(doing: &Doing) -> String {
