@@ -79,7 +79,7 @@ APP_PID=$!
 pid=$APP_PID
 
 # A cold debug build on software GL can take well past 3 s to start.
-wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line within 20 s"
+wait_for_up "$TRACE_LOG" || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 log_info "Waiting for overlay window..."

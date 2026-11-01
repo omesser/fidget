@@ -76,7 +76,7 @@ shot() { # <name>
   screencapture -x -o -l "$id" "$out/$1.png"
 }
 
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_marks 3 "$marks" '^spawn$' || fail "Harness never spawned; see $log"
 # The 1 s timed wake sends session/new (refused: auth required), which shows the
 # needs-login UI; a session/new only comes from a wake, not from attach alone.

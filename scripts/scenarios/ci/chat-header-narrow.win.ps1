@@ -154,7 +154,7 @@ $ax = Join-Path $root "scripts/ax-window-win.ps1"
 $startMs = Get-NowMs
 $proc = Start-FidgetPiped $Bin @() $log (Join-Path $out "app.err")
 try {
-    if (-not (Wait-ForUp 5 (Join-Path $out "app.err"))) { Fail "Fidget never wrote its overlay line; see $out\app.err" }
+    if (-not (Wait-ForUp (Join-Path $out "app.err"))) { Fail "Fidget never wrote its overlay line; see $out\app.err" }
     function Invoke-Dump([string]$Name) {
         $dump = Join-Path $out "$Name.ax.txt"
         if (-not (Invoke-AxWin $dump @{ Command = "dump"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "frames" })) { return $null }

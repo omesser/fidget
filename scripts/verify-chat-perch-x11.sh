@@ -82,7 +82,7 @@ APP_PID=$!
 # shellcheck disable=SC2034  # read by the sourced wait helpers
 pid=$APP_PID wait_log=$TRACE_LOG
 
-wait_for_up 20 "$TRACE_LOG" || fail "App never published an overlay line within 20 s"
+wait_for_up "$TRACE_LOG" || fail "App never published an overlay line"
 kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
 
 ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')

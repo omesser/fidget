@@ -279,7 +279,7 @@ $env:FIDGET_TRACE_FRAMES = "1"
 $startMs = Get-NowMs
 $script:proc = Start-FidgetPiped $Bin @() (Join-Path $out "app.log") $traceFile
 try {
-    if (-not (Wait-ForUp 3 $traceFile)) { Fail "Fidget never wrote its overlay line in 3 s; see $traceFile" }
+    if (-not (Wait-ForUp $traceFile)) { Fail "Fidget never wrote its overlay line; see $traceFile" }
     if (-not (Wait-ForTrace 3 $log $landedPattern)) { Fail "the sprite never landed within 3 s of startup; see $log" }
     if (-not (Wait-Until 3 { Get-SpriteAtRest $log })) { Fail "the sprite never came to rest within 3 s of landing; see $log" }
     # A bubble sent before an overlay's page loads is never drawn or traced. 5 s,

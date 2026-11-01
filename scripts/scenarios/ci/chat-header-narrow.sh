@@ -103,7 +103,7 @@ check() { # <width>
   echo "ok: $w: one row inside the window, page $aw of $sw points"
 }
 
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 wait_for_ax 3 "$pid" "$tools/window-id" "$pid" BMO || fail "Chat did not open for the ask"
 wait_for_ax 3 "$pid" shows_session || fail "the mind line names no session; see $out/session.ax.txt"
