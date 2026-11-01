@@ -4894,7 +4894,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: module: {}", std::io::Error::last_os_error()).into());
     }
 
-    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
+    let (icon, small_icon) = anchor_icons();
     let class_name = windows_sys::w!("FidgetAnchor");
     let class = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -4908,7 +4908,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         hbrBackground: std::ptr::null_mut(),
         lpszMenuName: std::ptr::null(),
         lpszClassName: class_name,
-        hIconSm: icon,
+        hIconSm: small_icon,
     };
     if unsafe { RegisterClassExW(&class) } == 0 {
         let err = std::io::Error::last_os_error();
@@ -4941,10 +4941,12 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         return Err(format!("anchor: create window: {}", std::io::Error::last_os_error()).into());
     }
 
-    if !icon.is_null() {
-        unsafe {
+    unsafe {
+        if !icon.is_null() {
             SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, icon as isize);
+        }
+        if !small_icon.is_null() {
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small_icon as isize);
         }
     }
 
@@ -5033,6 +5035,15 @@ unsafe extern "system" fn anchor_wndproc(
 
 /// Taskbar icon from the same PNG the bundle uses. The class stores the handle
 /// until process exit, and `DestroyIcon` would blank the button.
+#[cfg(target_os = "windows")]
+fn anchor_icons() -> (
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+    windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+) {
+    let icon = anchor_icon().unwrap_or(std::ptr::null_mut());
+    (icon, icon)
+}
+
 #[cfg(target_os = "windows")]
 fn anchor_icon() -> Option<windows_sys::Win32::UI::WindowsAndMessaging::HICON> {
     use windows_sys::Win32::UI::WindowsAndMessaging::CreateIcon;
@@ -5594,6 +5605,42 @@ fn main() {
                 harness::shutdown();
             }
         });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod anchor_icon_tests {
+    use windows_sys::Win32::Graphics::Gdi::{DeleteObject, GetObjectW, BITMAP};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetIconInfo, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON, SM_CYSMICON,
+    };
+
+    fn icon_size(icon: HICON) -> (i32, i32) {
+        let mut info: ICONINFO = unsafe { std::mem::zeroed() };
+        assert_ne!(unsafe { GetIconInfo(icon, &mut info) }, 0, "GetIconInfo");
+        let mut bitmap: BITMAP = unsafe { std::mem::zeroed() };
+        let read = unsafe {
+            GetObjectW(
+                info.hbmColor,
+                std::mem::size_of::<BITMAP>() as i32,
+                (&raw mut bitmap).cast(),
+            )
+        };
+        unsafe {
+            DeleteObject(info.hbmColor);
+            DeleteObject(info.hbmMask);
+        }
+        assert_ne!(read, 0, "GetObjectW");
+        (bitmap.bmWidth, bitmap.bmHeight)
+    }
+
+    #[test]
+    fn the_taskbar_gets_a_256px_icon_and_a_small_icon_sized_for_the_shell() {
+        let (big, small) = super::anchor_icons();
+        assert!(!big.is_null() && !small.is_null());
+        assert_eq!(icon_size(big), (256, 256));
+        let small_size = unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
+        assert_eq!(icon_size(small), small_size);
+    }
 }
 
 #[cfg(test)]
