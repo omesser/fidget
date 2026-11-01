@@ -8,7 +8,7 @@
 use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
-use crate::possession::{Arrow, Charge, Intent};
+use crate::possession::{Charge, Intent, Walk};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
@@ -1397,9 +1397,9 @@ impl Engine {
             return false;
         }
 
-        let heading = snapshot.possession.walk.map(|arrow| match arrow {
-            Arrow::Left => -1.0,
-            Arrow::Right => 1.0,
+        let heading = snapshot.possession.walk.map(|walk| match walk {
+            Walk::Left => -1.0,
+            Walk::Right => 1.0,
         });
         if let Some(heading) = heading {
             self.facing = heading;
@@ -9393,7 +9393,7 @@ mod tests {
     /// A possessed sprite and the keys the Shell feeds it.
     mod possession {
         use super::*;
-        use crate::possession::{Arrow, Charge, Intent, Key, Possession};
+        use crate::possession::{Charge, Intent, Key, Possession, Walk};
 
         const FRAME_MS: u32 = 16;
 
@@ -9406,9 +9406,9 @@ mod tests {
             keys.tick(FRAME_MS).launch.expect("a keyup launches")
         }
 
-        fn holding(arrow: Arrow) -> Intent {
+        fn holding(walk: Walk) -> Intent {
             Intent {
-                walk: Some(arrow),
+                walk: Some(walk),
                 ..Intent::default()
             }
         }
@@ -9481,7 +9481,7 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
 
-            let walking = engine.tick(&with_possession(holding(Arrow::Left), &world));
+            let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
             assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
             assert_eq!(walking.facing, -1.0);
             assert_eq!(walking.animation, "walk");
@@ -9500,7 +9500,7 @@ mod tests {
             let mut engine = resting_at(500.0, &world);
             let resting = engine.tick(&world);
 
-            let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(frame.position, resting.position, "{frame:?}");
             assert_eq!(frame.charge, None);
         }
@@ -9659,7 +9659,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             engine.tick(&with_possession(launching(released_after(1_000)), &world));
 
-            let steered = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(steered.state, State::Falling);
             assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
             assert_eq!(steered.facing, 1.0);
@@ -9678,7 +9678,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             let launched = engine.tick(&with_possession(
                 Intent {
-                    walk: Some(Arrow::Left),
+                    walk: Some(Walk::Left),
                     launch: Some(released_after(0)),
                     ..Intent::default()
                 },
@@ -9694,13 +9694,13 @@ mod tests {
         fn a_grab_while_possessed_wins_and_the_release_lands_as_usual() {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
-            engine.tick(&with_possession(holding(Arrow::Right), &world));
+            engine.tick(&with_possession(holding(Walk::Right), &world));
 
             let feet = engine.feet();
             let grabbed = engine.tick(&WorldSnapshot {
                 cursor: feet,
                 verbs: vec![Verb::Grab],
-                ..with_possession(holding(Arrow::Right), &world)
+                ..with_possession(holding(Walk::Right), &world)
             });
             assert_eq!(grabbed.state, State::Dragged);
             let held = engine.tick(&WorldSnapshot {
@@ -9708,7 +9708,7 @@ mod tests {
                 verbs: vec![Verb::Grab],
                 ..with_possession(
                     Intent {
-                        walk: Some(Arrow::Right),
+                        walk: Some(Walk::Right),
                         launch: Some(released_after(1_000)),
                         ..Intent::default()
                     },
@@ -9768,7 +9768,7 @@ mod tests {
                     ..world.clone()
                 },
             ] {
-                let frame = engine.tick(&with_possession(holding(Arrow::Right), &frozen));
+                let frame = engine.tick(&with_possession(holding(Walk::Right), &frozen));
                 assert_eq!(frame.velocity.x, WALK_SPEED, "{frame:?}");
                 assert_eq!(frame.animation, "walk", "{frame:?}");
             }
@@ -9822,7 +9822,7 @@ mod tests {
 
             engine.set_possessed(true);
             settle(&mut engine, &world);
-            let walking = engine.tick(&with_possession(holding(Arrow::Left), &world));
+            let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
             assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
         }
 
@@ -9849,7 +9849,7 @@ mod tests {
                 let mut engine = possessed_at(500.0, &world);
                 let mut last = None;
                 for _ in 0..400 {
-                    let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+                    let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
                     assert_ne!(frame.state, State::Climbing, "{frame:?}");
                     assert_eq!(frame.state, State::Grounded, "{frame:?}");
                     last = Some(frame);
@@ -9971,7 +9971,7 @@ mod tests {
             for (world, wall) in worlds {
                 let mut engine = possessed_at(500.0, &world);
                 for _ in 0..400 {
-                    engine.tick(&with_possession(holding(Arrow::Right), &world));
+                    engine.tick(&with_possession(holding(Walk::Right), &world));
                 }
                 let against = engine.tick(&world);
                 assert_eq!(against.velocity.x, 0.0, "stopped: {against:?}");
@@ -10061,7 +10061,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             engine.set_possessed(false);
             assert!(!engine.possessed());
-            let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(frame.velocity.x, 0.0, "keys move it no more: {frame:?}");
         }
 
@@ -10072,13 +10072,13 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             for _ in 0..5 {
-                engine.tick(&with_possession(holding(Arrow::Right), &world));
+                engine.tick(&with_possession(holding(Walk::Right), &world));
             }
             engine.set_possessed(false);
 
             let x = engine.feet().x;
             for _ in 0..300 {
-                let frame = engine.tick(&with_possession(holding(Arrow::Right), &world));
+                let frame = engine.tick(&with_possession(holding(Walk::Right), &world));
                 assert_eq!(frame.velocity.x, 0.0, "{frame:?}");
                 assert_eq!(frame.position.x, x, "{frame:?}");
                 assert_eq!(frame.state, State::Grounded, "{frame:?}");
@@ -10093,7 +10093,7 @@ mod tests {
             let world = on(one_display());
             let mut engine = possessed_at(500.0, &world);
             engine.tick(&with_possession(launching(released_after(1_000)), &world));
-            let steered = engine.tick(&with_possession(holding(Arrow::Right), &world));
+            let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
             engine.set_possessed(false);
 

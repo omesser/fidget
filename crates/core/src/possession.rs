@@ -1,9 +1,9 @@
 //! Possession: turning key edges into what a possessed sprite does this tick.
 //! The keyboard twin of `input::Pointer`, and pure for the same reason.
 
-/// A walk key.
+/// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Arrow {
+pub enum Walk {
     Left,
     Right,
 }
@@ -11,7 +11,7 @@ pub enum Arrow {
 /// A key possession hears. The Shell drops every other key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
-    Arrow(Arrow),
+    Walk(Walk),
     Up,
     Down,
     Space,
@@ -47,8 +47,8 @@ impl Charge {
 /// What possession asks of the Engine this tick.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Intent {
-    /// The arrow to walk towards, or `None` to stand.
-    pub walk: Option<Arrow>,
+    /// The side to walk towards, or `None` to stand.
+    pub walk: Option<Walk>,
     /// Up was pressed since the last tick: climb the wall the sprite stands
     /// against.
     pub climb: bool,
@@ -66,9 +66,9 @@ pub struct Intent {
 /// Held keys, between key edges and ticks.
 #[derive(Clone, Debug, Default)]
 pub struct Possession {
-    /// Held arrows in press order. The latest walks, and letting it go hands
+    /// Held walk keys in press order. The latest walks, and letting it go hands
     /// the walk back to the other.
-    arrows: Vec<Arrow>,
+    walks: Vec<Walk>,
     /// Up and Down are down. A press asks once, through `climb` and `drop`,
     /// so a held key neither climbs again after the let-go nor drops through
     /// every Perch below.
@@ -90,8 +90,8 @@ impl Possession {
     /// repeat only asks again to end a possession that is already ending.
     pub fn key(&mut self, key: Key, down: bool) {
         match (key, down) {
-            (Key::Arrow(arrow), true) if !self.arrows.contains(&arrow) => self.arrows.push(arrow),
-            (Key::Arrow(arrow), false) => self.arrows.retain(|held| *held != arrow),
+            (Key::Walk(walk), true) if !self.walks.contains(&walk) => self.walks.push(walk),
+            (Key::Walk(walk), false) => self.walks.retain(|held| *held != walk),
             (Key::Up, true) if !self.up => (self.up, self.climb) = (true, true),
             (Key::Up, false) => self.up = false,
             (Key::Down, true) if !self.down => (self.down, self.drop) = (true, true),
@@ -123,7 +123,7 @@ impl Possession {
             *ms = ms.saturating_add(elapsed_ms);
         }
         Intent {
-            walk: self.arrows.last().copied(),
+            walk: self.walks.last().copied(),
             climb: std::mem::take(&mut self.climb),
             drop: std::mem::take(&mut self.drop),
             charging: self.space_ms.map(Charge::held),
@@ -142,30 +142,30 @@ mod tests {
     #[test]
     fn a_held_arrow_walks_until_it_is_released() {
         let mut keys = Possession::default();
-        keys.key(Key::Arrow(Arrow::Left), true);
-        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
-        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
-        keys.key(Key::Arrow(Arrow::Left), false);
+        keys.key(Key::Walk(Walk::Left), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Walk::Left));
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Walk::Left));
+        keys.key(Key::Walk(Walk::Left), false);
         assert_eq!(keys.tick(FRAME_MS).walk, None);
     }
 
     #[test]
     fn the_later_arrow_walks_and_letting_it_go_hands_back_to_the_other() {
         let mut keys = Possession::default();
-        keys.key(Key::Arrow(Arrow::Left), true);
-        keys.key(Key::Arrow(Arrow::Right), true);
-        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Right));
-        keys.key(Key::Arrow(Arrow::Right), false);
-        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Left));
+        keys.key(Key::Walk(Walk::Left), true);
+        keys.key(Key::Walk(Walk::Right), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Walk::Right));
+        keys.key(Key::Walk(Walk::Right), false);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Walk::Left));
     }
 
     #[test]
     fn an_auto_repeat_keydown_does_not_steal_the_walk() {
         let mut keys = Possession::default();
-        keys.key(Key::Arrow(Arrow::Left), true);
-        keys.key(Key::Arrow(Arrow::Right), true);
-        keys.key(Key::Arrow(Arrow::Left), true);
-        assert_eq!(keys.tick(FRAME_MS).walk, Some(Arrow::Right));
+        keys.key(Key::Walk(Walk::Left), true);
+        keys.key(Key::Walk(Walk::Right), true);
+        keys.key(Key::Walk(Walk::Left), true);
+        assert_eq!(keys.tick(FRAME_MS).walk, Some(Walk::Right));
     }
 
     #[test]
@@ -250,15 +250,15 @@ mod tests {
     #[test]
     fn a_pause_lets_go_of_every_key_without_jumping() {
         let mut keys = Possession::default();
-        keys.key(Key::Arrow(Arrow::Left), true);
-        keys.key(Key::Arrow(Arrow::Right), true);
+        keys.key(Key::Walk(Walk::Left), true);
+        keys.key(Key::Walk(Walk::Right), true);
         keys.key(Key::Space, true);
         keys.tick(500);
         keys.pause();
         assert_eq!(keys.tick(FRAME_MS), Intent::default());
         // Keyups that straggle in after the pause launch nothing.
         keys.key(Key::Space, false);
-        keys.key(Key::Arrow(Arrow::Left), false);
+        keys.key(Key::Walk(Walk::Left), false);
         assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn escape_asks_once_to_end_possession_and_lets_go_of_every_key() {
         let mut keys = Possession::default();
-        keys.key(Key::Arrow(Arrow::Right), true);
+        keys.key(Key::Walk(Walk::Right), true);
         keys.key(Key::Space, true);
         keys.tick(500);
         keys.key(Key::Escape, true);

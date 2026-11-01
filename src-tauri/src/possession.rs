@@ -5,7 +5,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fidget_core::possession::{Arrow, Intent, Key, Possession};
+use fidget_core::possession::{Intent, Key, Possession, Walk};
 
 /// A blur shorter than this is the focus request's own false-then-true pair,
 /// not the user leaving. Longer, and the keyups will never arrive.
@@ -112,8 +112,8 @@ pub enum Edge {
 /// The names the overlay sends. Anything else is not a possession key.
 pub fn parse_key(name: &str) -> Option<Key> {
     match name {
-        "left" => Some(Key::Arrow(Arrow::Left)),
-        "right" => Some(Key::Arrow(Arrow::Right)),
+        "left" => Some(Key::Walk(Walk::Left)),
+        "right" => Some(Key::Walk(Walk::Right)),
         "up" => Some(Key::Up),
         "down" => Some(Key::Down),
         "space" => Some(Key::Space),
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn arrows_space_and_escape_are_the_only_possession_keys() {
+    fn four_arrows_space_and_escape_are_the_only_possession_keys() {
         assert!(parse_key("left").is_some());
         assert!(parse_key("right").is_some());
         assert!(parse_key("space").is_some());
