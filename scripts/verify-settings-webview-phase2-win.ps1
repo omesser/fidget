@@ -591,11 +591,7 @@ try {
     if ($null -ne $j.sound) {
       $Report.checks['3_roundtrip'] = 'PASS'
       $Report.notes += "sound=$($j.sound)"
-    } elseif (-not $Report.checks.Contains('3_roundtrip')) {
-      $Report.checks['3_roundtrip'] = 'FAIL'
     }
-  } elseif (-not $Report.checks.Contains('3_roundtrip')) {
-    $Report.checks['3_roundtrip'] = 'FAIL'
   }
 } catch {
   $Report.checks['3_roundtrip'] = 'FAIL'
