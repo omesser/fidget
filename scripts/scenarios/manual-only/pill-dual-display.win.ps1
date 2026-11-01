@@ -7,8 +7,8 @@
 #   The cursor pokes the sprite and hovers until the pill opens, "hi" is typed,
 #   and the sprite is pressed, carried to the middle of another display and let go.
 #   Keep hands off the mouse and keyboard for the run.
-# Duration: a few seconds. Startup gets 5 s, as in CI; every later wait gives up
-#   3 s after its trigger. The sprite's fall may take longer while it keeps moving.
+# Duration: a few seconds. Every wait gives up 3 s after its trigger: launch,
+#   landing, poke, hover, keys, press, move and drop.
 # Grants: a desktop session with two or more displays. A loopback TCP port.
 #   Nothing is pressed unless Fidget owns the window under the cursor, and
 #   nothing is typed unless Fidget holds the foreground.
@@ -118,6 +118,7 @@ $pillTypedPattern = '(?:^|\s)overlay: draft instance=\S+ text="hi" focused=true$
 $pressPattern = '(?:^|\s)click: down '
 $releasePattern = '(?:^|\s)click: up '
 $draggedPattern = '(?:^|\s)frame: \d+ Dragged '
+$landedPattern = '(?:^|\s)frame: \d+ (?:Grounded|Perched) '
 
 # The middle of the sprite at rest, and of a display it is not on.
 function Get-DragPlan([string]$LogFile) {
@@ -129,7 +130,7 @@ function Get-DragPlan([string]$LogFile) {
         $null = $line -match $displayPattern
         $w = [int]$Matches[1]; $h = [int]$Matches[2]; $left = [int]$Matches[3]; $top = [int]$Matches[4]
         $onIt = $x -ge $left -and $x -lt $left + $w -and $y -ge $top -and $y -lt $top + $h
-        if (-not $onIt) { return @{ X = $x; Y = $y; ToX = $left + [int]($w / 2); ToY = $top + [int]($h / 2) } }
+        if (-not $onIt) { return @{ X = $x; Y = $y; At = $at; Left = $left; Top = $top; W = $w; H = $h; ToX = $left + [int]($w / 2); ToY = $top + [int]($h / 2) } }
     }
     $null
 }
@@ -188,7 +189,8 @@ function Drive-PillAcrossSeam {
     $p = $script:plan
 
     $null = [PillDrag]::SetCursorPos($p.X, $p.Y)
-    if ([PillDrag]::OwnerAt($p.X, $p.Y) -ne $script:proc.Id) { Fail "refusing to poke at ($($p.X),$($p.Y)): Fidget does not own the window there" }
+    # The region is art-shaped and a landing frame can leave the middle bare.
+    if (-not (Wait-Until 3 { [PillDrag]::OwnerAt($p.X, $p.Y) -eq $script:proc.Id })) { Fail "refusing to poke at ($($p.X),$($p.Y)): Fidget did not own the window there in 3 s" }
     [PillDrag]::Button($false); [PillDrag]::Button($true)
     if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble in 3 s; see $traceFile" }
     if (-not (Wait-ForTrace 3 $log $pillOpenedPattern)) { Fail "hovering the sprite at ($($p.X),$($p.Y)) did not open a focused pill in 3 s; see $log" }
@@ -196,6 +198,8 @@ function Drive-PillAcrossSeam {
     [PillDrag]::Text("hi")
     if (-not (Wait-ForTrace 3 $log $pillTypedPattern)) { Fail "the pill never showed text=`"hi`" in 3 s; see $log" }
 
+    $now = Get-LastSpriteSpot $log
+    if (-not $now -or [Math]::Abs($now.X - $p.At.X) -gt 2 -or [Math]::Abs($now.Y - $p.At.Y) -gt 2) { Fail "the sprite moved off the planned press point, from ($($p.At.X),$($p.At.Y)) to ($($now.X),$($now.Y)); see $log" }
     if ([PillDrag]::OwnerAt($p.X, $p.Y) -ne $script:proc.Id) { Fail "refusing to press at ($($p.X),$($p.Y)): Fidget does not own the window there" }
     # The press must land before the move, or Fidget sees it off the sprite.
     $presses = Count $pressPattern
@@ -210,6 +214,9 @@ function Drive-PillAcrossSeam {
     }
     if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the release at ($($p.ToX),$($p.ToY)) in 3 s; see $log" }
     if (-not (Wait-ForTrace 3 $traceFile $followPattern)) { Fail "the pill never reopened on another overlay within 3 s of the drop; see $traceFile" }
+    $end = Get-LastSpriteSpot $log; $cx = $end.X + $p.X - $p.At.X; $cy = $end.Y + $p.Y - $p.At.Y
+    Write-Host "dropped at ($($p.ToX),$($p.ToY)); sprite middle at ($cx,$cy) on the display at ($($p.Left),$($p.Top)) $($p.W)x$($p.H)"
+    if ($cx -lt $p.Left -or $cx -ge $p.Left + $p.W -or $cy -lt $p.Top -or $cy -ge $p.Top + $p.H) { Fail "the sprite did not land on the display it was carried to; see $log" }
 }
 
 $displays = Get-CimInstance -ClassName Win32_DesktopMonitor | Measure-Object
@@ -239,8 +246,9 @@ $env:FIDGET_TRACE_FRAMES = "1"
 $startMs = Get-NowMs
 $script:proc = Start-FidgetPiped $Bin @() (Join-Path $out "app.log") $traceFile
 try {
-    if (-not (Wait-ForUp 5 $traceFile)) { Fail "Fidget never wrote its overlay line in 5 s; see $traceFile" }
-    if (-not (Wait-ForRest $log)) { Fail "the sprite never came to rest; see $log" }
+    if (-not (Wait-ForUp 3 $traceFile)) { Fail "Fidget never wrote its overlay line in 3 s; see $traceFile" }
+    if (-not (Wait-ForTrace 3 $log $landedPattern)) { Fail "the sprite never landed within 3 s of startup; see $log" }
+    if (-not (Wait-Until 3 { Get-SpriteAtRest $log })) { Fail "the sprite never came to rest within 3 s of landing; see $log" }
 
     Drive-PillAcrossSeam
     # The region rebuild that clears the painted rects follows the hide.
