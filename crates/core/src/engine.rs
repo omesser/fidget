@@ -764,11 +764,16 @@ impl Engine {
 
     /// Hand the sprite to the keyboard, or give it back. Either way the walk
     /// under way ends, chosen or from the keys, or it would stride on with no arrow
-    /// held. The keys own the feet from the next tick.
+    /// held. The keys own the feet from the next tick, and possession start
+    /// plays `possessed`.
     pub fn set_possessed(&mut self, possessed: bool) {
+        let starting = possessed && !self.possessed;
         self.possessed = possessed;
         if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {
             self.stop_playing();
+        }
+        if starting {
+            self.play(&[Primitive::Possessed]);
         }
         // Walk velocity outlives what set it, a Primitive or a held arrow.
         if self.is_walking() || self.steering {
@@ -1834,7 +1839,7 @@ impl Engine {
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
-            Primitive::React | Primitive::Talk => true,
+            Primitive::React | Primitive::Talk | Primitive::Possessed => true,
             Primitive::Walk | Primitive::Chase => {
                 on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
@@ -1884,6 +1889,8 @@ fn animation_of(primitive: Primitive) -> &'static str {
         // Optional art: the renderer resolves it to `fall` when a package
         // draws none, so the required set stays at nine (ADR-0007).
         Primitive::Jump => "jump",
+        // Optional art too, resolved to `react` when a package draws none.
+        Primitive::Possessed => "possessed",
     }
 }
 
@@ -9701,7 +9708,11 @@ mod tests {
                 ..world.clone()
             });
             assert_eq!(frame.behavior, None, "{frame:?}");
-            assert_eq!(frame.playing_primitive, None, "{frame:?}");
+            assert_eq!(
+                frame.playing_primitive,
+                Some(Primitive::Possessed),
+                "the start's own moment, not the walk: {frame:?}"
+            );
             assert_eq!(frame.dialogue.as_deref(), Some("hands off the wheel"));
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
         }
@@ -9768,6 +9779,46 @@ mod tests {
                 assert_eq!(last.velocity.x, 0.0, "stopped at the wall: {last:?}");
                 assert_eq!(last.animation, "idle", "standing, not striding: {last:?}");
             }
+        }
+
+        /// Possession start plays `possessed`, which a package without that art
+        /// draws as its `react`. Only the start plays it, not a repeat or the end.
+        #[test]
+        fn possession_start_plays_possessed_art_or_react() {
+            use crate::character::tests::{declaring, load_manifest};
+            use crate::character::REQUIRED_ANIMATIONS;
+
+            let without = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+            let with = load_manifest(&format!(
+                "{}[animations.possessed]\nframes = [\"idle-0.png\"]\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            ))
+            .expect("loads");
+
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+            let started = engine.tick(&world);
+            assert_eq!(started.animation, "possessed", "{started:?}");
+            let drawn = |character: &crate::character::Character| {
+                character
+                    .draw(started.animation, started.animation_ms, 0, 1.0)
+                    .expect("draws")
+                    .animation
+                    .to_string()
+            };
+            assert_eq!(drawn(&with), "possessed");
+            assert_eq!(drawn(&without), "react");
+
+            for _ in 0..60 {
+                engine.tick(&world);
+            }
+            engine.set_possessed(true);
+            let again = engine.tick(&world);
+            assert_ne!(again.animation, "possessed", "already possessed: {again:?}");
+
+            engine.set_possessed(false);
+            let released = engine.tick(&world);
+            assert_ne!(released.animation, "possessed", "{released:?}");
         }
 
         #[test]
