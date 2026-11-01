@@ -161,11 +161,7 @@ public class ClimbInput {
     public static void Move(int x, int y) {
         SetCursorPos(x, y);
     }
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        // A climbing sprite's loop ticks every frame, so 120 ms turns click-through off
-        // under the cursor. The grab's hit-test file wait is slower than the climb stays under it.
-        Thread.Sleep(120);
+    public static void Tap() {
         mouse_event(Down, 0, 0, 0, UIntPtr.Zero);
         // A press and release in one tick read as no click; 60 ms spans a tick.
         Thread.Sleep(60);
@@ -322,11 +318,11 @@ try {
     # Only the display's half of the sprite is drawn. Clicks a double-click
     # interval apart are separate Pokes, so stop at the first. Aim a quarter of
     # the sprite in from the edge, where Buddy Bot is solid from row 15 to 59:
-    # halfway in crosses its eye and misses. It climbs 27-65 px before the
-    # press lands, so aim 10 px above its top; `$sy -gt $size` keeps that on
-    # the display.
+    # halfway in crosses its eye and misses. The cursor waits just above the
+    # climbing sprite and taps once Fidget logs it under the cursor.
     $px = $edge + $into * [int][Math]::Floor($half / 4)
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
+    Skip-IfFullscreenOverClick $px $sy $script:proc.Id $out "click"
     $before = Pokes
     $poked = $false
     for ($i = 0; $i -lt 6; $i++) {
@@ -335,8 +331,10 @@ try {
         $sy = $frame.Y
         if ($sy -le $size) { break }
         $py = $sy - 10
-        Skip-IfFullscreenOverClick $px $py $script:proc.Id $out "click"
-        [ClimbInput]::Click($px, $py)
+        $hits = @(Select-String -LiteralPath $trace -Pattern $hitPattern -CaseSensitive).Count
+        [ClimbInput]::Move($px, $py)
+        if (-not (Wait-ForCount 1 $trace $hitPattern $hits)) { continue }
+        [ClimbInput]::Tap()
         Add-Content -LiteralPath $inputLog -Value "clicked ($px,$py)"
         if (Wait-ForCount ($clickGap / 1000) $trace $pokePattern $before) {
             $poked = $true
