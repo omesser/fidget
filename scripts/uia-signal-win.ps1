@@ -1,11 +1,12 @@
 # UI Automation change events as one waitable signal: [FidgetUiaSignal]::new($pid)
-# (0 = any process), .Wait($ms) is true on a window, menu, structure, name,
-# bounds or focus change. Wait-UiaChange re-runs a check on each one.
+# (0 = any process). .Wait($ms) is true on a window, menu, structure, name,
+# bounds or focus change. AlsoFile wakes the same wait when that file is written.
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase @"
+Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase, System @"
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows.Automation;
 public class FidgetUiaSignal : IDisposable {
@@ -15,6 +16,7 @@ public class FidgetUiaSignal : IDisposable {
     readonly StructureChangedEventHandler onStructure;
     readonly AutomationPropertyChangedEventHandler onProperty;
     readonly AutomationFocusChangedEventHandler onFocus;
+    FileSystemWatcher logWatch;
     static readonly AutomationEvent[] Events = {
         WindowPattern.WindowOpenedEvent, WindowPattern.WindowClosedEvent,
         AutomationElement.MenuOpenedEvent, AutomationElement.MenuClosedEvent,
@@ -46,6 +48,15 @@ public class FidgetUiaSignal : IDisposable {
         }
         changed.Set();
     }
+    // A write to this file is not a UI Automation event. Same wait either way.
+    public void Also(string file) {
+        logWatch = new FileSystemWatcher(Path.GetDirectoryName(file), Path.GetFileName(file));
+        logWatch.NotifyFilter = NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.LastWrite;
+        FileSystemEventHandler on = delegate { changed.Set(); };
+        logWatch.Created += on;
+        logWatch.Changed += on;
+        logWatch.EnableRaisingEvents = true;
+    }
     public bool Wait(int ms) { return ms > 0 && changed.WaitOne(ms); }
     public void Dispose() {
         foreach (var ev in Events) {
@@ -54,16 +65,22 @@ public class FidgetUiaSignal : IDisposable {
         Automation.RemoveStructureChangedEventHandler(AutomationElement.RootElement, onStructure);
         Automation.RemoveAutomationPropertyChangedEventHandler(AutomationElement.RootElement, onProperty);
         Automation.RemoveAutomationFocusChangedEventHandler(onFocus);
+        if (logWatch != null) {
+            logWatch.EnableRaisingEvents = false;
+            logWatch.Dispose();
+        }
         changed.Dispose();
     }
 }
 "@
 
 # Run a check now and again on each UI Automation change until it returns
-# true or the seconds run out. A caller's own $Shared signal is reused, not disposed.
-function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, $Shared = $null) {
+# true or the seconds run out. A caller's own $Shared signal is reused, not
+# disposed. AlsoFile, when this call owns the signal, wakes it on a write.
+function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, $Shared = $null, [string]$AlsoFile = "") {
     # The clock starts once the handlers are registered, which can be slow.
     $signal = if ($Shared) { $Shared } else { [FidgetUiaSignal]::new($ProcessId) }
+    if ($AlsoFile -and -not $Shared) { $signal.Also($AlsoFile) }
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     try {
         while ($true) {

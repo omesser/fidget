@@ -181,14 +181,15 @@ try {
     }
     $script:Handed = ""
     $script:Outcome = $null
+    # The open log is not a UI Automation event. AlsoFile wakes this wait
+    # when the file is written, instead of sitting out the whole 3 s.
     $null = Wait-UiaChange 0 3 {
         if (-not (Invoke-Ax "after.ax" @{ Command = "dump"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "frames" })) { return $false }
         $script:Handed = Get-HandedText $opened
         $script:Outcome = Get-LinkOutcome (Read-Dump (Join-Path $out "after.ax.txt")) $script:Handed
         [bool]$script:Outcome
-    }
-    # Invoke returns before the open. The log is written over IPC, so the
-    # wait's last copy can still be empty.
+    } -AlsoFile $opened
+    # The wake can still miss a write that lands as the clock runs out.
     if ($script:Outcome -eq "opened" -or $script:Outcome -eq "wrong" -or -not $script:Outcome) {
         Check-Handed (Get-HandedText $opened)
     }
