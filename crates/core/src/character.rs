@@ -36,6 +36,10 @@
 //! ```text
 //! name = "Blip"
 //!
+//! [frame_facing]
+//! "walk-left-0.png" = "left"
+//! "walk-left-1.png" = "left"
+//!
 //! [source]
 //! art = "Blip, cut from the Blipworks shimeji pack"
 //! url = "https://example.invalid/blip"
@@ -315,6 +319,15 @@ pub struct Behavior {
     pub trigger: Option<Trigger>,
 }
 
+/// Which way a frame's art faces, as drawn. The renderer mirrors a frame
+/// exactly when this differs from the way the sprite travels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Facing {
+    Left,
+    #[default]
+    Right,
+}
+
 /// One distinct frame's art, decoded once at load.
 /// Two readers need the pixels and neither can afford to open a file per tick:
 /// the hit-test and the webview. A frame two Animations share is one `Art`.
@@ -324,6 +337,8 @@ pub struct Art {
     /// renderer hands its webview.
     pub png: Vec<u8>,
     pub mask: AlphaMask,
+    /// The manifest's `frame_facing` for this frame, else its `facing`.
+    pub facing: Facing,
 }
 
 /// A Character that has been validated: every required Animation is present,
@@ -402,7 +417,7 @@ pub struct Drawn<'a> {
     pub index: usize,
     /// Whether this art is drawn flipped horizontally. The hit-test and the
     /// webview both read it, so the clickable region is the visible art.
-    /// Leftward travel mirrors unless a left strip already faces left.
+    /// True when the frame's declared facing is not the way of travel.
     pub mirrored: bool,
 }
 
@@ -427,17 +442,19 @@ impl Character {
         facing: f64,
     ) -> Option<Drawn<'_>> {
         let (name, animation) = self.resolve(animation, variant_draw)?;
-        // Strip first, mirror second, and never both: an Animation that draws
-        // its own leftward art is handed over as authored, and one that does
-        // not is mirrored.
-        let (name, animation, mirrored) = match animation
+        let travel = if facing < 0.0 {
+            Facing::Left
+        } else {
+            Facing::Right
+        };
+        let (name, animation) = match animation
             .left_strip
             .as_deref()
-            .filter(|_| facing < 0.0)
+            .filter(|_| travel == Facing::Left)
             .and_then(|left| self.animations.get_key_value(left))
         {
-            Some((left_name, left)) => (left_name.as_str(), left, false),
-            None => (name, animation, facing < 0.0),
+            Some((left_name, left)) => (left_name.as_str(), left),
+            None => (name, animation),
         };
         let index = animation.frame_at(animation_ms);
         let art = self.art.get(animation.frames.get(index)?)?;
@@ -447,7 +464,7 @@ impl Character {
             mask: &art.mask,
             frame_size: animation.frame_size,
             index,
-            mirrored,
+            mirrored: art.facing != travel,
         })
     }
 
@@ -554,7 +571,24 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
     let left_pairs = check_left_strips(&declared.animations, &mut errors);
-    let (mut animations, art) = resolve_animations(package, declared.animations, &mut errors);
+    for frame in declared.frame_facing.keys() {
+        let played = declared.animations.values();
+        if !played
+            .flat_map(|animation| &animation.frames)
+            .any(|f| f == frame)
+        {
+            errors.push(format!(
+                "frame_facing names {frame:?}, which no animation plays"
+            ));
+        }
+    }
+    let (mut animations, art) = resolve_animations(
+        package,
+        declared.animations,
+        declared.facing,
+        &declared.frame_facing,
+        &mut errors,
+    );
     // Linked after resolution so a variant whose frames failed never joins a
     // ring; its own declaration errors already say why.
     for (variant, base) in variant_pairs {
@@ -1490,9 +1524,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Art is authored facing right and leftward travel mirrors it, which puts
-    /// Buddy Bot's cheek LED on the wrong cheek. A left strip is drawn as
-    /// authored instead.
+    /// Mirroring a frame flips it, which puts Buddy Bot's cheek LED on the
+    /// wrong cheek. A left strip is drawn instead, and its frames' facing
+    /// decides whether it mirrors, the same as any frame's.
     #[test]
     fn a_left_strip_replaces_the_mirror_for_the_package_that_draws_one() {
         let mirroring = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1504,14 +1538,29 @@ pub(crate) mod tests {
         );
 
         let manifest = format!(
-            "{}[animations.walk-left]\nframes = [\"wave-0.png\"]\nleft_of = \"walk\"\n",
+            "{}[animations.walk-left]\nframes = [\"wave-0.png\"]\nleft_of = \"walk\"\n\
+             [frame_facing]\n\"wave-0.png\" = \"left\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let asymmetric = load_manifest(&manifest).expect("loads");
 
         let left = asymmetric.draw("walk", 0, 0, -1.0).expect("draws");
         assert_eq!(left.animation, "walk-left");
-        assert!(!left.mirrored, "the strip is already facing left");
+        assert!(!left.mirrored, "the strip is declared facing left");
+
+        let undeclared = format!(
+            "{}[animations.walk-left]\nframes = [\"wave-0.png\"]\nleft_of = \"walk\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let left = load_manifest(&undeclared)
+            .expect("loads")
+            .draw("walk", 0, 0, -1.0)
+            .expect("draws")
+            .mirrored;
+        assert!(
+            left,
+            "a strip left at the default faces right, so it mirrors"
+        );
 
         let right = asymmetric.draw("walk", 0, 0, 1.0).expect("draws");
         assert_eq!(right.animation, "walk");
@@ -1529,6 +1578,43 @@ pub(crate) mod tests {
                 .animation,
             "walk-left"
         );
+    }
+
+    /// A frame mirrors exactly when the way it faces is not the way the
+    /// sprite travels.
+    #[test]
+    fn a_frame_mirrors_when_its_facing_differs_from_the_travel() {
+        let base = declaring(&REQUIRED_ANIMATIONS).replace("name = \"Blip\"\n", "");
+        // The Character's default, walk-0's override, travel, and whether
+        // walk and idle (which takes the default) are drawn mirrored.
+        for (default, frame, travel, walk, idle) in [
+            ("", "", 1.0, false, false),
+            ("", "", -1.0, true, true),
+            ("right", "", 1.0, false, false),
+            ("left", "", 1.0, true, true),
+            ("left", "", -1.0, false, false),
+            ("left", "right", 1.0, false, true),
+            ("left", "right", -1.0, true, false),
+            ("", "left", 1.0, true, false),
+            ("", "left", -1.0, false, true),
+        ] {
+            let mut manifest = String::from("name = \"Blip\"\n");
+            if !default.is_empty() {
+                manifest.push_str(&format!("facing = \"{default}\"\n"));
+            }
+            manifest.push_str(&base);
+            if !frame.is_empty() {
+                manifest.push_str(&format!("[frame_facing]\n\"walk-0.png\" = \"{frame}\"\n"));
+            }
+            let character = load_manifest(&manifest).expect("loads");
+            let drawn = |animation| {
+                let drawn = character.draw(animation, 0, 0, travel).expect("draws");
+                drawn.mirrored
+            };
+            let case = format!("default {default:?}, override {frame:?}, travel {travel}");
+            assert_eq!(drawn("walk"), walk, "walk, {case}");
+            assert_eq!(drawn("idle"), idle, "idle, {case}");
+        }
     }
 
     #[test]

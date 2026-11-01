@@ -5,6 +5,7 @@
 name = "Rubber Duck"
 render_mode = "smooth"
 scale = 1
+facing = "left"
 gravity = 0.8
 
 [source]
@@ -284,3 +285,14 @@ when = "idle over 5m"
 [behaviors.wave]
 play = ["react"]
 weight = 0
+
+# The walk faces right; every resting pose faces left.
+[frame_facing]
+"frames/walk-0.png" = "right"
+"frames/walk-1.png" = "right"
+"frames/walk-2.png" = "right"
+"frames/walk-3.png" = "right"
+"frames/walk-4.png" = "right"
+"frames/walk-5.png" = "right"
+"frames/walk-6.png" = "right"
+"frames/walk-7.png" = "right"

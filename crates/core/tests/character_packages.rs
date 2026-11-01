@@ -570,6 +570,88 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
     }
 }
 
+/// How far right of the cap's middle Jotaro's gold badge sits, in pixels. The
+/// badge is on the cap's front, so it sits right of middle when he faces right.
+fn jotaro_badge_offset(bytes: &[u8]) -> f32 {
+    let (width, height, rgba) = frame_rgba(bytes);
+    let alpha: Vec<u8> = rgba.iter().map(|p| p[3]).collect();
+    let (top, bottom, _) = silhouette(width, height, &alpha);
+    let cap = top..top + (bottom - top) * 3 / 10;
+    let (mut x_min, mut x_max, mut badge, mut n) = (width, 0, 0.0f32, 0.0f32);
+    for row in cap {
+        for x in 0..width {
+            let [r, g, b, a] = rgba[row * width + x];
+            if a > 128 {
+                (x_min, x_max) = (x_min.min(x), x_max.max(x));
+                if r > 170 && g > 120 && b < 90 {
+                    badge += x as f32;
+                    n += 1.0;
+                }
+            }
+        }
+    }
+    assert!(n > 20.0, "the cap badge shows");
+    badge / n - (x_min + x_max) as f32 / 2.0
+}
+
+/// How far left of BMO's screen its dark side panel sits, in pixels. Facing
+/// right, the lettered side panel shows on the left of the screen.
+fn bmo_panel_offset(bytes: &[u8]) -> f32 {
+    let (width, _, rgba) = frame_rgba(bytes);
+    let centroid = |color: [u8; 3]| {
+        let (mut sum, mut n) = (0.0f32, 0.0f32);
+        for (i, [r, g, b, a]) in rgba.iter().enumerate() {
+            let near = [*r, *g, *b]
+                .iter()
+                .zip(color)
+                .all(|(p, c)| p.abs_diff(c) <= 18);
+            if *a > 128 && near {
+                sum += (i % width) as f32;
+                n += 1.0;
+            }
+        }
+        assert!(n > 200.0, "BMO's {color:?} shows");
+        sum / n
+    };
+    centroid([222, 255, 239]) - centroid([55, 103, 91])
+}
+
+/// Every walk and fall frame as drawn for both ways of travel faces that way.
+/// `faces_right` reads the art: positive when the PNG faces right.
+fn assert_walk_and_fall_face_the_travel(package: &str, faces_right: fn(&[u8]) -> f32) {
+    let character = load_package(package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
+    let files = package_bytes(package);
+    for name in ["walk", "fall"] {
+        let animation = &character.animations[name];
+        for (index, frame) in animation.frames.iter().enumerate() {
+            let at = ((index as u32 * 2 + 1) * 500) / animation.fps;
+            for travel in [1.0, -1.0] {
+                let drawn = character.draw(name, at, 0, travel).expect("draws");
+                assert_eq!(drawn.index, index, "{package} {name} reaches {frame}");
+                let offset = faces_right(&files[frame]);
+                let shown = if drawn.mirrored { -offset } else { offset };
+                assert!(
+                    shown * travel as f32 > 2.0,
+                    "{package} {frame} drawn for travel {travel} faces it, offset {shown}"
+                );
+            }
+        }
+    }
+}
+
+/// Jump draws `fall`, and Jotaro's fall frames face left while his walk faces
+/// right. The manifest says so, and the renderer mirrors each to the travel.
+#[test]
+fn jotaro_falls_facing_the_way_he_walks() {
+    assert_walk_and_fall_face_the_travel("jotaro-kujo", jotaro_badge_offset);
+}
+
+/// BMO's fall frames are drawn turned the other way from its walk.
+#[test]
+fn bmo_falls_facing_the_way_it_walks() {
+    assert_walk_and_fall_face_the_travel("bmo", bmo_panel_offset);
+}
+
 #[test]
 fn rubber_duck_uses_its_drawn_left_walk() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");

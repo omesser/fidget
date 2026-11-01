@@ -159,3 +159,8 @@ when = "idle under 10s"
 play = ["jump"]
 weight = 0
 when = "idle over 10s"
+
+# The fall is drawn turned the other way from the rest.
+[frame_facing]
+"frames/fall-0.png" = "left"
+"frames/fall-1.png" = "left"

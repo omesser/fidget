@@ -7,8 +7,8 @@ use crate::overlay::AlphaMask;
 
 use super::manifest::{DeclaredAnimation, DeclaredBehavior};
 use super::{
-    Animation, Art, Behavior, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS, MAX_FRAME_SIDE,
-    SHOWN_LOOP_BEHAVIORS,
+    Animation, Art, Behavior, Facing, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
+    MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS,
 };
 
 /// Check every declared Animation against package art and decode what passes.
@@ -17,6 +17,8 @@ use super::{
 pub(super) fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
+    facing: Facing,
+    frame_facing: &BTreeMap<String, Facing>,
     errors: &mut Vec<String>,
 ) -> (BTreeMap<String, Animation>, BTreeMap<String, Art>) {
     let mut animations = BTreeMap::new();
@@ -102,11 +104,13 @@ pub(super) fn resolve_animations(
         let bytes = &package[&frame];
         match AlphaMask::from_png(bytes, ALPHA_THRESHOLD) {
             Ok(mask) => {
+                let facing = frame_facing.get(&frame).copied().unwrap_or(facing);
                 art.insert(
                     frame,
                     Art {
                         png: bytes.clone(),
                         mask,
+                        facing,
                     },
                 );
             }
