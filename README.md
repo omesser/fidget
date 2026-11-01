@@ -199,7 +199,7 @@ too, labelled with what it was reacting to.
 <table>
 <tr>
 <td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-chat.gif" width="400" alt="Double-clicking Buddy Bot opens its chat; asked for its best dance move, it answers in the chat and a speech bubble" /><br><b>Ask it anything</b><br><sub>Double-click to chat; ask for its best dance move and it answers in the chat and a speech bubble.</sub></td>
-<td align="center" valign="bottom" width="50%"><img src="./docs/readme/chat-surface.png" width="240" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" /><br><b>Inside the chat</b><br><sub>A line it said on its own, your question, BMO's answer, and a status bar showing what it's up to.</sub></td>
+<td align="center" valign="bottom" width="50%"><a href="./docs/readme/chat-surface.png"><img src="./docs/readme/chat-surface.png" width="240" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" /></a><br><b>Inside the chat</b><br><sub>A line it said on its own, your question, BMO's answer, and a status bar showing what it's up to. Click to enlarge.</sub></td>
 </tr>
 </table>
 
