@@ -213,6 +213,7 @@ fn begin_possession(
     *session = Some(possession::Session::start(id, window));
     if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
         note_happened(&mut live.happened, Happened::PossessionStart);
+        live.recency.possessed();
         live.addressed = true;
     }
     hold_possession_keyboard(app, window, true);

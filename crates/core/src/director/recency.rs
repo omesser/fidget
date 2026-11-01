@@ -119,6 +119,12 @@ impl Recency {
         }
     }
 
+    /// A possession started. Its release sums up its own moves only, even when
+    /// a later verb took the last release's wake.
+    pub fn possessed(&mut self) {
+        self.driven.clear();
+    }
+
     /// A verb the Director will hear, as `touched` names it. Counts the streak.
     pub fn heard(&mut self, happened: &Happened) {
         let count = match &self.streak {
@@ -388,6 +394,35 @@ mod tests {
         assert!(
             !sprite.wake(Happened::PossessionEnd).contains("×"),
             "the summary is spent by the wake that reads it"
+        );
+    }
+
+    #[test]
+    fn a_release_no_wake_read_stays_out_of_the_next_sum() {
+        let mut sprite = Instance::at(500.0, 0.0);
+        let walk = |arrow| WorldSnapshot {
+            possession: Intent {
+                walk: Some(arrow),
+                ..Intent::default()
+            },
+            ..snapshot(100, vec![])
+        };
+        sprite.engine.set_possessed(true);
+        sprite.recency.possessed();
+        sprite.tick(walk(Arrow::Left));
+        sprite.engine.set_possessed(false);
+        sprite.wake(Happened::Grab);
+
+        sprite.engine.set_possessed(true);
+        sprite.recency.possessed();
+        sprite.tick(walk(Arrow::Right));
+        sprite.engine.set_possessed(false);
+
+        assert!(
+            sprite
+                .wake(Happened::PossessionEnd)
+                .contains("\ndriven: walk-right ×1\n"),
+            "only the second possession's walk"
         );
     }
 

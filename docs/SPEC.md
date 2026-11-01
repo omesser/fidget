@@ -415,7 +415,7 @@ also carries the last few seconds, with no timestamps or ages, from
 - A streak on `what just happened`, `poked (3 in a row)`, when the same verb
   came again within 12 seconds of the last.
 - `doing:` the Behavior playing as the wake is built.
-- `lately:` the States and Behaviors entered in the last 12 seconds, oldest
+- `lately:` the States, Behaviors and driven moves of the last 12 seconds, oldest
   first, at most five, when there are at least two.
 
 While possessed, `walk-left`, `walk-right` and `jump` are driven moves. They

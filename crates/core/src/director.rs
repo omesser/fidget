@@ -829,10 +829,9 @@ impl std::fmt::Display for Played {
     }
 }
 
-/// Record something as just played, forgetting whatever fell off the end.
-/// Each kind keeps its own `REMEMBERED`, so a possession cannot push the real
-/// Behaviors out. The caller keeps the list because the Director is a function
-/// of what it is handed: what has been played is the Shell's to know.
+/// Record something as just played, forgetting what fell off the end. Each
+/// kind keeps its own `REMEMBERED`, so a possession cannot push Behaviors out.
+/// The Shell keeps the list: the Director is a function of what it is handed.
 pub fn remember(recent: &mut Vec<Played>, played: Played) {
     recent.insert(0, played);
     let (mut behaviors, mut driven) = (0, 0);

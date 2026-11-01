@@ -239,7 +239,7 @@ pub struct Frame {
     /// How full the jump bar is while a possessed sprite's Space is held, from
     /// 0 to 1. `None` hides the bar.
     pub charge: Option<f64>,
-    /// The move the keys started on this frame. A pulse like `behavior`.
+    /// The driven move the keys started on this frame, on that frame only.
     pub driven: Option<Move>,
 }
 
@@ -1385,13 +1385,13 @@ impl Engine {
     /// started. A launch plays Jump the way a proposal does, so the flight,
     /// `land` and the drop Cue are every fall's. In hand the keys do nothing.
     fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> Option<Move> {
+        let walk = snapshot.possession.walk;
+        let walked = walk.filter(|_| walk != self.driving).map(Move::Walk);
+        self.driving = walk;
         let on_feet = matches!(state, State::Grounded | State::Perched);
         if !on_feet && !(state == State::Falling && self.steering) {
             return None;
         }
-        let walk = snapshot.possession.walk;
-        let walked = walk.filter(|_| walk != self.driving).map(Move::Walk);
-        self.driving = walk;
 
         let heading = snapshot.possession.walk.map(|arrow| match arrow {
             Arrow::Left => -1.0,
