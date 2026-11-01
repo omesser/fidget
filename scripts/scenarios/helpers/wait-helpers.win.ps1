@@ -149,8 +149,13 @@ function Wait-ForMarks([double]$Seconds, [string]$MarksFile, [string]$Pattern) {
 # Fidget is up at its `overlay:` line, before it attaches a Harness or takes a
 # taskbar click; a first wait starting here gets its whole budget. Pass the
 # piped stderr log, whose lines carry no seconds prefix.
-function Wait-ForUp([double]$Seconds, [string]$ErrLog) {
-    return (Wait-ForLine $Seconds $ErrLog '^overlay: ')
+# A cold WebKit on a hosted runner can draw the overlay seconds late. A fixed
+# 5 s missed on slow runners (#1765, `anchor-taskbar`); 30 s matches the macOS
+# warm-up budget, and the leaf's own cap still bounds a launch that never gets up.
+$FidgetStartupWaitSeconds = 30
+
+function Wait-ForUp([string]$ErrLog) {
+    return (Wait-ForLine $FidgetStartupWaitSeconds $ErrLog '^overlay: ')
 }
 
 function Wait-ForFile([double]$Seconds, [string]$FilePath) {

@@ -129,7 +129,7 @@ env HOME="$out/home" \
   "$bin" > "$log" 2>&1 &
 pid=$!
 trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
 ax() { python3 "$root/scripts/ax-window-linux.py" "$@"; }
 dump() { ax dump "$pid" BMO frames > "$out/$1.ax.txt" 2> "$out/$1.err"; }

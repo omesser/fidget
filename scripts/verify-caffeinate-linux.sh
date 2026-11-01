@@ -89,7 +89,7 @@ env HOME="$out/home" \
   "$bin" > "$log" 2>&1 &
 pid=$!
 trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
-wait_for_up 5 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
 rc=0
 tray Caffeinate || rc=$?

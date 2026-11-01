@@ -94,11 +94,18 @@ wait_for_marks() { # <seconds> <marks file> <pattern>
   wait_for_line "$@"
 }
 
+# A cold WebKit on a hosted runner can draw the overlay seconds late. The
+# 3 s this used to get missed on slow e2e-macos runners (#1765), even after a
+# warm-up launch, because every leaf starts in a private HOME with its own
+# WebKit cache. 30 s matches the warm-up's budget; a leaf's 3 min cap still
+# bounds a launch that never gets up.
+FIDGET_STARTUP_WAIT_SECONDS=30
+
 # Fidget is up once it writes its `overlay:` line, which lands before it
 # attaches a Harness. A wait for a harness mark starts here, so the mark gets
 # the whole budget instead of sharing it with the app's launch.
-wait_for_up() { # <seconds> <app log>
-  wait_for_line "$1" "$2" '^overlay:'
+wait_for_up() { # <app log>
+  wait_for_line "$FIDGET_STARTUP_WAIT_SECONDS" "$1" '^overlay:'
 }
 
 # Wait for a file to exist. tail -F cannot see an empty file appear, so this

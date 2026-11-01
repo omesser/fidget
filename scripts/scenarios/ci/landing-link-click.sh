@@ -66,7 +66,7 @@ shot() { screencapture -x -o -l "$("$tools/window-id" "$pid" BMO)" "$out/$1.png"
 # Fidget draws the tray icon before its click handler and its place in the menu
 # bar have settled, so an open that lands in that window is lost. The Chat
 # window appearing is what each retry waits on.
-wait_for_up 3 "$log" || fail "Fidget never wrote its overlay line; see $log"
+wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 chat_opened=0
 for attempt in 1 2; do
   "$tools/ax" open "$pid" Chat BMO > "$out/open.txt" 2>&1 || true
