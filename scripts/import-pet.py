@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import tomllib
 import zipfile
 
@@ -551,7 +552,7 @@ def synthesized_sleep(idle_frames):
     }
 
 
-def manifest_text(name, mode, scale, notes, source, animations):
+def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     """The Character Manifest: art-production notes as comments, and where the
     art came from in `[source]`.
 
@@ -566,6 +567,10 @@ def manifest_text(name, mode, scale, notes, source, animations):
         f'name = "{name}"',
         f'render_mode = "{mode}"',
         f"scale = {scale}",
+    ]
+    if facing != "right":
+        lines.append(f'facing = "{facing}"')
+    lines += [
         "",
         "[source]",
         # json.dumps writes a TOML basic string: same escapes, same quoting.
@@ -595,22 +600,57 @@ def manifest_text(name, mode, scale, notes, source, animations):
             lines.append('loop = "once"')
         if spec["variant_of"]:
             lines.append(f'variant_of = "{spec["variant_of"]}"')
+    turned = [
+        f'"frames/{animation}-{i}.png" = "{spec["facing"]}"'
+        for animation, spec in animations.items()
+        if spec.get("facing", facing) != facing
+        for i in range(len(spec["frames"]))
+    ]
+    if turned:
+        lines += ["", "[frame_facing]", *turned]
     lines.append(STARTER_BEHAVIORS)
     return "\n".join(lines).rstrip() + "\n"
 
 
-def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None, only_mapped=False):
+def mapping_notes(mappings, animations, rows, synthesized):
+    """The manifest's mapping comment, written from the mapping that cut the
+    frames, so it names the rows and headings the manifest actually uses."""
+    states = {row: state for state, (row, _, _) in PETSCODEX_ROWS.items()}
+    parts = []
+    for animation, (row, indices) in mappings.items():
+        part = f"{animation}<-{states.get(row, 'row')} row {row}"
+        if indices:
+            part += f"[{','.join(map(str, indices))}]"
+        if "facing" in animations[animation]:
+            part += f" (drawn heading {animations[animation]['facing']})"
+        parts.append(part)
+    text = "Mapping: " + ", ".join(parts) + "."
+    used = {row for row, _ in mappings.values()}
+    unused = [
+        f"{row} ({states[row]})" if row in states else str(row)
+        for row in range(rows)
+        if row not in used
+    ]
+    if unused:
+        text += f" Unused rows: {', '.join(unused)}."
+    if synthesized:
+        text += " Sleep is idle's stillest frame with a one-pixel breath."
+    text += " Frames face right unless declared otherwise."
+    return textwrap.wrap(text, 72, break_long_words=False, break_on_hyphens=False)
+
+
+def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
     """A petscodex pet directory (`npx petscodex install <id>` lands one at
     ~/.codex/pets/<id>/) into the importer's common shape.
 
     `walk_row` picks the walk art. Petdex's semantics say row 1 heads right,
     but the rows render as drawn and every pet sampled so far (cat, labubu,
-    tiga, hachiware) draws row 1 heading left — so row 2 is the default. No
-    code can see facing, and row quality varies per pet (hachiware's row 2
-    mixes camera angles and only its row 1 walks cleanly), so a human
-    eyeballs the output and re-runs with --walk-row 1 and, when neither row
-    heads right, --mirror-walk."""
-    from PIL import Image, ImageOps
+    tiga, hachiware) draws row 1 heading left — so row 2 is the default, and
+    the walk is declared facing the way its row is drawn. Row quality varies
+    per pet (hachiware's row 2 mixes camera angles and only its row 1 walks
+    cleanly), so a human eyeballs the output and re-runs with --walk-row 1.
+    No code can see which way the other rows face; they take the default."""
+    from PIL import Image
 
     pet = json.loads((source / "pet.json").read_text())
     sheet = Image.open(source / pet["spritesheetPath"]).convert("RGBA")
@@ -648,8 +688,6 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None, only_m
             sys.exit(f"--map {animation}={row}: this atlas has rows 0-{rows - 1}")
         count, duration = PETSCODEX_ROW_TABLE[row]
         frames = row_frames(row, indices if indices is not None else range(count))
-        if animation == "walk" and mirror_walk:
-            frames = [ImageOps.mirror(frame) for frame in frames]
         loop, variant_of = settings.get(animation, ("forever", None))
         animations[animation] = {
             "frames": frames,
@@ -658,30 +696,21 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None, only_m
             "variant_of": variant_of,
         }
 
+    # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
+    # cut from any other row (--map) faces no way the importer can see.
+    drawn = {1: "left", 2: "right"}
+    if "walk" in mappings and mappings["walk"][0] in drawn:
+        animations["walk"]["facing"] = drawn[mappings["walk"][0]]
+
     if "sleep" in overrides:
         animations["sleep"]["fps"] = 1
     elif not only_mapped:
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
-    mirrored = ", mirrored to head right" if mirror_walk else ""
     described = pet.get("description", "").strip()
-    notes = [
-        f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row}{mirrored}",
-        "(the row drawn heading right), talk<-waving row 3,",
-        "fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6",
-        "(idle variant), sit<-review row 8; sleep is idle's stillest frame",
-        "with a one-pixel breath. The other walk row (the engine mirrors",
-        "instead) and row 7 (running in place) go unused.",
-    ]
+    notes = mapping_notes(mappings, animations, rows, synthesized=not only_mapped and "sleep" not in overrides)
     if only_mapped:
-        notes = ["Explicit source mappings; review animation timing and behavior in the manifest."]
-    if overrides:
-        remapped = ", ".join(
-            f"{animation}<-row {row}"
-            + (f"[{','.join(map(str, indices))}]" if indices else "")
-            for animation, (row, indices) in sorted(overrides.items())
-        )
-        notes.append(f"Remapped for this pet's art (--map): {remapped}.")
+        notes.append("Explicit source mappings; review animation timing and behavior in the manifest.")
     # A pet.json may carry the key with nothing in it, which is the same
     # as not carrying it: one meaning of "undeclared" for every reader.
     license_line = (pet.get("pet_license") or pet.get("license") or "").strip()
@@ -695,6 +724,7 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None, only_m
             "url": f"https://petscodex.com/pets/{pet['id']}",
         },
         "notes": notes,
+        "facing": "right",
         "animations": animations,
     }
 
@@ -703,12 +733,12 @@ def read_shimeji(source, name=None):
     """A Shimeji-ee pack into the importer's common shape. Frames are
     per-pose PNGs (shime1.png…, at the root or under img/); pose semantics
     come from actions.xml, whose Action elements name Pose sequences — a
-    richer source than frame numbering alone. Shimeji art walks left, so
-    every frame is mirrored to head right, the engine's default (#96)."""
+    richer source than frame numbering alone. Shimeji art faces left, so the
+    frames are kept as drawn and the Character declares `facing = "left"`."""
     from defusedxml import DefusedXmlException
     from defusedxml import ElementTree as ET
 
-    from PIL import Image, ImageOps
+    from PIL import Image
 
     frame_root = next(source.rglob("shime1.png"), None)
     if frame_root is None:
@@ -747,14 +777,12 @@ def read_shimeji(source, name=None):
             if poses:
                 actions.setdefault(element.get("Name"), poses)
 
-    mirrored = {}
+    opened = {}
 
     def frame(image):
-        if image not in mirrored:
-            mirrored[image] = ImageOps.mirror(
-                Image.open(frame_root / image).convert("RGBA")
-            )
-        return mirrored[image]
+        if image not in opened:
+            opened[image] = Image.open(frame_root / image).convert("RGBA")
+        return opened[image]
 
     animations = {}
     chosen = []
@@ -795,8 +823,9 @@ def read_shimeji(source, name=None):
 
     name = name or source.name
     notes = [
-        "Every frame is mirrored to head right: shimeji art walks left, and",
-        "the engine mirrors right-facing art back for leftward travel (#96).",
+        "Shimeji art faces left, so the frames are kept as drawn and the",
+        "Character declares facing = \"left\"; the renderer mirrors them",
+        "for rightward travel.",
         "Mapping (animation <- this pack's actions.xml action):",
         ", ".join(chosen) + ".",
     ]
@@ -808,6 +837,7 @@ def read_shimeji(source, name=None):
             "url": None,
         },
         "notes": notes,
+        "facing": "left",
         "animations": animations,
     }
 
@@ -933,7 +963,10 @@ def emit(pet, out, validate=True, stand=None, frames_only=False):
 
     if not frames_only:
         source = dict(pet["source"], license=license_prose(pet["license"]))
-        manifest = manifest_text(pet["name"], mode, scale, pet["notes"], source, animations)
+        facing = pet.get("facing", "right")
+        manifest = manifest_text(
+            pet["name"], mode, scale, pet["notes"], source, animations, facing
+        )
         (out / "character.manifest").write_text(manifest)
 
     print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values())} "
@@ -946,6 +979,19 @@ def emit(pet, out, validate=True, stand=None, frames_only=False):
         )
         if done.returncode != 0:
             sys.exit("character::load rejected the output")
+
+
+def facing_summary(pet):
+    """The facing the manifest declares, as the importer prints it."""
+    default = pet.get("facing", "right")
+    turned = sorted(
+        f"{animation} {spec['facing']}"
+        for animation, spec in pet["animations"].items()
+        if spec.get("facing", default) != default
+    )
+    return f'facing = "{default}"' + (
+        f"; [frame_facing] {', '.join(turned)}" if turned else ""
+    )
 
 
 def require_pillow():
@@ -971,9 +1017,6 @@ def main():
                         help="petscodex: the sheet row to cut walk from. Row 2 "
                              "(petdex's running-left) is drawn heading right in "
                              "every pet sampled, so it is the default")
-    parser.add_argument("--mirror-walk", action="store_true",
-                        help="petscodex: flip the chosen walk row, for the pet "
-                             "whose only clean walk heads left")
     parser.add_argument("--map", action="append", default=[], dest="mappings",
                         metavar="ANIM=ROW[:I,J,...]",
                         help="petscodex: map any animation name to a zero-based "
@@ -1016,7 +1059,7 @@ def main():
         for text in args.mappings:
             animation, row, indices = parse_mapping(text)
             overrides[animation] = (row, indices)
-        pet = read_petscodex(source, args.walk_row, args.mirror_walk, overrides, args.only_mapped)
+        pet = read_petscodex(source, args.walk_row, overrides, args.only_mapped)
     else:
         # A zip unpacks to a temp directory, so the pack's own name comes
         # from the path the user gave, not from where it landed.
@@ -1043,15 +1086,20 @@ def main():
                     shutil.copy2(staged / "frames" / name, args.out / "frames" / name)
         print("frames recut; authored manifest, personality and other files preserved. "
               "Review the existing scale, render mode, animation timing and behaviors.")
+        print(f"the frames are as drawn, which a fresh import declares as "
+              f"{facing_summary(pet)}; check the authored facing matches")
         return
     emit(pet, args.out, stand=args.stand)
+    print(f"declared: {facing_summary(pet)}")
     if args.ecosystem == "petscodex":
-        print("review the output before shipping it: walk must head right "
-              "(--walk-row picks the other row; --mirror-walk flips it), and "
-              "every animation must read as its name — a pet whose art "
-              "strays from the row semantics is recut with --map")
+        print("review the output before shipping it: every frame must face "
+              "the way the manifest declares (--walk-row picks the other walk "
+              "row; edit facing or [frame_facing] for the rest), and every "
+              "animation must read as its name — a pet whose art strays from "
+              "the row semantics is recut with --map")
     else:
-        print("review the output before shipping it — walk must head right")
+        print("review the output before shipping it — every frame must face "
+              "the way the manifest declares")
     print("no personality.txt is written: author one to fit the art, the way "
           "the shipped characters' read")
     print(f"run it: FIDGET_CHARACTER={args.out.name} cargo run — the next "
@@ -1216,15 +1264,32 @@ def self_test():
         assert pet["license"] is None
 
         # --walk-row swaps the walk source row (the synthetic sheet colors
-        # each row differently, so the swap shows in the pixels), and
-        # --mirror-walk flips the chosen row.
+        # each row differently, so the swap shows in the pixels), and the
+        # walk is declared facing the way its row is drawn.
         other = read_petscodex(source, walk_row=1)
         walk = pet["animations"]["walk"]["frames"][0]
         assert walk.tobytes() != other["animations"]["walk"]["frames"][0].tobytes()
-        mirrored = read_petscodex(source, mirror_walk=True)
-        from PIL import ImageOps
-        flipped_back = ImageOps.mirror(mirrored["animations"]["walk"]["frames"][0])
-        assert walk.tobytes() == flipped_back.tobytes()
+        assert facing_summary(pet) == 'facing = "right"'
+        assert facing_summary(other) == 'facing = "right"; [frame_facing] walk left'
+        emit(other, tmp / "row-1", validate=False)
+        declared = tomllib.loads((tmp / "row-1" / "character.manifest").read_text())
+        assert "facing" not in declared
+        assert declared["frame_facing"] == {
+            f"frames/walk-{i}.png": "left"
+            for i in range(len(other["animations"]["walk"]["frames"]))
+        }
+        # A walk remapped onto a walk row reads that row's heading, and the
+        # mapping comment names the row the frames were cut from.
+        remapped = read_petscodex(source, overrides={"walk": (1, None)})
+        assert remapped["animations"]["walk"]["facing"] == "left"
+        noted = " ".join(pet["notes"])
+        assert "Unused rows: 1 (running-right), 7 (running)." in noted, noted
+        noted = " ".join(remapped["notes"])
+        assert "walk<-running-right row 1 (drawn heading left)" in noted, noted
+        assert "row 2" not in noted, noted
+        assert "Unused rows: 2 (running-left), 7 (running)." in noted, noted
+        noted = " ".join(read_petscodex(source, overrides={"walk": (7, None)})["notes"])
+        assert "walk<-running row 7," in noted and "heading" not in noted, noted
 
         out = tmp / "character"
         emit(pet, out, validate=False)
@@ -1389,9 +1454,11 @@ def self_test():
             "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk",
             "hold",
         }, set(pack["animations"])
-        # Mirrored: the marker pixel at x=1 lands at x=6 on an 8-wide frame.
+        # Kept as drawn: the marker pixel stays at x=1, and the Character
+        # declares the left-facing art instead.
         idle = pack["animations"]["idle"]["frames"][0]
-        assert idle.getpixel((6, 5))[3] == 255 and idle.getpixel((1, 5))[3] == 0
+        assert idle.getpixel((1, 5))[3] == 255 and idle.getpixel((6, 5))[3] == 0
+        assert facing_summary(pack) == 'facing = "left"'
         # Walk repeats shime1 (poses 1,2,1,3 over two written frames of it);
         # 25 ticks of 40ms are one second, so four poses make fps 4.
         walk = pack["animations"]["walk"]
@@ -1406,6 +1473,8 @@ def self_test():
         emit(pack, out, validate=False)
         manifest = (out / "character.manifest").read_text()
         assert manifest.count('"frames/walk-') == 4  # the repeated path
+        assert tomllib.loads(manifest)["facing"] == "left"
+        assert "[frame_facing]" not in manifest
         assert (out / "frames" / "walk-2.png").exists()
         assert not (out / "frames" / "walk-3.png").exists()
 

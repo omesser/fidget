@@ -149,3 +149,8 @@ when = "idle over 5m"
 play = ["chase"]
 weight = 30
 when = "idle over 30s"
+
+# Asleep, the cockpit points left.
+[frame_facing]
+"frames/sleep-0.png" = "left"
+"frames/sleep-1.png" = "left"

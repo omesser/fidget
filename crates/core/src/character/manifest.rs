@@ -6,8 +6,8 @@ use std::time::Duration;
 use toml_edit::{Document, Item};
 
 use super::{
-    CursorReaction, GravityScale, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS,
-    DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
+    CursorReaction, Facing, GravityScale, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE,
+    DEFAULT_FPS, DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
 };
 
 /// A Character Manifest as written, before its declarations are checked
@@ -23,6 +23,11 @@ pub(super) struct Declared {
     pub(super) rush_reaction: Option<CursorReaction>,
     pub(super) gravity_scale: Option<GravityScale>,
     pub(super) source: Option<Source>,
+    pub(super) facing: Facing,
+    /// Frame file to the way it faces, where it is not `facing`. Keyed by
+    /// file rather than declared per Animation, so a frame two Animations
+    /// share cannot be said to face two ways.
+    pub(super) frame_facing: BTreeMap<String, Facing>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
 }
@@ -145,18 +150,62 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
                     GravityScale::MAX
                 )),
             },
+            "facing" => match parse_facing(item) {
+                Some(facing) => declared.facing = facing,
+                None => errors.push(format!(
+                    "\"facing\" is {}, and must be \"left\" or \"right\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "frame_facing" => parse_frame_facing(item, manifest, &mut declared, errors),
             "source" => parse_source(item, manifest, &mut declared, errors),
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, render_mode, scale, gravity, source, animations, \
-                 behaviors, director and cursor"
+                 name, render_mode, scale, gravity, facing, frame_facing, \
+                 source, animations, behaviors, director and cursor"
             )),
         }
     }
 
     Some(declared)
+}
+
+fn parse_facing(item: &Item) -> Option<Facing> {
+    match item.as_str()? {
+        "left" => Some(Facing::Left),
+        "right" => Some(Facing::Right),
+        _ => None,
+    }
+}
+
+/// `[frame_facing]`: the frames that face the other way from `facing`.
+fn parse_frame_facing(
+    item: &Item,
+    manifest: &str,
+    declared: &mut Declared,
+    errors: &mut Vec<String>,
+) {
+    let Some(table) = item.as_table_like() else {
+        errors.push(
+            "\"frame_facing\" is not a table of frame files; it reads \
+             [frame_facing] with \"walk-0.png\" = \"left\" below"
+                .to_string(),
+        );
+        return;
+    };
+    for (frame, item) in table.iter() {
+        match parse_facing(item) {
+            Some(facing) => {
+                declared.frame_facing.insert(frame.to_string(), facing);
+            }
+            None => errors.push(format!(
+                "frame_facing for frame {frame:?} is {}, and must be \"left\" or \"right\"",
+                wrote(manifest, item.span()).unwrap_or("?")
+            )),
+        }
+    }
 }
 
 /// `[source]`: where the art came from, for `scripts/make-character-gallery.py`.
@@ -713,8 +762,8 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, gravity, source, animations, \
-                 behaviors, director and cursor"
+                 name, render_mode, scale, gravity, facing, frame_facing, \
+                 source, animations, behaviors, director and cursor"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
@@ -932,5 +981,48 @@ mod tests {
                 assert_names(&errors, offender);
             }
         }
+    }
+
+    #[test]
+    fn a_facing_that_is_neither_way_is_rejected_by_its_text() {
+        let manifest = format!("facing = \"up\"\n{}", declaring(&REQUIRED_ANIMATIONS));
+        assert_eq!(
+            errors(load_manifest(&manifest)),
+            vec!["\"facing\" is \"up\", and must be \"left\" or \"right\"".to_string()],
+        );
+
+        let manifest = format!(
+            "{}[frame_facing]\n\"walk-0.png\" = \"back\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        assert_eq!(
+            errors(load_manifest(&manifest)),
+            vec!["frame_facing for frame \"walk-0.png\" is \"back\", \
+                  and must be \"left\" or \"right\""
+                .to_string()],
+        );
+
+        let manifest = format!(
+            "frame_facing = \"left\"\n{}",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        assert_names(
+            &errors(load_manifest(&manifest)),
+            "\"frame_facing\" is not a table",
+        );
+    }
+
+    /// A typo in a frame's name would otherwise leave that frame quietly
+    /// facing the default.
+    #[test]
+    fn a_frame_facing_for_a_frame_no_animation_plays_is_rejected_by_name() {
+        let manifest = format!(
+            "{}[frame_facing]\n\"walk-9.png\" = \"left\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        assert_eq!(
+            errors(load_manifest(&manifest)),
+            vec!["frame_facing names \"walk-9.png\", which no animation plays".to_string()],
+        );
     }
 }

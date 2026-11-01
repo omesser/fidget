@@ -4,6 +4,7 @@
 name = "Jotaro Kujo"
 render_mode = "smooth"
 scale = 1
+facing = "left"
 
 [source]
 art = """
@@ -115,3 +116,14 @@ when = "idle over 1m"
 play = ["sit", "sleep"]
 weight = 30
 when = "idle over 2m"
+
+# Only the walk faces right; every other pose leans left.
+[frame_facing]
+"frames/walk-0.png" = "right"
+"frames/walk-1.png" = "right"
+"frames/walk-2.png" = "right"
+"frames/walk-3.png" = "right"
+"frames/walk-4.png" = "right"
+"frames/walk-5.png" = "right"
+"frames/walk-6.png" = "right"
+"frames/walk-7.png" = "right"

@@ -205,3 +205,14 @@ when = "idle over 5m"
 [behaviors.salute]
 play = ["react"]
 weight = 0
+
+# The left strip, drawn facing left.
+[frame_facing]
+"frames/walk-left-0.png" = "left"
+"frames/walk-left-1.png" = "left"
+"frames/walk-left-2.png" = "left"
+"frames/walk-left-3.png" = "left"
+"frames/walk-left-4.png" = "left"
+"frames/walk-left-5.png" = "left"
+"frames/walk-left-6.png" = "left"
+"frames/walk-left-7.png" = "left"
