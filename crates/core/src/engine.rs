@@ -1472,16 +1472,7 @@ impl Engine {
                 self.velocity.y += self.gravity * dt;
                 self.position.x += self.velocity.x * dt;
 
-                let wall_from_screen = wall_reached(self.position.x, self.velocity.x, snapshot);
-                let wall_from_dock = dock_side_reached(self.position, self.velocity.x, snapshot);
-                debug_assert!(
-                    wall_from_screen.is_none() || wall_from_dock.is_none(),
-                    "at most one wall check fires: screen at {:?}, dock at {:?}",
-                    wall_from_screen,
-                    wall_from_dock
-                );
-
-                if let Some(wall) = wall_from_screen.or(wall_from_dock) {
+                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot) {
                     let side = self.velocity.x.signum();
                     self.position.x = wall;
                     // A possessed sprite does not climb: it meets the side and
@@ -1529,17 +1520,6 @@ impl Engine {
                 };
                 let next_y = self.position.y - speed * dt;
 
-                // Climbing the Dock's side ends on its top: the Dock is a
-                // Perch, so its top edge is a landing, not a ceiling. The step
-                // inward puts the feet on it; stopping clear stands beside it.
-                if let Some(dock) = dock_in(snapshot) {
-                    if self.position.y > dock.y && next_y <= dock.y {
-                        if let Some(x) = dock_top_at(self.position.x, dock) {
-                            self.position = Point { x, y: dock.y };
-                            return Some(Contact::Landed(Surface::Perch));
-                        }
-                    }
-                }
                 self.position.y = next_y;
 
                 // Off the top of the display there is nothing left to hold, so
@@ -1579,7 +1559,7 @@ impl Engine {
                     }
                     // A point under the edge, so the fall that follows does
                     // not land straight back on the Perch it left. Not the
-                    // Dock: it hides what falls behind it, and pushes it out.
+                    // Dock, which hides what falls behind it.
                     let on_dock = dock_in(snapshot).is_some_and(|dock| {
                         dock.y == self.position.y && dock.spans_x(self.position.x)
                     });
@@ -1593,25 +1573,6 @@ impl Engine {
                 self.position.x += dx;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += dx;
-                }
-
-                // A walk beside the Dock stops clear of its side once, then
-                // climbs; a per-tick step back stutters under a held walk.
-                debug_assert!(
-                    snapshot.elapsed_ms <= crate::snapshot::MAX_ELAPSED_MS
-                        || dock_in(snapshot).is_none(),
-                    "Dock walk step is {} ms, over the {} ms poll cap",
-                    snapshot.elapsed_ms,
-                    crate::snapshot::MAX_ELAPSED_MS,
-                );
-                if let Some(x) = dock_side_reached(self.position, self.velocity.x, snapshot) {
-                    let side = self.velocity.x.signum();
-                    self.position.x = x;
-                    self.velocity = Point::default();
-                    // While possessed, the side stops the walk, and Up climbs it.
-                    if !self.possessed {
-                        return Some(Contact::Wall { side });
-                    }
                 }
 
                 let fresh = snapshot.poll_generation == 0
