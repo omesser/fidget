@@ -87,7 +87,6 @@ mod tests {
             contact: None,
             refused: None,
             charge: None,
-            driven: None,
         }
     }
 

@@ -79,8 +79,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use fidget_core::character::{Character, Primitive};
 use fidget_core::director::{
-    app_instructions, happened_cell, Happened, ModelDirector, Pace, Played, Recency, Seeded,
-    StaticDirector,
+    app_instructions, happened_cell, Happened, ModelDirector, Pace, Recency, Seeded, StaticDirector,
 };
 use fidget_core::engine::{Cue, Point, SpriteFootprint, State, Verb};
 use fidget_core::input::Pointer;
@@ -432,7 +431,7 @@ struct InstanceState {
     character: Arc<Character>,
     director: StaticDirector,
     model: Option<Arc<ModelDirector<completer::AnyCompleter>>>,
-    recent: Vec<Played>,
+    recent: Vec<String>,
     /// The last few seconds, for the wake that answers a verb.
     recency: Recency,
     pace: Pace,

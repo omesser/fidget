@@ -305,12 +305,6 @@ so a possessed sprite still falls, perches and can be grabbed, and it stays
 possessed when another window takes the keyboard. Users see it explained as
 "Manually drive the fidget on your screen". #1655.
 
-**Driven move**:
-What the keys make a possessed fidget do: `walk-left`, `walk-right` or `jump`.
-The Director reads it marked, `jump (driven)`, so it is never taken for a
-Behavior of the same name.
-_Avoid_: Possessed Behavior
-
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.
 Escape, hiding, Quit and removing the Instance also release. This Release is

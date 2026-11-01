@@ -8,7 +8,7 @@
 use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
-use crate::possession::{Arrow, Charge, Intent, Move};
+use crate::possession::{Arrow, Charge, Intent};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
@@ -239,8 +239,6 @@ pub struct Frame {
     /// How full the jump bar is while a possessed sprite's Space is held, from
     /// 0 to 1. `None` hides the bar.
     pub charge: Option<f64>,
-    /// The driven move the keys started on this frame, on that frame only.
-    pub driven: Option<Move>,
 }
 
 /// How long one Primitive holds the screen.
@@ -435,8 +433,6 @@ pub struct Engine {
     /// This fall left the feet while possessed, so a held arrow steers it. A
     /// release from the hand is not one: a throw flies as thrown.
     steering: bool,
-    /// The arrow the keys walked towards last tick, so a held one is one move.
-    driving: Option<Arrow>,
     /// Harness turn beats waiting out the one on screen. `play` leaves each
     /// unnamed, so a Character cannot replace it, and the next waits until
     /// that one-shot ends so a payoff cannot erase a failed beat.
@@ -679,7 +675,6 @@ impl Engine {
             do_not_disturb: false,
             possessed: false,
             steering: false,
-            driving: None,
             moment_queue: VecDeque::new(),
             moment_holding: false,
             near_reaction: CursorReaction::default(),
@@ -780,7 +775,6 @@ impl Engine {
             self.velocity.x = 0.0;
         }
         self.steering = false;
-        self.driving = None;
     }
 
     /// Whether the sprite is possessed: the keyboard moves it, not the Director.
@@ -1085,12 +1079,9 @@ impl Engine {
 
         // The keys own a possessed sprite's feet, after every hold above: a
         // bubble or a quick message stops a walk the sprite chose, not this.
-        let driven = if self.possessed {
-            self.apply_possession(state, snapshot)
-        } else {
-            None
-        };
-        started |= driven == Some(Move::Jump);
+        if self.possessed {
+            started |= self.apply_possession(state, snapshot);
+        }
 
         let contact = self.integrate(state, dt, snapshot);
 
@@ -1377,23 +1368,17 @@ impl Engine {
                 .charging
                 .filter(|_| self.possessed)
                 .map(Charge::fraction),
-            driven,
         }
     }
 
-    /// Apply this tick's keys to a possessed sprite, and name the move they
-    /// started. A launch plays Jump the way a proposal does, so the flight,
-    /// `land` and the drop Cue are every fall's. In hand the keys do nothing.
-    fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> Option<Move> {
+    /// Apply this tick's keys to a possessed sprite, true when Space launched
+    /// it. A launch plays Jump the way a proposal does, so the flight, `land`
+    /// and the drop Cue are every fall's. In hand the keys do nothing.
+    fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> bool {
         let on_feet = matches!(state, State::Grounded | State::Perched);
         if !on_feet && !(state == State::Falling && self.steering) {
-            // An arrow held while the keys do nothing walks on landing.
-            self.driving = None;
-            return None;
+            return false;
         }
-        let walk = snapshot.possession.walk;
-        let walked = walk.filter(|_| walk != self.driving).map(Move::Walk);
-        self.driving = walk;
 
         let heading = snapshot.possession.walk.map(|arrow| match arrow {
             Arrow::Left => -1.0,
@@ -1412,10 +1397,10 @@ impl Engine {
         };
 
         let Some(charge) = snapshot.possession.launch else {
-            return walked;
+            return false;
         };
         if !on_feet || !self.play(&[Primitive::Jump]) {
-            return walked;
+            return false;
         }
         let speed = self.launch_speed(charge, snapshot);
         self.velocity.y = -speed;
@@ -1423,7 +1408,7 @@ impl Engine {
         // apex, where the upward speed runs out.
         self.primitive_ms = (speed / self.gravity * 1000.0).ceil() as u32;
         self.release_cue = Some(Cue::Drop);
-        Some(Move::Jump)
+        true
     }
 
     /// The upward speed that lifts the feet as high as `charge` asks, from Jump's
@@ -9319,7 +9304,7 @@ mod tests {
     /// A possessed sprite and the keys the Shell feeds it.
     mod possession {
         use super::*;
-        use crate::possession::{Arrow, Charge, Intent, Key, Move, Possession};
+        use crate::possession::{Arrow, Charge, Intent, Key, Possession};
 
         const FRAME_MS: u32 = 16;
 
@@ -9418,36 +9403,6 @@ mod tests {
             assert_eq!(stopped.facing, -1.0, "it keeps the heading it walked");
             let there = stopped.position.x;
             assert_eq!(engine.tick(&world).position.x, there, "and stays put");
-        }
-
-        #[test]
-        fn each_driven_move_is_reported_once_as_it_starts() {
-            let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
-            let mut driven = |intent| engine.tick(&with_possession(intent, &world)).driven;
-
-            assert_eq!(driven(holding(Arrow::Left)), Some(Move::Walk(Arrow::Left)));
-            assert_eq!(driven(holding(Arrow::Left)), None, "held is one walk");
-            assert_eq!(
-                driven(holding(Arrow::Right)),
-                Some(Move::Walk(Arrow::Right))
-            );
-            assert_eq!(driven(Intent::default()), None, "a stop is no move");
-            assert_eq!(driven(launching(released_after(0))), Some(Move::Jump));
-            assert_eq!(driven(Intent::default()), None);
-        }
-
-        #[test]
-        fn an_arrow_held_through_a_fall_is_one_walk_on_landing() {
-            let world = on(one_display());
-            let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
-            engine.set_possessed(true);
-            let left = with_possession(holding(Arrow::Left), &world);
-
-            let walks = (0..400)
-                .filter_map(|_| engine.tick(&left).driven)
-                .collect::<Vec<_>>();
-            assert_eq!(walks, [Move::Walk(Arrow::Left)]);
         }
 
         #[test]

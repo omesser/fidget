@@ -21,7 +21,6 @@ use std::time::Duration;
 
 use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER};
 use crate::engine::{BehaviorProposal, State};
-use crate::possession::Move;
 use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
@@ -117,8 +116,8 @@ pub fn happened_cell(happened: &Happened) -> &'static str {
 #[derive(Clone, Debug)]
 pub struct Context {
     pub activity: Activity,
-    /// What played recently, most recent first.
-    pub recent: Vec<Played>,
+    /// Behavior identifiers played recently, most recent first.
+    pub recent: Vec<String>,
     /// The active Character's Personality Prompt. Empty when the package
     /// shipped none.
     pub personality: String,
@@ -812,37 +811,12 @@ pub fn fallback(
     }
 }
 
-/// One entry in `recent:`: a Behavior the Engine played, or a move the user
-/// drove while possessing the sprite.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Played {
-    Behavior(String),
-    Driven(Move),
-}
-
-impl std::fmt::Display for Played {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Played::Behavior(name) => f.write_str(name),
-            Played::Driven(moved) => moved.fmt(f),
-        }
-    }
-}
-
-/// Record something as just played, forgetting what fell off the end. Each
-/// kind keeps its own `REMEMBERED`, so a possession cannot push Behaviors out.
-/// The Shell keeps the list: the Director is a function of what it is handed.
-pub fn remember(recent: &mut Vec<Played>, played: Played) {
-    recent.insert(0, played);
-    let (mut behaviors, mut driven) = (0, 0);
-    recent.retain(|played| {
-        let kept = match played {
-            Played::Behavior(_) => &mut behaviors,
-            Played::Driven(_) => &mut driven,
-        };
-        *kept += 1;
-        *kept <= REMEMBERED
-    });
+/// Record a Behavior as just played, forgetting whatever fell off the end.
+/// The caller keeps the list because the Director is a function of what it
+/// is handed: what has been played is the Shell's to know.
+pub fn remember(recent: &mut Vec<String>, behavior: String) {
+    recent.insert(0, behavior);
+    recent.truncate(REMEMBERED);
 }
 
 /// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
@@ -1075,7 +1049,7 @@ impl StaticDirector {
         let eligible: Vec<(String, u32)> = self.behaviors.iter().filter_map(suits).collect();
         let unseen: Vec<(String, u32)> = eligible
             .iter()
-            .filter(|(name, _)| !context.recent.contains(&Played::Behavior(name.clone())))
+            .filter(|(name, _)| !context.recent.contains(name))
             .cloned()
             .collect();
 
@@ -1154,7 +1128,6 @@ impl Seeded {
 mod tests {
     use super::*;
     use crate::character::Primitive;
-    use crate::possession::Arrow;
     use std::time::UNIX_EPOCH;
 
     /// `happened_cell`'s budget, which nothing else on the Rust side would
@@ -1225,10 +1198,7 @@ mod tests {
     fn context(activity: Activity, recent: &[&str]) -> Context {
         Context {
             activity,
-            recent: recent
-                .iter()
-                .map(|name| Played::Behavior(name.to_string()))
-                .collect(),
+            recent: recent.iter().map(|name| name.to_string()).collect(),
             personality: "a shy robot.".to_string(),
             instance_prompt: String::new(),
             state: State::Grounded,
@@ -1281,15 +1251,15 @@ mod tests {
         // loop does with one `recent` per Instance.
         let played = |seed: u64| -> Vec<String> {
             let mut director = StaticDirector::new(behaviors.clone(), seed);
-            let mut recent = Vec::new();
+            let mut recent: Vec<String> = Vec::new();
             (0..8)
                 .filter_map(|_| {
-                    let moment = Context {
-                        recent: recent.clone(),
-                        ..context(working(), &[])
-                    };
+                    let moment = context(
+                        working(),
+                        &recent.iter().map(String::as_str).collect::<Vec<_>>(),
+                    );
                     director.propose(&moment).map(|proposal| {
-                        remember(&mut recent, Played::Behavior(proposal.behavior.clone()));
+                        remember(&mut recent, proposal.behavior.clone());
                         proposal.behavior
                     })
                 })
@@ -1462,11 +1432,10 @@ mod tests {
     fn what_is_remembered_is_the_last_few_behaviors_newest_first() {
         let mut recent = Vec::new();
         for behavior in ["nap", "pace", "wave", "greet"] {
-            remember(&mut recent, Played::Behavior(behavior.to_string()));
+            remember(&mut recent, behavior.to_string());
         }
 
-        let names: Vec<String> = recent.iter().map(Played::to_string).collect();
-        assert_eq!(names, ["greet", "wave", "pace"], "\"nap\" is forgotten");
+        assert_eq!(recent, ["greet", "wave", "pace"], "\"nap\" is forgotten");
         assert_eq!(recent.len(), REMEMBERED);
     }
 
@@ -2211,10 +2180,7 @@ mod tests {
                 minute: 15,
                 displays_asleep: false,
             },
-            recent: vec![
-                Played::Behavior("stroll".to_string()),
-                Played::Behavior("nap".to_string()),
-            ],
+            recent: vec!["stroll".to_string(), "nap".to_string()],
             personality: "Blip is cheerful.".to_string(),
             instance_prompt: String::new(),
             state: State::Grounded,
@@ -2628,104 +2594,6 @@ mod tests {
 
         let free = follow_up(&context(working(), &[]));
         assert!(!free.contains("possessed"), "{free}");
-    }
-
-    #[test]
-    fn driven_moves_read_marked_in_recent_and_lately() {
-        let driven = Context {
-            recent: vec![
-                Played::Driven(Move::Jump),
-                Played::Driven(Move::Walk(Arrow::Left)),
-                Played::Behavior("jump".to_string()),
-            ],
-            lately: Lately {
-                steps: vec![
-                    Step::State(State::Grounded),
-                    Step::Driven(Move::Walk(Arrow::Right)),
-                    Step::Driven(Move::Jump),
-                    Step::State(State::Falling),
-                ],
-                ..Lately::default()
-            },
-            ..context(working(), &[])
-        };
-        let sent = follow_up(&driven);
-
-        assert!(
-            sent.contains("recent: jump (driven), walk-left (driven), jump\n"),
-            "a driven jump is not the jump Behavior: {sent}"
-        );
-        assert!(
-            sent.contains("lately: idle → walk-right (driven) → jump (driven) → falling\n"),
-            "{sent}"
-        );
-    }
-
-    #[test]
-    fn a_driven_jump_does_not_suppress_the_jump_behavior() {
-        let mut director =
-            StaticDirector::new(declaring(&[("jump", 1, None), ("wave", 1, None)]), 7);
-        let moment = Context {
-            recent: vec![
-                Played::Driven(Move::Jump),
-                Played::Behavior("wave".to_string()),
-            ],
-            ..context(working(), &[])
-        };
-
-        let picked = proposed(&mut director, &moment, 20);
-        assert!(picked.iter().all(|name| name == "jump"), "{picked:?}");
-    }
-
-    #[test]
-    fn a_drive_leaves_the_behavior_history_intact() {
-        let mut recent = Vec::new();
-        for behavior in ["nap", "pace", "wave"] {
-            remember(&mut recent, Played::Behavior(behavior.to_string()));
-        }
-        for _ in 0..4 {
-            remember(&mut recent, Played::Driven(Move::Walk(Arrow::Left)));
-            remember(&mut recent, Played::Driven(Move::Jump));
-        }
-        let sent = follow_up(&Context {
-            recent,
-            ..context(working(), &[])
-        });
-
-        assert!(
-            sent.contains(
-                "recent: jump (driven), walk-left (driven), jump (driven), wave, pace, nap\n"
-            ),
-            "{REMEMBERED} driven moves, beside every remembered Behavior: {sent}"
-        );
-    }
-
-    #[test]
-    fn a_release_sums_up_what_was_driven() {
-        let released = |driven: Vec<(Move, u32)>| {
-            follow_up(&Context {
-                happened: Happened::PossessionEnd,
-                lately: Lately {
-                    driven,
-                    ..Lately::default()
-                },
-                ..context(working(), &[])
-            })
-        };
-
-        let sent = released(vec![(Move::Walk(Arrow::Left), 3), (Move::Jump, 1)]);
-        assert!(
-            sent.contains("state: idle\ndriven: walk-left ×3, jump ×1\n"),
-            "{sent}"
-        );
-        let idle = released(Vec::new());
-        assert!(idle.contains("\ndriven: nothing\n"), "{idle}");
-
-        let possessed = follow_up(&Context {
-            happened: Happened::PossessionStart,
-            ..context(working(), &[])
-        });
-        assert!(!possessed.contains("driven:"), "{possessed}");
     }
 
     /// A fidget nobody possesses sends the moment it sent before Possession.
