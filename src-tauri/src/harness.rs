@@ -587,7 +587,7 @@ fn owned_interrupt() -> Option<InterruptOwned> {
         .then_some(InterruptOwned(()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl InterruptOwned {
     /// Stands in for a successful install in a test that sends no signal.
     fn for_test() -> Self {
