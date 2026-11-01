@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -58,4 +59,13 @@ test("the did-not-open note is a refusal", { skip }, (t) => {
 
 test("a landing gone from Chat is a webview navigation", { skip }, (t) => {
   assert.equal(outcome(t, ["window|BMO", "web-area|Node.js"], URL_), "navigated");
+});
+
+test("the open log wakes the shared directory watcher, not a new UI signal", () => {
+  const leaf = readFileSync(script, "utf8");
+  const signal = readFileSync(join(import.meta.dirname, "..", "scripts", "uia-signal-win.ps1"), "utf8");
+  assert.match(leaf, /\$handoff = Join-Path \$out "handoff"/);
+  assert.match(leaf, /Wait-OnChanges 3 \$handoff/);
+  assert.doesNotMatch(leaf, /AlsoFile/);
+  assert.doesNotMatch(signal, /FileSystemWatcher|AlsoFile/);
 });
