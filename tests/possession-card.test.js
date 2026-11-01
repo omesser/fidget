@@ -57,10 +57,6 @@ test("the bar fills with the charge and hides when space is up", () => {
   assert.equal(chargeFill(1.5), 1);
 });
 
-function covers(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
 function onScreen(rect, bounds) {
   return (
     rect.x >= bounds.x &&
@@ -70,72 +66,46 @@ function onScreen(rect, bounds) {
   );
 }
 
-test("a card at the top corner of the display stays on screen", () => {
+test("the card sits in the top-left inset and does not follow the sprite", () => {
   const bounds = { x: 0, y: 0, width: 800, height: 600 };
   const card = { width: 220, height: 88 };
-  const sprite = { x: 0, y: 12, width: 128, height: 128 };
-  const placed = placePossession(sprite, card, 8, 8, bounds, null);
-  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
-  assert.equal(onScreen(placed.bar, bounds), true);
+  const near = placePossession({ x: 40, y: 80, width: 128, height: 128 }, card, 8, 8, bounds);
+  const far = placePossession({ x: 600, y: 400, width: 128, height: 128 }, card, 8, 8, bounds);
+  assert.equal(near.card.x, 16);
+  assert.equal(near.card.y, 16);
+  assert.deepEqual(near.card, far.card);
+  assert.equal(near.bar.x, 16);
+  assert.equal(near.bar.y, 16 + card.height + 8);
+  assert.equal(onScreen({ ...near.card, width: card.width, height: card.height }, bounds), true);
+  assert.equal(onScreen(near.bar, bounds), true);
 });
 
-test("a card steps clear of the quick-message pill", () => {
-  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+test("the card moves to the display the sprite crosses onto", () => {
   const card = { width: 220, height: 88 };
-  const sprite = { x: 290, y: 320, width: 128, height: 128 };
-  const pill = { x: 244, y: 200, width: 220, height: 70 };
-  const placed = placePossession(sprite, card, 8, 8, bounds, null, pill);
-  const top = Math.min(placed.card.y, placed.bar.y);
-  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
-  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
-  assert.equal(covers(stack, pill), false);
-  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
-  assert.equal(onScreen(placed.bar, bounds), true);
+  const here = { x: 0, y: 0, width: 1920, height: 1080 };
+  const next = { x: 1920, y: 0, width: 1440, height: 900 };
+  const onHere = placePossession({ x: 400, y: 700, width: 128, height: 128 }, card, 8, 8, here);
+  const onNext = placePossession({ x: 400, y: 700, width: 128, height: 128 }, card, 8, 8, next);
+  assert.equal(onHere.card.x, 16);
+  assert.equal(onHere.card.y, 16);
+  assert.equal(onNext.card.x, 1920 + 16);
+  assert.equal(onNext.card.y, 16);
+  assert.equal(onNext.bar.x, onNext.card.x);
+  assert.equal(onNext.bar.y, onNext.card.y + card.height + 8);
 });
 
-test("a card that steps off the pill does not land back on the bubble", () => {
-  const bounds = { x: 0, y: 0, width: 800, height: 600 };
+test("the card stays inside a display whose origin is not zero", () => {
   const card = { width: 220, height: 88 };
-  const sprite = { x: 290, y: 200, width: 128, height: 128 };
-  const bubble = { x: 0, y: 130, width: 800, height: 80 };
-  const pill = { x: 0, y: 80, width: 800, height: 40 };
-  const placed = placePossession(sprite, card, 8, 8, bounds, bubble, pill);
-  const top = Math.min(placed.card.y, placed.bar.y);
-  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
-  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
-  assert.equal(covers(stack, bubble), false);
-  assert.equal(covers(stack, pill), false);
-  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
-  assert.equal(onScreen(placed.bar, bounds), true);
-});
-
-test("a card near the top stays clear of the bubble and the pill", () => {
-  const bounds = { x: 0, y: 0, width: 800, height: 600 };
-  const card = { width: 220, height: 88 };
-  const sprite = { x: 290, y: 16, width: 128, height: 128 };
-  const bubble = { x: 0, y: 154, width: 800, height: 50 };
-  const pill = { x: 0, y: 40, width: 800, height: 50 };
-  const placed = placePossession(sprite, card, 8, 8, bounds, bubble, pill);
-  const top = Math.min(placed.card.y, placed.bar.y);
-  const bottom = Math.max(placed.card.y + card.height, placed.bar.y + placed.bar.height);
-  const stack = { x: placed.card.x, y: top, width: card.width, height: bottom - top };
-  assert.equal(covers(stack, bubble), false);
-  assert.equal(covers(stack, pill), false);
-  assert.equal(onScreen({ ...placed.card, width: card.width, height: card.height }, bounds), true);
-  assert.equal(onScreen(placed.bar, bounds), true);
-});
-
-test("a card steps clear of the speech bubble", () => {
-  const bounds = { x: 0, y: 0, width: 800, height: 600 };
-  const card = { width: 220, height: 88 };
-  const sprite = { x: 290, y: 320, width: 128, height: 128 };
-  const speech = { x: 244, y: 190, width: 220, height: 90 };
-  const placed = placePossession(sprite, card, 8, 8, bounds, speech);
-  const cardRect = { ...placed.card, width: card.width, height: card.height };
-  assert.equal(covers(cardRect, speech), false);
-  assert.equal(covers(placed.bar, speech), false);
-  assert.equal(onScreen(cardRect, bounds), true);
-  assert.equal(onScreen(placed.bar, bounds), true);
+  const left = { x: -1920, y: 0, width: 1920, height: 1080 };
+  const above = { x: 0, y: -800, width: 1920, height: 800 };
+  for (const bounds of [left, above]) {
+    const placed = placePossession({ x: bounds.x + 400, y: bounds.y + 400, width: 128, height: 128 }, card, 8, 8, bounds);
+    const cardRect = { ...placed.card, width: card.width, height: card.height };
+    assert.equal(placed.card.x, bounds.x + 16);
+    assert.equal(placed.card.y, bounds.y + 16);
+    assert.equal(onScreen(cardRect, bounds), true);
+    assert.equal(onScreen(placed.bar, bounds), true);
+  }
 });
 
 function element() {

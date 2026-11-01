@@ -413,48 +413,21 @@ export function createDraftReporter(invoke) {
   };
 }
 
-function overlapsBox(pos, size, obstacle) {
-  return (
-    pos.x < obstacle.x + obstacle.width &&
-    pos.x + size.width > obstacle.x &&
-    pos.y < obstacle.y + obstacle.height &&
-    pos.y + size.height > obstacle.y
-  );
-}
-
-function clampSeatY(y, size, bounds) {
-  return Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
-}
-
-function clearsEvery(pos, size, blocks) {
-  return blocks.every((obstacle) => !overlapsBox(pos, size, obstacle));
-}
-
-// A step off one box can land on another, so the seat has to clear every
-// obstacle. Above first, then below.
-export function placeQuickMessage(spriteRect, size, bounds, ...obstacles) {
-  const blocks = obstacles.filter(Boolean);
+// Same seat as the Speech bubble or the thinking dots. When that box is already
+// there, step clear of it so a hover does not cover it.
+export function placeQuickMessage(spriteRect, size, bounds, speechRect) {
   const pos = placeBubble(spriteRect, size, bounds);
-  if (blocks.length === 0 || clearsEvery(pos, size, blocks)) return pos;
+  if (!speechRect) return pos;
+  const overlaps =
+    pos.x < speechRect.x + speechRect.width &&
+    pos.x + size.width > speechRect.x &&
+    pos.y < speechRect.y + speechRect.height &&
+    pos.y + size.height > speechRect.y;
+  if (!overlaps) return pos;
   const gap = 10;
-  const seats = [];
-  for (const obstacle of blocks) {
-    seats.push({ y: clampSeatY(obstacle.y - size.height - gap, size, bounds), above: true });
-    seats.push({
-      y: clampSeatY(obstacle.y + obstacle.height + gap, size, bounds),
-      above: false,
-    });
-  }
-  const open = seats.filter((seat) => clearsEvery({ ...pos, y: seat.y }, size, blocks));
-  if (open.length === 0) return pos;
-  const above = open.filter((seat) => seat.above);
-  const pool = above.length > 0 ? above : open;
-  pool.sort((a, b) => Math.abs(a.y - pos.y) - Math.abs(b.y - pos.y) || a.y - b.y);
-  const y = pool[0].y;
-  return {
-    ...pos,
-    y,
-    // The step can cross the sprite, so the tail reads the final seat.
-    inverted: y > spriteRect.y + spriteRect.height / 2,
-  };
+  let y = speechRect.y - size.height - gap;
+  if (y < bounds.y) y = speechRect.y + speechRect.height + gap;
+  y = Math.max(bounds.y, Math.min(y, bounds.y + bounds.height - size.height));
+  // The step can cross the sprite, so the tail reads the final seat.
+  return { ...pos, y, inverted: y > spriteRect.y + spriteRect.height / 2 };
 }

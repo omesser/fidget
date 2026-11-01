@@ -1,11 +1,14 @@
 // The bindings card and the charge bar. The page paints this. The Shell
 // decides whether the sprite is possessed, whether focus has left, and how
 // full the bar is.
-import { placeQuickMessage } from "./quick-message.js";
 
 export const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
 export const RESUME_LABEL = "Click to resume";
+
+// Clear of the screen edge, on the display the sprite stands on. The card
+// stays put while the sprite walks, so the background under it stays visible.
+export const POSSESSION_INSET = 16;
 
 // The keys this build binds. Up, Down and the digits are later.
 const KEYS = [
@@ -86,22 +89,16 @@ export function paintPossession(card, bar, model, fill) {
   return rebuilt;
 }
 
-// One box, so the card takes the same seat as the quick-message pill.
-export function placePossession(sprite, cardSize, barHeight, gap, bounds, speech, pill) {
-  const stack = { width: cardSize.width, height: cardSize.height + gap + barHeight };
-  const seat = placeQuickMessage(sprite, stack, bounds, speech, pill);
-  const x = Math.round(seat.x);
-  if (seat.inverted) {
-    return {
-      card: { x, y: Math.round(seat.y + barHeight + gap) },
-      bar: { x, y: Math.round(seat.y), width: cardSize.width, height: barHeight },
-    };
-  }
+// Top-left of `bounds`, the display the possessed sprite is on. The sprite's
+// place on that display does not move the card.
+export function placePossession(_sprite, cardSize, barHeight, gap, bounds) {
+  const x = Math.round(bounds.x + POSSESSION_INSET);
+  const y = Math.round(bounds.y + POSSESSION_INSET);
   return {
-    card: { x, y: Math.round(seat.y) },
+    card: { x, y },
     bar: {
       x,
-      y: Math.round(seat.y + cardSize.height + gap),
+      y: Math.round(y + cardSize.height + gap),
       width: cardSize.width,
       height: barHeight,
     },
