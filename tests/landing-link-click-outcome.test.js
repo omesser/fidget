@@ -1,5 +1,6 @@
-// landing-link-click.win.ps1 waits for the click's real outcome. Get-LinkOutcome
-// is loaded through the parser, so the leaf's launch never runs.
+// landing-link-click.win.ps1 classifies the click from the UI Automation dump
+// and the URL string Fidget handed to ShellExecuteW. Get-LinkOutcome is loaded
+// through the parser, so the leaf never launches.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -11,10 +12,11 @@ import { resolvePwsh } from "./pwsh-resolve.js";
 const script = join(import.meta.dirname, "..", "scripts", "scenarios", "ci", "landing-link-click.win.ps1");
 const resolved = resolvePwsh();
 const skip = resolved.kind === "ready" ? false : resolved.reason;
+const URL_ = "https://nodejs.org/";
 
 const LANDING = ["window|BMO", "label|Codex needs npx", "link|https://nodejs.org/"];
 
-function outcome(t, dump, titles) {
+function outcome(t, dump, handed) {
   const command = `
 $tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:LEAF, [ref]$tokens, [ref]$errors)
@@ -22,29 +24,38 @@ if ($errors.Count -gt 0) { throw "parse errors: $($errors | Out-String)" }
 $fn = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq "Get-LinkOutcome" }, $true)
 if ($fn.Count -ne 1) { throw "missing Get-LinkOutcome" }
 Invoke-Expression $fn[0].Extent.Text
-$o = Get-LinkOutcome ($env:DUMP -split "\`n") ($env:TITLES -split "\`n" | Where-Object { $_ })
+$Url = $env:WANT
+$o = Get-LinkOutcome ($env:DUMP -split "\`n") $env:HANDED
 if ($null -eq $o) { "none" } else { $o }
 `;
   const run = spawnSync(resolved.command, [...(resolved.args ?? []), "-NoProfile", "-NonInteractive", "-Command", command], {
     encoding: "utf8",
-    env: { ...process.env, LEAF: script, DUMP: dump.join("\n"), TITLES: titles.join("\n") },
+    env: { ...process.env, LEAF: script, DUMP: dump.join("\n"), HANDED: handed, WANT: URL_ },
   });
   assert.equal(run.status, 0, `pwsh failed:\n${run.stdout}\n${run.stderr}`);
   return run.stdout.trim();
 }
 
-test("an unchanged landing with no browser window is no outcome yet", { skip }, (t) => {
-  assert.equal(outcome(t, LANDING, ["BMO", "Fidget"]), "none");
+test("an empty handoff on an unchanged landing is not opened", { skip }, (t) => {
+  assert.equal(outcome(t, LANDING, ""), "none");
 });
 
-test("a browser window on the link is the handoff", { skip }, (t) => {
-  assert.equal(outcome(t, LANDING, ["Node.js — Run JavaScript Everywhere - Edge"]), "opened");
+test("a window title is not the handed URL", { skip }, (t) => {
+  assert.equal(outcome(t, LANDING, "Notepad"), "wrong");
+});
+
+test("a different URL is not the nodejs.org handoff", { skip }, (t) => {
+  assert.equal(outcome(t, LANDING, "https://example.test/"), "wrong");
+});
+
+test("https://nodejs.org/ is the handoff", { skip }, (t) => {
+  assert.equal(outcome(t, LANDING, "https://nodejs.org/\n"), "opened");
 });
 
 test("the did-not-open note is a refusal", { skip }, (t) => {
-  assert.equal(outcome(t, [...LANDING, "label|That link did not open: no handler."], []), "refused");
+  assert.equal(outcome(t, [...LANDING, "label|That link did not open: no handler."], URL_), "refused");
 });
 
 test("a landing gone from Chat is a webview navigation", { skip }, (t) => {
-  assert.equal(outcome(t, ["window|BMO", "web-area|Node.js"], []), "navigated");
+  assert.equal(outcome(t, ["window|BMO", "web-area|Node.js"], URL_), "navigated");
 });

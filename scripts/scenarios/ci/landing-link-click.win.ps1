@@ -11,16 +11,16 @@
 # Grants: a desktop session. UI Automation for the terminal that runs it. The
 #   fidget icon shown on the taskbar, not in the hidden-icons overflow.
 # Asserts: the landing draws `npx` and https://nodejs.org/ as their own
-#   elements, with no backtick left in the copy; the click raises no "That
-#   link did not open" note, so ShellExecuteW took the URL; Chat still shows
-#   the landing after it, so the webview did not navigate. Windows hands the
-#   URL to ShellExecuteW, not a program on PATH, so which URL it got is not
-#   recorded here; tests/chat-landing-format.test.js asserts that.
+#   elements, with no backtick left in the copy; the click hands exactly
+#   https://nodejs.org/ to ShellExecuteW, recorded in the open log, not inferred
+#   from a new window; the click raises no "That link did not open" note; Chat
+#   still shows the landing after it, so the webview did not navigate.
 #
 # Usage: landing-link-click.win.ps1 --go <fidget binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
-# Set FIDGET_SCENARIO_AX_LANDING and FIDGET_SCENARIO_AX_AFTER to assert those
-# dumps and skip the GUI. That checks the assertion, not the live window.
+# Set FIDGET_SCENARIO_AX_LANDING, FIDGET_SCENARIO_AX_AFTER and
+# FIDGET_SCENARIO_OPENED to assert those dumps and the recorded hand-off and
+# skip the GUI. That checks the assertion, not the live window.
 # No param() block: Windows PowerShell binds `--go` as -Go and swallows the
 # next token, so $Go never equals "--go" and the leaf always exits 2.
 $Go = if ($args.Count -gt 0) { $args[0] } else { "" }
@@ -82,24 +82,35 @@ function Check-After([string]$File) {
     Write-Output "ok: Chat still shows the landing, and no note says the link did not open"
 }
 
-function Get-LinkOutcome([string[]]$Dump, [string[]]$NewTitles) {
-    if ($Dump | Where-Object { $_.Contains("That link did not open") }) { return "refused" }
-    if (-not ($Dump | Where-Object { $_.Contains("|Codex needs ") })) { return "navigated" }
-    if ($NewTitles | Where-Object { $_ -and $_ -notin @("BMO", "Fidget") }) { return "opened" }
-    return $null
+function Get-HandedText([string]$File) {
+    if (-not (Test-Path -LiteralPath $File)) { return "" }
+    return [System.IO.File]::ReadAllText($File).Trim()
 }
 
-function Get-TopWindows {
-    $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($w in $all) { [pscustomobject]@{ Handle = $w.Current.NativeWindowHandle; Title = $w.Current.Name } }
+function Check-Handed([string]$Handed) {
+    if ($Handed -ne $Url) { Fail "the click handed '$Handed' to ShellExecuteW, want $Url" }
+    Write-Output "ok: the click handed $Url to ShellExecuteW"
+}
+
+# "wrong" stops the wait. An empty hand-off stays unset so the wait runs out.
+function Get-LinkOutcome([string[]]$Dump, [string]$Handed) {
+    if ($Dump | Where-Object { $_.Contains("That link did not open") }) { return "refused" }
+    if (-not ($Dump | Where-Object { $_.Contains("|Codex needs ") })) { return "navigated" }
+    $handed = $Handed.Trim()
+    if ($handed -eq $Url) { return "opened" }
+    if ($handed) { return "wrong" }
+    return $null
 }
 
 $landing = $env:FIDGET_SCENARIO_AX_LANDING
 $after = $env:FIDGET_SCENARIO_AX_AFTER
-if ($landing -or $after) {
-    if (-not $landing -or -not $after) { Fail "set FIDGET_SCENARIO_AX_LANDING and FIDGET_SCENARIO_AX_AFTER" }
+$recorded = $env:FIDGET_SCENARIO_OPENED
+if ($landing -or $after -or $recorded) {
+    if (-not $landing -or -not $after -or -not $recorded) {
+        Fail "set FIDGET_SCENARIO_AX_LANDING, FIDGET_SCENARIO_AX_AFTER and FIDGET_SCENARIO_OPENED"
+    }
     Check-Landing $landing
+    Check-Handed (Get-HandedText $recorded)
     Check-After $after
     Write-Output "PASS: fixture dumps"
     exit 0
@@ -123,6 +134,11 @@ $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_CAPTURABLE = "1"
 $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
+$opened = Join-Path $out "opened.txt"
+[System.IO.File]::WriteAllText($opened, "")
+# ShellExecuteW is not a program on PATH, unlike open on macOS. Fidget appends
+# the URL it passes to the opener when this variable is set.
+$env:FIDGET_OPEN_URL_LOG = $opened
 
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::OutputEncoding = $utf8
@@ -156,7 +172,6 @@ try {
     Check-Landing (Join-Path $out "landing.ax.txt")
     $x = $script:Link[0] + [int]($script:Link[2] / 2)
     $y = $script:Link[1] + [int]($script:Link[3] / 2)
-    $before = @(Get-TopWindows | ForEach-Object { $_.Handle })
     # UI Automation's Invoke first, so the real cursor stays put; a real click
     # at the link's centre only if the webview exposes no Invoke on it.
     if (Invoke-Ax "click" @{ Command = "link"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = $Url }) {
@@ -164,17 +179,18 @@ try {
     } elseif (-not (Invoke-Ax "click" @{ Command = "click"; X = $x; Y = $y })) {
         Fail "could not click the link; see $out\click.txt"
     }
-    # Block on UI Automation events from any process (a browser window opening,
-    # Chat changing) until the click shows an outcome, at most 3 s.
+    # The click already returned, so the open log is already written.
+    $script:Handed = ""
     $script:Outcome = $null
     $null = Wait-UiaChange 0 3 {
         if (-not (Invoke-Ax "after.ax" @{ Command = "dump"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "frames" })) { return $false }
-        $new = @(Get-TopWindows | Where-Object { $_.Handle -notin $before } | ForEach-Object { $_.Title })
-        $script:Outcome = Get-LinkOutcome (Read-Dump (Join-Path $out "after.ax.txt")) $new
+        $script:Handed = Get-HandedText $opened
+        $script:Outcome = Get-LinkOutcome (Read-Dump (Join-Path $out "after.ax.txt")) $script:Handed
         [bool]$script:Outcome
     }
-    if (-not $script:Outcome) { Fail "the click showed no outcome (browser window, navigation or note) within 3 s; see $out\after.ax.txt" }
-    Write-Output "ok: the click's outcome is $script:Outcome"
+    if ($script:Outcome -eq "opened" -or $script:Outcome -eq "wrong" -or -not $script:Outcome) {
+        Check-Handed $script:Handed
+    }
     Check-After (Join-Path $out "after.ax.txt")
     Write-Output "PASS: evidence in $out ($((Get-NowMs) - $startMs)ms)"
 } finally {
