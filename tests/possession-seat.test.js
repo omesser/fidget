@@ -52,10 +52,7 @@ const seated = {
   sprites: [possessed(120, { charge: null })],
 };
 
-const released = {
-  ...charging,
-  sprites: [possessed(120, { charge: null })],
-};
+const released = seated;
 
 const walked = {
   ...charging,
@@ -235,8 +232,7 @@ function over(src, dst) {
   };
 }
 
-// What a pixel of `layer` looks like after the card's opacity, on `backdrop`.
-function seen(layer, opacity, backdrop) {
+function overBackdrop(layer, opacity, backdrop) {
   return over({ ...layer, a: layer.a * opacity }, { ...backdrop, a: 1 });
 }
 
@@ -244,7 +240,10 @@ function pausedContrast(style, backdrop) {
   const text = parseCssColor(style.color);
   const panel = parseCssColor(style.backgroundColor);
   const opacity = Number(style.opacity);
-  return contrast(seen(over(text, panel), opacity, backdrop), seen(panel, opacity, backdrop));
+  return contrast(
+    overBackdrop(over(text, panel), opacity, backdrop),
+    overBackdrop(panel, opacity, backdrop),
+  );
 }
 
 function reportedFor(rects, measured) {
