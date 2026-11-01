@@ -854,6 +854,7 @@ pub(crate) mod tests {
             proposal: Some(BehaviorProposal {
                 behavior: "jump".to_string(),
                 dialogue: None,
+                direction: None,
             }),
             ..ground.clone()
         };

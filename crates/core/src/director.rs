@@ -558,6 +558,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                     wake: Wake::Proposed(BehaviorProposal {
                         behavior,
                         dialogue: parsed.proposal.dialogue,
+                        direction: None,
                     }),
                     near_miss: None,
                     peeled_thought: peeled,
@@ -571,6 +572,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                             Some(line) => Wake::Proposed(BehaviorProposal {
                                 behavior: String::new(),
                                 dialogue: Some(line),
+                                direction: None,
                             }),
                             None => Wake::Failed,
                         };
@@ -732,6 +734,7 @@ fn parse_contract(reply: &str) -> Result<ParsedContract, ParseError> {
         proposal: BehaviorProposal {
             behavior: name.to_string(),
             dialogue,
+            direction: None,
         },
         marked,
         peeled_thought,
@@ -796,6 +799,7 @@ fn as_dialogue(reply: &str) -> Option<BehaviorProposal> {
     (!text.is_empty()).then(|| BehaviorProposal {
         behavior: String::new(),
         dialogue: Some(text.to_string()),
+        direction: None,
     })
 }
 
@@ -1065,6 +1069,7 @@ impl StaticDirector {
         Some(BehaviorProposal {
             behavior,
             dialogue: None,
+            direction: None,
         })
     }
 }

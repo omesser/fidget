@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
+use crate::engine::Direction;
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -80,6 +81,24 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
     })
 }
 
+/// The wire spelling of a walk's `direction`. Parsed here so the Engine's
+/// `Direction` stays free of a JSON shape.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DirectionArg {
+    Left,
+    Right,
+}
+
+impl From<DirectionArg> for Direction {
+    fn from(arg: DirectionArg) -> Self {
+        match arg {
+            DirectionArg::Left => Self::Left,
+            DirectionArg::Right => Self::Right,
+        }
+    }
+}
+
 fn unknown_instance(id: &str, roster: &[InstanceInfo]) -> String {
     if roster.is_empty() {
         return format!("No Character Instance has id {id}. No Character Instance is running.");
@@ -125,12 +144,15 @@ pub fn dispatch(
                 behavior: String,
                 #[serde(default)]
                 instance_id: Option<String>,
+                #[serde(default)]
+                direction: Option<DirectionArg>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
 
             let mut expression = context.expression.take();
             let result = tools::play_behavior(
                 &args.behavior,
+                args.direction.map(Direction::from),
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
@@ -246,13 +268,18 @@ pub fn list_tools() -> Vec<ToolInfo> {
     let mut tools = vec![
         ToolInfo {
             name: "play_behavior".to_string(),
-            description: "Play a named Behavior".to_string(),
+            description: "Play a named Behavior. Pass direction to aim a walk left or right instead of the way the Character last faced.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "behavior": {
                         "type": "string",
                         "description": "The name of the Behavior to play"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["left", "right"],
+                        "description": "Which way a walk in the Behavior goes: left or right of the screen. Omit it to keep the heading the Character last had. A Behavior that does not walk ignores it."
                     }
                 },
                 "required": ["behavior"]
@@ -876,6 +903,159 @@ mod tests {
                 .expect("dispatch succeeds");
             assert_eq!(played["success"], true, "{behavior}: {played}");
         }
+    }
+
+    #[test]
+    fn play_behavior_direction_reaches_the_proposal() {
+        struct Captured(Option<crate::engine::BehaviorProposal>);
+
+        impl crate::tools::ExpressionHandle for Captured {
+            fn enqueue(
+                &mut self,
+                _instance_id: &str,
+                proposal: crate::engine::BehaviorProposal,
+            ) -> bool {
+                self.0 = Some(proposal);
+                true
+            }
+        }
+
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let roster = [InstanceInfo {
+            id: "inst-1".to_string(),
+            name: "TestBuddy".to_string(),
+            ..Default::default()
+        }];
+        let mut captured = Captured(None);
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster,
+            expression: Some(&mut captured),
+            placement: PlacementQuery::empty(),
+            caffeinate: None,
+        };
+
+        let played = dispatch(
+            "play_behavior",
+            json!({"behavior": "walk", "direction": "left"}),
+            &mut context,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(played["success"], true);
+        drop(context);
+
+        let proposal = captured.0.expect("the proposal reached the handle");
+        assert_eq!(proposal.direction, Some(Direction::Left));
+    }
+
+    #[test]
+    fn play_behavior_refuses_a_direction_it_does_not_know() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+
+        let result = dispatch(
+            "play_behavior",
+            json!({"behavior": "walk", "direction": "up"}),
+            &mut context,
+        );
+
+        assert_eq!(
+            result.unwrap_err().code,
+            ErrorCode::InvalidArguments,
+            "a direction is left or right and nothing else"
+        );
+    }
+
+    #[test]
+    fn play_behavior_schema_names_the_direction_it_takes() {
+        let tools = list_tools();
+        let play = tools
+            .iter()
+            .find(|tool| tool.name == "play_behavior")
+            .expect("play_behavior is listed");
+
+        assert_eq!(
+            play.input_schema["properties"]["direction"]["enum"],
+            json!(["left", "right"])
+        );
+        assert!(play.description.contains("direction"));
+    }
+
+    /// The ask end to end: the argument turns the Instance before its first
+    /// step, so a right-facing sprite told to walk left goes left.
+    #[test]
+    fn play_behavior_direction_moves_the_instance_the_way_it_was_asked() {
+        use crate::character::{Behavior, Primitive};
+        use crate::engine::Point;
+
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let mut roster = crate::roster::Roster::new();
+        let mut character = test_character("Walker");
+        character.behaviors.insert(
+            "walk".to_string(),
+            Behavior {
+                primitives: vec![Primitive::Walk],
+                then: None,
+                weight: 0,
+                trigger: None,
+            },
+        );
+        let instance_id = roster.spawn(
+            &character,
+            "Walker".to_string(),
+            Point { x: 500.0, y: 100.0 },
+        );
+
+        let mut snapshot = test_snapshot();
+        let mut resting = None;
+        for _ in 0..50 {
+            resting = Some(roster.get_mut(&instance_id).unwrap().tick(&snapshot));
+            snapshot.elapsed_ms = 16;
+        }
+        let resting = resting.expect("the sprite ticked");
+        assert_eq!(resting.facing, 1.0, "it faced right before the ask");
+
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut roster),
+            placement: PlacementQuery::empty(),
+            caffeinate: None,
+        };
+
+        let played = dispatch(
+            "play_behavior",
+            json!({"behavior": "walk", "direction": "left"}),
+            &mut context,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(played["success"], true);
+        drop(context);
+
+        let instance = roster.get_mut(&instance_id).expect("instance still runs");
+        let asked = instance.tick(&test_snapshot());
+        assert_eq!(asked.facing, -1.0, "the ask turns it before it walks");
+        let walking = instance.tick(&test_snapshot());
+        assert!(
+            walking.position.x < asked.position.x,
+            "told to walk left: {asked:?} -> {walking:?}"
+        );
     }
 
     #[test]

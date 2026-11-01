@@ -365,7 +365,7 @@ Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP,
 
 | Tool | Category | What it does |
 |---|---|---|
-| `play_behavior` | Expression | Play a named Behavior |
+| `play_behavior` | Expression | Play a named Behavior; pass `direction` (`left` or `right`) to aim a walk instead of letting it keep its last heading |
 | `list_windows` | Sensing | List visible windows with bounds, and their names under consent |
 | `describe_screen` | Sensing | Describe screen (v1: window metadata only) |
 | `recall` | Memory | Read everything Memory holds |

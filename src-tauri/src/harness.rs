@@ -6907,6 +6907,7 @@ mod tests {
             Wake::Proposed(BehaviorProposal {
                 behavior: "wave".to_string(),
                 dialogue: Some("Good morning".to_string()),
+                direction: None,
             })
         );
     }
@@ -7487,6 +7488,7 @@ mod tests {
             Wake::Proposed(BehaviorProposal {
                 behavior: String::new(),
                 dialogue: Some(line.to_string()),
+                direction: None,
             })
         };
 
@@ -7495,6 +7497,7 @@ mod tests {
             &Wake::Proposed(BehaviorProposal {
                 behavior: "prowl".to_string(),
                 dialogue: Some("mine now".to_string()),
+                direction: None,
             }),
             true,
             None,

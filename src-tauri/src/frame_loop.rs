@@ -1662,6 +1662,7 @@ pub(crate) fn run_frame_loop(
                                 instance.enqueue(BehaviorProposal {
                                     behavior: String::new(),
                                     dialogue: Some(tour_message.to_string()),
+                                    direction: None,
                                 });
                             }
 
@@ -1848,6 +1849,7 @@ pub(crate) fn run_frame_loop(
                         proposal = Some(BehaviorProposal {
                             behavior: String::new(),
                             dialogue: Some(line.clone()),
+                            direction: None,
                         });
                         let _ = app.emit_to(
                             chat_label(&live.id),

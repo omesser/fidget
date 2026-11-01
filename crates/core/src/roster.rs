@@ -610,12 +610,14 @@ mod tests {
         snapshot_wave.proposal = Some(crate::engine::BehaviorProposal {
             behavior: "wave".to_string(),
             dialogue: None,
+            direction: None,
         });
 
         let mut snapshot_sleep = test_snapshot();
         snapshot_sleep.proposal = Some(crate::engine::BehaviorProposal {
             behavior: "sleep".to_string(),
             dialogue: None,
+            direction: None,
         });
 
         let frame_a = roster.get_mut(&id_a).unwrap().tick(&snapshot_wave);
