@@ -2662,6 +2662,22 @@ mod tests {
     }
 
     #[test]
+    fn a_driven_jump_does_not_suppress_the_jump_behavior() {
+        let mut director =
+            StaticDirector::new(declaring(&[("jump", 1, None), ("wave", 1, None)]), 7);
+        let moment = Context {
+            recent: vec![
+                Played::Driven(Move::Jump),
+                Played::Behavior("wave".to_string()),
+            ],
+            ..context(working(), &[])
+        };
+
+        let picked = proposed(&mut director, &moment, 20);
+        assert!(picked.iter().all(|name| name == "jump"), "{picked:?}");
+    }
+
+    #[test]
     fn a_drive_leaves_the_behavior_history_intact() {
         let mut recent = Vec::new();
         for behavior in ["nap", "pace", "wave"] {

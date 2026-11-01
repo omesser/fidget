@@ -1385,13 +1385,15 @@ impl Engine {
     /// started. A launch plays Jump the way a proposal does, so the flight,
     /// `land` and the drop Cue are every fall's. In hand the keys do nothing.
     fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> Option<Move> {
+        let on_feet = matches!(state, State::Grounded | State::Perched);
+        if !on_feet && !(state == State::Falling && self.steering) {
+            // An arrow held while the keys do nothing walks on landing.
+            self.driving = None;
+            return None;
+        }
         let walk = snapshot.possession.walk;
         let walked = walk.filter(|_| walk != self.driving).map(Move::Walk);
         self.driving = walk;
-        let on_feet = matches!(state, State::Grounded | State::Perched);
-        if !on_feet && !(state == State::Falling && self.steering) {
-            return None;
-        }
 
         let heading = snapshot.possession.walk.map(|arrow| match arrow {
             Arrow::Left => -1.0,
@@ -9433,6 +9435,19 @@ mod tests {
             assert_eq!(driven(Intent::default()), None, "a stop is no move");
             assert_eq!(driven(launching(released_after(0))), Some(Move::Jump));
             assert_eq!(driven(Intent::default()), None);
+        }
+
+        #[test]
+        fn an_arrow_held_through_a_fall_is_one_walk_on_landing() {
+            let world = on(one_display());
+            let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
+            engine.set_possessed(true);
+            let left = with_possession(holding(Arrow::Left), &world);
+
+            let walks = (0..400)
+                .filter_map(|_| engine.tick(&left).driven)
+                .collect::<Vec<_>>();
+            assert_eq!(walks, [Move::Walk(Arrow::Left)]);
         }
 
         #[test]
