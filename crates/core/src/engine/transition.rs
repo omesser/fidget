@@ -16,9 +16,8 @@ pub enum Contact {
     Lifted(Surface),
     /// Still standing exactly where it stood.
     Standing,
-    /// Ran into something the sprite cannot pass sideways: a screen edge or the
-    /// side of the Dock. Contains side (-1.0 left, 1.0 right); the sprite's x
-    /// is the contact x.
+    /// Ran into something the sprite cannot pass sideways: a screen edge.
+    /// Contains side (-1.0 left, 1.0 right); the sprite's x is the contact x.
     Wall { side: f64 },
     /// Met the usable top while rising or climbing.
     Ceiling,

@@ -1405,7 +1405,8 @@ impl Engine {
     /// and the drop Cue are every fall's. In hand the keys do nothing.
     fn apply_possession(&mut self, state: State, snapshot: &WorldSnapshot) -> bool {
         let on_feet = matches!(state, State::Grounded | State::Perched);
-        if !on_feet && !(state == State::Falling && self.steering) {
+        let climbing = state == State::Climbing;
+        if !on_feet && !climbing && !(state == State::Falling && self.steering) {
             return false;
         }
 
@@ -1413,22 +1414,31 @@ impl Engine {
             Walk::Left => -1.0,
             Walk::Right => 1.0,
         });
-        if let Some(heading) = heading {
-            self.facing = heading;
-        }
-        // Into the outermost edge the walk stops where a standing sprite shows
-        // whole, rather than walking off and catching the wall to climb.
-        self.velocity.x = match heading {
-            Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
-                heading * WALK_SPEED
+        if climbing {
+            // A climber faces its wall. An arrow away lets go and Space jumps
+            // off, and either one leaves the wall at a walk.
+            let away = -self.facing;
+            if heading == Some(away) || snapshot.possession.launch.is_some() {
+                self.velocity.x = away * WALK_SPEED;
             }
-            _ => 0.0,
-        };
+        } else {
+            if let Some(heading) = heading {
+                self.facing = heading;
+            }
+            // Into the outermost edge the walk stops where a standing sprite
+            // shows whole, rather than walking off and catching the wall.
+            self.velocity.x = match heading {
+                Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
+                    heading * WALK_SPEED
+                }
+                _ => 0.0,
+            };
+        }
 
         let Some(charge) = snapshot.possession.launch else {
             return false;
         };
-        if !on_feet || !self.play(&[Primitive::Jump]) {
+        if !(on_feet || climbing) || !self.play(&[Primitive::Jump]) {
             return false;
         }
         let speed = self.launch_speed(charge, snapshot);
@@ -1513,6 +1523,10 @@ impl Engine {
                 }
             }
             State::Climbing => {
+                // Only possession moves a climber sideways, off the wall.
+                if self.velocity.x != 0.0 {
+                    return Some(Contact::Airborne);
+                }
                 let speed = if self.climb_paused() {
                     0.0
                 } else {
@@ -1875,7 +1889,10 @@ impl Engine {
             Primitive::Walk | Primitive::Chase => {
                 on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
             }
-            Primitive::Jump => on_feet && self.poke_cooldown_ms == 0,
+            Primitive::Jump => {
+                let off_a_wall = self.possessed && self.state == State::Climbing;
+                (on_feet || off_a_wall) && self.poke_cooldown_ms == 0
+            }
             _ => on_feet,
         })
     }
