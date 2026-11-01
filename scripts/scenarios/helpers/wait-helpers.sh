@@ -15,10 +15,19 @@ fidget_alive() {
 
 # tail -F follows a file through kqueue (BSD) or inotify (GNU). GNU tail
 # treats some file systems as remote (overlayfs, NFS) and falls back to a
-# poll every second, so ask it for 50 ms there; it stops with Fidget, too.
+# poll every second, so ask it for 50 ms there; on macOS, caffeinate watches Fidget.
 follow() { # <first line: +1 for the whole file, +N from line N, 0 for new lines> <file>
   if tail --version > /dev/null 2>&1; then
     tail -s 0.05 ${pid:+--pid="$pid"} -n "$1" -F "$2" 2> /dev/null
+  elif [ -n "${pid:-}" ] && command -v caffeinate > /dev/null; then
+    local tail_pid watcher_pid
+    tail -n "$1" -F "$2" 2> /dev/null &
+    tail_pid=$!
+    caffeinate -w "$pid" 2> /dev/null &
+    watcher_pid=$!
+    wait "$watcher_pid" 2> /dev/null || true
+    kill "$tail_pid" 2> /dev/null || true
+    wait "$tail_pid" 2> /dev/null || true
   else
     tail -n "$1" -F "$2" 2> /dev/null
   fi

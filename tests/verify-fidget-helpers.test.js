@@ -57,8 +57,9 @@ test("launch fails within 3 s when no overlay line ever comes", (t) => {
 test("launch fails at once when Fidget exits during startup", (t) => {
   const { env } = scratch(t, "echo crashed >&2; exit 3");
   const r = helper("launch.sh", env);
-  assert.notEqual(r.code, 0, r.out);
+  assert.equal(r.code, 1, r.out);
   assert.match(r.out, /process exited/);
+  assert.match(r.out, /crashed/);
   assert.ok(r.ms < 1500, `took ${r.ms} ms`);
 });
 
