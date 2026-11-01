@@ -15,14 +15,14 @@ import {
 } from "../src/possession-card.js";
 import { possessionEdge } from "../src/possession-keys.js";
 
-test("arrows, space and escape are the possession keys, and a repeat is ignored", () => {
+test("four arrows, space and escape are the possession keys, and a repeat is ignored", () => {
   assert.deepEqual(possessionEdge("ArrowLeft", false, true), { key: "left", down: true });
   assert.deepEqual(possessionEdge("ArrowRight", false, false), { key: "right", down: false });
   assert.deepEqual(possessionEdge(" ", false, true), { key: "space", down: true });
   assert.deepEqual(possessionEdge("Escape", false, true), { key: "escape", down: true });
   assert.equal(possessionEdge("ArrowLeft", true, true), null);
-  assert.equal(possessionEdge("ArrowUp", false, true), null);
-  assert.equal(possessionEdge("ArrowDown", false, true), null);
+  assert.deepEqual(possessionEdge("ArrowUp", false, true), { key: "up", down: true });
+  assert.deepEqual(possessionEdge("ArrowDown", false, false), { key: "down", down: false });
   assert.equal(possessionEdge("1", false, true), null);
   assert.equal(possessionEdge("a", false, true), null);
 });
@@ -33,6 +33,8 @@ test("the card lists the bound keys under the explanation", () => {
   assert.equal(card.heading, "Manually drive the fidget on your screen");
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
+    ["↑", "Climb"],
+    ["↓", "Drop"],
     ["Space", "Jump"],
     ["Esc", "Release Possession"],
   ]);

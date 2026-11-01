@@ -10,9 +10,11 @@ export const RESUME_LABEL = "Click to resume";
 // stays put while the sprite walks, so the background under it stays visible.
 export const POSSESSION_INSET = 16;
 
-// The keys this build binds. Up, Down and the digits are later.
+// The keys this build binds. The digits are later.
 const KEYS = [
   ["← →", "Walk"],
+  ["↑", "Climb"],
+  ["↓", "Drop"],
   ["Space", "Jump"],
   ["Esc", "Release Possession"],
 ];
