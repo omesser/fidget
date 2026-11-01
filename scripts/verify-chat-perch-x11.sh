@@ -202,7 +202,8 @@ log_info "Placing Character on Chat ledge at ($PLACE_X, $PLACE_Y)..."
 CMD_PATH="$HOME_DIR/.fidget-debug-cmd"
 RES_PATH="$HOME_DIR/.fidget-debug-result"
 rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$PLACE_X" "$PLACE_Y" > "$CMD_PATH"
+printf 'place x=%s y=%s\n' "$PLACE_X" "$PLACE_Y" > "$CMD_PATH.tmp"
+mv "$CMD_PATH.tmp" "$CMD_PATH"
 PLACE_OK=0
 for _ in $(seq 1 40); do
   if [ -f "$RES_PATH" ]; then
@@ -243,7 +244,8 @@ if [ "$BESIDE_X" -lt 40 ]; then
 fi
 BESIDE_Y=$((CHAT_Y + CHAT_H / 2))
 rm -f "$RES_PATH"
-printf 'place x=%s y=%s\n' "$BESIDE_X" "$BESIDE_Y" > "$CMD_PATH"
+printf 'place x=%s y=%s\n' "$BESIDE_X" "$BESIDE_Y" > "$CMD_PATH.tmp"
+mv "$CMD_PATH.tmp" "$CMD_PATH"
 for _ in $(seq 1 40); do
   [ -f "$RES_PATH" ] && grep -q '^placed:' "$RES_PATH" 2> /dev/null && break
   sleep 0.25

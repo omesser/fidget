@@ -25,7 +25,11 @@ fn debug_dir() -> Option<PathBuf> {
 /// The other side polls this path every frame, so it must never see a
 /// half-written file. A rename on the same filesystem swaps the whole file in.
 pub fn write_whole_file_at_once(path: &Path, contents: &str) -> std::io::Result<()> {
-    fs::write(path, contents)
+    let staging_path = path.with_extension("tmp");
+    fs::write(&staging_path, contents)?;
+    fs::rename(&staging_path, path).inspect_err(|_| {
+        let _ = fs::remove_file(&staging_path);
+    })
 }
 
 #[cfg(test)]
