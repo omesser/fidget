@@ -1287,6 +1287,7 @@ def self_test():
         noted = " ".join(remapped["notes"])
         assert "walk<-running-right row 1 (drawn heading left)" in noted, noted
         assert "row 2" not in noted, noted
+        assert "Unused rows: 2 (running-left), 7 (running)." in noted, noted
         noted = " ".join(read_petscodex(source, overrides={"walk": (7, None)})["notes"])
         assert "walk<-running row 7," in noted and "heading" not in noted, noted
 
