@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createCueMachine, cueAnchor, POKE_WINDOW_MS } from "../src/cue.js";
+import { createCueMachine, cueAnchor, cueIo, POKE_WINDOW_MS } from "../src/cue.js";
 
 // The io a cue machine draws and sounds through, recording what it was asked
 // for and handing back the stops the machine is expected to call.
@@ -49,7 +49,7 @@ function machineHarness() {
 }
 
 test("each cue is drawn and sounded once, on the tick that carries it", () => {
-  for (const name of ["poke", "summon", "menu", "pickup", "drop", "throw"]) {
+  for (const name of ["poke", "summon", "menu", "pickup", "drop", "throw", "possess"]) {
     // A machine each, so the Poke the previous cue left in flight is not the
     // thing the next one is measured against. The cancel has its own test.
     const { machine, calls, placement } = machineHarness();
@@ -162,6 +162,45 @@ test("the click cues anchor to the sprite's centre, the drag cues to its feet, a
     ripple_y: 300,
     ripple_normal: { x: 1, y: 0 },
   });
+});
+
+// The frame listener draws through cueIo. A name with no visual throws there
+// and takes the rest of the frame with it.
+test("a possess cue draws a ring instead of throwing", () => {
+  const nodes = [];
+  const previous = globalThis.document;
+  globalThis.document = {
+    createElement() {
+      const node = {
+        style: {},
+        className: "",
+        setAttribute(_name, value) {
+          node.className = value;
+        },
+        append() {},
+        addEventListener() {},
+        remove() {},
+      };
+      return node;
+    },
+  };
+  try {
+    const io = cueIo(
+      {
+        append(...added) {
+          nodes.push(...added);
+        },
+      },
+      () => ({ x: 10, y: 20, feetX: 10, feetY: 40 }),
+    );
+    const stop = io.draw("possess");
+    assert.equal(nodes.length, 1);
+    assert.match(nodes[0].className, /\bpossess\b/);
+    stop();
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
 });
 
 test("an odd sprite width still centres the cue between its edges", () => {

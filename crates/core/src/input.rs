@@ -207,6 +207,15 @@ impl Pointer {
         verbs
     }
 
+    /// The click under way was a resume, not a Poke. A later settle must not
+    /// tell the Director a poke happened, and the next click is not its pair.
+    pub fn discard_unsettled_poke(&mut self) {
+        self.unsettled_poke = false;
+        self.poke_settled = false;
+        self.since_click_ms = u32::MAX;
+        self.summoned = false;
+    }
+
     /// Whether a Poke settled this tick: its pair window closed with no second
     /// click. `Verb::Poke` is the click the sprite reacts to at once; this is
     /// the Poke the Director hears. Never true for the first click of a double-click.
@@ -307,6 +316,15 @@ mod tests {
         for _ in 0..pointer.double_click_ms / TICK + 2 {
             pointer.update(true, false, false, at(100.0, 100.0), TICK);
         }
+    }
+
+    #[test]
+    fn a_discarded_click_does_not_settle_into_a_poke() {
+        let mut pointer = Pointer::default();
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+        pointer.discard_unsettled_poke();
+        pause(&mut pointer);
+        assert!(!pointer.poke_settled());
     }
 
     /// Two clicks in quick succession are a Summon, the deliberate act that

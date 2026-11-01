@@ -51,6 +51,7 @@ mod package;
 mod pi_mcp;
 mod pill_focus;
 mod platform;
+mod possession;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
 mod session_log;
@@ -626,6 +627,12 @@ struct SpritePlacement<'a> {
     /// The open quick-message draft. `None` off the bubble owner, so exactly one
     /// overlay draws the pill and the text follows the Instance across a seam.
     qm: Option<&'a fidget_core::quick_message::QmDraft>,
+    /// The user possesses this Instance. Only the bubble owner draws the card.
+    possessed: bool,
+    /// Focus left. The card asks for a click, and the keys were dropped.
+    paused: bool,
+    /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
+    charge: Option<f64>,
 }
 
 /// What the Chat button and the menu row show.
@@ -675,11 +682,18 @@ impl<'a> SpritePlacement<'a> {
             asking: bubble && instance.asking,
             hovered: bubble && instance.hovered,
             bubble,
-            cue: instance.cue.filter(|_| bubble).map(Cue::name),
+            cue: if bubble && instance.possession_cue {
+                Some("possess")
+            } else {
+                instance.cue.filter(|_| bubble).map(Cue::name)
+            },
             ripple_x: contact.map(|c| c.point.x.round() as i32 - display.x.round() as i32),
             ripple_y: contact.map(|c| c.point.y.round() as i32 - display.y.round() as i32),
             ripple_normal: contact.map(|c| c.normal),
             qm: instance.qm.as_ref().filter(|_| bubble),
+            possessed: bubble && instance.possessed,
+            paused: bubble && instance.paused,
+            charge: instance.charge.filter(|_| bubble),
         }
     }
 }
@@ -764,6 +778,11 @@ struct Placed {
     owner: Option<usize>,
     /// The open quick-message draft, carried to the bubble owner like `dialogue`.
     qm: Option<fidget_core::quick_message::QmDraft>,
+    possessed: bool,
+    paused: bool,
+    charge: Option<f64>,
+    /// This tick started the possession, so the overlay plays its cue.
+    possession_cue: bool,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -2127,8 +2146,24 @@ fn overlay_report_qm_draft(
             (flips, clear)
         })
         .unwrap_or((Vec::new(), true));
+    apply_keyboard_flips(window.app_handle(), flips, process_empty);
+    if dev_flags::TRACE_BUBBLE.is_on() {
+        match &payload {
+            Some(draft) => eprintln!(
+                "overlay: draft instance={instance} text={:?} focused={}",
+                draft.text, draft.focused
+            ),
+            None => eprintln!("overlay: draft instance={instance} closed"),
+        }
+    }
+    platform::set_qm_draft(instance, payload);
+}
+
+/// Focusable follows whoever holds the keyboard, a pill or a possession card. A
+/// close hands it back only when nothing in the process still holds it.
+fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, process_empty: bool) {
     for (label, open) in flips {
-        let Some(overlay) = window.app_handle().get_webview_window(&label) else {
+        let Some(overlay) = app.get_webview_window(&label) else {
             continue;
         };
         if platform::overlay_focus_follows_pill() {
@@ -2152,16 +2187,13 @@ fn overlay_report_qm_draft(
             });
         }
     }
-    if dev_flags::TRACE_BUBBLE.is_on() {
-        match &payload {
-            Some(draft) => eprintln!(
-                "overlay: draft instance={instance} text={:?} focused={}",
-                draft.text, draft.focused
-            ),
-            None => eprintln!("overlay: draft instance={instance} closed"),
-        }
-    }
-    platform::set_qm_draft(instance, payload);
+}
+
+/// The overlay heard a possession key. Repeats are dropped in the page. Edges wait
+/// for the frame loop, which owns the session.
+#[tauri::command]
+fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
+    possession::push_key(window.label(), &key, down);
 }
 
 /// The overlay heard the right button: the same witness as the primary's,
@@ -2345,7 +2377,7 @@ fn overlay_has_foreground(window: tauri::Window) -> bool {
 /// SetForegroundWindow to a background thread, so the overlay borrows the
 /// foreground thread's input for the call.
 #[tauri::command]
-fn overlay_request_focus(window: tauri::Window) -> Result<(), String> {
+fn overlay_request_focus(window: tauri::WebviewWindow) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -2504,11 +2536,25 @@ fn build_overlay(
                 }
                 platform::set_overlay_origin(&owner, (at.x, at.y));
             }
+            tauri::WindowEvent::Focused(focused) => {
+                possession::push_focus(&owner, *focused);
+            }
             #[cfg(all(unix, not(target_os = "macos")))]
             tauri::WindowEvent::Destroyed => {
                 platform::cleanup_overlay_window(&watched);
             }
             _ => {}
+        });
+    }
+
+    // macOS and Windows have no move watcher. Focus loss is what pauses possession.
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let owner = label.to_string();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                possession::push_focus(&owner, *focused);
+            }
         });
     }
 
@@ -3885,7 +3931,7 @@ fn apply_menu_action(
     cursor: Point,
     monitors: &[Rect],
     floors: &[Rect],
-) {
+) -> MenuEffect {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
@@ -3982,6 +4028,31 @@ fn apply_menu_action(
                 eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
             }
         }
+        menu::MenuAction::TogglePossession => {
+            let turning_on = roster
+                .get(instance_id)
+                .is_some_and(|instance| !instance.possessed());
+            if turning_on {
+                // One possessed Instance. The one this click names keeps it.
+                let others: Vec<String> = roster
+                    .list()
+                    .into_iter()
+                    .map(|(id, _)| id)
+                    .filter(|id| id != instance_id)
+                    .collect();
+                for id in others {
+                    if let Some(other) = roster.get_mut(&id) {
+                        other.set_possessed(false);
+                    }
+                }
+            }
+            if let Some(instance) = roster.get_mut(instance_id) {
+                let next = !instance.possessed();
+                instance.set_possessed(next);
+                eprintln!("menu: possession {}", if next { "on" } else { "off" });
+                return MenuEffect::Possession(next);
+            }
+        }
         menu::MenuAction::Hide => {
             if let Ok(mut r) = rules.lock() {
                 let saved = if let Ok(mut guard) = settings.lock() {
@@ -3996,6 +4067,9 @@ fn apply_menu_action(
                     persist_settings(settings, settings_path);
                 }
                 eprintln!("menu: {}", if away { "away" } else { "back" });
+                if away {
+                    return MenuEffect::Hide;
+                }
             }
         }
         menu::MenuAction::BringToThisDisplay => {
@@ -4044,8 +4118,19 @@ fn apply_menu_action(
                 eprintln!("menu: Summon");
             }
         }
-        menu::MenuAction::Quit => quit_now(),
+        menu::MenuAction::Quit => return MenuEffect::Quit,
     }
+    MenuEffect::None
+}
+
+/// What a menu click asks of the frame loop beyond the action itself.
+enum MenuEffect {
+    None,
+    /// This Instance is possessed after the click, or it is not.
+    Possession(bool),
+    /// The Character was just sent away.
+    Hide,
+    Quit,
 }
 
 /// Leave without AppKit's `terminate:`. `PredefinedMenuItem::quit` deadlocks
@@ -4386,6 +4471,10 @@ fn describe_menu(
         do_not_disturb: roster
             .get(instance_id)
             .map(|instance| instance.do_not_disturb())
+            .unwrap_or(false),
+        possessed: roster
+            .get(instance_id)
+            .map(|instance| instance.possessed())
             .unwrap_or(false),
         hidden: rules.is_away(),
         hide_in_fullscreen: rules.hide_in_fullscreen(),
@@ -5112,6 +5201,7 @@ fn main() {
             overlay_secondary,
             overlay_composing,
             overlay_report_qm_draft,
+            overlay_possession_key,
             overlay_rects,
             overlay_trace_bubble,
             overlay_hit_tests_hotspots,
@@ -7220,6 +7310,10 @@ mod tests {
             }),
             owner: Some(1),
             qm: None,
+            possessed: false,
+            paused: false,
+            charge: None,
+            possession_cue: false,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
@@ -7315,6 +7409,10 @@ mod tests {
             contact: None,
             owner: Some(1),
             qm: Some(draft.clone()),
+            possessed: false,
+            paused: false,
+            charge: None,
+            possession_cue: false,
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };

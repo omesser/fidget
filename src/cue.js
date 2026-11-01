@@ -109,6 +109,10 @@ const SOUNDS = {
   pickup: (v) => tone(v, { from: 280, to: 720, attack: 0.006, decay: 0.14, peak: 0.2 }),
   drop: (v) => tone(v, { from: 160, to: 55, attack: 0.004, decay: 0.16, peak: 0.3 }),
   throw: (v) => tone(v, { from: 220, to: 55, attack: 0.004, decay: 0.2, peak: 0.48 }),
+  possess: (v) => {
+    tone(v, { type: "sine", from: 392, to: 523.25, attack: 0.01, decay: 0.18, peak: 0.16 });
+    tone(v, { type: "sine", from: 523.25, to: 659.25, attack: 0.01, decay: 0.22, peak: 0.12, at: 0.08 });
+  },
 };
 
 function el(cls, x, y) {
@@ -247,6 +251,12 @@ const VISUALS = {
   },
   throw(stage, c) {
     return landingPuff(stage, c, "cue-puff hard");
+  },
+  possess(stage, c) {
+    const r = el("cue-ring possess", c.x, c.y);
+    stage.append(r);
+    reap(r);
+    return [r];
   },
 };
 

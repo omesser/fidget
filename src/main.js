@@ -10,6 +10,7 @@ import {
   readableBubbleRect,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
+import { possessionEdge } from "./possession-keys.js";
 import {
   CONNECT_HINT,
   applyQuickMessageGate,
@@ -28,6 +29,8 @@ const stage = document.getElementById("stage");
 // per platform lane, because it is the side that knows. False until `start`
 // asks, which is the safe way to be wrong.
 let clickableOffArt = false;
+// True while any sprite on this overlay is possessed, paused or not.
+let possessed = false;
 
 // Every Character's art as data: URLs, keyed by Character name and fetched
 // once. Art, not state, and one entry however many Instances draw from it.
@@ -762,6 +765,8 @@ async function start() {
       hoverDelayMs = payload.hover_delay_ms;
       const seen = new Set();
 
+      possessed = payload.sprites.some((sprite) => sprite.possessed);
+
       payload.sprites.forEach((sprite, index) => {
         seen.add(sprite.id);
         let view = views.get(sprite.id);
@@ -870,6 +875,20 @@ async function start() {
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
+  // The pill's field keeps its own keys. Everything else, while possessed,
+  // is a possession edge. Repeats are not edges.
+  const onPossessionKey = (event) => {
+    if (!possessed) return;
+    if (event.target?.closest?.("textarea, input")) return;
+    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown");
+    if (!edge) return;
+    event.preventDefault();
+    window.__TAURI__.core.invoke("overlay_possession_key", { key: edge.key, down: edge.down }).catch((err) => {
+      console.error("overlay_possession_key", err);
+    });
+  };
+  document.addEventListener("keydown", onPossessionKey);
+  document.addEventListener("keyup", onPossessionKey);
   petDrag = null;
   gestureActive = false;
   // A window blur is only a cue to ask the Shell once whether the overlay is

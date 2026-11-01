@@ -29,6 +29,8 @@ pub enum MenuAction {
     ToggleDirector,
     /// Quiet without hiding. Proposals stop; the Character stays on screen.
     ToggleDnd,
+    /// Possess this Instance, or let it go.
+    TogglePossession,
     /// Hide the Character instantly, same path as the hotkey.
     Hide,
     /// Move every on-screen Character onto the display the cursor is on.
@@ -64,6 +66,8 @@ pub struct MenuSnapshot<'a> {
     /// cross to the main thread and be compared against the last one.
     pub director_env_owned: bool,
     pub do_not_disturb: bool,
+    /// The user possesses this Instance. The row's label follows it.
+    pub possessed: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
     /// Already in this machine's words — `settings::Hotkey::display` printed it.
@@ -113,6 +117,12 @@ pub struct MenuDescription {
 }
 
 const DND_ID: &str = "dnd";
+
+const POSSESSION_ID: &str = "possession";
+
+/// The row while this Instance is possessed. One string, so a later
+/// label is one edit. "Release" already means letting go of a Grab.
+const POSSESSED_LABEL: &str = "Release Possession";
 
 const HIDE_ID: &str = "hide";
 
@@ -249,6 +259,19 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         checked: snapshot.do_not_disturb,
     });
     actions.insert(DND_ID.to_string(), MenuAction::ToggleDnd);
+
+    // Beside Do Not Disturb: a switch on this Instance, named by the action
+    // it will take. A checkmark would hide which way the click goes.
+    entries.push(MenuEntry::Item {
+        id: POSSESSION_ID.to_string(),
+        label: if snapshot.possessed {
+            POSSESSED_LABEL.to_string()
+        } else {
+            "Possess".to_string()
+        },
+        enabled: true,
+    });
+    actions.insert(POSSESSION_ID.to_string(), MenuAction::TogglePossession);
 
     // The same flag the hotkey flips. The label says which way it is pointing
     // so a checkmark is not doing two jobs.
@@ -455,6 +478,7 @@ mod tests {
             director_enabled: true,
             director_env_owned: false,
             do_not_disturb,
+            possessed: false,
             hidden: false,
             hide_in_fullscreen: true,
             hide_hotkey: "Control-Option-Command-B",
@@ -608,6 +632,42 @@ mod tests {
             .collect();
 
         assert_eq!(checked, vec![("bmo", false), ("nim", true)]);
+    }
+
+    /// The row names the switch. Possessed is not a checkmark: the label is
+    /// the action, the way Go away becomes Come back.
+    #[test]
+    fn the_possession_row_says_possess_and_then_release() {
+        let installed = names(&["bmo"]);
+        let before = describe(snapshot(&installed, "bmo", false));
+        assert_eq!(
+            entry_with_id(&before, "possession"),
+            Some(&MenuEntry::Item {
+                id: "possession".to_string(),
+                label: "Possess".to_string(),
+                enabled: true,
+            })
+        );
+        assert_eq!(
+            before.actions.get("possession"),
+            Some(&MenuAction::TogglePossession)
+        );
+
+        let mut possessed = snapshot(&installed, "bmo", false);
+        possessed.possessed = true;
+        let during = describe(possessed);
+        assert_eq!(
+            entry_with_id(&during, "possession"),
+            Some(&MenuEntry::Item {
+                id: "possession".to_string(),
+                label: "Release Possession".to_string(),
+                enabled: true,
+            })
+        );
+        assert_eq!(
+            during.actions.get("possession"),
+            Some(&MenuAction::TogglePossession)
+        );
     }
 
     /// The checkbox reports the Engine, so opening the menu twice around a
