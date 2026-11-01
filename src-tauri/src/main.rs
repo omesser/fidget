@@ -5045,8 +5045,11 @@ fn anchor_icons() -> (
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetSystemMetrics, LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON, SM_CYSMICON,
     };
-    // tauri_utils::platform::WINDOWS_APP_ICON_RESOURCE_ID, as MAKEINTRESOURCEW.
-    const APP_ICON: windows_sys::core::PCWSTR = 32512 as _;
+    // The id tauri-build gives the app icon, as MAKEINTRESOURCEW.
+    const APP_ICON: windows_sys::core::PCWSTR =
+        tauri::utils::platform::WINDOWS_APP_ICON_RESOURCE_ID as _;
+    // The shell's largest icon slot; a bigger one only costs memory.
+    const JUMBO: i32 = 256;
 
     // Not LR_SHARED: it caches one handle per resource, so the second size could be the first.
     let load = |width, height| {
@@ -5070,7 +5073,7 @@ fn anchor_icons() -> (
     };
     let (small_width, small_height) =
         unsafe { (GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON)) };
-    (load(256, 256), load(small_width, small_height))
+    (load(JUMBO, JUMBO), load(small_width, small_height))
 }
 
 fn main() {
