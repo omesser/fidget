@@ -1543,8 +1543,11 @@ impl Engine {
                 }
 
                 // A walk beside the Dock stops clear of its side once, then
-                // climbs; a per-tick step back stutters under a held walk. The
-                // assembler caps `elapsed_ms`, or a long step crosses the Dock.
+                // climbs; a per-tick step back stutters under a held walk.
+                debug_assert!(
+                    snapshot.elapsed_ms <= crate::snapshot::MAX_ELAPSED_MS
+                        || dock_in(snapshot).is_none()
+                );
                 if let Some(x) = dock_side_reached(self.position, self.velocity.x, snapshot) {
                     let side = self.velocity.x.signum();
                     self.position.x = x;

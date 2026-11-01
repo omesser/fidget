@@ -15,7 +15,7 @@ use crate::window_source::{
 /// The longest step of the world the Engine is ever told about. A slept machine
 /// hands the loop minutes at once, and five minutes of gravity flings the sprite
 /// off the desktop. One poll interval, because that is how old the geometry may be.
-const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
+pub(crate) const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
 
 /// Reads the platform at its own cadence and assembles a snapshot per tick.
 /// Geometry is read at the idle poll, or at the ride poll when the sprite is
