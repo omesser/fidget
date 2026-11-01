@@ -134,7 +134,11 @@ $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_CAPTURABLE = "1"
 $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
-$opened = Join-Path $out "opened.txt"
+# Own folder: the AX dumps land in $out, and a watcher of $out would
+# treat each dump as the hand-off and spin.
+$handoff = Join-Path $out "handoff"
+New-Item -ItemType Directory -Force -Path $handoff | Out-Null
+$opened = Join-Path $handoff "opened.txt"
 [System.IO.File]::WriteAllText($opened, "")
 # ShellExecuteW is not a program on PATH, unlike open on macOS. Fidget appends
 # the URL it passes to the opener when this variable is set.
@@ -181,15 +185,16 @@ try {
     }
     $script:Handed = ""
     $script:Outcome = $null
-    # The open log is not a UI Automation event. AlsoFile wakes this wait
-    # when the file is written, instead of sitting out the whole 3 s.
-    $null = Wait-UiaChange 0 3 {
+    # The open log is not a UI Automation event. Wait-OnChanges is the
+    # directory watcher the other leaves already compile. A refusal with
+    # no write is still judged when this clock runs out.
+    $null = Wait-OnChanges 3 $handoff {
         if (-not (Invoke-Ax "after.ax" @{ Command = "dump"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "frames" })) { return $false }
         $script:Handed = Get-HandedText $opened
         $script:Outcome = Get-LinkOutcome (Read-Dump (Join-Path $out "after.ax.txt")) $script:Handed
         [bool]$script:Outcome
-    } -AlsoFile $opened
-    # The wake can still miss a write that lands as the clock runs out.
+    }
+    # A write that lands as the clock runs out is still in the file.
     if ($script:Outcome -eq "opened" -or $script:Outcome -eq "wrong" -or -not $script:Outcome) {
         Check-Handed (Get-HandedText $opened)
     }
