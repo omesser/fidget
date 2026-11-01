@@ -87,7 +87,7 @@ Fidget starts the Harness itself, in its own data folder, and that folder is the
 |---|---|
 | macOS | `~/Library/Application Support/fidget` |
 | Linux | `~/.local/share/fidget` |
-| Windows | `%APPDATA%\fidget` |
+| Windows | `$env:APPDATA\fidget` (cmd: `%APPDATA%\fidget`) |
 
 A Harness reads MCP config when a session starts. Start a new session after an edit; one already open keeps the tool list it began with.
 
@@ -163,7 +163,7 @@ grok mcp add cua-driver -- cua-driver mcp
 
 ### `goose`
 
-Goose calls an MCP server an extension and reads it from `~/.config/goose/config.yaml` (`%APPDATA%\Block\goose\config\config.yaml` on Windows). `goose configure` → Add extension → Command-line writes this for you; by hand, it goes under `extensions:`:
+Goose calls an MCP server an extension and reads it from `~/.config/goose/config.yaml` (`$env:APPDATA\Block\goose\config\config.yaml` on Windows). `goose configure` → Add extension → Command-line writes this for you; by hand, it goes under `extensions:`:
 
 ```yaml
 extensions:
