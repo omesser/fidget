@@ -303,7 +303,8 @@ possesses a body, and the Director's prompt says so. Possession applies to one
 Character Instance. Possessing another releases the first. It is not a State,
 so a possessed sprite still falls, perches and can be grabbed, and it stays
 possessed when another window takes the keyboard. Users see it explained as
-"Manually drive the fidget on your screen". #1655.
+"Manually drive the fidget on your screen". Possessing plays the optional
+`possessed` Animation, or `react` in a package without it. #1655.
 
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.

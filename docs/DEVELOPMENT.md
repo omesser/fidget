@@ -250,13 +250,14 @@ A Character Manifest is at most 1 MiB. A package is at most 64 MiB, 4096 files, 
 
 #### Animations
 
-Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`, `react`, `talk`, and `hold`. The Engine also asks for three optional ones, and draws a stand-in when a package omits them:
+Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`, `react`, `talk`, and `hold`. The Engine also asks for four optional ones, and draws a stand-in when a package omits them:
 
 | Animation | Plays when | Without it |
 |---|---|---|
 | `grab` | The user drags the sprite | `fall` |
 | `climb` | The sprite climbs | `walk` |
 | `jump` | A Behavior plays the `jump` Primitive | `fall` |
+| `possessed` | The user possesses the fidget | `react` |
 
 Any other name draws only as a Variant or a Left Strip of one of these.
 
