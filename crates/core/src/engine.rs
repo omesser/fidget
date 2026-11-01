@@ -1779,24 +1779,21 @@ impl Engine {
     }
 
     fn react_to_cursor(&mut self, reaction: CursorReaction, cursor: Point) -> bool {
+        let facing = |right: bool| if right { 1.0 } else { -1.0 };
         match reaction {
             CursorReaction::Indifferent => false,
             CursorReaction::Speak => self.play(&[Primitive::Talk]),
-            CursorReaction::Face | CursorReaction::Toward => {
-                self.facing = if cursor.x > self.position.x {
-                    1.0
-                } else {
-                    -1.0
-                };
+            CursorReaction::Face => {
+                self.facing = facing(cursor.x > self.position.x);
+                false
+            }
+            CursorReaction::Toward => {
+                self.facing = facing(cursor.x > self.position.x);
                 // A one-shot walk; Chase is what follows.
-                reaction == CursorReaction::Toward && self.play(&[Primitive::Walk])
+                self.play(&[Primitive::Walk])
             }
             CursorReaction::Away => {
-                self.facing = if cursor.x < self.position.x {
-                    1.0
-                } else {
-                    -1.0
-                };
+                self.facing = facing(cursor.x < self.position.x);
                 self.play(&[Primitive::Walk])
             }
             CursorReaction::React => self.play(&[Primitive::React]),
