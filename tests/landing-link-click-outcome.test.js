@@ -37,8 +37,8 @@ test("an unchanged landing with no browser window is no outcome yet", { skip }, 
   assert.equal(outcome(t, LANDING, ["BMO", "Fidget"]), "none");
 });
 
-test("a browser window on the link is the handoff", { skip }, (t) => {
-  assert.equal(outcome(t, LANDING, ["Node.js — Run JavaScript Everywhere - Edge"]), "opened");
+test("a new window on an unchanged landing is not the handoff", { skip }, (t) => {
+  assert.equal(outcome(t, LANDING, ["Notepad"]), "none");
 });
 
 test("the did-not-open note is a refusal", { skip }, (t) => {
