@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import tomllib
 import zipfile
 
@@ -611,6 +612,25 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     return "\n".join(lines).rstrip() + "\n"
 
 
+def mapping_notes(mappings, animations, synthesized):
+    """The manifest's mapping comment, written from the mapping that cut the
+    frames, so it names the rows and headings the manifest actually uses."""
+    states = {row: state for state, (row, _, _) in PETSCODEX_ROWS.items()}
+    parts = []
+    for animation, (row, indices) in mappings.items():
+        part = f"{animation}<-{states.get(row, 'row')} row {row}"
+        if indices:
+            part += f"[{','.join(map(str, indices))}]"
+        if "facing" in animations[animation]:
+            part += f" (drawn heading {animations[animation]['facing']})"
+        parts.append(part)
+    text = "Mapping: " + ", ".join(parts) + "."
+    if synthesized:
+        text += " Sleep is idle's stillest frame with a one-pixel breath."
+    text += " Frames face right unless declared otherwise."
+    return textwrap.wrap(text, 72, break_long_words=False, break_on_hyphens=False)
+
+
 def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
     """A petscodex pet directory (`npx petscodex install <id>` lands one at
     ~/.codex/pets/<id>/) into the importer's common shape.
@@ -668,7 +688,6 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
             "variant_of": variant_of,
         }
 
-    heading = "right" if walk_row == 2 else "left"
     # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
     # cut from any other row (--map) faces no way the importer can see.
     drawn = {1: "left", 2: "right"}
@@ -681,16 +700,9 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
     described = pet.get("description", "").strip()
-    notes = [
-        f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row}",
-        f"(drawn heading {heading}), talk<-waving row 3,",
-        "fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6",
-        "(idle variant), sit<-review row 8; sleep is idle's stillest frame",
-        "with a one-pixel breath. The other walk row and row 7 (running in",
-        "place) go unused. Frames face right unless declared otherwise.",
-    ]
+    notes = mapping_notes(mappings, animations, synthesized=not only_mapped and "sleep" not in overrides)
     if only_mapped:
-        notes = ["Explicit source mappings; review animation timing and behavior in the manifest."]
+        notes.append("Explicit source mappings; review animation timing and behavior in the manifest.")
     if overrides:
         remapped = ", ".join(
             f"{animation}<-row {row}"
@@ -1265,9 +1277,15 @@ def self_test():
             f"frames/walk-{i}.png": "left"
             for i in range(len(other["animations"]["walk"]["frames"]))
         }
-        # A walk remapped onto a walk row reads that row's heading.
+        # A walk remapped onto a walk row reads that row's heading, and the
+        # mapping comment names the row the frames were cut from.
         remapped = read_petscodex(source, overrides={"walk": (1, None)})
         assert remapped["animations"]["walk"]["facing"] == "left"
+        noted = " ".join(remapped["notes"])
+        assert "walk<-running-right row 1 (drawn heading left)" in noted, noted
+        assert "row 2" not in noted, noted
+        noted = " ".join(read_petscodex(source, overrides={"walk": (7, None)})["notes"])
+        assert "walk<-running row 7," in noted and "heading" not in noted, noted
 
         out = tmp / "character"
         emit(pet, out, validate=False)
