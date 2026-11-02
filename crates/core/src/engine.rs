@@ -304,6 +304,10 @@ const CLIMB_SPEED: f64 = 200.0;
 /// strolling along a title bar is not.
 const WALK_SPEED: f64 = 120.0;
 
+/// Points per second a possessed sprite walks, half again `WALK_SPEED`: a held
+/// arrow should get somewhere, not stroll.
+const POSSESSED_WALK_SPEED: f64 = 180.0;
+
 /// Points per second squared, a tuning knob: a fall that reads as heavy rather
 /// than floaty is found by watching. 3600 keeps a Throw on the display long
 /// enough to see, instead of spending the flight above the usable frame.
@@ -1469,7 +1473,7 @@ impl Engine {
             // off, and either one leaves the wall at a walk.
             let away = -self.facing;
             if heading == Some(away) || snapshot.possession.launch.is_some() {
-                self.velocity.x = away * WALK_SPEED;
+                self.velocity.x = away * POSSESSED_WALK_SPEED;
             }
         } else {
             if let Some(heading) = heading {
@@ -1479,7 +1483,7 @@ impl Engine {
             // shows whole, rather than walking off and catching the wall.
             self.velocity.x = match heading {
                 Some(heading) if !edge_ahead(self.position.x, heading, snapshot) => {
-                    heading * WALK_SPEED
+                    heading * POSSESSED_WALK_SPEED
                 }
                 _ => 0.0,
             };
@@ -9302,7 +9306,10 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
 
             let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
-            assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
+            assert_eq!(
+                walking.velocity.x, -180.0,
+                "half again the idle walk: {walking:?}"
+            );
             assert_eq!(walking.facing, -1.0);
             assert_eq!(walking.animation, "walk");
             assert!(walking.position.x < 500.0, "it moved: {walking:?}");
@@ -9502,7 +9509,7 @@ mod tests {
 
             let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
             assert_eq!(steered.state, State::Falling);
-            assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
+            assert_eq!(steered.velocity.x, POSSESSED_WALK_SPEED, "{steered:?}");
             assert_eq!(steered.facing, 1.0);
 
             let let_go = engine.tick(&world);
@@ -9525,7 +9532,7 @@ mod tests {
                 },
                 &world,
             ));
-            assert_eq!(launched.velocity.x, -WALK_SPEED, "{launched:?}");
+            assert_eq!(launched.velocity.x, -POSSESSED_WALK_SPEED, "{launched:?}");
             assert!(launched.velocity.y < 0.0, "{launched:?}");
         }
 
@@ -9637,7 +9644,7 @@ mod tests {
                 },
             ] {
                 let frame = engine.tick(&with_possession(holding(Walk::Right), &frozen));
-                assert_eq!(frame.velocity.x, WALK_SPEED, "{frame:?}");
+                assert_eq!(frame.velocity.x, POSSESSED_WALK_SPEED, "{frame:?}");
                 assert_eq!(frame.animation, "walk", "{frame:?}");
             }
         }
@@ -9769,7 +9776,7 @@ mod tests {
             engine.set_possessed(true);
             settle(&mut engine, &world);
             let walking = engine.tick(&with_possession(holding(Walk::Left), &world));
-            assert_eq!(walking.velocity.x, -WALK_SPEED, "{walking:?}");
+            assert_eq!(walking.velocity.x, -POSSESSED_WALK_SPEED, "{walking:?}");
         }
 
         /// The screen edge and the Dock's side stop a possessed walk; neither is
@@ -10009,7 +10016,10 @@ mod tests {
             assert!(peak(&frames) < jumped.position.y, "it rose: {jumped:?}");
             let landed = frames.last().unwrap();
             assert_eq!(landed.position.y, floor, "{landed:?}");
-            assert!(landed.position.x < 1000.0 - WALK_SPEED / 4.0, "{landed:?}");
+            assert!(
+                landed.position.x < 1000.0 - POSSESSED_WALK_SPEED / 4.0,
+                "{landed:?}"
+            );
         }
 
         #[test]
@@ -10106,7 +10116,7 @@ mod tests {
             let mut engine = possessed_at(500.0, &world);
             engine.tick(&with_possession(launching(released_after(1_000)), &world));
             let steered = engine.tick(&with_possession(holding(Walk::Right), &world));
-            assert_eq!(steered.velocity.x, WALK_SPEED, "{steered:?}");
+            assert_eq!(steered.velocity.x, POSSESSED_WALK_SPEED, "{steered:?}");
             engine.set_possessed(false);
 
             let x = engine.feet().x;
