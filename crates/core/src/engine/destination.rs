@@ -8,7 +8,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 /// An x in the Engine's coordinate space, global points across every display.
-/// `Placement::engine_x` is the door to one from a display's own x.
+/// `Placement::engine_x` turns a display's own x into one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlobalX(f64);
 
