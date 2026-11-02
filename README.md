@@ -361,11 +361,12 @@ Tools each harness keeps under ACP, session and auth behavior, and per-harness s
 
 Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route the [MCP transport column](./docs/harness.md#harness-support) describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
 
-**Eight tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917). There is no tool for saying something: a Character says things only in its reply (ADR-0040).
+**Nine tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917). There is no tool for saying something: a Character says things only in its reply (ADR-0040).
 
 | Tool | Category | What it does |
 |---|---|---|
 | `play_behavior` | Expression | Play a named Behavior; pass `direction` (`left` or `right`) to aim a walk instead of letting it keep its last heading |
+| `move` | Expression | Walk a Character Instance left or right, by a distance or for a time, or to a spot from `whereabouts`. Say at once whether the walk started, or why not |
 | `list_windows` | Sensing | List visible windows with bounds, and their names under consent |
 | `describe_screen` | Sensing | Describe screen (v1: window metadata only) |
 | `recall` | Memory | Read everything Memory holds |

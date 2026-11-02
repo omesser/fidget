@@ -206,6 +206,17 @@ met a wall or the ceiling. An observation only — what the sprite becomes as a
 result is the State machine's decision, never the Contact's.
 _Avoid_: Collision, hit, event
 
+**Move**:
+A walk to one x that a Harness asks for with the `move` tool, as a distance or
+a time to the left or right, or as a spot `whereabouts` reported. The Engine
+keeps that x beside the Primitives, not as one, so no Primitive's turn ends a
+Move. A Behavior that needs the feet is refused until the Move ends. Arrival
+ends it, and so do a Grab, a fall, a Poke or a Summon, Possession, Do Not
+Disturb, and the end of the Surface underfoot. Nothing resumes it, and it never
+crosses to another display. A Speech bubble does not stop it, and a second Move
+replaces it.
+_Avoid_: Errand, path, trip
+
 ### Layers
 
 **Spatial Layer**:
