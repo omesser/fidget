@@ -54,7 +54,7 @@ function Fail([string]$Message) {
 }
 
 # process.log puts epoch seconds before each line.
-$clickPattern = 'click: down .* cursor\([-\d.]+,[-\d.]+\)->\((-?\d+),(-?\d+)\) press=\((-?\d+),(-?\d+)\)'
+$clickPattern = 'click: down .* cursor=\([^)]+\)->\((-?\d+),(-?\d+)\) press=\((-?\d+),(-?\d+)\)'
 $grabPattern = '^(?:\d+ )?verbs: .*\[Grab\]'
 $framePattern = '^(?:\d+ )?frame: '
 
@@ -152,7 +152,9 @@ try {
         [QuickGrab]::PressAndLeave($cx, $cy, $aim.FarX, $aim.FarY)
         if (-not (Wait-ForCount 3 $trace 'click: down ' $clicks)) { continue }
         $click = Last-ClickDown $trace
-        if (-not $click) { continue }
+        if (-not $click) {
+            Fail "a click: down line did not parse; see $trace"
+        }
         $pressOnSprite = Near $click.PressX $click.PressY $cx $cy 8
         $cursorLeft = -not (Near $click.CursorX $click.CursorY $cx $cy $half)
         if (-not $pressOnSprite) {

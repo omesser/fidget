@@ -1531,6 +1531,15 @@ pub(crate) fn run_frame_loop(
                 // over it. The rest still get time: a pointer that stopped
                 // being told would measure the next gesture's velocity over the gap.
                 let was_gesturing = live.pointer.gesturing();
+                // The mask hit used where the button went down. Travel has to
+                // start there too, or a drag that finished before this tick
+                // looks like a still press.
+                if target == Some(index) && button_edge == Some("down") {
+                    live.pointer.began_at(fidget_core::engine::Point {
+                        x: f64::from(press_at.0),
+                        y: f64::from(press_at.1),
+                    });
+                }
                 live.verbs = live.pointer.update(
                     target == Some(index),
                     held,
