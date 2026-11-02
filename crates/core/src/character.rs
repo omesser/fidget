@@ -67,7 +67,7 @@
 //! Frame count and frame size are read from the art instead of declared, since
 //! a declared size can disagree with the art and a derived one cannot.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::director::Seeded;
@@ -214,10 +214,11 @@ pub enum Primitive {
 }
 
 impl Primitive {
-    /// Whether a possessed sprite leaves this to the arrows and Space, so no
-    /// digit plays a Behavior that composes it. `walk`, `chase` and `jump`
-    /// move the sprite; `land`, `hold` and `possessed` are the Engine's own
-    /// moments. No `_` arm, so a new Primitive has to pick a side.
+    /// Whether this is movement a possessed sprite leaves to the arrows and
+    /// Space, so a Behavior made only of these gets no digit. `walk`, `chase`
+    /// and `jump` move the sprite; `land`, `hold` and `possessed` are moments
+    /// the Engine plays as the movement's side effects. No `_` arm, so a new
+    /// Primitive has to pick a side.
     pub fn owned_by_arrows_and_space(&self) -> bool {
         match self {
             Primitive::Walk | Primitive::Chase | Primitive::Jump => true,
@@ -339,29 +340,20 @@ pub struct Behavior {
     pub trigger: Option<Trigger>,
 }
 
-/// Every Primitive a named Behavior plays, chained ones included, or `None`
-/// when undeclared. It stops cycles: Behaviors arrive unvalidated, and
-/// ADR-0002 promises no package can hang the frame loop.
-pub(crate) fn chain(
-    behaviors: &BTreeMap<String, Behavior>,
-    behavior: &str,
-) -> Option<Vec<Primitive>> {
-    let mut primitives = Vec::new();
-    let mut walked: BTreeSet<&str> = BTreeSet::new();
-    let mut current = behaviors.get_key_value(behavior)?;
-
-    while walked.insert(current.0.as_str()) {
-        primitives.extend(current.1.primitives.iter().copied());
-        match current.1.then.as_deref() {
-            Some(next) => match behaviors.get_key_value(next) {
-                Some(next) => current = next,
-                None => break,
-            },
-            None => break,
-        }
-    }
-
-    Some(primitives)
+/// Whether `behavior` is the weight-0 stand-in loading adds for an askable
+/// Primitive the package plays nowhere, rather than one the package declares.
+/// A package declaring that very stand-in plays the same, so it answers the same.
+pub(crate) fn is_default_behavior(name: &str, behavior: &Behavior) -> bool {
+    ASKABLE_PRIMITIVES.iter().any(|&(askable, primitive)| {
+        askable == name
+            && *behavior
+                == Behavior {
+                    primitives: vec![primitive],
+                    then: None,
+                    weight: 0,
+                    trigger: None,
+                }
+    })
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame

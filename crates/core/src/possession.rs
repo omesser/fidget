@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::{chain, Behavior, Primitive};
+use crate::character::{is_default_behavior, Behavior, Primitive};
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,20 +24,28 @@ pub enum Key {
     Digit(u8),
 }
 
-/// Behaviors the digits play, in name order. One whose chain walks, chases,
-/// jumps, lands, holds or plays `possessed` is left to the arrows and Space.
-/// A Character with more than nine leaves the rest unbound.
-pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<&str> {
-    let mut names: Vec<&str> = behaviors
-        .keys()
-        .map(String::as_str)
-        .filter(|name| {
-            !chain(behaviors, name)
-                .is_some_and(|played| played.iter().any(Primitive::owned_by_arrows_and_space))
-        })
-        .collect();
-    names.truncate(9);
-    names
+/// What the digits play, one group of Behavior names per digit, in name
+/// order. Only Behaviors the package declares count, each by its own
+/// Primitives with its `then` left off. One made only of what the arrows and
+/// Space already do gets no digit. Behaviors playing the same Primitives, so
+/// the same Animations in the same order, share one digit. A Character with
+/// more than nine leaves the rest unbound.
+pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
+    let mut groups: Vec<(&[Primitive], Vec<&str>)> = Vec::new();
+    for (name, behavior) in behaviors {
+        let own = behavior.primitives.as_slice();
+        if is_default_behavior(name, behavior)
+            || own.iter().all(Primitive::owned_by_arrows_and_space)
+        {
+            continue;
+        }
+        match groups.iter_mut().find(|(played, _)| *played == own) {
+            Some((_, names)) => names.push(name),
+            None => groups.push((own, vec![name])),
+        }
+    }
+    groups.truncate(9);
+    groups.into_iter().map(|(_, names)| names).collect()
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -84,7 +92,7 @@ pub struct Intent {
     /// Escape was pressed: end the possession.
     pub end_possession: bool,
     /// A digit pressed since the last tick, 1 to 9. The Engine plays the
-    /// Behavior at that place in [`digit_behaviors`].
+    /// first Behavior at that place in [`digit_behaviors`], without its `then`.
     pub play: Option<u8>,
 }
 
@@ -365,33 +373,83 @@ mod tests {
             .collect()
     }
 
-    /// The arrows and Space already walk, jump and drop the sprite, so a
-    /// Behavior whose chain moves it gets no digit, whatever its name.
+    /// The weight-0 stand-in loading adds for an askable Primitive the package
+    /// plays nowhere repeats art the Character already shows, so it gets no
+    /// digit. Only what the package declares does.
     #[test]
-    fn behaviors_that_move_the_sprite_get_no_digit() {
+    fn only_behaviors_the_package_declares_get_digits() {
+        use crate::character::tests::{declaring, load_manifest};
+        use crate::character::REQUIRED_ANIMATIONS;
+
+        let manifest = format!(
+            "{}[behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+        assert!(
+            character.behaviors.contains_key("react"),
+            "loading adds react"
+        );
+        assert_eq!(digit_behaviors(&character.behaviors), [["nap"]]);
+    }
+
+    /// The arrows and Space already move the sprite, so a Behavior made only
+    /// of movement gets no digit. Its own Primitives decide, not its `then`.
+    #[test]
+    fn behaviors_made_only_of_movement_get_no_digit() {
         let table = behaviors(&[
-            ("wave", &[Primitive::React], None),
-            ("stroll", &[Primitive::Walk, Primitive::Idle], None),
             ("greet", &[Primitive::Talk], Some("stroll")),
+            ("stroll", &[Primitive::Walk], None),
             ("hop", &[Primitive::Jump], None),
             ("play-with-cursor", &[Primitive::Chase], None),
             ("touch-down", &[Primitive::Land], None),
-            ("ride", &[Primitive::Hold], None),
-            ("nap", &[Primitive::Sit, Primitive::Sleep], None),
+            ("ride", &[Primitive::Hold, Primitive::Walk], None),
+            ("wander", &[Primitive::Walk, Primitive::Idle], None),
         ]);
-        assert_eq!(digit_behaviors(&table), ["nap", "wave"]);
+        assert_eq!(digit_behaviors(&table), [["greet"], ["wander"]]);
+    }
+
+    /// Behaviors whose own Primitives play the same Animations in the same
+    /// order share one digit, named together.
+    #[test]
+    fn behaviors_playing_the_same_loop_share_a_digit() {
+        let table = behaviors(&[
+            ("wave", &[Primitive::React], None),
+            ("startle", &[Primitive::React], None),
+            ("greet", &[Primitive::React], Some("nap")),
+            ("nap", &[Primitive::Sit, Primitive::Sleep], None),
+            ("doze", &[Primitive::Sleep, Primitive::Sit], None),
+        ]);
+        assert_eq!(
+            digit_behaviors(&table),
+            [vec!["doze"], vec!["greet", "startle", "wave"], vec!["nap"]]
+        );
     }
 
     #[test]
     fn only_the_first_nine_behaviors_get_digits() {
         let names = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"];
+        let loops: Vec<Vec<Primitive>> = (1..=names.len())
+            .map(|sits| vec![Primitive::Sit; sits])
+            .collect();
         let table: Vec<_> = names
             .iter()
-            .map(|name| (*name, &[Primitive::Sit][..], None))
+            .zip(&loops)
+            .map(|(name, sits)| (*name, &sits[..], None))
             .collect();
         assert_eq!(
             digit_behaviors(&behaviors(&table)),
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+            [
+                ["a"],
+                ["b"],
+                ["c"],
+                ["d"],
+                ["e"],
+                ["f"],
+                ["g"],
+                ["h"],
+                ["i"]
+            ]
         );
     }
 

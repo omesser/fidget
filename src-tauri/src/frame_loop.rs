@@ -2510,7 +2510,7 @@ pub(crate) fn run_frame_loop(
                     behaviors: if possessed {
                         digit_behaviors(&live.character.behaviors)
                             .into_iter()
-                            .map(str::to_string)
+                            .map(|names| names.join("/"))
                             .collect()
                     } else {
                         Vec::new()

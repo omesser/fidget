@@ -306,17 +306,19 @@ _Avoid_: Invoke, activate, wake
 **Possession**:
 The switch that hands a fidget to the user's keyboard. Left and Right walk it,
 Up climbs the wall it stands against, Down drops it through its Perch, Space
-makes it jump, the digits 1 to 9 play its Behaviors in name order (skipping
-any whose chain walks, chases, jumps, lands, holds or plays possessed), and
-Escape releases it. The fidget is possessed, the way a ghost possesses a body,
-and the Director's prompt says so. Possession applies to one Character
-Instance. Possessing another releases the first. It is not a State, so a
-possessed sprite still falls, perches and can be grabbed, and it stays
-possessed when another window takes the keyboard. The Director hears only
-that the fidget was possessed and released, never the moves in between, so
-it comes to dazed, not sure how it got where it is. Users see it explained as
-"Manually drive the fidget on your screen". Possessing plays the optional
-`possessed` Animation, or `react` in a package without it. #1655, #1950.
+makes it jump, the digits 1 to 9 play its Behaviors in name order, and Escape
+releases it. The digits play only Behaviors the package declares, each without
+its `then`. They skip one made only of walking, chasing, jumping, landing or
+holding, and Behaviors that play the same Primitives share one digit, named
+`a/b`. The fidget is possessed, the way a ghost possesses a body, and the
+Director's prompt says so. Possession applies to one Character Instance.
+Possessing another releases the first. It is not a State, so a possessed sprite
+still falls, perches and can be grabbed, and it stays possessed when another
+window takes the keyboard. The Director hears only that the fidget was possessed
+and released, never the moves in between, so it comes to dazed, not sure how it
+got where it is. Users see it explained as "Manually drive the fidget on your
+screen". Possessing plays the optional `possessed` Animation, or `react` in a
+package without it. #1655, #1950.
 
 **Possess, Release**:
 The verbs that turn Possession on and off, and the Menu row's two labels.

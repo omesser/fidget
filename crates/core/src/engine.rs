@@ -5,14 +5,14 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{chain, Behavior, CursorReaction, GravityScale, Primitive};
+use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
 use crate::possession::{digit_behaviors, Charge, Intent, Walk};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod geometry;
 mod transition;
@@ -1263,7 +1263,8 @@ impl Engine {
                         // arrived, so the heading has to land now or the next
                         // tick walks the way the sprite last faced.
                         if let Some(direction) = proposal.direction {
-                            if chain(&self.behaviors, &proposal.behavior)
+                            if self
+                                .chain(&proposal.behavior)
                                 .is_some_and(|primitives| primitives.contains(&Primitive::Walk))
                             {
                                 self.facing = direction.facing();
@@ -1291,14 +1292,15 @@ impl Engine {
         let mut digit_started = false;
         if self.possessed {
             if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
-                match self.start_behavior(&name) {
-                    Some(true) => {
-                        started = true;
-                        digit_started = true;
-                        behavior = Some(name);
-                    }
-                    Some(false) => refused = Some(name),
-                    None => {}
+                // The Behavior alone: a digit leaves its `then` off.
+                let primitives = self.behaviors[&name].primitives.clone();
+                if self.play(&primitives) {
+                    self.playing_behavior = Some(name.clone());
+                    started = true;
+                    digit_started = true;
+                    behavior = Some(name);
+                } else {
+                    refused = Some(name);
                 }
             }
         }
@@ -1894,7 +1896,7 @@ impl Engine {
     /// Start `name` through `permitted`. `None` means the Character does not
     /// declare it. `play` clears the Behavior name, so only this puts it back.
     fn start_behavior(&mut self, name: &str) -> Option<bool> {
-        let primitives = chain(&self.behaviors, name)?;
+        let primitives = self.chain(name)?;
         let started = self.play(&primitives);
         if started {
             self.playing_behavior = Some(name.to_string());
@@ -1906,7 +1908,8 @@ impl Engine {
     fn behavior_for_digit(&self, play: Option<u8>) -> Option<String> {
         let index = usize::from(play?).checked_sub(1)?;
         digit_behaviors(&self.behaviors)
-            .get(index)
+            .get(index)?
+            .first()
             .map(|name| (*name).to_string())
     }
 
@@ -1951,6 +1954,28 @@ impl Engine {
             }
             _ => on_feet,
         })
+    }
+
+    /// Every Primitive a named Behavior plays, chained ones included, or `None`
+    /// when undeclared. It stops cycles: Behaviors arrive unvalidated, and
+    /// ADR-0002 promises no package can hang the frame loop.
+    fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
+        let mut primitives = Vec::new();
+        let mut walked: BTreeSet<&str> = BTreeSet::new();
+        let mut current = self.behaviors.get_key_value(behavior)?;
+
+        while walked.insert(current.0.as_str()) {
+            primitives.extend(current.1.primitives.iter().copied());
+            match current.1.then.as_deref() {
+                Some(next) => match self.behaviors.get_key_value(next) {
+                    Some(next) => current = next,
+                    None => break,
+                },
+                None => break,
+            }
+        }
+
+        Some(primitives)
     }
 }
 
@@ -9686,6 +9711,11 @@ mod tests {
             assert_eq!(played.playing_behavior.as_deref(), Some("greet"));
             assert_eq!(played.animation, "react");
             assert_eq!(played.refused, None);
+            assert!(
+                !engine.playing.contains(&Primitive::Sit),
+                "greet's then is left off: {:?}",
+                engine.playing
+            );
 
             let unbound = engine.tick(&with_possession(playing(3), &world));
             assert_eq!(unbound.behavior, None, "{unbound:?}");
@@ -9733,11 +9763,12 @@ mod tests {
             ];
             let behaviors = names
                 .iter()
-                .map(|name| {
+                .zip(1..)
+                .map(|(name, sits)| {
                     (
                         (*name).to_string(),
                         Behavior {
-                            primitives: vec![Primitive::Sit],
+                            primitives: vec![Primitive::Sit; sits],
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,
