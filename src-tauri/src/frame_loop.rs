@@ -225,6 +225,31 @@ fn begin_possession(
     }
 }
 
+/// Windows: only the overlay drawing the card hears keys, so the keyboard moves
+/// with the card. A paused session only relabels: the user's app keeps focus.
+fn follow_possession_display(
+    app: &tauri::AppHandle,
+    session: &mut possession::Session,
+    window: String,
+    now: Instant,
+) {
+    if session.window == window {
+        return;
+    }
+    hold_possession_keyboard(app, &window, true);
+    hold_possession_keyboard(app, &session.window, false);
+    let paused = session.paused();
+    session.move_to(window.as_str(), now);
+    if paused {
+        return;
+    }
+    if let Some(overlay) = app.get_webview_window(&window) {
+        if let Err(why) = overlay_request_focus(overlay) {
+            eprintln!("possession: {window} could not take the keyboard: {why}");
+        }
+    }
+}
+
 fn end_possession(
     app: &tauri::AppHandle,
     session: &mut Option<possession::Session>,
@@ -2464,6 +2489,19 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
+                if cfg!(target_os = "windows") {
+                    let possessed_here = session
+                        .as_mut()
+                        .filter(|session| session.instance == live.id);
+                    if let (Some(session), Some(index)) = (possessed_here, owner) {
+                        follow_possession_display(
+                            &app,
+                            session,
+                            overlay_label(index),
+                            Instant::now(),
+                        );
+                    }
+                }
                 let dialogue = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),

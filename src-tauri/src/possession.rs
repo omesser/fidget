@@ -78,6 +78,15 @@ impl Session {
         }
     }
 
+    /// The card moved to another overlay's display. Until that overlay reports
+    /// focus, this counts as a blur, so a focus request that never lands pauses.
+    pub fn move_to(&mut self, window: impl Into<String>, now: Instant) {
+        self.window = window.into();
+        if !self.paused {
+            self.blurred_at = Some(now);
+        }
+    }
+
     /// What the keys ask for this tick. A settled blur drops every held key
     /// before the tick, so a jump cannot launch into a pause.
     pub fn tick(&mut self, elapsed_ms: u32, now: Instant) -> Intent {
@@ -227,6 +236,57 @@ mod tests {
         assert!(session.paused());
         assert!(later.charging.is_none());
         assert!(later.launch.is_none());
+    }
+
+    fn on(window: &str, edge: Edge) -> Edge {
+        match edge {
+            Edge::Key { name, down, .. } => Edge::Key {
+                window: window.into(),
+                name,
+                down,
+            },
+            Edge::Focus { focused, .. } => Edge::Focus {
+                window: window.into(),
+                focused,
+            },
+        }
+    }
+
+    #[test]
+    fn a_held_walk_crosses_to_an_overlay_that_takes_focus() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.move_to("overlay-1", t0);
+        session.apply(&focus(false), t0);
+        session.apply(&on("overlay-1", focus(true)), t0);
+        let later = t0 + BLUR_SETTLE * 2;
+        assert_eq!(session.tick(16, later).walk, Some(Walk::Right));
+        session.apply(&on("overlay-1", key("right", false)), later);
+        assert_eq!(session.tick(16, later).walk, None);
+    }
+
+    #[test]
+    fn a_crossing_whose_focus_never_lands_pauses_and_drops_the_walk() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.move_to("overlay-1", t0);
+        let intent = session.tick(16, t0 + BLUR_SETTLE + Duration::from_millis(5));
+        assert!(session.paused());
+        assert_eq!(intent.walk, None);
+    }
+
+    #[test]
+    fn a_paused_crossing_resumes_on_the_new_overlays_focus() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&focus(false), t0);
+        session.tick(16, t0 + BLUR_SETTLE);
+        session.move_to("overlay-1", t0 + BLUR_SETTLE);
+        session.apply(&on("overlay-1", focus(true)), t0 + BLUR_SETTLE);
+        session.tick(16, t0 + BLUR_SETTLE);
+        assert!(!session.paused());
     }
 
     #[test]
