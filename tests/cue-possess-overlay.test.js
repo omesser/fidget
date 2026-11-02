@@ -87,8 +87,12 @@ function run() {
       a.currentTime = 260 + 0.09 * 320;
     }
     const swing = { rotate: getComputedStyle(drawn).rotate, centre: centre(drawn.getBoundingClientRect()) };
+    const during = drawn.className;
+    for (const a of drawn.getAnimations()) a.finish();
+    await until(() => !drawn.classList.contains("cue-possess"));
     console.log("__PROBE_RESULT__" + JSON.stringify({
-      classes: drawn.className,
+      after: drawn.className,
+      classes: during,
       layers: ghosts.map((g) => g.className),
       ghost,
       swing,
@@ -108,6 +112,11 @@ test("possess draws three outline ghosts over the sprite and shakes it", { skip:
   const { classes, layers } = await probe();
   assert.match(classes, /\bcue-possess\b/);
   assert.deepEqual(layers, ["cue cue-oghost trail2", "cue cue-oghost trail", "cue cue-oghost lead"]);
+});
+
+test("the sprite drops the cue class once its animations end", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const { after } = await probe();
+  assert.doesNotMatch(after, /\bcue-(possess|release)\b/);
 });
 
 test("the ghost outlines the frame as drawn, mirror included", { skip: chromeSkip, timeout: 60000 }, async () => {

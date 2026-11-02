@@ -337,11 +337,17 @@ function ghost(outline, c, cls, path) {
   return g;
 }
 
-// Restarts the class's animation even when it is the one already on.
+// Restarts the class's animation even when it is the one already on. The
+// shake and the dim end apart, so the class goes when neither still runs.
 function shake(sprite, cls) {
-  sprite.classList.remove(...Object.values(GHOSTS).map((g) => g.sprite));
+  const all = Object.values(GHOSTS).map((g) => g.sprite);
+  sprite.classList.remove(...all);
   void sprite.offsetWidth;
   sprite.classList.add(cls);
+  sprite.onanimationend = () => {
+    const running = sprite.getAnimations().some((a) => a.animationName && a.playState !== "finished");
+    if (!running) sprite.classList.remove(...all);
+  };
 }
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
