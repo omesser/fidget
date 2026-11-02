@@ -230,6 +230,29 @@ impl Primitive {
     }
 }
 
+/// Which of the Required Animation Set a Primitive plays.
+pub(crate) fn animation_of(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::Idle => "idle",
+        // The Animation only. The motion belongs to the walk a proposal starts,
+        // which outlives this Primitive's turn and stops when Perch runs out.
+        Primitive::Walk => "walk",
+        Primitive::Land => "land",
+        Primitive::Sit => "sit",
+        Primitive::Sleep => "sleep",
+        Primitive::React => "react",
+        Primitive::Talk => "talk",
+        Primitive::Hold => "hold",
+        // No chase Animation in the required set; walk is the motion.
+        Primitive::Chase => "walk",
+        // Optional art: the renderer resolves it to `fall` when a package
+        // draws none, so the required set stays at nine (ADR-0007).
+        Primitive::Jump => "jump",
+        // Optional art too, resolved to `react` when a package draws none.
+        Primitive::Possessed => "possessed",
+    }
+}
+
 const PRIMITIVES: [(&str, Primitive); 10] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),

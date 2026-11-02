@@ -5,7 +5,7 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
+use crate::character::{animation_of, Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
 use crate::possession::{digit_behaviors, Charge, Intent, Walk};
@@ -1976,29 +1976,6 @@ impl Engine {
         }
 
         Some(primitives)
-    }
-}
-
-/// Which of the Required Animation Set a Primitive plays.
-pub(crate) fn animation_of(primitive: Primitive) -> &'static str {
-    match primitive {
-        Primitive::Idle => "idle",
-        // The Animation only. The motion belongs to the walk a proposal starts,
-        // which outlives this Primitive's turn and stops when Perch runs out.
-        Primitive::Walk => "walk",
-        Primitive::Land => "land",
-        Primitive::Sit => "sit",
-        Primitive::Sleep => "sleep",
-        Primitive::React => "react",
-        Primitive::Talk => "talk",
-        Primitive::Hold => "hold",
-        // No chase Animation in the required set; walk is the motion.
-        Primitive::Chase => "walk",
-        // Optional art: the renderer resolves it to `fall` when a package
-        // draws none, so the required set stays at nine (ADR-0007).
-        Primitive::Jump => "jump",
-        // Optional art too, resolved to `react` when a package draws none.
-        Primitive::Possessed => "possessed",
     }
 }
 

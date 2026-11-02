@@ -3,8 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::{Behavior, Primitive};
-use crate::engine::animation_of;
+use crate::character::{animation_of, Behavior, Primitive};
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
