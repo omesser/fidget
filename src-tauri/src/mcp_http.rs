@@ -446,8 +446,9 @@ mod tests {
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         // The count catches a tool that reaches this list without being in the
         // core catalogue.
-        assert_eq!(names.len(), 8, "the core tools: {names:?}");
+        assert_eq!(names.len(), 9, "the core tools: {names:?}");
         assert!(names.contains(&"caffeinate"));
+        assert!(names.contains(&"move"));
         assert!(names.contains(&"play_behavior"));
         assert!(names.contains(&"whereabouts"));
         assert!(
