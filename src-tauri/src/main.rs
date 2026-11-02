@@ -2220,9 +2220,13 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
 }
 
 /// The overlay heard a possession key. Repeats are dropped in the page. Edges wait
-/// for the frame loop, which owns the session.
+/// for the frame loop, which owns the session. Only Windows moves the card's keys,
+/// so only there does an overlay the card left still send its keyups.
 #[tauri::command]
-fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
+fn overlay_possession_key(window: tauri::Window, key: String, down: bool, possessed: bool) {
+    if !possessed && !cfg!(target_os = "windows") {
+        return;
+    }
     possession::push_key(window.label(), &key, down);
 }
 
