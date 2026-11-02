@@ -184,9 +184,9 @@ impl Reach {
     }
 }
 
-/// The Surface underfoot, as far as a move may walk it: this display, inset by
-/// `EDGE_CLEARANCE` so the sprite never meets a wall it would climb, and a
-/// Perch's own ends. Never another display. `None` over no display.
+/// How far a move may walk the Surface underfoot. The span stays on this
+/// display, `EDGE_CLEARANCE` in from its sides so the sprite never meets a
+/// wall it would climb, and on a Perch it stays on the Perch.
 pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot) -> Option<Reach> {
     let display = displays_spanning(feet.x, snapshot)
         .find(|display| feet.y >= display.y && feet.y <= display.bottom())?;
