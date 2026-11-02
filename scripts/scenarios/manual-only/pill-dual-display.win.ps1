@@ -8,8 +8,8 @@
 #   and the sprite is pressed, carried to the middle of another display and let go.
 #   Keep hands off the mouse and keyboard for the run.
 # Duration: a few seconds. Launch gets the shared startup budget (Wait-ForUp);
-#   every other wait gives up 3 s after its trigger (landing, poke, hover, keys,
-#   press, move, drop).
+#   every other wait gives up 3 s after its trigger (landing, poke, held wake
+#   going out, hover, keys, press, move, drop).
 # Grants: a desktop session with two or more displays. A loopback TCP port.
 #   Nothing is pressed unless Fidget owns the window under the cursor, and
 #   nothing is typed unless Fidget holds the foreground.
@@ -62,6 +62,8 @@ $regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ 
 $followPattern = '^(?:\d+ )?overlay (\S+): pill follows instance=(\S+) chars=(\d+) focused=(\S+)'
 $bubbleShowPattern = '^(?:\d+ )?overlay (\S+): (?:showSpeech|showThinking)'
 $bubbleHidePattern = '^(?:\d+ )?overlay (\S+): (?:hideSpeech|hideThinking)'
+$wakeHeldPattern = '(?:^|\s)director: \S+ wake held until '
+$wakeOutPattern = '(?:^|\s)director: \S+ wake (?:released|sent anyway)'
 
 function Check-Trace([string]$File) {
     $sawRegionWithPainted = $false
@@ -223,7 +225,12 @@ function Drive-PillAcrossSeam {
         [PillDrag]::Button($true)
     }
     if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the poke's release in 3 s; see $log" }
-    if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the poke showed no Thinking bubble in 3 s; see $traceFile" }
+    # A wake held for a loading overlay page starts the bubble's 3 s when it goes out.
+    if (-not (Wait-ForTrace 3 $traceFile "$bubbleShowPattern|$wakeHeldPattern")) { Fail "the poke showed no Thinking bubble and held no wake in 3 s; see $traceFile" }
+    if (Test-FileMatches $traceFile $wakeHeldPattern) {
+        if (-not (Wait-ForTrace 3 $traceFile $wakeOutPattern)) { Fail "the held wake was neither released nor sent anyway in 3 s; see $traceFile" }
+        if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the wake went out but showed no Thinking bubble in 3 s; see $traceFile" }
+    }
     # Settled after the double-click interval, so the drag press is not a double-click.
     if (-not (Wait-ForTrace 3 $log $pokePattern)) { Fail "Fidget never settled the click as a Poke in 3 s; see $log" }
 
