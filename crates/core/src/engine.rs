@@ -17,7 +17,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod destination;
 mod geometry;
 mod transition;
-use destination::{heading_to, Heading};
+use destination::{heading_to, GlobalX, Heading};
+pub use destination::{Distance, Extent, MoveRefusal, MoveRequest};
 use geometry::*;
 
 /// A point in the one coordinate space the Engine works in: points, y growing
@@ -497,6 +498,10 @@ pub struct Engine {
     /// at the start so a proposal later in the tick sees the same hold.
     feet_held: bool,
 
+    /// Where a move is walking to. Beside `playing` and not in it, so no
+    /// Primitive's turn ends it.
+    destination: Option<GlobalX>,
+
     /// Whether the previous tick carried `Verb::Menu`. The Shell re-injects it
     /// every tick the popup is held, so the press edge is the cue; a gap clears
     /// this and the next press cues again.
@@ -721,6 +726,7 @@ impl Engine {
             chase_ms: 0,
             poke_cooldown_ms: 0,
             feet_held: false,
+            destination: None,
             menu_held: false,
         }
     }
@@ -1109,6 +1115,8 @@ impl Engine {
                 self.velocity.x = 0.0;
             }
         }
+
+        self.apply_destination();
 
         // The keys own a possessed sprite's feet, after every hold above: a
         // bubble or a quick message stops a walk the sprite chose, not this.

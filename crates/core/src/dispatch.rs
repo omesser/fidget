@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
-use crate::engine::{Direction, ARRIVAL_THRESHOLD, WALK_SPEED};
+use crate::engine::{Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED};
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -83,7 +84,7 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
 
 /// The wire spelling of a walk's `direction`. Parsed here so the Engine's
 /// `Direction` stays free of a JSON shape.
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum DirectionArg {
     Left,
@@ -96,6 +97,47 @@ impl From<DirectionArg> for Direction {
             DirectionArg::Left => Self::Left,
             DirectionArg::Right => Self::Right,
         }
+    }
+}
+
+/// The wire shape of a `move` call. Every field is optional because which ones
+/// may come together is the parse's to say, in words a caller can act on.
+#[derive(Deserialize)]
+struct MoveArgs {
+    #[serde(default)]
+    instance_id: Option<String>,
+    #[serde(default)]
+    direction: Option<DirectionArg>,
+    #[serde(default)]
+    distance: Option<f64>,
+    #[serde(default)]
+    duration_ms: Option<u32>,
+}
+
+impl MoveArgs {
+    /// One `MoveRequest`, or the sentence that says what to change.
+    fn request(&self) -> Result<MoveRequest, String> {
+        let along = |heading: DirectionArg, extent| MoveRequest::Along {
+            heading: heading.into(),
+            extent,
+        };
+        let request = match (self.direction, self.distance, self.duration_ms) {
+            (Some(heading), Some(points), None) => Distance::new(points)
+                .map(|distance| along(heading, Extent::Distance(distance)))
+                .ok_or("distance must be more than 0 points."),
+            (Some(heading), None, Some(ms)) => NonZeroU32::new(ms)
+                .map(|ms| along(heading, Extent::Time { ms }))
+                .ok_or("duration_ms must be more than 0."),
+            (_, Some(_), Some(_)) => Err("Pass distance or duration_ms, not both."),
+            (Some(_), None, None) => {
+                Err("Say how far. Pass distance or duration_ms with direction.")
+            }
+            (None, Some(_), None) | (None, None, Some(_)) => {
+                Err("distance and duration_ms need a direction, left or right.")
+            }
+            (None, None, None) => Err("Say where. Pass direction with distance or duration_ms."),
+        };
+        request.map_err(str::to_string)
     }
 }
 
@@ -153,6 +195,27 @@ pub fn dispatch(
             let result = tools::play_behavior(
                 &args.behavior,
                 args.direction.map(Direction::from),
+                args.instance_id.as_deref(),
+                context.roster,
+                as_expression_handle(&mut expression),
+            );
+            context.expression = expression;
+
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
+        }
+        "move" => {
+            let args: MoveArgs = parse_args(arguments, tool_name)?;
+            let request = args.request().map_err(|message| DispatchError {
+                code: ErrorCode::InvalidArguments,
+                message,
+            })?;
+
+            let mut expression = context.expression.take();
+            let result = tools::move_instance(
+                request,
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
@@ -924,6 +987,18 @@ mod tests {
                     proposal,
                 )
             }
+
+            fn start_move(
+                &mut self,
+                instance_id: &str,
+                request: crate::engine::MoveRequest,
+            ) -> Option<Result<(), crate::engine::MoveRefusal>> {
+                crate::tools::ExpressionHandle::start_move(
+                    &mut *self.0.borrow_mut(),
+                    instance_id,
+                    request,
+                )
+            }
         }
 
         let temp = tempfile::tempdir().expect("temp dir is creatable");
@@ -972,6 +1047,14 @@ mod tests {
             ) -> bool {
                 self.0 = Some(proposal);
                 true
+            }
+
+            fn start_move(
+                &mut self,
+                _instance_id: &str,
+                _request: crate::engine::MoveRequest,
+            ) -> Option<Result<(), crate::engine::MoveRefusal>> {
+                None
             }
         }
 
@@ -1161,6 +1244,279 @@ mod tests {
             walking.position.x < asked.position.x,
             "told to walk left: {asked:?} -> {walking:?}"
         );
+    }
+
+    /// A Roster with one Instance landed at `x` on `world`'s floor, and the
+    /// last Frame of its landing.
+    fn landed_walker(
+        x: f64,
+        world: &crate::engine::WorldSnapshot,
+    ) -> (crate::roster::Roster, String, crate::engine::Frame) {
+        use crate::engine::Point;
+
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &test_character("Walker"),
+            "Walker".to_string(),
+            Point { x, y: 100.0 },
+        );
+        let mut landed = None;
+        for _ in 0..100 {
+            landed = Some(roster.get_mut(&id).unwrap().tick(world));
+        }
+        (roster, id, landed.expect("the sprite ticked"))
+    }
+
+    /// `move` through `dispatch`, with the Roster as the handle and `frames`
+    /// as the displays `whereabouts` reports, as the frame loop calls it.
+    fn call_move(
+        roster: &mut crate::roster::Roster,
+        arguments: Value,
+        frames: &[Rect],
+    ) -> Result<Value, DispatchError> {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(roster),
+            placement: PlacementQuery {
+                frames,
+                usable: frames,
+                names: &[],
+                instances: &[],
+            },
+            caffeinate: None,
+        };
+        dispatch("move", arguments, &mut context)
+    }
+
+    /// The first Frame the Instance stands still in. A walk that never stops
+    /// fails here rather than passing on wherever it had got to.
+    fn tick_until_still(
+        roster: &mut crate::roster::Roster,
+        id: &str,
+        world: &crate::engine::WorldSnapshot,
+    ) -> crate::engine::Frame {
+        for _ in 0..1_000 {
+            let frame = roster.get_mut(id).expect("instance still runs").tick(world);
+            if frame.velocity.x == 0.0 {
+                return frame;
+            }
+        }
+        panic!("still walking after 1000 ticks");
+    }
+
+    #[test]
+    fn move_left_walks_the_distance_asked_and_keeps_its_height() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        assert_eq!(landed.position.x, 500.0, "{landed:?}");
+        assert_eq!(landed.facing, 1.0, "it faced right before the ask");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 300.0).abs() <= 30.0,
+            "200 points left of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.facing, -1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_right_walks_the_distance_asked_and_keeps_its_height() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 700.0).abs() <= 30.0,
+            "200 points right of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.facing, 1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_for_a_duration_walks_as_far_as_that_time_covers() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "duration_ms": 1000}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 620.0).abs() <= 30.0,
+            "one second is 120 points: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_inside_the_arrival_band_does_not_start() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 10}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let after = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(after.position.x, landed.position.x, "{after:?}");
+    }
+
+    #[test]
+    fn a_walk_asked_of_a_drowsy_instance_does_not_end_asleep() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let mut a_second = world.clone();
+        a_second.elapsed_ms = 1000;
+        for _ in 0..58 {
+            roster.get_mut(&id).unwrap().tick(&a_second);
+        }
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 600}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 1100.0).abs() <= 30.0,
+            "600 points right of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.state, crate::engine::State::Grounded, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_refuses_a_distance_or_duration_that_is_not_positive() {
+        let world = test_snapshot();
+        let (mut roster, _, _) = landed_walker(500.0, &world);
+
+        for arguments in [
+            json!({"direction": "left", "distance": 0}),
+            json!({"direction": "left", "distance": -200}),
+            json!({"direction": "right", "duration_ms": 0}),
+        ] {
+            let refused = call_move(&mut roster, arguments.clone(), &world.displays);
+            assert_eq!(
+                refused.map_err(|error| error.code),
+                Err(ErrorCode::InvalidArguments),
+                "{arguments}"
+            );
+        }
+    }
+
+    #[test]
+    fn move_refuses_a_half_filled_request_and_names_what_to_change() {
+        let world = test_snapshot();
+        let (mut roster, _, _) = landed_walker(500.0, &world);
+
+        for (arguments, names) in [
+            (
+                json!({"direction": "left", "distance": 200, "duration_ms": 1000}),
+                &["distance", "duration_ms"][..],
+            ),
+            (json!({"direction": "left"}), &["distance", "duration_ms"]),
+            (json!({"distance": 200}), &["direction"]),
+            (json!({"duration_ms": 1000}), &["direction"]),
+            (json!({}), &["direction"]),
+        ] {
+            let error = call_move(&mut roster, arguments.clone(), &world.displays)
+                .expect_err("a half-filled request builds no walk");
+            assert_eq!(error.code, ErrorCode::InvalidArguments, "{arguments}");
+            for name in names {
+                assert!(
+                    error.message.contains(name),
+                    "{arguments} names {name}: {}",
+                    error.message
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn move_says_why_nobody_was_reached_in_the_words_play_behavior_uses() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let one = [InstanceInfo {
+            id: "inst-1".to_string(),
+            name: "Walker".to_string(),
+            ..Default::default()
+        }];
+        let two = [
+            one[0].clone(),
+            InstanceInfo {
+                id: "inst-2".to_string(),
+                name: "Runner".to_string(),
+                ..Default::default()
+            },
+        ];
+        let mut retired = crate::roster::Roster::new();
+
+        let mut contexts = [
+            test_context(&temp, &source, &[]),
+            test_context(&temp, &source, &two),
+            test_context(&temp, &source, &one),
+            DispatchContext {
+                expression: Some(&mut retired),
+                ..test_context(&temp, &source, &one)
+            },
+        ];
+        for context in &mut contexts {
+            let moved = dispatch(
+                "move",
+                json!({"direction": "left", "distance": 200}),
+                context,
+            )
+            .expect("dispatch succeeds");
+            let played = dispatch("play_behavior", json!({"behavior": "wave"}), context)
+                .expect("dispatch succeeds");
+            assert_eq!(moved["started"], false, "{moved}");
+            assert!(moved["reason"].is_string(), "{moved}");
+            assert_eq!(moved["reason"], played["reason"]);
+        }
     }
 
     #[test]

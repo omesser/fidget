@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 
 use crate::display::Whereabouts;
-use crate::engine::{BehaviorProposal, Direction, Point};
+use crate::engine::{BehaviorProposal, Direction, MoveRefusal, MoveRequest, Point};
 use crate::memory::MemoryManifest;
 use crate::window_source::Rect;
 
@@ -22,11 +22,30 @@ pub struct PlayBehaviorResult {
     pub reason: Option<String>,
 }
 
-/// Live handle for enqueueing Expression proposals onto Character Instances.
+/// Tool result for the `move` tool.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveResult {
+    /// The Engine took the walk, which says nothing about arriving. A grab, a
+    /// fall, a poke or an edge can end it early.
+    pub started: bool,
+    /// Why the walk did not start, when `started` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Live handle for acting on Character Instances.
 pub trait ExpressionHandle {
     /// Enqueue a BehaviorProposal onto the Instance with the given id.
     /// Returns true if that id was live and the proposal was queued.
     fn enqueue(&mut self, instance_id: &str, proposal: BehaviorProposal) -> bool;
+
+    /// Hand the Instance with the given id a move, and return the Engine's
+    /// verdict now rather than a tick later. `None` when no Instance has that id.
+    fn start_move(
+        &mut self,
+        instance_id: &str,
+        request: MoveRequest,
+    ) -> Option<Result<(), MoveRefusal>>;
 }
 
 /// Tool result for the `list_windows` tool.
@@ -209,7 +228,7 @@ pub fn whereabouts(
 }
 
 mod helpers {
-    use crate::engine::BehaviorProposal;
+    use crate::engine::{BehaviorProposal, MoveRequest};
     use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
     use crate::window_source::{WindowRect, WindowSource};
 
@@ -234,15 +253,14 @@ mod helpers {
             .collect()
     }
 
-    /// Resolve the target Instance and enqueue, for `play_behavior`.
-    /// The `Err` is the whole answer a Harness gets about why the Expression
-    /// landed nowhere, so it names the reason rather than a code.
-    pub fn enqueue_expression(
+    /// Resolve the Instance an Expression tool acts on, and the handle that
+    /// reaches it. The `Err` is the whole answer a Harness gets about why the
+    /// Expression landed nowhere, so it names the reason rather than a code.
+    fn reach_instance<'h>(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
-        expression: Option<&mut dyn ExpressionHandle>,
-        proposal: BehaviorProposal,
-    ) -> Result<(), String> {
+        expression: Option<&'h mut dyn ExpressionHandle>,
+    ) -> Result<(String, &'h mut dyn ExpressionHandle), String> {
         let target_id = match resolve_target_instance(instance_id, roster) {
             TargetResolution::Resolved(id) => id,
             TargetResolution::NoInstances => {
@@ -260,24 +278,50 @@ mod helpers {
         };
 
         // No handle is no way to reach the Instance the roster just named, so
-        // the proposal lands nowhere however live that Instance is. The stdio
+        // the Expression lands nowhere however live that Instance is. The stdio
         // path runs this way today, which is why it cannot report success.
         let Some(handle) = expression else {
             return Err(
                 "No live connection to the running app, so nothing changed on screen".to_string(),
             );
         };
+        Ok((target_id, handle))
+    }
 
-        // The roster is a snapshot, so an Instance can retire between the
-        // resolution above and this enqueue. Saying so is the same honesty the
-        // empty roster gets: the proposal reached nobody either way.
+    /// The roster is a snapshot, so an Instance can retire between resolving
+    /// it and reaching it. Saying so is the same honesty the empty roster gets.
+    fn no_longer_running(target_id: &str) -> String {
+        format!("Character Instance {target_id} is no longer running, so nothing changed on screen")
+    }
+
+    /// Resolve the target Instance and enqueue, for `play_behavior`.
+    pub fn enqueue_expression(
+        instance_id: Option<&str>,
+        roster: &[InstanceInfo],
+        expression: Option<&mut dyn ExpressionHandle>,
+        proposal: BehaviorProposal,
+    ) -> Result<(), String> {
+        let (target_id, handle) = reach_instance(instance_id, roster, expression)?;
         if !handle.enqueue(&target_id, proposal) {
-            return Err(format!(
-                "Character Instance {target_id} is no longer running, so nothing changed on screen"
-            ));
+            return Err(no_longer_running(&target_id));
         }
-
         Ok(())
+    }
+
+    /// Resolve the target Instance and start the move, for `move`. The
+    /// Engine's refusal is the `Err`, in its own words.
+    pub fn start_move(
+        instance_id: Option<&str>,
+        roster: &[InstanceInfo],
+        expression: Option<&mut dyn ExpressionHandle>,
+        request: MoveRequest,
+    ) -> Result<(), String> {
+        let (target_id, handle) = reach_instance(instance_id, roster, expression)?;
+        match handle.start_move(&target_id, request) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(refusal)) => Err(refusal.to_string()),
+            None => Err(no_longer_running(&target_id)),
+        }
     }
 
     /// Target resolution result for Expression tools.
@@ -287,7 +331,7 @@ mod helpers {
         AmbiguousTarget,
     }
 
-    /// Target resolution against roster for play_behavior.
+    /// Target resolution against roster for the Expression tools.
     /// `dispatch` already refused an id the roster does not carry.
     fn resolve_target_instance(
         instance_id: Option<&str>,
@@ -332,6 +376,21 @@ pub(crate) fn play_behavior(
     PlayBehaviorResult {
         success: reason.is_none(),
         behavior: behavior.to_string(),
+        reason,
+    }
+}
+
+/// Start a walk. `started` is the Engine's own answer, given before this
+/// returns, and says nothing about arrival.
+pub(crate) fn move_instance(
+    request: MoveRequest,
+    instance_id: Option<&str>,
+    roster: &[InstanceInfo],
+    expression: Option<&mut dyn ExpressionHandle>,
+) -> MoveResult {
+    let reason = helpers::start_move(instance_id, roster, expression, request).err();
+    MoveResult {
+        started: reason.is_none(),
         reason,
     }
 }
