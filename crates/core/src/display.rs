@@ -3,7 +3,7 @@
 //! The id is the index in the current arrangement. The windowing layer does
 //! not provide a native display id.
 
-use crate::engine::Point;
+use crate::engine::{GlobalX, Point};
 use crate::overlay::stands_on;
 use crate::window_source::Rect;
 
@@ -54,6 +54,34 @@ impl Placement {
     /// Offset from the frame's top edge.
     pub fn y(&self) -> f64 {
         self.y
+    }
+
+    /// A spot on display `index`, as `whereabouts` reports one and a caller
+    /// names one back.
+    pub(crate) fn at(index: usize, x: f64, y: f64) -> Self {
+        Self { index, x, y }
+    }
+
+    /// This spot's x in the Engine's coordinate space, the frame's origin plus
+    /// `x`, undoing `locate`. `y` plays no part.
+    pub(crate) fn engine_x(&self, frames: &[Rect]) -> Result<GlobalX, String> {
+        let Some(frame) = frames.get(self.index) else {
+            return Err(match frames.len() {
+                0 => "No display is connected.".to_string(),
+                connected => format!(
+                    "No display {}. whereabouts lists displays 0 to {}.",
+                    self.index,
+                    connected - 1
+                ),
+            });
+        };
+        match GlobalX::new(frame.x + self.x) {
+            Some(x) if (0.0..=frame.width).contains(&self.x) => Ok(x),
+            _ => Err(format!(
+                "x {} is outside display {}, which is {} points wide.",
+                self.x, self.index, frame.width
+            )),
+        }
     }
 }
 

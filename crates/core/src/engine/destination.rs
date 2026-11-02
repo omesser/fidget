@@ -7,8 +7,16 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 /// An x in the Engine's coordinate space, global points across every display.
+/// `Placement::engine_x` is the door to one from a display's own x.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlobalX(f64);
+
+impl GlobalX {
+    /// `None` unless `x` is finite.
+    pub(crate) fn new(x: f64) -> Option<Self> {
+        x.is_finite().then_some(Self(x))
+    }
+}
 
 /// How far to walk, in points. Finite and more than zero, so a negative
 /// distance cannot turn a heading round.
@@ -32,17 +40,21 @@ pub enum Extent {
     },
 }
 
-/// A move, parsed. A heading always carries exactly one extent.
+/// A move, parsed. A heading always carries exactly one extent, and a spot
+/// carries no `y`, because a walk never changes height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MoveRequest {
     /// Walk `heading` for `extent`, counted from the feet when the Engine takes it.
     Along { heading: Direction, extent: Extent },
+    /// Walk to `x`.
+    To(GlobalX),
 }
 
 impl MoveRequest {
     /// The one x every request becomes.
     fn target(self, feet_x: f64) -> GlobalX {
         match self {
+            Self::To(x) => x,
             Self::Along { heading, extent } => {
                 let points = match extent {
                     Extent::Distance(Distance(points)) => points,

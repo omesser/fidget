@@ -7,6 +7,7 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
+use crate::display::Placement;
 use crate::engine::{Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED};
 use crate::memory::MemoryManifest;
 use crate::tools;
@@ -112,32 +113,54 @@ struct MoveArgs {
     distance: Option<f64>,
     #[serde(default)]
     duration_ms: Option<u32>,
+    #[serde(default)]
+    to: Option<SpotArg>,
+}
+
+/// A spot as `whereabouts` reports one. `y` is required so that spot passes
+/// back unchanged, and a walk never reads it.
+#[derive(Clone, Copy, Deserialize)]
+struct SpotArg {
+    display: usize,
+    x: f64,
+    y: f64,
 }
 
 impl MoveArgs {
-    /// One `MoveRequest`, or the sentence that says what to change.
-    fn request(&self) -> Result<MoveRequest, String> {
+    /// One `MoveRequest`, or the sentence that says what to change. `frames`
+    /// are the full frames `whereabouts` measures a spot from.
+    fn request(&self, frames: &[Rect]) -> Result<MoveRequest, String> {
         let along = |heading: DirectionArg, extent| MoveRequest::Along {
             heading: heading.into(),
             extent,
         };
-        let request = match (self.direction, self.distance, self.duration_ms) {
-            (Some(heading), Some(points), None) => Distance::new(points)
-                .map(|distance| along(heading, Extent::Distance(distance)))
-                .ok_or("distance must be more than 0 points."),
-            (Some(heading), None, Some(ms)) => NonZeroU32::new(ms)
-                .map(|ms| along(heading, Extent::Time { ms }))
-                .ok_or("duration_ms must be more than 0."),
-            (_, Some(_), Some(_)) => Err("Pass distance or duration_ms, not both."),
-            (Some(_), None, None) => {
-                Err("Say how far. Pass distance or duration_ms with direction.")
+        let refuse = |why: &str| Err(why.to_string());
+        match (self.direction, self.distance, self.duration_ms, self.to) {
+            (Some(heading), Some(points), None, None) => match Distance::new(points) {
+                Some(distance) => Ok(along(heading, Extent::Distance(distance))),
+                None => refuse("distance must be more than 0 points."),
+            },
+            (Some(heading), None, Some(ms), None) => match NonZeroU32::new(ms) {
+                Some(ms) => Ok(along(heading, Extent::Time { ms })),
+                None => refuse("duration_ms must be more than 0."),
+            },
+            (None, None, None, Some(spot)) => Placement::at(spot.display, spot.x, spot.y)
+                .engine_x(frames)
+                .map(MoveRequest::To),
+            (_, _, _, Some(_)) => {
+                refuse("Pass either to, or direction with distance or duration_ms. Not both.")
             }
-            (None, Some(_), None) | (None, None, Some(_)) => {
-                Err("distance and duration_ms need a direction, left or right.")
+            (_, Some(_), Some(_), None) => refuse("Pass distance or duration_ms, not both."),
+            (Some(_), None, None, None) => {
+                refuse("Say how far. Pass distance or duration_ms with direction.")
             }
-            (None, None, None) => Err("Say where. Pass direction with distance or duration_ms."),
-        };
-        request.map_err(str::to_string)
+            (None, Some(_), None, None) | (None, None, Some(_), None) => {
+                refuse("distance and duration_ms need a direction, left or right.")
+            }
+            (None, None, None, None) => {
+                refuse("Say where. Pass direction with distance or duration_ms, or pass to.")
+            }
+        }
     }
 }
 
@@ -208,10 +231,12 @@ pub fn dispatch(
         }
         "move" => {
             let args: MoveArgs = parse_args(arguments, tool_name)?;
-            let request = args.request().map_err(|message| DispatchError {
-                code: ErrorCode::InvalidArguments,
-                message,
-            })?;
+            let request =
+                args.request(context.placement.frames)
+                    .map_err(|message| DispatchError {
+                        code: ErrorCode::InvalidArguments,
+                        message,
+                    })?;
 
             let mut expression = context.expression.take();
             let result = tools::move_instance(
@@ -1267,12 +1292,23 @@ mod tests {
         (roster, id, landed.expect("the sprite ticked"))
     }
 
-    /// `move` through `dispatch`, with the Roster as the handle and `frames`
-    /// as the displays `whereabouts` reports, as the frame loop calls it.
+    /// `move` on displays whose full frames are their usable ones.
     fn call_move(
         roster: &mut crate::roster::Roster,
         arguments: Value,
         frames: &[Rect],
+    ) -> Result<Value, DispatchError> {
+        call_move_on(roster, arguments, frames, frames)
+    }
+
+    /// `move` through `dispatch`, with the Roster as the handle, `frames` as
+    /// the full frames `whereabouts` reports and `usable` as the floors the
+    /// Engine walks, as the frame loop calls it.
+    fn call_move_on(
+        roster: &mut crate::roster::Roster,
+        arguments: Value,
+        frames: &[Rect],
+        usable: &[Rect],
     ) -> Result<Value, DispatchError> {
         let temp = tempfile::tempdir().expect("temp dir is creatable");
         let source = fake_source(vec![]);
@@ -1293,7 +1329,7 @@ mod tests {
             expression: Some(roster),
             placement: PlacementQuery {
                 frames,
-                usable: frames,
+                usable,
                 names: &[],
                 instances: &[],
             },
@@ -1407,6 +1443,65 @@ mod tests {
         assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
     }
 
+    /// Display 1's usable floor starts 80 points in from its frame, as a Dock
+    /// on its left would leave it, so the frame's origin and the floor's differ
+    /// by more than the arrival band.
+    fn side_by_side() -> ([Rect; 2], crate::engine::WorldSnapshot) {
+        let display = |x, width| Rect {
+            x,
+            y: 0.0,
+            width,
+            height: 1080.0,
+        };
+        let frames = [display(0.0, 1920.0), display(1920.0, 1920.0)];
+        let mut world = test_snapshot();
+        world.displays = vec![display(0.0, 1920.0), display(2000.0, 1840.0)];
+        (frames, world)
+    }
+
+    #[test]
+    fn move_to_a_whereabouts_spot_stops_there_and_keeps_its_height() {
+        let (frames, world) = side_by_side();
+        let (mut roster, id, landed) = landed_walker(2620.0, &world);
+
+        let said = call_move_on(
+            &mut roster,
+            json!({"to": {"display": 1, "x": 400, "y": 900}}),
+            &frames,
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 2320.0).abs() <= 30.0,
+            "400 points into the display whose frame starts at 1920: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_refuses_a_spot_whereabouts_could_not_have_reported() {
+        let (frames, world) = side_by_side();
+        let (mut roster, _, _) = landed_walker(2620.0, &world);
+
+        for spot in [
+            json!({"display": 2, "x": 400, "y": 900}),
+            json!({"display": 1, "x": 5000, "y": 900}),
+            json!({"display": 1, "x": -10, "y": 900}),
+            json!({"display": 1, "x": 400}),
+        ] {
+            let refused =
+                call_move_on(&mut roster, json!({ "to": spot }), &frames, &world.displays);
+            assert_eq!(
+                refused.map_err(|error| error.code),
+                Err(ErrorCode::InvalidArguments),
+                "{spot}"
+            );
+        }
+    }
+
     #[test]
     fn move_inside_the_arrival_band_does_not_start() {
         let world = test_snapshot();
@@ -1484,6 +1579,10 @@ mod tests {
             (json!({"distance": 200}), &["direction"]),
             (json!({"duration_ms": 1000}), &["direction"]),
             (json!({}), &["direction"]),
+            (
+                json!({"direction": "left", "to": {"display": 0, "x": 100, "y": 1080}}),
+                &["to", "direction"],
+            ),
         ] {
             let error = call_move(&mut roster, arguments.clone(), &world.displays)
                 .expect_err("a half-filled request builds no walk");

@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod destination;
 mod geometry;
 mod transition;
-use destination::{heading_to, GlobalX, Heading};
-pub use destination::{Distance, Extent, MoveRefusal, MoveRequest};
+use destination::{heading_to, Heading};
+pub use destination::{Distance, Extent, GlobalX, MoveRefusal, MoveRequest};
 use geometry::*;
 
 /// A point in the one coordinate space the Engine works in: points, y growing
