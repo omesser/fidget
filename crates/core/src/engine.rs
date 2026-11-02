@@ -14,8 +14,10 @@ use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+mod destination;
 mod geometry;
 mod transition;
+use destination::{heading_to, Heading};
 use geometry::*;
 
 /// A point in the one coordinate space the Engine works in: points, y growing
@@ -362,10 +364,10 @@ const RUSH_VELOCITY: f64 = 800.0;
 /// that never closes disengages. Boredom is the realism.
 const CHASE_TIMEOUT_MS: u32 = 8000;
 
-/// How close the sprite's x must get to the cursor's x to arrive, in points.
-/// Close enough to read as catching it, loose enough not to overshoot and
+/// How close the sprite's x must get to the x it walks toward, in points.
+/// Close enough to read as getting there, loose enough not to overshoot and
 /// backtrack.
-const CHASE_ARRIVAL_THRESHOLD: f64 = 30.0;
+const ARRIVAL_THRESHOLD: f64 = 30.0;
 
 pub struct Engine {
     position: Point,
@@ -1068,27 +1070,19 @@ impl Engine {
         if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
-                Some(Primitive::Chase) => {
-                    let target_x = snapshot.cursor.x;
-                    let distance_x = (target_x - self.position.x).abs();
-
-                    if distance_x < CHASE_ARRIVAL_THRESHOLD {
+                Some(Primitive::Chase) => match heading_to(self.position.x, snapshot.cursor.x) {
+                    Heading::Arrived => {
                         self.velocity.x = 0.0;
                         self.stop_playing();
                         started |= self.play(&[Primitive::React]);
-                    } else if self.chase_ms >= CHASE_TIMEOUT_MS {
+                    }
+                    Heading::Toward(_) if self.chase_ms >= CHASE_TIMEOUT_MS => {
                         self.velocity.x = 0.0;
                         self.stop_playing();
                         started = true;
-                    } else {
-                        self.facing = if target_x > self.position.x {
-                            1.0
-                        } else {
-                            -1.0
-                        };
-                        self.velocity.x = self.facing * WALK_SPEED;
                     }
-                }
+                    Heading::Toward(toward) => self.stride(toward),
+                },
 
                 // Up and forward is an arc. `integrate` reads the rise as lost
                 // footing, `transition` makes it a fall that lands as usual.
@@ -8417,7 +8411,7 @@ mod tests {
 
         let chasing = engine.tick(&WorldSnapshot {
             cursor: Point {
-                x: sprite_x + CHASE_ARRIVAL_THRESHOLD + 10.0,
+                x: sprite_x + ARRIVAL_THRESHOLD + 10.0,
                 y: engine.position.y,
             },
             ..snapshot(100)
