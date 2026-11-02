@@ -2027,6 +2027,23 @@ mod tests {
     }
 
     #[test]
+    fn a_move_arrives_without_the_swat_a_chase_ends_in() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+
+        let arrived = tick_until_still(&mut roster, &id, &world);
+        assert!((arrived.position.x - 300.0).abs() <= 30.0, "{arrived:?}");
+        assert_ne!(arrived.animation, "react", "{arrived:?}");
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);
