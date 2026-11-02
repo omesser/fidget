@@ -2619,27 +2619,27 @@ fn build_overlay(
     Ok(())
 }
 
-/// Build one Instance's Chat surface. No overlay flags: click-through would
+/// Build one Instance's hidden Chat. No overlay flags: click-through would
 /// swallow the caret click; always-on-top would follow the user out of the app.
 /// Stays under the overlay as a Perch; typing reaches it via key focus.
 fn build_chat(
     app: &tauri::AppHandle,
     label: &str,
     title: &str,
-    at: Option<(f64, f64)>,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
     let configured = Instant::now();
     trace_chat(label, "build-request", None);
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
     let page_label = label.to_string();
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
         .min_inner_size(320.0, 320.0)
         // See-through only where it draws right: some X11 setups lose an
         // unrepainted see-through page to black or to the desktop.
         .transparent(platform::see_through_draws())
-        .focused(true)
+        .visible(false)
+        .focused(false)
         .on_page_load(move |_window, payload| {
             if !payload.url().as_str().starts_with("about:") {
                 let event = match payload.event() {
@@ -2649,9 +2649,6 @@ fn build_chat(
                 trace_chat(&page_label, event, Some(configured));
             }
         });
-    if let Some((x, y)) = at {
-        builder = builder.position(x, y);
-    }
     let started = Instant::now();
     trace_chat(label, "builder-configured", Some(configured));
     let window = builder.build()?;
@@ -2674,6 +2671,20 @@ fn build_chat(
     .ok();
     let observer = std::cell::Cell::new(observer);
     window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // Keep the native webview warm; rebuilding it holds the main thread.
+            if let Some(window) = handle.get_webview_window(&label) {
+                match window.hide() {
+                    Ok(()) => {
+                        api.prevent_close();
+                        if dev_flags::TRACE_BUBBLE.is_on() {
+                            eprintln!("chat: {label} is closed");
+                        }
+                    }
+                    Err(why) => eprintln!("chat: {label} could not be hidden: {why}"),
+                }
+            }
+        }
         if matches!(event, tauri::WindowEvent::Destroyed) {
             observer.take();
         }
@@ -2708,6 +2719,29 @@ fn trace_chat(label: &str, event: &str, started: Option<Instant>) {
         let at = ORIGIN.get_or_init(Instant::now).elapsed().as_micros();
         let duration = started.map(|start| start.elapsed().as_micros());
         eprintln!("chat-timing: label={label} event={event} at_us={at} duration_us={duration:?}");
+    }
+}
+
+/// Prepare hidden Chats before a Summon needs their native webviews. Read the
+/// published roster on the main thread so a queued preparation skips an
+/// Instance dismissed before it runs.
+fn prepare_chats(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        let rows = handle
+            .try_state::<SettingsState>()
+            .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
+            .unwrap_or_default();
+        for row in rows {
+            let label = chat_label(&row.id);
+            if handle.get_webview_window(&label).is_none() {
+                if let Err(why) = build_chat(&handle, &label, &row.name) {
+                    eprintln!("chat: {label} could not be prepared: {why}");
+                }
+            }
+        }
+    }) {
+        eprintln!("chat: could not prepare on the main thread: {why}");
     }
 }
 
@@ -2772,9 +2806,9 @@ fn chat_ui_now(state: Option<&SettingsState>) -> String {
         .unwrap_or_else(|| "minimal".to_string())
 }
 
-/// Open this Instance's Chat surface, or raise the one it has, beside `feet`
-/// when known. The lookup posts to the main thread too: Ok from
-/// `run_on_main_thread` means queued, so two Summons would each build.
+/// Show this Instance's prepared Chat beside `feet`, or raise its visible Chat.
+/// The lookup shares the main thread with preparation so two queued Summons
+/// cannot build the same missing window after a failed preparation.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
     let requested = Instant::now();
     let label = chat_label(id);
@@ -2791,10 +2825,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
                 if let Err(why) = window.set_title(&title) {
                     eprintln!("chat: {label} could not be retitled: {why}");
                 }
-                let _ = window.unminimize();
                 window
             }
-            None => match build_chat(&handle, &label, &title, at) {
+            None => match build_chat(&handle, &label, &title) {
                 Ok(window) => window,
                 Err(why) => {
                     eprintln!("chat: {label}: {why}");
@@ -2802,8 +2835,19 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
                 }
             },
         };
-        // Both paths: `focused(true)` only orders within this app. Activate for
-        // typing, but keep Chat under the overlay so it stays a Perch.
+        if !window.is_visible().unwrap_or(false) {
+            if let Some((x, y)) = at {
+                if let Err(why) = window.set_position(LogicalPosition::new(x, y)) {
+                    eprintln!("chat: {label} could not be placed: {why}");
+                }
+            }
+        }
+        let _ = window.unminimize();
+        if let Err(why) = window.show() {
+            eprintln!("chat: {label} could not be shown: {why}");
+            return;
+        }
+        // Keep Chat under the overlay so it stays a Perch while typing.
         if let Err(why) = platform::activate_for_typing(&window) {
             eprintln!("chat: {label} could not be raised: {why}");
         }
@@ -2816,15 +2860,14 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
     }
 }
 
-/// Shut the Chat surface belonging to `id`, if it has one. Nothing else
-/// closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
+/// Destroy a dismissed Instance's Chat, bypassing the user-close handler that
+/// retains its webview for the next Summon. Main thread only.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
-            if let Err(why) = window.close() {
+            if let Err(why) = window.destroy() {
                 eprintln!("chat: {label} could not be closed: {why}");
             }
         }
@@ -5624,6 +5667,7 @@ fn main() {
                 bind_hide_hotkey(app.handle(), &spec);
             }
             let instance_rows = Arc::new(Mutex::new(Vec::new()));
+            publish_instances(&roster, &instance_rows);
             let (ops_tx, ops_rx) = mpsc::channel();
             let (chat_tx, chat_rx) = mpsc::channel();
             app.manage(ChatChannel(chat_tx));
@@ -5659,6 +5703,7 @@ fn main() {
                 rebuild_after_destroy: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&rules));
+            prepare_chats(app.handle());
 
             // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.

@@ -1384,6 +1384,20 @@ async function start() {
   showWho(opening);
   attached(opening);
   showPrompt(opening);
+  await listen(
+    "tauri://focus",
+    async () => {
+      try {
+        const opening = await invoke("chat_opening", { instance });
+        showWho(opening);
+        attached(opening);
+        showPrompt(opening);
+      } catch (why) {
+        console.error("chat: this opening could not be refreshed:", why);
+      }
+    },
+    { target: chat.label },
+  );
   line.focus();
 }
 
