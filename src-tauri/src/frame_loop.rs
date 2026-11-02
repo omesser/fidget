@@ -3502,6 +3502,11 @@ enum WakeTurn {
 /// wake keeps `addressed` and `happened`, so pokes during the hold make one
 /// wake once the page listens.
 fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
+    if gate.loading.is_none() {
+        if let Some(label) = live.wake_held_on.take() {
+            eprintln!("director: {} wake released, was held on {label}", live.id);
+        }
+    }
     let due = gate.enabled
         && director::session_due(
             live.addressed,
@@ -3521,9 +3526,6 @@ fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
             live.wake_held_on = Some(label);
         }
         return WakeTurn::Held;
-    }
-    if let Some(label) = live.wake_held_on.take() {
-        eprintln!("director: {} wake released, was held on {label}", live.id);
     }
     let was_addressed = std::mem::take(&mut live.addressed);
     if was_addressed {
@@ -3604,6 +3606,27 @@ mod tests {
                 }
             );
             assert_eq!(spend_wake(&mut live, gate(None)), WakeTurn::NotDue);
+        });
+    }
+
+    /// Production change that would fail this: the "released" line waiting
+    /// for the next due wake after the page already listens.
+    #[test]
+    fn a_hold_is_released_when_the_page_listens_even_with_no_wake_due() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            live.addressed = true;
+            assert_eq!(
+                spend_wake(&mut live, gate(Some("overlay-1"))),
+                WakeTurn::Held
+            );
+            let not_due = WakeGate {
+                enabled: false,
+                ..gate(None)
+            };
+            assert_eq!(spend_wake(&mut live, not_due), WakeTurn::NotDue);
+            assert_eq!(live.wake_held_on, None);
         });
     }
 
