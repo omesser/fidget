@@ -1951,6 +1951,22 @@ mod tests {
         );
     }
 
+    /// A curly quote on the marker's last byte is prose. Callers see an error,
+    /// not a process panic that leaves the overlays up.
+    #[test]
+    fn a_curly_quote_on_the_marker_boundary_is_an_error() {
+        // `behavior` is 8 bytes. U+201C is the character the Windows console
+        // printed as ΓÇ£, and it occupies bytes 8..11. That is the panic.
+        assert!(
+            parse_proposal("behavior\u{201c}walk").is_err(),
+            "a quote where the colon would be is not a contract"
+        );
+        assert!(
+            parse_proposal("xxxxxxxx\u{201c}still talking").is_err(),
+            "any line with a multibyte character on that byte is still prose"
+        );
+    }
+
     /// A model that writes its line above the name is still answering. The
     /// contract asks for the name first, but nothing tells a stray sentence
     /// from a Harness's chrome, so both are kept.
