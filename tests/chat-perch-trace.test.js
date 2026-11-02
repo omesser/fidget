@@ -16,6 +16,23 @@ function check(t, trace, firstLine = 2, instance = "character-a") {
   });
 }
 
+function checkDisplayCount(count) {
+  return spawnSync("bash", [script, "--check-display-count", String(count)], {
+    encoding: "utf8",
+  });
+}
+
+test("one display passes the chat-perch display preflight", () => {
+  const result = checkDisplayCount(1);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("multiple displays fail the chat-perch display preflight with a reason", () => {
+  const result = checkDisplayCount(2);
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.match(result.stderr, /chat-perch requires exactly one display; found 2/);
+});
+
 test("a new command trace for the clicked Character passes without a desktop", (t) => {
   const result = check(t, "overlay: ready\nbubble: open-chat invoked instance=character-a\n");
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -42,5 +59,6 @@ test("without consent the scenario only prints its takeover header", () => {
   const result = spawnSync("bash", [script], { encoding: "utf8" });
   assert.equal(result.status, 2, result.stderr);
   assert.match(result.stdout, /Scenario: chat-perch/);
+  assert.match(result.stdout, /Requires exactly one active display/);
   assert.match(result.stdout, /Input: synthetic mouse clicks and typing inside Fidget only/);
 });

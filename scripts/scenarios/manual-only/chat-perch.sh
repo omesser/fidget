@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Scenario: chat-perch (macOS), Chat as a Perch (#1502).
+# Requires exactly one active display. Chat placement uses primary-display bounds.
 # On screen: launches one private-HOME Fidget/BMO instance with Chat, focuses
 #   Chat, and places the Character on Chat's ledge. The waiting question shows
 #   a bubble over Chat. The script clicks its chat button, then clicks and
@@ -13,9 +14,23 @@
 # Evidence: a fresh fidget-scenario-chat-perch directory under TMPDIR.
 # Usage: chat-perch.sh --go <fidget binary> <fidget test binary>
 # Setup: --prepare compiles helpers without touching the GUI.
-# Offline: --check-click <log> <first new line> <instance> checks a saved trace.
-# Without --go this prints the takeover header and exits 2.
+# Offline: --check-display-count <count> checks the single-display preflight.
+#   --check-click <log> <first new line> <instance> checks a saved trace.
+# Trace diagnosis: hit-test lines emit on flips or every 120 ticks; the 3 s wait
+#   can expire first, so a later match does not prove a coordinate mismatch.
 set -euo pipefail
+
+require_one_display() {
+  local count=$1
+  [[ "$count" =~ ^[1-9][0-9]*$ ]] || {
+    echo "FAIL: could not determine active display count" >&2
+    return 1
+  }
+  [ "$count" -eq 1 ] || {
+    echo "FAIL: chat-perch requires exactly one display; found $count" >&2
+    return 1
+  }
+}
 
 click_traced() {
   local trace=$1 first_line=$2 id=$3
@@ -27,6 +42,12 @@ if [ "${1:-}" = --check-click ]; then
   [ "$#" -eq 4 ] && [[ "$3" =~ ^[1-9][0-9]*$ ]] && [ -n "$4" ] || exit 2
   click_traced "$2" "$3" "$4"
   exit $?
+fi
+
+if [ "${1:-}" = --check-display-count ]; then
+  [ "$#" -eq 2 ] && [[ "$2" =~ ^[1-9][0-9]*$ ]] || exit 2
+  require_one_display "$2" || exit 1
+  exit 0
 fi
 
 if [ "${1:-}" != --go ] && [ "${1:-}" != --prepare ]; then
@@ -80,6 +101,9 @@ done
 if ! { [ -x "$bin" ] && [ -x "$test_bin" ] && [ -x "$verify_bin" ]; }; then
   fail "missing Fidget, fidget-verify, or fixture test binary"
 fi
+
+display_count=$("$tools/chat-window" display-count) || fail "could not determine active display count"
+require_one_display "$display_count" || exit 1
 
 info() { "$tools/chat-window" info "$pid" BMO; }
 layer_zero() { [ "$("$tools/window-layer" "$pid" BMO)" = 0 ]; }
