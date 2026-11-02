@@ -585,6 +585,23 @@ body {
   color: var(--shared-accent);
 }
 
+/* The card lets pointers through to a sprite under it; the button does not. */
+.possession-release {
+  display: block;
+  margin: 10px 0 0;
+  padding: 4px 10px;
+  border: 1px solid var(--shared-accent);
+  border-radius: var(--shared-radius);
+  background: transparent;
+  color: var(--shared-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.possession.visible .possession-release {
+  pointer-events: auto;
+}
+
 .possession-charge {
   position: absolute;
   top: 0;
