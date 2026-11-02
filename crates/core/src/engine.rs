@@ -1344,19 +1344,21 @@ impl Engine {
                 .iter()
                 .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
-        // One cue a tick: a possession edge, else a hand transition, else the
-        // first click verb. Menu repeats every held tick like Grab, so it cues
-        // on the press edge.
+        // One cue a tick: a hand transition, else the first click verb, else a
+        // possession edge, which waits for a free tick rather than be lost.
+        // Menu repeats every held tick like Grab, so it cues on the press edge.
         let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
-        let cue = self.possession_cue.take().or(cue).or_else(|| {
-            snapshot
-                .verbs
-                .iter()
-                .find_map(|verb| match Cue::of_verb(verb) {
-                    Some(Cue::Menu) if self.menu_held => None,
-                    other => other,
-                })
-        });
+        let cue = cue
+            .or_else(|| {
+                snapshot
+                    .verbs
+                    .iter()
+                    .find_map(|verb| match Cue::of_verb(verb) {
+                        Some(Cue::Menu) if self.menu_held => None,
+                        other => other,
+                    })
+            })
+            .or_else(|| self.possession_cue.take());
         self.menu_held = menu_now;
 
         // A Behavior is drawn over whatever the sprite is doing, so a Poke
@@ -3303,6 +3305,24 @@ mod tests {
             carried.iter().all(Option::is_none),
             "held, and cued once: {carried:?}"
         );
+    }
+
+    /// A possession edge on the tick of a pickup waits for the next free tick
+    /// rather than take the pickup's place.
+    #[test]
+    fn a_possession_edge_yields_the_tick_to_a_hand_cue() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let world = snapshot(100);
+        settle(&mut engine, &world);
+
+        engine.set_possessed(true);
+        let press = WorldSnapshot {
+            cursor: engine.feet(),
+            verbs: vec![Verb::Grab],
+            ..world
+        };
+        let cues: Vec<Option<Cue>> = (0..3).map(|_| engine.tick(&press).cue).collect();
+        assert_eq!(cues, vec![Some(Cue::Pickup), Some(Cue::Possess), None]);
     }
 
     /// Pickup is the edge `on_verbs` reports for the grab that takes hold.
