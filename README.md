@@ -359,7 +359,7 @@ Tools each harness keeps under ACP, session and auth behavior, and per-harness s
 
 ### Harness ↔ MCP
 
-Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route the [MCP transport column](./docs/harness.md#harness-support) describes. [harness.md](./docs/harness.md#mcp-server) has the transport details.
+Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP, on the route the [MCP transport column](./docs/harness.md#harness-support) describes. [harness.md](./docs/harness.md#mcp-server) has the transport details. A Model API is offered the same eight tools in its request, and Fidget runs the calls it makes.
 
 **Eight tools** from `crates/core/src/dispatch.rs`. The opening turn of the Character Prompt tells the model to use the tools it has, without naming them, so this table stays the only catalog (#917). There is no tool for saying something: a Character says things only in its reply (ADR-0040).
 
@@ -374,7 +374,7 @@ Fidget attaches to a Harness over ACP on stdio. The Harness calls back over MCP,
 | `whereabouts` | Placement | Which display each Instance is on, the other displays, and its feet in that display. Each display includes its name when the platform has one, its origin, and its size, in logical points |
 | `caffeinate` | Power | Keep the computer awake until turned off or Fidget quits, and say what keeps it awake |
 
-Every tool takes an optional `instance_id`. Each Character Instance has its own Harness session, and that session's opening turn names its id, so `play_behavior` lands on the Instance whose session called it. An id no running Instance has is refused.
+Every tool takes an optional `instance_id`. Each Character Instance has its own Harness session, and that session's opening turn names its id, so `play_behavior` lands on the Instance whose session called it. A Model API passes `instance_id` the same way, from the Character Prompt that names it. An id no running Instance has is refused.
 
 **Three readonly resources** (`resources/list`, `resources/read`; no write, no subscribe):
 

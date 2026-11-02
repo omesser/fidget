@@ -3,6 +3,13 @@
 Anchor: `faa34b9f` on `main`, 2026-10-18. Every Fidget citation below is read
 against that tree. The spike is #1614.
 
+Since #2080 the HTTP Completer runs Fidget's tools, so the reason given under
+"Not needed" for skipping `reasoning_details` passback no longer holds.
+OpenRouter says reasoning blocks must be preserved during tool use
+([reasoning tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md)).
+Passback is still not built. It is an open point for reasoning models in a
+tool round, and nothing has run against OpenRouter to show what goes wrong.
+
 This note answers one question: what does it take to make
 [OpenRouter](https://openrouter.ai) a first-class AI source in Fidget? It
 covers the Model API, which is the HTTP Completer in `src-tauri/src/model.rs`,

@@ -656,8 +656,20 @@ impl Endpoint {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut rounds: Vec<Round> = Vec::new();
         let reply = loop {
-            match self.attempt(url, &snapshot, &rounds, instance, said) {
-                Ok(Turn::Said(reply)) => break Ok(reply),
+            // ponytail: while a call is possible the bubble waits for the
+            // round to end, since text before a call is preamble, not the
+            // reply. Stream it live again if a host's replies run long.
+            let held = self.tools.is_some()
+                && self.takes_tools.load(Ordering::SeqCst)
+                && rounds.len() < TOOL_ROUNDS;
+            let hearing: &dyn Fn(&str) = if held { &|_| {} } else { said };
+            match self.attempt(url, &snapshot, &rounds, instance, hearing) {
+                Ok(Turn::Said(reply)) => {
+                    if held {
+                        said(&reply.text);
+                    }
+                    break Ok(reply);
+                }
                 Ok(Turn::Called(_)) if crate::completer::abandoned() => {
                     break Err(Unsent::Abandoned)
                 }
@@ -732,7 +744,12 @@ impl Endpoint {
                     Field::Stream => self.streams.store(false, Ordering::SeqCst),
                     Field::Effort => self.takes_effort.store(false, Ordering::SeqCst),
                     Field::Cap => self.takes_max_tokens.store(false, Ordering::SeqCst),
-                    Field::Tools => self.takes_tools.store(false, Ordering::SeqCst),
+                    // After a round the host has already taken `tools`, so
+                    // the refusal was about this wake's history, not the field.
+                    Field::Tools if rounds.is_empty() => {
+                        self.takes_tools.store(false, Ordering::SeqCst)
+                    }
+                    Field::Tools => {}
                 }
             }
         }
@@ -841,6 +858,8 @@ impl Endpoint {
         );
         if asked.tools {
             offer_tools(&mut body, responses, rounds);
+        } else {
+            recount_rounds(&mut body, responses, rounds);
         }
         let request = self
             .headers(self.agent.post(url), accept)
@@ -1499,6 +1518,32 @@ fn offer_tools(body: &mut serde_json::Value, responses: bool, rounds: &[Round]) 
     }
 }
 
+/// This wake's rounds as plain text on the question, for a text-only retry.
+/// Tool messages without the catalog are what some servers refuse, and the
+/// calls already ran, so the model still has to hear what they returned.
+fn recount_rounds(body: &mut serde_json::Value, responses: bool, rounds: &[Round]) {
+    if rounds.is_empty() {
+        return;
+    }
+    let calls: Vec<String> = rounds
+        .iter()
+        .flatten()
+        .map(|(call, output)| format!("{} {} -> {output}", call.name, call.arguments))
+        .collect();
+    let recount = format!(
+        "\n\nTools you already called this turn, and what they returned:\n{}",
+        calls.join("\n")
+    );
+    let key = if responses { "input" } else { "messages" };
+    let question = match &mut body[key] {
+        serde_json::Value::Array(history) => history.last_mut().map(|last| &mut last["content"]),
+        text => Some(text),
+    };
+    if let Some(serde_json::Value::String(text)) = question {
+        text.push_str(&recount);
+    }
+}
+
 // One over the clippy cap. Folding two of these would pair a guard with the
 // value it guards, or a cap's name with its number.
 #[allow(clippy::too_many_arguments)]
@@ -1607,7 +1652,8 @@ enum Field {
     /// The one field that is renamed rather than dropped. The retry still
     /// carries a cap, spelled `max_completion_tokens`.
     Cap,
-    /// Dropped with this wake's tool rounds: the retry is text-only.
+    /// The retry is text-only, with this wake's rounds told as text. Only a
+    /// refusal before any round says the host never takes it.
     Tools,
 }
 
@@ -2684,8 +2730,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// A loopback server that answers each POST with the next reply, as JSON
-    /// or as an event stream, and hands back every body it was sent.
+    /// A loopback server that answers each POST with the next reply, as JSON,
+    /// as an event stream, or as a 400 for an `error` body, and hands back
+    /// every body it was sent.
     fn server_answering(path: &str, replies: Vec<String>) -> (String, Receiver<String>) {
         use std::io::Write;
 
@@ -2704,9 +2751,13 @@ pub(crate) mod tests {
                     true => "text/event-stream",
                     false => "application/json",
                 };
+                let status = match reply.starts_with(r#"{"error""#) {
+                    true => "400 Bad Request",
+                    false => "200 OK",
+                };
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                     reply.len()
                 );
                 let _ = stream.flush();
@@ -2948,6 +2999,91 @@ pub(crate) mod tests {
             .unwrap();
         assert!(json(&seen.recv().unwrap())["tools"].is_null());
         assert!(seen.try_recv().is_err(), "one POST on the next wake");
+    }
+
+    /// Text streamed before a call is preamble. The bubble hears only the
+    /// round that answers.
+    #[test]
+    fn text_before_a_tool_call_never_reaches_the_bubble() {
+        let (url, _seen) = server_answering(
+            "/v1/chat/completions",
+            vec![
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"wave\\nlet me wave\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c\",\"type\":\"function\",\"function\":{\"name\":\"recall\",\"arguments\":\"{}\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string(),
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"wave\\nhi\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string(),
+            ],
+        );
+        let (frame_loop, _) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+        let heard = std::cell::RefCell::new(Vec::<String>::new());
+
+        endpoint
+            .post(&url, "hello", "buddy-1", &|text| {
+                heard.borrow_mut().push(text.to_string())
+            })
+            .unwrap();
+
+        assert_eq!(heard.into_inner(), ["wave\nhi"]);
+    }
+
+    /// A refusal after a round is about this wake's history: the host took
+    /// `tools` a request ago. The retry keeps what the calls returned, and
+    /// the next wake is offered tools again.
+    #[test]
+    fn a_tools_refusal_after_a_round_keeps_the_round_and_the_tools() {
+        let (url, seen) = server_answering(
+            "/v1/chat/completions",
+            vec![
+                r#"{"choices":[{"message":{"tool_calls":[{"id":"c","type":"function","function":{"name":"play_behavior","arguments":"{\"behavior\":\"wave\"}"}}]},"finish_reason":"tool_calls"}]}"#.to_string(),
+                r#"{"error":{"message":"tools: tool history is malformed"}}"#.to_string(),
+                r#"{"choices":[{"message":{"content":"wave\nhi"},"finish_reason":"stop"}]}"#.to_string(),
+                r#"{"choices":[{"message":{"content":"stroll\nhey"},"finish_reason":"stop"}]}"#.to_string(),
+            ],
+        );
+        let (frame_loop, heard) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        let reply = endpoint.post(&url, "hello", "buddy-1", &|_| {}).unwrap();
+
+        assert_eq!(reply.text, "wave\nhi");
+        assert_eq!(heard.recv().unwrap().0, "play_behavior");
+        let bodies: Vec<_> = (0..3).map(|_| json(&seen.recv().unwrap())).collect();
+        assert!(bodies[1]["tools"].is_array());
+        let retry = &bodies[2];
+        assert!(retry["tools"].is_null(), "the retry is text-only");
+        let question = retry["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            question.contains(r#"play_behavior {"behavior":"wave"} -> "#)
+                && question.contains(WAVED),
+            "{question}"
+        );
+
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1", &|_| {})
+            .unwrap();
+        assert!(
+            json(&seen.recv().unwrap())["tools"].is_array(),
+            "the host is still offered tools"
+        );
     }
 
     /// The field goes out. A server that names it in a rejection gets one
