@@ -3372,6 +3372,8 @@ fn answer_tool_call(
                 app_instructions: director::app_instructions(
                     super::behavior_names_of(characters, instance),
                     blank,
+                    // Only a Harness can call this tool, and it has tools.
+                    true,
                 ),
                 personality_prompt: match blank {
                     true => String::new(),
@@ -3661,7 +3663,7 @@ mod tests {
         assert_eq!(pip["id"], json!(id));
         assert_eq!(
             pip["app_instructions"],
-            json!(director::app_instructions(["wave"], false))
+            json!(director::app_instructions(["wave"], false, true))
         );
         assert_eq!(pip["personality_prompt"], json!("a shy robot."));
         assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));

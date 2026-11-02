@@ -2759,6 +2759,10 @@ impl Completer for Session {
     /// One child serves every Instance, so an outstanding ask
     /// belongs to the Instance whose session asked it, mid-turn or between
     /// turns. Another character's wake is not held by this one's question.
+    fn has_tools(&self) -> bool {
+        true
+    }
+
     fn awaiting_user(&self, instance: &str) -> bool {
         let serving = self
             .serving_instance
