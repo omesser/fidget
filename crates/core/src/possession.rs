@@ -24,9 +24,9 @@ pub enum Key {
     Digit(u8),
 }
 
-/// Behaviors the digits play, in name order. One whose chain walks, jumps,
-/// lands or holds is left to the arrows and Space. A Character with more than
-/// nine leaves the rest unbound.
+/// Behaviors the digits play, in name order. One whose chain walks, chases,
+/// jumps, lands, holds or plays `possessed` is left to the arrows and Space.
+/// A Character with more than nine leaves the rest unbound.
 pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<&str> {
     let mut names: Vec<&str> = behaviors
         .keys()
