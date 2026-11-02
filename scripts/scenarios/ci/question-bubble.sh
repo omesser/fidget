@@ -63,10 +63,12 @@ wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
 wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 wait_for_trace 2 "$log" '^frame: .* sprite\(-?[0-9]+,-?[0-9]+\)' || fail "no frame trace in $log"
-# The page's first draft report comes from its frame listener. Before it the
-# sprite is undrawn, and the one-frame ask the Poke raises reaches nobody.
-wait_for_trace "$FIDGET_STARTUP_WAIT_SECONDS" "$log" '^overlay: draft instance=[^ ]+ closed$' ||
-  fail "the overlay page never took a frame; see $log"
+# The page's first draft report for the sprite comes from its frame listener.
+# Before it the sprite is undrawn, and the one-frame ask reaches nobody.
+id=$(sed -nE 's/^frame: .* sprite\(-?[0-9]+,-?[0-9]+\) .* ([^ ]+)$/\1/p' "$log" | tail -1)
+[ -n "$id" ] || fail "no instance in the frame trace in $log"
+wait_for_trace "$FIDGET_STARTUP_WAIT_SECONDS" "$log" "^overlay: draft instance=$id closed\$" ||
+  fail "the overlay page never drew $id; see $log"
 
 # The overlay spans the display, so its centre is not the sprite. The newest
 # frame trace line says where the sprite is drawn, in global points.
