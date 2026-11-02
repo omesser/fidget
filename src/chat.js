@@ -502,6 +502,7 @@ const applyChatAppearance = mountChatAppearance(document.documentElement);
 // or the child never came up. The composer is disabled rather than hidden so
 // it reads as waiting, and method buttons rebuild so a dropped one cannot linger.
 const retry = document.getElementById("landing-retry");
+let signingIn = false;
 
 function setPickersDisabled(disabled) {
   for (const btn of document.querySelectorAll(".connect-btn")) {
@@ -518,6 +519,8 @@ function paintSignIn(actions, waiting) {
     button.className = "sign-in-btn";
     button.textContent = action.label;
     button.addEventListener("click", () => {
+      if (signingIn) return;
+      signingIn = true;
       const pending = document.createElement("p");
       pending.className = "hint sign-in-waiting";
       drawInline(pending, waiting);
@@ -529,6 +532,7 @@ function paintSignIn(actions, waiting) {
       invoke("sign_in", { instance, methodId: action.id })
         .catch((why) => note(String(why)))
         .finally(() => {
+          signingIn = false;
           pending.remove();
           button.disabled = false;
           retry.disabled = false;
@@ -1389,6 +1393,7 @@ async function start() {
     async () => {
       try {
         const opening = await invoke("chat_opening", { instance });
+        if (signingIn) return;
         showWho(opening);
         attached(opening);
         showPrompt(opening);
