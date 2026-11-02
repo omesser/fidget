@@ -3493,6 +3493,19 @@ struct WakeGate {
 /// well under this, so one that hasn't by now never will.
 const PAGE_LOAD_LIMIT: Duration = Duration::from_secs(3);
 
+/// A due wake's wait on the overlay page under the feet.
+#[derive(Debug, PartialEq)]
+pub(crate) enum WakeHold {
+    Waiting {
+        page: String,
+        since: Instant,
+    },
+    /// It didn't listen within `PAGE_LOAD_LIMIT`, so wakes on it go out at once.
+    GaveUp {
+        page: String,
+    },
+}
+
 #[derive(Debug, PartialEq)]
 enum WakeTurn {
     NotDue,
@@ -3509,8 +3522,8 @@ enum WakeTurn {
 /// wake once the page listens, or after `PAGE_LOAD_LIMIT` if it never does.
 fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
     if gate.loading.is_none() {
-        if let Some((label, _)) = live.wake_held_on.take() {
-            eprintln!("director: {} wake released, was held on {label}", live.id);
+        if let Some(WakeHold::Waiting { page, .. }) = live.wake_held_on.take() {
+            eprintln!("director: {} wake released, was held on {page}", live.id);
         }
     }
     let due = gate.enabled
@@ -3526,23 +3539,28 @@ fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
     if !due {
         return WakeTurn::NotDue;
     }
-    if let Some(label) = gate.loading {
-        let since = match &live.wake_held_on {
-            Some((held, since)) if *held == label => *since,
-            _ => {
-                eprintln!("director: {} wake held until {label} listens", live.id);
-                live.wake_held_on = Some((label.clone(), gate.now));
-                gate.now
+    if let Some(page) = gate.loading {
+        match &live.wake_held_on {
+            Some(WakeHold::GaveUp { page: held }) if *held == page => {}
+            Some(WakeHold::Waiting { page: held, since }) if *held == page => {
+                if gate.now.duration_since(*since) < PAGE_LOAD_LIMIT {
+                    return WakeTurn::Held;
+                }
+                eprintln!(
+                    "director: {} wake sent anyway, {page} never listened",
+                    live.id
+                );
+                live.wake_held_on = Some(WakeHold::GaveUp { page });
             }
-        };
-        if gate.now.duration_since(since) < PAGE_LOAD_LIMIT {
-            return WakeTurn::Held;
+            _ => {
+                eprintln!("director: {} wake held until {page} listens", live.id);
+                live.wake_held_on = Some(WakeHold::Waiting {
+                    page,
+                    since: gate.now,
+                });
+                return WakeTurn::Held;
+            }
         }
-        // Keep the hold's start, so later wakes on this page don't wait again.
-        eprintln!(
-            "director: {} wake sent anyway, {label} never listened",
-            live.id
-        );
     }
     let was_addressed = std::mem::take(&mut live.addressed);
     if was_addressed {
