@@ -2260,7 +2260,7 @@ pub(crate) const HOVER_DELAY_MS_VAR: &str = "FIDGET_HOVER_DELAY_MS";
 /// How long the pointer rests on the Character before the quick message pill
 /// opens, in ms. The only default: the row's placeholder names it, and every
 /// frame carries the delay in force to the overlay.
-const HOVER_DELAY_MS: u64 = 1500;
+const HOVER_DELAY_MS: u64 = 2500;
 
 /// The hover delay in force: the variable, then the Development row, then the default.
 pub(crate) fn hover_delay_ms() -> u64 {
@@ -5944,15 +5944,15 @@ mod tests {
     fn the_hover_delay_in_force_is_the_setting_or_the_default() {
         model::tests::with_env(None, None, None, || {
             dev_flags::seed(&settings::Settings::default());
-            assert_eq!(hover_delay_ms(), 1500);
-            assert_eq!(hover_delay_placeholder(), "1500");
+            assert_eq!(hover_delay_ms(), 2500);
+            assert_eq!(hover_delay_placeholder(), "2500");
 
             for unset in ["", "0", "abc"] {
                 dev_flags::seed(&settings::Settings {
                     hover_delay_ms: unset.into(),
                     ..settings::Settings::default()
                 });
-                assert_eq!(hover_delay_ms(), 1500, "{unset:?} leaves the default");
+                assert_eq!(hover_delay_ms(), 2500, "{unset:?} leaves the default");
             }
 
             dev_flags::seed(&settings::Settings {

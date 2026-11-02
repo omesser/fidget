@@ -45,9 +45,9 @@ export function quickMessageMirror(text, prompt, available) {
   return "\u200b";
 }
 
-// Auto-hide after 3s continuously away from both sprite and pill.
+// Auto-hide after 1.5s continuously away from both sprite and pill.
 // Re-entering resets the wait.
-export const AUTO_HIDE_DELAY_MS = 3000;
+export const AUTO_HIDE_DELAY_MS = 1500;
 
 // While the Speech bubble or thinking is up the Character has the floor, so an empty
 // pill the pointer left gives way. Only long enough to cross onto the pill.

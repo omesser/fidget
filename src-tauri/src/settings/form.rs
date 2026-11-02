@@ -3421,7 +3421,7 @@ pub(crate) mod tests {
             };
 
             let description = describe();
-            assert_eq!(hover_row(&description), ("1500".to_string(), false, None));
+            assert_eq!(hover_row(&description), ("2500".to_string(), false, None));
             assert_eq!(
                 description.text_write(HOVER_DELAY_MS_ID),
                 Some(TextField::HoverDelayMs)
@@ -3433,7 +3433,7 @@ pub(crate) mod tests {
             assert_eq!(
                 hover_row(&description),
                 (
-                    "1500".to_string(),
+                    "2500".to_string(),
                     true,
                     Some("Overridden by env: FIDGET_HOVER_DELAY_MS".to_string())
                 )

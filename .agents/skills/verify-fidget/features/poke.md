@@ -34,5 +34,5 @@ Preconditions:
 - A click shorter than one ~16ms poll can miss `XQueryPointer`; hold the button (~120ms) as the X11 script does.
 - Clicking the feet `pos()` may miss the art (feet are at the bottom); aim ~40px above on X11.
 - Double-click is Summon, not Poke — wait between attempts.
-- A pointer left resting on a climber opens the quick-message pill after ~1.5 s, and a visible pill holds the climb (#1366). The `poke-mid-climb` X11 leaf leaves the pointer on the sprite after its Poke, so it can fail with `the sprite did not climb on after the cooldown`. Moving the pointer off the sprite right after the Poke makes the same leaf pass. Treat that FAIL as this hold, not a regression of #1346, and report it.
+- A pointer left resting on a climber opens the quick-message pill after ~2.5 s, and a visible pill holds the climb (#1366). The `poke-mid-climb` X11 leaf leaves the pointer on the sprite after its Poke, so it can fail with `the sprite did not climb on after the cooldown`. Moving the pointer off the sprite right after the Poke makes the same leaf pass. Treat that FAIL as this hold, not a regression of #1346, and report it.
 - Headless boxes without `xterm`/`openbox` cannot reach this path via `verify-overlay-x11.sh`; prove units instead and record the unmet packages in Gotchas / PROOF.md — do not invent a parallel poke harness.

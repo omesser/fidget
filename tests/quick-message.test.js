@@ -22,7 +22,7 @@ import {
 } from "../src/quick-message.js";
 
 // Any dwell the Shell might send. The default lives in the Shell, which sends it on every frame.
-const HOVER_DELAY_MS = 1500;
+const HOVER_DELAY_MS = 2500;
 
 function harness(options = {}) {
   let time = 0;
@@ -76,7 +76,7 @@ function shown() {
   return harnessed;
 }
 
-test("the composer appears after a 1.5s hover, focused, and not before", () => {
+test("the composer appears after a 2.5s hover, focused, and not before", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
@@ -91,7 +91,7 @@ test("the composer appears after a 1.5s hover, focused, and not before", () => {
   assert.equal(qm.takeFocus(), false, "the overlay focuses the field once");
 });
 
-test("a hover delay from the Shell replaces the 1.5s dwell", () => {
+test("a hover delay from the Shell replaces the 2.5s dwell", () => {
   const { qm, advance } = harness({ hoverDelayMs: 100 });
 
   qm.enterSprite();
@@ -129,7 +129,7 @@ test("leaving before the hover completes does not show the composer", () => {
   assert.equal(qm.visible, false);
 });
 
-test("a second enter does not postpone the dwell", () => {
+test("a second enter does not postpone the hover delay", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
@@ -139,7 +139,7 @@ test("a second enter does not postpone the dwell", () => {
   assert.equal(qm.visible, true);
 });
 
-test("clicking away during the dwell does not show the composer later", () => {
+test("clicking away during the hover delay does not show the composer later", () => {
   const { qm, advance } = harness();
 
   qm.enterSprite();
@@ -192,60 +192,60 @@ test("an empty pill holding the caret stays until the caret leaves", () => {
   assert.equal(qm.visible, false);
 });
 
-test("pill auto-hides after 3s if empty and pointer leaves both sprite and pill", () => {
+test("pill auto-hides after 1.5s if empty and pointer leaves both sprite and pill", () => {
   const { qm, advance } = shown();
 
   qm.blur();
   qm.leaveSprite();
   qm.leavePill();
 
-  advance(2900);
-  assert.equal(qm.visible, true, "pill stays visible before 3s");
+  advance(1400);
+  assert.equal(qm.visible, true, "pill stays visible before 1.5s");
 
   advance(100);
-  assert.equal(qm.visible, false, "pill auto-hides after 3s continuous away");
+  assert.equal(qm.visible, false, "pill auto-hides after 1.5s continuous away");
 });
 
-test("auto-hide cancels if pointer re-enters sprite before 3s", () => {
+test("auto-hide cancels if pointer re-enters sprite before 1.5s", () => {
   const { qm, advance } = shown();
 
   qm.leaveSprite();
   qm.leavePill();
-  advance(2000);
+  advance(1000);
 
   qm.enterSprite();
-  advance(2000);
+  advance(1000);
 
   assert.equal(qm.visible, true, "pill stays visible when sprite re-entered");
 });
 
-test("re-entering sprite resets auto-hide timer to fresh 3s on next leave", () => {
+test("re-entering sprite resets auto-hide timer to fresh 1.5s on next leave", () => {
   const { qm, advance } = shown();
 
   qm.blur();
   qm.leaveSprite();
   qm.leavePill();
-  advance(2000);
+  advance(1000);
 
   qm.enterSprite();
 
   qm.leaveSprite();
-  advance(2900);
-  assert.equal(qm.visible, true, "pill still visible at 2.9s of fresh timer");
+  advance(1400);
+  assert.equal(qm.visible, true, "pill still visible at 1.4s of fresh timer");
 
   advance(100);
-  assert.equal(qm.visible, false, "pill hides after fresh 3s from second leave");
+  assert.equal(qm.visible, false, "pill hides after fresh 1.5s from second leave");
 });
 
-test("auto-hide cancels if pointer re-enters pill before 3s", () => {
+test("auto-hide cancels if pointer re-enters pill before 1.5s", () => {
   const { qm, advance } = shown();
 
   qm.leaveSprite();
   qm.leavePill();
-  advance(2000);
+  advance(1000);
 
   qm.enterPill();
-  advance(2000);
+  advance(1000);
 
   assert.equal(qm.visible, true, "pill stays visible when pill re-entered");
 });
@@ -257,7 +257,7 @@ test("auto-hide does not trigger if user has typed non-empty text", () => {
   qm.leaveSprite();
   qm.leavePill();
 
-  advance(3000);
+  advance(1500);
   assert.equal(qm.visible, true, "pill with text does not auto-hide");
   assert.equal(qm.text, "hey");
 });
@@ -270,7 +270,7 @@ test("auto-hide treats whitespace-only as empty", () => {
   qm.leaveSprite();
   qm.leavePill();
 
-  advance(3000);
+  advance(1500);
   assert.equal(qm.visible, false, "pill with only whitespace auto-hides");
 });
 
@@ -280,7 +280,7 @@ test("auto-hide does not trigger if only sprite is left but pill is hovered", ()
   qm.enterPill();
   qm.leaveSprite();
 
-  advance(3000);
+  advance(1500);
   assert.equal(qm.visible, true, "pill stays visible while hovered");
 });
 
@@ -289,7 +289,7 @@ test("auto-hide does not trigger if only pill is left but sprite is hovered", ()
 
   qm.leavePill();
 
-  advance(3000);
+  advance(1500);
   assert.equal(qm.visible, true, "pill stays visible while sprite hovered");
 });
 

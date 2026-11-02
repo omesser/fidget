@@ -451,12 +451,12 @@
   <header>
     <p class="class">Dated proposal · <a href="https://github.com/omesser/fidget/issues/277">#277</a> · 2026-09-03, Possess and Unpossess <a href="https://github.com/omesser/fidget/issues/1655#issuecomment-6551720792">#1655</a> · 2026-11-01 · hand-written and frozen, not a description of shipped behavior; the Possess and Unpossess rows play the shipped cue.js</p>
     <h1>Fidget Cues</h1>
-    <p class="lede">One cue per interaction. Try them on the desk: <b>click</b> (Poke), <b>double-click</b> (Summon), <b>right-click</b> (Menu), <b>drag</b> (Pickup, Drop, or Throw), and <b>hover and stay <span id="lede-dwell">~1.5 seconds</span></b> for the quick-message pill. The Summon cue cancels a Poke still in flight. A fast release is a Throw. Possess and Unpossess play from their rows below, with the app's own <code>cue.js</code> and rules. Every stroke is white on ink, the same pair the speech bubble already uses.</p>
+    <p class="lede">One cue per interaction. Try them on the desk: <b>click</b> (Poke), <b>double-click</b> (Summon), <b>right-click</b> (Menu), <b>drag</b> (Pickup, Drop, or Throw), and <b>hover and stay <span id="lede-dwell">~2.5 seconds</span></b> for the quick-message pill. The Summon cue cancels a Poke still in flight. A fast release is a Throw. Possess and Unpossess play from their rows below, with the app's own <code>cue.js</code> and rules. Every stroke is white on ink, the same pair the speech bubble already uses.</p>
   </header>
 
   <section class="desk-wrap">
     <div class="desk-bar">
-      <span class="hint">Try each gesture on BMO: <b>click</b>, <b>double-click</b>, <b>right-click</b>, <b>drag</b>, <b>hover and stay <span id="hint-dwell">~1.5s</span></b> for the quick-message pill. The wallpaper changes to check that the cues read on any desktop. A throw or a drop can perch on the window.</span>
+      <span class="hint">Try each gesture on BMO: <b>click</b>, <b>double-click</b>, <b>right-click</b>, <b>drag</b>, <b>hover and stay <span id="hint-dwell">~2.5s</span></b> for the quick-message pill. The wallpaper changes to check that the cues read on any desktop. A throw or a drop can perch on the window.</span>
       <div class="seg" role="group" aria-label="Wallpaper">
         <button data-wall="light" aria-pressed="true">Light</button>
         <button data-wall="dark" aria-pressed="false">Dark</button>
@@ -497,8 +497,8 @@
 
   <section id="quick-message-spec">
     <h2>Quick message</h2>
-    <p>Hover BMO for <span id="spec-dwell-long">1.5 seconds</span> and a pill appears over the sprite, the field focused. The pill opens on hover even while the Chat mock is open; Chat is a separate composer and does not gate it. Empty, it says <b>talk to me</b>. Send is an accent disc, <code>#5cc9b5</code>, with a dark triangle — not a link. The box is the speech bubble's chrome and it has no tail. Appear and dismiss fade over 180ms. The caret is that same accent. The same pill on a light, a dark and a busy desktop is <a href="bubble.html#quick-message-chrome">Fidget Bubble</a>.</p>
-    <p>Leave during the <span id="spec-dwell-short">1.5s</span> and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape dismisses and clears the draft. Enter sends.</p>
+    <p>Hover BMO for <span id="spec-dwell-long">2.5 seconds</span> and a pill appears over the sprite, the field focused. The pill opens on hover even while the Chat mock is open; Chat is a separate composer and does not gate it. Empty, it says <b>talk to me</b>. Send is an accent disc, <code>#5cc9b5</code>, with a dark triangle — not a link. The box is the speech bubble's chrome and it has no tail. Appear and dismiss fade over 180ms. The caret is that same accent. The same pill on a light, a dark and a busy desktop is <a href="bubble.html#quick-message-chrome">Fidget Bubble</a>.</p>
+    <p>Leave during the <span id="spec-dwell-short">2.5s</span> and the pill never appears. Leave after it is up and it stays. It goes away on a click outside the sprite and the pill, a drag of the pet of at least 4px, or a double-click. The double-click is still Summon. A poke still plays and does not dismiss. A drag that starts in the field selects text; it does not grab the pet and does not dismiss. Escape dismisses and clears the draft. Enter sends.</p>
     <p>While the caret is in the field the stroll holds in place. This desk has no walk-cycle frames, so the slide stands in for the Engine's walk. Idle is the sprite at rest, which stays. A jump is not drawn here; the Engine still lets one leave. <b>Release the caret</b> blurs the field without a dismiss, which is when the stroll resumes and the pill remains. The stroll pauses while the pointer is on the sprite, so a still cursor can finish the dwell — on the desktop the pet can keep walking through that wait.</p>
     <p>When nothing can answer, the field is disabled and the draft is cleared so the sentence shows. That is <b>Nothing can answer yet</b>, or <b>Starting Hermes…</b> while a harness is still coming up. Send is the dim disc <code>#2c3340</code>, not the accent.</p>
     <div class="quick-message visible quick-frozen" id="quick-message-frozen">
@@ -986,7 +986,7 @@ document.getElementById("sequence").addEventListener("click", () => {
 
 // The quick-message gesture locked on. The desk already decodes poke,
 // drag and Summon; this only decides when the pill is up.
-const HOVER_DELAY_MS = 1500;
+const HOVER_DELAY_MS = 2500;
 const quick = document.getElementById("quick-message");
 const field = document.getElementById("quick-field");
 const mirror = document.getElementById("quick-mirror");

@@ -970,7 +970,7 @@
               "type": "TextField",
               "id": "hover_delay_ms",
               "label": "Hover delay, in milliseconds",
-              "placeholder": "1500",
+              "placeholder": "2500",
               "writes": "HoverDelayMs",
               "help": "How long to rest on the Character before the quick message opens.",
               "frozen": false,
@@ -980,7 +980,7 @@
             }
           ],
           "comment": "Also for development and testing. Leave empty for the default.",
-          "disclosure": "Hover delay: how long the pointer rests on the Character before the quick message opens. Leave empty for 1500 milliseconds (the default). A change applies to the next hover.",
+          "disclosure": "Hover delay: how long the pointer rests on the Character before the quick message opens. Leave empty for 2500 milliseconds (the default). A change applies to the next hover.",
           "status": null
         }
       ]
