@@ -5,11 +5,12 @@
 //! nothing. `completer` picks between them and holds the in-flight call.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use fidget_core::director::{self, Completer, Pace, Reply, WakeRequest, WAKE_EVERY};
+use fidget_core::dispatch::list_tools;
 use serde::Serialize;
 use url::{Host, Url};
 
@@ -265,6 +266,8 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         takes_effort: AtomicBool::new(true),
         takes_max_tokens: AtomicBool::new(true),
         marks_thinking: AtomicBool::new(false),
+        tools: crate::mcp_http::calls(),
+        takes_tools: AtomicBool::new(true),
         agent: ureq::agent(),
     })
 }
@@ -522,6 +525,30 @@ struct Message {
     content: String,
 }
 
+/// Tool rounds one wake may spend before the model must answer in text. A
+/// Harness runs its own loop; this one is ours to bound.
+const TOOL_ROUNDS: usize = 4;
+
+/// A function the model asked for. `arguments` stays the JSON text it sent,
+/// so the next request can echo the call back verbatim.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+/// One round's calls, each beside what it returned. Held for the wake only:
+/// the session keeps the reply the user heard, as it did before tools.
+type Round = Vec<(ToolCall, String)>;
+
+/// What one POST produced: words to say, or tools to run first.
+#[derive(Debug, PartialEq, Eq)]
+enum Turn {
+    Said(Reply),
+    Called(Vec<ToolCall>),
+}
+
 /// The conversation, and which turn is open in it.
 /// A counter rather than last-message position: two calls can be inside
 /// `post` at once, and "the question at the end" does not say whose.
@@ -563,6 +590,11 @@ pub struct Endpoint {
     /// like `streams`, but pessimistic and only rising: a new host gets the single
     /// combined number until one turn marks.
     marks_thinking: AtomicBool,
+    /// Where a tool call runs: the frame loop the MCP server feeds, so this
+    /// lane and a Harness dispatch alike. `None` sends no `tools`.
+    tools: Option<mpsc::Sender<crate::mcp_http::Call>>,
+    /// Does this host take `tools`? Same shape as `takes_effort`.
+    takes_tools: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are use-once
     /// Agents, so each wake would throw away the pooled connection.
     agent: ureq::Agent,
@@ -622,14 +654,49 @@ impl Endpoint {
         said: &dyn Fn(&str),
     ) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
-        let mut wire = if self.streams.load(Ordering::SeqCst) {
-            Wire::Stream
-        } else {
-            Wire::Whole
+        let mut rounds: Vec<Round> = Vec::new();
+        let reply = loop {
+            match self.attempt(url, &snapshot, &rounds, instance, said) {
+                Ok(Turn::Said(reply)) => break Ok(reply),
+                Ok(Turn::Called(_)) if rounds.len() == TOOL_ROUNDS => {
+                    break Err(Unsent::Failed(format!(
+                        "{url}: {} still calling tools after {TOOL_ROUNDS} rounds",
+                        self.model
+                    )))
+                }
+                Ok(Turn::Called(calls)) => {
+                    if crate::completer::abandoned() {
+                        break Err(Unsent::Abandoned);
+                    }
+                    rounds.push(self.run_tools(calls));
+                }
+                Err(unsent) => break Err(unsent),
+            }
         };
-        let mut effort = self.takes_effort.load(Ordering::SeqCst) && self.effort.is_some();
-        let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
-        let mut reply = self.send(url, &snapshot, wire, effort, cap, instance, said);
+        self.close_turn(turn, reply.map_err(Unsent::into_error))
+    }
+
+    /// One request and its field fallbacks. The latches are read fresh, so a
+    /// field one tool round settled stays off for the next.
+    fn attempt(
+        &self,
+        url: &str,
+        snapshot: &[Message],
+        rounds: &[Round],
+        instance: &str,
+        said: &dyn Fn(&str),
+    ) -> Result<Turn, Unsent> {
+        let mut asked = Asked {
+            wire: if self.streams.load(Ordering::SeqCst) {
+                Wire::Stream
+            } else {
+                Wire::Whole
+            },
+            effort: self.takes_effort.load(Ordering::SeqCst) && self.effort.is_some(),
+            cap: self.takes_max_tokens.load(Ordering::SeqCst),
+            tools: self.tools.is_some() && self.takes_tools.load(Ordering::SeqCst),
+        };
+        let mut reply = self.send(url, snapshot, rounds, asked, instance, said);
         // A loop rather than one retry: three guarded fields, and a validator
         // strict enough to refuse two would otherwise lose the wake. Bounded
         // by the field count so a body that keeps naming one cannot post forever.
@@ -638,15 +705,7 @@ impl Endpoint {
             let Some((field, settles)) = unsent.retry_settles() else {
                 break;
             };
-            let sent = match field {
-                Field::Stream => wire == Wire::Stream,
-                Field::Effort => effort,
-                // The Responses path spells the cap `max_output_tokens`, so
-                // a body naming `max_tokens` there is about something this
-                // request never sent.
-                Field::Cap => cap && !uses_responses(url),
-            };
-            if !sent {
+            if !asked.sent(field, url) {
                 break;
             }
             if tracing() {
@@ -665,12 +724,8 @@ impl Endpoint {
                 reply = Err(Unsent::Abandoned);
                 break;
             }
-            match field {
-                Field::Stream => wire = Wire::Whole,
-                Field::Effort => effort = false,
-                Field::Cap => cap = false,
-            }
-            reply = self.send(url, &snapshot, wire, effort, cap, instance, said);
+            asked = asked.without(field);
+            reply = self.send(url, snapshot, rounds, asked, instance, said);
             // Evidence, not a guess: the server rejected the field and the
             // request without it worked. A misread 400 fails twice and settles
             // nothing, and neither does a stream that merely broke.
@@ -679,10 +734,39 @@ impl Endpoint {
                     Field::Stream => self.streams.store(false, Ordering::SeqCst),
                     Field::Effort => self.takes_effort.store(false, Ordering::SeqCst),
                     Field::Cap => self.takes_max_tokens.store(false, Ordering::SeqCst),
+                    Field::Tools => self.takes_tools.store(false, Ordering::SeqCst),
                 }
             }
         }
-        self.close_turn(turn, reply.map_err(Unsent::into_error))
+        reply
+    }
+
+    /// Run each call through `dispatch` on the frame loop and keep what it
+    /// said. A refusal goes back as text, so the model can try again.
+    fn run_tools(&self, calls: Vec<ToolCall>) -> Round {
+        calls
+            .into_iter()
+            .map(|call| {
+                let arguments = match call.arguments.trim() {
+                    "" => Ok(serde_json::json!({})),
+                    text => serde_json::from_str(text)
+                        .map_err(|why| format!("arguments are not JSON: {why}")),
+                };
+                let outcome = arguments.and_then(|arguments| match &self.tools {
+                    Some(frame_loop) => crate::mcp_http::run(frame_loop, &call.name, arguments)
+                        .map_err(|why| why.message),
+                    None => Err("no tools in this session".to_string()),
+                });
+                let output = match outcome {
+                    Ok(value) => value.to_string(),
+                    Err(why) => format!("error: {why}"),
+                };
+                if tracing() {
+                    eprintln!("director: tool {} -> {output}", call.name);
+                }
+                (call, output)
+            })
+            .collect()
     }
 
     /// Paired with `close_turn`: the session only grows here and is only
@@ -733,32 +817,33 @@ impl Endpoint {
 
     /// One POST. Both attempts come through here, so the fallback differs
     /// from the first try in exactly one field.
-    #[allow(clippy::too_many_arguments)]
     fn send(
         &self,
         url: &str,
         session: &[Message],
-        wire: Wire,
-        effort: bool,
-        cap: bool,
+        rounds: &[Round],
+        asked: Asked,
         instance: &str,
         said: &dyn Fn(&str),
-    ) -> Result<Reply, Unsent> {
-        let accept = match wire {
+    ) -> Result<Turn, Unsent> {
+        let accept = match asked.wire {
             Wire::Stream => "text/event-stream",
             Wire::Whole => "application/json",
         };
         let responses = uses_responses(url);
-        let body = request_body(
+        let mut body = request_body(
             &self.model,
             session,
             responses,
             self.wire_budget(),
-            wire,
-            effort,
+            asked.wire,
+            asked.effort,
             self.effort.as_deref(),
-            cap,
+            asked.cap,
         );
+        if asked.tools {
+            offer_tools(&mut body, responses, rounds);
+        }
         let request = self
             .headers(self.agent.post(url), accept)
             .header("Content-Type", "application/json")
@@ -777,25 +862,25 @@ impl Endpoint {
             // Only a field this request actually sent: a body that names one
             // we left out is talking about something else, and dropping it
             // again would send the identical request.
-            let refused = refused_field(code, &text).filter(|field| match field {
-                Field::Stream => wire == Wire::Stream,
-                Field::Effort => effort,
-                Field::Cap => cap && !responses,
-            });
+            let refused = refused_field(code, &text).filter(|field| asked.sent(*field, url));
             return Err(match refused {
                 Some(field) => Unsent::Refused(field, error),
                 None => Unsent::Failed(error),
             });
         }
 
-        match wire {
+        match asked.wire {
             Wire::Whole => {
                 let (_, text) = read_response(response).map_err(Unsent::Failed)?;
+                let calls = calls_from_body(&text);
+                if !calls.is_empty() && !truncated_body(&text) {
+                    return Ok(Turn::Called(calls));
+                }
                 // The same three endings as a stream, in the shape a server
                 // that will not stream sends them.
                 let said = content_from_body(&text);
                 match (said, truncated_body(&text)) {
-                    (Ok(said), false) => Ok(Reply::whole(said)),
+                    (Ok(said), false) => Ok(Turn::Said(Reply::whole(said))),
                     (Err(error), false) => Err(Unsent::Failed(format!("{url}: {error}"))),
                     (said, true) => self.reply_from(
                         url,
@@ -849,9 +934,12 @@ impl Endpoint {
 
     /// What a finished stream is worth. Apart from the socket, so all six
     /// endings are checked without one.
-    fn reply_from(&self, url: &str, streamed: Streamed) -> Result<Reply, Unsent> {
+    fn reply_from(&self, url: &str, streamed: Streamed) -> Result<Turn, Unsent> {
         match streamed {
-            Streamed::Complete(content) if !content.trim().is_empty() => Ok(Reply::whole(content)),
+            Streamed::Called(calls) => Ok(Turn::Called(calls)),
+            Streamed::Complete(content) if !content.trim().is_empty() => {
+                Ok(Turn::Said(Reply::whole(content)))
+            }
             Streamed::Complete(_) => Err(Unsent::Failed(format!(
                 "{url}: streamed reply had no text content"
             ))),
@@ -859,7 +947,7 @@ impl Endpoint {
                 // Parseable is the one `Truncation` that is still Dialogue: a full Behavior
                 // / sayable line, marked. The other three are Unsent.
                 if let Truncation::Parseable(content) = what {
-                    Ok(Reply::truncated(content))
+                    Ok(Turn::Said(Reply::truncated(content)))
                 } else {
                     Err(Unsent::Truncated(self.out_of_budget(url, &what)))
                 }
@@ -1292,6 +1380,122 @@ enum Wire {
     Whole,
 }
 
+/// Which guarded fields one attempt carries.
+#[derive(Clone, Copy, Debug)]
+struct Asked {
+    wire: Wire,
+    effort: bool,
+    cap: bool,
+    tools: bool,
+}
+
+impl Asked {
+    /// Whether this attempt sent `field`. A refusal naming one it left out is
+    /// about something else, and dropping it would send the identical request.
+    fn sent(self, field: Field, url: &str) -> bool {
+        match field {
+            Field::Stream => self.wire == Wire::Stream,
+            Field::Effort => self.effort,
+            // The Responses path spells the cap `max_output_tokens`, so a body
+            // naming `max_tokens` there is about something this never sent.
+            Field::Cap => self.cap && !uses_responses(url),
+            Field::Tools => self.tools,
+        }
+    }
+
+    fn without(self, field: Field) -> Self {
+        match field {
+            Field::Stream => Self {
+                wire: Wire::Whole,
+                ..self
+            },
+            Field::Effort => Self {
+                effort: false,
+                ..self
+            },
+            Field::Cap => Self { cap: false, ..self },
+            Field::Tools => Self {
+                tools: false,
+                ..self
+            },
+        }
+    }
+}
+
+/// Fidget's tool catalog, and this wake's earlier rounds, in the shape the
+/// Responses or chat-completions path takes. Anthropic is served through its
+/// chat-completions layer, so it reads the chat shape.
+fn offer_tools(body: &mut serde_json::Value, responses: bool, rounds: &[Round]) {
+    use serde_json::json;
+
+    body["tools"] = list_tools()
+        .into_iter()
+        .map(|tool| match responses {
+            true => json!({
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            }),
+            false => json!({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            }),
+        })
+        .collect();
+    if rounds.is_empty() {
+        return;
+    }
+    let key = if responses { "input" } else { "messages" };
+    if let Some(text) = body[key].as_str() {
+        body[key] = json!([{ "role": "user", "content": text }]);
+    }
+    let Some(history) = body[key].as_array_mut() else {
+        return;
+    };
+    for round in rounds {
+        if !responses {
+            history.push(json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": round
+                    .iter()
+                    .map(|(call, _)| json!({
+                        "id": call.id,
+                        "type": "function",
+                        "function": { "name": call.name, "arguments": call.arguments },
+                    }))
+                    .collect::<Vec<_>>(),
+            }));
+        }
+        for (call, output) in round {
+            if responses {
+                history.push(json!({
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                }));
+                history.push(json!({
+                    "type": "function_call_output",
+                    "call_id": call.id,
+                    "output": output,
+                }));
+            } else {
+                history.push(json!({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": output,
+                }));
+            }
+        }
+    }
+}
+
 // One over the clippy cap. Folding two of these would pair a guard with the
 // value it guards, or a cap's name with its number.
 #[allow(clippy::too_many_arguments)]
@@ -1375,6 +1579,7 @@ fn dropped_field(field: Field, effort: &str) -> String {
         Field::Stream => field.name().to_string(),
         Field::Effort => format!("{}={effort}", field.name()),
         Field::Cap => format!("{}, under {NEW_CAP}", field.name()),
+        Field::Tools => field.name().to_string(),
     }
 }
 
@@ -1399,13 +1604,15 @@ enum Field {
     /// The one field that is renamed rather than dropped. The retry still
     /// carries a cap, spelled `max_completion_tokens`.
     Cap,
+    /// Dropped with this wake's tool rounds: the retry is text-only.
+    Tools,
 }
 
 impl Field {
     /// Every guarded field, in the order a retry gives them up. One list, so
     /// the rejection reader and the retry bound cannot disagree about how
     /// many there are.
-    const ALL: [Field; 3] = [Field::Cap, Field::Effort, Field::Stream];
+    const ALL: [Field; 4] = [Field::Cap, Field::Effort, Field::Stream, Field::Tools];
 
     /// The name in the body, which is also the name a rejection uses.
     fn name(self) -> &'static str {
@@ -1413,6 +1620,7 @@ impl Field {
             Field::Stream => "stream",
             Field::Effort => "reasoning_effort",
             Field::Cap => "max_tokens",
+            Field::Tools => "tools",
         }
     }
 }
@@ -1489,6 +1697,9 @@ enum Streamed {
     /// The server marked the end. Empty when the model spent its whole
     /// budget without writing anything.
     Complete(String),
+    /// The server marked the end after asking for tools. Any text beside the
+    /// calls is preamble, not the reply.
+    Called(Vec<ToolCall>),
     /// The server marked the end and named the token cap as the reason,
     /// `finish_reason: "length"`, `response.incomplete`, or Anthropic
     /// `stop_reason: "max_tokens"`.
@@ -1550,14 +1761,20 @@ fn read_frames(
 
     let mut reader = std::io::BufReader::new(reader);
     let mut content = crate::acp_wire::Answer::default();
+    let mut calls = std::collections::BTreeMap::<u64, ToolCall>::new();
     let mut line = String::new();
     let mut framed = false;
     let mut finished = false;
     let mut truncated = false;
     let mut started = false;
-    let ended = |content: crate::acp_wire::Answer, truncated: bool, thought: &str| {
+    let ended = |content: crate::acp_wire::Answer,
+                 calls: std::collections::BTreeMap<u64, ToolCall>,
+                 truncated: bool,
+                 thought: &str| {
         let content = content.finish();
-        if truncated {
+        if !truncated && !calls.is_empty() {
+            Streamed::Called(calls.into_values().collect())
+        } else if truncated {
             Streamed::Truncated(classify_truncation(&content, !thought.trim().is_empty()))
         } else {
             Streamed::Complete(content)
@@ -1577,7 +1794,7 @@ fn read_frames(
         {
             return Ok(match (framed, finished) {
                 (false, _) => Streamed::NotEventStream,
-                (true, true) => ended(content, truncated, thinking),
+                (true, true) => ended(content, calls, truncated, thinking),
                 (true, false) => Streamed::Cut,
             });
         }
@@ -1589,7 +1806,7 @@ fn read_frames(
         framed = true;
         let payload = payload.trim();
         if payload == "[DONE]" {
-            return Ok(ended(content, truncated, thinking));
+            return Ok(ended(content, calls, truncated, thinking));
         }
         let event = read_event(payload);
         if let Some(why) = event.error {
@@ -1597,6 +1814,16 @@ fn read_frames(
         }
         finished |= event.finished;
         truncated |= event.truncated;
+        for part in event.calls {
+            let call = calls.entry(part.index).or_default();
+            if let Some(id) = part.id {
+                call.id = id;
+            }
+            if let Some(name) = part.name {
+                call.name = name;
+            }
+            call.arguments.push_str(&part.arguments);
+        }
         let mut chunk = event.thought.unwrap_or_default();
         if let Some(delta) = event.delta {
             if !started && !delta.is_empty() {
@@ -1641,6 +1868,17 @@ struct Event {
     truncated: bool,
     /// The `error.message` this frame carries.
     error: Option<String>,
+    /// Pieces of tool calls, keyed by `index` across frames.
+    calls: Vec<CallPart>,
+}
+
+/// Chat completions stream a call in fragments, the id and name first and
+/// the arguments after. Responses sends it whole in `output_item.done`.
+struct CallPart {
+    index: u64,
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
 }
 
 /// Read one event in either chat-completions or Responses shape. Markers tell
@@ -1703,7 +1941,63 @@ fn read_event(payload: &str) -> Event {
             || kind == Some("response.incomplete")
             || stop == Some("max_tokens"),
         error: in_band_error(&value),
+        calls: call_parts(&value),
     }
+}
+
+fn call_parts(value: &serde_json::Value) -> Vec<CallPart> {
+    let text = |value: &serde_json::Value| value.as_str().map(str::to_string);
+    if let Some(parts) = value["choices"][0]["delta"]["tool_calls"].as_array() {
+        return parts
+            .iter()
+            .map(|part| CallPart {
+                index: part["index"].as_u64().unwrap_or(0),
+                id: text(&part["id"]),
+                name: text(&part["function"]["name"]),
+                arguments: text(&part["function"]["arguments"]).unwrap_or_default(),
+            })
+            .collect();
+    }
+    let item = &value["item"];
+    if value["type"] == "response.output_item.done" && item["type"] == "function_call" {
+        return vec![CallPart {
+            index: value["output_index"].as_u64().unwrap_or(0),
+            id: text(&item["call_id"]),
+            name: text(&item["name"]),
+            arguments: text(&item["arguments"]).unwrap_or_default(),
+        }];
+    }
+    Vec::new()
+}
+
+/// Tool calls in a whole body: chat `message.tool_calls`, or Responses
+/// `function_call` output items.
+fn calls_from_body(body: &str) -> Vec<ToolCall> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    let text = |value: &serde_json::Value| value.as_str().unwrap_or_default().to_string();
+    if let Some(calls) = value["choices"][0]["message"]["tool_calls"].as_array() {
+        return calls
+            .iter()
+            .map(|call| ToolCall {
+                id: text(&call["id"]),
+                name: text(&call["function"]["name"]),
+                arguments: text(&call["function"]["arguments"]),
+            })
+            .collect();
+    }
+    value["output"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| item["type"] == "function_call")
+        .map(|item| ToolCall {
+            id: text(&item["call_id"]),
+            name: text(&item["name"]),
+            arguments: text(&item["arguments"]),
+        })
+        .collect()
 }
 
 /// Failure text in a 200 body or frame. OpenRouter and Anthropic use
@@ -2263,6 +2557,8 @@ pub(crate) mod tests {
             takes_effort: AtomicBool::new(true),
             takes_max_tokens: AtomicBool::new(true),
             marks_thinking: AtomicBool::new(false),
+            tools: None,
+            takes_tools: AtomicBool::new(true),
             agent: ureq::agent(),
         }
     }
@@ -2383,6 +2679,262 @@ pub(crate) mod tests {
                 direction: None,
             })
         );
+    }
+
+    /// A loopback server that answers each POST with the next reply, as JSON
+    /// or as an event stream, and hands back every body it was sent.
+    fn server_answering(path: &str, replies: Vec<String>) -> (String, Receiver<String>) {
+        use std::io::Write;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("the bound port").port();
+        let (sent, seen) = mpsc::channel();
+        thread::spawn(move || {
+            for reply in replies {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let Some(body) = posted_body(&stream) else {
+                    return;
+                };
+                let kind = match reply.starts_with("data:") {
+                    true => "text/event-stream",
+                    false => "application/json",
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                let _ = stream.flush();
+                if sent.send(body).is_err() {
+                    return;
+                }
+            }
+        });
+        (format!("http://127.0.0.1:{port}{path}"), seen)
+    }
+
+    /// The frame loop's end of the MCP `Call` channel, answering every call
+    /// with `answer` and handing back what was asked.
+    fn frame_loop_answering(
+        answer: serde_json::Value,
+    ) -> (
+        mpsc::Sender<crate::mcp_http::Call>,
+        Receiver<(String, serde_json::Value)>,
+    ) {
+        let (calls, inbox) = mpsc::channel::<crate::mcp_http::Call>();
+        let (asked, heard) = mpsc::channel();
+        thread::spawn(move || {
+            for call in inbox {
+                let _ = call.reply.send(Ok(answer.clone()));
+                let _ = asked.send((call.tool, call.arguments));
+            }
+        });
+        (calls, heard)
+    }
+
+    fn json(body: &str) -> serde_json::Value {
+        serde_json::from_str(body).expect("a JSON request body")
+    }
+
+    const WAVED: &str = r#"{"success":true,"behavior":"wave"}"#;
+
+    #[test]
+    fn a_chat_completions_tool_call_runs_and_its_result_goes_back() {
+        let (url, seen) = server_answering(
+            "/v1/chat/completions",
+            vec![
+                r#"{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"play_behavior","arguments":"{\"behavior\":\"wave\",\"instance_id\":\"buddy-1\"}"}}]},"finish_reason":"tool_calls"}]}"#.to_string(),
+                r#"{"choices":[{"message":{"content":"wave\nhi"},"finish_reason":"stop"}]}"#.to_string(),
+            ],
+        );
+        let (frame_loop, heard) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        let reply = endpoint.post(&url, "hello", "buddy-1", &|_| {}).unwrap();
+
+        assert_eq!(reply.text, "wave\nhi");
+        let first = json(&seen.recv().expect("the first request"));
+        let offered: Vec<_> = first["tools"]
+            .as_array()
+            .expect("tools are offered")
+            .iter()
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_string())
+            .collect();
+        let catalog: Vec<_> = list_tools().into_iter().map(|tool| tool.name).collect();
+        assert_eq!(offered, catalog, "the one catalog MCP serves");
+        assert_eq!(
+            heard.recv().unwrap(),
+            (
+                "play_behavior".to_string(),
+                serde_json::json!({"behavior": "wave", "instance_id": "buddy-1"})
+            )
+        );
+        let second = json(&seen.recv().expect("the follow-up"));
+        let messages = second["messages"].as_array().unwrap();
+        assert_eq!(messages[1]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call_1");
+        assert_eq!(json(messages[2]["content"].as_str().unwrap()), json(WAVED));
+        assert_eq!(
+            spoken(&endpoint.session.lock().unwrap().messages),
+            [("user", "hello"), ("assistant", "wave\nhi")],
+            "the session keeps what was heard, not the tool rounds"
+        );
+    }
+
+    /// Anthropic's OpenAI layer and every local server stream a call in
+    /// fragments: the id and name first, the arguments in pieces after.
+    #[test]
+    fn a_streamed_chat_tool_call_is_assembled_from_its_fragments() {
+        let (url, seen) = server_answering(
+            "/v1/chat/completions",
+            vec![
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"toolu_1\",\"type\":\"function\",\"function\":{\"name\":\"play_behavior\",\"arguments\":\"\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"behavior\\\":\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"wave\\\"}\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string(),
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"wave\\nhi\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string(),
+            ],
+        );
+        let (frame_loop, heard) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+
+        let reply = endpoint.post(&url, "hello", "buddy-1", &|_| {}).unwrap();
+
+        assert_eq!(reply.text, "wave\nhi");
+        assert_eq!(
+            heard.recv().unwrap(),
+            (
+                "play_behavior".to_string(),
+                serde_json::json!({"behavior": "wave"})
+            )
+        );
+        seen.recv().expect("the first request");
+        let second = json(&seen.recv().expect("the follow-up"));
+        assert_eq!(
+            second["messages"][1]["tool_calls"][0]["function"]["arguments"],
+            r#"{"behavior":"wave"}"#,
+            "the call goes back as it was sent"
+        );
+        assert_eq!(second["messages"][2]["tool_call_id"], "toolu_1");
+    }
+
+    #[test]
+    fn a_responses_tool_call_runs_and_its_output_goes_back() {
+        let (url, seen) = server_answering(
+            "/v1/responses",
+            vec![
+                concat!(
+                    "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"call_id\":\"call_9\",\"name\":\"recall\",\"arguments\":\"{}\"}}\n\n",
+                    "data: {\"type\":\"response.completed\"}\n\n",
+                )
+                .to_string(),
+                concat!(
+                    "data: {\"type\":\"response.output_text.delta\",\"delta\":\"wave\\nhi\"}\n\n",
+                    "data: {\"type\":\"response.completed\"}\n\n",
+                )
+                .to_string(),
+            ],
+        );
+        let (frame_loop, heard) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+
+        let reply = endpoint.post(&url, "hello", "buddy-1", &|_| {}).unwrap();
+
+        assert_eq!(reply.text, "wave\nhi");
+        assert_eq!(heard.recv().unwrap().0, "recall");
+        let first = json(&seen.recv().expect("the first request"));
+        assert_eq!(
+            first["tools"][0]["name"], "play_behavior",
+            "Responses names a tool at the top level"
+        );
+        let second = json(&seen.recv().expect("the follow-up"));
+        let input = second["input"].as_array().expect("the input grew a list");
+        assert_eq!(input[0]["content"], "hello");
+        assert_eq!(input[1]["type"], "function_call");
+        assert_eq!(input[1]["call_id"], "call_9");
+        assert_eq!(input[2]["type"], "function_call_output");
+        assert_eq!(input[2]["call_id"], "call_9");
+    }
+
+    #[test]
+    fn a_model_that_never_stops_calling_tools_ends_at_the_round_cap() {
+        let call = r#"{"choices":[{"message":{"tool_calls":[{"id":"c","type":"function","function":{"name":"recall","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#;
+        let (url, seen) = server_answering(
+            "/v1/chat/completions",
+            vec![call.to_string(); TOOL_ROUNDS + 2],
+        );
+        let (frame_loop, heard) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        let error = endpoint
+            .post(&url, "hello", "buddy-1", &|_| {})
+            .unwrap_err();
+
+        assert!(
+            error.contains(&format!("after {TOOL_ROUNDS} rounds")),
+            "{error}"
+        );
+        assert_eq!(seen.try_iter().count(), TOOL_ROUNDS + 1);
+        assert_eq!(heard.try_iter().count(), TOOL_ROUNDS);
+        assert!(
+            endpoint.session.lock().unwrap().messages.is_empty(),
+            "a lost wake leaves no question behind"
+        );
+    }
+
+    /// A server that refuses `tools` still answers, in text, and is not
+    /// offered them again.
+    #[test]
+    fn a_server_that_refuses_tools_falls_back_to_text() {
+        let (url, seen) = server_refusing(Field::Tools);
+        let (frame_loop, _) = frame_loop_answering(json(WAVED));
+        let endpoint = Endpoint {
+            tools: Some(frame_loop),
+            ..endpoint_at(&url)
+        };
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        assert_eq!(
+            endpoint
+                .post(&url, "hello", "buddy-1", &|_| {})
+                .unwrap()
+                .text,
+            "stroll\nhey"
+        );
+        assert!(json(&seen.recv().unwrap())["tools"].is_array());
+        assert!(json(&seen.recv().unwrap())["tools"].is_null());
+
+        endpoint
+            .post(&url, "what just happened: poked", "buddy-1", &|_| {})
+            .unwrap();
+        assert!(json(&seen.recv().unwrap())["tools"].is_null());
+        assert!(seen.try_recv().is_err(), "one POST on the next wake");
     }
 
     /// The field goes out. A server that names it in a rejection gets one
@@ -3103,7 +3655,7 @@ pub(crate) mod tests {
                     Streamed::Truncated(Truncation::Parseable("stroll\nhey th".to_string()))
                 )
                 .ok(),
-            Some(Reply::truncated("stroll\nhey th")),
+            Some(Turn::Said(Reply::truncated("stroll\nhey th"))),
             "the Behavior is acted on and the words are said, with the mark beside them"
         );
 
@@ -3137,7 +3689,7 @@ pub(crate) mod tests {
             endpoint
                 .reply_from(url, Streamed::Complete("stroll".to_string()))
                 .ok(),
-            Some(Reply::whole("stroll")),
+            Some(Turn::Said(Reply::whole("stroll"))),
             "a whole reply is not marked"
         );
     }

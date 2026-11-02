@@ -75,7 +75,8 @@ pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
 
 /// The app layer of the Character Prompt: voice rules, roster, reply contract.
 /// Empty under Blank AI, which the Prompt tab shows frozen. Paid every wake,
-/// so the tools describe themselves over MCP; a copy here would drift.
+/// so the tools describe themselves: over MCP to a Harness, in the request's
+/// `tools` on the Model API. A copy here would drift.
 pub fn app_instructions(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,

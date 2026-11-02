@@ -102,6 +102,15 @@ impl Endpoint {
 
 static ENDPOINT: OnceLock<Option<Endpoint>> = OnceLock::new();
 
+/// The frame loop's end of `serve`, for a Completer that calls tools in
+/// process rather than over this socket.
+static CALLS: OnceLock<mpsc::Sender<Call>> = OnceLock::new();
+
+/// Where a tool call reaches the frame loop. `None` before `serve`.
+pub fn calls() -> Option<mpsc::Sender<Call>> {
+    CALLS.get().cloned()
+}
+
 /// How many `tools/list` requests this run has answered. The one sign, short
 /// of a tool call, that a Harness took the server it was handed.
 static LISTED: AtomicUsize = AtomicUsize::new(0);
@@ -114,6 +123,7 @@ pub fn tools_listed() -> usize {
 /// Bind loopback and serve, once per app run. `None` is a bind or a token that
 /// failed: a session with no tools rather than an app that will not start.
 pub fn serve(calls: mpsc::Sender<Call>) -> Option<Endpoint> {
+    let _ = CALLS.set(calls.clone());
     ENDPOINT
         .get_or_init(|| match start(calls) {
             Ok(endpoint) => Some(endpoint),
@@ -365,6 +375,34 @@ fn read_resource(params: &Value) -> Result<Value, (i64, String)> {
     }))
 }
 
+/// One tool call dispatched on the frame loop, for any lane that calls tools.
+pub(crate) fn run(
+    calls: &mpsc::Sender<Call>,
+    tool: &str,
+    arguments: Value,
+) -> Result<Value, DispatchError> {
+    let (reply, answers) = mpsc::channel();
+    let sent = calls
+        .send(Call {
+            tool: tool.to_string(),
+            arguments,
+            reply,
+        })
+        .is_ok();
+    if !sent {
+        return Err(DispatchError {
+            code: ErrorCode::ExecutionFailed,
+            message: "the app is shutting down".to_string(),
+        });
+    }
+    answers
+        .recv_timeout(ANSWER_TIMEOUT)
+        .unwrap_or(Err(DispatchError {
+            code: ErrorCode::ExecutionFailed,
+            message: "the app did not answer".to_string(),
+        }))
+}
+
 /// A `tools/call`, dispatched on the frame loop and reported the way MCP wants
 /// it: a tool that refused is a result with `isError`, not a JSON-RPC error.
 fn call_tool(params: &Value, calls: &mpsc::Sender<Call>) -> Value {
@@ -376,28 +414,7 @@ fn call_tool(params: &Value, calls: &mpsc::Sender<Call>) -> Value {
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let (reply, answers) = mpsc::channel();
-    let sent = calls
-        .send(Call {
-            tool: tool.to_string(),
-            arguments,
-            reply,
-        })
-        .is_ok();
-    let outcome = if sent {
-        answers
-            .recv_timeout(ANSWER_TIMEOUT)
-            .unwrap_or(Err(DispatchError {
-                code: ErrorCode::ExecutionFailed,
-                message: "the app did not answer".to_string(),
-            }))
-    } else {
-        Err(DispatchError {
-            code: ErrorCode::ExecutionFailed,
-            message: "the app is shutting down".to_string(),
-        })
-    };
-    match outcome {
+    match run(calls, tool, arguments) {
         Ok(value) => json!({
             "content": [{"type": "text", "text": value.to_string()}],
             "structuredContent": value,
