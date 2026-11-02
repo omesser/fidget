@@ -25,18 +25,23 @@ pub enum Key {
 }
 
 /// What the digits play, one group of Behavior names per digit, in name
-/// order. Only Behaviors the package declares count, each by its own
+/// order. Only Behaviors the package declares count, each judged by its own
 /// Primitives with its `then` left off. One made only of what the arrows and
-/// Space already do gets no digit. Behaviors playing the same Primitives, so
-/// the same Animations in the same order, share one digit. A Character with
-/// more than nine leaves the rest unbound.
+/// Space already do, idle between moves included, gets no digit. Behaviors
+/// playing the same Primitives, so the same Animations in the same order,
+/// share one digit. A Character with more than nine leaves the rest unbound.
 pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
     let mut groups: Vec<(&[Primitive], Vec<&str>)> = Vec::new();
     for (name, behavior) in behaviors {
         let own = behavior.primitives.as_slice();
-        if is_default_behavior(name, behavior)
-            || own.iter().all(Primitive::owned_by_arrows_and_space)
-        {
+        // Idle between moves is the pause in a stroll, which the arrows
+        // already give. Idle alone is not movement.
+        let moves = own.iter().any(Primitive::owned_by_arrows_and_space);
+        let only_moves = moves
+            && own.iter().all(|primitive| {
+                *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
+            });
+        if is_default_behavior(name, behavior) || only_moves {
             continue;
         }
         match groups.iter_mut().find(|(played, _)| *played == own) {
@@ -394,7 +399,8 @@ mod tests {
     }
 
     /// The arrows and Space already move the sprite, so a Behavior made only
-    /// of movement gets no digit. Its own Primitives decide, not its `then`.
+    /// of movement, and the idle between moves, gets no digit. Its own Primitives
+    /// decide, not its `then`.
     #[test]
     fn behaviors_made_only_of_movement_get_no_digit() {
         let table = behaviors(&[
@@ -405,8 +411,10 @@ mod tests {
             ("touch-down", &[Primitive::Land], None),
             ("ride", &[Primitive::Hold, Primitive::Walk], None),
             ("wander", &[Primitive::Walk, Primitive::Idle], None),
+            ("pace", &[Primitive::Walk, Primitive::Talk], None),
+            ("stare", &[Primitive::Idle], None),
         ]);
-        assert_eq!(digit_behaviors(&table), [["greet"], ["wander"]]);
+        assert_eq!(digit_behaviors(&table), [["greet"], ["pace"], ["stare"]]);
     }
 
     /// Behaviors whose own Primitives play the same Animations in the same
