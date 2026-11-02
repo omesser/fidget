@@ -2155,23 +2155,28 @@ pub(crate) fn run_frame_loop(
                 // the trace at the end of this Instance's turn reads it.
                 let happened = live.happened.clone();
                 let mut asking = false;
+                let mut held = false;
                 let reactive_wake = if let (Some(model), Some(activity)) =
-                    (&live.model, last_activity.as_ref())
+                    (live.model.clone(), last_activity.as_ref())
                 {
-                    if director::session_due(
-                        live.addressed,
-                        live.since_proactive,
-                        &live.pace,
-                        activity.displays_asleep,
-                        instance.do_not_disturb(),
-                        config.proactive_allowed,
-                        instance.possessed(),
-                    ) && config.enabled
-                        && bubble_overlay_listening(
+                    let gate = WakeGate {
+                        displays_asleep: activity.displays_asleep,
+                        do_not_disturb: instance.do_not_disturb(),
+                        proactive_allowed: config.proactive_allowed,
+                        possessed: instance.possessed(),
+                        enabled: config.enabled,
+                        loading: loading_overlay(
                             (frame.position.x, frame.position.y),
                             &displays.frames,
                             platform::overlay_listening,
-                        )
+                        ),
+                    };
+                    let wake = spend_wake(live, gate);
+                    held = wake == WakeTurn::Held;
+                    if let WakeTurn::Spent {
+                        happened: spent,
+                        was_addressed,
+                    } = wake
                     {
                         let context = Context {
                             activity: activity.clone(),
@@ -2182,8 +2187,8 @@ pub(crate) fn run_frame_loop(
                             personality: live.character.personality.clone(),
                             instance_prompt: instance.prompt().to_string(),
                             state: frame.state,
-                            happened: live.happened.clone(),
-                            lately: live.recency.take(&live.happened),
+                            lately: live.recency.take(&spent),
+                            happened: spent,
                             standing: assembler.standing_on(frame.position),
                             front_title: activity
                                 .frontmost_application
@@ -2192,15 +2197,6 @@ pub(crate) fn run_frame_loop(
                             caffeinate: caffeinate_fact,
                             possessed: instance.possessed(),
                         };
-                        let was_addressed = live.addressed;
-                        if live.addressed {
-                            live.pace.after_reactive();
-                        } else {
-                            live.pace.after_ambient();
-                        }
-                        live.addressed = false;
-                        live.happened = Happened::Proactive;
-                        live.since_proactive = Duration::ZERO;
                         let line = instance
                             .whereabouts(&displays.frames, &displays.usable_frames)
                             .prompt_line();
@@ -2219,7 +2215,7 @@ pub(crate) fn run_frame_loop(
                         let touched =
                             director::claim(&context.happened) == director::Claim::Interaction;
                         let cell = director::happened_cell(&context.happened);
-                        match slots.wake_with_prompt(&live.id, Arc::clone(model), context, line) {
+                        match slots.wake_with_prompt(&live.id, model, context, line) {
                             // The call on the wire is the truer one
                             // (ADR-0016). This wake is dropped, not queued:
                             // the bookkeeping above has already spent it.
@@ -2281,6 +2277,8 @@ pub(crate) fn run_frame_loop(
                         .is_some_and(|activity| activity.displays_asleep)
                     {
                         "asleep"
+                    } else if held {
+                        "overlay-loading"
                     } else {
                         "not-due"
                     };
@@ -3467,14 +3465,77 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
     eprintln!("click-trace: {name} t={:.1}", platform::trace_ms());
 }
 
-/// A wake waits until the overlay that draws its bubble listens: a Thinking
-/// bubble or line sent to a page still loading is never drawn.
-fn bubble_overlay_listening(
+/// The overlay that would draw the bubble but whose page doesn't listen yet:
+/// a Thinking bubble or line sent to a page still loading is never drawn.
+fn loading_overlay(
     feet: (f64, f64),
     displays: &[Rect],
     listening: impl Fn(&str) -> bool,
-) -> bool {
-    bubble_owner(feet, displays).is_none_or(|index| listening(&overlay_label(index)))
+) -> Option<String> {
+    let label = overlay_label(bubble_owner(feet, displays)?);
+    (!listening(&label)).then_some(label)
+}
+
+/// What decides whether this tick wakes the Director.
+struct WakeGate {
+    displays_asleep: bool,
+    do_not_disturb: bool,
+    proactive_allowed: bool,
+    possessed: bool,
+    enabled: bool,
+    /// The overlay under the feet that doesn't listen yet, if any.
+    loading: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum WakeTurn {
+    NotDue,
+    /// Due, but held until `WakeGate::loading` listens.
+    Held,
+    Spent {
+        happened: Happened,
+        was_addressed: bool,
+    },
+}
+
+/// Spend `live`'s wake if one is due and its bubble can be drawn. A held
+/// wake keeps `addressed` and `happened`, so pokes during the hold make one
+/// wake once the page listens.
+fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
+    let due = gate.enabled
+        && director::session_due(
+            live.addressed,
+            live.since_proactive,
+            &live.pace,
+            gate.displays_asleep,
+            gate.do_not_disturb,
+            gate.proactive_allowed,
+            gate.possessed,
+        );
+    if !due {
+        return WakeTurn::NotDue;
+    }
+    if let Some(label) = gate.loading {
+        if live.wake_held_on.as_deref() != Some(label.as_str()) {
+            eprintln!("director: {} wake held until {label} listens", live.id);
+            live.wake_held_on = Some(label);
+        }
+        return WakeTurn::Held;
+    }
+    if let Some(label) = live.wake_held_on.take() {
+        eprintln!("director: {} wake released, was held on {label}", live.id);
+    }
+    let was_addressed = std::mem::take(&mut live.addressed);
+    if was_addressed {
+        live.pace.after_reactive();
+    } else {
+        live.pace.after_ambient();
+    }
+    live.since_proactive = Duration::ZERO;
+    WakeTurn::Spent {
+        happened: std::mem::replace(&mut live.happened, Happened::Proactive),
+        was_addressed,
+    }
 }
 
 #[cfg(test)]
@@ -3490,7 +3551,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn a_wake_waits_for_the_overlay_under_the_feet_to_listen() {
+    fn the_bubble_waits_on_the_overlay_under_the_feet() {
         let left = Rect {
             x: 0.0,
             y: 0.0,
@@ -3500,16 +3561,50 @@ mod tests {
         let right = Rect { x: 100.0, ..left };
         let displays = [left, right];
         let only_left = |label: &str| label == overlay_label(0);
-        assert!(bubble_overlay_listening((50.0, 50.0), &displays, only_left));
-        assert!(!bubble_overlay_listening(
-            (150.0, 50.0),
-            &displays,
-            only_left
-        ));
+        assert_eq!(loading_overlay((50.0, 50.0), &displays, only_left), None);
+        assert_eq!(
+            loading_overlay((150.0, 50.0), &displays, only_left),
+            Some(overlay_label(1))
+        );
         // Feet on no display have no bubble to lose.
-        assert!(bubble_overlay_listening((500.0, 500.0), &displays, |_| {
-            false
-        }));
+        assert_eq!(loading_overlay((500.0, 500.0), &displays, |_| false), None);
+    }
+
+    fn gate(loading: Option<&str>) -> WakeGate {
+        WakeGate {
+            displays_asleep: false,
+            do_not_disturb: false,
+            proactive_allowed: false,
+            possessed: false,
+            enabled: true,
+            loading: loading.map(String::from),
+        }
+    }
+
+    /// Production change that would fail this: a wake sent while the page
+    /// under the feet still loads, or a held wake that drops its Poke.
+    #[test]
+    fn pokes_while_the_overlay_loads_make_one_wake_once_it_listens() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            for _ in 0..2 {
+                note_happened(&mut live.happened, Happened::Poke);
+                live.addressed = true;
+                assert_eq!(
+                    spend_wake(&mut live, gate(Some("overlay-1"))),
+                    WakeTurn::Held
+                );
+            }
+            assert_eq!(
+                spend_wake(&mut live, gate(None)),
+                WakeTurn::Spent {
+                    happened: Happened::Poke,
+                    was_addressed: true,
+                }
+            );
+            assert_eq!(spend_wake(&mut live, gate(None)), WakeTurn::NotDue);
+        });
     }
 
     fn activity(frontmost: Option<&str>) -> Activity {
@@ -4074,6 +4169,7 @@ mod tests {
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
+            wake_held_on: None,
         }
     }
 

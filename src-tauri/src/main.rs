@@ -480,6 +480,9 @@ struct InstanceState {
     /// falls a millisecond per millisecond and the window subtracts for itself;
     /// only a deadline that *moved* is worth a push.
     status_wake_ms: Option<u64>,
+    /// The overlay this Instance's due wake waits on, so the hold and its
+    /// release are each logged once.
+    wake_held_on: Option<String>,
 }
 
 /// One open menu, from the frame loop's side.
@@ -2300,6 +2303,13 @@ fn overlay_listening(window: tauri::Window) {
     platform::set_overlay_listening(window.label(), true);
 }
 
+/// A page that starts loading again no longer hears frames until it says so.
+fn overlay_page_loading(label: &str, event: tauri::webview::PageLoadEvent) {
+    if event == tauri::webview::PageLoadEvent::Started {
+        platform::set_overlay_listening(label, false);
+    }
+}
+
 /// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
 #[tauri::command]
 fn overlay_trace_bubble(app: tauri::AppHandle, label: String, message: String) {
@@ -2540,9 +2550,7 @@ fn build_overlay(
         .skip_taskbar(true)
         .visible(false)
         .on_page_load(|webview, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
-                platform::set_overlay_listening(webview.label(), false);
-            }
+            overlay_page_loading(webview.label(), payload.event());
             if !dev_flags::TRACE_BUBBLE.is_on() {
                 return;
             }
@@ -4410,6 +4418,7 @@ fn spawn_live(
         traced_last: None,
         status_last: None,
         status_wake_ms: None,
+        wake_held_on: None,
         happened_last: None,
         verbs: Vec::new(),
         menu_hold: None,
@@ -4771,6 +4780,7 @@ fn spawn_instances(
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
+            wake_held_on: None,
             happened_last: None,
             verbs: Vec::new(),
             menu_hold: None,
@@ -5795,6 +5805,21 @@ mod anchor_icon_tests {
 
 #[cfg(test)]
 mod tests {
+    /// Production change that would fail this: a reload that leaves the page
+    /// marked listening, so a wake is sent before its listener is back.
+    #[test]
+    fn a_reload_holds_wakes_until_the_page_listens_again() {
+        use tauri::webview::PageLoadEvent;
+        let label = "overlay-reload-test";
+        super::platform::set_overlay_listening(label, true);
+        super::overlay_page_loading(label, PageLoadEvent::Finished);
+        assert!(super::platform::overlay_listening(label));
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
+        super::platform::set_overlay_listening(label, true);
+        assert!(super::platform::overlay_listening(label));
+    }
+
     #[test]
     fn an_overlay_label_is_the_prefix_chat_and_settings_do_not_share() {
         assert!(super::is_overlay_label(&super::overlay_label(0)));
