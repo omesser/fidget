@@ -80,11 +80,17 @@ try {
     $script:proc = $child
     Check ($closed -and ((Get-NowMs) - $start) -lt 1000) "the log writer closed at end of stream ($((Get-NowMs) - $start) ms)"
 
-    # Scoped to the form's pid, which shares this console and opens no window
-    # but the form 3 s in, so only the form can wake the wait.
-    $form = '-NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; ' +
-        '$f = New-Object System.Windows.Forms.Form; Start-Sleep 3; $f.Show(); Start-Sleep 2"'
-    $shown = Start-Process $shell -ArgumentList $form -NoNewWindow -PassThru
+    # Scoped to the form's pid and armed once its startup windows exist, so
+    # only the form showing 2 s later can wake the wait.
+    $formStart = New-Object System.Diagnostics.ProcessStartInfo $shell
+    $formStart.Arguments = '-NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; ' +
+        '$f = New-Object System.Windows.Forms.Form; $null = $f.Handle; [Console]::Out.WriteLine(''ready''); ' +
+        'Start-Sleep 2; $f.Show(); Start-Sleep 2"'
+    $formStart.UseShellExecute = $false
+    $formStart.CreateNoWindow = $true
+    $formStart.RedirectStandardOutput = $true
+    $shown = [System.Diagnostics.Process]::Start($formStart)
+    Check ($shown.StandardOutput.ReadLine() -eq "ready") "the form's process is ready"
     $start = Get-NowMs
     $signal = [FidgetUiaSignal]::new($shown.Id)
     Check (((Get-NowMs) - $start) -lt 1000) "the signal registers at once ($((Get-NowMs) - $start) ms)"
