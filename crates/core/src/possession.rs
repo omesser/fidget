@@ -1,6 +1,10 @@
 //! Possession: turning key edges into what a possessed sprite does this tick.
 //! The keyboard twin of `input::Pointer`, and pure for the same reason.
 
+use std::collections::BTreeMap;
+
+use crate::character::{chain, Behavior, Primitive};
+
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Walk {
@@ -20,16 +24,25 @@ pub enum Key {
     Digit(u8),
 }
 
-/// Behaviors the digits play, in name order, without `walk` or `jump`.
-/// A Character with more than nine leaves the rest unbound.
-pub fn digit_behaviors<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut names: Vec<&str> = names
-        .into_iter()
-        .filter(|name| *name != "walk" && *name != "jump")
+/// Behaviors the digits play, in name order. One whose chain walks, jumps,
+/// lands or holds is left to the arrows and Space. A Character with more than
+/// nine leaves the rest unbound.
+pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<&str> {
+    let mut names: Vec<&str> = behaviors
+        .keys()
+        .map(String::as_str)
+        .filter(|name| !chain(behaviors, name).is_some_and(|played| played.iter().any(moves)))
         .collect();
-    names.sort_unstable();
     names.truncate(9);
     names
+}
+
+/// A Primitive the arrows and Space own while possessed.
+fn moves(primitive: &Primitive) -> bool {
+    matches!(
+        primitive,
+        Primitive::Walk | Primitive::Chase | Primitive::Jump | Primitive::Land | Primitive::Hold
+    )
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -342,19 +355,47 @@ mod tests {
         assert!(keys.tick(FRAME_MS).end_possession);
     }
 
+    fn behaviors(table: &[(&str, &[Primitive], Option<&str>)]) -> BTreeMap<String, Behavior> {
+        table
+            .iter()
+            .map(|(name, primitives, then)| {
+                let behavior = Behavior {
+                    primitives: primitives.to_vec(),
+                    then: then.map(str::to_string),
+                    weight: 1,
+                    trigger: None,
+                };
+                (name.to_string(), behavior)
+            })
+            .collect()
+    }
+
+    /// The arrows and Space already walk, jump and drop the sprite, so a
+    /// Behavior whose chain moves it gets no digit, whatever its name.
     #[test]
-    fn digits_follow_behavior_names_skipping_walk_and_jump() {
-        let names = ["jump", "walk", "wave", "nod", "sit"];
-        assert_eq!(digit_behaviors(names), ["nod", "sit", "wave"]);
+    fn behaviors_that_move_the_sprite_get_no_digit() {
+        let table = behaviors(&[
+            ("wave", &[Primitive::React], None),
+            ("stroll", &[Primitive::Walk, Primitive::Idle], None),
+            ("greet", &[Primitive::Talk], Some("stroll")),
+            ("hop", &[Primitive::Jump], None),
+            ("play-with-cursor", &[Primitive::Chase], None),
+            ("touch-down", &[Primitive::Land], None),
+            ("ride", &[Primitive::Hold], None),
+            ("nap", &[Primitive::Sit, Primitive::Sleep], None),
+        ]);
+        assert_eq!(digit_behaviors(&table), ["nap", "wave"]);
     }
 
     #[test]
     fn only_the_first_nine_behaviors_get_digits() {
-        let names = [
-            "walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a",
-        ];
+        let names = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"];
+        let table: Vec<_> = names
+            .iter()
+            .map(|name| (*name, &[Primitive::Sit][..], None))
+            .collect();
         assert_eq!(
-            digit_behaviors(names),
+            digit_behaviors(&behaviors(&table)),
             ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
         );
     }

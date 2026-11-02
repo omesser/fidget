@@ -67,7 +67,7 @@
 //! Frame count and frame size are read from the art instead of declared, since
 //! a declared size can disagree with the art and a derived one cannot.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use crate::director::Seeded;
@@ -319,6 +319,28 @@ pub struct Behavior {
     pub weight: u32,
     /// When this Behavior may be picked, or `None` for any time at all.
     pub trigger: Option<Trigger>,
+}
+
+/// Every Primitive a named Behavior plays, chained ones included, or `None`
+/// when undeclared. It stops cycles: Behaviors arrive unvalidated, and
+/// ADR-0002 promises no package can hang the frame loop.
+pub fn chain(behaviors: &BTreeMap<String, Behavior>, behavior: &str) -> Option<Vec<Primitive>> {
+    let mut primitives = Vec::new();
+    let mut walked: BTreeSet<&str> = BTreeSet::new();
+    let mut current = behaviors.get_key_value(behavior)?;
+
+    while walked.insert(current.0.as_str()) {
+        primitives.extend(current.1.primitives.iter().copied());
+        match current.1.then.as_deref() {
+            Some(next) => match behaviors.get_key_value(next) {
+                Some(next) => current = next,
+                None => break,
+            },
+            None => break,
+        }
+    }
+
+    Some(primitives)
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame

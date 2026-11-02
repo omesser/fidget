@@ -2511,7 +2511,7 @@ pub(crate) fn run_frame_loop(
                     paused,
                     charge: frame.charge,
                     behaviors: if possessed {
-                        digit_behaviors(live.character.behaviors.keys().map(String::as_str))
+                        digit_behaviors(&live.character.behaviors)
                             .into_iter()
                             .map(str::to_string)
                             .collect()
