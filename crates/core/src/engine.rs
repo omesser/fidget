@@ -1284,11 +1284,13 @@ impl Engine {
 
         // Director proposals stay out while possessed. A digit is the user
         // asking, so it takes the same `permitted` gate.
+        let mut digit_started = false;
         if self.possessed {
             if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
                 match self.start_behavior(&name) {
                     Some(true) => {
                         started = true;
+                        digit_started = true;
                         behavior = Some(name);
                     }
                     Some(false) => refused = Some(name),
@@ -1344,8 +1346,8 @@ impl Engine {
                 .iter()
                 .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
-        // One cue a tick: a hand transition, else the first click verb, else a
-        // possession edge, which waits for a free tick rather than be lost.
+        // One cue a tick: a hand transition, else a click verb, else a started
+        // digit Behavior, else a possession edge, which waits for a free tick.
         // Menu repeats every held tick like Grab, so it cues on the press edge.
         let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
         let cue = cue
@@ -1358,6 +1360,7 @@ impl Engine {
                         other => other,
                     })
             })
+            .or(digit_started.then_some(Cue::Poke))
             .or_else(|| self.possession_cue.take());
         self.menu_held = menu_now;
 
