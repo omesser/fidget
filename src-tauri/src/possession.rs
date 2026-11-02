@@ -33,8 +33,6 @@ pub struct Session {
     /// The press began while paused, so its click resumes and is not a Poke.
     /// A drag that follows still grabs.
     pub swallow_click: bool,
-    /// True on the tick the session starts, so the overlay can play its cue.
-    pub cue: bool,
 }
 
 impl Session {
@@ -46,7 +44,6 @@ impl Session {
             paused: false,
             blurred_at: None,
             swallow_click: false,
-            cue: true,
         }
     }
 

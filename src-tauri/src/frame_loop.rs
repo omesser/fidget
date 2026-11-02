@@ -2482,12 +2482,9 @@ pub(crate) fn run_frame_loop(
 
                 last_sprite_rects.push((sprite.x, sprite.y, width, height));
 
-                let (possessed, paused, possession_cue) = match session.as_mut() {
-                    Some(session) if session.instance == live.id => {
-                        let cue = std::mem::take(&mut session.cue);
-                        (true, session.paused(), cue)
-                    }
-                    _ => (false, false, false),
+                let (possessed, paused) = match session.as_ref() {
+                    Some(session) if session.instance == live.id => (true, session.paused()),
+                    _ => (false, false),
                 };
 
                 placed.push(Placed {
@@ -2513,7 +2510,6 @@ pub(crate) fn run_frame_loop(
                     possessed,
                     paused,
                     charge: frame.charge,
-                    possession_cue,
                     behaviors: if possessed {
                         digit_behaviors(live.character.behaviors.keys().map(String::as_str))
                             .into_iter()

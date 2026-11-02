@@ -685,11 +685,7 @@ impl<'a> SpritePlacement<'a> {
             asking: bubble && instance.asking,
             hovered: bubble && instance.hovered,
             bubble,
-            cue: if bubble && instance.possession_cue {
-                Some("possess")
-            } else {
-                instance.cue.filter(|_| bubble).map(Cue::name)
-            },
+            cue: instance.cue.filter(|_| bubble).map(Cue::name),
             ripple_x: contact.map(|c| c.point.x.round() as i32 - display.x.round() as i32),
             ripple_y: contact.map(|c| c.point.y.round() as i32 - display.y.round() as i32),
             ripple_normal: contact.map(|c| c.normal),
@@ -801,8 +797,6 @@ struct Placed {
     possessed: bool,
     paused: bool,
     charge: Option<f64>,
-    /// This tick started the possession, so the overlay plays its cue.
-    possession_cue: bool,
     /// The Character's Behavior names, so the card can label digits 1 to 9.
     behaviors: Vec<String>,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -7439,7 +7433,6 @@ mod tests {
             possessed: true,
             paused: false,
             charge: None,
-            possession_cue: false,
             behaviors: vec!["nod".to_string(), "sit".to_string()],
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
@@ -7548,7 +7541,6 @@ mod tests {
             possessed: false,
             paused: false,
             charge: None,
-            possession_cue: false,
             behaviors: Vec::new(),
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
