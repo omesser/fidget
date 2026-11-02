@@ -1365,6 +1365,28 @@ mod tests {
     }
 
     #[test]
+    fn a_stalled_frame_does_not_carry_a_move_past_where_it_stops() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let mut stalled = world.clone();
+        stalled.elapsed_ms = 1000;
+        let stopped = tick_until_still(&mut roster, &id, &stalled);
+        assert!(
+            (stopped.position.x - 300.0).abs() <= 30.0,
+            "200 points left of 500: {stopped:?}"
+        );
+    }
+
+    #[test]
     fn move_for_a_duration_walks_as_far_as_that_time_covers() {
         let world = test_snapshot();
         let (mut roster, id, landed) = landed_walker(500.0, &world);

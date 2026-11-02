@@ -1087,7 +1087,7 @@ impl Engine {
                         self.stop_playing();
                         started = true;
                     }
-                    Heading::Toward(toward) => self.stride(toward),
+                    Heading::Toward(toward) => self.stride(toward, snapshot.cursor.x, dt),
                 },
 
                 // Up and forward is an arc. `integrate` reads the rise as lost
@@ -1116,7 +1116,7 @@ impl Engine {
             }
         }
 
-        self.apply_destination();
+        self.apply_destination(dt);
 
         // The keys own a possessed sprite's feet, after every hold above: a
         // bubble or a quick message stops a walk the sprite chose, not this.

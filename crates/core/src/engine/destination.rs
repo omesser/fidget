@@ -104,20 +104,23 @@ impl Engine {
     }
 
     /// Stride toward the destination, or end the move on arrival.
-    pub(super) fn apply_destination(&mut self) {
+    pub(super) fn apply_destination(&mut self, dt: f64) {
         let Some(GlobalX(target_x)) = self.destination else {
             return;
         };
         match heading_to(self.position.x, target_x) {
             Heading::Arrived => self.end_move(),
-            Heading::Toward(toward) => self.stride(toward),
+            Heading::Toward(toward) => self.stride(toward, target_x, dt),
         }
     }
 
-    /// Face `toward` and walk at `WALK_SPEED`.
-    pub(super) fn stride(&mut self, toward: Direction) {
+    /// Face `toward` and walk at `WALK_SPEED`. The step that reaches `target_x`
+    /// stops on it, or one long tick could carry the walk past the arrival band
+    /// and turn it round.
+    pub(super) fn stride(&mut self, toward: Direction, target_x: f64, dt: f64) {
         self.facing = toward.facing();
-        self.velocity.x = self.facing * WALK_SPEED;
+        let speed = WALK_SPEED.min((target_x - self.position.x).abs() / dt);
+        self.velocity.x = self.facing * speed;
     }
 
     /// The only way out of a move. Nothing keeps the x, so nothing resumes it.
