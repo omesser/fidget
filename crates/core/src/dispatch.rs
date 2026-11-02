@@ -1952,6 +1952,49 @@ mod tests {
         assert_eq!(later.position.x, 1930.0, "{later:?}");
     }
 
+    /// A window whose top is a Perch from x 300 to 900, 600 points down.
+    fn a_perch() -> crate::engine::WorldSnapshot {
+        crate::engine::WorldSnapshot {
+            windows: vec![crate::engine::Window {
+                id: 1,
+                rect: Rect {
+                    x: 300.0,
+                    y: 600.0,
+                    width: 600.0,
+                    height: 200.0,
+                },
+            }],
+            ..test_snapshot()
+        }
+    }
+
+    #[test]
+    fn a_move_past_the_end_of_its_perch_stops_on_it() {
+        use crate::engine::State;
+
+        let world = a_perch();
+        for (direction, perch_end) in [("right", 900.0), ("left", 300.0)] {
+            let (mut roster, id, landed) = landed_walker(600.0, &world);
+            assert_eq!(landed.state, State::Perched, "{landed:?}");
+
+            let said = call_move(
+                &mut roster,
+                json!({"direction": direction, "distance": 600}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], true, "{said}");
+
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert_eq!(stopped.state, State::Perched, "{direction}: {stopped:?}");
+            assert_eq!(stopped.position.y, 600.0, "{direction}: {stopped:?}");
+            assert!(
+                (stopped.position.x - perch_end).abs() <= 30.0,
+                "{direction}: {stopped:?}"
+            );
+        }
+    }
+
     #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();

@@ -1,6 +1,6 @@
 //! Spatial queries over a `WorldSnapshot`.
 
-use super::{Point, Rect, Window, WorldSnapshot, EDGE_CLEARANCE};
+use super::{Point, Rect, State, Window, WorldSnapshot, EDGE_CLEARANCE};
 use crate::window_source::DOCK_PERCH_ID;
 
 /// A surface the sprite can come to rest on.
@@ -185,16 +185,20 @@ impl Reach {
 }
 
 /// The Surface underfoot, as far as a move may walk it: this display, inset by
-/// `EDGE_CLEARANCE` so the sprite never meets a wall it would climb. Never
-/// another display. `None` over no display.
-pub(super) fn standing_reach(feet: Point, snapshot: &WorldSnapshot) -> Option<Reach> {
+/// `EDGE_CLEARANCE` so the sprite never meets a wall it would climb, and a
+/// Perch's own ends. Never another display. `None` over no display.
+pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot) -> Option<Reach> {
     let display = displays_spanning(feet.x, snapshot)
         .find(|display| feet.y >= display.y && feet.y <= display.bottom())?;
-    Some(Reach::around(
-        feet.x,
-        display.x + EDGE_CLEARANCE,
-        display.x + display.width - EDGE_CLEARANCE,
-    ))
+    let mut lo = display.x + EDGE_CLEARANCE;
+    let mut hi = display.x + display.width - EDGE_CLEARANCE;
+    if state == State::Perched {
+        if let Some(perch) = perch_at(feet, &snapshot.windows) {
+            lo = lo.max(perch.rect.x);
+            hi = hi.min(perch.rect.x + perch.rect.width);
+        }
+    }
+    Some(Reach::around(feet.x, lo, hi))
 }
 
 /// Whether a step at `x` heading `direction` would leave the outermost display

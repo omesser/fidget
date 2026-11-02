@@ -161,7 +161,8 @@ impl Engine {
         let Some(GlobalX(target_x)) = self.destination else {
             return;
         };
-        let stop_x = standing_reach(self.position, snapshot).map(|reach| reach.clamp(target_x));
+        let stop_x =
+            standing_reach(self.position, state, snapshot).map(|reach| reach.clamp(target_x));
         match (self.stride_blocked(state), stop_x) {
             (None, Some(stop_x)) => match heading_to(self.position.x, stop_x) {
                 Heading::Toward(toward) => self.stride(toward, stop_x, dt),
