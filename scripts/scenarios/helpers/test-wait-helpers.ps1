@@ -123,7 +123,8 @@ try {
     $start = Get-NowMs
     $leafProc = [System.Diagnostics.Process]::Start($leaf)
     $errTask = $leafProc.StandardError.ReadToEndAsync()
-    $standIn = [int]$leafProc.StandardOutput.ReadLine()
+    $pidLine = $leafProc.StandardOutput.ReadLineAsync()
+    $standIn = if ($pidLine.Wait(15000)) { [int]$pidLine.Result } else { 0 }
     $ended = $leafProc.WaitForExit(20000)
     Check ($ended -and ((Get-NowMs) - $start) -lt 15000) "a stalled leaf ends itself ($((Get-NowMs) - $start) ms)"
     $said = $errTask.Result
