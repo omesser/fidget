@@ -604,7 +604,7 @@ function Count([string]$Pattern) {
     if (-not (Test-Path -LiteralPath $log)) { return 0 }
     @(Get-Content -LiteralPath $log | Where-Object { $_ -match $Pattern }).Count
 }
-# Until $Test holds, re-checked on each UI Automation event (focus, windows,
+# Until $Test holds, re-checked on each window event (focus, windows,
 # structure, names), for desktop state with no line or file of its own.
 function Wait-Ui([double]$Seconds, [scriptblock]$Test) { [bool](Wait-UiaChange 0 $Seconds $Test $script:uia) }
 function Wait-LogCount([string]$Pattern, [int]$Before) { Wait-ForCount 3 $log $Pattern $Before }

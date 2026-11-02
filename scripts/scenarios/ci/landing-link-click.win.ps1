@@ -185,7 +185,7 @@ try {
     }
     $script:Handed = ""
     $script:Outcome = $null
-    # The open log is not a UI Automation event. Wait-OnChanges is the
+    # The open log is not a window event. Wait-OnChanges is the
     # directory watcher the other leaves already compile. A refusal with
     # no write is still judged when this clock runs out.
     $null = Wait-OnChanges 3 $handoff {

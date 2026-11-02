@@ -1,5 +1,5 @@
 # Shared waits for Windows scenario leaves. Each re-checks on a wake (a line
-# on Fidget's piped stderr, a file change, a UI Automation event) and gives up
+# on Fidget's piped stderr, a file change, a window event) and gives up
 # after its seconds. Nothing sleeps or polls.
 
 . (Join-Path $PSScriptRoot "..\..\uia-signal-win.ps1")
@@ -154,8 +154,8 @@ function Wait-ForMarks([double]$Seconds, [string]$MarksFile, [string]$Pattern) {
 # 5 s missed on slow runners (#1765, `anchor-taskbar`); 30 s matches the macOS
 # warm-up budget, and the leaf's own cap still bounds a launch that never gets up.
 $FidgetStartupWaitSeconds = 30
-# The startup wait plus the slowest leaf (~35 s), under the job's 3 min per
-# leaf with its build.
+# Past the slowest whole leaf (~41 s), so only a blocked call trips it, and
+# under the job's 3 min per leaf with its build.
 $FidgetStallSeconds = 90
 
 function Wait-ForUp([string]$ErrLog) {

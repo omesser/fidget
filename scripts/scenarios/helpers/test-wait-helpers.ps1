@@ -80,14 +80,29 @@ try {
     $script:proc = $child
     Check ($closed -and ((Get-NowMs) - $start) -lt 1000) "the log writer closed at end of stream ($((Get-NowMs) - $start) ms)"
 
-    # A leaf that blocks past its stall budget: the trail names its last step,
-    # the stand-in Fidget dies, and the leaf ends.
+    $start = Get-NowMs
+    $signal = [FidgetUiaSignal]::new(0)
+    Check (((Get-NowMs) - $start) -lt 1000) "the signal registers at once ($((Get-NowMs) - $start) ms)"
+    $form = '-NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; ' +
+        '$f = New-Object System.Windows.Forms.Form; $f.Show(); Start-Sleep 2"'
+    $start = Get-NowMs
+    $shown = Start-Process $shell -ArgumentList $form -PassThru
+    $woke = $signal.Wait(10000)
+    Check $woke "another process's new window wakes the signal ($((Get-NowMs) - $start) ms)"
+    $start = Get-NowMs
+    $signal.Dispose()
+    Check (((Get-NowMs) - $start) -lt 1000) "the signal lets go at once ($((Get-NowMs) - $start) ms)"
+    Check ($shown.WaitForExit(20000)) "the window's process exits"
+
+    # A leaf that steps past its stall budget, then blocks: the trail names its
+    # last step, the stand-in Fidget dies, and the leaf ends.
     $stall = Join-Path $dir "stall.ps1"
     [System.IO.File]::WriteAllLines($stall, @(
             ". '$(Join-Path $PSScriptRoot "wait-helpers.win.ps1")'",
             '$FidgetStallSeconds = 2',
             "`$p = Start-FidgetPiped '$shell' @('-NoProfile', '-Command', 'Start-Sleep 60') '$dir\stall.out' '$dir\stall.err'",
             '[Console]::Out.WriteLine($p.Id)',
+            '1..4 | ForEach-Object { [FidgetTrail]::Mark("step $_"); Start-Sleep -Milliseconds 700 }',
             '[FidgetTrail]::Mark("blocked on nothing")',
             'Start-Sleep 60'
         ), $utf8)
@@ -103,7 +118,7 @@ try {
     $ended = $leafProc.WaitForExit(20000)
     Check ($ended -and ((Get-NowMs) - $start) -lt 15000) "a stalled leaf ends itself ($((Get-NowMs) - $start) ms)"
     $said = $errTask.Result
-    Check ($said.Contains("FAIL: the leaf stalled 2 s") -and $said.Contains("blocked on nothing")) "the stall names the last step: $said"
+    Check ($said.Contains("FAIL: the leaf took no step for 2 s") -and $said.Contains("blocked on nothing")) "the stall waits out the steps and names the last: $said"
     Check ($null -eq (Get-Process -Id $standIn -ErrorAction SilentlyContinue)) "the stall killed Fidget (pid $standIn)"
 } finally {
     if (-not $script:proc.HasExited) { $script:proc.Kill() }
