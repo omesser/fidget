@@ -994,10 +994,13 @@ fn contract_line(line: &str) -> Option<(&str, Option<&str>, bool)> {
 }
 
 /// Body after a leading `behavior:` marker, when the line opens with one.
+/// A cut that is not a character boundary cannot be this ASCII marker, and
+/// slicing there panics.
 fn behavior_marker_body(line: &str) -> Option<&str> {
     const MARK: &str = "behavior:";
     let line = line.trim();
-    if line.len() < MARK.len() || !line[..MARK.len()].eq_ignore_ascii_case(MARK) {
+    let prefix = line.get(..MARK.len())?;
+    if !prefix.eq_ignore_ascii_case(MARK) {
         return None;
     }
     Some(line[MARK.len()..].trim_start())
