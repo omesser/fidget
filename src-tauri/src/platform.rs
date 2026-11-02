@@ -157,6 +157,26 @@ static OVERLAY_RECTS: Mutex<Vec<(String, OverlayRect)>> = Mutex::new(Vec::new())
 /// Empty elsewhere, so every overlay is drawn from the frame it asked for.
 static OVERLAY_ORIGINS: Mutex<Vec<(String, (f64, f64))>> = Mutex::new(Vec::new());
 
+/// Overlays whose page has attached its frame listener. Cleared whenever the
+/// page starts loading again.
+static OVERLAYS_LISTENING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub fn set_overlay_listening(label: &str, listening: bool) {
+    let Ok(mut all) = OVERLAYS_LISTENING.lock() else {
+        return;
+    };
+    all.retain(|owner| owner != label);
+    if listening {
+        all.push(label.to_string());
+    }
+}
+
+pub fn overlay_listening(label: &str) -> bool {
+    OVERLAYS_LISTENING
+        .lock()
+        .is_ok_and(|all| all.iter().any(|owner| owner == label))
+}
+
 /// The window manager reported where `label`'s overlay now is.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn set_overlay_origin(label: &str, origin: (f64, f64)) {

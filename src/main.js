@@ -960,6 +960,8 @@ async function start() {
     },
     { target: overlay.label },
   );
+  // Rust holds a wake until this, so no bubble is sent before it can be drawn.
+  window.__TAURI__.core.invoke("overlay_listening").catch(console.error);
 
   arm();
 

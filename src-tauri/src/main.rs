@@ -2294,6 +2294,12 @@ fn overlay_rects(window: tauri::Window, rects: Vec<fidget_core::overlay_region::
     platform::set_overlay_rects(window.label(), rects);
 }
 
+/// The overlay's page now hears frames; until then a wake is held (#2037).
+#[tauri::command]
+fn overlay_listening(window: tauri::Window) {
+    platform::set_overlay_listening(window.label(), true);
+}
+
 /// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
 #[tauri::command]
 fn overlay_trace_bubble(app: tauri::AppHandle, label: String, message: String) {
@@ -2534,6 +2540,9 @@ fn build_overlay(
         .skip_taskbar(true)
         .visible(false)
         .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                platform::set_overlay_listening(webview.label(), false);
+            }
             if !dev_flags::TRACE_BUBBLE.is_on() {
                 return;
             }
@@ -5271,6 +5280,7 @@ fn main() {
             chat_send,
             chat_prompt,
             chat_ready,
+            overlay_listening,
             names_hint_act,
             permission_answer,
             elicitation_answer,

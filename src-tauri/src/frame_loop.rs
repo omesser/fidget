@@ -2167,6 +2167,11 @@ pub(crate) fn run_frame_loop(
                         config.proactive_allowed,
                         instance.possessed(),
                     ) && config.enabled
+                        && bubble_overlay_listening(
+                            (frame.position.x, frame.position.y),
+                            &displays.frames,
+                            platform::overlay_listening,
+                        )
                     {
                         let context = Context {
                             activity: activity.clone(),
@@ -3462,6 +3467,16 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
     eprintln!("click-trace: {name} t={:.1}", platform::trace_ms());
 }
 
+/// A wake waits until the overlay that draws its bubble listens: a Thinking
+/// bubble or line sent to a page still loading is never drawn (#2037).
+fn bubble_overlay_listening(
+    feet: (f64, f64),
+    displays: &[Rect],
+    listening: impl Fn(&str) -> bool,
+) -> bool {
+    bubble_owner(feet, displays).is_none_or(|index| listening(&overlay_label(index)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3473,6 +3488,29 @@ mod tests {
     use fidget_core::window_source::{Capabilities, WorldGeometry};
     use serde_json::json;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn a_wake_waits_for_the_overlay_under_the_feet_to_listen() {
+        let left = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+        };
+        let right = Rect { x: 100.0, ..left };
+        let displays = [left, right];
+        let only_left = |label: &str| label == overlay_label(0);
+        assert!(bubble_overlay_listening((50.0, 50.0), &displays, only_left));
+        assert!(!bubble_overlay_listening(
+            (150.0, 50.0),
+            &displays,
+            only_left
+        ));
+        // Feet on no display have no bubble to lose.
+        assert!(bubble_overlay_listening((500.0, 500.0), &displays, |_| {
+            false
+        }));
+    }
 
     fn activity(frontmost: Option<&str>) -> Activity {
         Activity {

@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -115,4 +115,14 @@ test("no drag is planned while the sprite walks", { skip }, (t) => {
   const run = checkTrace(t, [...DISPLAYS, ...walking], "FIDGET_SCENARIO_PLAN_LOG");
   if (run == null) return;
   assert.equal(run.stdout.trim(), "plan: none", run.stderr);
+});
+
+// Every wait gives up within 3 s of its trigger, page load included (#2037).
+// Wait-ForUp waits the shared 30 s launch budget.
+test("no wait in the leaf runs past 3 s", () => {
+  const source = readFileSync(script, "utf8");
+  assert.doesNotMatch(source, /Wait-ForUp\b/);
+  const seconds = [...source.matchAll(/\bWait-(?:For\w*|Until) (\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+  assert.ok(seconds.length > 0, "no waits found");
+  assert.deepEqual(seconds.filter((s) => s > 3), []);
 });
