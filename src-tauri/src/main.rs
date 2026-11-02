@@ -2628,7 +2628,10 @@ fn build_chat(
     title: &str,
     at: Option<(f64, f64)>,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let configured = Instant::now();
+    trace_chat(label, "build-request", None);
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
+    let page_label = label.to_string();
     let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
@@ -2636,15 +2639,27 @@ fn build_chat(
         // See-through only where it draws right: some X11 setups lose an
         // unrepainted see-through page to black or to the desktop.
         .transparent(platform::see_through_draws())
-        .focused(true);
+        .focused(true)
+        .on_page_load(move |_window, payload| {
+            if !payload.url().as_str().starts_with("about:") {
+                let event = match payload.event() {
+                    tauri::webview::PageLoadEvent::Started => "page-started",
+                    tauri::webview::PageLoadEvent::Finished => "page-loaded",
+                };
+                trace_chat(&page_label, event, Some(configured));
+            }
+        });
     if let Some((x, y)) = at {
         builder = builder.position(x, y);
     }
     let started = Instant::now();
+    trace_chat(label, "builder-configured", Some(configured));
     let window = builder.build()?;
+    trace_chat(label, "built", Some(started));
     if dev_flags::TRACE_BUBBLE.is_on() {
         eprintln!("chat: {label} built in {}ms", started.elapsed().as_millis());
     }
+    let setup = Instant::now();
     glass::wear(&window, &chat_ui_now(app.try_state().as_deref()));
     let (handle, label) = (app.clone(), label.to_string());
     let observer = platform::observe_minimize(&window, {
@@ -2683,7 +2698,17 @@ fn build_chat(
             eprintln!("chat: {label} level: {why}");
         }
     });
+    trace_chat(window.label(), "setup", Some(setup));
     Ok(window)
+}
+
+fn trace_chat(label: &str, event: &str, started: Option<Instant>) {
+    if dev_flags::TRACE_BUBBLE.is_on() {
+        static ORIGIN: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        let at = ORIGIN.get_or_init(Instant::now).elapsed().as_micros();
+        let duration = started.map(|start| start.elapsed().as_micros());
+        eprintln!("chat-timing: label={label} event={event} at_us={at} duration_us={duration:?}");
+    }
 }
 
 /// A new Chat window's inner size, in points.
@@ -2751,11 +2776,14 @@ fn chat_ui_now(state: Option<&SettingsState>) -> String {
 /// when known. The lookup posts to the main thread too: Ok from
 /// `run_on_main_thread` means queued, so two Summons would each build.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
+    let requested = Instant::now();
     let label = chat_label(id);
+    trace_chat(&label, "open-request", None);
     let at = feet
         .and_then(|feet| chat_origin(feet, &platform::read_displays(app).usable_frames, CHAT_SIZE));
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
+        trace_chat(&label, "main-dispatch", Some(requested));
         let window = match handle.get_webview_window(&label) {
             Some(window) => {
                 // The title is the Instance name, which a Character switch can
@@ -2782,6 +2810,7 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
         if dev_flags::TRACE_BUBBLE.is_on() {
             eprintln!("chat: {label} is open");
         }
+        trace_chat(&label, "opened", Some(requested));
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
     }
@@ -3646,6 +3675,7 @@ fn chat_ready(
     chat: tauri::State<'_, ChatChannel>,
     pending: tauri::State<'_, PendingAsks>,
 ) {
+    trace_chat(&chat_label(&instance), "ready", None);
     if let Ok(mut pending) = pending.0.lock() {
         let restored = session_log::restored(&app, &instance);
         if !restored.is_empty() {
