@@ -23,6 +23,8 @@
   animation-delay: 45ms;
 }
 
+/* GHOSTS in cue.js copies this path's rise, span and largest scale to report
+   the ghost's flight rect; update it when these keyframes change. */
 @keyframes cue-og-swoop {
   0% {
     transform: translate(-50%, -50%) translate(calc(85px * var(--dir, 1)), calc(-150px * var(--ky, 1)))
@@ -79,6 +81,7 @@
   animation: cue-og-rise 310ms cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
 }
 
+/* Mirrored in GHOSTS in cue.js too. */
 @keyframes cue-og-rise {
   0% {
     transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
