@@ -238,9 +238,7 @@ fn follow_possession_display(
     }
     hold_possession_keyboard(app, &window, true);
     hold_possession_keyboard(app, &session.window, false);
-    let paused = session.paused();
-    session.move_to(window.as_str(), now);
-    if paused {
+    if !session.move_to(window.as_str(), now) {
         return;
     }
     if let Some(overlay) = app.get_webview_window(&window) {

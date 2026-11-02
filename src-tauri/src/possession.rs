@@ -30,6 +30,8 @@ pub struct Session {
     keys: Possession,
     paused: bool,
     blurred_at: Option<Instant>,
+    /// The overlay the card just left. Its keyups still count until focus moves.
+    left_window: Option<String>,
     /// The press began while paused, so its click resumes and is not a Poke.
     /// A drag that follows still grabs.
     pub swallow_click: bool,
@@ -43,6 +45,7 @@ impl Session {
             keys: Possession::default(),
             paused: false,
             blurred_at: None,
+            left_window: None,
             swallow_click: false,
         }
     }
@@ -55,7 +58,9 @@ impl Session {
         let window = match edge {
             Edge::Key { window, .. } | Edge::Focus { window, .. } => window,
         };
-        if window != &self.window {
+        let late_keyup = matches!(edge, Edge::Key { down: false, .. })
+            && self.left_window.as_ref() == Some(window);
+        if window != &self.window && !late_keyup {
             return;
         }
         match edge {
@@ -70,6 +75,7 @@ impl Session {
             Edge::Focus { focused, .. } => {
                 if *focused {
                     self.blurred_at = None;
+                    self.left_window = None;
                     self.paused = false;
                 } else if self.blurred_at.is_none() {
                     self.blurred_at = Some(now);
@@ -78,13 +84,15 @@ impl Session {
         }
     }
 
-    /// The card moved to another overlay's display. Until that overlay reports
-    /// focus, this counts as a blur, so a focus request that never lands pauses.
-    pub fn move_to(&mut self, window: impl Into<String>, now: Instant) {
-        self.window = window.into();
+    /// The card moved to another overlay's display, which counts as a blur until it
+    /// reports focus. Returns whether to ask for focus: never while paused.
+    pub fn move_to(&mut self, window: impl Into<String>, now: Instant) -> bool {
+        let left = std::mem::replace(&mut self.window, window.into());
         if !self.paused {
             self.blurred_at = Some(now);
+            self.left_window = Some(left);
         }
+        !self.paused
     }
 
     /// What the keys ask for this tick. A settled blur drops every held key
@@ -95,6 +103,7 @@ impl Session {
                 self.paused = true;
                 self.keys.pause();
                 self.blurred_at = None;
+                self.left_window = None;
             }
         }
         self.keys.tick(elapsed_ms)
@@ -287,6 +296,27 @@ mod tests {
         session.apply(&on("overlay-1", focus(true)), t0 + BLUR_SETTLE);
         session.tick(16, t0 + BLUR_SETTLE);
         assert!(!session.paused());
+    }
+
+    #[test]
+    fn only_a_live_crossing_asks_for_focus() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        assert!(session.move_to("overlay-1", t0));
+        session.tick(16, t0 + BLUR_SETTLE);
+        assert!(!session.move_to("overlay-0", t0 + BLUR_SETTLE));
+    }
+
+    #[test]
+    fn a_keyup_on_the_old_overlay_during_the_wait_still_releases() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.move_to("overlay-1", t0);
+        session.apply(&key("right", false), t0);
+        session.apply(&key("left", true), t0);
+        session.apply(&on("overlay-1", focus(true)), t0);
+        assert_eq!(session.tick(16, t0).walk, None);
     }
 
     #[test]
