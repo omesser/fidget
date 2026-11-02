@@ -10003,6 +10003,7 @@ mod tests {
             let let_go = engine.tick(&with_possession(holding(Walk::Left), &world));
             assert_eq!(let_go.state, State::Falling, "{let_go:?}");
             assert_eq!(let_go.facing, -1.0, "{let_go:?}");
+            assert_eq!(let_go.velocity.x, -POSSESSED_WALK_SPEED, "{let_go:?}");
             let landed = flight(&mut engine, &world).pop().unwrap();
             assert_eq!(landed.position.y, floor, "{landed:?}");
             assert!(landed.position.x < 1000.0, "off the wall: {landed:?}");
@@ -10012,6 +10013,7 @@ mod tests {
             assert_eq!(jumped.state, State::Falling, "{jumped:?}");
             assert!(jumped.velocity.y < 0.0, "it jumps up: {jumped:?}");
             assert_eq!(jumped.facing, -1.0, "{jumped:?}");
+            assert_eq!(jumped.velocity.x, -POSSESSED_WALK_SPEED, "{jumped:?}");
             let frames = flight(&mut engine, &world);
             assert!(peak(&frames) < jumped.position.y, "it rose: {jumped:?}");
             let landed = frames.last().unwrap();
