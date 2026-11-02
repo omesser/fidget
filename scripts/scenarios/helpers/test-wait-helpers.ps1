@@ -90,7 +90,8 @@ try {
     $formStart.CreateNoWindow = $true
     $formStart.RedirectStandardOutput = $true
     $shown = [System.Diagnostics.Process]::Start($formStart)
-    Check ($shown.StandardOutput.ReadLine() -eq "ready") "the form's process is ready"
+    $ready = $shown.StandardOutput.ReadLineAsync()
+    Check ($ready.Wait(15000) -and $ready.Result -eq "ready") "the form's process is ready"
     $start = Get-NowMs
     $signal = [FidgetUiaSignal]::new($shown.Id)
     Check (((Get-NowMs) - $start) -lt 1000) "the signal registers at once ($((Get-NowMs) - $start) ms)"
