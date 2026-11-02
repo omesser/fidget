@@ -9686,6 +9686,19 @@ mod tests {
             assert_eq!(unbound.playing_behavior.as_deref(), Some("greet"));
         }
 
+        /// The possession edge still pending waits a tick for the press.
+        #[test]
+        fn a_digit_that_starts_its_behavior_cues_a_poke() {
+            let world = on(one_display());
+            let mut engine = possessed_at(500.0, &world);
+
+            let cues: Vec<Option<Cue>> = [playing(1), Intent::default()]
+                .into_iter()
+                .map(|intent| engine.tick(&with_possession(intent, &world)).cue)
+                .collect();
+            assert_eq!(cues, vec![Some(Cue::Poke), Some(Cue::Possess)]);
+        }
+
         #[test]
         fn a_digit_the_state_forbids_is_refused_like_a_proposal() {
             let world = on(one_display());
@@ -9696,6 +9709,7 @@ mod tests {
             let refused = engine.tick(&with_possession(playing(2), &world));
             assert_eq!(refused.behavior, None, "{refused:?}");
             assert_eq!(refused.refused.as_deref(), Some("settle"));
+            assert_eq!(refused.cue, None, "a refusal plays no Poke");
             assert_eq!(
                 refused.animation, "jump",
                 "the refusal does not replace the flight"
