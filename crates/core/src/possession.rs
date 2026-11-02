@@ -31,18 +31,13 @@ pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<&str> {
     let mut names: Vec<&str> = behaviors
         .keys()
         .map(String::as_str)
-        .filter(|name| !chain(behaviors, name).is_some_and(|played| played.iter().any(moves)))
+        .filter(|name| {
+            !chain(behaviors, name)
+                .is_some_and(|played| played.iter().any(Primitive::owned_by_arrows_and_space))
+        })
         .collect();
     names.truncate(9);
     names
-}
-
-/// A Primitive the arrows and Space own while possessed.
-fn moves(primitive: &Primitive) -> bool {
-    matches!(
-        primitive,
-        Primitive::Walk | Primitive::Chase | Primitive::Jump | Primitive::Land | Primitive::Hold
-    )
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a

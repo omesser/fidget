@@ -213,6 +213,24 @@ pub enum Primitive {
     Possessed,
 }
 
+impl Primitive {
+    /// Whether a possessed sprite leaves this to the arrows and Space, so no
+    /// digit plays a Behavior that composes it. `walk`, `chase` and `jump`
+    /// move the sprite; `land`, `hold` and `possessed` are the Engine's own
+    /// moments. No `_` arm, so a new Primitive has to pick a side.
+    pub fn owned_by_arrows_and_space(&self) -> bool {
+        match self {
+            Primitive::Walk | Primitive::Chase | Primitive::Jump => true,
+            Primitive::Land | Primitive::Hold | Primitive::Possessed => true,
+            Primitive::Idle
+            | Primitive::Sit
+            | Primitive::Sleep
+            | Primitive::React
+            | Primitive::Talk => false,
+        }
+    }
+}
+
 const PRIMITIVES: [(&str, Primitive); 10] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
@@ -324,7 +342,10 @@ pub struct Behavior {
 /// Every Primitive a named Behavior plays, chained ones included, or `None`
 /// when undeclared. It stops cycles: Behaviors arrive unvalidated, and
 /// ADR-0002 promises no package can hang the frame loop.
-pub fn chain(behaviors: &BTreeMap<String, Behavior>, behavior: &str) -> Option<Vec<Primitive>> {
+pub(crate) fn chain(
+    behaviors: &BTreeMap<String, Behavior>,
+    behavior: &str,
+) -> Option<Vec<Primitive>> {
     let mut primitives = Vec::new();
     let mut walked: BTreeSet<&str> = BTreeSet::new();
     let mut current = behaviors.get_key_value(behavior)?;
