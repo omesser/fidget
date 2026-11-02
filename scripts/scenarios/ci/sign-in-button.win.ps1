@@ -169,7 +169,8 @@ try {
         Fail "could not press Fake login button; see $out\press.txt"
     }
     if (-not (Wait-ForMarks 2 $marks '^authenticate$')) { Fail "sign-in button did not trigger authenticate; see $log" }
-    $null = Wait-ForUia 3 $proc.Id { Has (Invoke-Dump "waiting") $Waiting }
+    # Open comes with the Harness's URL request, after the waiting line.
+    $null = Wait-ForUia 3 $proc.Id { $f = Invoke-Dump "waiting"; (Has $f $Waiting) -and (Has $f "button|Open|") }
     Check-Waiting (Join-Path $out "waiting.ax.txt")
 
     if (-not (Invoke-Ax "press-open" @{ Command = "press"; ProcessId = $proc.Id; Title = "BMO"; Arg3 = "Open" })) {
