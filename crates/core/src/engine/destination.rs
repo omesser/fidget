@@ -2,7 +2,7 @@
 //! walks to one fixed when it starts, kept in `Engine::destination` beside
 //! `playing` and not in it, so no Primitive's turn ends it.
 
-use super::{Direction, Engine, ARRIVAL_THRESHOLD, WALK_SPEED};
+use super::{Direction, Engine, State, ARRIVAL_THRESHOLD, WALK_SPEED};
 use std::fmt;
 use std::num::NonZeroU32;
 
@@ -69,6 +69,15 @@ impl MoveRequest {
 /// Why the Engine would not take a move. `Display` is the sentence the caller reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveRefusal {
+    Falling,
+    /// `State::Dragged`, in the user's hand.
+    Held,
+    Climbing,
+    Asleep,
+    /// A Poke or a Summon holds the sprite still for `POKE_COOLDOWN_MS`.
+    JustPoked,
+    Possessed,
+    DoNotDisturb,
     /// The target is inside `ARRIVAL_THRESHOLD`, so the walk would end before its first stride.
     AlreadyThere,
 }
@@ -76,11 +85,38 @@ pub enum MoveRefusal {
 impl fmt::Display for MoveRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Falling => {
+                f.write_str("The Character is in the air, so it cannot walk until it lands.")
+            }
+            Self::Held => f.write_str("The user is holding the Character, so it cannot walk."),
+            Self::Climbing => f.write_str("The Character is climbing a wall, so it cannot walk."),
+            Self::Asleep => f.write_str("The Character is asleep, so it cannot walk."),
+            Self::JustPoked => f.write_str(
+                "The Character was just poked and stands still for a moment. Try again in a few seconds.",
+            ),
+            Self::Possessed => f.write_str(
+                "The user is driving the Character from the keyboard, so it cannot walk on its own.",
+            ),
+            Self::DoNotDisturb => {
+                f.write_str("Do Not Disturb is on, so the Character starts nothing.")
+            }
             Self::AlreadyThere => write!(
                 f,
                 "The Character already stands within {ARRIVAL_THRESHOLD} points of where it was sent, so it did not walk."
             ),
         }
+    }
+}
+
+/// The State and cooldown facts that stop any walk, a Behavior's or a move's.
+fn footing_refusal(state: State, poke_cooldown_ms: u32) -> Option<MoveRefusal> {
+    match state {
+        State::Falling => Some(MoveRefusal::Falling),
+        State::Dragged => Some(MoveRefusal::Held),
+        State::Climbing => Some(MoveRefusal::Climbing),
+        State::Asleep => Some(MoveRefusal::Asleep),
+        State::Grounded | State::Perched if poke_cooldown_ms > 0 => Some(MoveRefusal::JustPoked),
+        State::Grounded | State::Perched => None,
     }
 }
 
@@ -106,6 +142,9 @@ impl Engine {
     /// the state the next tick starts from.
     pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
         let target = request.target(self.position.x);
+        if let Some(refusal) = self.stride_blocked(self.state) {
+            return Err(refusal);
+        }
         if let Heading::Arrived = heading_to(self.position.x, target.0) {
             return Err(MoveRefusal::AlreadyThere);
         }
@@ -133,6 +172,19 @@ impl Engine {
         self.facing = toward.facing();
         let speed = WALK_SPEED.min((target_x - self.position.x).abs() / dt);
         self.velocity.x = self.facing * speed;
+    }
+
+    /// Why a move cannot stride in `state`, if it cannot. A speech bubble or a
+    /// quick message holds a Behavior's walk and not a move's, so `feet_held`
+    /// is not read here.
+    fn stride_blocked(&self, state: State) -> Option<MoveRefusal> {
+        footing_refusal(state, self.poke_cooldown_ms).or(if self.possessed {
+            Some(MoveRefusal::Possessed)
+        } else if self.do_not_disturb {
+            Some(MoveRefusal::DoNotDisturb)
+        } else {
+            None
+        })
     }
 
     /// The only way out of a move. Nothing keeps the x, so nothing resumes it.

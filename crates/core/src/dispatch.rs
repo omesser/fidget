@@ -1546,6 +1546,159 @@ mod tests {
         assert_eq!(stopped.state, crate::engine::State::Grounded, "{stopped:?}");
     }
 
+    /// `ticks` more Frames of `world`, and the last of them.
+    fn tick_for(
+        roster: &mut crate::roster::Roster,
+        id: &str,
+        world: &crate::engine::WorldSnapshot,
+        ticks: usize,
+    ) -> crate::engine::Frame {
+        let instance = roster.get_mut(id).expect("instance still runs");
+        (0..ticks)
+            .map(|_| instance.tick(world))
+            .last()
+            .expect("at least one tick")
+    }
+
+    #[test]
+    fn move_refuses_while_the_instance_is_falling() {
+        use crate::engine::{Point, State};
+
+        let world = test_snapshot();
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &test_character("Walker"),
+            "Walker".to_string(),
+            Point { x: 500.0, y: 100.0 },
+        );
+        let midair = tick_for(&mut roster, &id, &world, 1);
+        assert_eq!(midair.state, State::Falling, "{midair:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let landed = tick_for(&mut roster, &id, &world, 200);
+        assert_eq!(landed.state, State::Grounded, "{landed:?}");
+        assert_eq!(landed.position.x, 500.0, "nothing walks it once it lands");
+    }
+
+    #[test]
+    fn move_refuses_while_the_user_holds_the_instance() {
+        use crate::engine::{State, Verb, WorldSnapshot};
+
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        let in_hand = WorldSnapshot {
+            cursor: landed.position,
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let held = tick_for(&mut roster, &id, &in_hand, 1);
+        assert_eq!(held.state, State::Dragged, "{held:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let let_go = tick_for(&mut roster, &id, &world, 200);
+        assert_eq!(let_go.state, State::Grounded, "{let_go:?}");
+        assert_eq!(
+            let_go.position.x, 500.0,
+            "nothing walks it once it is let go"
+        );
+    }
+
+    #[test]
+    fn every_refusal_names_its_cause() {
+        use crate::engine::{Point, State, Verb, WorldSnapshot};
+        use crate::roster::Roster;
+
+        type Setup = fn(&mut Roster, &str, &WorldSnapshot);
+        let causes: [(&str, Setup); 7] = [
+            ("in the air", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.stand_at(Point { x: 500.0, y: 100.0 });
+                assert_eq!(instance.tick(world).state, State::Falling);
+            }),
+            ("holding", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                let grab = WorldSnapshot {
+                    cursor: instance.feet(),
+                    verbs: vec![Verb::Grab],
+                    ..world.clone()
+                };
+                assert_eq!(instance.tick(&grab).state, State::Dragged);
+            }),
+            ("climbing", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                let hand = |cursor, verb| WorldSnapshot {
+                    cursor,
+                    verbs: vec![verb],
+                    ..world.clone()
+                };
+                let aloft = Point {
+                    x: 1500.0,
+                    y: 500.0,
+                };
+                let throw = Verb::Throw {
+                    velocity: Point { x: 2000.0, y: 0.0 },
+                };
+                instance.tick(&hand(instance.feet(), Verb::Grab));
+                instance.tick(&hand(aloft, Verb::Grab));
+                instance.tick(&hand(aloft, throw));
+                let climbing = (0..100).any(|_| instance.tick(world).state == State::Climbing);
+                assert!(climbing, "thrown at the wall, it climbs");
+            }),
+            ("asleep", |roster, id, world| {
+                let a_second = WorldSnapshot {
+                    elapsed_ms: 1000,
+                    ..world.clone()
+                };
+                assert_eq!(tick_for(roster, id, &a_second, 61).state, State::Asleep);
+            }),
+            ("poked", |roster, id, world| {
+                let poke = WorldSnapshot {
+                    verbs: vec![Verb::Poke],
+                    ..world.clone()
+                };
+                assert_eq!(tick_for(roster, id, &poke, 1).animation, "react");
+            }),
+            ("keyboard", |roster, id, _| {
+                roster.get_mut(id).unwrap().set_possessed(true)
+            }),
+            ("Do Not Disturb", |roster, id, _| {
+                roster.get_mut(id).unwrap().set_do_not_disturb(true)
+            }),
+        ];
+
+        let world = test_snapshot();
+        for (cause, setup) in causes {
+            let (mut roster, id, _) = landed_walker(500.0, &world);
+            setup(&mut roster, &id, &world);
+
+            let said = call_move(
+                &mut roster,
+                json!({"direction": "left", "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], false, "{cause}: {said}");
+            let reason = said["reason"].as_str().expect("a refusal says why");
+            assert!(reason.contains(cause), "{reason:?} does not say {cause:?}");
+        }
+    }
+
     #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
