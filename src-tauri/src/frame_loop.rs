@@ -3538,11 +3538,11 @@ fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
         if gate.now.duration_since(since) < PAGE_LOAD_LIMIT {
             return WakeTurn::Held;
         }
+        // Keep the hold's start, so later wakes on this page don't wait again.
         eprintln!(
             "director: {} wake sent anyway, {label} never listened",
             live.id
         );
-        live.wake_held_on = None;
     }
     let was_addressed = std::mem::take(&mut live.addressed);
     if was_addressed {
@@ -3656,6 +3656,27 @@ mod tests {
                     was_addressed: true,
                 }
             );
+        });
+    }
+
+    /// Production change that would fail this: every later wake on a page
+    /// that never listened waiting out `PAGE_LOAD_LIMIT` again.
+    #[test]
+    fn after_a_page_never_listened_later_wakes_on_it_go_out_at_once() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            let start = Instant::now();
+            let at = |now| WakeGate {
+                now,
+                ..gate(Some("overlay-1"))
+            };
+            live.addressed = true;
+            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
+            let gave_up = start + PAGE_LOAD_LIMIT;
+            assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
+            live.addressed = true;
+            assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
         });
     }
 
