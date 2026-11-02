@@ -214,11 +214,9 @@ pub enum Primitive {
 }
 
 impl Primitive {
-    /// Whether this is movement a possessed sprite leaves to the arrows and
-    /// Space, so a Behavior made only of these gets no digit. `walk`, `chase`
-    /// and `jump` move the sprite; `land`, `hold` and `possessed` are moments
-    /// the Engine plays as the movement's side effects. No `_` arm, so a new
-    /// Primitive has to pick a side.
+    /// Movement the arrows and Space own, so a Behavior of only these gets no
+    /// digit: walk, chase, jump, and land, hold, possessed as their side effects.
+    /// No `_` arm, so a new Primitive has to pick a side.
     pub fn owned_by_arrows_and_space(&self) -> bool {
         match self {
             Primitive::Walk | Primitive::Chase | Primitive::Jump => true,
@@ -338,22 +336,8 @@ pub struct Behavior {
     pub weight: u32,
     /// When this Behavior may be picked, or `None` for any time at all.
     pub trigger: Option<Trigger>,
-}
-
-/// Whether `behavior` is the weight-0 stand-in loading adds for an askable
-/// Primitive the package plays nowhere, rather than one the package declares.
-/// A package declaring that very stand-in plays the same, so it answers the same.
-pub(crate) fn is_default_behavior(name: &str, behavior: &Behavior) -> bool {
-    ASKABLE_PRIMITIVES.iter().any(|&(askable, primitive)| {
-        askable == name
-            && *behavior
-                == Behavior {
-                    primitives: vec![primitive],
-                    then: None,
-                    weight: 0,
-                    trigger: None,
-                }
-    })
+    /// Loading added it for an askable Primitive the package plays nowhere.
+    pub stand_in: bool,
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame
@@ -1113,6 +1097,7 @@ pub(crate) mod tests {
                 then: Some("settle".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
+                stand_in: false,
             }
         );
         assert_eq!(character.behaviors["settle"].then, None);
@@ -1133,6 +1118,7 @@ pub(crate) mod tests {
                 then: None,
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),
+                stand_in: false,
             }
         );
     }

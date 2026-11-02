@@ -3571,6 +3571,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                stand_in: false,
             },
         );
         Character {

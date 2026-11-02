@@ -426,6 +426,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                stand_in: false,
             },
         );
         behaviors.insert(
@@ -435,6 +436,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                stand_in: false,
             },
         );
 

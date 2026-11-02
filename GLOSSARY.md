@@ -309,8 +309,8 @@ Up climbs the wall it stands against, Down drops it through its Perch, Space
 makes it jump, the digits 1 to 9 play its Behaviors in name order, and Escape
 releases it. The digits play only Behaviors the package declares, each without
 its `then`. They skip one made only of walking, chasing, jumping, landing or
-holding, idling between moves included, and Behaviors that play the same
-Primitives share one digit, named `a/b`. The fidget is possessed, the way a ghost possesses a body, and the
+holding, idling between moves included, and Behaviors that draw the same
+Animations in the same order share one digit, named `a/b`. The fidget is possessed, the way a ghost possesses a body, and the
 Director's prompt says so. Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
 still falls, perches and can be grabbed, and it stays possessed when another

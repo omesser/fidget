@@ -3,7 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::{is_default_behavior, Behavior, Primitive};
+use crate::character::{Behavior, Primitive};
+use crate::engine::animation_of;
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,14 +25,10 @@ pub enum Key {
     Digit(u8),
 }
 
-/// What the digits play, one group of Behavior names per digit, in name
-/// order. Only Behaviors the package declares count, each judged by its own
-/// Primitives with its `then` left off. One made only of what the arrows and
-/// Space already do, idle between moves included, gets no digit. Behaviors
-/// playing the same Primitives, so the same Animations in the same order,
-/// share one digit. A Character with more than nine leaves the rest unbound.
+/// What digits 1 to 9 play: declared Behaviors by their own Primitives, not
+/// `then`, minus movement-only ones, one digit per Animation loop, name order.
 pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<(&[Primitive], Vec<&str>)> = Vec::new();
+    let mut groups: Vec<(Vec<&str>, Vec<&str>)> = Vec::new();
     for (name, behavior) in behaviors {
         let own = behavior.primitives.as_slice();
         // Idle between moves is the pause in a stroll, which the arrows
@@ -41,12 +38,18 @@ pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>>
             && own.iter().all(|primitive| {
                 *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
             });
-        if is_default_behavior(name, behavior) || only_moves {
+        if behavior.stand_in || only_moves {
             continue;
         }
-        match groups.iter_mut().find(|(played, _)| *played == own) {
+        // Composable Primitives only fall back to art no other one draws, so
+        // `animation_of` alone says what is drawn.
+        let drawn: Vec<&str> = own
+            .iter()
+            .map(|primitive| animation_of(*primitive))
+            .collect();
+        match groups.iter_mut().find(|(played, _)| *played == drawn) {
             Some((_, names)) => names.push(name),
-            None => groups.push((own, vec![name])),
+            None => groups.push((drawn, vec![name])),
         }
     }
     groups.truncate(9);
@@ -372,6 +375,7 @@ mod tests {
                     then: then.map(str::to_string),
                     weight: 1,
                     trigger: None,
+                    stand_in: false,
                 };
                 (name.to_string(), behavior)
             })
@@ -396,6 +400,21 @@ mod tests {
             "loading adds react"
         );
         assert_eq!(digit_behaviors(&character.behaviors), [["nap"]]);
+    }
+
+    /// A package that declares the very shape loading would add still declared
+    /// it, so it keeps its digit.
+    #[test]
+    fn a_declared_weightless_react_keeps_its_digit() {
+        use crate::character::tests::{declaring, load_manifest};
+        use crate::character::REQUIRED_ANIMATIONS;
+
+        let manifest = format!(
+            "{}[behaviors.react]\nplay = [\"react\"]\nweight = 0\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+        assert_eq!(digit_behaviors(&character.behaviors), [["react"]]);
     }
 
     /// The arrows and Space already move the sprite, so a Behavior made only
@@ -432,6 +451,17 @@ mod tests {
             digit_behaviors(&table),
             [vec!["doze"], vec!["greet", "startle", "wave"], vec!["nap"]]
         );
+    }
+
+    /// Chase draws the walk Animation, so chasing while talking looks the same
+    /// as walking while talking and gets the same digit.
+    #[test]
+    fn behaviors_drawing_the_same_animations_share_a_digit() {
+        let table = behaviors(&[
+            ("pace", &[Primitive::Walk, Primitive::Talk], None),
+            ("pester", &[Primitive::Chase, Primitive::Talk], None),
+        ]);
+        assert_eq!(digit_behaviors(&table), [["pace", "pester"]]);
     }
 
     #[test]

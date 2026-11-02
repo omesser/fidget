@@ -1980,7 +1980,7 @@ impl Engine {
 }
 
 /// Which of the Required Animation Set a Primitive plays.
-fn animation_of(primitive: Primitive) -> &'static str {
+pub(crate) fn animation_of(primitive: Primitive) -> &'static str {
     match primitive {
         Primitive::Idle => "idle",
         // The Animation only. The motion belongs to the walk a proposal starts,
@@ -2242,6 +2242,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
             (
@@ -2251,6 +2252,7 @@ mod tests {
                     then: Some("settle".to_string()),
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
             (
@@ -2260,6 +2262,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
             (
@@ -2269,6 +2272,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
         ])
@@ -2588,6 +2592,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             )]));
 
@@ -2606,6 +2611,7 @@ mod tests {
             then: Some(then.to_string()),
             weight: DEFAULT_WEIGHT,
             trigger: None,
+            stand_in: false,
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
             ("here".to_string(), pacing("there")),
@@ -3005,6 +3011,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             )]));
         let base = settle(&mut engine, &snapshot(100)).animation_ms;
@@ -4943,6 +4950,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
             (
@@ -4955,6 +4963,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    stand_in: false,
                 },
             ),
         ]));
@@ -9772,6 +9781,7 @@ mod tests {
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,
+                            stand_in: false,
                         },
                     )
                 })

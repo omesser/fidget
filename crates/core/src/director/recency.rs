@@ -169,6 +169,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                stand_in: false,
             };
             let mut engine = Engine::new(Point { x, y })
                 .with_behaviors(BTreeMap::from([("walk".to_string(), walk)]));

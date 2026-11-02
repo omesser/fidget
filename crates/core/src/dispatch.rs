@@ -788,6 +788,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                stand_in: false,
             },
         );
 
@@ -1003,6 +1004,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
+                stand_in: false,
             },
         );
         let instance_id = roster.spawn(
@@ -1118,6 +1120,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
+                stand_in: false,
             },
         );
         let instance_id = roster.spawn(
