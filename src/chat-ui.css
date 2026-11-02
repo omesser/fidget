@@ -766,7 +766,7 @@
 }
 
 [data-platform="macos"][data-chat-palette="light"].chat-ui-glass body {
-  background: linear-gradient(rgba(248,249,252,.68), rgba(242,244,248,.78));
+  background: linear-gradient(rgba(248,249,252,.55), rgba(242,244,248,.65));
 }
 
 [data-chat-palette="light"].chat-ui-glass .tb button {
