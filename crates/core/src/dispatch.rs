@@ -1700,6 +1700,94 @@ mod tests {
     }
 
     #[test]
+    fn a_move_the_user_cuts_short_never_resumes() {
+        use crate::engine::{Verb, WorldSnapshot};
+        use crate::roster::Roster;
+
+        type Interruption = fn(&mut Roster, &str, &WorldSnapshot);
+        let interruptions: [(&str, Interruption); 4] = [
+            ("a grab and a release", |roster, id, world| {
+                let held = WorldSnapshot {
+                    cursor: roster.get_mut(id).unwrap().feet(),
+                    verbs: vec![Verb::Grab],
+                    ..world.clone()
+                };
+                tick_for(roster, id, &held, 10);
+            }),
+            ("a poke", |roster, id, world| {
+                let poke = WorldSnapshot {
+                    verbs: vec![Verb::Poke],
+                    ..world.clone()
+                };
+                tick_for(roster, id, &poke, 1);
+            }),
+            ("Do Not Disturb on and off", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.set_do_not_disturb(true);
+                instance.tick(world);
+                instance.set_do_not_disturb(false);
+            }),
+            ("possession on and off", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.set_possessed(true);
+                instance.tick(world);
+                instance.set_possessed(false);
+            }),
+        ];
+
+        let world = test_snapshot();
+        let resumed: Vec<String> = interruptions
+            .into_iter()
+            .filter_map(|(interruption, interrupt)| {
+                let (mut roster, id, _) = landed_walker(500.0, &world);
+                let said = call_move(
+                    &mut roster,
+                    json!({"direction": "left", "distance": 200}),
+                    &world.displays,
+                )
+                .expect("dispatch succeeds");
+                assert_eq!(said["started"], true, "{said}");
+                let under_way = tick_for(&mut roster, &id, &world, 20);
+                assert_eq!(under_way.animation, "walk", "{under_way:?}");
+
+                interrupt(&mut roster, &id, &world);
+                let stopped_at = roster.get_mut(&id).unwrap().feet().x;
+                let later = tick_for(&mut roster, &id, &world, 600);
+                (later.position.x != stopped_at).then(|| {
+                    format!(
+                        "{interruption}, from x {stopped_at} to {}",
+                        later.position.x
+                    )
+                })
+            })
+            .collect();
+        assert!(resumed.is_empty(), "walked on after {resumed:#?}");
+    }
+
+    #[test]
+    fn a_move_ends_when_the_instance_is_brought_somewhere_else() {
+        use crate::engine::Point;
+
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        roster.get_mut(&id).unwrap().stand_at(Point {
+            x: 900.0,
+            y: landed.position.y,
+        });
+        let later = tick_for(&mut roster, &id, &world, 600);
+        assert_eq!(later.position.x, 900.0, "it stays where it was brought");
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

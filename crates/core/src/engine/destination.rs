@@ -154,14 +154,18 @@ impl Engine {
         Ok(())
     }
 
-    /// Stride toward the destination, or end the move on arrival.
-    pub(super) fn apply_destination(&mut self, dt: f64) {
+    /// Stride toward the destination, or end the move on arrival or once
+    /// `state` stops it.
+    pub(super) fn apply_destination(&mut self, state: State, dt: f64) {
         let Some(GlobalX(target_x)) = self.destination else {
             return;
         };
-        match heading_to(self.position.x, target_x) {
-            Heading::Arrived => self.end_move(),
-            Heading::Toward(toward) => self.stride(toward, target_x, dt),
+        match (
+            self.stride_blocked(state),
+            heading_to(self.position.x, target_x),
+        ) {
+            (None, Heading::Toward(toward)) => self.stride(toward, target_x, dt),
+            _ => self.end_move(),
         }
     }
 
@@ -188,7 +192,7 @@ impl Engine {
     }
 
     /// The only way out of a move. Nothing keeps the x, so nothing resumes it.
-    fn end_move(&mut self) {
+    pub(super) fn end_move(&mut self) {
         self.velocity.x = 0.0;
         self.destination = None;
     }
