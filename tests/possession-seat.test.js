@@ -131,6 +131,19 @@ async function launch() {
       handlers.frame({ payload: ${JSON.stringify(seated)} });
       await until(() => cardEl() && last());
       const seatedReported = last();
+      const releaseEl = cardEl().querySelector(".possession-release");
+      const releaseBox = releaseEl && box(releaseEl);
+      const releaseText = releaseEl?.textContent ?? null;
+      const releaseHits = releaseEl
+        ? document.elementFromPoint(releaseBox[0] + 4, releaseBox[1] + 4) === releaseEl
+        : false;
+      const before = window.__invoked.length;
+      releaseEl?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      releaseEl?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      releaseEl?.click();
+      const releaseCalls = window.__invoked
+        .slice(before)
+        .filter((c) => c.name !== "overlay_rects");
       const fonts = {
         card: fontOf(".possession"),
         heading: fontOf(".possession-heading"),
@@ -153,9 +166,15 @@ async function launch() {
       await until(() => cardEl()?.classList.contains("paused") && last());
       const pausedCard = box(cardEl());
       const pausedReported = last();
+      const pausedRelease = Boolean(cardEl().querySelector(".possession-release"));
       const pausedStyle = getComputedStyle(cardEl());
       console.log("__PROBE_RESULT__" + JSON.stringify({
         seatedReported,
+        releaseBox,
+        releaseText,
+        releaseHits,
+        releaseCalls,
+        pausedRelease,
         fonts,
         chargingCard,
         chargingBar,
@@ -296,6 +315,26 @@ test(
     assert.ok(result.chargingBar[1] >= result.chargingCard[1] + result.chargingCard[3]);
     assert.ok(result.chargingBar[1] + result.chargingBar[3] < 900, "the bar is inside the window");
     assert.equal(reportedFor(result.releasedReported, result.chargingBar), undefined);
+  },
+);
+
+test(
+  "the release button takes its own click and ends possession the way Esc does",
+  { skip: chromeSkip, timeout: 60000 },
+  async () => {
+    const result = await drive();
+    assert.ok(result.releaseBox, "an active card has a release button");
+    assert.equal(result.releaseText, "Release Possession (Esc)");
+    assert.equal(result.releaseHits, true, "the button takes the pointer although the card does not");
+    const row = reportedFor(result.seatedReported, result.releaseBox);
+    assert.ok(row, `release button missing from ${JSON.stringify(result.seatedReported)}`);
+    assert.equal(row.clickable, true, "only the button's own rect takes the click");
+    assert.equal(row.follows, undefined, "the button stays in the corner with the card");
+    assert.deepEqual(result.releaseCalls, [
+      { name: "overlay_possession_key", args: { key: "escape", down: true } },
+      { name: "overlay_possession_key", args: { key: "escape", down: false } },
+    ]);
+    assert.equal(result.pausedRelease, false, "a paused card is the resume click, with no button");
   },
 );
 
