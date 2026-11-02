@@ -289,6 +289,15 @@ test("possess swoops in three outline ghosts and shakes the sprite", () => {
   });
 });
 
+test("a layer with a width is the stage the swoop mirrors off", () => {
+  withDom((dom) => {
+    const { io, layer } = possessionIo(dom, "data:narrow-stage");
+    layer.clientWidth = 450;
+    io.draw("possess");
+    assert.equal(layer.children[0].children[2].style["--dir"], "-1", "x 400 is near the right of a 450 px desk");
+  });
+});
+
 test("an outline is drawn once per frame and size, and the cache keeps 64", () => {
   withDom((dom) => {
     const first = possessionIo(dom, "data:frame-0");

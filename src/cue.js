@@ -356,7 +356,10 @@ function possession(stage, c, sprite, cue) {
   shake(sprite, GHOSTS[cue].sprite);
   if (reducedMotion()) return [];
   const outline = outlineOf(sprite);
-  const path = ghostPath(cue, { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h, stageW: globalThis.innerWidth ?? Infinity });
+  // The overlay's cue layer is zero-sized, so its stage is the window. The
+  // cues page draws into a desk narrower than that.
+  const stageW = stage.clientWidth || (globalThis.innerWidth ?? Infinity);
+  const path = ghostPath(cue, { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h, stageW });
   const ghosts = GHOSTS[cue].layers.map((cls) => ghost(outline, c, cls, path));
   const wrapper = document.createElement("div");
   wrapper.className = "cue";

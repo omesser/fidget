@@ -91,7 +91,7 @@ const probe = `
   })();
 </script>`;
 
-async function launch() {
+async function launch(probe) {
   const cdp = launchWithPipe(chromePath, [
     "--headless=new",
     "--disable-gpu",
@@ -126,11 +126,39 @@ async function launch() {
 }
 
 test("a throw into the desk's right wall puffs flush against it, centred on the wall", { skip: chromeSkip }, async () => {
-  const puff = await launch();
+  const puff = await launch(probe);
   assert.deepEqual(puff.errors, [], "the page threw nothing");
   const gap = puff.width - (puff.right + puff.shadow);
   const drift = (puff.top + puff.bottom) / 2 - puff.height / 2;
   assert.ok(Math.abs(gap) <= 0.01, `flush against the wall: ${gap}px off in ${JSON.stringify(puff)}`);
   assert.ok(Math.abs(drift) <= 0.01, `centred on the wall: ${drift}px off in ${JSON.stringify(puff)}`);
   assert.ok(puff.bottom - puff.top > puff.right - puff.left, `stands along the wall: ${JSON.stringify(puff)}`);
+});
+
+// The Possess row plays the app's cue.js and cue-possess.css, which the build
+// copies beside the page: a missing copy throws or leaves the ghost unanimated.
+const possessProbe = `
+<script type="module">
+  const errors = [];
+  window.addEventListener("error", (e) => errors.push(e.message));
+  window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason)));
+  window.addEventListener("load", async () => {
+    document.querySelector('.play[data-cue="possess"]').click();
+    await new Promise(requestAnimationFrame);
+    const ghosts = [...document.querySelectorAll("#desk .cue-oghost")];
+    console.log("__PROBE_RESULT__" + JSON.stringify({
+      errors,
+      layers: ghosts.map((g) => g.className),
+      animations: ghosts.flatMap((g) => g.getAnimations().map((a) => a.animationName)),
+      sprite: document.querySelector("#sprite img").className,
+    }));
+  });
+</script>`;
+
+test("the Possess row swoops the app's outline ghost onto BMO and shakes it", { skip: chromeSkip }, async () => {
+  const seen = await launch(possessProbe);
+  assert.deepEqual(seen.errors, [], "the page threw nothing");
+  assert.deepEqual(seen.layers, ["cue cue-oghost trail2", "cue cue-oghost trail", "cue cue-oghost lead"]);
+  assert.ok(seen.animations.includes("cue-og-swoop"), `the ghost runs cue-possess.css: ${seen.animations}`);
+  assert.match(seen.sprite, /\bcue-possess\b/);
 });
