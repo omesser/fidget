@@ -2102,12 +2102,9 @@ pub(crate) fn run_frame_loop(
                     session_log::log_thinking(&app, &live.id);
                 }
 
-                let became_perched = live.last_state.is_some()
-                    && frame.state == State::Perched
-                    && live.last_state != Some(State::Perched);
-                if became_perched {
+                if let Some(what) = landed(live.last_state, frame.state, instance.possessed()) {
                     live.addressed = true;
-                    note_happened(&mut live.happened, Happened::Perch);
+                    note_happened(&mut live.happened, what);
                 }
 
                 if live.last_state != Some(frame.state) {
@@ -3434,6 +3431,13 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
     }
 }
 
+/// What the wake says happened when the sprite changes State. A possessed
+/// sprite perches where the user steered it, so that landing is not news.
+fn landed(last: Option<State>, now: State, possessed: bool) -> Option<Happened> {
+    let became_perched = last.is_some() && now == State::Perched && last != Some(State::Perched);
+    (became_perched && !possessed).then_some(Happened::Perch)
+}
+
 /// Drop front and `before` names without WindowNames consent or when excluded
 /// (ADR-0032). Repeated here: these names arrive by a different call than the
 /// window walk, and exclusion can only match while the name is still present.
@@ -3770,6 +3774,18 @@ mod tests {
 
     fn wait(ms: usize) -> Vec<bool> {
         vec![false; ms / 16]
+    }
+
+    #[test]
+    fn a_possessed_landing_does_not_wake_the_director() {
+        let falling = Some(State::Falling);
+        assert_eq!(
+            landed(falling, State::Perched, false),
+            Some(Happened::Perch)
+        );
+        assert_eq!(landed(falling, State::Perched, true), None);
+        assert_eq!(landed(Some(State::Perched), State::Perched, false), None);
+        assert_eq!(landed(None, State::Perched, false), None);
     }
 
     #[test]

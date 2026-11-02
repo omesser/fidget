@@ -6,6 +6,9 @@ export const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
 export const RESUME_LABEL = "Click to resume";
 
+// The button carries the Esc hint, so the bindings list does not repeat it.
+export const RELEASE_LABEL = "Release Possession (Esc)";
+
 // Clear of the screen edge, on the display the sprite stands on. The card
 // stays put while the sprite walks, so the background under it stays visible.
 export const POSSESSION_INSET = 16;
@@ -17,7 +20,6 @@ const KEYS = [
   ["↑", "Climb"],
   ["↓", "Drop"],
   ["Space", "Jump"],
-  ["Esc", "Release Possession"],
 ];
 
 // Walk and Jump are written as labels. A Behavior name is a key (`nod`).
@@ -35,14 +37,21 @@ function bindingRows(behaviors) {
 }
 
 // Null while the sprite is not possessed. Paused keeps the card and replaces
-// the explanation with the resume line.
+// the explanation with the resume line. The whole paused card is the resume
+// click, so it has no release button.
 export function possessionCard({ possessed, paused, behaviors }) {
   if (!possessed) return null;
   const keys = bindingRows(behaviors);
   if (paused) {
-    return { paused: true, dimmed: true, heading: RESUME_LABEL, keys };
+    return { paused: true, dimmed: true, heading: RESUME_LABEL, keys, release: null };
   }
-  return { paused: false, dimmed: false, heading: POSSESSION_HEADING, keys };
+  return {
+    paused: false,
+    dimmed: false,
+    heading: POSSESSION_HEADING,
+    keys,
+    release: RELEASE_LABEL,
+  };
 }
 
 // Null hides the bar. A number is the fill, clamped to 0..1.
@@ -52,10 +61,12 @@ export function chargeFill(charge) {
 }
 
 // The card takes the resume click only while paused. Otherwise a sprite
-// perched under it cannot be grabbed. The bar is only drawn.
-export function possessionRects(card, bar, paused) {
+// perched under it cannot be grabbed, so only the release button's own rect
+// takes a click. The bar is only drawn.
+export function possessionRects(card, bar, release, paused) {
   const rects = [];
   if (card) rects.push({ rect: card, clickable: Boolean(paused) });
+  if (release) rects.push({ rect: release, clickable: true });
   if (bar) rects.push({ rect: bar, clickable: false });
   return rects;
 }
@@ -76,7 +87,7 @@ const painted = new WeakMap();
 
 function modelStamp(model) {
   if (!model) return "";
-  return JSON.stringify([Boolean(model.paused), model.heading, model.keys]);
+  return JSON.stringify([Boolean(model.paused), model.heading, model.keys, model.release]);
 }
 
 // Paint `model` into `card`. `bar` is the track. `fill` is from `chargeFill`.
@@ -98,6 +109,13 @@ export function paintPossession(card, bar, model, fill) {
         const list = document.createElement("ul");
         for (const [keys, does] of model.keys) list.append(row(keys, does));
         card.append(list);
+      }
+      if (model.release) {
+        const release = document.createElement("button");
+        release.type = "button";
+        release.className = "possession-release";
+        release.textContent = model.release;
+        card.append(release);
       }
     }
   }

@@ -48,8 +48,8 @@ test("the card lists the bound keys under the explanation", () => {
     ["↑", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
-    ["Esc", "Release Possession"],
   ]);
+  assert.equal(card.release, "Release Possession (Esc)");
 });
 
 test("the card numbers the shell's list and writes each name as a label", () => {
@@ -63,7 +63,6 @@ test("the card numbers the shell's list and writes each name as a label", () => 
     ["↑", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
-    ["Esc", "Release Possession"],
     ["1", "Wave"],
     ["2", "Nod"],
   ]);
@@ -72,7 +71,7 @@ test("the card numbers the shell's list and writes each name as a label", () => 
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
   const card = possessionCard({ possessed: true, paused: false, behaviors: names });
-  assert.deepEqual(card.keys.slice(5), [
+  assert.deepEqual(card.keys.slice(4), [
     ["1", "K"],
     ["2", "J"],
     ["3", "Walk"],
@@ -84,6 +83,7 @@ test("a paused card dims and asks for a click", () => {
   assert.equal(card.paused, true);
   assert.equal(card.heading, "Click to resume");
   assert.equal(card.dimmed, true);
+  assert.equal(card.release, null, "the whole paused card is the resume click");
 });
 
 test("the bindings card uses the shared sans stack", () => {
@@ -233,16 +233,18 @@ test("a charge-only change keeps the same card nodes", () => {
   }
 });
 
-test("the card takes a click only while paused, and the charge bar never does", () => {
+test("the card takes a click only while paused, the release button always, the bar never", () => {
   const card = [10, 20, 220, 88];
   const bar = [10, 112, 220, 8];
-  assert.deepEqual(possessionRects(card, bar, true), [
+  const release = [24, 80, 150, 22];
+  assert.deepEqual(possessionRects(card, bar, null, true), [
     { rect: card, clickable: true },
     { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(card, bar, false), [
+  assert.deepEqual(possessionRects(card, bar, release, false), [
     { rect: card, clickable: false },
+    { rect: release, clickable: true },
     { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(null, null, false), []);
+  assert.deepEqual(possessionRects(null, null, null, false), []);
 });

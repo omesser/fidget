@@ -336,6 +336,13 @@ function positionPossession(view, latest) {
     paused: model.paused,
   };
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
+  const release = view.card.querySelector(".possession-release");
+  view.releaseRect = release && [
+    placed.card.x + release.offsetLeft,
+    placed.card.y + release.offsetTop,
+    release.offsetWidth,
+    release.offsetHeight,
+  ];
   view.chargeRect = chargeRectFor(fill, placed);
   reportOverlayRects();
 }
@@ -552,17 +559,29 @@ function attachQuickMessage(view, id) {
   // A press here resumes. It is not a press on the art, so it must not poke.
   const resume = (event) => {
     event.stopPropagation();
+    if (!card.classList.contains("paused")) return;
     window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
       console.error("overlay_request_focus", err);
     });
   };
+  // The button presses Esc, so Possession ends on the path the key takes.
+  const release = (event) => {
+    event.stopPropagation();
+    if (!event.target.closest(".possession-release")) return;
+    for (const down of [true, false]) {
+      window.__TAURI__.core.invoke("overlay_possession_key", { key: "escape", down }).catch((err) => {
+        console.error("overlay_possession_key", err);
+      });
+    }
+  };
   card.addEventListener("pointerdown", resume);
   card.addEventListener("pointerup", (event) => event.stopPropagation());
-  card.addEventListener("click", (event) => event.stopPropagation());
+  card.addEventListener("click", release);
   stage.append(card, bar);
   view.card = card;
   view.bar = bar;
   view.possessionRect = null;
+  view.releaseRect = null;
   view.chargeRect = null;
 
   let machine;
@@ -659,7 +678,8 @@ function reportOverlayRects() {
     // The card stays in the corner. `follows` would sweep its rect along the
     // sprite's trail, and an unpaused card must not take the grab.
     const paused = view.card.classList.contains("paused");
-    for (const part of possessionRects(view.possessionRect, view.chargeRect, paused)) {
+    const release = view.possessionRect && view.releaseRect;
+    for (const part of possessionRects(view.possessionRect, view.chargeRect, release, paused)) {
       rects.push({ rect: part.rect, clickable: part.clickable });
     }
   }

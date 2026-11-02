@@ -28,7 +28,7 @@ CONTEXT.md vocabulary. fidget column is honest about what is and is not built.
 | Capability | fidget | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | Character Packages (first-class) | ✅ | ✅ (DLC) | ✅ (Workshop) | ✅ (community) | ✅ (beta, +2 soon) | ✅ (catalog) | ✅ (VRM + Workshop) |
-| Art ecosystem / gallery | ✅ (import petdex + Shimeji-ee) | 41 official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
+| Art ecosystem / gallery | ✅ (in-app import of Fidget Character Packages; petdex + Shimeji-ee packs converted by script first) | 41 official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
 | Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp | ❌ (VRM rigged) |
 | Declarative Behaviors | ✅ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✅ (plugins) | ❌ |
 
@@ -150,8 +150,9 @@ this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (41 official DLC;
 character packs $7.49–$14.99 each); fidget has a growing set of built-in Character Packages, internal
-package format (undocumented until v2), and import adapters for petdex / Pets
-Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
+package format (undocumented until v2), in-app import of Fidget Character Packages
+(ZIP or folder, Settings, #1977), and a conversion script for petdex / Pets Codex
+and Shimeji-ee packs. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
 creation after mod removal. fidget's Spatial Layer includes ballistic physics
 and Perch riding/dropping under a gate, and its shipped agent integrations
@@ -233,7 +234,8 @@ Behaviors.
 **Differences.** Shimeji-ee's community character ecosystem (1000s of free
 packs) offers direct distribution; fidget imports from Shimeji-ee via
 `scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
-Character Packages once (authoring-time, not live bridge). Shimeji-ee has
+Character Packages once (authoring-time, not live bridge); Settings import (#1977)
+only accepts Fidget's own package format, so a Shimeji-ee pack must be converted first. Shimeji-ee has
 Fall/gravity (sprite kinematics) but not fidget's ballistic Perch model; no
 window awareness beyond edges; no agent integrations or AI capabilities.
 fidget adds ballistic physics (gravity arcs, throw, Perches under acceleration
@@ -280,8 +282,8 @@ chat via user's OpenAI key, while fidget ships Director + authored
 personality-driven idle speech (Character talks in-character while living on
 windows, not a chat window). Desktop Pet is beta with limited character selection
 (1 shipped, +2 soon) and no public validation; fidget has a growing set of built-in Character Packages,
-internal package format, and import adapters for petdex / Pets Codex
-and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
+internal package format, in-app import of Fidget Character Packages, and a
+conversion script for petdex / Pets Codex and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
 awareness. Desktop Pet's AI is an OpenAI chat window; fidget's Director drives
 idle speech from personality, plus a Summon chat surface shipped. fidget's Harness ACP Completer (#433 2026-09-07)
 + MCP server (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are
@@ -400,8 +402,8 @@ built-in local LLM (QWEN 2.5 1.5b) but no authored personality file or
 Director-driven idle speech. Both sit on windows (Perches), but MateEngine is
 VRM-driven (user's 3D rigged models) and fidget is 2D sprite + ballistic
 physics. MateEngine has Steam Workshop + mods (the capability Desktop Mate
-removed); fidget has import adapters for petdex + Shimeji-ee (authoring-time,
-not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
+removed); fidget imports its own Character Packages in-app and
+converts petdex + Shimeji-ee packs by script at authoring time (no live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
 no hide rules, no capture exclusion, no MCP, no agent Harness. fidget's Spatial
 Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
 exclusion; fidget's Functional Layer (Harness ACP Completer #433 2026-09-07 +
@@ -499,8 +501,9 @@ package-authored.
    MateEngine: VRM + Workshop-open, free, the switching target after Desktop
    Mate disabled mods (3,709 stars + 1,032 Steam reviews 97%). Shimeji-ee: 1000s
    free packs, community folklore. OpenPets: openpets.dev catalog. fidget: a growing
-   set of built-in Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
-   authoring-time import, not a live gallery or first-party store.
+   set of built-in Character Packages, in-app import of Fidget Character Packages
+   (ZIP or folder, #1977), and `scripts/import-pet.py` to convert petdex +
+   Shimeji-ee packs into that format first; still no live gallery or first-party store.
 
 2. **Agent integrations shipped:** Desktop Pet has OpenAI chat (vendor-only
    evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,246 stars,
