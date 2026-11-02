@@ -799,12 +799,10 @@ impl Engine {
     /// plays `possessed`.
     pub fn set_possessed(&mut self, possessed: bool) {
         let starting = possessed && !self.possessed;
-        if possessed != self.possessed {
-            self.possession_cue = Some(if possessed {
-                Cue::Possess
-            } else {
-                Cue::Unpossess
-            });
+        match (self.possessed, possessed) {
+            (false, true) => self.possession_cue = Some(Cue::Possess),
+            (true, false) => self.possession_cue = Some(Cue::Unpossess),
+            _ => {}
         }
         self.possessed = possessed;
         if matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)) {

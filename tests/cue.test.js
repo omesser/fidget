@@ -279,6 +279,7 @@ test("possess swoops in three outline ghosts and shakes the sprite", () => {
       ["cue cue-oghost trail2", "cue cue-oghost trail", "cue cue-oghost lead"],
     );
     assert.equal(wrap.children[2].style.width, "76px", "the sprite plus a 6 px pad each side");
+    assert.equal(wrap.children[2].style.imageRendering, "pixelated", "pixel art stays crisp, as the sprite does");
     assert.ok(sprite.classList.contains("cue-possess"));
 
     io.draw("unpossess");

@@ -202,8 +202,9 @@ function reap(node, child) {
 
 const UP = { x: 0, y: -1 };
 
-// The possession ghost: the current frame's silhouette as a white outline over
-// a faint fill, in display px. Drawn at SS times, so the stroke stays smooth.
+// The possession ghost: the frame's silhouette, a white STROKE outside it with
+// ink beyond (INK_OUT) and just inside (INK_IN), over a faint FILL. Display px,
+// drawn SS times supersampled so the stroke stays smooth.
 const PAD = 6;
 const SS = 2;
 const STROKE = 2;
@@ -216,52 +217,51 @@ const OUTLINE_CACHE = 64;
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const REACH = Math.ceil((STROKE + INK_OUT + 1) * SS);
-// Nearest first, so the first pixel of the other kind is the distance.
 const OFFSETS = [];
 for (let dy = -REACH; dy <= REACH; dy++) {
   for (let dx = -REACH; dx <= REACH; dx++) {
     const d = Math.hypot(dx, dy);
-    if (d > 0 && d <= REACH) OFFSETS.push([dx, dy, d]);
+    if (d > 0 && d <= REACH) OFFSETS.push(dx, dy, d);
   }
 }
-OFFSETS.sort((a, b) => a[2] - b[2]);
 
-// RGBA for a W×H alpha map, both in supersampled px. Off the map is outside.
-// ponytail: a disk search per pixel, about 300 probes; a distance transform
-// if a large sprite ever makes the first cue on a frame stutter.
+// RGBA for a W×H alpha map, both in supersampled px. A pixel's nearest one of
+// the other kind sits on a boundary, so only boundary pixels splat distances.
+// PAD keeps the body further than REACH from the map's edge.
 export function outlinePixels(alpha, W, H) {
-  const out = new Uint8ClampedArray(W * H * 4);
+  const body = (x, y) => x >= 0 && y >= 0 && x < W && y < H && alpha[y * W + x] >= 128;
+  const dist = new Float32Array(W * H).fill(REACH + 1);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const body = alpha[y * W + x] >= 128;
-      let d = REACH + 1;
-      for (const [dx, dy, dist] of OFFSETS) {
-        const nx = x + dx;
-        const ny = y + dy;
-        const inside = nx >= 0 && ny >= 0 && nx < W && ny < H && alpha[ny * W + nx] >= 128;
-        if (inside !== body) {
-          d = dist;
-          break;
-        }
+      const k = body(x, y);
+      if (body(x - 1, y) === k && body(x + 1, y) === k && body(x, y - 1) === k && body(x, y + 1) === k) continue;
+      for (let j = 0; j < OFFSETS.length; j += 3) {
+        const tx = x + OFFSETS[j];
+        const ty = y + OFFSETS[j + 1];
+        if (tx < 0 || ty < 0 || tx >= W || ty >= H || body(tx, ty) === k) continue;
+        const t = ty * W + tx;
+        if (OFFSETS[j + 2] < dist[t]) dist[t] = OFFSETS[j + 2];
       }
-      d /= SS;
-      let a;
-      let from;
-      let to;
-      let mix;
-      if (body) {
-        const edge = clamp01(INK_IN + 0.5 - d);
-        a = FILL + (0.9 - FILL) * edge;
-        [from, to, mix] = [WHITE, INK, (edge * 0.9) / a];
-      } else {
-        a = clamp01(STROKE + INK_OUT + 0.5 - d);
-        if (a === 0) continue;
-        [from, to, mix] = [INK, WHITE, clamp01(STROKE + 0.5 - d) / a];
-      }
-      const i = (y * W + x) * 4;
-      for (let c = 0; c < 3; c++) out[i + c] = Math.round(from[c] + (to[c] - from[c]) * mix);
-      out[i + 3] = Math.round(a * 255);
     }
+  }
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    const d = dist[i] / SS;
+    let a;
+    let from;
+    let to;
+    let mix;
+    if (alpha[i] >= 128) {
+      const edge = clamp01(INK_IN + 0.5 - d);
+      a = FILL + (0.9 - FILL) * edge;
+      [from, to, mix] = [WHITE, INK, (edge * 0.9) / a];
+    } else {
+      a = clamp01(STROKE + INK_OUT + 0.5 - d);
+      if (a === 0) continue;
+      [from, to, mix] = [INK, WHITE, clamp01(STROKE + 0.5 - d) / a];
+    }
+    for (let c = 0; c < 3; c++) out[i * 4 + c] = Math.round(from[c] + (to[c] - from[c]) * mix);
+    out[i * 4 + 3] = Math.round(a * 255);
   }
   return out;
 }
@@ -298,23 +298,30 @@ function outlineOf(sprite) {
   for (let i = 0; i < alpha.length; i++) alpha[i] = image.data[i * 4 + 3];
   image.data.set(outlinePixels(alpha, W, H));
   ctx.putImageData(image, 0, 0);
-  const made = { canvas, w: w + 2 * PAD, h: h + 2 * PAD };
+  const made = { canvas, w: w + 2 * PAD, h: h + 2 * PAD, smooth };
   outlines.set(key, made);
   if (outlines.size > OUTLINE_CACHE) outlines.delete(outlines.keys().next().value);
   return made;
 }
 
-// --dir and --ky bend the keyframed path off the overlay's edges. The rise
-// is squashed, never flipped below, and the anchor never moves, so the ghost
-// still ends on the body. Possess reaches +85 px right, so it may mirror.
+// Each cue's ghost layers and sprite class, and how far its keyframed path in
+// main.css reaches above the centre and to the right of it.
+const GHOSTS = {
+  possess: { layers: ["trail2", "trail", "lead"], sprite: "cue-possess", rise: 165, right: 85 },
+  unpossess: { layers: ["rise"], sprite: "cue-release", rise: 150, right: 0 },
+};
+
+// --dir and --ky bend the path off the overlay's edges. The rise is squashed,
+// never flipped below, and the anchor never moves, so the ghost still ends on
+// the body. A path that reaches right mirrors when only the left side fits.
 export function ghostPath(cue, { cx, cy, gw, gh, stageW }) {
-  const rise = cue === "possess" ? 165 : 150;
+  const { rise, right } = GHOSTS[cue];
   const ky = cy < rise + gh / 2 ? Math.max(0.4, (cy - gh / 2 - 4) / rise) : 1;
-  const mirrored = cue === "possess" && cx + 85 + gw / 2 > stageW && cx - 85 - gw / 2 >= 0;
+  const mirrored = right > 0 && cx + right + gw / 2 > stageW && cx - right - gw / 2 >= 0;
   return { dir: mirrored ? -1 : 1, ky };
 }
 
-function ghost(outline, c, sprite, cls, path) {
+function ghost(outline, c, cls, path) {
   const g = document.createElement("canvas");
   g.setAttribute("class", "cue cue-oghost " + cls);
   g.width = outline.canvas.width;
@@ -324,29 +331,27 @@ function ghost(outline, c, sprite, cls, path) {
   g.style.top = c.y + "px";
   g.style.width = outline.w + "px";
   g.style.height = outline.h + "px";
-  g.style.imageRendering = sprite.style.imageRendering;
+  g.style.imageRendering = outline.smooth ? "auto" : "pixelated";
   g.style.setProperty("--dir", path.dir);
   g.style.setProperty("--ky", path.ky);
   return g;
 }
 
-const SPRITE_CUES = ["cue-possess", "cue-release"];
-
 // Restarts the class's animation even when it is the one already on.
 function shake(sprite, cls) {
-  sprite.classList.remove(...SPRITE_CUES);
+  sprite.classList.remove(...Object.values(GHOSTS).map((g) => g.sprite));
   void sprite.offsetWidth;
   sprite.classList.add(cls);
 }
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-function possession(stage, c, sprite, cue, spriteCue, layers) {
-  shake(sprite, spriteCue);
+function possession(stage, c, sprite, cue) {
+  shake(sprite, GHOSTS[cue].sprite);
   if (reducedMotion()) return [];
   const outline = outlineOf(sprite);
   const path = ghostPath(cue, { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h, stageW: globalThis.innerWidth ?? Infinity });
-  const ghosts = layers.map((cls) => ghost(outline, c, sprite, cls, path));
+  const ghosts = GHOSTS[cue].layers.map((cls) => ghost(outline, c, cls, path));
   const wrapper = document.createElement("div");
   wrapper.className = "cue";
   wrapper.append(...ghosts);
@@ -437,10 +442,10 @@ const VISUALS = {
     return landingPuff(stage, c, "cue-puff hard");
   },
   possess(stage, c, sprite) {
-    return possession(stage, c, sprite, "possess", "cue-possess", ["trail2", "trail", "lead"]);
+    return possession(stage, c, sprite, "possess");
   },
   unpossess(stage, c, sprite) {
-    return possession(stage, c, sprite, "unpossess", "cue-release", ["rise"]);
+    return possession(stage, c, sprite, "unpossess");
   },
 };
 
