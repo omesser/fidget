@@ -67,7 +67,8 @@ wait_for_trace 2 "$log" '^frame: .* sprite\(-?[0-9]+,-?[0-9]+\)' || fail "no fra
 # Before it the sprite is undrawn, and the one-frame ask reaches nobody.
 id=$(sed -nE 's/^frame: .* sprite\(-?[0-9]+,-?[0-9]+\) .* ([^ ]+)$/\1/p' "$log" | tail -1)
 [ -n "$id" ] || fail "no instance in the frame trace in $log"
-wait_for_trace "$FIDGET_STARTUP_WAIT_SECONDS" "$log" "^overlay: draft instance=$id closed\$" ||
+id_re=$(printf '%s' "$id" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+wait_for_trace "$FIDGET_STARTUP_WAIT_SECONDS" "$log" "^overlay: draft instance=$id_re closed\$" ||
   fail "the overlay page never drew $id; see $log"
 
 # The overlay spans the display, so its centre is not the sprite. The newest
