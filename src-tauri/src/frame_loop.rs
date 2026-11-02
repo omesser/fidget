@@ -3558,10 +3558,12 @@ fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
         return WakeTurn::NotDue;
     }
     if let Some(page) = gate.loading {
-        match &live.wake_held_on {
+        match &mut live.wake_held_on {
             Some(WakeHold::GaveUp { page: held }) if *held == page => {}
-            Some(WakeHold::Waiting { page: held, since }) if *held == page => {
+            // A load that starts mid-hold keeps the hold's clock.
+            Some(WakeHold::Waiting { page: held, since }) if held.label == page.label => {
                 if gate.now.duration_since(*since) < PAGE_LOAD_LIMIT {
+                    *held = page;
                     return WakeTurn::Held;
                 }
                 eprintln!(
@@ -3730,6 +3732,28 @@ mod tests {
             assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
             live.addressed = true;
             assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
+        });
+    }
+
+    /// Production change that would fail this: a hold that starts before the
+    /// first page load restarting its 3 s when that load begins.
+    #[test]
+    fn a_hold_across_a_page_load_still_ends_at_the_limit() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            let start = Instant::now();
+            live.addressed = true;
+            let first = WakeGate {
+                now: start,
+                ..gate_on_load(Some("overlay-1"), 0)
+            };
+            assert_eq!(spend_wake(&mut live, first), WakeTurn::Held);
+            let later = WakeGate {
+                now: start + PAGE_LOAD_LIMIT,
+                ..gate_on_load(Some("overlay-1"), 1)
+            };
+            assert_ne!(spend_wake(&mut live, later), WakeTurn::Held);
         });
     }
 
