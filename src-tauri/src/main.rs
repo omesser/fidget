@@ -2306,7 +2306,7 @@ fn overlay_listening(window: tauri::Window) {
 /// A page that starts loading again no longer hears frames until it says so.
 fn overlay_page_loading(label: &str, event: tauri::webview::PageLoadEvent) {
     if event == tauri::webview::PageLoadEvent::Started {
-        platform::set_overlay_listening(label, false);
+        platform::overlay_page_load_started(label);
     }
 }
 
@@ -5814,8 +5814,10 @@ mod tests {
         super::platform::set_overlay_listening(label, true);
         super::overlay_page_loading(label, PageLoadEvent::Finished);
         assert!(super::platform::overlay_listening(label));
+        let loads = super::platform::overlay_page_loads(label);
         super::overlay_page_loading(label, PageLoadEvent::Started);
         assert!(!super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), loads + 1);
         super::platform::set_overlay_listening(label, true);
         assert!(super::platform::overlay_listening(label));
     }

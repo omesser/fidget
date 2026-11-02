@@ -2169,6 +2169,7 @@ pub(crate) fn run_frame_loop(
                             (frame.position.x, frame.position.y),
                             &displays.frames,
                             platform::overlay_listening,
+                            platform::overlay_page_loads,
                         ),
                         now: Instant::now(),
                     };
@@ -3472,9 +3473,26 @@ fn loading_overlay(
     feet: (f64, f64),
     displays: &[Rect],
     listening: impl Fn(&str) -> bool,
-) -> Option<String> {
+    loads: impl Fn(&str) -> u32,
+) -> Option<LoadingPage> {
     let label = overlay_label(bubble_owner(feet, displays)?);
-    (!listening(&label)).then_some(label)
+    (!listening(&label)).then(|| LoadingPage {
+        load: loads(&label),
+        label,
+    })
+}
+
+/// One load of an overlay's page: a reload is a new page to wait on.
+#[derive(Debug, PartialEq)]
+pub(crate) struct LoadingPage {
+    label: String,
+    load: u32,
+}
+
+impl std::fmt::Display for LoadingPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} load {}", self.label, self.load)
+    }
 }
 
 /// What decides whether this tick wakes the Director.
@@ -3485,7 +3503,7 @@ struct WakeGate {
     possessed: bool,
     enabled: bool,
     /// The overlay under the feet that doesn't listen yet, if any.
-    loading: Option<String>,
+    loading: Option<LoadingPage>,
     now: Instant,
 }
 
@@ -3497,12 +3515,12 @@ const PAGE_LOAD_LIMIT: Duration = Duration::from_secs(3);
 #[derive(Debug, PartialEq)]
 pub(crate) enum WakeHold {
     Waiting {
-        page: String,
+        page: LoadingPage,
         since: Instant,
     },
     /// It didn't listen within `PAGE_LOAD_LIMIT`, so wakes on it go out at once.
     GaveUp {
-        page: String,
+        page: LoadingPage,
     },
 }
 
@@ -3598,23 +3616,40 @@ mod tests {
         let right = Rect { x: 100.0, ..left };
         let displays = [left, right];
         let only_left = |label: &str| label == overlay_label(0);
-        assert_eq!(loading_overlay((50.0, 50.0), &displays, only_left), None);
+        let loads = |_: &str| 2;
         assert_eq!(
-            loading_overlay((150.0, 50.0), &displays, only_left),
-            Some(overlay_label(1))
+            loading_overlay((50.0, 50.0), &displays, only_left, loads),
+            None
+        );
+        assert_eq!(
+            loading_overlay((150.0, 50.0), &displays, only_left, loads),
+            Some(LoadingPage {
+                label: overlay_label(1),
+                load: 2,
+            })
         );
         // Feet on no display have no bubble to lose.
-        assert_eq!(loading_overlay((500.0, 500.0), &displays, |_| false), None);
+        assert_eq!(
+            loading_overlay((500.0, 500.0), &displays, |_| false, loads),
+            None
+        );
     }
 
     fn gate(loading: Option<&str>) -> WakeGate {
+        gate_on_load(loading, 0)
+    }
+
+    fn gate_on_load(loading: Option<&str>, load: u32) -> WakeGate {
         WakeGate {
             displays_asleep: false,
             do_not_disturb: false,
             proactive_allowed: false,
             possessed: false,
             enabled: true,
-            loading: loading.map(String::from),
+            loading: loading.map(|label| LoadingPage {
+                label: label.to_string(),
+                load,
+            }),
             now: Instant::now(),
         }
     }
@@ -3695,6 +3730,32 @@ mod tests {
             assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
             live.addressed = true;
             assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
+        });
+    }
+
+    /// Production change that would fail this: a page that gave up and then
+    /// reloads sending wakes before its listener is back, losing the bubble.
+    #[test]
+    fn a_page_that_gave_up_holds_wakes_again_after_a_reload() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            let start = Instant::now();
+            let at = |now| WakeGate {
+                now,
+                ..gate(Some("overlay-1"))
+            };
+            live.addressed = true;
+            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
+            assert_ne!(
+                spend_wake(&mut live, at(start + PAGE_LOAD_LIMIT)),
+                WakeTurn::Held
+            );
+            live.addressed = true;
+            assert_eq!(
+                spend_wake(&mut live, gate_on_load(Some("overlay-1"), 1)),
+                WakeTurn::Held
+            );
         });
     }
 

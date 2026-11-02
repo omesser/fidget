@@ -172,6 +172,30 @@ pub fn set_overlay_listening(label: &str, listening: bool) {
     }
 }
 
+/// How many times each overlay's page has started loading.
+static OVERLAY_PAGE_LOADS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+/// `label`'s page started loading again, so it no longer hears frames.
+pub fn overlay_page_load_started(label: &str) {
+    set_overlay_listening(label, false);
+    let Ok(mut all) = OVERLAY_PAGE_LOADS.lock() else {
+        return;
+    };
+    match all.iter_mut().find(|(owner, _)| owner == label) {
+        Some((_, loads)) => *loads += 1,
+        None => all.push((label.to_string(), 1)),
+    }
+}
+
+/// How many times `label`'s page has started loading.
+pub fn overlay_page_loads(label: &str) -> u32 {
+    OVERLAY_PAGE_LOADS.lock().map_or(0, |all| {
+        all.iter()
+            .find(|(owner, _)| owner == label)
+            .map_or(0, |(_, loads)| *loads)
+    })
+}
+
 /// Whether `label`'s page hears frames yet.
 pub fn overlay_listening(label: &str) -> bool {
     OVERLAYS_LISTENING
