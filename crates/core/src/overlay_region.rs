@@ -377,6 +377,10 @@ mod tests {
     #[test]
     fn region_plan_table() {
         let art = [[100, 200, 180, 328]]; // sprite swept bounds
+        let ghost_flight = OverlayRect {
+            see_through: true,
+            ..drawn([40, 20, 220, 270])
+        };
         const open_chat: OverlayRect = clickable([220, 140, 72, 18]);
         const bubble: OverlayRect = drawn([120, 80, 200, 90]);
         const thinking: OverlayRect = drawn([150, 100, 48, 24]);
@@ -417,6 +421,12 @@ mod tests {
                 ],
             ),
             ("bubble hidden", &art, &[], &[[100, 200, 180, 328]]),
+            (
+                "possess ghost in flight, mostly clear but still drawn",
+                &art,
+                &[ghost_flight],
+                &[[100, 200, 180, 328], [40, 20, 260, 290]],
+            ),
             (
                 "no sprite, bubble straddling the seam",
                 &[],

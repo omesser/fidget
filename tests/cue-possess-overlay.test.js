@@ -81,7 +81,22 @@ function run() {
     const ghosts = [...document.querySelectorAll(".cue-oghost")];
     const lead = ghosts.find((g) => g.classList.contains("lead"));
     const flights = () => (reported.at(-1) ?? []).filter((r) => r.see_through);
-    const flying = { rects: flights(), dir: Number(lead.style.getPropertyValue("--dir")) };
+    // Each layer as drawn at each of its keyframes, turned and scaled. The
+    // keyframes are linear or don't overshoot, so these bound the flight.
+    const boxes = (layers) => layers.flatMap((g) => {
+      const anims = g.getAnimations();
+      const { delay, duration } = anims[0].effect.getComputedTiming();
+      const offsets = new Set(anims.flatMap((a) => a.effect.getKeyframes().map((k) => k.computedOffset)));
+      return [...offsets].map((offset) => {
+        for (const a of anims) {
+          a.pause();
+          a.currentTime = delay + offset * duration;
+        }
+        const r = g.getBoundingClientRect();
+        return [r.left, r.top, r.right, r.bottom];
+      });
+    });
+    const flying = { rects: flights(), boxes: boxes(ghosts) };
     const alphaAt = (x, y) => lead.getContext("2d").getImageData(x, y, 1, 1).data[3];
     // Ghost px are (display + 6) * 2: the frame's left and right halves.
     const ghost = { left: alphaAt(28, 76), right: alphaAt(124, 76) };
@@ -97,10 +112,18 @@ function run() {
     // Settled frames, not until(): a class that stays must fail one test,
     // not hang every test that shares this probe.
     for (let i = 0; i < 5; i += 1) await settle();
+    const after = drawn.className;
+    const landed = flights();
+    // Released: one ghost rises off the body.
+    handlers.frame({ payload: { ...shown, sprites: [{ ...shown.sprites[0], cue: null }] } });
+    handlers.frame({ payload: { ...shown, sprites: [{ ...shown.sprites[0], cue: "unpossess" }] } });
+    await until(() => document.querySelector(".cue-oghost.rise"));
+    const rising = { rects: flights(), boxes: boxes([document.querySelector(".cue-oghost.rise")]) };
     console.log("__PROBE_RESULT__" + JSON.stringify({
-      after: drawn.className,
+      after,
       flying,
-      landed: flights(),
+      landed,
+      rising,
       classes: during,
       layers: ghosts.map((g) => g.className),
       ghost,
@@ -142,19 +165,30 @@ test("the shake turns the sprite about its drawn centre", { skip: chromeSkip, ti
   assert.ok(Math.abs(x - 632) <= 8 && Math.abs(y - 432) <= 8, `centre ${x},${y} near 632,432`);
 });
 
-// Windows clips drawing to the reported region, so a ghost outside the art
-// shows only where its flight was reported, from where it starts to the body.
-test("the ghost's flight is reported while it flies and dropped once it lands", { skip: chromeSkip, timeout: 60000 }, async () => {
-  const { flying, landed } = await probe();
-  assert.equal(flying.rects.length, 1, JSON.stringify(flying));
-  const [{ rect, clickable }] = flying.rects;
-  assert.equal(clickable, false);
-  const [x, y, w, h] = rect;
-  const covers = (px, py) => px >= x && px <= x + w && py >= y && py <= y + h;
-  // Ghost 76 px square (64 + 2 * 6), centred on 632,432 and starting 85 right, 150 up.
-  const start = 632 + 85 * flying.dir;
-  for (const [px, py] of [[start - 38, 432 - 150 - 38], [start + 38, 432 - 150 - 38], [632 - 38, 432 + 38], [632 + 38, 432 + 38]]) {
-    assert.ok(covers(px, py), `${px},${py} in ${rect}`);
+// Windows clips drawing to the reported region, so the reported flight must
+// hold the ghost at every keyframe, and not much more than that.
+function assertBoundsFlight({ rects: [only, ...rest], boxes }) {
+  assert.deepEqual(rest, []);
+  assert.equal(only.clickable, false);
+  const [x, y, w, h] = only.rect;
+  const union = [0, 1, 2, 3].map((i) => (i < 2 ? Math.min : Math.max)(...boxes.map((b) => b[i])));
+  for (const [l, t, r, b] of boxes) {
+    assert.ok(l >= x && t >= y && r <= x + w && b <= y + h, `${[l, t, r, b]} outside ${only.rect}`);
   }
+  // Room to turn any way: a 76 px ghost's half-diagonal less its half-side
+  // is about 16 px, plus rounding.
+  const slack = 20;
+  const spare = [union[0] - x, union[1] - y, x + w - union[2], y + h - union[3]];
+  assert.ok(spare.every((s) => s <= slack), `spare ${spare} over ${slack} px`);
+}
+
+test("the possess ghost's flight is reported while it flies and dropped once it lands", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const { flying, landed } = await probe();
+  assertBoundsFlight(flying);
   assert.deepEqual(landed, []);
+});
+
+test("the release ghost's rise is reported", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const { rising } = await probe();
+  assertBoundsFlight(rising);
 });
