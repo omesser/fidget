@@ -161,6 +161,7 @@ static OVERLAY_ORIGINS: Mutex<Vec<(String, (f64, f64))>> = Mutex::new(Vec::new()
 /// page starts loading again.
 static OVERLAYS_LISTENING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Mark whether `label`'s page hears frames.
 pub fn set_overlay_listening(label: &str, listening: bool) {
     let Ok(mut all) = OVERLAYS_LISTENING.lock() else {
         return;
@@ -171,6 +172,7 @@ pub fn set_overlay_listening(label: &str, listening: bool) {
     }
 }
 
+/// Whether `label`'s page hears frames yet.
 pub fn overlay_listening(label: &str) -> bool {
     OVERLAYS_LISTENING
         .lock()

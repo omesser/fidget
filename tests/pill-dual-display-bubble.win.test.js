@@ -117,7 +117,7 @@ test("no drag is planned while the sprite walks", { skip }, (t) => {
   assert.equal(run.stdout.trim(), "plan: none", run.stderr);
 });
 
-// Every wait gives up within 3 s of its trigger, page load included (#2037).
+// Every wait gives up within 3 s of its trigger, page load included.
 // Wait-ForUp waits the shared 30 s launch budget.
 test("no wait in the leaf runs past 3 s", () => {
   const source = readFileSync(script, "utf8");

@@ -3468,7 +3468,7 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
 }
 
 /// A wake waits until the overlay that draws its bubble listens: a Thinking
-/// bubble or line sent to a page still loading is never drawn (#2037).
+/// bubble or line sent to a page still loading is never drawn.
 fn bubble_overlay_listening(
     feet: (f64, f64),
     displays: &[Rect],

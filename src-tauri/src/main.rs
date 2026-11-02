@@ -2294,7 +2294,7 @@ fn overlay_rects(window: tauri::Window, rects: Vec<fidget_core::overlay_region::
     platform::set_overlay_rects(window.label(), rects);
 }
 
-/// The overlay's page now hears frames; until then a wake is held (#2037).
+/// The overlay's page now hears frames; until then a wake is held.
 #[tauri::command]
 fn overlay_listening(window: tauri::Window) {
     platform::set_overlay_listening(window.label(), true);
