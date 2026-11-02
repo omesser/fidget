@@ -89,7 +89,9 @@ function run() {
     const swing = { rotate: getComputedStyle(drawn).rotate, centre: centre(drawn.getBoundingClientRect()) };
     const during = drawn.className;
     for (const a of drawn.getAnimations()) a.finish();
-    await until(() => !drawn.classList.contains("cue-possess"));
+    // Settled frames, not until(): a class that stays must fail one test,
+    // not hang every test that shares this probe.
+    for (let i = 0; i < 5; i += 1) await settle();
     console.log("__PROBE_RESULT__" + JSON.stringify({
       after: drawn.className,
       classes: during,
