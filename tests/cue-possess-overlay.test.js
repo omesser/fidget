@@ -118,12 +118,27 @@ function run() {
     handlers.frame({ payload: { ...shown, sprites: [{ ...shown.sprites[0], cue: null }] } });
     handlers.frame({ payload: { ...shown, sprites: [{ ...shown.sprites[0], cue: "unpossess" }] } });
     await until(() => document.querySelector(".cue-oghost.rise"));
-    const rising = { rects: flights(), boxes: boxes([document.querySelector(".cue-oghost.rise")]) };
+    const riser = document.querySelector(".cue-oghost.rise");
+    const rising = { rects: flights(), boxes: boxes([riser]) };
+    // Possessed near the top edge: the rise is squashed to fit.
+    for (const a of riser.getAnimations()) a.finish();
+    await until(() => !document.querySelector(".cue-oghost"));
+    const high = { ...shown.sprites[0], y: 10 };
+    handlers.frame({ payload: { ...shown, sprites: [{ ...high, cue: null }] } });
+    handlers.frame({ payload: { ...shown, sprites: [high] } });
+    await until(() => document.querySelector(".cue-oghost"));
+    const highGhosts = [...document.querySelectorAll(".cue-oghost")];
+    const squashed = {
+      ky: Number(highGhosts[0].style.getPropertyValue("--ky")),
+      rects: flights(),
+      boxes: boxes(highGhosts),
+    };
     console.log("__PROBE_RESULT__" + JSON.stringify({
       after,
       flying,
       landed,
       rising,
+      squashed,
       classes: during,
       layers: ghosts.map((g) => g.className),
       ghost,
@@ -191,4 +206,10 @@ test("the possess ghost's flight is reported while it flies and dropped once it 
 test("the release ghost's rise is reported", { skip: chromeSkip, timeout: 60000 }, async () => {
   const { rising } = await probe();
   assertBoundsFlight(rising);
+});
+
+test("the flight of a ghost squashed under the top edge is reported", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const { squashed: { ky, ...flight } } = await probe();
+  assert.ok(ky < 1, `ky ${ky} squashes the rise`);
+  assertBoundsFlight(flight);
 });
