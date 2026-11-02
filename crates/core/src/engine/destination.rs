@@ -166,9 +166,9 @@ impl Engine {
         match (self.stride_blocked(state), stop_x) {
             (None, Some(stop_x)) => match heading_to(self.position.x, stop_x) {
                 Heading::Toward(toward) => self.stride(toward, stop_x, dt),
-                Heading::Arrived => self.end_move(),
+                Heading::Arrived => self.end_move(state),
             },
-            _ => self.end_move(),
+            _ => self.end_move(state),
         }
     }
 
@@ -201,8 +201,12 @@ impl Engine {
     }
 
     /// The only way out of a move. Nothing keeps the x, so nothing resumes it.
-    pub(super) fn end_move(&mut self) {
-        self.velocity.x = 0.0;
+    /// On its feet the sprite stops too. In the air its stride carries into
+    /// the fall, as any walk's does.
+    pub(super) fn end_move(&mut self, state: State) {
+        if matches!(state, State::Grounded | State::Perched) {
+            self.velocity.x = 0.0;
+        }
         self.destination = None;
     }
 }

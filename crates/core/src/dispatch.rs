@@ -1996,6 +1996,37 @@ mod tests {
     }
 
     #[test]
+    fn a_move_whose_perch_closes_falls_with_its_stride_and_stays_down() {
+        use crate::engine::State;
+
+        let perch = a_perch();
+        let closed = test_snapshot();
+        let (mut roster, id, _) = landed_walker(600.0, &perch);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &perch.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &perch, 20);
+
+        let lost = tick_for(&mut roster, &id, &closed, 1);
+        assert_eq!(lost.state, State::Falling, "{lost:?}");
+        let down = tick_for(&mut roster, &id, &closed, 200);
+        assert_eq!(down.state, State::Grounded, "{down:?}");
+        assert!(
+            down.position.x < lost.position.x,
+            "it fell with its stride: {down:?}"
+        );
+        let later = tick_for(&mut roster, &id, &closed, 300);
+        assert_eq!(
+            later.position.x, down.position.x,
+            "nothing resumes the walk"
+        );
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

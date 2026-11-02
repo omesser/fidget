@@ -893,7 +893,7 @@ impl Engine {
         self.idle_ms = 0;
         self.perched_rest_ms = 0;
         self.stop_playing();
-        self.end_move();
+        self.end_move(self.state);
         self.last_perch = None;
         self.hold_offset_x = 0.0;
         self.rest_perch();
