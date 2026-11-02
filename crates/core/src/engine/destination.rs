@@ -109,7 +109,7 @@ impl fmt::Display for MoveRefusal {
 }
 
 /// The State and cooldown facts that stop any walk, a Behavior's or a move's.
-fn footing_refusal(state: State, poke_cooldown_ms: u32) -> Option<MoveRefusal> {
+pub(super) fn footing_refusal(state: State, poke_cooldown_ms: u32) -> Option<MoveRefusal> {
     match state {
         State::Falling => Some(MoveRefusal::Falling),
         State::Dragged => Some(MoveRefusal::Held),

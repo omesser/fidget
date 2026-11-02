@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod destination;
 mod geometry;
 mod transition;
-use destination::{heading_to, Heading};
+use destination::{footing_refusal, heading_to, Heading};
 pub use destination::{Distance, Extent, GlobalX, MoveRefusal, MoveRequest};
 use geometry::*;
 
@@ -1939,7 +1939,7 @@ impl Engine {
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk | Primitive::Possessed => true,
             Primitive::Walk | Primitive::Chase => {
-                on_feet && self.poke_cooldown_ms == 0 && !self.feet_held
+                footing_refusal(self.state, self.poke_cooldown_ms).is_none() && !self.feet_held
             }
             Primitive::Jump => {
                 let off_a_wall = self.possessed && self.state == State::Climbing;
