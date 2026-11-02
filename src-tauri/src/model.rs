@@ -658,18 +658,16 @@ impl Endpoint {
         let reply = loop {
             match self.attempt(url, &snapshot, &rounds, instance, said) {
                 Ok(Turn::Said(reply)) => break Ok(reply),
+                Ok(Turn::Called(_)) if crate::completer::abandoned() => {
+                    break Err(Unsent::Abandoned)
+                }
                 Ok(Turn::Called(_)) if rounds.len() == TOOL_ROUNDS => {
                     break Err(Unsent::Failed(format!(
                         "{url}: {} still calling tools after {TOOL_ROUNDS} rounds",
                         self.model
                     )))
                 }
-                Ok(Turn::Called(calls)) => {
-                    if crate::completer::abandoned() {
-                        break Err(Unsent::Abandoned);
-                    }
-                    rounds.push(self.run_tools(calls));
-                }
+                Ok(Turn::Called(calls)) => rounds.push(self.run_tools(calls)),
                 Err(unsent) => break Err(unsent),
             }
         };
@@ -1449,6 +1447,11 @@ fn offer_tools(body: &mut serde_json::Value, responses: bool, rounds: &[Round]) 
         .collect();
     if rounds.is_empty() {
         return;
+    }
+    // The last round asks for words. Dropping `tools` instead would leave
+    // tool history some servers refuse without the catalog beside it.
+    if rounds.len() == TOOL_ROUNDS {
+        body["tool_choice"] = json!("none");
     }
     let key = if responses { "input" } else { "messages" };
     if let Some(text) = body[key].as_str() {
@@ -2878,6 +2881,8 @@ pub(crate) mod tests {
         assert_eq!(input[2]["call_id"], "call_9");
     }
 
+    /// The cap request forbids calls. A server that calls anyway loses the
+    /// wake rather than looping.
     #[test]
     fn a_model_that_never_stops_calling_tools_ends_at_the_round_cap() {
         let call = r#"{"choices":[{"message":{"tool_calls":[{"id":"c","type":"function","function":{"name":"recall","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#;
@@ -2900,7 +2905,15 @@ pub(crate) mod tests {
             error.contains(&format!("after {TOOL_ROUNDS} rounds")),
             "{error}"
         );
-        assert_eq!(seen.try_iter().count(), TOOL_ROUNDS + 1);
+        let bodies: Vec<_> = seen.try_iter().map(|body| json(&body)).collect();
+        assert_eq!(bodies.len(), TOOL_ROUNDS + 1);
+        assert!(bodies[..TOOL_ROUNDS]
+            .iter()
+            .all(|body| body["tool_choice"].is_null()));
+        assert_eq!(
+            bodies[TOOL_ROUNDS]["tool_choice"], "none",
+            "the last request asks for words"
+        );
         assert_eq!(heard.try_iter().count(), TOOL_ROUNDS);
         assert!(
             endpoint.session.lock().unwrap().messages.is_empty(),
