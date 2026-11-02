@@ -9689,7 +9689,7 @@ mod tests {
             assert_eq!(unbound.playing_behavior.as_deref(), Some("greet"));
         }
 
-        /// The possession edge still pending waits a tick for the press.
+        /// The Poke takes the tick, so the pending possession edge slips one.
         #[test]
         fn a_digit_that_starts_its_behavior_cues_a_poke() {
             let world = on(one_display());
