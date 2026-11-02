@@ -1,5 +1,5 @@
 
-// The cue machine. Five interactions, each with its own visual and sound.
+// The cue machine. Each interaction has its own visual and sound.
 // Frequencies, envelopes, gains, and durations were decided in
 // website/cues.html. The Engine decides which cue plays; this obeys.
 const MASTER = 0.5;
@@ -66,7 +66,18 @@ function voice() {
 
 function tone(
   v,
-  { type = "sine", from, to = from, at = 0, attack = 0.004, hold = 0, decay = 0.14, peak = 0.25, lowpass = null },
+  {
+    type = "sine",
+    from,
+    to = from,
+    at = 0,
+    attack = 0.004,
+    hold = 0,
+    decay = 0.14,
+    peak = 0.25,
+    lowpass = null,
+    vibrato = null,
+  },
 ) {
   const { ac, g } = v;
   const t0 = ac.currentTime + at;
@@ -74,6 +85,17 @@ function tone(
   osc.type = type;
   osc.frequency.setValueAtTime(from, t0);
   if (to !== from) osc.frequency.exponentialRampToValueAtTime(to, t0 + attack + hold + decay);
+  const end = t0 + attack + hold + decay + 0.02;
+  if (vibrato) {
+    const lfo = ac.createOscillator();
+    lfo.frequency.value = vibrato.rate;
+    const depth = ac.createGain();
+    depth.gain.value = vibrato.depth;
+    lfo.connect(depth);
+    depth.connect(osc.frequency);
+    lfo.start(t0);
+    lfo.stop(end);
+  }
   let out = osc;
   if (lowpass) {
     const f = ac.createBiquadFilter();
@@ -93,7 +115,7 @@ function tone(
   env.gain.exponentialRampToValueAtTime(0.0005, t0 + attack + hold + decay);
   g.gain.setValueAtTime(1, t0);
   osc.start(t0);
-  osc.stop(t0 + attack + hold + decay + 0.02);
+  osc.stop(end);
 }
 
 const SOUNDS = {
@@ -109,9 +131,18 @@ const SOUNDS = {
   pickup: (v) => tone(v, { from: 280, to: 720, attack: 0.006, decay: 0.14, peak: 0.2 }),
   drop: (v) => tone(v, { from: 160, to: 55, attack: 0.004, decay: 0.16, peak: 0.3 }),
   throw: (v) => tone(v, { from: 220, to: 55, attack: 0.004, decay: 0.2, peak: 0.48 }),
+  // Two voices a few hertz apart, so the "ooo" has a chorus. The possess
+  // swell peaks at 0.26 s, when the ghost lands and the thump plays.
   possess: (v) => {
-    tone(v, { type: "sine", from: 392, to: 523.25, attack: 0.01, decay: 0.18, peak: 0.16 });
-    tone(v, { type: "sine", from: 523.25, to: 659.25, attack: 0.01, decay: 0.22, peak: 0.12, at: 0.08 });
+    const ooo = { at: 0.01, attack: 0.21, hold: 0.04, decay: 0.08, peak: 0.12 };
+    tone(v, { ...ooo, from: 300, to: 650, vibrato: { rate: 7, depth: 14 } });
+    tone(v, { ...ooo, from: 307, to: 663, vibrato: { rate: 7.6, depth: 14 } });
+    tone(v, { type: "triangle", from: 330, to: 250, at: 0.26, attack: 0.004, decay: 0.12, peak: 0.08, lowpass: 1200 });
+  },
+  unpossess: (v) => {
+    const ooo = { attack: 0.02, hold: 0.06, decay: 0.18, peak: 0.145 };
+    tone(v, { ...ooo, from: 650, to: 300, vibrato: { rate: 7, depth: 14 } });
+    tone(v, { ...ooo, from: 663, to: 307, vibrato: { rate: 7.6, depth: 14 } });
   },
 };
 
@@ -170,6 +201,159 @@ function reap(node, child) {
 }
 
 const UP = { x: 0, y: -1 };
+
+// The possession ghost: the current frame's silhouette as a white outline over
+// a faint fill, in display px. Drawn at SS times, so the stroke stays smooth.
+const PAD = 6;
+const SS = 2;
+const STROKE = 2;
+const INK_OUT = 1.6;
+const INK_IN = 1.1;
+const FILL = 0.18;
+const WHITE = [255, 255, 255];
+const INK = [0x24, 0x26, 0x2c];
+const OUTLINE_CACHE = 64;
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const REACH = Math.ceil((STROKE + INK_OUT + 1) * SS);
+// Nearest first, so the first pixel of the other kind is the distance.
+const OFFSETS = [];
+for (let dy = -REACH; dy <= REACH; dy++) {
+  for (let dx = -REACH; dx <= REACH; dx++) {
+    const d = Math.hypot(dx, dy);
+    if (d > 0 && d <= REACH) OFFSETS.push([dx, dy, d]);
+  }
+}
+OFFSETS.sort((a, b) => a[2] - b[2]);
+
+// RGBA for a W×H alpha map, both in supersampled px. Off the map is outside.
+// ponytail: a disk search per pixel, about 300 probes; a distance transform
+// if a large sprite ever makes the first cue on a frame stutter.
+export function outlinePixels(alpha, W, H) {
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const body = alpha[y * W + x] >= 128;
+      let d = REACH + 1;
+      for (const [dx, dy, dist] of OFFSETS) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const inside = nx >= 0 && ny >= 0 && nx < W && ny < H && alpha[ny * W + nx] >= 128;
+        if (inside !== body) {
+          d = dist;
+          break;
+        }
+      }
+      d /= SS;
+      let a;
+      let from;
+      let to;
+      let mix;
+      if (body) {
+        const edge = clamp01(INK_IN + 0.5 - d);
+        a = FILL + (0.9 - FILL) * edge;
+        [from, to, mix] = [WHITE, INK, (edge * 0.9) / a];
+      } else {
+        a = clamp01(STROKE + INK_OUT + 0.5 - d);
+        if (a === 0) continue;
+        [from, to, mix] = [INK, WHITE, clamp01(STROKE + 0.5 - d) / a];
+      }
+      const i = (y * W + x) * 4;
+      for (let c = 0; c < 3; c++) out[i + c] = Math.round(from[c] + (to[c] - from[c]) * mix);
+      out[i + 3] = Math.round(a * 255);
+    }
+  }
+  return out;
+}
+
+const outlines = new Map();
+
+// The sprite's frame as drawn: its layout size, its mirror and its smoothing.
+function outlineOf(sprite) {
+  const w = sprite.width;
+  const h = sprite.height;
+  const mirror = Number(sprite.dataset.mirror) === -1 ? -1 : 1;
+  const smooth = sprite.style.imageRendering === "auto";
+  const key = `${sprite.currentSrc}@${w}x${h}@${mirror}@${smooth}`;
+  const hit = outlines.get(key);
+  if (hit) {
+    outlines.delete(key);
+    outlines.set(key, hit);
+    return hit;
+  }
+  const W = (w + 2 * PAD) * SS;
+  const H = (h + 2 * PAD) * SS;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = smooth;
+  if (mirror === -1) {
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(sprite, PAD * SS, PAD * SS, w * SS, h * SS);
+  const image = ctx.getImageData(0, 0, W, H);
+  const alpha = new Uint8Array(W * H);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = image.data[i * 4 + 3];
+  image.data.set(outlinePixels(alpha, W, H));
+  ctx.putImageData(image, 0, 0);
+  const made = { canvas, w: w + 2 * PAD, h: h + 2 * PAD };
+  outlines.set(key, made);
+  if (outlines.size > OUTLINE_CACHE) outlines.delete(outlines.keys().next().value);
+  return made;
+}
+
+// --dir and --ky bend the keyframed path off the overlay's edges. The rise
+// is squashed, never flipped below, and the anchor never moves, so the ghost
+// still ends on the body. Possess reaches +85 px right, so it may mirror.
+export function ghostPath(cue, { cx, cy, gw, gh, stageW }) {
+  const rise = cue === "possess" ? 165 : 150;
+  const ky = cy < rise + gh / 2 ? Math.max(0.4, (cy - gh / 2 - 4) / rise) : 1;
+  const mirrored = cue === "possess" && cx + 85 + gw / 2 > stageW && cx - 85 - gw / 2 >= 0;
+  return { dir: mirrored ? -1 : 1, ky };
+}
+
+function ghost(outline, c, sprite, cls, path) {
+  const g = document.createElement("canvas");
+  g.setAttribute("class", "cue cue-oghost " + cls);
+  g.width = outline.canvas.width;
+  g.height = outline.canvas.height;
+  g.getContext("2d").drawImage(outline.canvas, 0, 0);
+  g.style.left = c.x + "px";
+  g.style.top = c.y + "px";
+  g.style.width = outline.w + "px";
+  g.style.height = outline.h + "px";
+  g.style.imageRendering = sprite.style.imageRendering;
+  g.style.setProperty("--dir", path.dir);
+  g.style.setProperty("--ky", path.ky);
+  return g;
+}
+
+const SPRITE_CUES = ["cue-possess", "cue-release"];
+
+// Restarts the class's animation even when it is the one already on.
+function shake(sprite, cls) {
+  sprite.classList.remove(...SPRITE_CUES);
+  void sprite.offsetWidth;
+  sprite.classList.add(cls);
+}
+
+const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+function possession(stage, c, sprite, cue, spriteCue, layers) {
+  shake(sprite, spriteCue);
+  if (reducedMotion()) return [];
+  const outline = outlineOf(sprite);
+  const path = ghostPath(cue, { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h, stageW: globalThis.innerWidth ?? Infinity });
+  const ghosts = layers.map((cls) => ghost(outline, c, sprite, cls, path));
+  const wrapper = document.createElement("div");
+  wrapper.className = "cue";
+  wrapper.append(...ghosts);
+  stage.append(wrapper);
+  reap(wrapper, ghosts);
+  return [wrapper];
+}
 
 // The puff sits on the contact, pushed off the surface along its normal by
 // its own half-thickness, and lies along it. A landing with no contact is a
@@ -252,11 +436,11 @@ const VISUALS = {
   throw(stage, c) {
     return landingPuff(stage, c, "cue-puff hard");
   },
-  possess(stage, c) {
-    const r = el("cue-ring possess", c.x, c.y);
-    stage.append(r);
-    reap(r);
-    return [r];
+  possess(stage, c, sprite) {
+    return possession(stage, c, sprite, "possess", "cue-possess", ["trail2", "trail", "lead"]);
+  },
+  unpossess(stage, c, sprite) {
+    return possession(stage, c, sprite, "unpossess", "cue-release", ["rise"]);
   },
 };
 
@@ -276,11 +460,12 @@ export function cueAnchor(sprite) {
 }
 
 // DOM and Web Audio for one Instance's cue layer. Apart from the machine so
-// node can drive the bookkeeping without a window or a sound card.
-export function cueIo(layer, anchorOf) {
+// node can drive the bookkeeping without a window or a sound card. `sprite` is
+// the Instance's `<img>`, which the possession cues outline and shake.
+export function cueIo(layer, anchorOf, sprite) {
   return {
     draw(name) {
-      const nodes = VISUALS[name](layer, anchorOf());
+      const nodes = VISUALS[name](layer, anchorOf(), sprite);
       return () => nodes.forEach((node) => node.remove());
     },
     sound(name) {

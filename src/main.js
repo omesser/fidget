@@ -192,7 +192,7 @@ function createView(id) {
   // Anchored when the cue fires rather than followed afterwards: a cue is a
   // burst where the gesture landed, and the sprite it marks may be halfway to
   // the cursor before it fades.
-  view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(view.latest)));
+  view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(view.latest), sprite));
 
   view.bubbles = createBubbleMachine({
     showSpeech(text, cutOff) {
@@ -701,7 +701,12 @@ function drawView(view, now) {
   // Whole pixels, so an integer-scaled sprite is not resampled onto a fractional
   // grid by the compositor. `mirror` comes from the Shell, not the
   // heading: a Character that draws its own left strip is sent as authored.
-  view.sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.mirror})`;
+  view.sprite.style.transform = `translate(${spriteX}px, ${spriteY}px)`;
+  // The possession shake's `rotate` applies after `transform`, so the origin
+  // tracks the drawn centre, and the mirror moves to `scale` to pivot there.
+  view.sprite.style.transformOrigin = `${spriteX + latest.width / 2}px ${spriteY + latest.height / 2}px`;
+  view.sprite.style.scale = `${latest.mirror} 1`;
+  view.sprite.dataset.mirror = latest.mirror;
 
   // Carried on every frame rather than announced on change: a change announced
   // while this file was still fetching its art is a change nobody heard.

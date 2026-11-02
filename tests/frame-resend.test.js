@@ -129,7 +129,7 @@ test("a late listener's first placement is drawn", { skip: chromeSkip, timeout: 
   assert.equal(asks.first, 1);
   assert.deepEqual(drawn, {
     visibility: "visible",
-    transform: "translate(200px, 200px) scaleX(1)",
+    transform: "translate(200px, 200px)",
     animation: "idle",
     frameIndex: "0",
   });

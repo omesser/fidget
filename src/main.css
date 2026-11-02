@@ -340,9 +340,6 @@ body {
      the sprite every display frame, and a transform is composited. */
   top: 0;
   left: 0;
-  /* Center origin so `scaleX(-1)` mirrors the sprite about its midline.
-     The width is always even, so the mirrored pixels stay on the grid. */
-  transform-origin: center;
   /* Pixel art, nearest-neighbour, integer scale only. A Character with
      render_mode smooth overrides this from main.js. */
   image-rendering: pixelated;
@@ -414,10 +411,6 @@ body {
   opacity: 0;
 }
 
-.cue-ring.possess {
-  border-color: var(--shared-accent);
-}
-
 @keyframes cue-summon {
   from {
     transform: translate(-50%, -50%) scale(5);
@@ -430,6 +423,154 @@ body {
     transform: translate(-50%, -50%) scale(1.1);
     opacity: 0;
   }
+}
+
+/* Possess and unpossess. An outline of the frame, drawn by cue.js, swoops into
+   the body or peels off it, and the sprite itself shakes. --dir and --ky bend
+   the path away from the overlay's edges. */
+.cue-oghost {
+  opacity: 0;
+}
+
+.cue-oghost.lead,
+.cue-oghost.trail,
+.cue-oghost.trail2 {
+  animation:
+    cue-og-swoop 270ms linear forwards,
+    cue-og-swoop-lead 270ms linear forwards;
+}
+
+.cue-oghost.trail {
+  animation-name: cue-og-swoop, cue-og-swoop-t1;
+  animation-delay: 22ms;
+}
+
+.cue-oghost.trail2 {
+  animation-name: cue-og-swoop, cue-og-swoop-t2;
+  animation-delay: 45ms;
+}
+
+@keyframes cue-og-swoop {
+  0% {
+    transform: translate(-50%, -50%) translate(calc(85px * var(--dir, 1)), calc(-150px * var(--ky, 1)))
+      rotate(calc(14deg * var(--dir, 1))) scale(0.8);
+  }
+  14% {
+    transform: translate(-50%, -50%) translate(calc(60px * var(--dir, 1)), calc(-165px * var(--ky, 1)))
+      rotate(calc(8deg * var(--dir, 1))) scale(0.95);
+  }
+  38% {
+    transform: translate(-50%, -50%) translate(calc(8px * var(--dir, 1)), calc(-158px * var(--ky, 1)))
+      rotate(calc(-10deg * var(--dir, 1))) scale(1);
+  }
+  58% {
+    transform: translate(-50%, -50%) translate(calc(-30px * var(--dir, 1)), calc(-110px * var(--ky, 1)))
+      rotate(calc(-6deg * var(--dir, 1))) scale(1);
+  }
+  80% {
+    transform: translate(-50%, -50%) translate(calc(-10px * var(--dir, 1)), calc(-40px * var(--ky, 1)))
+      rotate(calc(6deg * var(--dir, 1))) scale(0.97, 1);
+  }
+  92% {
+    transform: translate(-50%, -50%) translate(0, calc(-6px * var(--ky, 1))) rotate(0deg) scale(1);
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes cue-og-swoop-lead {
+  0% { opacity: 0; }
+  14%, 80% { opacity: 1; }
+  92% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+@keyframes cue-og-swoop-t1 {
+  0% { opacity: 0; }
+  14%, 38% { opacity: 0.35; }
+  58% { opacity: 0.3; }
+  80% { opacity: 0.15; }
+  92%, 100% { opacity: 0; }
+}
+
+@keyframes cue-og-swoop-t2 {
+  0% { opacity: 0; }
+  14%, 38% { opacity: 0.15; }
+  58% { opacity: 0.12; }
+  80% { opacity: 0.05; }
+  92%, 100% { opacity: 0; }
+}
+
+.cue-oghost.rise {
+  animation: cue-og-rise 310ms cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+@keyframes cue-og-rise {
+  0% {
+    transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(-50%, -50%) translate(0, calc(-10px * var(--ky, 1))) rotate(0deg) scale(1);
+    opacity: 0.9;
+  }
+  45% {
+    transform: translate(-50%, -50%) translate(-8px, calc(-60px * var(--ky, 1))) rotate(6deg) scale(1);
+    opacity: 0.8;
+  }
+  75% {
+    transform: translate(-50%, -50%) translate(6px, calc(-110px * var(--ky, 1))) rotate(-5deg) scale(1.02);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(-3px, calc(-150px * var(--ky, 1))) rotate(4deg) scale(1.04);
+    opacity: 0;
+  }
+}
+
+/* `translate` and `rotate`, which compose with the `transform` main.js writes
+   every frame. Possess shakes as the ghost lands at 260 ms; unpossess waits
+   20 ms so its first swing meets the ghost lifting clear. */
+.sprite.cue-possess {
+  animation:
+    cue-shake-big 320ms linear 260ms,
+    cue-flicker 320ms linear 260ms;
+}
+
+.sprite.cue-release {
+  animation:
+    cue-shake-big 320ms linear 20ms,
+    cue-release-dim 240ms linear 20ms;
+}
+
+@keyframes cue-shake-big {
+  0% { translate: 0 0; rotate: 0deg; }
+  9% { translate: -7px 1px; rotate: -5deg; }
+  18% { translate: 7px -1px; rotate: 5deg; }
+  27% { translate: -6px 0; rotate: -4deg; }
+  36% { translate: 6px 1px; rotate: 4deg; }
+  46% { translate: -4px 0; rotate: -3deg; }
+  56% { translate: 4px -1px; rotate: 2deg; }
+  67% { translate: -3px 0; rotate: -1.5deg; }
+  78% { translate: 2px 0; rotate: 1deg; }
+  89% { translate: -1px 0; rotate: 0deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+
+@keyframes cue-flicker {
+  0%, 100% { opacity: 1; }
+  12% { opacity: 0.35; }
+  24% { opacity: 1; }
+  40% { opacity: 0.55; }
+  52% { opacity: 1; }
+  70% { opacity: 0.8; }
+}
+
+@keyframes cue-release-dim {
+  0%, 100% { opacity: 1; }
+  30% { opacity: 0.6; }
+  60% { opacity: 1; }
 }
 
 @keyframes cue-fade {
@@ -623,6 +764,12 @@ body {
   .cue-puff {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
+  }
+
+  /* cue.js draws no ghost here. One soft dim instead of the shake. */
+  .sprite.cue-possess,
+  .sprite.cue-release {
+    animation: cue-release-dim 200ms linear !important;
   }
 
   .bubble,
