@@ -120,7 +120,7 @@ impl Instance {
         self.pending = Some(proposal);
     }
 
-    /// Start a move now and answer now. See `Engine::start_move`.
+    /// The Engine stays private, so a caller starts a move here.
     pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
         self.engine.start_move(request)
     }

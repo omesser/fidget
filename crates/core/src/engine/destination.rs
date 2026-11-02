@@ -52,7 +52,6 @@ pub enum MoveRequest {
 }
 
 impl MoveRequest {
-    /// The one x every request becomes.
     fn target(self, feet_x: f64) -> GlobalX {
         match self {
             Self::To(x) => x,

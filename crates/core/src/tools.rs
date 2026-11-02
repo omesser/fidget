@@ -294,7 +294,8 @@ mod helpers {
         format!("Character Instance {target_id} is no longer running, so nothing changed on screen")
     }
 
-    /// Resolve the target Instance and enqueue, for `play_behavior`.
+    /// The `Err` is the whole answer a Harness gets when the Expression lands
+    /// nowhere, so it names the reason rather than a code.
     pub fn enqueue_expression(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
@@ -308,8 +309,7 @@ mod helpers {
         Ok(())
     }
 
-    /// Resolve the target Instance and start the move, for `move`. The
-    /// Engine's refusal is the `Err`, in its own words.
+    /// The Engine's refusal is the `Err`, in its own words.
     pub fn start_move(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
@@ -331,7 +331,6 @@ mod helpers {
         AmbiguousTarget,
     }
 
-    /// Target resolution against roster for the Expression tools.
     /// `dispatch` already refused an id the roster does not carry.
     fn resolve_target_instance(
         instance_id: Option<&str>,
