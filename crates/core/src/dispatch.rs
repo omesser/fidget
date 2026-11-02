@@ -1401,6 +1401,37 @@ mod tests {
     }
 
     #[test]
+    fn move_right_from_a_leftward_heading_turns_and_walks_the_distance() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        let facing_left = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(facing_left.facing, -1.0, "{facing_left:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - facing_left.position.x - 200.0).abs() <= 30.0,
+            "200 points right of where the left walk stopped: {facing_left:?} -> {stopped:?}"
+        );
+        assert_eq!(stopped.facing, 1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
     fn a_stalled_frame_does_not_carry_a_move_past_where_it_stops() {
         let world = test_snapshot();
         let (mut roster, id, _) = landed_walker(500.0, &world);
