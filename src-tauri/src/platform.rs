@@ -1137,9 +1137,8 @@ pub fn buttons_down() -> ButtonsDown {
     x11::buttons_down().unwrap_or(overlay)
 }
 
-/// Where the latest press began, in the cursor's pixels, when the source
-/// knows. XI2 on X11, the low-level hook on Windows. A press dragged away
-/// before the tick is hit-tested here, not where the tick finds the cursor.
+/// Where the latest XI2 press began, in the cursor's pixels. A drag before
+/// the tick is hit-tested here, not where the tick finds the cursor.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn press_point() -> Option<(i32, i32)> {
     x11::press_point()

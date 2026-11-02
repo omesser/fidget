@@ -552,8 +552,9 @@ pub(crate) fn run_frame_loop(
                     thread::sleep(deadline);
                 }
                 _ => {
-                    // No listener: poll with back-off. That is Windows always, Wayland
-                    // always, and macOS until the user grants Input Monitoring.
+                    // No motion listener: poll with back-off. Wayland always, macOS
+                    // until Input Monitoring is granted. On Windows a button edge
+                    // ends the visible idle wait; motion keeps the cap.
                     match (schedule_mode, was_visible) {
                         (scheduler::ScheduleMode::Active, _) => {
                             let now = Instant::now();
@@ -2139,9 +2140,8 @@ pub(crate) fn run_frame_loop(
                 }
                 live.last_position = frame.position;
 
-                // Stay Active while moving, animating, accruing idle_ms, or holding
-                // a press that is not yet a Grab or a Poke. Idle would wait up
-                // to a second for the tick that measures the drag.
+                // Stay Active while moving, a multi-frame animation still
+                // advancing, or idle_ms accruing toward sleep.
                 let behavior_playing = frame.playing_behavior.is_some();
                 let needs_active_for_motion =
                     scheduler::mode(&frame, presence.visible, behavior_playing)
@@ -2168,10 +2168,14 @@ pub(crate) fn run_frame_loop(
                     matches!(frame.state, State::Grounded | State::Perched);
 
                 any_moving |= scheduler::moving(&frame);
+                // Windows hears button edges, not motion, so a press that is
+                // not yet a Grab or a Poke would otherwise sit on the 1s cap.
+                // macOS and X11 already wake on the drag.
+                let resolving_press = cfg!(not(unix)) && live.pointer.gesturing();
                 if needs_active_for_motion
                     || needs_active_for_animation
                     || needs_active_for_sleep_accrual
-                    || live.pointer.gesturing()
+                    || resolving_press
                 {
                     any_needs_active = true;
                 }

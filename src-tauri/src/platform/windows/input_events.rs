@@ -32,7 +32,8 @@ pub fn press_point() -> Option<(i32, i32)> {
     PRESS.lock().unwrap_or_else(PoisonError::into_inner).at()
 }
 
-fn remember(message: u32, at: (i32, i32)) -> bool {
+/// Store a button-down. The bool is whether this edge should wake the loop.
+fn note_edge(message: u32, at: (i32, i32)) -> bool {
     PRESS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -86,12 +87,13 @@ fn listen(wake: SyncSender<()>, ready: mpsc::Sender<bool>) {
     unsafe { UnhookWindowsHookEx(hook) };
 }
 
+/// Low-level mouse hook. Records a button-down and wakes on a button edge.
 unsafe extern "system" fn heard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam != 0 {
         // SAFETY: for a low-level mouse hook, `lparam` is a pointer to
         // `MSLLHOOKSTRUCT` for this call.
         let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
-        if remember(wparam as u32, (info.pt.x, info.pt.y)) {
+        if note_edge(wparam as u32, (info.pt.x, info.pt.y)) {
             // Full means a wake is already waiting. Disconnected means the
             // frame loop has gone, and the next press still keeps its point.
             if let Some(sender) = WAKE.get() {

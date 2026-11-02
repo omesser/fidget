@@ -62,6 +62,18 @@ function Near([int]$X, [int]$Y, [int]$ToX, [int]$ToY, [int]$Slop) {
     return ([Math]::Abs($X - $ToX) -le $Slop) -and ([Math]::Abs($Y - $ToY) -le $Slop)
 }
 
+# Center of the sprite, and a point more than 48px off it, kept on screen.
+function Get-Aim($Spot, [int]$Half, [int]$Size) {
+    $farY = $Spot.Y - (2 * $Size)
+    if ($farY -lt 0) { $farY = $Spot.Y + (2 * $Size) }
+    [pscustomobject]@{
+        CenterX = $Spot.X + $Half
+        CenterY = $Spot.Y + $Half
+        FarX    = $Spot.X
+        FarY    = $farY
+    }
+}
+
 function Last-ClickDown([string]$File) {
     $line = Get-Content -LiteralPath $File | Where-Object { $_ -match $clickPattern } | Select-Object -Last 1
     if (-not $line -or $line -notmatch $clickPattern) { return $null }
@@ -123,26 +135,21 @@ try {
         [QuickGrab]::Release()
         $spot = Get-LastSpriteSpot $trace
         if (-not $spot) { Fail "no sprite position in $trace" }
-        $cx = $spot.X + $half
-        $cy = $spot.Y + $half
-        $farY = $spot.Y - (2 * $size)
-        if ($farY -lt 0) { $farY = $spot.Y + (2 * $size) }
-        $farX = $spot.X
-        [QuickGrab]::Move($farX, $farY)
+        $aim = Get-Aim $spot $half $size
+        [QuickGrab]::Move($aim.FarX, $aim.FarY)
         $frames = @(Select-String -LiteralPath $trace -Pattern $framePattern -CaseSensitive).Count
         if (-not (Wait-ForCount 3 $trace $framePattern $frames)) {
             Fail "no tick after the cursor left the sprite; see $trace"
         }
         $spot = Get-LastSpriteSpot $trace
         if (-not $spot) { Fail "no sprite position in $trace" }
-        $cx = $spot.X + $half
-        $cy = $spot.Y + $half
-        $farY = $spot.Y - (2 * $size)
-        if ($farY -lt 0) { $farY = $spot.Y + (2 * $size) }
+        $aim = Get-Aim $spot $half $size
+        $cx = $aim.CenterX
+        $cy = $aim.CenterY
 
         $clicks = @(Select-String -LiteralPath $trace -Pattern 'click: down ' -CaseSensitive).Count
         $grabs = @(Select-String -LiteralPath $trace -Pattern $grabPattern -CaseSensitive).Count
-        [QuickGrab]::PressAndLeave($cx, $cy, $farX, $farY)
+        [QuickGrab]::PressAndLeave($cx, $cy, $aim.FarX, $aim.FarY)
         if (-not (Wait-ForCount 3 $trace 'click: down ' $clicks)) { continue }
         $click = Last-ClickDown $trace
         if (-not $click) { continue }
