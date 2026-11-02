@@ -1048,9 +1048,10 @@ impl Engine {
             }
         }
 
-        // The next Director wake is reactive because `addressed` is set.
+        // The next Director wake is reactive because `addressed` is set. Not
+        // while possessed: the user drives it under the cursor, no dwell.
         let mut addressed = false;
-        if cursor_distance < DWELL_RADIUS {
+        if cursor_distance < DWELL_RADIUS && !self.possessed {
             self.cursor_dwell_ms = self.cursor_dwell_ms.saturating_add(snapshot.elapsed_ms);
             if self.cursor_dwell_ms >= DWELL_MS && !self.cursor_dwell_addressed {
                 self.cursor_dwell_addressed = true;
@@ -8643,6 +8644,29 @@ mod tests {
             !still_dwelling.addressed,
             "addressed only once per dwell session"
         );
+    }
+
+    /// Driving the sprite under a resting cursor is not a dwell.
+    #[test]
+    fn a_possessed_sprite_under_a_resting_cursor_does_not_address() {
+        let mut engine = a_resting_sprite();
+        let on_sprite = WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x,
+                y: engine.position.y,
+            },
+            elapsed_ms: DWELL_MS + 1,
+            ..snapshot(16)
+        };
+        engine.set_possessed(true);
+        for _ in 0..2 {
+            let possessed = engine.tick(&on_sprite);
+            assert!(!possessed.addressed, "a possessed dwell stays quiet");
+        }
+
+        engine.set_possessed(false);
+        let released = engine.tick(&on_sprite);
+        assert!(released.addressed, "the same dwell addresses once released");
     }
 
     #[test]
