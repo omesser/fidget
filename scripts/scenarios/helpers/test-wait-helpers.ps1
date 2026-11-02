@@ -80,15 +80,18 @@ try {
     $script:proc = $child
     Check ($closed -and ((Get-NowMs) - $start) -lt 1000) "the log writer closed at end of stream ($((Get-NowMs) - $start) ms)"
 
-    $start = Get-NowMs
-    $signal = [FidgetUiaSignal]::new(0)
-    Check (((Get-NowMs) - $start) -lt 1000) "the signal registers at once ($((Get-NowMs) - $start) ms)"
+    # Scoped to the form's pid, armed after its console is up, so only the
+    # form showing 3 s in can wake the wait.
     $form = '-NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; ' +
-        '$f = New-Object System.Windows.Forms.Form; $f.Show(); Start-Sleep 2"'
-    $start = Get-NowMs
+        '$f = New-Object System.Windows.Forms.Form; Start-Sleep 3; $f.Show(); Start-Sleep 2"'
     $shown = Start-Process $shell -ArgumentList $form -PassThru
+    Start-Sleep -Milliseconds 1000
+    $start = Get-NowMs
+    $signal = [FidgetUiaSignal]::new($shown.Id)
+    Check (((Get-NowMs) - $start) -lt 1000) "the signal registers at once ($((Get-NowMs) - $start) ms)"
     $woke = $signal.Wait(10000)
-    Check $woke "another process's new window wakes the signal ($((Get-NowMs) - $start) ms)"
+    $took = (Get-NowMs) - $start
+    Check ($woke -and $took -gt 1000) "the watched process's form wakes the signal, not its console ($took ms)"
     $start = Get-NowMs
     $signal.Dispose()
     Check (((Get-NowMs) - $start) -lt 1000) "the signal lets go at once ($((Get-NowMs) - $start) ms)"

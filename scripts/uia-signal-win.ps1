@@ -47,6 +47,7 @@ public static class FidgetTrail {
         } catch (Exception) {
         }
         // A call blocked on Fidget may return now and fail the leaf itself.
+        // Else exit hard: no finally runs; a manual run keeps its temp files.
         Thread.Sleep(5000);
         Process.GetCurrentProcess().Kill();
     }
