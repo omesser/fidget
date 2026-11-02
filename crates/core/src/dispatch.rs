@@ -1788,6 +1788,48 @@ mod tests {
     }
 
     #[test]
+    fn a_move_walks_on_under_a_speech_bubble_and_looks_it() {
+        use crate::engine::{BehaviorProposal, WorldSnapshot};
+        use std::collections::BTreeSet;
+
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+
+        let bubble = WorldSnapshot {
+            locomotion_frozen: true,
+            ..world.clone()
+        };
+        let a_line = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some("On my way.".to_string()),
+                direction: None,
+            }),
+            ..bubble.clone()
+        };
+        let instance = roster.get_mut(&id).unwrap();
+        let mut frame = instance.tick(&a_line);
+        let mut drawn = BTreeSet::new();
+        for _ in 0..1_000 {
+            if frame.velocity.x == 0.0 {
+                break;
+            }
+            drawn.insert(frame.animation);
+            frame = instance.tick(&bubble);
+        }
+        assert_eq!(frame.velocity.x, 0.0, "still walking after 1000 ticks");
+        assert!((frame.position.x - 300.0).abs() <= 30.0, "{frame:?}");
+        assert_eq!(drawn, BTreeSet::from(["walk"]), "the art while it moved");
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

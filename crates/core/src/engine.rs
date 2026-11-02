@@ -1370,6 +1370,8 @@ impl Engine {
             // A possessed walk is the user's stride: it shows over a landing or a
             // startle rather than sliding under them.
             _ if self.possessed && self.is_walking() => "walk",
+            // So does a move's, over a line or a startle.
+            _ if self.feet_owned() && self.is_walking() => animation_of(Primitive::Chase),
             Some(primitive) => animation_of(primitive),
             // A walk outlasts the Primitive that starts it: the velocity holds
             // until the sprite runs out of Perch, so the Animation has to hold

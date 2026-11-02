@@ -169,6 +169,12 @@ impl Engine {
         }
     }
 
+    /// Whether a move holds the feet. Asked instead of the field, so a move
+    /// the gate has closed on holds nothing in the tick before it ends.
+    pub(super) fn feet_owned(&self) -> bool {
+        self.destination.is_some() && self.stride_blocked(self.state).is_none()
+    }
+
     /// Face `toward` and walk at `WALK_SPEED`. The step that reaches `target_x`
     /// stops on it, or one long tick could carry the walk past the arrival band
     /// and turn it round.
