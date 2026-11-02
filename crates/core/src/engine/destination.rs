@@ -151,7 +151,7 @@ impl Engine {
             return Err(MoveRefusal::AlreadyThere);
         }
         self.destination = Some(target);
-        // An order is activity, as a proposal is, or a drowsy sprite nods off on arrival.
+        // A move is activity, as a proposal is, or a drowsy sprite nods off on arrival.
         self.idle_ms = 0;
         Ok(())
     }

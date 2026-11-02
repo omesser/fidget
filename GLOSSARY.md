@@ -215,7 +215,7 @@ ends it, and so do a Grab, a fall, a Poke or a Summon, Possession, Do Not
 Disturb, and the end of the Surface underfoot. Nothing resumes it, and it never
 crosses to another display. A Speech bubble does not stop it, and a second Move
 replaces it.
-_Avoid_: Errand, path, trip
+_Avoid_: Errand, path, order
 
 ### Layers
 
