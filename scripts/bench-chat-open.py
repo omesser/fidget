@@ -154,6 +154,10 @@ def durations(trace):
     ready = next((e["at_us"] for e in trace if e["event"] == "ready"), None)
     if requested is not None and ready is not None and ready >= requested:
         result["request_to_listening_us"] = ready - requested
+    page_started = next((e["at_us"] for e in trace if e["event"] == "page-started"), None)
+    page_loaded = next((e["at_us"] for e in trace if e["event"] == "page-loaded"), None)
+    if page_started is not None and page_loaded is not None:
+        result["navigation_us"] = page_loaded - page_started
     dispatched = next((e["at_us"] for e in trace if e["event"] == "main-dispatch"), None)
     opened = next((e["at_us"] for e in trace if e["event"] == "opened"), None)
     if dispatched is not None and opened is not None:
