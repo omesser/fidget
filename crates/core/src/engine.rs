@@ -1117,6 +1117,8 @@ impl Engine {
             }
         }
 
+        // A move strides after the hold above, as the keys do, so a bubble
+        // stops a walk the sprite chose and not this one.
         self.apply_destination(state, dt, snapshot);
 
         // The keys own a possessed sprite's feet, after every hold above: a
