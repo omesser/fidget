@@ -438,6 +438,10 @@ pub(crate) fn run_frame_loop(
         let mut input_events: Option<platform::EventTap> = None;
         #[cfg(not(unix))]
         let mut input_events: Option<mpsc::Receiver<()>> = None;
+        // Button edges only. The idle back-off still waits out motion, and a
+        // press dragged off the sprite is hit-tested where the hook saw it.
+        #[cfg(not(unix))]
+        let mut press_wakes = platform::spawn_press_listener();
 
         let mut button_was_down = false;
         let mut sound_allowed = true;
@@ -495,6 +499,8 @@ pub(crate) fn run_frame_loop(
             // closed channel returns at once, which is a spin rather than a
             // sleep. Dropped after the match, where nothing borrows it.
             let mut listener_hung_up = false;
+            #[cfg(not(unix))]
+            let mut press_listener_hung_up = false;
 
             // Active sleeps 16ms. Idle blocks until a real deadline with no cap. Hidden
             // sleeps and ignores input. Visible, Asleep and DND included, keeps the
@@ -605,14 +611,28 @@ pub(crate) fn run_frame_loop(
                             let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
                             let deadline = next_director.min(next_sense);
 
-                            // Visible idle input polling. Cap at 100ms when the cursor is near a
-                            // sprite (within 48px) for hover gesture responsiveness. Otherwise cap
-                            // at 1s to avoid burning CPU waiting for rare events (right-click).
+                            // Idle poll: 100ms within 48px of a sprite, else 1s. A button edge
+                            // ends the wait. Motion keeps the cap, so a still cursor does not
+                            // tick and a drag is hit-tested where the button went down.
                             let capped = if cursor_near_sprite(last_cursor, &last_sprite_rects) {
                                 deadline.min(Duration::from_millis(100))
                             } else {
                                 deadline.min(Duration::from_secs(1))
                             };
+                            #[cfg(not(unix))]
+                            {
+                                press_listener_hung_up = match &press_wakes {
+                                    Some(wakes) => matches!(
+                                        wakes.recv_timeout(capped),
+                                        Err(mpsc::RecvTimeoutError::Disconnected)
+                                    ),
+                                    None => {
+                                        thread::sleep(capped);
+                                        false
+                                    }
+                                };
+                            }
+                            #[cfg(unix)]
                             thread::sleep(capped);
                         }
                     }
@@ -628,6 +648,10 @@ pub(crate) fn run_frame_loop(
                 // went away. Back off rather than spin; on macOS the next
                 // iteration starts a new tap if the setting is still on.
                 input_events = None;
+            }
+            #[cfg(not(unix))]
+            if press_listener_hung_up {
+                press_wakes = None;
             }
 
             // Read per tick: the Development tab can flip these while the
@@ -2115,8 +2139,9 @@ pub(crate) fn run_frame_loop(
                 }
                 live.last_position = frame.position;
 
-                // Stay Active while moving, a multi-frame animation still
-                // advancing, or idle_ms accruing toward sleep.
+                // Stay Active while moving, animating, accruing idle_ms, or holding
+                // a press that is not yet a Grab or a Poke. Idle would wait up
+                // to a second for the tick that measures the drag.
                 let behavior_playing = frame.playing_behavior.is_some();
                 let needs_active_for_motion =
                     scheduler::mode(&frame, presence.visible, behavior_playing)
@@ -2146,6 +2171,7 @@ pub(crate) fn run_frame_loop(
                 if needs_active_for_motion
                     || needs_active_for_animation
                     || needs_active_for_sleep_accrual
+                    || live.pointer.gesturing()
                 {
                     any_needs_active = true;
                 }
