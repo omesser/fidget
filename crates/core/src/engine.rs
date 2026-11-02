@@ -304,7 +304,7 @@ const CLIMB_SPEED: f64 = 200.0;
 /// Points per second the sprite walks along whatever it is standing on. A
 /// tuning knob, slower than a climb: hauling yourself up an edge is urgent and
 /// strolling along a title bar is not.
-const WALK_SPEED: f64 = 120.0;
+pub(crate) const WALK_SPEED: f64 = 120.0;
 
 /// Points per second squared, a tuning knob: a fall that reads as heavy rather
 /// than floaty is found by watching. 3600 keeps a Throw on the display long
@@ -367,7 +367,7 @@ const CHASE_TIMEOUT_MS: u32 = 8000;
 /// How close the sprite's x must get to the x it walks toward, in points.
 /// Close enough to read as getting there, loose enough not to overshoot and
 /// backtrack.
-const ARRIVAL_THRESHOLD: f64 = 30.0;
+pub(crate) const ARRIVAL_THRESHOLD: f64 = 30.0;
 
 pub struct Engine {
     position: Point,

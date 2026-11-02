@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
-use crate::engine::Direction;
+use crate::engine::{Direction, ARRIVAL_THRESHOLD, WALK_SPEED};
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -286,6 +286,60 @@ pub fn list_tools() -> Vec<ToolInfo> {
             }),
         },
         ToolInfo {
+            name: "move".to_string(),
+            description: format!(
+                "Walk a Character Instance left or right along the display floor or window top it stands on. \
+                 Pass direction with distance in points or duration_ms in milliseconds, at {WALK_SPEED} points per second. \
+                 Or pass to with a spot as whereabouts reports one, and it walks to to.x on display to.display. \
+                 to.y is required so that spot passes back unchanged, and y is ignored, since a walk never changes height. \
+                 It answers at once with started true, or with started false and the reason, such as falling or being held. \
+                 It does not wait to arrive. \
+                 The walk stops within {ARRIVAL_THRESHOLD} points of where it was sent, at the edge of what it stands on, \
+                 or at a grab, a fall or a poke, and nothing resumes it. \
+                 It never crosses to another display. Call whereabouts to see where it stopped."
+            ),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["left", "right"],
+                        "description": "Which way to walk, left or right of the screen. Pass it with exactly one of distance or duration_ms, and leave it out when you pass to."
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": "How far to walk, in points, from where the Character stands now. Pass this or duration_ms, not both."
+                    },
+                    "duration_ms": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": format!("How long to walk, in milliseconds, at {WALK_SPEED} points per second. Pass this or distance, not both.")
+                    },
+                    "to": {
+                        "type": "object",
+                        "description": "A spot to walk to, as whereabouts reports one. Pass it instead of direction.",
+                        "properties": {
+                            "display": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Which display, by the index whereabouts lists. A spot on another display than the Character's own is walked toward, and the walk stops at the edge of its own display."
+                            },
+                            "x": {
+                                "type": "number",
+                                "description": "Points from that display's left edge, as whereabouts reports an Instance's x."
+                            },
+                            "y": {
+                                "type": "number",
+                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Required so a whereabouts spot passes back unchanged, and ignored, since a walk never changes height."
+                            }
+                        },
+                        "required": ["display", "x", "y"]
+                    }
+                }
+            }),
+        },
+        ToolInfo {
             name: "list_windows".to_string(),
             description: "List visible windows with bounds. The owning application and the title need the window-names consent".to_string(),
             input_schema: serde_json::json!({
@@ -360,7 +414,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     for tool in &mut tools {
         tool.input_schema["properties"]["instance_id"] = serde_json::json!({
             "type": "string",
-            "description": "Your Character Instance id, named in your prompt. play_behavior acts on that Instance. Optional while only one Instance runs."
+            "description": "Your Character Instance id, named in your prompt. play_behavior and move act on that Instance. Optional while only one Instance runs."
         });
     }
     tools
@@ -552,12 +606,13 @@ mod tests {
         let tools = list_tools();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
-        assert_eq!(names.len(), 8);
+        assert_eq!(names.len(), 9);
         assert!(
             !names.contains(&"speak"),
             "a Character says things only in its reply"
         );
         assert!(names.contains(&"play_behavior"));
+        assert!(names.contains(&"move"));
         assert!(names.contains(&"list_windows"));
         assert!(names.contains(&"describe_screen"));
         assert!(names.contains(&"recall"));
@@ -983,6 +1038,56 @@ mod tests {
             json!(["left", "right"])
         );
         assert!(play.description.contains("direction"));
+    }
+
+    #[test]
+    fn move_is_listed_with_every_field_described_and_y_ignored() {
+        let tools = list_tools();
+        let walk = tools
+            .iter()
+            .find(|tool| tool.name == "move")
+            .expect("move is listed");
+
+        for field in [
+            "direction",
+            "distance",
+            "duration_ms",
+            "to.display",
+            "to.x",
+            "to.y",
+        ] {
+            assert!(
+                walk.description.contains(field),
+                "the description names {field}: {}",
+                walk.description
+            );
+        }
+        assert!(
+            walk.description.contains("y is ignored"),
+            "{}",
+            walk.description
+        );
+
+        let properties = &walk.input_schema["properties"];
+        assert_eq!(properties["direction"]["enum"], json!(["left", "right"]));
+        for field in ["direction", "distance", "duration_ms", "to"] {
+            assert!(
+                properties[field]["description"].is_string(),
+                "{field} has a description"
+            );
+        }
+        let spot = &properties["to"];
+        for field in ["display", "x", "y"] {
+            assert!(
+                spot["properties"][field]["description"].is_string(),
+                "to.{field} has a description"
+            );
+        }
+        assert_eq!(
+            spot["required"],
+            json!(["display", "x", "y"]),
+            "a whereabouts spot passes back whole"
+        );
     }
 
     /// The ask end to end: the argument turns the Instance before its first
