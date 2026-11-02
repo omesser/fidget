@@ -117,10 +117,11 @@ struct MoveArgs {
     to: Option<SpotArg>,
 }
 
-/// A spot as `whereabouts` reports one. `y` is required so that spot passes
-/// back unchanged, and a walk never reads it.
+/// A spot from `whereabouts`. The report names the display `on_display`.
+/// `y` is required, and a walk never reads it.
 #[derive(Clone, Copy, Deserialize)]
 struct SpotArg {
+    #[serde(alias = "on_display")]
     display: usize,
     x: f64,
     y: f64,
@@ -378,8 +379,8 @@ pub fn list_tools() -> Vec<ToolInfo> {
             description: format!(
                 "Walk a Character Instance left or right along the display floor or window top it stands on. \
                  Pass direction with distance in points or duration_ms in milliseconds, at {WALK_SPEED} points per second. \
-                 Or pass to with a spot as whereabouts reports one, and it walks to to.x on display to.display. \
-                 to.y is required so that spot passes back unchanged, and y is ignored, since a walk never changes height. \
+                 Or pass to.display, to.x, and to.y. whereabouts calls that index on_display, and that name is accepted too. \
+                 to.y is required, and y is ignored, since a walk never changes height. \
                  It answers at once with started true, or with started false and the reason, such as falling or being held. \
                  It does not wait to arrive. \
                  The walk stops within {ARRIVAL_THRESHOLD} points of where it was sent, at the edge of what it stands on, \
@@ -411,7 +412,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
                             "display": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "description": "Which display, by the index whereabouts lists. A spot on another display than the Character's own is walked toward, and the walk stops at the edge of its own display."
+                                "description": "Which display, by the index whereabouts lists. whereabouts names it on_display, and that name is accepted too. A spot on another display than the Character's own is walked toward, and the walk stops at the edge of its own display."
                             },
                             "x": {
                                 "type": "number",
@@ -419,7 +420,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Required so a whereabouts spot passes back unchanged, and ignored, since a walk never changes height."
+                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Required, and ignored, since a walk never changes height."
                             }
                         },
                         "required": ["display", "x", "y"]
@@ -1508,6 +1509,37 @@ mod tests {
         assert!(
             (stopped.position.x - 2320.0).abs() <= 30.0,
             "400 points into the display whose frame starts at 1920: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_accepts_the_on_display_field_whereabouts_reports() {
+        let (frames, world) = side_by_side();
+        let (mut roster, id, landed) = landed_walker(2620.0, &world);
+
+        let said = call_move_on(
+            &mut roster,
+            json!({
+                "to": {
+                    "on_display": 1,
+                    "x": 400,
+                    "y": 900,
+                    "id": "walker",
+                    "name": "Walker",
+                    "other_displays": [0]
+                }
+            }),
+            &frames,
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 2320.0).abs() <= 30.0,
+            "the same spot as display 1, x 400: {stopped:?}"
         );
         assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
     }

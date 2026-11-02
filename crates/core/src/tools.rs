@@ -277,9 +277,9 @@ mod helpers {
             }
         };
 
-        // No handle is no way to reach the Instance the roster just named, so
-        // the Expression lands nowhere however live that Instance is. The stdio
-        // path runs this way today, which is why it cannot report success.
+        // No handle means the Expression lands nowhere. The Harness probe and
+        // the tests call dispatch this way. The stdio shim relays to the app,
+        // which has a handle.
         let Some(handle) = expression else {
             return Err(
                 "No live connection to the running app, so nothing changed on screen".to_string(),

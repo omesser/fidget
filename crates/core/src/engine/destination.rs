@@ -200,9 +200,9 @@ impl Engine {
         })
     }
 
-    /// The only way out of a move. Nothing keeps the x, so nothing resumes it.
     /// On its feet the sprite stops too. In the air its stride carries into
-    /// the fall, as any walk's does.
+    /// the fall, as any walk's does. A new move replaces this one in
+    /// `start_move` and does not come through here.
     pub(super) fn end_move(&mut self, state: State) {
         if matches!(state, State::Grounded | State::Perched) {
             self.velocity.x = 0.0;
