@@ -38,7 +38,7 @@ test("Glass drops its CSS blur under the macOS flag and keeps it elsewhere", { s
 
 test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
   assert.deepEqual((await bodyStyles()).tints, {
-    dark: [0.48, 0.6],
+    dark: [0.22, 0.3],
     light: [0.68, 0.78],
   });
 });

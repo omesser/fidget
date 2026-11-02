@@ -760,7 +760,7 @@
    drops after another Fidget window closes. The cause is unproven, and
    the native view sits outside WebKit's layers. */
 [data-platform="macos"].chat-ui-glass body {
-  background: linear-gradient(rgba(14,17,24,.48), rgba(14,17,24,.60));
+  background: linear-gradient(rgba(14,17,24,.22), rgba(14,17,24,.30));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
