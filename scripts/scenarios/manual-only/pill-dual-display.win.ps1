@@ -185,7 +185,7 @@ public static class PillDrag {
 }
 "@
 
-function Count([string]$Pattern) { @(Get-Content -LiteralPath $log | Where-Object { $_ -match $Pattern }).Count }
+function Count([string]$Pattern, [string]$File = $log) { @(Get-Content -LiteralPath $File | Where-Object { $_ -match $Pattern }).Count }
 
 # Hover the sprite's newest spot until Fidget owns the window there, chasing it
 # if it walks. The region is art-shaped, so a landing frame can leave it bare.
@@ -217,6 +217,10 @@ function Drive-PillAcrossSeam {
     Assert-Still $a "poke"
     # Fidget samples the button each frame, so an instant click is never seen.
     $presses = Count $pressPattern
+    # Only lines after the poke count, so a wake held at launch can't stand in.
+    $bubbleOrHeld = "$bubbleShowPattern|$wakeHeldPattern"
+    $shows = Count $bubbleShowPattern $traceFile; $helds = Count $wakeHeldPattern $traceFile
+    $outs = Count $wakeOutPattern $traceFile; $either = Count $bubbleOrHeld $traceFile
     [PillDrag]::Button($false)
     try {
         if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the poke's press in 3 s; see $log" }
@@ -226,10 +230,10 @@ function Drive-PillAcrossSeam {
     }
     if (-not (Wait-ForCount 3 $log $releasePattern $releases)) { Fail "Fidget did not see the poke's release in 3 s; see $log" }
     # A wake held for a loading overlay page starts the bubble's 3 s when it goes out.
-    if (-not (Wait-ForTrace 3 $traceFile "$bubbleShowPattern|$wakeHeldPattern")) { Fail "the poke showed no Thinking bubble and held no wake in 3 s; see $traceFile" }
-    if (Test-FileMatches $traceFile $wakeHeldPattern) {
-        if (-not (Wait-ForTrace 3 $traceFile $wakeOutPattern)) { Fail "the held wake was neither released nor sent anyway in 3 s; see $traceFile" }
-        if (-not (Wait-ForTrace 3 $traceFile $bubbleShowPattern)) { Fail "the wake went out but showed no Thinking bubble in 3 s; see $traceFile" }
+    if (-not (Wait-ForCount 3 $traceFile $bubbleOrHeld $either)) { Fail "the poke showed no Thinking bubble and held no wake in 3 s; see $traceFile" }
+    if ((Count $wakeHeldPattern $traceFile) -gt $helds) {
+        if (-not (Wait-ForCount 3 $traceFile $wakeOutPattern $outs)) { Fail "the held wake was neither released nor sent anyway in 3 s; see $traceFile" }
+        if (-not (Wait-ForCount 3 $traceFile $bubbleShowPattern $shows)) { Fail "the wake went out but showed no Thinking bubble in 3 s; see $traceFile" }
     }
     # Settled after the double-click interval, so the drag press is not a double-click.
     if (-not (Wait-ForTrace 3 $log $pokePattern)) { Fail "Fidget never settled the click as a Poke in 3 s; see $log" }
@@ -244,6 +248,10 @@ function Drive-PillAcrossSeam {
     Assert-Still $a "press"
     # The press must land before the move, or Fidget sees it off the sprite.
     $presses = Count $pressPattern
+    # Only lines after the poke count, so a wake held at launch can't stand in.
+    $bubbleOrHeld = "$bubbleShowPattern|$wakeHeldPattern"
+    $shows = Count $bubbleShowPattern $traceFile; $helds = Count $wakeHeldPattern $traceFile
+    $outs = Count $wakeOutPattern $traceFile; $either = Count $bubbleOrHeld $traceFile
     [PillDrag]::Button($false)
     try {
         if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the press on the sprite in 3 s; see $log" }
