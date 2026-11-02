@@ -1830,6 +1830,73 @@ mod tests {
     }
 
     #[test]
+    fn a_behavior_that_needs_the_feet_does_not_cut_a_move_short() {
+        use crate::character::{Behavior, Primitive};
+        use crate::engine::{BehaviorProposal, Point, State, WorldSnapshot};
+
+        let mut character = test_character("Hopper");
+        character.behaviors.insert(
+            "hop".to_string(),
+            Behavior {
+                primitives: vec![Primitive::Jump],
+                then: None,
+                weight: 1,
+                trigger: None,
+            },
+        );
+        let world = test_snapshot();
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &character,
+            "Hopper".to_string(),
+            Point { x: 500.0, y: 100.0 },
+        );
+        tick_for(&mut roster, &id, &world, 100);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        let a_hop = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "hop".to_string(),
+                dialogue: None,
+                direction: None,
+            }),
+            ..world.clone()
+        };
+        let asked = tick_for(&mut roster, &id, &a_hop, 1);
+        assert_eq!(asked.refused.as_deref(), Some("hop"), "{asked:?}");
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(stopped.state, State::Grounded, "{stopped:?}");
+        assert!((stopped.position.x - 300.0).abs() <= 30.0, "{stopped:?}");
+    }
+
+    #[test]
+    fn do_not_disturb_sits_a_moving_instance_down_as_it_does_any_walk() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        roster.get_mut(&id).unwrap().set_do_not_disturb(true);
+        let quiet = tick_for(&mut roster, &id, &world, 1);
+        assert_eq!(quiet.animation, "sit", "{quiet:?}");
+        assert_eq!(quiet.velocity.x, 0.0, "{quiet:?}");
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

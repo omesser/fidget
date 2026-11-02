@@ -1941,6 +1941,9 @@ impl Engine {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk | Primitive::Possessed => true,
+            // A move holds the feet, so nothing that would walk, stop or launch
+            // them starts under it.
+            _ if self.feet_owned() => false,
             Primitive::Walk | Primitive::Chase => {
                 footing_refusal(self.state, self.poke_cooldown_ms).is_none() && !self.feet_held
             }
