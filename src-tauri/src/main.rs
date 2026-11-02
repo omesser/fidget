@@ -480,9 +480,9 @@ struct InstanceState {
     /// falls a millisecond per millisecond and the window subtracts for itself;
     /// only a deadline that *moved* is worth a push.
     status_wake_ms: Option<u64>,
-    /// The overlay this Instance's due wake waits on, so the hold and its
-    /// release are each logged once.
-    wake_held_on: Option<String>,
+    /// The overlay this Instance's due wake waits on and since when, so the
+    /// hold is bounded and it and its release are each logged once.
+    wake_held_on: Option<(String, std::time::Instant)>,
 }
 
 /// One open menu, from the frame loop's side.

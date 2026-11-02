@@ -2170,6 +2170,7 @@ pub(crate) fn run_frame_loop(
                             &displays.frames,
                             platform::overlay_listening,
                         ),
+                        now: Instant::now(),
                     };
                     let wake = spend_wake(live, gate);
                     held = wake == WakeTurn::Held;
@@ -3485,7 +3486,12 @@ struct WakeGate {
     enabled: bool,
     /// The overlay under the feet that doesn't listen yet, if any.
     loading: Option<String>,
+    now: Instant,
 }
+
+/// How long a wake waits on a page that doesn't listen. A page loads in
+/// well under this, so one that hasn't by now never will.
+const PAGE_LOAD_LIMIT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, PartialEq)]
 enum WakeTurn {
@@ -3500,10 +3506,10 @@ enum WakeTurn {
 
 /// Spend `live`'s wake if one is due and its bubble can be drawn. A held
 /// wake keeps `addressed` and `happened`, so pokes during the hold make one
-/// wake once the page listens.
+/// wake once the page listens, or after `PAGE_LOAD_LIMIT` if it never does.
 fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
     if gate.loading.is_none() {
-        if let Some(label) = live.wake_held_on.take() {
+        if let Some((label, _)) = live.wake_held_on.take() {
             eprintln!("director: {} wake released, was held on {label}", live.id);
         }
     }
@@ -3521,11 +3527,22 @@ fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
         return WakeTurn::NotDue;
     }
     if let Some(label) = gate.loading {
-        if live.wake_held_on.as_deref() != Some(label.as_str()) {
-            eprintln!("director: {} wake held until {label} listens", live.id);
-            live.wake_held_on = Some(label);
+        let since = match &live.wake_held_on {
+            Some((held, since)) if *held == label => *since,
+            _ => {
+                eprintln!("director: {} wake held until {label} listens", live.id);
+                live.wake_held_on = Some((label.clone(), gate.now));
+                gate.now
+            }
+        };
+        if gate.now.duration_since(since) < PAGE_LOAD_LIMIT {
+            return WakeTurn::Held;
         }
-        return WakeTurn::Held;
+        eprintln!(
+            "director: {} wake sent anyway, {label} never listened",
+            live.id
+        );
+        live.wake_held_on = None;
     }
     let was_addressed = std::mem::take(&mut live.addressed);
     if was_addressed {
@@ -3580,6 +3597,7 @@ mod tests {
             possessed: false,
             enabled: true,
             loading: loading.map(String::from),
+            now: Instant::now(),
         }
     }
 
@@ -3606,6 +3624,38 @@ mod tests {
                 }
             );
             assert_eq!(spend_wake(&mut live, gate(None)), WakeTurn::NotDue);
+        });
+    }
+
+    /// Production change that would fail this: a page that never listens
+    /// (its overlay failed to build) holding the Director, Chat included, for good.
+    #[test]
+    fn a_wake_held_past_the_page_load_limit_goes_out_anyway() {
+        model::tests::with_env(None, None, None, || {
+            let director = model::resolve("http://localhost:11434", "gemma4", None);
+            let mut live = instance_state("buddy-1", &director);
+            live.happened = Happened::Chat("hi".to_string());
+            live.addressed = true;
+            let start = Instant::now();
+            let at = |now| WakeGate {
+                now,
+                ..gate(Some("overlay-1"))
+            };
+            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
+            assert_eq!(
+                spend_wake(
+                    &mut live,
+                    at(start + PAGE_LOAD_LIMIT - Duration::from_millis(1))
+                ),
+                WakeTurn::Held
+            );
+            assert_eq!(
+                spend_wake(&mut live, at(start + PAGE_LOAD_LIMIT)),
+                WakeTurn::Spent {
+                    happened: Happened::Chat("hi".to_string()),
+                    was_addressed: true,
+                }
+            );
         });
     }
 
