@@ -77,6 +77,7 @@ function Start-FidgetPiped([string]$Bin, [string[]]$Arguments, [string]$StdoutLo
     $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding $false
     $start.StandardErrorEncoding = New-Object System.Text.UTF8Encoding $false
     $process = [System.Diagnostics.Process]::Start($start)
+    [FidgetTrail]::Arm($FidgetStallSeconds, $process.Id)
     [FidgetSignal]::Tee($process, $false, $StdoutLog)
     [FidgetSignal]::Tee($process, $true, $StderrLog)
     return $process
@@ -153,6 +154,9 @@ function Wait-ForMarks([double]$Seconds, [string]$MarksFile, [string]$Pattern) {
 # 5 s missed on slow runners (#1765, `anchor-taskbar`); 30 s matches the macOS
 # warm-up budget, and the leaf's own cap still bounds a launch that never gets up.
 $FidgetStartupWaitSeconds = 30
+# The startup wait plus the slowest leaf (~35 s), under the job's 3 min per
+# leaf with its build.
+$FidgetStallSeconds = 90
 
 function Wait-ForUp([string]$ErrLog) {
     return (Wait-ForLine $FidgetStartupWaitSeconds $ErrLog '^overlay: ')
@@ -184,11 +188,14 @@ function Wait-Until([double]$Seconds, [scriptblock]$Probe) {
 $script:AxScript = Join-Path $PSScriptRoot "..\..\ax-window-win.ps1"
 function Invoke-AxWin([string]$OutFile, [hashtable]$AxArgs) {
     $global:LASTEXITCODE = 0
+    [FidgetTrail]::Mark("ax $($AxArgs.Command) $($AxArgs.Arg3)")
     try {
         & $script:AxScript @AxArgs 2>&1 | Out-File -FilePath $OutFile -Encoding utf8
     } catch {
         $_ | Out-File -FilePath $OutFile -Encoding utf8 -Append
         return $false
+    } finally {
+        [FidgetTrail]::Mark("ax $($AxArgs.Command) returned")
     }
     return ($LASTEXITCODE -eq 0)
 }

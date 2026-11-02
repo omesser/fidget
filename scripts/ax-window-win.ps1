@@ -334,6 +334,7 @@ if ($Command -eq "tray") {
     # no menu or drop the row's Invoke. Each retry waits on the window, not a clock.
     $why = ""
     for ($attempt = 1; $attempt -le 3; $attempt++) {
+        [FidgetTrail]::Mark("tray: click $attempt")
         $signal = [FidgetUiaSignal]::new(0)
         try {
             [FidgetWinEnum]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
@@ -357,10 +358,14 @@ if ($Command -eq "tray") {
         }
         $signal = [FidgetUiaSignal]::new($ProcessId)
         try {
+            [FidgetTrail]::Mark("tray: invoke $Arg3")
             Invoke-Element $row
             $deadline = [DateTime]::UtcNow.AddSeconds(2)
             while ($true) {
-                if ([FidgetWinEnum]::Find([uint32]$ProcessId, $Title) -ne [IntPtr]::Zero) { exit 0 }
+                if ([FidgetWinEnum]::Find([uint32]$ProcessId, $Title) -ne [IntPtr]::Zero) {
+                    [FidgetTrail]::Mark("tray: $Title open, unregister")
+                    exit 0
+                }
                 if (-not $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) { break }
             }
         } finally {

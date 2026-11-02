@@ -79,6 +79,32 @@ try {
     }
     $script:proc = $child
     Check ($closed -and ((Get-NowMs) - $start) -lt 1000) "the log writer closed at end of stream ($((Get-NowMs) - $start) ms)"
+
+    # A leaf that blocks past its stall budget: the trail names its last step,
+    # the stand-in Fidget dies, and the leaf ends.
+    $stall = Join-Path $dir "stall.ps1"
+    [System.IO.File]::WriteAllLines($stall, @(
+            ". '$(Join-Path $PSScriptRoot "wait-helpers.win.ps1")'",
+            '$FidgetStallSeconds = 2',
+            "`$p = Start-FidgetPiped '$shell' @('-NoProfile', '-Command', 'Start-Sleep 60') '$dir\stall.out' '$dir\stall.err'",
+            '[Console]::Out.WriteLine($p.Id)',
+            '[FidgetTrail]::Mark("blocked on nothing")',
+            'Start-Sleep 60'
+        ), $utf8)
+    $leaf = New-Object System.Diagnostics.ProcessStartInfo $shell
+    $leaf.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$stall`""
+    $leaf.UseShellExecute = $false
+    $leaf.RedirectStandardOutput = $true
+    $leaf.RedirectStandardError = $true
+    $start = Get-NowMs
+    $leafProc = [System.Diagnostics.Process]::Start($leaf)
+    $errTask = $leafProc.StandardError.ReadToEndAsync()
+    $standIn = [int]$leafProc.StandardOutput.ReadLine()
+    $ended = $leafProc.WaitForExit(20000)
+    Check ($ended -and ((Get-NowMs) - $start) -lt 15000) "a stalled leaf ends itself ($((Get-NowMs) - $start) ms)"
+    $said = $errTask.Result
+    Check ($said.Contains("FAIL: the leaf stalled 2 s") -and $said.Contains("blocked on nothing")) "the stall names the last step: $said"
+    Check ($null -eq (Get-Process -Id $standIn -ErrorAction SilentlyContinue)) "the stall killed Fidget (pid $standIn)"
 } finally {
     if (-not $script:proc.HasExited) { $script:proc.Kill() }
     Remove-Item -Recurse -Force -LiteralPath $dir

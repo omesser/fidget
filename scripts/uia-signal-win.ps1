@@ -2,6 +2,52 @@
 # (0 = any process), .Wait($ms) is true on a window, menu, structure, name,
 # bounds or focus change. Wait-UiaChange re-runs a check on each one.
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+
+# A UI Automation call has no timeout, so a stuck one held a leaf to the job's
+# 3 min cap with no word of where (#1765). Steps go on a trail; Arm names the
+# last ones, kills Fidget's tree, and ends the leaf if it stalls.
+if (-not ("FidgetTrail" -as [type])) {
+    Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+public static class FidgetTrail {
+    static readonly object gate = new object();
+    static readonly Queue<string> steps = new Queue<string>();
+    static readonly Stopwatch clock = Stopwatch.StartNew();
+    static Timer timer;
+    public static void Mark(string step) {
+        lock (gate) {
+            steps.Enqueue(clock.ElapsedMilliseconds + " ms " + step);
+            if (steps.Count > 24) { steps.Dequeue(); }
+        }
+    }
+    public static string Dump() {
+        lock (gate) { return string.Join("\n  ", steps.ToArray()); }
+    }
+    public static void Arm(int seconds, int fidgetPid) {
+        Mark("Fidget started, pid " + fidgetPid);
+        if (timer != null) { timer.Dispose(); }
+        timer = new Timer(delegate {
+            Console.Error.WriteLine("FAIL: the leaf stalled " + seconds + " s after Fidget started; its last steps:\n  " + Dump());
+            Console.Error.Flush();
+            try {
+                ProcessStartInfo kill = new ProcessStartInfo("taskkill.exe", "/PID " + fidgetPid + " /T /F");
+                kill.UseShellExecute = false;
+                kill.CreateNoWindow = true;
+                Process.Start(kill).WaitForExit(10000);
+            } catch (Exception) {
+            }
+            // A call blocked on Fidget may return now and fail the leaf itself.
+            Thread.Sleep(5000);
+            Process.GetCurrentProcess().Kill();
+        }, null, seconds * 1000, Timeout.Infinite);
+    }
+}
+"@
+}
+
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase @"
@@ -63,7 +109,9 @@ public class FidgetUiaSignal : IDisposable {
 # true or the seconds run out. A caller's own $Shared signal is reused, not disposed.
 function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, $Shared = $null) {
     # The clock starts once the handlers are registered, which can be slow.
+    [FidgetTrail]::Mark("uia: register")
     $signal = if ($Shared) { $Shared } else { [FidgetUiaSignal]::new($ProcessId) }
+    [FidgetTrail]::Mark("uia: wait $Seconds s")
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     try {
         while ($true) {
@@ -73,6 +121,7 @@ function Wait-UiaChange([int]$ProcessId, [double]$Seconds, [scriptblock]$Check, 
             if (-not $signal.Wait($left)) { return (& $Check) }
         }
     } finally {
+        [FidgetTrail]::Mark("uia: unregister")
         if (-not $Shared) { $signal.Dispose() }
     }
 }
