@@ -12,6 +12,8 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.mac.sh
+. scripts/scenarios/helpers/wait-helpers.mac.sh
 
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
@@ -32,16 +34,6 @@ OUT=".verify/$STAMP"
 mkdir -p "$OUT"
 
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
-
-# Waits for a log to say something, rather than sleeping a guessed interval:
-# every timing here belongs to the app or the window server, not to us.
-await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
-  for _ in $(seq 1 "$3"); do
-    grep -qE "$2" "$1" 2> /dev/null && return 0
-    perl -e 'select(undef,undef,undef,0.25)'
-  done
-  return 1
-}
 
 diagnose_no_frames() { # $1=log file
   local log="$1"
@@ -113,7 +105,7 @@ echo "Opening a prop at window level $DOCK_LEVEL at $OVER_RECT to fall through..
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift $OVER_RECT $DOCK_LEVEL > "$OUT/over.log" 2>&1 &
 OVER_PID=$!
-await "$OUT/over.log" '^\{' 40 || {
+wait_for_trace 10 "$OUT/over.log" '^\{' || {
   echo "FAIL: elevated prop window never reported its bounds"
   cat "$OUT/over.log"
   exit 1
@@ -123,7 +115,7 @@ echo "Opening a prop window at $PERCH_RECT to perch on..."
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift $PERCH_RECT > "$OUT/perch.log" 2>&1 &
 PERCH_PID=$!
-await "$OUT/perch.log" '^\{' 40 || {
+wait_for_trace 10 "$OUT/perch.log" '^\{' || {
   echo "FAIL: prop window never reported its bounds"
   cat "$OUT/perch.log"
   exit 1
@@ -139,20 +131,18 @@ fi
 FIDGET_TRACE_HITTEST=1 FIDGET_TRACE_FRAMES=1 \
   "$BIN_PATH" > "$OUT/app.log" 2>&1 &
 APP_PID=$!
+# shellcheck disable=SC2034 # read by the sourced wait helpers
+pid=$APP_PID
 
-for _ in $(seq 1 60); do
-  grep -q '^overlay:' "$OUT/app.log" 2> /dev/null && break
-  kill -0 "$APP_PID" 2> /dev/null || {
-    echo "FAIL: app exited"
-    cat "$OUT/app.log"
-    exit 1
-  }
-  perl -e 'select(undef,undef,undef,0.25)'
-done
+wait_for_up "$OUT/app.log" || {
+  echo "FAIL: app exited or never published an overlay line"
+  cat "$OUT/app.log"
+  exit 1
+}
 
 # Land on the prop, then wait for a step it takes *after* landing, so the check
 # never races the app's startup.
-await "$OUT/app.log" '^frame: [0-9]+ Perched' 60 ||
+wait_for_trace 15 "$OUT/app.log" '^frame: [0-9]+ Perched' ||
   diagnose_no_frames "$OUT/app.log"
 
 # It has done its job by now: the sprite has fallen past it, and it is drawn
@@ -165,11 +155,8 @@ swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
     cat "$OUT/window.err"
   }
 
-PERCH_LINES=$(grep -c '^{' "$OUT/perch.log")
-for _ in $(seq 1 40); do
-  [ "$(grep -c '^{' "$OUT/perch.log")" -gt "$PERCH_LINES" ] && break
-  perl -e 'select(undef,undef,undef,0.25)'
-done
+PERCH_LINES=$(line_count "$OUT/perch.log" '^\{')
+wait_for_count 10 "$OUT/perch.log" '^\{' "$PERCH_LINES" || true
 perl -e 'select(undef,undef,undef,1.5)' # long enough to fall the step and settle
 
 echo "Closing the prop window..."
@@ -422,31 +409,18 @@ BEFORE=$(swift scripts/cursor-position.swift)
 # Prints the still sprite's x, y, width and height, or fails if it keeps moving.
 # Each probe waits afresh: an idle walk can start between two probes.
 still_sprite() {
+  wait_for_rest "$OUT/app.log" || return 1
   python3 - "$OUT" << 'PY'
-import re, sys, time
+import re, sys
 out = sys.argv[1]
 
-def read_tail_frames(log_path, n=10):
-    with open(log_path) as f:
-        lines = f.readlines()
-    return [
-        (m[1], m[2])
-        for line in lines
-        if (m := re.match(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", line))
-    ][-n:]
-
 log_path = f"{out}/app.log"
-still_found = False
-for attempt in range(40):
-    frames = read_tail_frames(log_path, n=5)
-    if len(frames) >= 3 and all(f == frames[0] for f in frames):
-        pos = frames[0]
-        still_found = True
-        break
-    time.sleep(0.25)
-
-if not still_found:
-    sys.exit(1)
+frames = [
+    (m[1], m[2])
+    for line in open(log_path)
+    if (m := re.match(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", line))
+]
+pos = frames[-1]
 
 size = re.search(r"sprite (\d+)x(\d+)", open(log_path).read())
 if not size:
@@ -472,13 +446,8 @@ probe() { # $1=half-sizes into the art, 1 its centre, 0 its top-left corner  $2=
     return
   fi
 
-  for _ in $(seq 1 40); do
-    line=$(grep 'hit-test:' "$OUT/app.log" | tail -1)
-    if echo "$line" | grep -q "cursor($x,$y)"; then
-      break
-    fi
-    perl -e 'select(undef,undef,undef,0.1)'
-  done
+  wait_for_trace 4 "$OUT/app.log" "hit-test:.*cursor\\($x,$y\\)"
+  line=$(grep -F "cursor($x,$y)" "$OUT/app.log" | tail -1)
 
   if ! echo "$line" | grep -q "cursor($x,$y)"; then
     echo "  FAIL  $2 (no hit-test line for cursor($x,$y))"
@@ -509,26 +478,26 @@ echo "Grip:"
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift --fast $PERCH_RECT > "$OUT/fling.log" 2>&1 &
 FLING_PID=$!
-await "$OUT/fling.log" '^\{' 40 || {
+wait_for_trace 10 "$OUT/fling.log" '^\{' || {
   echo "FAIL: the flinging prop window never reported its bounds"
   cat "$OUT/fling.log"
   exit 1
 }
+FLING_LINES=$(line_count "$OUT/fling.log" '^\{')
 
 # Our recorded pid, not a stray: the Grip run gets a clean log of its own.
 kill "$APP_PID" 2> /dev/null
 wait "$APP_PID" 2> /dev/null
 FIDGET_TRACE_FRAMES=1 "$BIN_PATH" > "$OUT/grip.log" 2>&1 &
 APP_PID=$!
-await "$OUT/grip.log" '^frame: [0-9]+ Perched' 60 ||
+# shellcheck disable=SC2034 # read by the sourced wait helpers
+pid=$APP_PID
+wait_for_trace 15 "$OUT/grip.log" '^frame: [0-9]+ Perched' ||
   echo "  (the sprite never perched - the checks below will say so)"
 
 # The fling is one move rather than a series, so this waits for the one report
 # that follows it: the prop's second line.
-for _ in $(seq 1 80); do
-  [ "$(grep -c '^{' "$OUT/fling.log")" -ge 2 ] && break
-  perl -e 'select(undef,undef,undef,0.25)'
-done
+wait_for_count 20 "$OUT/fling.log" '^\{' "$FLING_LINES" || true
 perl -e 'select(undef,undef,undef,2.5)' # long enough to be left behind, fall and settle
 kill "$FLING_PID" 2> /dev/null
 

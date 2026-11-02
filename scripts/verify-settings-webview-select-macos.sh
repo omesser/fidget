@@ -7,6 +7,8 @@ set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root" || exit 1
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.mac.sh
+. "$root/scripts/scenarios/helpers/wait-helpers.mac.sh"
 
 bin="${FIDGET_VERIFY_BIN:-$root/target/debug/fidget}"
 out="$root/.verify/settings-webview-select-$(date +%Y%m%d-%H%M%S)"
@@ -52,28 +54,21 @@ env -u FIDGET_DIRECTOR_API_KEY \
   FIDGET_TRACE_HITTEST=1 \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
+# shellcheck disable=SC2034 # read by the sourced wait helpers
+pid=$app_pid
 
-await() {
-  local file="$1" pattern="$2" attempts="$3"
-  for _ in $(seq 1 "$attempts"); do
-    grep -qE "$pattern" "$file" 2> /dev/null && return 0
-    perl -e 'select(undef,undef,undef,0.25)'
-  done
-  return 1
-}
-
-await "$log" '^overlay:' 80 || {
+wait_for_up "$log" || {
   fail "app never published an overlay line"
   tail -40 "$log"
   exit 1
 }
-await "$log" '^frame: .*(Grounded|Perched) ' 80 || {
+wait_for_trace 20 "$log" '^frame: .*(Grounded|Perched) ' || {
   fail "sprite never settled"
   exit 1
 }
 # Patrol walks after the first Perched frame. Sit/idle is when the art stays
 # put long enough for a double-click to land on opaque pixels.
-await "$log" '^frame: .*(Grounded|Perched) .*(sit|idle)#' 80 || true
+wait_for_trace 20 "$log" '^frame: .*(Grounded|Perched) .*(sit|idle)#' || true
 
 sprite_from_log() {
   python3 - "$log" << 'PY'
@@ -106,11 +101,12 @@ while [ "$attempt" -lt 6 ]; do
   }
   read -r sprite_x sprite_y sprite_w sprite_h click_x click_y <<< "$sprite_point"
   info "Summon attempt ${attempt}: sprite ${sprite_x},${sprite_y} ${sprite_w}x${sprite_h}; click ${click_x},${click_y}"
+  before_summons=$(line_count "$log" '^verbs:.*Summon')
   swift "$root/scripts/click-cursor.swift" "$click_x" "$click_y" 2 > "$out/summon-click.txt" || {
     fail "summon click failed"
     exit 1
   }
-  if await "$log" '^verbs:.*Summon' 16; then
+  if wait_for_count 4 "$log" '^verbs:.*Summon' "$before_summons"; then
     summoned=1
     break
   fi
