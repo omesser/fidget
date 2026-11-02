@@ -248,10 +248,6 @@ function Drive-PillAcrossSeam {
     Assert-Still $a "press"
     # The press must land before the move, or Fidget sees it off the sprite.
     $presses = Count $pressPattern
-    # Only lines after the poke count, so a wake held at launch can't stand in.
-    $bubbleOrHeld = "$bubbleShowPattern|$wakeHeldPattern"
-    $shows = Count $bubbleShowPattern $traceFile; $helds = Count $wakeHeldPattern $traceFile
-    $outs = Count $wakeOutPattern $traceFile; $either = Count $bubbleOrHeld $traceFile
     [PillDrag]::Button($false)
     try {
         if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the press on the sprite in 3 s; see $log" }
