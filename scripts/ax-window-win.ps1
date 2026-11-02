@@ -210,8 +210,8 @@ function Get-PopupMenuItems {
 }
 
 # The screen rect of Fidget's open menu row that starts with $Prefix, read
-# from the menu itself: UI Automation lists no rows in a #32768 popup unless
-# a client listens for its events, and those listeners are slow (#1765).
+# from the menu itself: UI Automation found the rows only while the signal
+# held root-wide UI Automation handlers, which it no longer does (#1765).
 function Find-MenuRow([uint32]$FidgetPid, [string]$Prefix) {
     foreach ($menu in [FidgetWinEnum]::OfClass("#32768", $false)) {
         $owner = 0

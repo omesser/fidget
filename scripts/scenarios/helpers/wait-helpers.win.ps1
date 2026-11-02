@@ -154,8 +154,8 @@ function Wait-ForMarks([double]$Seconds, [string]$MarksFile, [string]$Pattern) {
 # 5 s missed on slow runners (#1765, `anchor-taskbar`); 30 s matches the macOS
 # warm-up budget, and the leaf's own cap still bounds a launch that never gets up.
 $FidgetStartupWaitSeconds = 30
-# Past the slowest whole leaf (~41 s), so only a blocked call trips it, and
-# under the job's 3 min per leaf with its build.
+# Seconds with no step: past the slowest whole leaf (~41 s), so only a
+# blocked call trips it, and under the job's 3 min per leaf with its build.
 $FidgetStallSeconds = 90
 
 function Wait-ForUp([string]$ErrLog) {
