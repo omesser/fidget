@@ -1897,6 +1897,62 @@ mod tests {
     }
 
     #[test]
+    fn a_move_toward_another_display_stops_at_the_edge_of_this_one() {
+        use crate::engine::State;
+
+        let (frames, a_dock_between) = side_by_side();
+        let abutting = crate::engine::WorldSnapshot {
+            displays: frames.to_vec(),
+            ..a_dock_between.clone()
+        };
+        let layouts = [
+            ("a Dock between", a_dock_between, 2064.0),
+            ("abutting", abutting, 1984.0),
+        ];
+
+        for (layout, world, inset_edge) in layouts {
+            let (mut roster, id, _) = landed_walker(2620.0, &world);
+            let said = call_move_on(
+                &mut roster,
+                json!({"to": {"display": 0, "x": 400, "y": 900}}),
+                &frames,
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], true, "{layout}: {said}");
+
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert_eq!(stopped.state, State::Grounded, "{layout}: {stopped:?}");
+            assert!(
+                (stopped.position.x - inset_edge).abs() <= 30.0,
+                "{layout}: {stopped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_move_toward_an_edge_it_already_stands_past_never_turns_it_round() {
+        let (frames, world) = side_by_side();
+        let abutting = crate::engine::WorldSnapshot {
+            displays: frames.to_vec(),
+            ..world
+        };
+        let (mut roster, id, landed) = landed_walker(1930.0, &abutting);
+        assert_eq!(landed.position.x, 1930.0, "{landed:?}");
+
+        let said = call_move_on(
+            &mut roster,
+            json!({"to": {"display": 0, "x": 400, "y": 900}}),
+            &frames,
+            &abutting.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        let later = tick_for(&mut roster, &id, &abutting, 100);
+        assert_eq!(later.position.x, 1930.0, "{later:?}");
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

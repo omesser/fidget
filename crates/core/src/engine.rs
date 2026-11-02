@@ -1117,7 +1117,7 @@ impl Engine {
             }
         }
 
-        self.apply_destination(state, dt);
+        self.apply_destination(state, dt, snapshot);
 
         // The keys own a possessed sprite's feet, after every hold above: a
         // bubble or a quick message stops a walk the sprite chose, not this.

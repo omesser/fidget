@@ -2,7 +2,8 @@
 //! walks to one fixed when it starts, kept in `Engine::destination` beside
 //! `playing` and not in it, so no Primitive's turn ends it.
 
-use super::{Direction, Engine, State, ARRIVAL_THRESHOLD, WALK_SPEED};
+use super::geometry::standing_reach;
+use super::{Direction, Engine, State, WorldSnapshot, ARRIVAL_THRESHOLD, WALK_SPEED};
 use std::fmt;
 use std::num::NonZeroU32;
 
@@ -154,17 +155,18 @@ impl Engine {
         Ok(())
     }
 
-    /// Stride toward the destination, or end the move on arrival or once
-    /// `state` stops it.
-    pub(super) fn apply_destination(&mut self, state: State, dt: f64) {
+    /// Stride toward the destination, or end the move on arrival, at the end
+    /// of the Surface underfoot, or once `state` stops it.
+    pub(super) fn apply_destination(&mut self, state: State, dt: f64, snapshot: &WorldSnapshot) {
         let Some(GlobalX(target_x)) = self.destination else {
             return;
         };
-        match (
-            self.stride_blocked(state),
-            heading_to(self.position.x, target_x),
-        ) {
-            (None, Heading::Toward(toward)) => self.stride(toward, target_x, dt),
+        let stop_x = standing_reach(self.position, snapshot).map(|reach| reach.clamp(target_x));
+        match (self.stride_blocked(state), stop_x) {
+            (None, Some(stop_x)) => match heading_to(self.position.x, stop_x) {
+                Heading::Toward(toward) => self.stride(toward, stop_x, dt),
+                Heading::Arrived => self.end_move(),
+            },
             _ => self.end_move(),
         }
     }

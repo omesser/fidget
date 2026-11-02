@@ -163,6 +163,40 @@ pub(super) fn usable_height_under(feet: Point, snapshot: &WorldSnapshot) -> Opti
         .map(|display| display.height)
 }
 
+/// How far along x a walk may go. It always holds the feet, so a clamp to it
+/// can stop a walk short and never turn it round.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Reach {
+    lo: f64,
+    hi: f64,
+}
+
+impl Reach {
+    fn around(feet_x: f64, lo: f64, hi: f64) -> Self {
+        Self {
+            lo: lo.min(feet_x),
+            hi: hi.max(feet_x),
+        }
+    }
+
+    pub(super) fn clamp(self, x: f64) -> f64 {
+        x.clamp(self.lo, self.hi)
+    }
+}
+
+/// The Surface underfoot, as far as a move may walk it: this display, inset by
+/// `EDGE_CLEARANCE` so the sprite never meets a wall it would climb. Never
+/// another display. `None` over no display.
+pub(super) fn standing_reach(feet: Point, snapshot: &WorldSnapshot) -> Option<Reach> {
+    let display = displays_spanning(feet.x, snapshot)
+        .find(|display| feet.y >= display.y && feet.y <= display.bottom())?;
+    Some(Reach::around(
+        feet.x,
+        display.x + EDGE_CLEARANCE,
+        display.x + display.width - EDGE_CLEARANCE,
+    ))
+}
+
 /// Whether a step at `x` heading `direction` would leave the outermost display
 /// edge's inset, `EDGE_CLEARANCE`, where a standing sprite shows whole.
 pub(super) fn edge_ahead(x: f64, direction: f64, snapshot: &WorldSnapshot) -> bool {
