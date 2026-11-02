@@ -2160,6 +2160,7 @@ pub(crate) fn run_frame_loop(
                 {
                     if director::session_due(
                         live.addressed,
+                        &live.happened,
                         live.since_proactive,
                         &live.pace,
                         activity.displays_asleep,

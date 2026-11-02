@@ -902,10 +902,12 @@ pub fn due(
 }
 
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
-/// Proactive off keeps Poke and Summon on the session path and leaves Static
-/// weights to fill the idle life.
+/// Proactive off keeps Poke and Summon and leaves the idle life to Static.
+/// While possessed, a Perch or a cursor dwell is the user driving, not a wake.
+#[allow(clippy::too_many_arguments)]
 pub fn session_due(
     addressed: bool,
+    happened: &Happened,
     since_proactive: Duration,
     pace: &Pace,
     displays_asleep: bool,
@@ -916,7 +918,8 @@ pub fn session_due(
     if displays_asleep {
         return false;
     }
-    if addressed {
+    let driven = possessed && matches!(happened, Happened::Perch | Happened::Proactive);
+    if addressed && !driven {
         return true;
     }
     if do_not_disturb || possessed {
@@ -1581,23 +1584,68 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, true, false),
+            session_due(
+                true,
+                &Happened::Poke,
+                Duration::ZERO,
+                &pace,
+                false,
+                false,
+                true,
+                false
+            ),
             "the user addressed the character"
         );
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, false, true, false),
+            !session_due(
+                false,
+                &Happened::Proactive,
+                Duration::ZERO,
+                &pace,
+                false,
+                false,
+                true,
+                false
+            ),
             "nothing happened and the wait has not elapsed"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false, false, true, false),
+            session_due(
+                false,
+                &Happened::Proactive,
+                Pace::FIRST,
+                &pace,
+                false,
+                false,
+                true,
+                false
+            ),
             "the first ambient wait has elapsed"
         );
         assert!(
-            !session_due(true, Duration::ZERO, &pace, true, false, true, false),
+            !session_due(
+                true,
+                &Happened::Poke,
+                Duration::ZERO,
+                &pace,
+                true,
+                false,
+                true,
+                false
+            ),
             "asleep: not even a Poke spends tokens"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, true, false, true, false),
+            !session_due(
+                false,
+                &Happened::Proactive,
+                Pace::FIRST,
+                &pace,
+                true,
+                false,
+                true,
+                false
+            ),
             "asleep: proactive stays quiet"
         );
     }
@@ -3149,11 +3197,29 @@ mod tests {
         // Ambient off is not Director off: a Poke still spends a session turn,
         // and an elapsed idle wait does not. Static weights keep the life.
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, false, false),
+            session_due(
+                true,
+                &Happened::Poke,
+                Duration::ZERO,
+                &pace,
+                false,
+                false,
+                false,
+                false
+            ),
             "a Poke still wakes the Director when ambient is off"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, false, false, false, false),
+            !session_due(
+                false,
+                &Happened::Proactive,
+                Pace::FIRST,
+                &pace,
+                false,
+                false,
+                false,
+                false
+            ),
             "an elapsed ambient wait does not wake when ambient is off"
         );
     }
@@ -3326,21 +3392,80 @@ mod tests {
         }
     }
 
+    /// Landing a jump on a window or the Dock is a Perch. While possessed the
+    /// user steered it there, so it is not something done to the character.
+    #[test]
+    fn the_users_driving_does_not_wake_the_session() {
+        let pace = Pace::new();
+        let wakes = |happened: &Happened, possessed: bool| {
+            session_due(
+                true,
+                happened,
+                Duration::ZERO,
+                &pace,
+                false,
+                false,
+                true,
+                possessed,
+            )
+        };
+        assert!(!wakes(&Happened::Perch, true), "a driven landing is quiet");
+        assert!(
+            !wakes(&Happened::Proactive, true),
+            "driving under a resting cursor is not a dwell"
+        );
+        assert!(wakes(&Happened::Perch, false), "a free perch still wakes");
+        for edge in [
+            Happened::PossessionStart,
+            Happened::PossessionEnd,
+            Happened::Chat("where are we going?".to_string()),
+        ] {
+            assert!(wakes(&edge, true), "{edge:?} still wakes while possessed");
+        }
+    }
+
     /// The Director cannot tell a paused possession from a live one: the Shell
     /// keeps `possessed` set through a pause, so this covers both.
     #[test]
     fn a_possessed_fidget_wakes_only_when_the_user_does_something() {
         let pace = Pace::new();
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false, true, true),
+            session_due(
+                true,
+                &Happened::Poke,
+                Duration::ZERO,
+                &pace,
+                false,
+                false,
+                true,
+                true
+            ),
             "a Poke or a Chat line while possessed still gets a reply"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, false, false, true, true),
+            !session_due(
+                false,
+                &Happened::Proactive,
+                Pace::FIRST,
+                &pace,
+                false,
+                false,
+                true,
+                true
+            ),
             "an elapsed ambient wait does not wake a possessed fidget"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false, false, true, false),
+            session_due(
+                false,
+                &Happened::Proactive,
+                Pace::FIRST,
+                &pace,
+                false,
+                false,
+                true,
+                false
+            ),
             "the same wait wakes it once released"
         );
 
@@ -3378,7 +3503,16 @@ mod tests {
     fn session_due_allows_addressed_wakes_under_dnd() {
         let pace = Pace::new();
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, true, true, false),
+            session_due(
+                true,
+                &Happened::Poke,
+                Duration::ZERO,
+                &pace,
+                false,
+                true,
+                true,
+                false
+            ),
             "addressed wake proceeds even under DND"
         );
     }
@@ -3389,6 +3523,7 @@ mod tests {
         assert!(
             !session_due(
                 false,
+                &Happened::Proactive,
                 Duration::from_secs(120),
                 &pace,
                 false,
@@ -3406,6 +3541,7 @@ mod tests {
         assert!(
             session_due(
                 false,
+                &Happened::Proactive,
                 Duration::from_secs(120),
                 &pace,
                 false,
@@ -3428,6 +3564,7 @@ mod tests {
             assert!(
                 session_due(
                     true,
+                    &Happened::Poke,
                     Duration::ZERO,
                     &pace,
                     false,
@@ -3439,7 +3576,16 @@ mod tests {
             );
         }
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, true, true, false),
+            !session_due(
+                false,
+                &Happened::Proactive,
+                Duration::ZERO,
+                &pace,
+                false,
+                true,
+                true,
+                false
+            ),
             "the same moment without a line stays quiet"
         );
     }
