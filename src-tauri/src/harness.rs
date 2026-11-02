@@ -2756,13 +2756,13 @@ impl Completer for Session {
         reply
     }
 
-    /// One child serves every Instance, so an outstanding ask
-    /// belongs to the Instance whose session asked it, mid-turn or between
-    /// turns. Another character's wake is not held by this one's question.
     fn has_tools(&self) -> bool {
         true
     }
 
+    /// One child serves every Instance, so an outstanding ask
+    /// belongs to the Instance whose session asked it, mid-turn or between
+    /// turns. Another character's wake is not held by this one's question.
     fn awaiting_user(&self, instance: &str) -> bool {
         let serving = self
             .serving_instance
@@ -6913,6 +6913,23 @@ mod tests {
                 dialogue: Some("Good morning".to_string()),
                 direction: None,
             })
+        );
+    }
+
+    /// The Shell hands Directors an `AnyCompleter`, so the tools invitation
+    /// has to survive that wrapper, not just the bare Session.
+    #[test]
+    fn a_harness_wake_is_invited_to_use_its_tools() {
+        let (_fx, session) = Fixture::new("speaking");
+        let completer = crate::completer::AnyCompleter::Harness(Arc::new(session));
+        let director = ModelDirector::new(completer, ["wave"], "buddy-1", "bmo", false);
+
+        let request = director.request(&crate::completer::tests::wake_context());
+
+        assert!(
+            request.layers.contains("use the tools you have"),
+            "the Harness opening invites tool use: {}",
+            request.layers
         );
     }
 
