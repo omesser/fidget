@@ -545,6 +545,8 @@ struct SettingsState {
     /// the one the opening turn names.
     behavior_names: Arc<BTreeMap<String, Vec<String>>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
+    /// The frame loop locks `settings` then this. Never hold this while you
+    /// take `settings`, or the two threads deadlock.
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
