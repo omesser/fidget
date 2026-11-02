@@ -115,6 +115,8 @@ function createView(id) {
   // written every tick, not by append order, which would put the first-seen
   // Instance at the back and send a reappearing id to the front.
   stage.append(bubble, sprite, cueLayer);
+  // A ghost's flight is reported when it is drawn and dropped when it is reaped.
+  new MutationObserver(reportOverlayRects).observe(cueLayer, { childList: true });
 
   const view = {
     id,
@@ -661,6 +663,10 @@ function reportOverlayRects() {
     const paused = view.card.classList.contains("paused");
     for (const part of possessionRects(view.possessionRect, view.chargeRect, paused)) {
       rects.push({ rect: part.rect, clickable: part.clickable });
+    }
+    // Stays put: the ghost flies to where the sprite was when the cue drew.
+    for (const cue of view.cueLayer.children) {
+      if (cue.flight) rects.push({ rect: cue.flight, clickable: false, see_through: true });
     }
   }
   const serialized = JSON.stringify(rects);

@@ -1,6 +1,6 @@
 // The possess cue on the overlay page itself, in headless Chrome: the shake
-// turns the sprite about its drawn centre, and the ghost outlines the frame
-// as drawn, mirror included.
+// turns the sprite about its drawn centre, the ghost outlines the frame as
+// drawn, mirror included, and its flight is reported for Windows' region.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -41,6 +41,7 @@ function run() {
 <script type="module">
   ${pageWait()}
   const handlers = {};
+  const reported = [];
   // Art filled on its left half only, so a mirrored ghost is filled on its right.
   const art = document.createElement("canvas");
   art.width = 64;
@@ -48,7 +49,8 @@ function run() {
   art.getContext("2d").fillRect(0, 0, 32, 64);
   window.__TAURI__ = {
     core: {
-      invoke(name) {
+      invoke(name, args) {
+        if (name === "overlay_rects") reported.push(args.rects);
         if (name === "character") {
           return Promise.resolve({ characters: { Lefty: { art: { idle: [art.toDataURL()] } } } });
         }
@@ -78,6 +80,8 @@ function run() {
     const centre = (r) => [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
     const ghosts = [...document.querySelectorAll(".cue-oghost")];
     const lead = ghosts.find((g) => g.classList.contains("lead"));
+    const flights = () => (reported.at(-1) ?? []).filter((r) => r.see_through);
+    const flying = { rects: flights(), dir: Number(lead.style.getPropertyValue("--dir")) };
     const alphaAt = (x, y) => lead.getContext("2d").getImageData(x, y, 1, 1).data[3];
     // Ghost px are (display + 6) * 2: the frame's left and right halves.
     const ghost = { left: alphaAt(28, 76), right: alphaAt(124, 76) };
@@ -89,11 +93,14 @@ function run() {
     const swing = { rotate: getComputedStyle(drawn).rotate, centre: centre(drawn.getBoundingClientRect()) };
     const during = drawn.className;
     for (const a of drawn.getAnimations()) a.finish();
+    for (const g of ghosts) for (const a of g.getAnimations()) a.finish();
     // Settled frames, not until(): a class that stays must fail one test,
     // not hang every test that shares this probe.
     for (let i = 0; i < 5; i += 1) await settle();
     console.log("__PROBE_RESULT__" + JSON.stringify({
       after: drawn.className,
+      flying,
+      landed: flights(),
       classes: during,
       layers: ghosts.map((g) => g.className),
       ghost,
@@ -133,4 +140,21 @@ test("the shake turns the sprite about its drawn centre", { skip: chromeSkip, ti
   assert.equal(swing.rotate, "-5deg");
   const [x, y] = swing.centre;
   assert.ok(Math.abs(x - 632) <= 8 && Math.abs(y - 432) <= 8, `centre ${x},${y} near 632,432`);
+});
+
+// Windows clips drawing to the reported region, so a ghost outside the art
+// shows only where its flight was reported, from where it starts to the body.
+test("the ghost's flight is reported while it flies and dropped once it lands", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const { flying, landed } = await probe();
+  assert.equal(flying.rects.length, 1, JSON.stringify(flying));
+  const [{ rect, clickable }] = flying.rects;
+  assert.equal(clickable, false);
+  const [x, y, w, h] = rect;
+  const covers = (px, py) => px >= x && px <= x + w && py >= y && py <= y + h;
+  // Ghost 76 px square (64 + 2 * 6), centred on 632,432 and starting 85 right, 150 up.
+  const start = 632 + 85 * flying.dir;
+  for (const [px, py] of [[start - 38, 432 - 150 - 38], [start + 38, 432 - 150 - 38], [632 - 38, 432 + 38], [632 + 38, 432 + 38]]) {
+    assert.ok(covers(px, py), `${px},${py} in ${rect}`);
+  }
+  assert.deepEqual(landed, []);
 });
