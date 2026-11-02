@@ -2044,6 +2044,34 @@ mod tests {
     }
 
     #[test]
+    fn a_second_move_replaces_the_one_under_way() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let first = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(first["started"], true, "{first}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        let asked_at = roster.get_mut(&id).unwrap().feet().x;
+        let second = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 300}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(second["started"], true, "{second}");
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - (asked_at + 300.0)).abs() <= 30.0,
+            "asked at x {asked_at}: {stopped:?}"
+        );
+    }
+
+    #[test]
     fn move_refuses_a_distance_or_duration_that_is_not_positive() {
         let world = test_snapshot();
         let (mut roster, _, _) = landed_walker(500.0, &world);

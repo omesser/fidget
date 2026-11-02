@@ -139,8 +139,9 @@ pub(super) fn heading_to(from_x: f64, target_x: f64) -> Heading {
 }
 
 impl Engine {
-    /// Take a move, or say why not. The answer is the Engine's own, given on
-    /// the state the next tick starts from.
+    /// Take a move, or say why not. A move taken replaces the one under way.
+    /// The answer is the Engine's own, given on the state the next tick
+    /// starts from.
     pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
         let target = request.target(self.position.x);
         if let Some(refusal) = self.stride_blocked(self.state) {
