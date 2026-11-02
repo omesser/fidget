@@ -5,17 +5,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromeSkip, probePage } from "./chrome-cdp.js";
 
-async function bodyBackdrops() {
+async function bodyStyles() {
   const html = `<!doctype html>
 <html class="chat-ui-glass">
   <head><link rel="stylesheet" href="chat-ui.css"></head>
   <body>
     <script>
       const root = document.documentElement;
-      const out = {};
+      const out = { backdrops: {}, tints: {} };
       for (const platform of ["macos", null]) {
         if (platform) root.dataset.platform = platform; else delete root.dataset.platform;
-        out[platform || "other"] = getComputedStyle(document.body).backdropFilter;
+        out.backdrops[platform || "other"] = getComputedStyle(document.body).backdropFilter;
+      }
+      root.dataset.platform = "macos";
+      for (const palette of ["dark", "light"]) {
+        root.dataset.chatPalette = palette;
+        out.tints[palette] = [...getComputedStyle(document.body).backgroundImage.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((m) => Number(m[1]));
       }
       console.log("__PROBE_RESULT__" + JSON.stringify(out));
     </script>
@@ -25,8 +30,15 @@ async function bodyBackdrops() {
 }
 
 test("Glass drops its CSS blur under the macOS flag and keeps it elsewhere", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual(await bodyBackdrops(), {
+  assert.deepEqual((await bodyStyles()).backdrops, {
     macos: "none",
     other: "blur(22px) saturate(1.5)",
+  });
+});
+
+test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
+  assert.deepEqual((await bodyStyles()).tints, {
+    dark: [0.48, 0.6],
+    light: [0.68, 0.78],
   });
 });
