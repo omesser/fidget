@@ -3209,10 +3209,12 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         .unwrap_or_default();
     // Re-read on every opening: a login the user ran mid-session moves the
     // Harness out of the not-authenticated state, and nothing else pushes it.
-    if let Ok(mut inspect) = state.inspect.lock() {
+    // A copy, not the guard: the frame loop locks settings then inspect, so
+    // holding inspect into the settings reads below deadlocked (#1765).
+    let inspect = state.inspect.lock().ok().map(|mut inspect| {
         inspect.harness = harness::attached().map(|session| session.inspect());
-    }
-    let inspect = state.inspect.lock().ok();
+        inspect.clone()
+    });
     let blank = model::blank();
     ChatOpening {
         instructions: app_instructions(
@@ -3237,7 +3239,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
-        harness: inspect.as_ref().and_then(|read| chat_harness(read)),
+        harness: inspect.as_ref().and_then(chat_harness),
         model: inspect
             .as_ref()
             .map(|read| read.model.clone())
