@@ -588,8 +588,9 @@ body {
 /* Release on the left, Focus on the right, in both states. */
 .possession-footer {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin: 10px 0 0;
 }
@@ -597,13 +598,19 @@ body {
 /* The card lets pointers through to a sprite under it; the buttons do not. */
 .possession-release {
   display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border: 1px solid var(--shared-accent);
   border-radius: var(--shared-radius);
   background: transparent;
   color: var(--shared-ink);
   font: inherit;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -615,15 +622,18 @@ body {
 /* Raised asks for a click; pressed says the overlay holds the keys. */
 .possession-focus {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   margin: 0 0 0 auto;
-  padding: 4px 10px;
+  padding: 4px 8px;
+  white-space: nowrap;
   border: 1px solid var(--shared-accent);
   border-radius: var(--shared-radius);
   background: var(--shared-accent);
   color: var(--shared-panel);
   font: inherit;
+  font-size: 12px;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),

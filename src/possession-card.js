@@ -8,7 +8,10 @@ export const PAUSED_HEADING = "Paused";
 
 export const FOCUS_PRESSED_LABEL = "Focused";
 
-export const FOCUS_RAISED_LABEL = "Click to focus";
+export const FOCUS_RAISED_LABEL = "Focus";
+
+// Both states name the action, since the visible label is one word.
+export const FOCUS_ARIA_LABEL = "Click to focus";
 
 // The button carries the Esc hint, so the bindings list does not repeat it.
 export const RELEASE_LABEL = "Release Possession (Esc)";
@@ -108,6 +111,7 @@ function focusButton({ label, pressed }) {
   button.type = "button";
   button.className = "possession-focus";
   button.setAttribute("aria-pressed", pressed);
+  button.setAttribute("aria-label", FOCUS_ARIA_LABEL);
   const icon = document.createElement("span");
   icon.className = "possession-focus-icon";
   const text = document.createElement("span");

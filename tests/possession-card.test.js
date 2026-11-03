@@ -298,7 +298,7 @@ test("the focus button is pressed while the overlay holds the keys and raised on
   withDocument(() => {
     for (const [paused, pressed, label] of [
       [false, "true", "Focused"],
-      [true, "false", "Click to focus"],
+      [true, "false", "Focus"],
     ]) {
       const button = paintedCard(paused).querySelector(".possession-focus");
       assert.ok(button, `a ${paused ? "paused" : "live"} card has a focus button`);
