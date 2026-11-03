@@ -45,6 +45,20 @@ hit_test_traced() {
   [ "$count" -gt "$baseline" ]
 }
 
+allow_button_center() {
+  python3 - "$1" << 'PY'
+import sys
+for line in open(sys.argv[1]):
+    cells = line.rstrip("\n").split("|")
+    if cells[0] == "AXButton" and cells[1] == "Allow" and len(cells) >= 8:
+        x, y, width, height = map(int, cells[-1].split(","))
+        print(x + width // 2, y + height // 2)
+        break
+else:
+    sys.exit(1)
+PY
+}
+
 if [ "${1:-}" = --main-fit ]; then
   [ "$#" -eq 3 ] || exit 2
   for bounds in "$2" "$3"; do
@@ -82,6 +96,12 @@ if [ "${1:-}" = --check-hit-test ]; then
   else
     exit $?
   fi
+fi
+
+if [ "${1:-}" = --allow-button ]; then
+  [ "$#" -eq 2 ] || exit 2
+  allow_button_center "$2"
+  exit $?
 fi
 
 if [ "${1:-}" != --go ] && [ "${1:-}" != --prepare ]; then
@@ -414,9 +434,18 @@ grep -Fq "$marker" "$out/chat-after.ax.txt" ||
   fail "typed text did not appear in Chat composer"
 echo 'composer_click_and_type=pass' >> "$out/result.txt"
 
-# Answer the ask, so the fixture Harness finishes its turn instead of waiting.
-answer_permission "$pid" Allow || fail "could not answer the permission ask in Chat; see $log"
-wait_for_marks 3 "$marks" '^replied$' || fail "the Harness never replied after Allow; see $marks"
+# AXPress can be refused by the nonactivating Chat; verify the target before a click fallback.
+answer_permission "$pid" Allow || true
+if ! wait_for_marks 3 "$marks" '^replied$'; then
+  ax_dump BMO "$out/chat-before-allow.ax.txt" || fail "could not inspect Chat before answering the ask"
+  allow_point=$(allow_button_center "$out/chat-before-allow.ax.txt") ||
+    fail "could not locate the permission Allow button; see $out/chat-before-allow.ax.txt"
+  read -r allow_x allow_y <<< "$allow_point"
+  hit "$allow_x" "$allow_y" "$pid|BMO|AXButton|Allow"
+  "$tools/click-cursor" "$allow_x" "$allow_y" 1 > "$out/allow-click.txt" ||
+    fail "could not click the permission Allow button"
+  wait_for_marks 3 "$marks" '^replied$' || fail "the Harness never replied after Allow; see $marks"
+fi
 echo "ok: answered the permission ask, and the Harness replied"
 
 echo "PASS: all four macOS checks; evidence in $out ($(($(now_ms) - start_ms))ms)"

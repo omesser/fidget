@@ -30,6 +30,12 @@ function checkHitTest(t, trace, baseline, x = 420, y = 160, state = "on") {
   });
 }
 
+function checkAllowButton(t, dump) {
+  const path = join(tempDir(t, "fidget-perch-allow-"), "chat.ax.txt");
+  writeFileSync(path, dump);
+  return spawnSync("bash", [script, "--allow-button", path], { encoding: "utf8" });
+}
+
 test("Chat opened on another display gets a fitting main-display target", () => {
   const result = checkMainFit("0,0,1920,1080", "2200,100,500,700");
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -76,6 +82,15 @@ test("hit-test does not accept a matching line from before the baseline", (t) =>
   const line = "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 miss click-through on\n";
   const result = checkHitTest(t, line, 1);
   assert.equal(result.status, 1, result.stderr || result.stdout);
+});
+
+test("the Allow fallback targets the center of the AX Allow button", (t) => {
+  const result = checkAllowButton(t,
+    "AXButton|Allow|||true|false|true|672,373,384,22\n" +
+      "AXButton|Reject|||true|false|true|672,400,384,22\n",
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stdout.trim(), "864 384");
 });
 
 test("a new command trace for the clicked Character passes without a desktop", (t) => {
