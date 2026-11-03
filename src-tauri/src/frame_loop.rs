@@ -1674,7 +1674,7 @@ pub(crate) fn run_frame_loop(
                     if let Some(first_live) = lives.first() {
                         let already_opened = app
                             .get_webview_window(&chat_label(&first_live.id))
-                            .is_some_and(|window| window.is_visible().unwrap_or(false));
+                            .is_some();
 
                         if !already_opened {
                             if let Some(instance) = roster.get_mut(&first_live.id) {

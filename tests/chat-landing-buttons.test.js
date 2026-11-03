@@ -238,7 +238,7 @@ test("refocusing during sign-in preserves browser progress until authentication 
   assert.equal(seen.error, undefined, seen.error);
   assert.equal(seen.refocusedSigningIn.signInDisabled, true);
   assert.match(seen.refocusedSigningIn.waiting, /Finish signing in in your browser/);
-  assert.equal(seen.refocusedSigningIn.disabled, 11);
+  assert.equal(seen.refocusedSigningIn.disabled, seen.signingIn.disabled, "refocus leaves them disabled");
   assert.deepEqual(seen.refocusedSignInCalls, [["sign_in", null]]);
   assert.equal(seen.refocusedSignedIn.composer, true);
   assert.equal(seen.refocusedSignedIn.landing, false);

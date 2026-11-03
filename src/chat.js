@@ -793,6 +793,12 @@ promptConfirm.addEventListener("click", () => {
     });
 });
 
+function paintOpening(opening) {
+  showWho(opening);
+  attached(opening);
+  showPrompt(opening);
+}
+
 function showWho(opening) {
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
@@ -1335,9 +1341,7 @@ async function start() {
   await listen(
     "chat-opening",
     ({ payload }) => {
-      showWho(payload);
-      attached(payload);
-      showPrompt(payload);
+      paintOpening(payload);
     },
     { target: chat.label },
   );
@@ -1385,18 +1389,13 @@ async function start() {
   applyPlatform(document.documentElement, opening.platform);
   applyChatAppearance(opening.chat_appearance);
 
-  showWho(opening);
-  attached(opening);
-  showPrompt(opening);
+  paintOpening(opening);
   await listen(
     "tauri://focus",
     async () => {
       try {
         const opening = await invoke("chat_opening", { instance });
-        if (signingIn) return;
-        showWho(opening);
-        attached(opening);
-        showPrompt(opening);
+        if (!signingIn) paintOpening(opening);
       } catch (why) {
         console.error("chat: this opening could not be refreshed:", why);
       }

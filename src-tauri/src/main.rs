@@ -2812,14 +2812,15 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
 }
 
 /// Destroy a dismissed Instance's Chat, bypassing the user-close handler that
-/// retains its webview for the next Summon. Main thread only.
+/// keeps it for the next Summon. Nothing else ends a `chat-*`: they sit outside
+/// the `overlay-` namespace `place_overlays` sweeps. Main thread only.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
             if let Err(why) = window.destroy() {
-                eprintln!("chat: {label} could not be closed: {why}");
+                eprintln!("chat: {label} could not be destroyed: {why}");
             }
         }
     }) {
