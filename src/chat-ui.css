@@ -746,7 +746,7 @@
   text-shadow: none;
 }
 
-/* Windows keeps enough tint to read the text when WebView2 does not blur. */
+/* WebView2 can't blur the desktop, so Windows always gets this tint. */
 [data-platform="windows"].chat-ui-glass {
   --chat-panel: rgba(14,17,24,.84);
 }
