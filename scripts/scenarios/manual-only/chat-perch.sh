@@ -26,9 +26,13 @@ click_traced() {
 }
 
 hit_test_pattern() {
-  local x=$1 y=$2 state=$3
+  local x=$1 y=$2 state=$3 result
   [[ "$x" =~ ^-?[0-9]+$ && "$y" =~ ^-?[0-9]+$ && ("$state" = on || "$state" = OFF) ]] || return 2
-  printf '^hit-test:.*point\\(%s,%s\\).*click-through %s([[:space:]]|$)' "$x" "$y" "$state"
+  case "$state" in
+    on) result='miss click-through on' ;;
+    OFF) result='HIT[[:space:]]+click-through OFF' ;;
+  esac
+  printf '^hit-test:.*point\\(%s,%s\\).*%s([[:space:]]|$)' "$x" "$y" "$result"
 }
 
 hit_test_match_count() {

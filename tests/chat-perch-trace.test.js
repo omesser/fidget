@@ -62,6 +62,17 @@ test("hit-test accepts the expected point and state on any overlay", (t) => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
+test("hit-test accepts a blocked point on a nonzero overlay", (t) => {
+  const result = checkHitTest(t,
+    "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 HIT  click-through OFF\n",
+    0,
+    420,
+    160,
+    "OFF",
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
 test("hit-test rejects a line for another point", (t) => {
   const result = checkHitTest(t,
     "hit-test: cursor(420,160) scale 1 -> point(421,160) on overlay 7 miss click-through on\n",
@@ -73,6 +84,14 @@ test("hit-test rejects a line for another point", (t) => {
 test("hit-test rejects a line for another click-through state", (t) => {
   const result = checkHitTest(t,
     "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 HIT click-through OFF\n",
+    0,
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+});
+
+test("hit-test does not treat a HIT as a released click-through point", (t) => {
+  const result = checkHitTest(t,
+    "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 HIT click-through on\n",
     0,
   );
   assert.equal(result.status, 1, result.stderr || result.stdout);
