@@ -320,6 +320,36 @@ mod tests {
     }
 
     #[test]
+    fn a_keyup_for_a_key_never_down_changes_nothing() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.apply(&key("left", false), t0);
+        session.apply(&key("space", false), t0);
+        let intent = session.tick(16, t0);
+        assert_eq!(intent.walk, Some(Walk::Right));
+        assert!(intent.launch.is_none());
+    }
+
+    #[test]
+    fn a_keyup_for_a_held_key_releases_it() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.apply(&key("right", false), t0);
+        assert_eq!(session.tick(16, t0).walk, None);
+    }
+
+    #[test]
+    fn a_keyup_from_an_overlay_the_session_never_held_is_ignored() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        session.apply(&key("right", true), t0);
+        session.apply(&on("overlay-1", key("right", false)), t0);
+        assert_eq!(session.tick(16, t0).walk, Some(Walk::Right));
+    }
+
+    #[test]
     fn escape_asks_to_end_and_does_not_launch() {
         let mut session = Session::start("a", "overlay-0");
         let t0 = Instant::now();
