@@ -14,10 +14,9 @@ export function applyChatUiClass(root, design) {
   root.classList.add(`chat-ui-${normalizeChatUi(design)}`);
 }
 
-// Linux cannot blur the desktop behind Chat, so Glass paints a stronger tint
-// there. macOS blurs with a native window effect instead of CSS.
+// Platform selectors let Glass tune its tint when a renderer lacks desktop blur.
 export function applyPlatform(root, platform) {
-  if (platform === "linux" || platform === "macos") {
+  if (platform === "linux" || platform === "macos" || platform === "windows") {
     root.dataset.platform = platform;
   } else {
     delete root.dataset.platform;

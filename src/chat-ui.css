@@ -746,6 +746,23 @@
   text-shadow: none;
 }
 
+/* Windows keeps enough tint to read the text when WebView2 does not blur. */
+[data-platform="windows"].chat-ui-glass {
+  --chat-panel: rgba(14,17,24,.84);
+}
+
+[data-platform="windows"][data-chat-palette="light"].chat-ui-glass {
+  --chat-panel: rgba(242,244,248,.98);
+}
+
+[data-platform="windows"].chat-ui-glass body {
+  background: linear-gradient(rgba(14,17,24,.72), var(--chat-panel));
+}
+
+[data-platform="windows"][data-chat-palette="light"].chat-ui-glass body {
+  background: linear-gradient(rgba(248,249,252,.95), var(--chat-panel));
+}
+
 /* WebKitGTK blurs only its own page, so the desktop shows through the
    tint unblurred. A stronger tint stands in for the blur. */
 [data-platform="linux"].chat-ui-glass body {
@@ -777,7 +794,7 @@
   background: rgba(242,244,248,.65);
 }
 
-[data-platform="macos"].chat-ui-glass .prompt textarea {
+.chat-ui-glass .prompt textarea {
   border-radius: 14px;
 }
 
