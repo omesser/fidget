@@ -43,16 +43,21 @@ test("Glass drops its CSS blur under the macOS flag and keeps it elsewhere", { s
 });
 
 test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  const styles = await bodyStyles();
-  assert.deepEqual(styles.tints, {
+  assert.deepEqual((await bodyStyles()).tints, {
     dark: [0.22, 0.3],
     light: [0.55, 0.65],
   });
-  assert.deepEqual(styles.promptActionTints, {
+});
+
+test("Glass macOS prompt footer matches the body tint in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
+  assert.deepEqual((await bodyStyles()).promptActionTints, {
     dark: 0.3,
     light: 0.65,
   });
-  assert.deepEqual(styles.promptTextareaRadii, {
+});
+
+test("Glass macOS Prompt textarea keeps a box-shaped radius in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
+  assert.deepEqual((await bodyStyles()).promptTextareaRadii, {
     dark: "14px",
     light: "14px",
   });
