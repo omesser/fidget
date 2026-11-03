@@ -777,6 +777,10 @@
   background: rgba(242,244,248,.65);
 }
 
+[data-platform="macos"].chat-ui-glass .prompt textarea {
+  border-radius: 14px;
+}
+
 [data-chat-palette="light"].chat-ui-glass .tb button {
   background: rgba(0,0,0,.08);
 }

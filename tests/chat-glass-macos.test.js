@@ -11,19 +11,22 @@ async function bodyStyles() {
   <head><link rel="stylesheet" href="chat-ui.css"></head>
   <body>
     <div class="prompt-actions"></div>
+    <section class="prompt"><textarea></textarea></section>
     <script>
       const root = document.documentElement;
-      const out = { backdrops: {}, tints: {}, promptActionTints: {} };
+      const out = { backdrops: {}, tints: {}, promptActionTints: {}, promptTextareaRadii: {} };
       for (const platform of ["macos", null]) {
         if (platform) root.dataset.platform = platform; else delete root.dataset.platform;
         out.backdrops[platform || "other"] = getComputedStyle(document.body).backdropFilter;
       }
       const promptActions = document.querySelector(".prompt-actions");
+      const promptTextarea = document.querySelector(".prompt textarea");
       root.dataset.platform = "macos";
       for (const palette of ["dark", "light"]) {
         root.dataset.chatPalette = palette;
         out.tints[palette] = [...getComputedStyle(document.body).backgroundImage.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((m) => Number(m[1]));
         out.promptActionTints[palette] = Number(getComputedStyle(promptActions).backgroundColor.match(/rgba?\\([^)]*,\\s*([\\d.]+)\\)/)?.[1]);
+        out.promptTextareaRadii[palette] = getComputedStyle(promptTextarea).borderRadius;
       }
       console.log("__PROBE_RESULT__" + JSON.stringify(out));
     </script>
@@ -48,5 +51,9 @@ test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, 
   assert.deepEqual(styles.promptActionTints, {
     dark: 0.3,
     light: 0.65,
+  });
+  assert.deepEqual(styles.promptTextareaRadii, {
+    dark: "14px",
+    light: "14px",
   });
 });
