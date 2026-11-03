@@ -97,6 +97,7 @@ foreach ($palette in @("dark", "light")) {
     $script:Marks = Join-Path $script:Run "harness.log"
     $log = Join-Path $script:Run "app.log"
     try {
+        New-Item -ItemType Directory -Force -Path $script:Run | Out-Null
         Set-Content -LiteralPath $script:Marks -Value "" -Encoding ascii
         # The seed holds the design and palette; Glass on Windows takes the
         # heavier tint (the CSS rules are platform-scoped, no blur switcher).
