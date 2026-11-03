@@ -2760,10 +2760,9 @@ fn chat_ui_now(state: Option<&SettingsState>) -> String {
         .unwrap_or_else(|| "minimal".to_string())
 }
 
-/// Show this Instance's Chat beside `feet` when known, building it on first
-/// use, or raise it if it is already showing. The lookup posts to the main
-/// thread too: Ok from `run_on_main_thread` means queued, so two Summons would
-/// each build.
+/// Show this Instance's Chat beside `feet`, building it on first use. The
+/// lookup posts to the main thread: Ok from `run_on_main_thread` means queued,
+/// so two Summons would each build.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
     let label = chat_label(id);
     let at = feet
