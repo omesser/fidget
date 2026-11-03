@@ -227,10 +227,10 @@ sys.exit(1)
 PY
 }
 
-chat_at_position() { # <x> <y>
-  local x y
-  IFS=, read -r x y _ <<< "$(info)"
-  [ "$x" = "$1" ] && [ "$y" = "$2" ]
+chat_at_position() {
+  local expected_x=$1 expected_y=$2 actual_x actual_y
+  IFS=, read -r actual_x actual_y _ <<< "$(info)"
+  [ "$actual_x" = "$expected_x" ] && [ "$actual_y" = "$expected_y" ]
 }
 
 last_button=
@@ -253,17 +253,18 @@ point_cursor_at() {
     fail "cursor landed at $landed instead of Fidget target ($x,$y)"
 }
 
-wait_for_hit_test() { # <matching lines before cursor movement> <x> <y> <on|OFF>
+wait_for_hit_test() {
   local baseline=$1 x=$2 y=$3 state=$4 pattern
   pattern=$(hit_test_pattern "$x" "$y" "$state") || return $?
   wait_for_count 7 "$log" "$pattern" "$baseline"
 }
 
-rect_fits_main_display() { # <x> <y> <width> <height>
-  [ "$3" -gt 0 ] && [ "$4" -gt 0 ] &&
-    [ "$1" -ge "$screen_x" ] && [ "$2" -ge "$screen_y" ] &&
-    [ $(($1 + $3)) -le $((screen_x + screen_w)) ] &&
-    [ $(($2 + $4)) -le $((screen_y + screen_h)) ]
+rect_fits_main_display() {
+  local x=$1 y=$2 width=$3 height=$4
+  [ "$width" -gt 0 ] && [ "$height" -gt 0 ] &&
+    [ "$x" -ge "$screen_x" ] && [ "$y" -ge "$screen_y" ] &&
+    [ $((x + width)) -le $((screen_x + screen_w)) ] &&
+    [ $((y + height)) -le $((screen_y + screen_h)) ]
 }
 
 screen=$("$tools/chat-window" screen)
