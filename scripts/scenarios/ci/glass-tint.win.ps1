@@ -92,6 +92,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $out = Join-Path $env:TEMP "fidget-scenario-glass-tint-$stamp"
 $script:Evidence = $out
 
+$startMs = Get-NowMs
 foreach ($palette in @("dark", "light")) {
     $script:Run = Join-Path $out $palette
     $script:Marks = Join-Path $script:Run "harness.log"
@@ -137,5 +138,5 @@ foreach ($palette in @("dark", "light")) {
     }
 }
 
-Write-Output "PASS: evidence in $out"
+Write-Output "PASS: evidence in $out ($((Get-NowMs) - $startMs)ms)"
 exit 0
