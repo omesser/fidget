@@ -18,6 +18,7 @@ import {
   possessionBounds,
   possessionCard,
   possessionRects,
+  wirePossessionCard,
 } from "./possession-card.js";
 import {
   CONNECT_HINT,
@@ -338,13 +339,15 @@ function positionPossession(view, latest) {
     paused: model.paused,
   };
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
-  const release = view.card.querySelector(".possession-release");
-  view.releaseRect = release && [
-    placed.card.x + release.offsetLeft,
-    placed.card.y + release.offsetTop,
-    release.offsetWidth,
-    release.offsetHeight,
-  ];
+  const rectOf = (button) =>
+    button && [
+      placed.card.x + button.offsetLeft,
+      placed.card.y + button.offsetTop,
+      button.offsetWidth,
+      button.offsetHeight,
+    ];
+  view.releaseRect = rectOf(view.card.querySelector(".possession-release"));
+  view.focusRect = rectOf(view.card.querySelector(".possession-focus"));
   view.chargeRect = chargeRectFor(fill, placed);
   reportOverlayRects();
 }
@@ -558,32 +561,13 @@ function attachQuickMessage(view, id) {
   const charge = document.createElement("div");
   charge.className = "possession-charge-fill";
   bar.append(charge);
-  // A press here resumes. It is not a press on the art, so it must not poke.
-  const resume = (event) => {
-    event.stopPropagation();
-    if (!card.classList.contains("paused")) return;
-    window.__TAURI__.core.invoke("overlay_request_focus").catch((err) => {
-      console.error("overlay_request_focus", err);
-    });
-  };
-  // The button presses Esc, so Possession ends on the path the key takes.
-  const release = (event) => {
-    event.stopPropagation();
-    if (!event.target.closest(".possession-release")) return;
-    for (const down of [true, false]) {
-      window.__TAURI__.core.invoke("overlay_possession_key", { key: "escape", down }).catch((err) => {
-        console.error("overlay_possession_key", err);
-      });
-    }
-  };
-  card.addEventListener("pointerdown", resume);
-  card.addEventListener("pointerup", (event) => event.stopPropagation());
-  card.addEventListener("click", release);
+  wirePossessionCard(card, window.__TAURI__.core.invoke);
   stage.append(card, bar);
   view.card = card;
   view.bar = bar;
   view.possessionRect = null;
   view.releaseRect = null;
+  view.focusRect = null;
   view.chargeRect = null;
 
   let machine;
@@ -681,7 +665,8 @@ function reportOverlayRects() {
     // sprite's trail, and an unpaused card must not take the grab.
     const paused = view.card.classList.contains("paused");
     const release = view.possessionRect && view.releaseRect;
-    for (const part of possessionRects(view.possessionRect, view.chargeRect, release, paused)) {
+    const focus = view.possessionRect && view.focusRect;
+    for (const part of possessionRects(view.possessionRect, view.chargeRect, release, focus, paused)) {
       rects.push({ rect: part.rect, clickable: part.clickable });
     }
     // Stays put: the ghost flies to where the sprite was when the cue drew.
