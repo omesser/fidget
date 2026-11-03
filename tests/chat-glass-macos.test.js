@@ -35,29 +35,37 @@ async function bodyStyles() {
   return probePage(html);
 }
 
+// One probe serves every assertion here; splitting tests must not multiply
+// Chrome launches over the same page.
+let stylesPromise;
+function sharedStyles() {
+  stylesPromise ||= bodyStyles();
+  return stylesPromise;
+}
+
 test("Glass drops its CSS blur under the macOS flag and keeps it elsewhere", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual((await bodyStyles()).backdrops, {
+  assert.deepEqual((await sharedStyles()).backdrops, {
     macos: "none",
     other: "blur(22px) saturate(1.5)",
   });
 });
 
 test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual((await bodyStyles()).tints, {
+  assert.deepEqual((await sharedStyles()).tints, {
     dark: [0.22, 0.3],
     light: [0.55, 0.65],
   });
 });
 
 test("Glass macOS prompt footer matches the body tint in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual((await bodyStyles()).promptActionTints, {
+  assert.deepEqual((await sharedStyles()).promptActionTints, {
     dark: 0.3,
     light: 0.65,
   });
 });
 
 test("Glass macOS Prompt textarea keeps a box-shaped radius in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual((await bodyStyles()).promptTextareaRadii, {
+  assert.deepEqual((await sharedStyles()).promptTextareaRadii, {
     dark: "14px",
     light: "14px",
   });
