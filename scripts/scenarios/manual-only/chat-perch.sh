@@ -14,9 +14,8 @@
 # Setup: --prepare compiles helpers without touching the GUI.
 # Offline: --main-fit <screen x,y,w,h> <Chat x,y,w,h> prints a fitting origin.
 #   --check-hit-test <log> <baseline matches> <x> <y> <on|OFF> checks a trace.
-# Likely second failure: Chat on a secondary display can use a nonzero overlay
-# index, which the old overlay-0-only match ignored. Traces emit on flips or every
-# 120 ticks; a 7 s event wait can still time out without a new matching line.
+# Trace wait: hit-test lines emit on state flips or every 120 ticks, so point/state
+# checks wait 7 s for a fresh match.
 set -euo pipefail
 
 click_traced() {
