@@ -106,13 +106,6 @@ if mode == "screen" {
     exit(0)
 }
 
-if mode == "display-count" {
-    var count: UInt32 = 0
-    guard CGGetActiveDisplayList(0, nil, &count) == .success else { exit(1) }
-    print(count)
-    exit(0)
-}
-
 guard args.count >= 3, let pid = Int(args[1]) else { exit(2) }
 let title = args[2]
 

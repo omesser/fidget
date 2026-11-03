@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Scenario: chat-perch (macOS), Chat as a Perch (#1502).
-# Requires exactly one active display. Chat placement uses primary-display bounds.
+# Chat is moved to fit primary-display CG bounds when it opens elsewhere.
 # On screen: launches one private-HOME Fidget/BMO instance with Chat, focuses
 #   Chat, and places the Character on Chat's ledge. The waiting question shows
 #   a bubble over Chat. The script clicks its chat button, then clicks and
 #   types into the Chat composer. Two cropped screenshots are captured.
-#   The instance quits at the end.
 # Input: synthetic mouse clicks and typing inside Fidget only; no Finder or Poke.
 # Duration: a few seconds, 20 s at most.
 # Grants: Accessibility and Screen Recording for the terminal running it.
@@ -14,23 +13,12 @@
 # Evidence: a fresh fidget-scenario-chat-perch directory under TMPDIR.
 # Usage: chat-perch.sh --go <fidget binary> <fidget test binary>
 # Setup: --prepare compiles helpers without touching the GUI.
-# Offline: --check-display-count <count> checks the single-display preflight.
-#   --check-click <log> <first new line> <instance> checks a saved trace.
-# Trace diagnosis: hit-test lines emit on flips or every 120 ticks; the 3 s wait
-#   can expire first, so a later match does not prove a coordinate mismatch.
+# Offline: --main-fit <screen x,y,w,h> <Chat x,y,w,h> prints a fitting origin.
+#   --check-hit-test <log> <baseline matches> <x> <y> <on|OFF> checks a trace.
+# Likely second failure: Chat on a secondary display can use a nonzero overlay
+# index, which the old overlay-0-only match ignored. Traces emit on flips or every
+# 120 ticks; the 3 s event wait can still time out without a new matching line.
 set -euo pipefail
-
-require_one_display() {
-  local count=$1
-  [[ "$count" =~ ^[1-9][0-9]*$ ]] || {
-    echo "FAIL: could not determine active display count" >&2
-    return 1
-  }
-  [ "$count" -eq 1 ] || {
-    echo "FAIL: chat-perch requires exactly one display; found $count" >&2
-    return 1
-  }
-}
 
 click_traced() {
   local trace=$1 first_line=$2 id=$3
@@ -38,16 +26,63 @@ click_traced() {
     'NR >= first && $0 == marker { found = 1 } END { exit !found }' "$trace"
 }
 
+hit_test_pattern() {
+  local x=$1 y=$2 state=$3
+  [[ "$x" =~ ^-?[0-9]+$ && "$y" =~ ^-?[0-9]+$ && ("$state" = on || "$state" = OFF) ]] || return 2
+  printf '^hit-test:.*point\\(%s,%s\\).*click-through %s([[:space:]]|$)' "$x" "$y" "$state"
+}
+
+hit_test_match_count() {
+  local pattern count
+  pattern=$(hit_test_pattern "$2" "$3" "$4") || return $?
+  count=$(grep -cE "$pattern" "$1" 2> /dev/null) || true
+  printf '%s\n' "${count:-0}"
+}
+
+hit_test_traced() {
+  local trace=$1 baseline=$2 x=$3 y=$4 state=$5 count
+  [[ "$baseline" =~ ^[0-9]+$ ]] || return 2
+  count=$(hit_test_match_count "$trace" "$x" "$y" "$state") || return $?
+  [ "$count" -gt "$baseline" ]
+}
+
+if [ "${1:-}" = --main-fit ]; then
+  [ "$#" -eq 3 ] || exit 2
+  for bounds in "$2" "$3"; do
+    [[ "$bounds" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || exit 2
+  done
+  IFS=, read -r sx sy sw sh <<< "$2"
+  IFS=, read -r cx cy cw ch <<< "$3"
+  [ "$sw" -gt 0 ] && [ "$sh" -gt 0 ] && [ "$cw" -gt 0 ] && [ "$ch" -gt 0 ] || exit 2
+  [ "$cw" -le "$sw" ] && [ "$ch" -le "$sh" ] || {
+    echo "FAIL: Chat is too large for the primary display" >&2
+    exit 1
+  }
+  tx=$cx
+  ty=$cy
+  [ "$tx" -ge "$sx" ] || tx=$sx
+  [ "$ty" -ge "$sy" ] || ty=$sy
+  max_x=$((sx + sw - cw))
+  max_y=$((sy + sh - ch))
+  [ "$tx" -le "$max_x" ] || tx=$max_x
+  [ "$ty" -le "$max_y" ] || ty=$max_y
+  printf '%s,%s\n' "$tx" "$ty"
+  exit 0
+fi
+
 if [ "${1:-}" = --check-click ]; then
   [ "$#" -eq 4 ] && [[ "$3" =~ ^[1-9][0-9]*$ ]] && [ -n "$4" ] || exit 2
   click_traced "$2" "$3" "$4"
   exit $?
 fi
 
-if [ "${1:-}" = --check-display-count ]; then
-  [ "$#" -eq 2 ] && [[ "$2" =~ ^[1-9][0-9]*$ ]] || exit 2
-  require_one_display "$2" || exit 1
-  exit 0
+if [ "${1:-}" = --check-hit-test ]; then
+  [ "$#" -eq 6 ] && [[ "$3" =~ ^[0-9]+$ ]] || exit 2
+  if hit_test_traced "$2" "$3" "$4" "$5" "$6"; then
+    exit 0
+  else
+    exit $?
+  fi
 fi
 
 if [ "${1:-}" != --go ] && [ "${1:-}" != --prepare ]; then
@@ -101,9 +136,6 @@ done
 if ! { [ -x "$bin" ] && [ -x "$test_bin" ] && [ -x "$verify_bin" ]; }; then
   fail "missing Fidget, fidget-verify, or fixture test binary"
 fi
-
-display_count=$("$tools/chat-window" display-count) || fail "could not determine active display count"
-require_one_display "$display_count" || exit 1
 
 info() { "$tools/chat-window" info "$pid" BMO; }
 layer_zero() { [ "$("$tools/window-layer" "$pid" BMO)" = 0 ]; }
@@ -196,10 +228,10 @@ sys.exit(1)
 PY
 }
 
-chat_at_y() { # <y>
-  local y
-  IFS=, read -r _ y _ <<< "$(info)"
-  [ "$y" = "$1" ]
+chat_at_position() { # <x> <y>
+  local x y
+  IFS=, read -r x y _ <<< "$(info)"
+  [ "$x" = "$1" ] && [ "$y" = "$2" ]
 }
 
 last_button=
@@ -222,11 +254,17 @@ point_cursor_at() {
     fail "cursor landed at $landed instead of Fidget target ($x,$y)"
 }
 
-overlay_state_at() {
-  local x=$1 y=$2 first_line=$3 expected=$4 latest
-  latest=$(awk -v first="$first_line" -v point="point($x,$y) on overlay 0" \
-    'NR >= first && index($0, point) { found = $0 } END { print found }' "$log")
-  [ -n "$latest" ] && [[ "$latest" == *"$expected"* ]]
+wait_for_hit_test() { # <matching lines before cursor movement> <x> <y> <on|OFF>
+  local baseline=$1 x=$2 y=$3 state=$4 pattern
+  pattern=$(hit_test_pattern "$x" "$y" "$state") || return $?
+  wait_for_new_matching_line 3 "$log" "$baseline" "$pattern"
+}
+
+rect_fits_main_display() { # <x> <y> <width> <height>
+  [ "$3" -gt 0 ] && [ "$4" -gt 0 ] &&
+    [ "$1" -ge "$screen_x" ] && [ "$2" -ge "$screen_y" ] &&
+    [ $(($1 + $3)) -le $((screen_x + screen_w)) ] &&
+    [ $(($2 + $4)) -le $((screen_y + screen_h)) ]
 }
 
 screen=$("$tools/chat-window" screen)
@@ -261,14 +299,23 @@ echo "screen=$screen" >> "$out/run.txt"
 wait_until 3 info || fail "Chat window did not open"
 wait_for_marks 3 "$marks" '^asked$' || fail "fixture did not ask its question"
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-if ! { [ "$chat_x" -ge "$screen_x" ] && [ $((chat_x + chat_w)) -le $((screen_x + screen_w)) ]; }; then
-  fail "Chat is not wholly on the primary display"
+main_target=$(bash "$0" --main-fit "$screen" "$chat_x,$chat_y,$chat_w,$chat_h") ||
+  fail "Chat cannot fit on the primary display"
+IFS=, read -r main_x main_y <<< "$main_target"
+if [ "$chat_x" -ne "$main_x" ] || [ "$chat_y" -ne "$main_y" ]; then
+  "$tools/chat-window" move "$pid" BMO "$main_x" "$main_y" ||
+    fail "could not move Chat onto the primary display"
+  wait_until 3 chat_at_position "$main_x" "$main_y" ||
+    fail "Chat never reached the primary-display position"
 fi
+IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
+rect_fits_main_display "$chat_x" "$chat_y" "$chat_w" "$chat_h" ||
+  fail "Chat is not wholly on the primary display"
 chat_title_x=$((chat_x + chat_w / 2))
 chat_title_y=$((chat_y + 14))
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$chat_title_x" "$chat_title_y" on)
 point_cursor_at "$chat_title_x" "$chat_title_y"
-wait_until 3 overlay_state_at "$chat_title_x" "$chat_title_y" "$before_pointer_lines" "miss click-through on" ||
+wait_for_hit_test "$before_pointer_matches" "$chat_title_x" "$chat_title_y" on ||
   fail "overlay did not release input over Chat title"
 hit "$chat_title_x" "$chat_title_y" "$pid|BMO|"
 "$tools/click-cursor" "$chat_title_x" "$chat_title_y" 1 \
@@ -287,9 +334,11 @@ target_y=$((screen_y + 160))
 if [ "$chat_y" -ne "$target_y" ]; then
   "$tools/chat-window" move "$pid" BMO "$chat_x" "$target_y" ||
     fail "could not move Chat to a perchable ledge"
-  wait_until 3 chat_at_y "$target_y" || fail "Chat never reached y=$target_y after the move"
+  wait_until 3 chat_at_position "$chat_x" "$target_y" || fail "Chat never reached y=$target_y after the move"
 fi
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
+rect_fits_main_display "$chat_x" "$chat_y" "$chat_w" "$chat_h" ||
+  fail "Chat moved outside the primary display"
 echo "chat=$chat_x,$chat_y,$chat_w,$chat_h,$chat_layer" >> "$out/run.txt"
 [ "$chat_layer" -eq 0 ] || fail "Chat rose to layer $chat_layer after move"
 
@@ -304,6 +353,8 @@ capture_x=$chat_x
 capture_y=$((chat_y - 120))
 [ "$capture_y" -ge "$screen_y" ] || capture_y=$screen_y
 capture_h=$((chat_h + chat_y - capture_y))
+rect_fits_main_display "$capture_x" "$capture_y" "$chat_w" "$capture_h" ||
+  fail "screenshot crop is outside the primary display"
 screencapture -x -R "$capture_x,$capture_y,$chat_w,$capture_h" "$out/perched.png" ||
   fail "could not capture perched Character"
 
@@ -316,10 +367,9 @@ echo 'bubble_over_chat=pass' >> "$out/result.txt"
 screencapture -x -R "$capture_x,$capture_y,$chat_w,$capture_h" "$out/bubble-over-chat.png" ||
   fail "could not capture bubble over Chat"
 
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$button_x" "$button_y" OFF)
 point_cursor_at "$button_x" "$button_y"
-wait_until 3 overlay_state_at "$button_x" "$button_y" \
-  "$before_pointer_lines" "click-through OFF" ||
+wait_for_hit_test "$before_pointer_matches" "$button_x" "$button_y" OFF ||
   fail "overlay did not accept input at the bubble button"
 hit "$button_x" "$button_y" "$pid|Fidget|AXButton|chat"
 ask_id=$(sed -n 's/.*showAsk instance=\([^ ]*\) dnd=.*/\1/p' "$log" | tail -n 1)
@@ -343,9 +393,9 @@ IFS=, read -r cx cy cw ch <<< "$rect"
 composer_x=$((cx + cw / 2))
 composer_y=$((cy + ch / 2))
 chat_focused_and_normal || fail "Chat lost focus before the composer click"
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$composer_x" "$composer_y" on)
 point_cursor_at "$composer_x" "$composer_y"
-wait_until 3 overlay_state_at "$composer_x" "$composer_y" "$before_pointer_lines" "miss click-through on" ||
+wait_for_hit_test "$before_pointer_matches" "$composer_x" "$composer_y" on ||
   fail "overlay did not release the Chat composer point"
 hit "$composer_x" "$composer_y" "$pid|BMO|AXTextArea|"
 "$tools/click-cursor" "$composer_x" "$composer_y" 1 > "$out/composer-click.txt" ||
