@@ -252,6 +252,12 @@ pub trait Completer {
     fn awaiting_user(&self, _instance: &str) -> bool {
         false
     }
+
+    /// Whether this Completer hands the model tools. Only a Harness does;
+    /// the prompt invites tool use only then.
+    fn has_tools(&self) -> bool {
+        false
+    }
 }
 
 /// What a reply the token cap ended is marked with, in the one place it is
@@ -390,7 +396,12 @@ impl<C: Completer> ModelDirector<C> {
     pub fn request(&self, context: &Context) -> WakeRequest {
         WakeRequest {
             prompt: named_moment(context, &self.instance),
-            layers: character_layers(context, self.behaviors.iter(), self.blank),
+            layers: character_layers(
+                context,
+                self.behaviors.iter(),
+                self.blank,
+                self.completer.has_tools(),
+            ),
             opening: !self.opened.load(Ordering::SeqCst),
             instance: self.instance.clone(),
             character: self.character.clone(),
@@ -1177,6 +1188,7 @@ mod tests {
             then: None,
             weight,
             trigger,
+            not_in_manifest: false,
         }
     }
 
@@ -2360,7 +2372,6 @@ mod tests {
             "You may propose one of these behaviors: wave",
             "Reply with behavior: <name> on the first line",
             "Propose nothing else.",
-            "use the tools you have",
         ] {
             assert!(shaped.contains(layer), "the shaped opening: {shaped}");
         }
@@ -2372,7 +2383,10 @@ mod tests {
     #[test]
     fn a_request_invites_the_tools_without_naming_them() {
         let moment = context(working(), &["nap"]);
-        let opening = character_prompt(&moment, "buddy-1", ["wave"], false);
+        let opening = with_layers(
+            &character_layers(&moment, ["wave"], false, true),
+            &named_moment(&moment, "buddy-1"),
+        );
 
         assert!(
             opening.contains(
@@ -2409,13 +2423,34 @@ mod tests {
         );
     }
 
+    /// The Model API lane sends no tools, so it is not told to use any.
+    #[test]
+    fn a_completer_without_tools_is_not_invited_to_use_them() {
+        let moment = context(working(), &["nap"]);
+        let director = directing(Scripted::says("wave"), ["wave"]);
+        director.wake(&moment);
+
+        let sent = director
+            .completer
+            .seen_prompt()
+            .expect("the Completer was called");
+        assert!(
+            sent.contains("Propose nothing else."),
+            "the opening: {sent}"
+        );
+        assert!(
+            !sent.contains("use the tools you have"),
+            "the opening: {sent}"
+        );
+    }
+
     /// The app layer is paid on every wake, including an HTTP Director with a
     /// small context, and it crowds the Character and Instance prompts.
     const APP_LAYER_BUDGET: usize = 717;
 
     #[test]
     fn the_app_layer_stays_under_its_budget() {
-        let app = app_instructions(["wave", "nap", "sit"], false);
+        let app = app_instructions(["wave", "nap", "sit"], false, true);
         assert!(
             app.len() < APP_LAYER_BUDGET,
             "app_instructions is {} bytes, over the {APP_LAYER_BUDGET} budget: {app}",

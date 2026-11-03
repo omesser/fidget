@@ -115,6 +115,8 @@ function createView(id) {
   // written every tick, not by append order, which would put the first-seen
   // Instance at the back and send a reappearing id to the front.
   stage.append(bubble, sprite, cueLayer);
+  // A ghost's flight is reported when it is drawn and dropped when it is reaped.
+  new MutationObserver(reportOverlayRects).observe(cueLayer, { childList: true });
 
   const view = {
     id,
@@ -682,6 +684,10 @@ function reportOverlayRects() {
     for (const part of possessionRects(view.possessionRect, view.chargeRect, release, paused)) {
       rects.push({ rect: part.rect, clickable: part.clickable });
     }
+    // Stays put: the ghost flies to where the sprite was when the cue drew.
+    for (const cue of view.cueLayer.children) {
+      if (cue.flight) rects.push({ rect: cue.flight, clickable: false, see_through: true });
+    }
   }
   const serialized = JSON.stringify(rects);
   if (serialized === reportedRects) return;
@@ -1021,11 +1027,10 @@ async function start() {
     event.preventDefault();
   });
   const onPossessionKey = (event) => {
-    if (!possessed) return;
     const inField = Boolean(event.target?.closest?.("textarea, input"));
-    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown", event.code, inField);
+    const edge = possessionEdge(event.key, event.repeat, event.type === "keydown", event.code, inField, possessed);
     if (!edge) return;
-    if (!inField) event.preventDefault();
+    if (possessed && !inField) event.preventDefault();
     window.__TAURI__.core.invoke("overlay_possession_key", { key: edge.key, down: edge.down }).catch((err) => {
       console.error("overlay_possession_key", err);
     });

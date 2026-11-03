@@ -213,6 +213,46 @@ pub enum Primitive {
     Possessed,
 }
 
+impl Primitive {
+    /// Movement the arrows and Space own, so a Behavior of only these gets no
+    /// digit: walk, chase, jump, and land, hold, possessed as their side effects.
+    /// No `_` arm, so a new Primitive has to pick a side.
+    pub fn owned_by_arrows_and_space(&self) -> bool {
+        match self {
+            Primitive::Walk | Primitive::Chase | Primitive::Jump => true,
+            Primitive::Land | Primitive::Hold | Primitive::Possessed => true,
+            Primitive::Idle
+            | Primitive::Sit
+            | Primitive::Sleep
+            | Primitive::React
+            | Primitive::Talk => false,
+        }
+    }
+}
+
+/// Which of the Required Animation Set a Primitive plays.
+pub(crate) fn animation_of(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::Idle => "idle",
+        // The Animation only. The motion belongs to the walk a proposal starts,
+        // which outlives this Primitive's turn and stops when Perch runs out.
+        Primitive::Walk => "walk",
+        Primitive::Land => "land",
+        Primitive::Sit => "sit",
+        Primitive::Sleep => "sleep",
+        Primitive::React => "react",
+        Primitive::Talk => "talk",
+        Primitive::Hold => "hold",
+        // No chase Animation in the required set; walk is the motion.
+        Primitive::Chase => "walk",
+        // Optional art: the renderer resolves it to `fall` when a package
+        // draws none, so the required set stays at nine (ADR-0007).
+        Primitive::Jump => "jump",
+        // Optional art too, resolved to `react` when a package draws none.
+        Primitive::Possessed => "possessed",
+    }
+}
+
 const PRIMITIVES: [(&str, Primitive); 10] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
@@ -319,6 +359,8 @@ pub struct Behavior {
     pub weight: u32,
     /// When this Behavior may be picked, or `None` for any time at all.
     pub trigger: Option<Trigger>,
+    /// The Character manifest doesn't declare it; the loader added it.
+    pub not_in_manifest: bool,
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame
@@ -1078,6 +1120,7 @@ pub(crate) mod tests {
                 then: Some("settle".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
+                not_in_manifest: false,
             }
         );
         assert_eq!(character.behaviors["settle"].then, None);
@@ -1098,6 +1141,7 @@ pub(crate) mod tests {
                 then: None,
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),
+                not_in_manifest: false,
             }
         );
     }

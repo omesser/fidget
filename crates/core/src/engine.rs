@@ -5,7 +5,7 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{Behavior, CursorReaction, GravityScale, Primitive};
+use crate::character::{animation_of, Behavior, CursorReaction, GravityScale, Primitive};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
 use crate::possession::{digit_behaviors, Charge, Intent, Walk};
@@ -1292,14 +1292,15 @@ impl Engine {
         let mut digit_started = false;
         if self.possessed {
             if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
-                match self.start_behavior(&name) {
-                    Some(true) => {
-                        started = true;
-                        digit_started = true;
-                        behavior = Some(name);
-                    }
-                    Some(false) => refused = Some(name),
-                    None => {}
+                // The Behavior alone: a digit leaves its `then` off.
+                let primitives = self.behaviors[&name].primitives.clone();
+                if self.play(&primitives) {
+                    self.playing_behavior = Some(name.clone());
+                    started = true;
+                    digit_started = true;
+                    behavior = Some(name);
+                } else {
+                    refused = Some(name);
                 }
             }
         }
@@ -1906,9 +1907,9 @@ impl Engine {
     /// The Behavior digit `play` names, or nothing past the list.
     fn behavior_for_digit(&self, play: Option<u8>) -> Option<String> {
         let index = usize::from(play?).checked_sub(1)?;
-        let names: Vec<&str> = self.behaviors.keys().map(String::as_str).collect();
-        digit_behaviors(names)
-            .get(index)
+        digit_behaviors(&self.behaviors)
+            .get(index)?
+            .first()
             .map(|name| (*name).to_string())
     }
 
@@ -1975,29 +1976,6 @@ impl Engine {
         }
 
         Some(primitives)
-    }
-}
-
-/// Which of the Required Animation Set a Primitive plays.
-fn animation_of(primitive: Primitive) -> &'static str {
-    match primitive {
-        Primitive::Idle => "idle",
-        // The Animation only. The motion belongs to the walk a proposal starts,
-        // which outlives this Primitive's turn and stops when Perch runs out.
-        Primitive::Walk => "walk",
-        Primitive::Land => "land",
-        Primitive::Sit => "sit",
-        Primitive::Sleep => "sleep",
-        Primitive::React => "react",
-        Primitive::Talk => "talk",
-        Primitive::Hold => "hold",
-        // No chase Animation in the required set; walk is the motion.
-        Primitive::Chase => "walk",
-        // Optional art: the renderer resolves it to `fall` when a package
-        // draws none, so the required set stays at nine (ADR-0007).
-        Primitive::Jump => "jump",
-        // Optional art too, resolved to `react` when a package draws none.
-        Primitive::Possessed => "possessed",
     }
 }
 
@@ -2241,6 +2219,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2250,6 +2229,7 @@ mod tests {
                     then: Some("settle".to_string()),
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2259,6 +2239,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2268,6 +2249,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
         ])
@@ -2587,6 +2569,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             )]));
 
@@ -2605,6 +2588,7 @@ mod tests {
             then: Some(then.to_string()),
             weight: DEFAULT_WEIGHT,
             trigger: None,
+            not_in_manifest: false,
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
             ("here".to_string(), pacing("there")),
@@ -3004,6 +2988,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             )]));
         let base = settle(&mut engine, &snapshot(100)).animation_ms;
@@ -4942,6 +4927,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -4954,6 +4940,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
+                    not_in_manifest: false,
                 },
             ),
         ]));
@@ -9710,6 +9697,11 @@ mod tests {
             assert_eq!(played.playing_behavior.as_deref(), Some("greet"));
             assert_eq!(played.animation, "react");
             assert_eq!(played.refused, None);
+            assert!(
+                !engine.playing.contains(&Primitive::Sit),
+                "greet's then is left off: {:?}",
+                engine.playing
+            );
 
             let unbound = engine.tick(&with_possession(playing(3), &world));
             assert_eq!(unbound.behavior, None, "{unbound:?}");
@@ -9757,14 +9749,16 @@ mod tests {
             ];
             let behaviors = names
                 .iter()
-                .map(|name| {
+                .zip(1..)
+                .map(|(name, sits)| {
                     (
                         (*name).to_string(),
                         Behavior {
-                            primitives: vec![Primitive::Sit],
+                            primitives: vec![Primitive::Sit; sits],
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,
+                            not_in_manifest: false,
                         },
                     )
                 })

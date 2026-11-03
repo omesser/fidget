@@ -44,6 +44,10 @@ impl Completer for AnyCompleter {
             AnyCompleter::Harness(session) => session.awaiting_user(instance),
         }
     }
+
+    fn has_tools(&self) -> bool {
+        matches!(self, AnyCompleter::Harness(_))
+    }
 }
 
 /// The Completer `configured` promises. Harness first: with one attached the

@@ -39,6 +39,14 @@ test("the pill's field keeps its keydowns, but every keyup still lets go", () =>
   assert.deepEqual(possessionEdge("1", false, false, "Digit1", true), { key: "1", down: false });
 });
 
+test("keyups pass whether or not the overlay is possessed, keydowns only when it is", () => {
+  for (const possessed of [true, false]) {
+    assert.deepEqual(possessionEdge("ArrowRight", false, false, "ArrowRight", false, possessed), { key: "right", down: false });
+  }
+  assert.deepEqual(possessionEdge("ArrowRight", false, true, "ArrowRight", false, true), { key: "right", down: true });
+  assert.equal(possessionEdge("ArrowRight", false, true, "ArrowRight", false, false), null);
+});
+
 test("the card lists the bound keys under the explanation", () => {
   const card = possessionCard({ possessed: true, paused: false });
   assert.equal(card.paused, false);

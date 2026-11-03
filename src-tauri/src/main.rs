@@ -545,6 +545,8 @@ struct SettingsState {
     /// the one the opening turn names.
     behavior_names: Arc<BTreeMap<String, Vec<String>>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
+    /// The frame loop locks `settings` then this. Never hold this while you
+    /// take `settings`, or the two threads deadlock.
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
@@ -2219,8 +2221,8 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
     }
 }
 
-/// The overlay heard a possession key. Repeats are dropped in the page. Edges wait
-/// for the frame loop, which owns the session.
+/// An overlay heard a possession key. Every overlay sends its keyups; the frame
+/// loop's session drops any for a key it never saw go down.
 #[tauri::command]
 fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
     possession::push_key(window.label(), &key, down);
@@ -3230,7 +3232,7 @@ fn chat_opening_layers(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        instructions: app_instructions(behaviors, blank),
+        instructions: app_instructions(behaviors, blank, inspect.harness.is_some()),
         personality: if blank {
             String::new()
         } else {
@@ -3281,10 +3283,12 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         .unwrap_or_default();
     // Re-read on every opening: a login the user ran mid-session moves the
     // Harness out of the not-authenticated state, and nothing else pushes it.
-    if let Ok(mut inspect) = state.inspect.lock() {
-        inspect.harness = harness::attached().map(|session| session.inspect());
-    }
-    let inspect = state.inspect.lock().ok();
+    // A copy, not the guard: the frame loop locks settings then inspect, so
+    // holding inspect into the settings reads below deadlocks.
+    let inspect = state.inspect.lock().ok().map(|mut guard| {
+        guard.harness = harness::attached().map(|session| session.inspect());
+        guard.clone()
+    });
     let blank = model::blank();
     ChatOpening {
         instructions: app_instructions(
@@ -3294,6 +3298,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
                 .map(|rows| declared_behaviors(&rows, &state.behavior_names, &instance))
                 .unwrap_or_default(),
             blank,
+            inspect.as_ref().is_some_and(|read| read.harness.is_some()),
         ),
         personality: if blank {
             String::new()
@@ -3308,7 +3313,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
-        harness: inspect.as_ref().and_then(|read| chat_harness(read)),
+        harness: inspect.as_ref().and_then(chat_harness),
         model: inspect
             .as_ref()
             .map(|read| read.model.clone())
