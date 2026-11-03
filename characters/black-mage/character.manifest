@@ -120,7 +120,7 @@ play = ["walk"]
 weight = 10
 when = "idle over 30s"
 
-# The fall is drawn turned the other way from the rest.
+# The fall, and the land that opens with it, is drawn turned the other way from the rest.
 [frame_facing]
 "frames/fall-0.png" = "left"
 "frames/fall-1.png" = "left"

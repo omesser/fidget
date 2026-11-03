@@ -620,6 +620,34 @@ fn bmo_panel_offset(bytes: &[u8]) -> f32 {
 /// Every frame of `names` as drawn for both ways of travel faces that way,
 /// left strip included. `faces_right` reads the art: positive past `margin`
 /// when the PNG faces right, negative past it when it faces left.
+/// How far the hat's tip trails left of the hat's middle, in pixels. The tip
+/// trails behind, so it is positive when the art faces right.
+fn black_mage_hat_tip_offset(bytes: &[u8]) -> f32 {
+    let (width, height, rgba) = frame_rgba(bytes);
+    let is_hat = |i: usize| {
+        let [r, g, b, a] = rgba[i];
+        a > 128 && r > 150 && g > 120 && b < 110
+    };
+    let top = (0..width * height).find(|&i| is_hat(i)).expect("the hat shows");
+    let (mut hat, mut stack, mut seen) = (Vec::new(), vec![top], vec![false; width * height]);
+    seen[top] = true;
+    while let Some(i) = stack.pop() {
+        hat.push(i);
+        let (x, y) = (i % width, i / width);
+        let near = [(x.wrapping_sub(1), y), (x + 1, y), (x, y.wrapping_sub(1)), (x, y + 1)];
+        for (nx, ny) in near {
+            let n = ny * width + nx;
+            if nx < width && ny < height && !seen[n] && is_hat(n) {
+                seen[n] = true;
+                stack.push(n);
+            }
+        }
+    }
+    let mean_x = |cells: &[usize]| cells.iter().map(|i| (i % width) as f32).sum::<f32>() / cells.len() as f32;
+    let tip: Vec<usize> = hat.iter().copied().filter(|i| i / width <= top / width + 1).collect();
+    mean_x(&hat) - mean_x(&tip)
+}
+
 fn assert_drawn_facing_the_travel(
     package: &str,
     names: &[&str],
@@ -707,6 +735,13 @@ fn jotaro_falls_facing_the_way_he_walks() {
 #[test]
 fn bmo_falls_facing_the_way_it_walks() {
     assert_drawn_facing_the_travel("bmo", &["walk", "fall"], bmo_panel_offset, 2.0);
+}
+
+/// Black Mage's fall frames, which land opens with, are drawn turned the other
+/// way from his walk.
+#[test]
+fn black_mage_falls_facing_the_way_he_walks() {
+    assert_drawn_facing_the_travel("black-mage", &["walk", "fall"], black_mage_hat_tip_offset, 2.0);
 }
 
 /// The duck rests facing left and walks facing right, with a drawn left walk.
