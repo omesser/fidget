@@ -89,22 +89,6 @@ wait_for_trace() { # <seconds> <log file> <pattern>
   wait_for_line "$@"
 }
 
-# Wait for one more matching line than the baseline count. tail follows the log,
-# so old matches are consumed without accepting a line after the timeout.
-wait_for_new_matching_line() { # <seconds> <file> <baseline match count> <extended regex>
-  wait_on_lines "$1" +1 "$2" matching_line_after "$4" "$3"
-}
-matching_line_after() { # <extended regex> <baseline match count>
-  local pattern=$1 baseline=$2 line seen=0
-  while IFS= read -r line; do
-    if [[ "$line" =~ $pattern ]]; then
-      seen=$((seen + 1))
-      [ "$seen" -gt "$baseline" ] && return 0
-    fi
-  done
-  return 1
-}
-
 # Wait for a line in the fixture Harness marks file.
 wait_for_marks() { # <seconds> <marks file> <pattern>
   wait_for_line "$@"

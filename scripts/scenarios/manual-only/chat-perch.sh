@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Scenario: chat-perch (macOS), Chat as a Perch (#1502).
 # Chat is moved to fit primary-display CG bounds when it opens elsewhere.
-# On screen: launches one private-HOME Fidget/BMO instance with Chat, focuses
-#   Chat, and places the Character on Chat's ledge. The waiting question shows
-#   a bubble over Chat. The script clicks its chat button, then clicks and
-#   types into the Chat composer. Two cropped screenshots are captured.
+# On screen: launches one private-HOME BMO, focuses Chat, perches it on Chat's
+#   ledge, clicks the question bubble and types into the composer. It captures
+#   two crops, then exits.
 # Input: synthetic mouse clicks and typing inside Fidget only; no Finder or Poke.
-# Duration: a few seconds, 20 s at most.
+# Duration: a few seconds, 45 s at most.
 # Grants: Accessibility and Screen Recording for the terminal running it.
 # Asserts: focused Chat stays at layer 0, supports a Perch, accepts composer
 #   input, and its overlapping bubble button invokes the Chat command.
@@ -17,7 +16,7 @@
 #   --check-hit-test <log> <baseline matches> <x> <y> <on|OFF> checks a trace.
 # Likely second failure: Chat on a secondary display can use a nonzero overlay
 # index, which the old overlay-0-only match ignored. Traces emit on flips or every
-# 120 ticks; the 3 s event wait can still time out without a new matching line.
+# 120 ticks; a 7 s event wait can still time out without a new matching line.
 set -euo pipefail
 
 click_traced() {
@@ -257,7 +256,7 @@ point_cursor_at() {
 wait_for_hit_test() { # <matching lines before cursor movement> <x> <y> <on|OFF>
   local baseline=$1 x=$2 y=$3 state=$4 pattern
   pattern=$(hit_test_pattern "$x" "$y" "$state") || return $?
-  wait_for_new_matching_line 3 "$log" "$baseline" "$pattern"
+  wait_for_count 7 "$log" "$pattern" "$baseline"
 }
 
 rect_fits_main_display() { # <x> <y> <width> <height>
