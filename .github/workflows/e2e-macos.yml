@@ -12,14 +12,6 @@ on:
         description: Space-separated ci/ leaf names; empty runs them all
         required: false
         default: ""
-      perf_baseline_ref:
-        description: Optional diagnostics-only commit for alternating release Chat measurements
-        required: false
-        default: ""
-      perf_runs:
-        description: Release launches per binary, after one excluded warmup; at least five
-        required: false
-        default: "5"
 
 permissions:
   contents: read
@@ -34,7 +26,7 @@ jobs:
   e2e-macos:
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e-macos'
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
 
     steps:
       - name: Check out the repository
@@ -139,67 +131,6 @@ jobs:
           printf '%s' "$summary"
           printf '```\n%s```\n' "$summary" >> "$GITHUB_STEP_SUMMARY"
           exit "$failed"
-
-      - name: Check out the Chat performance baseline
-        if: ${{ !cancelled() && inputs.perf_baseline_ref != '' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.perf_baseline_ref }}
-          path: chat-open-perf/baseline
-
-      - name: Build both release Chat binaries and record provenance
-        id: perf-build
-        if: ${{ !cancelled() && inputs.perf_baseline_ref != '' }}
-        shell: bash
-        run: |
-          mkdir -p chat-open-perf/evidence/bin
-          git -C chat-open-perf/baseline rev-parse HEAD > chat-open-perf/evidence/baseline-sha.txt
-          git rev-parse HEAD > chat-open-perf/evidence/candidate-sha.txt
-          rustc -Vv > chat-open-perf/evidence/rustc.txt
-          cargo -V > chat-open-perf/evidence/cargo.txt
-          extension=""
-          if [ "$RUNNER_OS" = Windows ]; then extension=.exe; fi
-          cargo build --release --locked -p fidget --manifest-path chat-open-perf/baseline/Cargo.toml --target-dir target
-          cp "target/release/fidget$extension" "chat-open-perf/evidence/bin/baseline$extension"
-          cargo build --release --locked -p fidget
-          cp "target/release/fidget$extension" "chat-open-perf/evidence/bin/candidate$extension"
-
-      - name: Measure release startup and native tray Chat opens
-        if: ${{ !cancelled() && steps.perf-build.outcome == 'success' }}
-        shell: bash
-        env:
-          RUNS: ${{ inputs.perf_runs }}
-        run: |
-          extension=""
-          if [ "$RUNNER_OS" = Windows ]; then extension=.exe; fi
-          python scripts/bench-chat-open.py --go \
-            --baseline "chat-open-perf/evidence/bin/baseline$extension" \
-            --candidate "chat-open-perf/evidence/bin/candidate$extension" \
-            --output chat-open-perf/evidence/measurements --runs "$RUNS"
-
-      - name: Summarize release Chat durations
-        if: ${{ always() && inputs.perf_baseline_ref != '' }}
-        shell: bash
-        run: |
-          if [ -e chat-open-perf/evidence/measurements/results.json ]; then
-            python -c 'import json; d=json.load(open("chat-open-perf/evidence/measurements/results.json")); print("```json\n"+json.dumps({"errors":d["errors"],"summary":d.get("summary")},indent=2)+"\n```")' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload release Chat measurements
-        if: ${{ always() && inputs.perf_baseline_ref != '' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: chat-open-perf-macos
-          path: |
-            chat-open-perf/evidence/*-sha.txt
-            chat-open-perf/evidence/rustc.txt
-            chat-open-perf/evidence/cargo.txt
-            chat-open-perf/evidence/measurements/results.json
-            chat-open-perf/evidence/measurements/*/data/process.log*
-            chat-open-perf/evidence/measurements/*/*.txt
-            chat-open-perf/evidence/measurements/*/console.log
-            chat-open-perf/evidence/measurements/promote-*.txt
-          if-no-files-found: warn
 
       - name: Gather evidence
         if: always()

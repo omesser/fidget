@@ -2629,10 +2629,7 @@ fn build_chat(
     label: &str,
     title: &str,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
-    let configured = Instant::now();
-    trace_chat(label, "build-request", None);
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
-    let page_label = label.to_string();
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
@@ -2641,24 +2638,12 @@ fn build_chat(
         // unrepainted see-through page to black or to the desktop.
         .transparent(platform::see_through_draws())
         .visible(false)
-        .focused(false)
-        .on_page_load(move |_window, payload| {
-            if !payload.url().as_str().starts_with("about:") {
-                let event = match payload.event() {
-                    tauri::webview::PageLoadEvent::Started => "page-started",
-                    tauri::webview::PageLoadEvent::Finished => "page-loaded",
-                };
-                trace_chat(&page_label, event, Some(configured));
-            }
-        });
+        .focused(false);
     let started = Instant::now();
-    trace_chat(label, "builder-configured", Some(configured));
     let window = builder.build()?;
-    trace_chat(label, "built", Some(started));
     if dev_flags::TRACE_BUBBLE.is_on() {
         eprintln!("chat: {label} built in {}ms", started.elapsed().as_millis());
     }
-    let setup = Instant::now();
     glass::wear(&window, &chat_ui_now(app.try_state().as_deref()));
     let (handle, label) = (app.clone(), label.to_string());
     let observer = platform::observe_minimize(&window, {
@@ -2711,40 +2696,7 @@ fn build_chat(
             eprintln!("chat: {label} level: {why}");
         }
     });
-    trace_chat(window.label(), "setup", Some(setup));
     Ok(window)
-}
-
-fn trace_chat(label: &str, event: &str, started: Option<Instant>) {
-    if dev_flags::TRACE_BUBBLE.is_on() {
-        static ORIGIN: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-        let at = ORIGIN.get_or_init(Instant::now).elapsed().as_micros();
-        let duration = started.map(|start| start.elapsed().as_micros());
-        eprintln!("chat-timing: label={label} event={event} at_us={at} duration_us={duration:?}");
-    }
-}
-
-/// Prepare hidden Chats before a Summon needs their native webviews. Read the
-/// published roster on the main thread so a queued preparation skips an
-/// Instance dismissed before it runs.
-fn prepare_chats(app: &tauri::AppHandle) {
-    let handle = app.clone();
-    if let Err(why) = app.run_on_main_thread(move || {
-        let rows = handle
-            .try_state::<SettingsState>()
-            .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
-            .unwrap_or_default();
-        for row in rows {
-            let label = chat_label(&row.id);
-            if handle.get_webview_window(&label).is_none() {
-                if let Err(why) = build_chat(&handle, &label, &row.name) {
-                    eprintln!("chat: {label} could not be prepared: {why}");
-                }
-            }
-        }
-    }) {
-        eprintln!("chat: could not prepare on the main thread: {why}");
-    }
 }
 
 /// A new Chat window's inner size, in points.
@@ -2808,18 +2760,16 @@ fn chat_ui_now(state: Option<&SettingsState>) -> String {
         .unwrap_or_else(|| "minimal".to_string())
 }
 
-/// Show this Instance's prepared Chat beside `feet`, or raise its visible Chat.
-/// The lookup shares the main thread with preparation so two queued Summons
-/// cannot build the same missing window after a failed preparation.
+/// Show this Instance's Chat beside `feet` when known, building it on first
+/// use, or raise it if it is already showing. The lookup posts to the main
+/// thread too: Ok from `run_on_main_thread` means queued, so two Summons would
+/// each build.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
-    let requested = Instant::now();
     let label = chat_label(id);
-    trace_chat(&label, "open-request", None);
     let at = feet
         .and_then(|feet| chat_origin(feet, &platform::read_displays(app).usable_frames, CHAT_SIZE));
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
-        trace_chat(&label, "main-dispatch", Some(requested));
         let window = match handle.get_webview_window(&label) {
             Some(window) => {
                 // The title is the Instance name, which a Character switch can
@@ -2856,7 +2806,6 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
         if dev_flags::TRACE_BUBBLE.is_on() {
             eprintln!("chat: {label} is open");
         }
-        trace_chat(&label, "opened", Some(requested));
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
     }
@@ -3723,7 +3672,6 @@ fn chat_ready(
     chat: tauri::State<'_, ChatChannel>,
     pending: tauri::State<'_, PendingAsks>,
 ) {
-    trace_chat(&chat_label(&instance), "ready", None);
     if let Ok(mut pending) = pending.0.lock() {
         let restored = session_log::restored(&app, &instance);
         if !restored.is_empty() {
@@ -5672,7 +5620,6 @@ fn main() {
                 bind_hide_hotkey(app.handle(), &spec);
             }
             let instance_rows = Arc::new(Mutex::new(Vec::new()));
-            publish_instances(&roster, &instance_rows);
             let (ops_tx, ops_rx) = mpsc::channel();
             let (chat_tx, chat_rx) = mpsc::channel();
             app.manage(ChatChannel(chat_tx));
@@ -5708,7 +5655,6 @@ fn main() {
                 rebuild_after_destroy: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&rules));
-            prepare_chats(app.handle());
 
             // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.

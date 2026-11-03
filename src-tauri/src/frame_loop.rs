@@ -34,12 +34,12 @@ use super::{
     apply_keyboard_flips, apply_menu_action, bring_roster_off_fullscreen, cancelled_caret,
     chat_label, close_chat, completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources,
     menu, menu_caffeinate, model, note_caffeinate_view, note_happened, open_chat, overlay_label,
-    overlay_request_focus, paced, place_overlays, platform, possession, prepare_chats,
-    publish_instances, push_chat_opening, push_chat_openings, quit_now, remember_instances,
-    spawn_live, sprite_width, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
-    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuEffect,
-    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, WorkArea,
-    ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    overlay_request_focus, paced, place_overlays, platform, possession, publish_instances,
+    push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
+    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
+    FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
+    SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
@@ -1159,7 +1159,6 @@ pub(crate) fn run_frame_loop(
             // InstanceRow, not the one from last tick. Menu-driven switches
             // never set `settings_ops`.
             if settings_ops || menu_acted {
-                prepare_chats(&app);
                 let handle = app.clone();
                 let _ = app.run_on_main_thread(move || {
                     platform::refresh_settings(&handle);
