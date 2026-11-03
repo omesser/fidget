@@ -219,8 +219,9 @@ fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
 }
 
 /// Weight-0 Behaviors for each `ASKABLE_PRIMITIVES` entry whose name is free
-/// and whose Primitive no declared Behavior already plays, returning their
-/// names. Author entries win; exclusions (land/hold/talk/idle) are on that table.
+/// and whose Primitive no declared Behavior already plays. Returns their names:
+/// the Behaviors not in the manifest. Author entries win; exclusions
+/// (land/hold/talk/idle) are on that table.
 fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -> BTreeSet<String> {
     let mut added = BTreeSet::new();
     for &(name, primitive) in super::ASKABLE_PRIMITIVES {
@@ -254,7 +255,7 @@ pub(super) fn resolve_behaviors(
     mut declared: BTreeMap<String, DeclaredBehavior>,
     errors: &mut Vec<String>,
 ) -> BTreeMap<String, Behavior> {
-    let stand_ins = ensure_default_behaviors(&mut declared);
+    let not_in_manifest = ensure_default_behaviors(&mut declared);
 
     for (name, declaration) in &declared {
         if let Some(next) = &declaration.then {
@@ -301,7 +302,7 @@ pub(super) fn resolve_behaviors(
     declared
         .into_iter()
         .map(|(name, declaration)| {
-            let stand_in = stand_ins.contains(&name);
+            let not_in_manifest = not_in_manifest.contains(&name);
             (
                 name,
                 Behavior {
@@ -309,7 +310,7 @@ pub(super) fn resolve_behaviors(
                     then: declaration.then,
                     weight: declaration.weight,
                     trigger: declaration.trigger,
-                    stand_in,
+                    not_in_manifest,
                 },
             )
         })

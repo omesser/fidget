@@ -359,8 +359,8 @@ pub struct Behavior {
     pub weight: u32,
     /// When this Behavior may be picked, or `None` for any time at all.
     pub trigger: Option<Trigger>,
-    /// Loading added it for an askable Primitive the package plays nowhere.
-    pub stand_in: bool,
+    /// The Character manifest doesn't declare it; the loader added it.
+    pub not_in_manifest: bool,
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame
@@ -1120,7 +1120,7 @@ pub(crate) mod tests {
                 then: Some("settle".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
-                stand_in: false,
+                not_in_manifest: false,
             }
         );
         assert_eq!(character.behaviors["settle"].then, None);
@@ -1141,7 +1141,7 @@ pub(crate) mod tests {
                 then: None,
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),
-                stand_in: false,
+                not_in_manifest: false,
             }
         );
     }

@@ -3571,7 +3571,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
-                stand_in: false,
+                not_in_manifest: false,
             },
         );
         Character {

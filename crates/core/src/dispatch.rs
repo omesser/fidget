@@ -788,7 +788,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
-                stand_in: false,
+                not_in_manifest: false,
             },
         );
 
@@ -1004,7 +1004,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
-                stand_in: false,
+                not_in_manifest: false,
             },
         );
         let instance_id = roster.spawn(
@@ -1120,7 +1120,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
-                stand_in: false,
+                not_in_manifest: false,
             },
         );
         let instance_id = roster.spawn(

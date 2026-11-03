@@ -37,7 +37,7 @@ pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>>
             && own.iter().all(|primitive| {
                 *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
             });
-        if behavior.stand_in || only_moves {
+        if behavior.not_in_manifest || only_moves {
             continue;
         }
         // Composable Primitives only fall back to art no other one draws, so
@@ -374,16 +374,16 @@ mod tests {
                     then: then.map(str::to_string),
                     weight: 1,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 };
                 (name.to_string(), behavior)
             })
             .collect()
     }
 
-    /// The weight-0 stand-in loading adds for an askable Primitive the package
-    /// plays nowhere repeats art the Character already shows, so it gets no
-    /// digit. Only what the package declares does.
+    /// A Behavior not in the manifest (weight 0, added by the loader) repeats
+    /// art the Character already shows, so it gets no digit. Only what the
+    /// package declares does.
     #[test]
     fn only_behaviors_the_package_declares_get_digits() {
         use crate::character::tests::{declaring, load_manifest};

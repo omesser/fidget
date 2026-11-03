@@ -2219,7 +2219,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2229,7 +2229,7 @@ mod tests {
                     then: Some("settle".to_string()),
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2239,7 +2239,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -2249,7 +2249,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
         ])
@@ -2569,7 +2569,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             )]));
 
@@ -2588,7 +2588,7 @@ mod tests {
             then: Some(then.to_string()),
             weight: DEFAULT_WEIGHT,
             trigger: None,
-            stand_in: false,
+            not_in_manifest: false,
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
             ("here".to_string(), pacing("there")),
@@ -2988,7 +2988,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             )]));
         let base = settle(&mut engine, &snapshot(100)).animation_ms;
@@ -4927,7 +4927,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
             (
@@ -4940,7 +4940,7 @@ mod tests {
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
-                    stand_in: false,
+                    not_in_manifest: false,
                 },
             ),
         ]));
@@ -9758,7 +9758,7 @@ mod tests {
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,
-                            stand_in: false,
+                            not_in_manifest: false,
                         },
                     )
                 })
