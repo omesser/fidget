@@ -105,7 +105,7 @@ echo "Opening a prop at window level $DOCK_LEVEL at $OVER_RECT to fall through..
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift $OVER_RECT $DOCK_LEVEL > "$OUT/over.log" 2>&1 &
 OVER_PID=$!
-wait_for_trace 10 "$OUT/over.log" '^\{' || {
+wait_for_line 10 "$OUT/over.log" '^\{' || {
   echo "FAIL: elevated prop window never reported its bounds"
   cat "$OUT/over.log"
   exit 1
@@ -115,7 +115,7 @@ echo "Opening a prop window at $PERCH_RECT to perch on..."
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift $PERCH_RECT > "$OUT/perch.log" 2>&1 &
 PERCH_PID=$!
-wait_for_trace 10 "$OUT/perch.log" '^\{' || {
+wait_for_line 10 "$OUT/perch.log" '^\{' || {
   echo "FAIL: prop window never reported its bounds"
   cat "$OUT/perch.log"
   exit 1
@@ -478,7 +478,7 @@ echo "Grip:"
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift --fast $PERCH_RECT > "$OUT/fling.log" 2>&1 &
 FLING_PID=$!
-wait_for_trace 10 "$OUT/fling.log" '^\{' || {
+wait_for_line 10 "$OUT/fling.log" '^\{' || {
   echo "FAIL: the flinging prop window never reported its bounds"
   cat "$OUT/fling.log"
   exit 1
