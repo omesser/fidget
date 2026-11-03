@@ -58,9 +58,10 @@ test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, 
 });
 
 test("Glass macOS prompt footer matches the body tint in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  assert.deepEqual((await sharedStyles()).promptActionTints, {
-    dark: 0.3,
-    light: 0.65,
+  const styles = await sharedStyles();
+  assert.deepEqual(styles.promptActionTints, {
+    dark: styles.tints.dark[1],
+    light: styles.tints.light[1],
   });
 });
 

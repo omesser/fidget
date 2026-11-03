@@ -3044,8 +3044,8 @@ struct ChatOpening {
     /// Which Chat UI design the user picked: "minimal", "terminal", or "glass".
     chat_ui: String,
     chat_appearance: ChatAppearance,
-    /// `std::env::consts::OS`. Glass tints harder on "linux", where the
-    /// webview cannot blur the desktop behind Chat.
+    /// `std::env::consts::OS`. Glass tints harder on "linux" and "windows",
+    /// where the webview cannot blur the desktop behind Chat.
     platform: &'static str,
     /// A Harness is attached but not signed in. Names the login command for
     /// the user's own terminal.

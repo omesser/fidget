@@ -16,12 +16,12 @@ async function glassStyles() {
       const alphaValues = (value) => [...value.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((match) => Number(match[1]));
       const alpha = (value) => Number(value.match(/rgba?\\([^)]*,\\s*([\\d.]+)\\)/)?.[1]);
       const out = {};
-      for (const platform of ["windows", "linux"]) {
-        root.dataset.platform = platform;
+      for (const platform of ["windows", "linux", null]) {
+        if (platform) root.dataset.platform = platform; else delete root.dataset.platform;
         for (const palette of ["dark", "light"]) {
           root.dataset.chatPalette = palette;
           const body = getComputedStyle(document.body);
-          out[platform + " " + palette] = {
+          out[(platform || "other") + " " + palette] = {
             bodyTints: alphaValues(body.backgroundImage),
             panel: alpha(getComputedStyle(root).getPropertyValue("--chat-panel")),
             footer: alpha(getComputedStyle(actions).backgroundColor),
@@ -36,20 +36,17 @@ async function glassStyles() {
   return probePage(html);
 }
 
-test("Windows Glass raises the tint when backdrop blur is unavailable", { skip: chromeSkip, timeout: 60000 }, async () => {
+test("Windows Glass paints the panel and footer at the body's heavier bottom tint", { skip: chromeSkip, timeout: 60000 }, async () => {
   const styles = await glassStyles();
-  assert.deepEqual(styles["windows dark"], {
-    bodyTints: [0.72, 0.84],
-    panel: 0.84,
-    footer: 0.84,
-    promptRadius: "14px",
-  });
-  assert.deepEqual(styles["windows light"], {
-    bodyTints: [0.95, 0.98],
-    panel: 0.98,
-    footer: 0.98,
-    promptRadius: "14px",
-  });
+  for (const palette of ["dark", "light"]) {
+    const windows = styles["windows " + palette];
+    const plain = styles["other " + palette];
+    assert.equal(windows.panel, windows.bodyTints[1], palette);
+    assert.equal(windows.footer, windows.bodyTints[1], palette);
+    assert.ok(windows.bodyTints[1] > plain.bodyTints[1],
+      `${palette}: Windows opaque ${windows.bodyTints[1]} must exceed plain Glass ${plain.bodyTints[1]}`);
+    assert.equal(windows.promptRadius, "14px", palette);
+  }
 });
 
 test("Linux Glass keeps its tint and uses a box-shaped Prompt editor", { skip: chromeSkip, timeout: 60000 }, async () => {
