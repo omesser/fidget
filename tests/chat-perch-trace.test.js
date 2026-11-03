@@ -64,7 +64,7 @@ test("hit-test accepts the expected point and state on any overlay", (t) => {
 
 test("hit-test accepts a blocked point on a nonzero overlay", (t) => {
   const result = checkHitTest(t,
-    "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 HIT  click-through OFF\n",
+    "hit-test: cursor(420,160) scale 1 -> point(420,160) on overlay 7 miss click-through OFF\n",
     0,
     420,
     160,

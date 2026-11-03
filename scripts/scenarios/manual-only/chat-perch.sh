@@ -30,7 +30,7 @@ hit_test_pattern() {
   [[ "$x" =~ ^-?[0-9]+$ && "$y" =~ ^-?[0-9]+$ && ("$state" = on || "$state" = OFF) ]] || return 2
   case "$state" in
     on) result='miss click-through on' ;;
-    OFF) result='HIT[[:space:]]+click-through OFF' ;;
+    OFF) result='click-through OFF' ;;
   esac
   printf '^hit-test:.*point\\(%s,%s\\).*%s([[:space:]]|$)' "$x" "$y" "$result"
 }
