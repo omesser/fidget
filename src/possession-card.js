@@ -4,11 +4,11 @@
 
 export const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
-export const RESUME_LABEL = "Paused";
+export const PAUSED_HEADING = "Paused";
 
-export const FOCUSED_LABEL = "Focused";
+export const FOCUS_PRESSED_LABEL = "Focused";
 
-export const FOCUS_LABEL = "Click to focus";
+export const FOCUS_RAISED_LABEL = "Click to focus";
 
 // The button carries the Esc hint, so the bindings list does not repeat it.
 export const RELEASE_LABEL = "Release Possession (Esc)";
@@ -50,10 +50,10 @@ export function possessionCard({ possessed, paused, behaviors }) {
     return {
       paused: true,
       dimmed: true,
-      heading: RESUME_LABEL,
+      heading: PAUSED_HEADING,
       keys,
       release: null,
-      focus: { label: FOCUS_LABEL, pressed: false },
+      focus: { label: FOCUS_RAISED_LABEL, pressed: false },
     };
   }
   return {
@@ -62,7 +62,7 @@ export function possessionCard({ possessed, paused, behaviors }) {
     heading: POSSESSION_HEADING,
     keys,
     release: RELEASE_LABEL,
-    focus: { label: FOCUSED_LABEL, pressed: true },
+    focus: { label: FOCUS_PRESSED_LABEL, pressed: true },
   };
 }
 
