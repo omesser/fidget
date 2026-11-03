@@ -786,12 +786,9 @@
   background: linear-gradient(rgba(248,249,252,.55), rgba(242,244,248,.65));
 }
 
-[data-platform="macos"].chat-ui-glass .prompt-actions {
-  background: rgba(14,17,24,.30);
-}
-
-[data-platform="macos"][data-chat-palette="light"].chat-ui-glass .prompt-actions {
-  background: rgba(242,244,248,.65);
+/* The body already tints the footer. A fill of its own would stack on it. */
+.chat-ui-glass .prompt-actions {
+  background: transparent;
 }
 
 .chat-ui-glass .prompt textarea {

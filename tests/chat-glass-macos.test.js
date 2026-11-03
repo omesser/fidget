@@ -10,22 +10,19 @@ async function bodyStyles() {
 <html class="chat-ui-glass">
   <head><link rel="stylesheet" href="chat-ui.css"></head>
   <body>
-    <div class="prompt-actions"></div>
     <section class="prompt"><textarea></textarea></section>
     <script>
       const root = document.documentElement;
-      const out = { backdrops: {}, tints: {}, promptActionTints: {}, promptTextareaRadii: {} };
+      const out = { backdrops: {}, tints: {}, promptTextareaRadii: {} };
       for (const platform of ["macos", null]) {
         if (platform) root.dataset.platform = platform; else delete root.dataset.platform;
         out.backdrops[platform || "other"] = getComputedStyle(document.body).backdropFilter;
       }
-      const promptActions = document.querySelector(".prompt-actions");
       const promptTextarea = document.querySelector(".prompt textarea");
       root.dataset.platform = "macos";
       for (const palette of ["dark", "light"]) {
         root.dataset.chatPalette = palette;
         out.tints[palette] = [...getComputedStyle(document.body).backgroundImage.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((m) => Number(m[1]));
-        out.promptActionTints[palette] = Number(getComputedStyle(promptActions).backgroundColor.match(/rgba?\\([^)]*,\\s*([\\d.]+)\\)/)?.[1]);
         out.promptTextareaRadii[palette] = getComputedStyle(promptTextarea).borderRadius;
       }
       console.log("__PROBE_RESULT__" + JSON.stringify(out));
@@ -54,14 +51,6 @@ test("Glass macOS body tints are lighter in both palettes", { skip: chromeSkip, 
   assert.deepEqual((await sharedStyles()).tints, {
     dark: [0.22, 0.3],
     light: [0.55, 0.65],
-  });
-});
-
-test("Glass macOS prompt footer matches the body tint in both palettes", { skip: chromeSkip, timeout: 60000 }, async () => {
-  const styles = await sharedStyles();
-  assert.deepEqual(styles.promptActionTints, {
-    dark: styles.tints.dark[1],
-    light: styles.tints.light[1],
   });
 });
 
