@@ -118,12 +118,13 @@ struct MoveArgs {
 }
 
 /// A spot from `whereabouts`. The report names the display `on_display`.
-/// `y` is required, and a walk never reads it.
+/// `y` is optional, and a walk never reads it.
 #[derive(Clone, Copy, Deserialize)]
 struct SpotArg {
     #[serde(alias = "on_display")]
     display: usize,
     x: f64,
+    #[serde(default)]
     y: f64,
 }
 
@@ -380,7 +381,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
                 "Walk a Character Instance left or right along the display floor or window top it stands on. \
                  Pass direction with distance in points or duration_ms in milliseconds, at {WALK_SPEED} points per second. \
                  Or pass to.display, to.x, and to.y. whereabouts calls that index on_display, and that name is accepted too. \
-                 to.y is required, and y is ignored, since a walk never changes height. \
+                 to.y is optional, and y is ignored, since a walk never changes height. \
                  It answers at once with started true, or with started false and the reason, such as falling or being held. \
                  It does not wait to arrive. \
                  The walk stops within {ARRIVAL_THRESHOLD} points of where it was sent, at the edge of what it stands on, \
@@ -425,10 +426,10 @@ pub fn list_tools() -> Vec<ToolInfo> {
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Required, and ignored, since a walk never changes height."
+                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Optional and ignored, since a walk never changes height."
                             }
                         },
-                        "required": ["x", "y"],
+                        "required": ["x"],
                         "oneOf": [
                             {"required": ["display"]},
                             {"required": ["on_display"]}
@@ -1202,7 +1203,7 @@ mod tests {
                 "to.{field} has a description"
             );
         }
-        assert_eq!(spot["required"], json!(["x", "y"]));
+        assert_eq!(spot["required"], json!(["x"]));
         assert_eq!(
             spot["oneOf"],
             json!([{"required": ["display"]}, {"required": ["on_display"]}]),
@@ -1529,6 +1530,25 @@ mod tests {
     }
 
     #[test]
+    fn move_to_a_display_x_accepts_an_omitted_y() {
+        let (frames, world) = side_by_side();
+        for display_field in ["display", "on_display"] {
+            let (mut roster, id, landed) = landed_walker(2620.0, &world);
+            let said = call_move_on(
+                &mut roster,
+                json!({"to": {display_field: 1, "x": 400}}),
+                &frames,
+                &world.displays,
+            )
+            .expect("dispatch succeeds without y");
+            assert_eq!(said, json!({"started": true}));
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert!((stopped.position.x - 2320.0).abs() <= 30.0, "{stopped:?}");
+            assert_eq!(stopped.position.y, landed.position.y);
+        }
+    }
+
+    #[test]
     fn move_accepts_the_on_display_field_whereabouts_reports() {
         let (frames, world) = side_by_side();
         let (mut roster, id, landed) = landed_walker(2620.0, &world);
@@ -1568,7 +1588,7 @@ mod tests {
             json!({"display": 2, "x": 400, "y": 900}),
             json!({"display": 1, "x": 5000, "y": 900}),
             json!({"display": 1, "x": -10, "y": 900}),
-            json!({"display": 1, "x": 400}),
+            json!({"display": 1, "y": 900}),
             json!({"display": 1, "on_display": 1, "x": 400, "y": 900}),
         ] {
             let refused =
@@ -1944,6 +1964,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         let world = test_snapshot();

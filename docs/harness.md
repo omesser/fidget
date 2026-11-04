@@ -358,7 +358,7 @@ Two transports, not to be conflated:
 1. **ACP** (Fidget ↔ Harness): always stdio. Fidget spawns the Harness and prompts it over newline-delimited JSON-RPC.
 2. **MCP** (Harness → Fidget): the Harness calls back so Behaviors, sensing, and Memory reach the fidget. It says things only in its reply (ADR-0040).
 
-The README lists the [tools and resources](../README.md#harness--mcp). `move` walks a Character Instance left or right by a distance or for a time, or to the x of a spot from `whereabouts`. The spot's y is accepted and ignored.
+The README lists the [tools and resources](../README.md#harness--mcp). `move` walks a Character Instance left or right by a distance or for a time, or to the x of a spot from `whereabouts`. The spot's y is optional and ignored.
 
 ### How it works
 
