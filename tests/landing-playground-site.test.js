@@ -365,9 +365,8 @@ const touches = `
       await frame();
       const longPress = { after, poked: layer.querySelectorAll(".cue-ring").length, open: pill.classList.contains("visible") };
       const box = desk.getBoundingClientRect();
-      // The sprite walks the floor, so a fixed corner is sometimes the character.
-      // A press on it leaves the pill up. Land off the sprite, the pill, and the
-      // wallpaper switch, then wait until that press removes the visible class.
+      // The sprite walks the floor, so a fixed corner is sometimes the character,
+      // and a press there leaves the pill up.
       let spot = null;
       for (let y = box.top + 24; spot === null && y < box.bottom - 8; y += 18) {
         for (let x = box.left + 16; x < box.right - 16 && spot === null; x += 18) {
