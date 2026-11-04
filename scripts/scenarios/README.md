@@ -99,6 +99,15 @@ by 3.5 s (`poke-mid-climb-check.py`). Set `FIDGET_SCENARIO_TRACE` to a saved
 app log to run only the check, as `fixtures/poke-mid-climb-trace.txt` does in
 `crates/verify`.
 
+`possession-keyup.sh` takes only the app binary and runs no Harness. It
+right-clicks the sprite, presses Possess
+(`scripts/scenarios/helpers/possession-input.swift`), and posts arrow key
+edges. From the frame trace, it checks that a held arrow walks the sprite and
+that its keyup stops it for the next 30 frames. It then holds the arrow, brings
+Finder to the front so the keyup lands there, clicks the sprite to give the
+overlay focus back, and checks that the sprite still stands. It has no X11 or
+Windows leaf yet.
+
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness

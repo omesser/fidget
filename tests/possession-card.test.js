@@ -12,6 +12,7 @@ import {
   possessionBounds,
   possessionCard,
   possessionRects,
+  wirePossessionCard,
 } from "../src/possession-card.js";
 import { possessionEdge } from "../src/possession-keys.js";
 
@@ -39,6 +40,14 @@ test("the pill's field keeps its keydowns, but every keyup still lets go", () =>
   assert.deepEqual(possessionEdge("1", false, false, "Digit1", true), { key: "1", down: false });
 });
 
+test("keyups pass whether or not the overlay is possessed, keydowns only when it is", () => {
+  for (const possessed of [true, false]) {
+    assert.deepEqual(possessionEdge("ArrowRight", false, false, "ArrowRight", false, possessed), { key: "right", down: false });
+  }
+  assert.deepEqual(possessionEdge("ArrowRight", false, true, "ArrowRight", false, true), { key: "right", down: true });
+  assert.equal(possessionEdge("ArrowRight", false, true, "ArrowRight", false, false), null);
+});
+
 test("the card lists the bound keys under the explanation", () => {
   const card = possessionCard({ possessed: true, paused: false });
   assert.equal(card.paused, false);
@@ -48,8 +57,8 @@ test("the card lists the bound keys under the explanation", () => {
     ["↑", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
-    ["Esc", "Release Possession"],
   ]);
+  assert.equal(card.release, "Release Possession (Esc)");
 });
 
 test("the card numbers the shell's list and writes each name as a label", () => {
@@ -63,7 +72,6 @@ test("the card numbers the shell's list and writes each name as a label", () => 
     ["↑", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
-    ["Esc", "Release Possession"],
     ["1", "Wave"],
     ["2", "Nod"],
   ]);
@@ -72,7 +80,7 @@ test("the card numbers the shell's list and writes each name as a label", () => 
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
   const card = possessionCard({ possessed: true, paused: false, behaviors: names });
-  assert.deepEqual(card.keys.slice(5), [
+  assert.deepEqual(card.keys.slice(4), [
     ["1", "K"],
     ["2", "J"],
     ["3", "Walk"],
@@ -82,8 +90,9 @@ test("the card does not reorder or drop a name the shell sent", () => {
 test("a paused card dims and asks for a click", () => {
   const card = possessionCard({ possessed: true, paused: true });
   assert.equal(card.paused, true);
-  assert.equal(card.heading, "Click to resume");
+  assert.equal(card.heading, "Paused");
   assert.equal(card.dimmed, true);
+  assert.equal(card.release, null, "the whole paused card is the resume click");
 });
 
 test("the bindings card uses the shared sans stack", () => {
@@ -185,7 +194,22 @@ function element() {
     textContent: "",
     style: {},
     children: [],
-    classList: { toggle() {} },
+    attributes: {},
+    classes: new Set(),
+    classList: {
+      toggle(name, on) {
+        if (on) node.classes.add(name);
+        else node.classes.delete(name);
+      },
+      contains: (name) => node.classes.has(name),
+    },
+    setAttribute(name, value) {
+      node.attributes[name] = String(value);
+    },
+    listeners: {},
+    addEventListener(type, handler) {
+      node.listeners[type] = handler;
+    },
     append(...kids) {
       node.children.push(...kids);
     },
@@ -233,16 +257,104 @@ test("a charge-only change keeps the same card nodes", () => {
   }
 });
 
-test("the card takes a click only while paused, and the charge bar never does", () => {
+test("the card takes a click only while paused, its buttons always, the bar never", () => {
   const card = [10, 20, 220, 88];
   const bar = [10, 112, 220, 8];
-  assert.deepEqual(possessionRects(card, bar, true), [
+  const release = [24, 80, 150, 22];
+  const focus = [180, 80, 40, 22];
+  assert.deepEqual(possessionRects(card, bar, null, focus, true), [
     { rect: card, clickable: true },
+    { rect: focus, clickable: true },
     { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(card, bar, false), [
+  assert.deepEqual(possessionRects(card, bar, release, focus, false), [
     { rect: card, clickable: false },
+    { rect: release, clickable: true },
+    { rect: focus, clickable: true },
     { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(null, null, false), []);
+  assert.deepEqual(possessionRects(null, null, null, null, false), []);
+});
+
+function withDocument(run) {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => element() };
+  try {
+    run();
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
+}
+
+function paintedCard(paused) {
+  const card = element();
+  const bar = element();
+  paintPossession(card, bar, possessionCard({ possessed: true, paused }), null);
+  return card;
+}
+
+test("the focus button is pressed while the overlay holds the keys and raised once it pauses", () => {
+  withDocument(() => {
+    for (const [paused, pressed, label] of [
+      [false, "true", "Focused"],
+      [true, "false", "Focus"],
+    ]) {
+      const button = paintedCard(paused).querySelector(".possession-focus");
+      assert.ok(button, `a ${paused ? "paused" : "live"} card has a focus button`);
+      assert.equal(button.attributes["aria-pressed"], pressed);
+      assert.equal(button.querySelector(".possession-focus-label").textContent, label);
+    }
+  });
+});
+
+function pressOn(card, selector) {
+  const target = selector && card.querySelector(selector);
+  const event = {
+    target: { closest: (wanted) => (wanted === selector ? target : null) },
+    stopPropagation() {},
+  };
+  card.listeners.pointerdown(event);
+  card.listeners.pointerup?.(event);
+  card.listeners.click?.(event);
+}
+
+test("one press on the focus button asks for focus once, paused or not", () => {
+  withDocument(() => {
+    for (const paused of [false, true]) {
+      const card = paintedCard(paused);
+      const calls = [];
+      wirePossessionCard(card, (command, args) => {
+        calls.push([command, args]);
+        return Promise.resolve();
+      });
+      pressOn(card, ".possession-focus");
+      assert.deepEqual(calls, [["overlay_request_focus", undefined]]);
+    }
+  });
+});
+
+test("the paused card body still resumes, a live one does not, and release presses Esc", () => {
+  withDocument(() => {
+    const calls = [];
+    const invoke = (command, args) => {
+      calls.push([command, args]);
+      return Promise.resolve();
+    };
+    const paused = paintedCard(true);
+    wirePossessionCard(paused, invoke);
+    pressOn(paused, null);
+    assert.deepEqual(calls, [["overlay_request_focus", undefined]]);
+
+    calls.length = 0;
+    const live = paintedCard(false);
+    wirePossessionCard(live, invoke);
+    pressOn(live, null);
+    assert.deepEqual(calls, []);
+    pressOn(live, ".possession-release");
+    assert.deepEqual(calls, [
+      ["overlay_possession_key", { key: "escape", down: true }],
+      ["overlay_possession_key", { key: "escape", down: false }],
+    ]);
+  });
 });

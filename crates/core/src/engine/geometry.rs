@@ -1,6 +1,6 @@
 //! Spatial queries over a `WorldSnapshot`.
 
-use super::{Point, Rect, Window, WorldSnapshot, EDGE_CLEARANCE};
+use super::{Point, Rect, State, Window, WorldSnapshot, EDGE_CLEARANCE};
 use crate::window_source::DOCK_PERCH_ID;
 
 /// A surface the sprite can come to rest on.
@@ -161,6 +161,40 @@ pub(super) fn usable_height_under(feet: Point, snapshot: &WorldSnapshot) -> Opti
     displays_spanning(feet.x, snapshot)
         .find(|display| feet.y >= display.y && feet.y <= display.bottom())
         .map(|display| display.height)
+}
+
+/// How far along x a walk may go. It always holds the feet, so a clamp to it
+/// can stop a walk short and never turn it round.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Reach {
+    left_x: f64,
+    right_x: f64,
+}
+
+impl Reach {
+    pub(super) fn clamp(self, x: f64) -> f64 {
+        x.clamp(self.left_x, self.right_x)
+    }
+}
+
+/// How far a move may walk the Surface underfoot. The span stays on this
+/// display, `EDGE_CLEARANCE` in from its sides so the sprite never meets a
+/// wall it would climb, and on a Perch it stays on the Perch.
+pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot) -> Option<Reach> {
+    let display = displays_spanning(feet.x, snapshot)
+        .find(|display| feet.y >= display.y && feet.y <= display.bottom())?;
+    let mut left_x = display.x + EDGE_CLEARANCE;
+    let mut right_x = display.x + display.width - EDGE_CLEARANCE;
+    if state == State::Perched {
+        if let Some(perch) = perch_at(feet, &snapshot.windows) {
+            left_x = left_x.max(perch.rect.x);
+            right_x = right_x.min(perch.rect.x + perch.rect.width);
+        }
+    }
+    Some(Reach {
+        left_x: left_x.min(feet.x),
+        right_x: right_x.max(feet.x),
+    })
 }
 
 /// Whether a step at `x` heading `direction` would leave the outermost display

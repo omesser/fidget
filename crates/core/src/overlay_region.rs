@@ -21,6 +21,10 @@ pub struct OverlayRect {
     /// the rect was measured. `None` for a rect that stays put.
     #[serde(default)]
     pub follows: Option<Follows>,
+    /// Mostly clear pixels, like the possess ghost's flight. Windows' region
+    /// keeps it; an uncomposited X11 shape leaves it out, or it shows black.
+    #[serde(default)]
+    pub see_through: bool,
 }
 
 /// Which Instance a rect is placed from, and that Instance's top-left, in
@@ -56,8 +60,8 @@ pub fn follow_placements(
             }
             OverlayRect {
                 rect: [left, top, right - left, bottom - top],
-                clickable: overlay_rect.clickable,
                 follows: None,
+                ..overlay_rect.clone()
             }
         })
         .collect()
@@ -165,9 +169,9 @@ pub struct DrawnInstance<'a> {
     pub offset: (i32, i32),
 }
 
-/// What an overlay draws: every Character's swept art and every overlay rect,
-/// each following rect stretched over its sprite's placements. Nothing while
-/// the Characters are hidden.
+/// What an uncomposited X11 overlay draws: every Character's swept art and
+/// every overlay rect but a see-through one, each following rect stretched over
+/// its sprite's placements. Nothing while the Characters are hidden.
 pub fn drawn_region(
     visible: bool,
     instances: &[DrawnInstance<'_>],
@@ -180,7 +184,12 @@ pub fn drawn_region(
         .iter()
         .flat_map(|instance| instance.trail.clip_rects(instance.offset))
         .collect();
-    let rects = follow_placements(rects, |id| {
+    let opaque: Vec<OverlayRect> = rects
+        .iter()
+        .filter(|rect| !rect.see_through)
+        .cloned()
+        .collect();
+    let rects = follow_placements(&opaque, |id| {
         let instance = instances.iter().find(|instance| instance.id == id)?;
         Some(instance.trail.placements(instance.offset).to_vec())
     });
@@ -233,6 +242,7 @@ mod tests {
             rect,
             clickable: true,
             follows: None,
+            see_through: false,
         }
     }
 
@@ -241,6 +251,7 @@ mod tests {
             rect,
             clickable: false,
             follows: None,
+            see_through: false,
         }
     }
 
@@ -366,6 +377,10 @@ mod tests {
     #[test]
     fn region_plan_table() {
         let art = [[100, 200, 180, 328]]; // sprite swept bounds
+        let ghost_flight = OverlayRect {
+            see_through: true,
+            ..drawn([40, 20, 220, 270])
+        };
         const open_chat: OverlayRect = clickable([220, 140, 72, 18]);
         const bubble: OverlayRect = drawn([120, 80, 200, 90]);
         const thinking: OverlayRect = drawn([150, 100, 48, 24]);
@@ -406,6 +421,12 @@ mod tests {
                 ],
             ),
             ("bubble hidden", &art, &[], &[[100, 200, 180, 328]]),
+            (
+                "possess ghost in flight, mostly clear but still drawn",
+                &art,
+                &[ghost_flight],
+                &[[100, 200, 180, 328], [40, 20, 260, 290]],
+            ),
             (
                 "no sprite, bubble straddling the seam",
                 &[],
@@ -531,6 +552,7 @@ mod tests {
                 instance: "one".into(),
                 at: [100, 100],
             }),
+            see_through: false,
         };
         let region = drawn_region(true, &instances, &[bubble]);
         assert!(
@@ -556,6 +578,26 @@ mod tests {
         assert!(shows(&region, (101, 101)), "{region:?}");
     }
 
+    /// A ghost's flight is mostly clear pixels, which an uncomposited X11
+    /// shape would fill black, so only the art is shown.
+    #[test]
+    fn a_see_through_rect_is_not_drawn() {
+        let trail = trail_through(&[(100, 100)]);
+        let instances = [DrawnInstance {
+            id: "one",
+            trail: &trail,
+            offset: (0, 0),
+        }];
+        let flight = OverlayRect {
+            see_through: true,
+            ..drawn([0, 0, 400, 400])
+        };
+        assert_eq!(
+            drawn_region(true, &instances, &[flight]),
+            drawn_region(true, &instances, &[])
+        );
+    }
+
     /// Hidden Characters draw nothing, bubble included.
     #[test]
     fn hidden_characters_draw_nothing() {
@@ -569,6 +611,7 @@ mod tests {
             rect: [100, 40, 40, 20],
             clickable: false,
             follows: None,
+            see_through: false,
         };
         assert_eq!(
             drawn_region(false, &instances, &[bubble]),

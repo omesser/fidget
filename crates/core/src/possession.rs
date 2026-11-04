@@ -1,6 +1,10 @@
 //! Possession: turning key edges into what a possessed sprite does this tick.
 //! The keyboard twin of `input::Pointer`, and pure for the same reason.
 
+use std::collections::BTreeMap;
+
+use crate::character::{animation_of, Behavior, Primitive};
+
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Walk {
@@ -20,16 +24,35 @@ pub enum Key {
     Digit(u8),
 }
 
-/// Behaviors the digits play, in name order, without `walk` or `jump`.
-/// A Character with more than nine leaves the rest unbound.
-pub fn digit_behaviors<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut names: Vec<&str> = names
-        .into_iter()
-        .filter(|name| *name != "walk" && *name != "jump")
-        .collect();
-    names.sort_unstable();
-    names.truncate(9);
-    names
+/// What digits 1 to 9 play: declared Behaviors by their own Primitives, not
+/// `then`, minus movement-only ones, one digit per Animation loop, name order.
+pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
+    let mut groups: Vec<(Vec<&str>, Vec<&str>)> = Vec::new();
+    for (name, behavior) in behaviors {
+        let own = behavior.primitives.as_slice();
+        // Idle between moves is the pause in a stroll, which the arrows
+        // already give. Idle alone is not movement.
+        let moves = own.iter().any(Primitive::owned_by_arrows_and_space);
+        let only_moves = moves
+            && own.iter().all(|primitive| {
+                *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
+            });
+        if behavior.not_in_manifest || only_moves {
+            continue;
+        }
+        // Composable Primitives only fall back to art no other one draws, so
+        // `animation_of` alone says what is drawn.
+        let drawn: Vec<&str> = own
+            .iter()
+            .map(|primitive| animation_of(*primitive))
+            .collect();
+        match groups.iter_mut().find(|(played, _)| *played == drawn) {
+            Some((_, names)) => names.push(name),
+            None => groups.push((drawn, vec![name])),
+        }
+    }
+    groups.truncate(9);
+    groups.into_iter().map(|(_, names)| names).collect()
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -76,7 +99,7 @@ pub struct Intent {
     /// Escape was pressed: end the possession.
     pub end_possession: bool,
     /// A digit pressed since the last tick, 1 to 9. The Engine plays the
-    /// Behavior at that place in [`digit_behaviors`].
+    /// first Behavior at that place in [`digit_behaviors`], without its `then`.
     pub play: Option<u8>,
 }
 
@@ -342,20 +365,128 @@ mod tests {
         assert!(keys.tick(FRAME_MS).end_possession);
     }
 
+    fn behaviors(table: &[(&str, &[Primitive], Option<&str>)]) -> BTreeMap<String, Behavior> {
+        table
+            .iter()
+            .map(|(name, primitives, then)| {
+                let behavior = Behavior {
+                    primitives: primitives.to_vec(),
+                    then: then.map(str::to_string),
+                    weight: 1,
+                    trigger: None,
+                    not_in_manifest: false,
+                };
+                (name.to_string(), behavior)
+            })
+            .collect()
+    }
+
+    /// A Behavior not in the manifest (weight 0, added by the loader) repeats
+    /// art the Character already shows, so it gets no digit. Only what the
+    /// package declares does.
     #[test]
-    fn digits_follow_behavior_names_skipping_walk_and_jump() {
-        let names = ["jump", "walk", "wave", "nod", "sit"];
-        assert_eq!(digit_behaviors(names), ["nod", "sit", "wave"]);
+    fn only_behaviors_the_package_declares_get_digits() {
+        use crate::character::tests::{declaring, load_manifest};
+        use crate::character::REQUIRED_ANIMATIONS;
+
+        let manifest = format!(
+            "{}[behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+        assert!(
+            character.behaviors.contains_key("react"),
+            "loading adds react"
+        );
+        assert_eq!(digit_behaviors(&character.behaviors), [["nap"]]);
+    }
+
+    /// A package that declares the very shape loading would add still declared
+    /// it, so it keeps its digit.
+    #[test]
+    fn a_declared_weightless_react_keeps_its_digit() {
+        use crate::character::tests::{declaring, load_manifest};
+        use crate::character::REQUIRED_ANIMATIONS;
+
+        let manifest = format!(
+            "{}[behaviors.react]\nplay = [\"react\"]\nweight = 0\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+        assert_eq!(digit_behaviors(&character.behaviors), [["react"]]);
+    }
+
+    /// The arrows and Space already move the sprite, so a Behavior made only
+    /// of movement, and the idle between moves, gets no digit. Its own Primitives
+    /// decide, not its `then`.
+    #[test]
+    fn behaviors_made_only_of_movement_get_no_digit() {
+        let table = behaviors(&[
+            ("greet", &[Primitive::Talk], Some("stroll")),
+            ("stroll", &[Primitive::Walk], None),
+            ("hop", &[Primitive::Jump], None),
+            ("play-with-cursor", &[Primitive::Chase], None),
+            ("touch-down", &[Primitive::Land], None),
+            ("ride", &[Primitive::Hold, Primitive::Walk], None),
+            ("wander", &[Primitive::Walk, Primitive::Idle], None),
+            ("pace", &[Primitive::Walk, Primitive::Talk], None),
+            ("stare", &[Primitive::Idle], None),
+        ]);
+        assert_eq!(digit_behaviors(&table), [["greet"], ["pace"], ["stare"]]);
+    }
+
+    /// Behaviors whose own Primitives play the same Animations in the same
+    /// order share one digit, named together.
+    #[test]
+    fn behaviors_playing_the_same_loop_share_a_digit() {
+        let table = behaviors(&[
+            ("wave", &[Primitive::React], None),
+            ("startle", &[Primitive::React], None),
+            ("greet", &[Primitive::React], Some("nap")),
+            ("nap", &[Primitive::Sit, Primitive::Sleep], None),
+            ("doze", &[Primitive::Sleep, Primitive::Sit], None),
+        ]);
+        assert_eq!(
+            digit_behaviors(&table),
+            [vec!["doze"], vec!["greet", "startle", "wave"], vec!["nap"]]
+        );
+    }
+
+    /// Chase draws the walk Animation, so chasing while talking looks the same
+    /// as walking while talking and gets the same digit.
+    #[test]
+    fn behaviors_drawing_the_same_animations_share_a_digit() {
+        let table = behaviors(&[
+            ("pace", &[Primitive::Walk, Primitive::Talk], None),
+            ("pester", &[Primitive::Chase, Primitive::Talk], None),
+        ]);
+        assert_eq!(digit_behaviors(&table), [["pace", "pester"]]);
     }
 
     #[test]
     fn only_the_first_nine_behaviors_get_digits() {
-        let names = [
-            "walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a",
-        ];
+        let names = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"];
+        let loops: Vec<Vec<Primitive>> = (1..=names.len())
+            .map(|sits| vec![Primitive::Sit; sits])
+            .collect();
+        let table: Vec<_> = names
+            .iter()
+            .zip(&loops)
+            .map(|(name, sits)| (*name, &sits[..], None))
+            .collect();
         assert_eq!(
-            digit_behaviors(names),
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+            digit_behaviors(&behaviors(&table)),
+            [
+                ["a"],
+                ["b"],
+                ["c"],
+                ["d"],
+                ["e"],
+                ["f"],
+                ["g"],
+                ["h"],
+                ["i"]
+            ]
         );
     }
 

@@ -12,19 +12,19 @@ update the line below.
 
 ## `marked.esm.js`
 
-`marked@18.1.1`, `lib/marked.esm.js` — 78 lines, 47,076 bytes, no imports, no
+`marked@18.1.2`, `lib/marked.esm.js` — 82 lines, 48,327 bytes, no imports, no
 runtime dependencies.
 
 ```sh
-npm pack marked@18.1.1
-tar xzOf marked-18.1.1.tgz package/lib/marked.esm.js > src/vendor/marked.esm.js
+npm pack marked@18.1.2
+tar xzOf marked-18.1.2.tgz package/lib/marked.esm.js > src/vendor/marked.esm.js
 ```
 
 | | |
 | --- | --- |
-| sha256 (file) | `930457e5d55439f90465015cc507d3323366e80df5f7a701b61189d4e1046bda` |
-| sha256 (tarball) | `c05b3cff890d35e1208805a01fd0501571d09a81e725de0559b10bdfae90adad` |
-| same file on a CDN | <https://cdn.jsdelivr.net/npm/marked@18.1.1/lib/marked.esm.js> |
+| sha256 (file) | `e7b0919876c54c2d9ca6b927db18420a081f6fee8cf1ecfd7cb6ea97a3b55309` |
+| sha256 (tarball) | `9e3e0f5beb9c15a671025eb588c64dc8078a529121d1de809f8752bc422ad09d` |
+| same file on a CDN | <https://cdn.jsdelivr.net/npm/marked@18.1.2/lib/marked.esm.js> |
 | licence | MIT |
 
 Used by `src/markdown.js`, and only through its token API — `Lexer.lex`. The
@@ -37,6 +37,6 @@ readable alternative is not the same library at a different price — it is
 pinning the 15.x line (2,189 lines, 71,905 bytes) and giving up three majors.
 What stands in for reading it: the version is pinned, the hash above matches
 the registry byte for byte, and marked publishes to npm with SLSA provenance
-(`npm view marked@18.1.1 dist.attestations`). The readable original is in
+(`npm view marked@18.1.2 dist.attestations`). The readable original is in
 `lib/marked.esm.js.map` in the same tarball, which is not vendored because
 nothing but a devtools session would read it.

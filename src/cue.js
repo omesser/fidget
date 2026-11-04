@@ -304,11 +304,12 @@ function outlineOf(sprite) {
   return made;
 }
 
-// Each cue's ghost layers and sprite class, and how far its keyframed path in
-// main.css reaches above the centre and to the right of it.
+// Each cue's ghost layers and sprite class, how far its keyframed path in
+// cue-possess.css reaches above the centre and to the right of it, its whole
+// left-to-right `span`, and its largest scale.
 const GHOSTS = {
-  possess: { layers: ["trail2", "trail", "lead"], sprite: "cue-possess", rise: 165, right: 85 },
-  unpossess: { layers: ["rise"], sprite: "cue-release", rise: 150, right: 0 },
+  possess: { layers: ["trail2", "trail", "lead"], sprite: "cue-possess", rise: 165, right: 85, span: [-30, 85], scale: 1 },
+  unpossess: { layers: ["rise"], sprite: "cue-release", rise: 150, right: 0, span: [-8, 6], scale: 1.04 },
 };
 
 // --dir and --ky bend the path off the overlay's edges. The rise is squashed,
@@ -319,6 +320,19 @@ export function ghostPath(cue, { cx, cy, gw, gh, stageW }) {
   const ky = cy < rise + gh / 2 ? Math.max(0.4, (cy - gh / 2 - 4) / rise) : 1;
   const mirrored = right > 0 && cx + right + gw / 2 > stageW && cx - right - gw / 2 >= 0;
   return { dir: mirrored ? -1 : 1, ky };
+}
+
+// Everywhere the ghost is drawn in flight, as [x, y, width, height]: its
+// path's reach plus its frame turned any way. Windows draws only there.
+export function ghostFlight(cue, { cx, cy, gw, gh }, { dir, ky }) {
+  const { rise, span, scale } = GHOSTS[cue];
+  const r = (Math.hypot(gw, gh) / 2) * scale;
+  const xs = span.map((dx) => cx + dx * dir);
+  const left = Math.floor(Math.min(...xs) - r);
+  const top = Math.floor(cy - rise * ky - r);
+  const right = Math.ceil(Math.max(...xs) + r);
+  const bottom = Math.ceil(cy + r);
+  return [left, top, right - left, bottom - top];
 }
 
 function ghost(outline, c, cls, path) {
@@ -359,10 +373,12 @@ function possession(stage, c, sprite, cue) {
   // The overlay's cue layer is zero-sized, so its stage is the window. The
   // cues page draws into a desk narrower than that.
   const stageW = stage.clientWidth || (globalThis.innerWidth ?? Infinity);
-  const path = ghostPath(cue, { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h, stageW });
+  const at = { cx: c.x, cy: c.y, gw: outline.w, gh: outline.h };
+  const path = ghostPath(cue, { ...at, stageW });
   const ghosts = GHOSTS[cue].layers.map((cls) => ghost(outline, c, cls, path));
   const wrapper = document.createElement("div");
   wrapper.className = "cue";
+  wrapper.flight = ghostFlight(cue, at, path);
   wrapper.append(...ghosts);
   stage.append(wrapper);
   reap(wrapper, ghosts);

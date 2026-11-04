@@ -4,7 +4,9 @@
 
 use crate::character::Character;
 use crate::display::Whereabouts;
-use crate::engine::{BehaviorProposal, Engine, Frame, Point, Rect, WorldSnapshot};
+use crate::engine::{
+    BehaviorProposal, Engine, Frame, MoveRefusal, MoveRequest, Point, Rect, WorldSnapshot,
+};
 use std::collections::BTreeMap;
 
 /// A stable identifier for one Character Instance.
@@ -116,6 +118,11 @@ impl Instance {
     /// Enqueue a BehaviorProposal to be applied on the next tick.
     pub fn enqueue(&mut self, proposal: BehaviorProposal) {
         self.pending = Some(proposal);
+    }
+
+    /// The Engine stays private, so a caller starts a move here.
+    pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
+        self.engine.start_move(request)
     }
 
     /// Play a Harness turn beat on the next tick. The Engine owns it.
@@ -385,6 +392,16 @@ impl crate::tools::ExpressionHandle for Roster {
             None => false,
         }
     }
+
+    fn start_move(
+        &mut self,
+        instance_id: &str,
+        request: MoveRequest,
+    ) -> Option<Result<(), MoveRefusal>> {
+        self.instances
+            .get_mut(instance_id)
+            .map(|instance| instance.start_move(request))
+    }
 }
 
 #[cfg(test)]
@@ -426,6 +443,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         behaviors.insert(
@@ -435,6 +453,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
 

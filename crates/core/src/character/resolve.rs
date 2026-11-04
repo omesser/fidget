@@ -219,9 +219,11 @@ fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
 }
 
 /// Weight-0 Behaviors for each `ASKABLE_PRIMITIVES` entry whose name is free
-/// and whose Primitive no declared Behavior already plays. Author entries win.
-/// Exclusions (land/hold/talk/idle) live on that table's comment.
-fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) {
+/// and whose Primitive no declared Behavior already plays. Returns their names:
+/// the Behaviors not in the manifest. Author entries win; exclusions
+/// (land/hold/talk/idle) are on that table.
+fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -> BTreeSet<String> {
+    let mut added = BTreeSet::new();
     for &(name, primitive) in super::ASKABLE_PRIMITIVES {
         if declared.contains_key(name) {
             continue;
@@ -241,7 +243,9 @@ fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) {
                 trigger: None,
             },
         );
+        added.insert(name.to_string());
     }
+    added
 }
 
 /// Check that every Behavior can be played to an end. A chain that returns to
@@ -251,7 +255,7 @@ pub(super) fn resolve_behaviors(
     mut declared: BTreeMap<String, DeclaredBehavior>,
     errors: &mut Vec<String>,
 ) -> BTreeMap<String, Behavior> {
-    ensure_default_behaviors(&mut declared);
+    let not_in_manifest = ensure_default_behaviors(&mut declared);
 
     for (name, declaration) in &declared {
         if let Some(next) = &declaration.then {
@@ -298,6 +302,7 @@ pub(super) fn resolve_behaviors(
     declared
         .into_iter()
         .map(|(name, declaration)| {
+            let not_in_manifest = not_in_manifest.contains(&name);
             (
                 name,
                 Behavior {
@@ -305,6 +310,7 @@ pub(super) fn resolve_behaviors(
                     then: declaration.then,
                     weight: declaration.weight,
                     trigger: declaration.trigger,
+                    not_in_manifest,
                 },
             )
         })

@@ -225,6 +225,29 @@ fn begin_possession(
     }
 }
 
+/// Windows: only the overlay drawing the card hears keys, so the keyboard moves
+/// with the card. A paused session only relabels: the user's app keeps focus.
+fn follow_possession_display(
+    app: &tauri::AppHandle,
+    session: &mut possession::Session,
+    window: String,
+    now: Instant,
+) {
+    if session.window == window {
+        return;
+    }
+    hold_possession_keyboard(app, &window, true);
+    hold_possession_keyboard(app, &session.window, false);
+    if !session.move_to(window.as_str(), now) {
+        return;
+    }
+    if let Some(overlay) = app.get_webview_window(&window) {
+        if let Err(why) = overlay_request_focus(overlay) {
+            eprintln!("possession: {window} could not take the keyboard: {why}");
+        }
+    }
+}
+
 fn end_possession(
     app: &tauri::AppHandle,
     session: &mut Option<possession::Session>,
@@ -1519,8 +1542,15 @@ pub(crate) fn run_frame_loop(
                     .as_mut()
                     .filter(|session| session.instance == live.id)
                 {
-                    if !was_gesturing && live.pointer.gesturing() && session.paused() {
-                        session.swallow_click = true;
+                    if !was_gesturing && live.pointer.gesturing() && session.press() {
+                        if let Some(overlay) = app.get_webview_window(&session.window) {
+                            if let Err(why) = overlay_request_focus(overlay) {
+                                eprintln!(
+                                    "possession: {} could not take the keyboard: {why}",
+                                    session.window
+                                );
+                            }
+                        }
                     }
                     if session.swallow_click {
                         let grabbing = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab));
@@ -2101,12 +2131,9 @@ pub(crate) fn run_frame_loop(
                     session_log::log_thinking(&app, &live.id);
                 }
 
-                let became_perched = live.last_state.is_some()
-                    && frame.state == State::Perched
-                    && live.last_state != Some(State::Perched);
-                if became_perched {
+                if let Some(what) = landed(live.last_state, frame.state, instance.possessed()) {
                     live.addressed = true;
-                    note_happened(&mut live.happened, Happened::Perch);
+                    note_happened(&mut live.happened, what);
                 }
 
                 if live.last_state != Some(frame.state) {
@@ -2464,6 +2491,19 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
+                if cfg!(target_os = "windows") {
+                    let possessed_here = session
+                        .as_mut()
+                        .filter(|session| session.instance == live.id);
+                    if let (Some(session), Some(index)) = (possessed_here, owner) {
+                        follow_possession_display(
+                            &app,
+                            session,
+                            overlay_label(index),
+                            Instant::now(),
+                        );
+                    }
+                }
                 let listening =
                     owner.is_some_and(|index| platform::overlay_listening(&overlay_label(index)));
                 let dialogue = super::draw_response(
@@ -2514,9 +2554,9 @@ pub(crate) fn run_frame_loop(
                     paused,
                     charge: frame.charge,
                     behaviors: if possessed {
-                        digit_behaviors(live.character.behaviors.keys().map(String::as_str))
+                        digit_behaviors(&live.character.behaviors)
                             .into_iter()
-                            .map(str::to_string)
+                            .map(|names| names.join("/"))
                             .collect()
                     } else {
                         Vec::new()
@@ -3375,6 +3415,8 @@ fn answer_tool_call(
                 app_instructions: director::app_instructions(
                     super::behavior_names_of(characters, instance),
                     blank,
+                    // Only a Harness can call this tool, and it has tools.
+                    true,
                 ),
                 personality_prompt: match blank {
                     true => String::new(),
@@ -3434,6 +3476,13 @@ fn touched(verbs: &[Verb], grab_started: bool, poke_settled: bool) -> Option<Hap
     } else {
         None
     }
+}
+
+/// What the wake says happened when the sprite changes State. A possessed
+/// sprite perches where the user steered it, so that landing is not news.
+fn landed(last: Option<State>, now: State, possessed: bool) -> Option<Happened> {
+    let became_perched = last.is_some() && now == State::Perched && last != Some(State::Perched);
+    (became_perched && !possessed).then_some(Happened::Perch)
 }
 
 /// Drop front and `before` names without WindowNames consent or when excluded
@@ -3568,6 +3617,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         Character {
@@ -3664,7 +3714,7 @@ mod tests {
         assert_eq!(pip["id"], json!(id));
         assert_eq!(
             pip["app_instructions"],
-            json!(director::app_instructions(["wave"], false))
+            json!(director::app_instructions(["wave"], false, true))
         );
         assert_eq!(pip["personality_prompt"], json!("a shy robot."));
         assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));
@@ -3775,6 +3825,18 @@ mod tests {
     }
 
     #[test]
+    fn a_possessed_landing_does_not_wake_the_director() {
+        let falling = Some(State::Falling);
+        assert_eq!(
+            landed(falling, State::Perched, false),
+            Some(Happened::Perch)
+        );
+        assert_eq!(landed(falling, State::Perched, true), None);
+        assert_eq!(landed(Some(State::Perched), State::Perched, false), None);
+        assert_eq!(landed(None, State::Perched, false), None);
+    }
+
+    #[test]
     fn a_double_click_wakes_the_director_with_the_summon_alone() {
         let gesture = [click(), wait(100), click(), wait(1000)].concat();
         assert_eq!(heard(&gesture), vec![Happened::Summon]);
@@ -3878,6 +3940,7 @@ mod tests {
             rect: [50, 60, 200, 80],
             clickable: false,
             follows: None,
+            see_through: false,
         }];
         assert_eq!(
             decide_region_action(&[], &bubble, true),

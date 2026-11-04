@@ -3,7 +3,7 @@
 //! The id is the index in the current arrangement. The windowing layer does
 //! not provide a native display id.
 
-use crate::engine::Point;
+use crate::engine::{GlobalX, Point};
 use crate::overlay::stands_on;
 use crate::window_source::Rect;
 
@@ -54,6 +54,27 @@ impl Placement {
     /// Offset from the frame's top edge.
     pub fn y(&self) -> f64 {
         self.y
+    }
+}
+
+/// A display's own `x` in the Engine's coordinate space, the frame's origin
+/// plus `x`, undoing `locate`. `display` is the index `whereabouts` lists.
+pub(crate) fn engine_x(display: usize, x: f64, frames: &[Rect]) -> Result<GlobalX, String> {
+    let Some(frame) = frames.get(display) else {
+        return Err(match frames.len() {
+            0 => "No display is connected.".to_string(),
+            connected => format!(
+                "No display {display}. whereabouts lists displays 0 to {}.",
+                connected - 1
+            ),
+        });
+    };
+    match GlobalX::new(frame.x + x) {
+        Some(global) if (0.0..=frame.width).contains(&x) => Ok(global),
+        _ => Err(format!(
+            "x {x} is outside display {display}, which is {} points wide.",
+            frame.width
+        )),
     }
 }
 

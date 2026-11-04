@@ -3,10 +3,12 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
-use crate::engine::Direction;
+use crate::display;
+use crate::engine::{Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED};
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -83,7 +85,7 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
 
 /// The wire spelling of a walk's `direction`. Parsed here so the Engine's
 /// `Direction` stays free of a JSON shape.
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum DirectionArg {
     Left,
@@ -95,6 +97,69 @@ impl From<DirectionArg> for Direction {
         match arg {
             DirectionArg::Left => Self::Left,
             DirectionArg::Right => Self::Right,
+        }
+    }
+}
+
+/// The wire shape of a `move` call. Every field is optional because which ones
+/// may come together is the parse's to say, in words a caller can act on.
+#[derive(Deserialize)]
+struct MoveArgs {
+    #[serde(default)]
+    instance_id: Option<String>,
+    #[serde(default)]
+    direction: Option<DirectionArg>,
+    #[serde(default)]
+    distance: Option<f64>,
+    #[serde(default)]
+    duration_ms: Option<u32>,
+    #[serde(default)]
+    to: Option<SpotArg>,
+}
+
+/// A spot from `whereabouts`. The report names the display `on_display`.
+/// Its `y` is accepted and dropped, since a walk never changes height.
+#[derive(Clone, Copy, Deserialize)]
+struct SpotArg {
+    #[serde(alias = "on_display")]
+    display: usize,
+    x: f64,
+}
+
+impl MoveArgs {
+    /// One `MoveRequest`, or the sentence that says what to change. `frames`
+    /// are the full frames `whereabouts` measures a spot from.
+    fn request(&self, frames: &[Rect]) -> Result<MoveRequest, String> {
+        let along = |heading: DirectionArg, extent| MoveRequest::Along {
+            heading: heading.into(),
+            extent,
+        };
+        let refuse = |why: &str| Err(why.to_string());
+        match (self.direction, self.distance, self.duration_ms, self.to) {
+            (Some(heading), Some(points), None, None) => match Distance::new(points) {
+                Some(distance) => Ok(along(heading, Extent::Distance(distance))),
+                None => refuse("distance must be more than 0 points."),
+            },
+            (Some(heading), None, Some(ms), None) => match NonZeroU32::new(ms) {
+                Some(ms) => Ok(along(heading, Extent::Time { ms })),
+                None => refuse("duration_ms must be more than 0."),
+            },
+            (None, None, None, Some(spot)) => {
+                display::engine_x(spot.display, spot.x, frames).map(MoveRequest::To)
+            }
+            (_, _, _, Some(_)) => {
+                refuse("Pass either to, or direction with distance or duration_ms. Not both.")
+            }
+            (_, Some(_), Some(_), None) => refuse("Pass distance or duration_ms, not both."),
+            (Some(_), None, None, None) => {
+                refuse("Say how far. Pass distance or duration_ms with direction.")
+            }
+            (None, Some(_), None, None) | (None, None, Some(_), None) => {
+                refuse("distance and duration_ms need a direction, left or right.")
+            }
+            (None, None, None, None) => {
+                refuse("Say where. Pass direction with distance or duration_ms, or pass to.")
+            }
         }
     }
 }
@@ -153,6 +218,29 @@ pub fn dispatch(
             let result = tools::play_behavior(
                 &args.behavior,
                 args.direction.map(Direction::from),
+                args.instance_id.as_deref(),
+                context.roster,
+                as_expression_handle(&mut expression),
+            );
+            context.expression = expression;
+
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
+        }
+        "move" => {
+            let args: MoveArgs = parse_args(arguments, tool_name)?;
+            let request =
+                args.request(context.placement.frames)
+                    .map_err(|message| DispatchError {
+                        code: ErrorCode::InvalidArguments,
+                        message,
+                    })?;
+
+            let mut expression = context.expression.take();
+            let result = tools::move_instance(
+                request,
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
@@ -286,6 +374,69 @@ pub fn list_tools() -> Vec<ToolInfo> {
             }),
         },
         ToolInfo {
+            name: "move".to_string(),
+            description: format!(
+                "Walk a Character Instance left or right along the display floor or window top it stands on. \
+                 Pass direction with distance in points or duration_ms in milliseconds, at {WALK_SPEED} points per second. \
+                 Or pass to.display and to.x, as whereabouts reports a spot, and on_display is accepted for to.display. \
+                 to.y is optional, and y is ignored, since a walk never changes height. \
+                 It answers at once with started true, or with started false and the reason, such as falling or being held. \
+                 It does not wait to arrive. \
+                 The walk stops within {ARRIVAL_THRESHOLD} points of where it was sent, at the edge of what it stands on, \
+                 or at a grab, a fall or a poke, and nothing resumes it. \
+                 It never crosses to another display. Call whereabouts to see where it stopped."
+            ),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["left", "right"],
+                        "description": "Which way to walk, left or right of the screen. Pass it with exactly one of distance or duration_ms, and leave it out when you pass to."
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": "How far to walk, in points, from where the Character stands now. Pass this or duration_ms, not both."
+                    },
+                    "duration_ms": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": format!("How long to walk, in milliseconds, at {WALK_SPEED} points per second. Pass this or distance, not both.")
+                    },
+                    "to": {
+                        "type": "object",
+                        "description": "A spot to walk to, as whereabouts reports one. Pass it instead of direction.",
+                        "properties": {
+                            "display": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Which display, by the index whereabouts lists. whereabouts names it on_display, and that name is accepted too. A spot on another display than the Character's own is walked toward, and the walk stops at the edge of its own display."
+                            },
+                            "on_display": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Alias for display, using the field name returned by whereabouts. Pass either display or on_display."
+                            },
+                            "x": {
+                                "type": "number",
+                                "description": "Points from that display's left edge, as whereabouts reports an Instance's x."
+                            },
+                            "y": {
+                                "type": "number",
+                                "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Optional and ignored, since a walk never changes height."
+                            }
+                        },
+                        "required": ["x"],
+                        "oneOf": [
+                            {"required": ["display"]},
+                            {"required": ["on_display"]}
+                        ]
+                    }
+                }
+            }),
+        },
+        ToolInfo {
             name: "list_windows".to_string(),
             description: "List visible windows with bounds. The owning application and the title need the window-names consent".to_string(),
             input_schema: serde_json::json!({
@@ -360,7 +511,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
     for tool in &mut tools {
         tool.input_schema["properties"]["instance_id"] = serde_json::json!({
             "type": "string",
-            "description": "Your Character Instance id, named in your prompt. play_behavior acts on that Instance. Optional while only one Instance runs."
+            "description": "Your Character Instance id, named in your prompt. play_behavior and move act on that Instance. Optional while only one Instance runs."
         });
     }
     tools
@@ -552,12 +703,13 @@ mod tests {
         let tools = list_tools();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
-        assert_eq!(names.len(), 8);
+        assert_eq!(names.len(), 9);
         assert!(
             !names.contains(&"speak"),
             "a Character says things only in its reply"
         );
         assert!(names.contains(&"play_behavior"));
+        assert!(names.contains(&"move"));
         assert!(names.contains(&"list_windows"));
         assert!(names.contains(&"describe_screen"));
         assert!(names.contains(&"recall"));
@@ -788,6 +940,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
 
@@ -869,6 +1022,18 @@ mod tests {
                     proposal,
                 )
             }
+
+            fn start_move(
+                &mut self,
+                instance_id: &str,
+                request: crate::engine::MoveRequest,
+            ) -> Option<Result<(), crate::engine::MoveRefusal>> {
+                crate::tools::ExpressionHandle::start_move(
+                    &mut *self.0.borrow_mut(),
+                    instance_id,
+                    request,
+                )
+            }
         }
 
         let temp = tempfile::tempdir().expect("temp dir is creatable");
@@ -917,6 +1082,14 @@ mod tests {
             ) -> bool {
                 self.0 = Some(proposal);
                 true
+            }
+
+            fn start_move(
+                &mut self,
+                _instance_id: &str,
+                _request: crate::engine::MoveRequest,
+            ) -> Option<Result<(), crate::engine::MoveRefusal>> {
+                None
             }
         }
 
@@ -985,6 +1158,60 @@ mod tests {
         assert!(play.description.contains("direction"));
     }
 
+    #[test]
+    fn move_is_listed_with_every_field_described_and_y_ignored() {
+        let tools = list_tools();
+        let walk = tools
+            .iter()
+            .find(|tool| tool.name == "move")
+            .expect("move is listed");
+
+        for field in [
+            "direction",
+            "distance",
+            "duration_ms",
+            "to.display",
+            "to.x",
+            "to.y",
+        ] {
+            assert!(
+                walk.description.contains(field),
+                "the description names {field}: {}",
+                walk.description
+            );
+        }
+        assert!(
+            walk.description.contains("y is ignored"),
+            "{}",
+            walk.description
+        );
+
+        let properties = &walk.input_schema["properties"];
+        assert_eq!(properties["direction"]["enum"], json!(["left", "right"]));
+        for field in ["direction", "distance", "duration_ms", "to"] {
+            assert!(
+                properties[field]["description"].is_string(),
+                "{field} has a description"
+            );
+        }
+        let spot = &properties["to"];
+        for field in ["display", "x", "y"] {
+            assert!(
+                spot["properties"][field]["description"].is_string(),
+                "to.{field} has a description"
+            );
+        }
+        assert_eq!(spot["required"], json!(["x"]));
+        assert_eq!(
+            spot["oneOf"],
+            json!([{"required": ["display"]}, {"required": ["on_display"]}]),
+            "a whereabouts spot passes back whole"
+        );
+        assert_eq!(spot["properties"]["on_display"]["type"], "integer");
+        assert_eq!(spot["properties"]["on_display"]["minimum"], 0);
+        assert!(spot["properties"]["on_display"]["description"].is_string());
+    }
+
     /// The ask end to end: the argument turns the Instance before its first
     /// step, so a right-facing sprite told to walk left goes left.
     #[test]
@@ -1003,6 +1230,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         let instance_id = roster.spawn(
@@ -1056,6 +1284,1047 @@ mod tests {
             walking.position.x < asked.position.x,
             "told to walk left: {asked:?} -> {walking:?}"
         );
+    }
+
+    /// A Roster with one Instance landed at `x` on `world`'s floor, and the
+    /// last Frame of its landing.
+    fn landed_walker(
+        x: f64,
+        world: &crate::engine::WorldSnapshot,
+    ) -> (crate::roster::Roster, String, crate::engine::Frame) {
+        use crate::engine::Point;
+
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &test_character("Walker"),
+            "Walker".to_string(),
+            Point { x, y: 100.0 },
+        );
+        let mut landed = None;
+        for _ in 0..100 {
+            landed = Some(roster.get_mut(&id).unwrap().tick(world));
+        }
+        (roster, id, landed.expect("the sprite ticked"))
+    }
+
+    /// `move` on displays whose full frames are their usable ones.
+    fn call_move(
+        roster: &mut crate::roster::Roster,
+        arguments: Value,
+        frames: &[Rect],
+    ) -> Result<Value, DispatchError> {
+        call_move_on(roster, arguments, frames, frames)
+    }
+
+    /// `move` through `dispatch`, with the Roster as the handle, `frames` as
+    /// the full frames `whereabouts` reports and `usable` as the floors the
+    /// Engine walks, as the frame loop calls it.
+    fn call_move_on(
+        roster: &mut crate::roster::Roster,
+        arguments: Value,
+        frames: &[Rect],
+        usable: &[Rect],
+    ) -> Result<Value, DispatchError> {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo {
+                id,
+                name,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(roster),
+            placement: PlacementQuery {
+                frames,
+                usable,
+                names: &[],
+                instances: &[],
+            },
+            caffeinate: None,
+        };
+        dispatch("move", arguments, &mut context)
+    }
+
+    /// The first Frame the Instance stands still in. A walk that never stops
+    /// fails here rather than passing on wherever it had got to.
+    fn tick_until_still(
+        roster: &mut crate::roster::Roster,
+        id: &str,
+        world: &crate::engine::WorldSnapshot,
+    ) -> crate::engine::Frame {
+        for _ in 0..1_000 {
+            let frame = roster.get_mut(id).expect("instance still runs").tick(world);
+            if frame.velocity.x == 0.0 {
+                return frame;
+            }
+        }
+        panic!("still walking after 1000 ticks");
+    }
+
+    #[test]
+    fn move_left_walks_the_distance_asked_and_keeps_its_height() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        assert_eq!(landed.position.x, 500.0, "{landed:?}");
+        assert_eq!(landed.facing, 1.0, "it faced right before the ask");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 300.0).abs() <= 30.0,
+            "200 points left of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.facing, -1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_right_walks_the_distance_asked_and_keeps_its_height() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 700.0).abs() <= 30.0,
+            "200 points right of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.facing, 1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_right_from_a_leftward_heading_turns_and_walks_the_distance() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        let facing_left = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(facing_left.facing, -1.0, "{facing_left:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - facing_left.position.x - 200.0).abs() <= 30.0,
+            "200 points right of where the left walk stopped: {facing_left:?} -> {stopped:?}"
+        );
+        assert_eq!(stopped.facing, 1.0, "{stopped:?}");
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn a_stalled_frame_does_not_carry_a_move_past_where_it_stops() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let mut stalled = world.clone();
+        stalled.elapsed_ms = 1000;
+        let stopped = tick_until_still(&mut roster, &id, &stalled);
+        assert!(
+            (stopped.position.x - 300.0).abs() <= 30.0,
+            "200 points left of 500: {stopped:?}"
+        );
+    }
+
+    #[test]
+    fn move_for_a_duration_walks_as_far_as_that_time_covers() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "duration_ms": 1000}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 620.0).abs() <= 30.0,
+            "one second is 120 points: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    /// Display 1's usable floor starts 80 points in from its frame, as a Dock
+    /// on its left would leave it, so the frame's origin and the floor's differ
+    /// by more than the arrival band.
+    fn side_by_side() -> ([Rect; 2], crate::engine::WorldSnapshot) {
+        let display = |x, width| Rect {
+            x,
+            y: 0.0,
+            width,
+            height: 1080.0,
+        };
+        let frames = [display(0.0, 1920.0), display(1920.0, 1920.0)];
+        let mut world = test_snapshot();
+        world.displays = vec![display(0.0, 1920.0), display(2000.0, 1840.0)];
+        (frames, world)
+    }
+
+    #[test]
+    fn move_to_a_whereabouts_spot_stops_there_and_keeps_its_height() {
+        let (frames, world) = side_by_side();
+        let (mut roster, id, landed) = landed_walker(2620.0, &world);
+
+        let said = call_move_on(
+            &mut roster,
+            json!({"to": {"display": 1, "x": 400, "y": 900}}),
+            &frames,
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 2320.0).abs() <= 30.0,
+            "400 points into the display whose frame starts at 1920: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_to_a_display_x_accepts_an_omitted_y() {
+        let (frames, world) = side_by_side();
+        for display_field in ["display", "on_display"] {
+            let (mut roster, id, landed) = landed_walker(2620.0, &world);
+            let said = call_move_on(
+                &mut roster,
+                json!({"to": {display_field: 1, "x": 400}}),
+                &frames,
+                &world.displays,
+            )
+            .expect("dispatch succeeds without y");
+            assert_eq!(said, json!({"started": true}));
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert!((stopped.position.x - 2320.0).abs() <= 30.0, "{stopped:?}");
+            assert_eq!(stopped.position.y, landed.position.y);
+        }
+    }
+
+    #[test]
+    fn move_accepts_the_on_display_field_whereabouts_reports() {
+        let (frames, world) = side_by_side();
+        let (mut roster, id, landed) = landed_walker(2620.0, &world);
+
+        let said = call_move_on(
+            &mut roster,
+            json!({
+                "to": {
+                    "on_display": 1,
+                    "x": 400,
+                    "y": 900,
+                    "id": "walker",
+                    "name": "Walker",
+                    "other_displays": [0]
+                }
+            }),
+            &frames,
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 2320.0).abs() <= 30.0,
+            "the same spot as display 1, x 400: {stopped:?}"
+        );
+        assert_eq!(stopped.position.y, landed.position.y, "{stopped:?}");
+    }
+
+    #[test]
+    fn move_refuses_a_spot_whereabouts_could_not_have_reported() {
+        let (frames, world) = side_by_side();
+        let (mut roster, _, _) = landed_walker(2620.0, &world);
+
+        for spot in [
+            json!({"display": 2, "x": 400, "y": 900}),
+            json!({"display": 1, "x": 5000, "y": 900}),
+            json!({"display": 1, "x": -10, "y": 900}),
+            json!({"display": 1, "y": 900}),
+            json!({"display": 1, "on_display": 1, "x": 400, "y": 900}),
+        ] {
+            let refused =
+                call_move_on(&mut roster, json!({ "to": spot }), &frames, &world.displays);
+            assert_eq!(
+                refused.map_err(|error| error.code),
+                Err(ErrorCode::InvalidArguments),
+                "{spot}"
+            );
+        }
+    }
+
+    #[test]
+    fn move_inside_the_arrival_band_does_not_start() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 10}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let after = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(after.position.x, landed.position.x, "{after:?}");
+    }
+
+    #[test]
+    fn a_walk_asked_of_a_drowsy_instance_does_not_end_asleep() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let mut a_second = world.clone();
+        a_second.elapsed_ms = 1000;
+        for _ in 0..58 {
+            roster.get_mut(&id).unwrap().tick(&a_second);
+        }
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 600}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said, json!({"started": true}));
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - 1100.0).abs() <= 30.0,
+            "600 points right of 500: {stopped:?}"
+        );
+        assert_eq!(stopped.state, crate::engine::State::Grounded, "{stopped:?}");
+    }
+
+    /// `ticks` more Frames of `world`, and the last of them.
+    fn tick_for(
+        roster: &mut crate::roster::Roster,
+        id: &str,
+        world: &crate::engine::WorldSnapshot,
+        ticks: usize,
+    ) -> crate::engine::Frame {
+        let instance = roster.get_mut(id).expect("instance still runs");
+        (0..ticks)
+            .map(|_| instance.tick(world))
+            .last()
+            .expect("at least one tick")
+    }
+
+    #[test]
+    fn move_refuses_while_the_instance_is_falling() {
+        use crate::engine::{Point, State};
+
+        let world = test_snapshot();
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &test_character("Walker"),
+            "Walker".to_string(),
+            Point { x: 500.0, y: 100.0 },
+        );
+        let midair = tick_for(&mut roster, &id, &world, 1);
+        assert_eq!(midair.state, State::Falling, "{midair:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let landed = tick_for(&mut roster, &id, &world, 200);
+        assert_eq!(landed.state, State::Grounded, "{landed:?}");
+        assert_eq!(landed.position.x, 500.0, "nothing walks it once it lands");
+    }
+
+    #[test]
+    fn move_refuses_while_the_user_holds_the_instance() {
+        use crate::engine::{State, Verb, WorldSnapshot};
+
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        let in_hand = WorldSnapshot {
+            cursor: landed.position,
+            verbs: vec![Verb::Grab],
+            ..world.clone()
+        };
+        let held = tick_for(&mut roster, &id, &in_hand, 1);
+        assert_eq!(held.state, State::Dragged, "{held:?}");
+
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].is_string(), "{said}");
+
+        let let_go = tick_for(&mut roster, &id, &world, 200);
+        assert_eq!(let_go.state, State::Grounded, "{let_go:?}");
+        assert_eq!(
+            let_go.position.x, 500.0,
+            "nothing walks it once it is let go"
+        );
+    }
+
+    #[test]
+    fn every_refusal_names_its_cause() {
+        use crate::engine::{Point, State, Verb, WorldSnapshot};
+        use crate::roster::Roster;
+
+        type Setup = fn(&mut Roster, &str, &WorldSnapshot);
+        let causes: [(&str, Setup); 7] = [
+            ("in the air", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.stand_at(Point { x: 500.0, y: 100.0 });
+                assert_eq!(instance.tick(world).state, State::Falling);
+            }),
+            ("holding", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                let grab = WorldSnapshot {
+                    cursor: instance.feet(),
+                    verbs: vec![Verb::Grab],
+                    ..world.clone()
+                };
+                assert_eq!(instance.tick(&grab).state, State::Dragged);
+            }),
+            ("climbing", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                let hand = |cursor, verb| WorldSnapshot {
+                    cursor,
+                    verbs: vec![verb],
+                    ..world.clone()
+                };
+                let aloft = Point {
+                    x: 1500.0,
+                    y: 500.0,
+                };
+                let throw = Verb::Throw {
+                    velocity: Point { x: 2000.0, y: 0.0 },
+                };
+                instance.tick(&hand(instance.feet(), Verb::Grab));
+                instance.tick(&hand(aloft, Verb::Grab));
+                instance.tick(&hand(aloft, throw));
+                let climbing = (0..100).any(|_| instance.tick(world).state == State::Climbing);
+                assert!(climbing, "thrown at the wall, it climbs");
+            }),
+            ("asleep", |roster, id, world| {
+                let a_second = WorldSnapshot {
+                    elapsed_ms: 1000,
+                    ..world.clone()
+                };
+                assert_eq!(tick_for(roster, id, &a_second, 61).state, State::Asleep);
+            }),
+            ("poked", |roster, id, world| {
+                let poke = WorldSnapshot {
+                    verbs: vec![Verb::Poke],
+                    ..world.clone()
+                };
+                assert_eq!(tick_for(roster, id, &poke, 1).animation, "react");
+            }),
+            ("keyboard", |roster, id, _| {
+                roster.get_mut(id).unwrap().set_possessed(true)
+            }),
+            ("Do Not Disturb", |roster, id, _| {
+                roster.get_mut(id).unwrap().set_do_not_disturb(true)
+            }),
+        ];
+
+        let world = test_snapshot();
+        for (cause, setup) in causes {
+            let (mut roster, id, _) = landed_walker(500.0, &world);
+            setup(&mut roster, &id, &world);
+
+            let said = call_move(
+                &mut roster,
+                json!({"direction": "left", "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], false, "{cause}: {said}");
+            let reason = said["reason"].as_str().expect("a refusal says why");
+            assert!(reason.contains(cause), "{reason:?} does not say {cause:?}");
+        }
+    }
+
+    #[test]
+    fn a_move_the_user_cuts_short_never_resumes() {
+        use crate::engine::{Verb, WorldSnapshot};
+        use crate::roster::Roster;
+
+        type Interruption = fn(&mut Roster, &str, &WorldSnapshot);
+        let interruptions: [(&str, Interruption); 4] = [
+            ("a grab and a release", |roster, id, world| {
+                let held = WorldSnapshot {
+                    cursor: roster.get_mut(id).unwrap().feet(),
+                    verbs: vec![Verb::Grab],
+                    ..world.clone()
+                };
+                tick_for(roster, id, &held, 10);
+            }),
+            ("a poke", |roster, id, world| {
+                let poke = WorldSnapshot {
+                    verbs: vec![Verb::Poke],
+                    ..world.clone()
+                };
+                tick_for(roster, id, &poke, 1);
+            }),
+            ("Do Not Disturb on and off", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.set_do_not_disturb(true);
+                instance.tick(world);
+                instance.set_do_not_disturb(false);
+            }),
+            ("possession on and off", |roster, id, world| {
+                let instance = roster.get_mut(id).unwrap();
+                instance.set_possessed(true);
+                instance.tick(world);
+                instance.set_possessed(false);
+            }),
+        ];
+
+        let world = test_snapshot();
+        let resumed: Vec<String> = interruptions
+            .into_iter()
+            .filter_map(|(interruption, interrupt)| {
+                let (mut roster, id, _) = landed_walker(500.0, &world);
+                let said = call_move(
+                    &mut roster,
+                    json!({"direction": "left", "distance": 200}),
+                    &world.displays,
+                )
+                .expect("dispatch succeeds");
+                assert_eq!(said["started"], true, "{said}");
+                let under_way = tick_for(&mut roster, &id, &world, 20);
+                assert_eq!(under_way.animation, "walk", "{under_way:?}");
+
+                interrupt(&mut roster, &id, &world);
+                let stopped_at = roster.get_mut(&id).unwrap().feet().x;
+                let later = tick_for(&mut roster, &id, &world, 600);
+                (later.position.x != stopped_at).then(|| {
+                    format!(
+                        "{interruption}, from x {stopped_at} to {}",
+                        later.position.x
+                    )
+                })
+            })
+            .collect();
+        assert!(resumed.is_empty(), "walked on after {resumed:#?}");
+    }
+
+    #[test]
+    fn a_move_ends_when_the_instance_is_brought_somewhere_else() {
+        use crate::engine::Point;
+
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        roster.get_mut(&id).unwrap().stand_at(Point {
+            x: 900.0,
+            y: landed.position.y,
+        });
+        let later = tick_for(&mut roster, &id, &world, 600);
+        assert_eq!(later.position.x, 900.0, "it stays where it was brought");
+    }
+
+    #[test]
+    fn a_move_after_relocation_waits_for_footing_then_can_start() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        roster.get_mut(&id).unwrap().stand_at(crate::engine::Point {
+            x: 900.0,
+            y: landed.position.y,
+        });
+        let request = json!({"direction": "left", "distance": 200});
+        let waiting =
+            call_move(&mut roster, request.clone(), &world.displays).expect("dispatch succeeds");
+        assert_eq!(waiting["started"], false, "{waiting}");
+        assert!(
+            waiting["reason"].as_str().unwrap().contains("footing"),
+            "{waiting}"
+        );
+        tick_for(&mut roster, &id, &world, 1);
+        let started = call_move(&mut roster, request, &world.displays).expect("dispatch succeeds");
+        assert_eq!(started, json!({"started": true}));
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!((stopped.position.x - 700.0).abs() <= 30.0, "{stopped:?}");
+    }
+
+    #[test]
+    fn a_move_walks_on_under_a_speech_bubble_and_looks_it() {
+        use crate::engine::{BehaviorProposal, WorldSnapshot};
+        use std::collections::BTreeSet;
+
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+
+        let bubble = WorldSnapshot {
+            locomotion_frozen: true,
+            ..world.clone()
+        };
+        let a_line = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some("On my way.".to_string()),
+                direction: None,
+            }),
+            ..bubble.clone()
+        };
+        let instance = roster.get_mut(&id).unwrap();
+        let mut frame = instance.tick(&a_line);
+        let mut drawn = BTreeSet::new();
+        for _ in 0..1_000 {
+            if frame.velocity.x == 0.0 {
+                break;
+            }
+            drawn.insert(frame.animation);
+            frame = instance.tick(&bubble);
+        }
+        assert_eq!(frame.velocity.x, 0.0, "still walking after 1000 ticks");
+        assert!((frame.position.x - 300.0).abs() <= 30.0, "{frame:?}");
+        assert_eq!(drawn, BTreeSet::from(["walk"]), "the art while it moved");
+    }
+
+    #[test]
+    fn a_behavior_that_needs_the_feet_does_not_cut_a_move_short() {
+        use crate::character::{Behavior, Primitive};
+        use crate::engine::{BehaviorProposal, Point, State, WorldSnapshot};
+
+        let mut character = test_character("Hopper");
+        character.behaviors.insert(
+            "hop".to_string(),
+            Behavior {
+                primitives: vec![Primitive::Jump],
+                then: None,
+                weight: 1,
+                trigger: None,
+                not_in_manifest: false,
+            },
+        );
+        let world = test_snapshot();
+        let mut roster = crate::roster::Roster::new();
+        let id = roster.spawn(
+            &character,
+            "Hopper".to_string(),
+            Point { x: 500.0, y: 100.0 },
+        );
+        tick_for(&mut roster, &id, &world, 100);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        let a_hop = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "hop".to_string(),
+                dialogue: None,
+                direction: None,
+            }),
+            ..world.clone()
+        };
+        let asked = tick_for(&mut roster, &id, &a_hop, 1);
+        assert_eq!(asked.refused.as_deref(), Some("hop"), "{asked:?}");
+
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert_eq!(stopped.state, State::Grounded, "{stopped:?}");
+        assert!((stopped.position.x - 300.0).abs() <= 30.0, "{stopped:?}");
+    }
+
+    #[test]
+    fn do_not_disturb_sits_a_moving_instance_down_as_it_does_any_walk() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        roster.get_mut(&id).unwrap().set_do_not_disturb(true);
+        let quiet = tick_for(&mut roster, &id, &world, 1);
+        assert_eq!(quiet.animation, "sit", "{quiet:?}");
+        assert_eq!(quiet.velocity.x, 0.0, "{quiet:?}");
+    }
+
+    #[test]
+    fn a_move_toward_another_display_stops_at_the_edge_of_this_one() {
+        use crate::engine::State;
+
+        let (frames, a_dock_between) = side_by_side();
+        let abutting = crate::engine::WorldSnapshot {
+            displays: frames.to_vec(),
+            ..a_dock_between.clone()
+        };
+        let layouts = [
+            ("a Dock between", a_dock_between, 2064.0),
+            ("abutting", abutting, 1984.0),
+        ];
+
+        for (layout, world, inset_edge) in layouts {
+            let (mut roster, id, _) = landed_walker(2620.0, &world);
+            let said = call_move_on(
+                &mut roster,
+                json!({"to": {"display": 0, "x": 400, "y": 900}}),
+                &frames,
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], true, "{layout}: {said}");
+
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert_eq!(stopped.state, State::Grounded, "{layout}: {stopped:?}");
+            assert!(
+                (stopped.position.x - inset_edge).abs() <= 30.0,
+                "{layout}: {stopped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_move_toward_an_edge_it_already_stands_past_is_refused() {
+        let (frames, world) = side_by_side();
+        let abutting = crate::engine::WorldSnapshot {
+            displays: frames.to_vec(),
+            ..world
+        };
+        let (mut roster, id, landed) = landed_walker(1930.0, &abutting);
+        assert_eq!(landed.position.x, 1930.0, "{landed:?}");
+
+        let said = call_move_on(
+            &mut roster,
+            json!({"to": {"display": 0, "x": 400, "y": 900}}),
+            &frames,
+            &abutting.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].as_str().unwrap().contains("edge"), "{said}");
+        let later = tick_for(&mut roster, &id, &abutting, 100);
+        assert_eq!(later.position.x, 1930.0, "{later:?}");
+    }
+
+    /// A window whose top is a Perch from x 300 to 900, 600 points down.
+    fn a_perch() -> crate::engine::WorldSnapshot {
+        crate::engine::WorldSnapshot {
+            windows: vec![crate::engine::Window {
+                id: 1,
+                rect: Rect {
+                    x: 300.0,
+                    y: 600.0,
+                    width: 600.0,
+                    height: 200.0,
+                },
+            }],
+            ..test_snapshot()
+        }
+    }
+
+    #[test]
+    fn a_move_outward_at_a_surface_edge_is_refused_but_inward_still_works() {
+        let floor = test_snapshot();
+        let perch = a_perch();
+        for (world, x, outward, inward) in [
+            (&floor, 70.0, "left", "right"),
+            (&floor, 1850.0, "right", "left"),
+            (&perch, 310.0, "left", "right"),
+            (&perch, 890.0, "right", "left"),
+        ] {
+            let (mut roster, id, landed) = landed_walker(x, world);
+            let refused = call_move(
+                &mut roster,
+                json!({"direction": outward, "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(refused["started"], false, "x={x}: {refused}");
+            assert!(
+                refused["reason"].as_str().unwrap().contains("edge"),
+                "{refused}"
+            );
+            let still = tick_for(&mut roster, &id, world, 100);
+            assert_eq!(still.position, landed.position);
+
+            let accepted = call_move(
+                &mut roster,
+                json!({"direction": inward, "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(accepted, json!({"started": true}));
+            let stopped = tick_until_still(&mut roster, &id, world);
+            let target = x + if inward == "left" { -200.0 } else { 200.0 };
+            assert!((stopped.position.x - target).abs() <= 30.0, "{stopped:?}");
+            assert_eq!(stopped.position.y, landed.position.y);
+            assert_eq!(stopped.state, landed.state);
+        }
+    }
+
+    #[test]
+    fn a_move_past_the_end_of_its_perch_stops_on_it() {
+        use crate::engine::State;
+
+        let world = a_perch();
+        for (direction, perch_end) in [("right", 900.0), ("left", 300.0)] {
+            let (mut roster, id, landed) = landed_walker(600.0, &world);
+            assert_eq!(landed.state, State::Perched, "{landed:?}");
+
+            let said = call_move(
+                &mut roster,
+                json!({"direction": direction, "distance": 600}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(said["started"], true, "{said}");
+
+            let stopped = tick_until_still(&mut roster, &id, &world);
+            assert_eq!(stopped.state, State::Perched, "{direction}: {stopped:?}");
+            assert_eq!(stopped.position.y, 600.0, "{direction}: {stopped:?}");
+            assert!(
+                (stopped.position.x - perch_end).abs() <= 30.0,
+                "{direction}: {stopped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_move_whose_perch_closes_falls_with_its_stride_and_stays_down() {
+        use crate::engine::State;
+
+        let perch = a_perch();
+        let closed = test_snapshot();
+        let (mut roster, id, _) = landed_walker(600.0, &perch);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &perch.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+        tick_for(&mut roster, &id, &perch, 20);
+
+        let lost = tick_for(&mut roster, &id, &closed, 1);
+        assert_eq!(lost.state, State::Falling, "{lost:?}");
+        let down = tick_for(&mut roster, &id, &closed, 200);
+        assert_eq!(down.state, State::Grounded, "{down:?}");
+        assert!(
+            down.position.x < lost.position.x,
+            "it fell with its stride: {down:?}"
+        );
+        let later = tick_for(&mut roster, &id, &closed, 300);
+        assert_eq!(
+            later.position.x, down.position.x,
+            "nothing resumes the walk"
+        );
+    }
+
+    #[test]
+    fn a_move_arrives_without_the_swat_a_chase_ends_in() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let said = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(said["started"], true, "{said}");
+
+        let arrived = tick_until_still(&mut roster, &id, &world);
+        assert!((arrived.position.x - 300.0).abs() <= 30.0, "{arrived:?}");
+        assert_ne!(arrived.animation, "react", "{arrived:?}");
+    }
+
+    #[test]
+    fn a_second_move_replaces_the_one_under_way() {
+        let world = test_snapshot();
+        let (mut roster, id, _) = landed_walker(500.0, &world);
+        let first = call_move(
+            &mut roster,
+            json!({"direction": "left", "distance": 200}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(first["started"], true, "{first}");
+        tick_for(&mut roster, &id, &world, 20);
+
+        let asked_at = roster.get_mut(&id).unwrap().feet().x;
+        let second = call_move(
+            &mut roster,
+            json!({"direction": "right", "distance": 300}),
+            &world.displays,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(second["started"], true, "{second}");
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!(
+            (stopped.position.x - (asked_at + 300.0)).abs() <= 30.0,
+            "asked at x {asked_at}: {stopped:?}"
+        );
+    }
+
+    #[test]
+    fn move_refuses_a_distance_or_duration_that_is_not_positive() {
+        let world = test_snapshot();
+        let (mut roster, _, _) = landed_walker(500.0, &world);
+
+        for arguments in [
+            json!({"direction": "left", "distance": 0}),
+            json!({"direction": "left", "distance": -200}),
+            json!({"direction": "right", "duration_ms": 0}),
+        ] {
+            let refused = call_move(&mut roster, arguments.clone(), &world.displays);
+            assert_eq!(
+                refused.map_err(|error| error.code),
+                Err(ErrorCode::InvalidArguments),
+                "{arguments}"
+            );
+        }
+    }
+
+    #[test]
+    fn move_refuses_a_half_filled_request_and_names_what_to_change() {
+        let world = test_snapshot();
+        let (mut roster, _, _) = landed_walker(500.0, &world);
+
+        for (arguments, names) in [
+            (
+                json!({"direction": "left", "distance": 200, "duration_ms": 1000}),
+                &["distance", "duration_ms"][..],
+            ),
+            (json!({"direction": "left"}), &["distance", "duration_ms"]),
+            (json!({"distance": 200}), &["direction"]),
+            (json!({"duration_ms": 1000}), &["direction"]),
+            (json!({}), &["direction"]),
+            (
+                json!({"direction": "left", "to": {"display": 0, "x": 100, "y": 1080}}),
+                &["to", "direction"],
+            ),
+        ] {
+            let error = call_move(&mut roster, arguments.clone(), &world.displays)
+                .expect_err("a half-filled request builds no walk");
+            assert_eq!(error.code, ErrorCode::InvalidArguments, "{arguments}");
+            for name in names {
+                assert!(
+                    error.message.contains(name),
+                    "{arguments} names {name}: {}",
+                    error.message
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn move_says_why_nobody_was_reached_in_the_words_play_behavior_uses() {
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let source = fake_source(vec![]);
+        let one = [InstanceInfo {
+            id: "inst-1".to_string(),
+            name: "Walker".to_string(),
+            ..Default::default()
+        }];
+        let two = [
+            one[0].clone(),
+            InstanceInfo {
+                id: "inst-2".to_string(),
+                name: "Runner".to_string(),
+                ..Default::default()
+            },
+        ];
+        let mut retired = crate::roster::Roster::new();
+
+        let mut contexts = [
+            test_context(&temp, &source, &[]),
+            test_context(&temp, &source, &two),
+            test_context(&temp, &source, &one),
+            DispatchContext {
+                expression: Some(&mut retired),
+                ..test_context(&temp, &source, &one)
+            },
+        ];
+        for context in &mut contexts {
+            let moved = dispatch(
+                "move",
+                json!({"direction": "left", "distance": 200}),
+                context,
+            )
+            .expect("dispatch succeeds");
+            let played = dispatch("play_behavior", json!({"behavior": "wave"}), context)
+                .expect("dispatch succeeds");
+            assert_eq!(moved["started"], false, "{moved}");
+            assert!(moved["reason"].is_string(), "{moved}");
+            assert_eq!(moved["reason"], played["reason"]);
+        }
     }
 
     #[test]
@@ -1118,6 +2387,7 @@ mod tests {
                 then: None,
                 weight: 0,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         let instance_id = roster.spawn(

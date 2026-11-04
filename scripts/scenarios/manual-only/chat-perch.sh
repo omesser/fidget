@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # Scenario: chat-perch (macOS), Chat as a Perch (#1502).
-# On screen: launches one private-HOME Fidget/BMO instance with Chat, focuses
-#   Chat, and places the Character on Chat's ledge. The waiting question shows
-#   a bubble over Chat. The script clicks its chat button, then clicks and
-#   types into the Chat composer. Two cropped screenshots are captured.
-#   The instance quits at the end.
+# On screen: launches one private-HOME BMO, moves Chat to a ledge on the
+#   primary display, focuses it, perches BMO there, clicks the question bubble
+#   and types into the composer. It captures two crops, then exits.
 # Input: synthetic mouse clicks and typing inside Fidget only; no Finder or Poke.
-# Duration: a few seconds, 20 s at most.
+# Duration: a few seconds, 45 s at most.
 # Grants: Accessibility and Screen Recording for the terminal running it.
 # Asserts: focused Chat stays at layer 0, supports a Perch, accepts composer
 #   input, and its overlapping bubble button invokes the Chat command.
@@ -15,12 +13,38 @@
 # Setup: --prepare compiles helpers without touching the GUI.
 # Offline: --check-click <log> <first new line> <instance> checks a saved trace.
 # Without --go this prints the takeover header and exits 2.
+# Trace wait: hit-test lines emit on state flips or every 120 ticks, so
+#   point/state checks wait 7 s for a fresh match.
 set -euo pipefail
 
 click_traced() {
   local trace=$1 first_line=$2 id=$3
   awk -v first="$first_line" -v marker="bubble: open-chat invoked instance=$id" \
     'NR >= first && $0 == marker { found = 1 } END { exit !found }' "$trace"
+}
+
+hit_test_pattern() { # <x> <y> <on|OFF>
+  local result='miss click-through on'
+  [ "$3" = OFF ] && result='click-through OFF'
+  printf '^hit-test:.*point\\(%s,%s\\).*%s([[:space:]]|$)' "$1" "$2" "$result"
+}
+
+hit_test_match_count() { # <log> <x> <y> <on|OFF>
+  grep -cE "$(hit_test_pattern "$2" "$3" "$4")" "$1" || true
+}
+
+allow_button_center() {
+  python3 - "$1" << 'PY'
+import sys
+for line in open(sys.argv[1]):
+    cells = line.rstrip("\n").split("|")
+    if cells[0] == "AXButton" and cells[1] == "Allow" and len(cells) >= 8:
+        x, y, width, height = map(int, cells[-1].split(","))
+        print(x + width // 2, y + height // 2)
+        break
+else:
+    sys.exit(1)
+PY
 }
 
 if [ "${1:-}" = --check-click ]; then
@@ -172,10 +196,10 @@ sys.exit(1)
 PY
 }
 
-chat_at_y() { # <y>
-  local y
-  IFS=, read -r _ y _ <<< "$(info)"
-  [ "$y" = "$1" ]
+chat_at_position() {
+  local expected_x=$1 expected_y=$2 actual_x actual_y
+  IFS=, read -r actual_x actual_y _ <<< "$(info)"
+  [ "$actual_x" = "$expected_x" ] && [ "$actual_y" = "$expected_y" ]
 }
 
 last_button=
@@ -198,11 +222,8 @@ point_cursor_at() {
     fail "cursor landed at $landed instead of Fidget target ($x,$y)"
 }
 
-overlay_state_at() {
-  local x=$1 y=$2 first_line=$3 expected=$4 latest
-  latest=$(awk -v first="$first_line" -v point="point($x,$y) on overlay 0" \
-    'NR >= first && index($0, point) { found = $0 } END { print found }' "$log")
-  [ -n "$latest" ] && [[ "$latest" == *"$expected"* ]]
+wait_for_hit_test() { # <baseline> <x> <y> <on|OFF>
+  wait_for_count 7 "$log" "$(hit_test_pattern "$2" "$3" "$4")" "$1"
 }
 
 screen=$("$tools/chat-window" screen)
@@ -237,14 +258,22 @@ echo "screen=$screen" >> "$out/run.txt"
 wait_until 3 info || fail "Chat window did not open"
 wait_for_marks 3 "$marks" '^asked$' || fail "fixture did not ask its question"
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-if ! { [ "$chat_x" -ge "$screen_x" ] && [ $((chat_x + chat_w)) -le $((screen_x + screen_w)) ]; }; then
-  fail "Chat is not wholly on the primary display"
+chat_left=$((screen_x + (screen_w - chat_w) / 2))
+target_y=$((screen_y + 160))
+[ "$chat_w" -le "$screen_w" ] && [ $((target_y + chat_h)) -le $((screen_y + screen_h)) ] ||
+  fail "primary display is too small for the bubble-over-Chat placement"
+if [ "$chat_x" -ne "$chat_left" ] || [ "$chat_y" -ne "$target_y" ]; then
+  "$tools/chat-window" move "$pid" BMO "$chat_left" "$target_y" ||
+    fail "could not move Chat to a perchable ledge on the primary display"
+  wait_until 3 chat_at_position "$chat_left" "$target_y" ||
+    fail "Chat never reached ($chat_left,$target_y) after the move"
 fi
+IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
 chat_title_x=$((chat_x + chat_w / 2))
 chat_title_y=$((chat_y + 14))
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$chat_title_x" "$chat_title_y" on)
 point_cursor_at "$chat_title_x" "$chat_title_y"
-wait_until 3 overlay_state_at "$chat_title_x" "$chat_title_y" "$before_pointer_lines" "miss click-through on" ||
+wait_for_hit_test "$before_pointer_matches" "$chat_title_x" "$chat_title_y" on ||
   fail "overlay did not release input over Chat title"
 hit "$chat_title_x" "$chat_title_y" "$pid|BMO|"
 "$tools/click-cursor" "$chat_title_x" "$chat_title_y" 1 \
@@ -257,17 +286,8 @@ probe_chat > "$out/initial-chat-state.txt"
 echo 'normal_level=pass' >> "$out/result.txt"
 
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-target_y=$((screen_y + 160))
-[ $((target_y + chat_h)) -le $((screen_y + screen_h)) ] ||
-  fail "display is too short for the bubble-over-Chat placement"
-if [ "$chat_y" -ne "$target_y" ]; then
-  "$tools/chat-window" move "$pid" BMO "$chat_x" "$target_y" ||
-    fail "could not move Chat to a perchable ledge"
-  wait_until 3 chat_at_y "$target_y" || fail "Chat never reached y=$target_y after the move"
-fi
-IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
 echo "chat=$chat_x,$chat_y,$chat_w,$chat_h,$chat_layer" >> "$out/run.txt"
-[ "$chat_layer" -eq 0 ] || fail "Chat rose to layer $chat_layer after move"
+[ "$chat_layer" -eq 0 ] || fail "Chat rose to layer $chat_layer after focus"
 
 ledge_x=$((chat_x + chat_w / 2))
 ledge_y=$chat_y
@@ -292,10 +312,9 @@ echo 'bubble_over_chat=pass' >> "$out/result.txt"
 screencapture -x -R "$capture_x,$capture_y,$chat_w,$capture_h" "$out/bubble-over-chat.png" ||
   fail "could not capture bubble over Chat"
 
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$button_x" "$button_y" OFF)
 point_cursor_at "$button_x" "$button_y"
-wait_until 3 overlay_state_at "$button_x" "$button_y" \
-  "$before_pointer_lines" "click-through OFF" ||
+wait_for_hit_test "$before_pointer_matches" "$button_x" "$button_y" OFF ||
   fail "overlay did not accept input at the bubble button"
 hit "$button_x" "$button_y" "$pid|Fidget|AXButton|chat"
 ask_id=$(sed -n 's/.*showAsk instance=\([^ ]*\) dnd=.*/\1/p' "$log" | tail -n 1)
@@ -319,9 +338,9 @@ IFS=, read -r cx cy cw ch <<< "$rect"
 composer_x=$((cx + cw / 2))
 composer_y=$((cy + ch / 2))
 chat_focused_and_normal || fail "Chat lost focus before the composer click"
-before_pointer_lines=$(($(wc -l < "$log") + 1))
+before_pointer_matches=$(hit_test_match_count "$log" "$composer_x" "$composer_y" on)
 point_cursor_at "$composer_x" "$composer_y"
-wait_until 3 overlay_state_at "$composer_x" "$composer_y" "$before_pointer_lines" "miss click-through on" ||
+wait_for_hit_test "$before_pointer_matches" "$composer_x" "$composer_y" on ||
   fail "overlay did not release the Chat composer point"
 hit "$composer_x" "$composer_y" "$pid|BMO|AXTextArea|"
 "$tools/click-cursor" "$composer_x" "$composer_y" 1 > "$out/composer-click.txt" ||
@@ -340,9 +359,18 @@ grep -Fq "$marker" "$out/chat-after.ax.txt" ||
   fail "typed text did not appear in Chat composer"
 echo 'composer_click_and_type=pass' >> "$out/result.txt"
 
-# Answer the ask, so the fixture Harness finishes its turn instead of waiting.
-answer_permission "$pid" Allow || fail "could not answer the permission ask in Chat; see $log"
-wait_for_marks 3 "$marks" '^replied$' || fail "the Harness never replied after Allow; see $marks"
+# AXPress can be refused by the nonactivating Chat; verify the target before a click fallback.
+answer_permission "$pid" Allow || true
+if ! wait_for_marks 3 "$marks" '^replied$'; then
+  ax_dump BMO "$out/chat-before-allow.ax.txt" || fail "could not inspect Chat before answering the ask"
+  allow_point=$(allow_button_center "$out/chat-before-allow.ax.txt") ||
+    fail "could not locate the permission Allow button; see $out/chat-before-allow.ax.txt"
+  read -r allow_x allow_y <<< "$allow_point"
+  hit "$allow_x" "$allow_y" "$pid|BMO|AXButton|Allow"
+  "$tools/click-cursor" "$allow_x" "$allow_y" 1 > "$out/allow-click.txt" ||
+    fail "could not click the permission Allow button"
+  wait_for_marks 3 "$marks" '^replied$' || fail "the Harness never replied after Allow; see $marks"
+fi
 echo "ok: answered the permission ask, and the Harness replied"
 
 echo "PASS: all four macOS checks; evidence in $out ($(($(now_ms) - start_ms))ms)"

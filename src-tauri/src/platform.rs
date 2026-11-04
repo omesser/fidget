@@ -1798,11 +1798,13 @@ mod tests {
             rect: [10, 20, 30, 40],
             clickable: true,
             follows: None,
+            see_through: false,
         };
         let bubble = OverlayRect {
             rect: [0, 0, 100, 80],
             clickable: false,
             follows: None,
+            see_through: false,
         };
         set_overlay_rects("overlay-test-a", vec![open_chat.clone(), bubble.clone()]);
         set_overlay_rects("overlay-test-b", vec![bubble.clone()]);

@@ -502,6 +502,7 @@ const applyChatAppearance = mountChatAppearance(document.documentElement);
 // or the child never came up. The composer is disabled rather than hidden so
 // it reads as waiting, and method buttons rebuild so a dropped one cannot linger.
 const retry = document.getElementById("landing-retry");
+let signingIn = false;
 
 function setPickersDisabled(disabled) {
   for (const btn of document.querySelectorAll(".connect-btn")) {
@@ -518,6 +519,8 @@ function paintSignIn(actions, waiting) {
     button.className = "sign-in-btn";
     button.textContent = action.label;
     button.addEventListener("click", () => {
+      if (signingIn) return;
+      signingIn = true;
       const pending = document.createElement("p");
       pending.className = "hint sign-in-waiting";
       drawInline(pending, waiting);
@@ -529,6 +532,7 @@ function paintSignIn(actions, waiting) {
       invoke("sign_in", { instance, methodId: action.id })
         .catch((why) => note(String(why)))
         .finally(() => {
+          signingIn = false;
           pending.remove();
           button.disabled = false;
           retry.disabled = false;
@@ -788,6 +792,12 @@ promptConfirm.addEventListener("click", () => {
       syncPromptActions();
     });
 });
+
+function paintOpening(opening) {
+  showWho(opening);
+  attached(opening);
+  showPrompt(opening);
+}
 
 function showWho(opening) {
   them = opening.name;
@@ -1331,9 +1341,7 @@ async function start() {
   await listen(
     "chat-opening",
     ({ payload }) => {
-      showWho(payload);
-      attached(payload);
-      showPrompt(payload);
+      paintOpening(payload);
     },
     { target: chat.label },
   );
@@ -1381,9 +1389,19 @@ async function start() {
   applyPlatform(document.documentElement, opening.platform);
   applyChatAppearance(opening.chat_appearance);
 
-  showWho(opening);
-  attached(opening);
-  showPrompt(opening);
+  paintOpening(opening);
+  await listen(
+    "tauri://focus",
+    async () => {
+      try {
+        const opening = await invoke("chat_opening", { instance });
+        if (!signingIn) paintOpening(opening);
+      } catch (why) {
+        console.error("chat: this opening could not be refreshed:", why);
+      }
+    },
+    { target: chat.label },
+  );
   line.focus();
 }
 

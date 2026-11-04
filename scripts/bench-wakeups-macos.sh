@@ -8,6 +8,8 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# shellcheck source=scripts/scenarios/helpers/wait-helpers.mac.sh
+. scripts/scenarios/helpers/wait-helpers.mac.sh
 
 BINARY=""
 SCENARIO=""
@@ -74,20 +76,12 @@ if [ "$SCENARIO" != "baseline" ]; then
     FIDGET_CAPTURABLE=1 \
     "$BINARY" > "$LOG" 2>&1 &
   APP_PID=$!
+  # shellcheck disable=SC2034 # read by the sourced wait helpers
+  pid=$APP_PID
   echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
 fi
 
-READY=$([ "$SCENARIO" = "baseline" ] && echo 1 || echo 0)
-for _ in $(seq 1 40); do
-  [ "$READY" -eq 1 ] && break
-  grep -q '^overlay:' "$LOG" 2> /dev/null && {
-    READY=1
-    break
-  }
-  kill -0 "$APP_PID" 2> /dev/null || break
-  perl -e 'select(undef,undef,undef,0.25)'
-done
-if [ "$READY" -ne 1 ]; then
+if [ "$SCENARIO" != "baseline" ] && ! wait_for_up "$LOG"; then
   echo "bench-wakeups-macos: app never reported '^overlay:' - see $LOG" >&2
   exit 1
 fi
@@ -96,10 +90,7 @@ fi
 # the sprite spawns mid-air and plays Falling until it lands, and a click during
 # that window can miss the moving art, so wait for Grounded.
 if [ -n "$APP_PID" ]; then
-  for _ in $(seq 1 40); do
-    grep -qE '^frame: .* (Grounded|Perched) ' "$LOG" 2> /dev/null && break
-    perl -e 'select(undef,undef,undef,0.25)'
-  done
+  wait_for_trace 10 "$LOG" '^frame: .* (Grounded|Perched) ' || true
   sleep 1
 fi
 
@@ -109,11 +100,7 @@ if [ "$SCENARIO" = "hidden" ]; then
   # interrupted run leaves no window behind.
   swift scripts/fullscreen-window.swift $((DURATION + 60)) > "$OUT/fullscreen.log" 2>&1 &
   PROP_PID=$!
-  for _ in $(seq 1 40); do
-    grep -q '^presence: hidden' "$LOG" 2> /dev/null && break
-    perl -e 'select(undef,undef,undef,0.25)'
-  done
-  if ! grep -q '^presence: hidden' "$LOG"; then
+  if ! wait_for_trace 10 "$LOG" '^presence: hidden'; then
     echo "bench-wakeups-macos: sprite never reported 'presence: hidden' - see $OUT/fullscreen.log and $LOG" >&2
     exit 1
   fi
@@ -144,9 +131,9 @@ PY
   # `osascript ... click at` resolves an AX element under the point first, and
   # this borderless panel presents none (fails -25208). click-cursor.swift warps
   # the cursor and posts real HID events instead. `2` clicks reads as one Summon.
+  BEFORE_SUMMON=$(line_count "$LOG" 'verbs:.*Summon')
   swift scripts/click-cursor.swift "$CX" "$CY" 2 > "$OUT/click.log" 2>&1
-  sleep 1
-  if grep -qE 'verbs:.*Summon' "$LOG"; then
+  if wait_for_count 1 "$LOG" 'verbs:.*Summon' "$BEFORE_SUMMON"; then
     SUMMON_STATUS="confirmed"
   else
     SUMMON_STATUS="NOT CONFIRMED - see $OUT/click.log and $LOG"
