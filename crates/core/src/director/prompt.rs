@@ -12,7 +12,7 @@ pub(crate) fn character_prompt(
     blank: bool,
 ) -> String {
     with_layers(
-        &character_layers(context, behaviors, blank),
+        &character_layers(context, behaviors, blank, false),
         &named_moment(context, instance),
     )
 }
@@ -32,6 +32,7 @@ pub(crate) fn character_layers(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    tools: bool,
 ) -> String {
     // Empty, not `(no personality)`: that placeholder is a Character with an
     // empty file, which still gets the voice rules. Blank AI is the emptied
@@ -53,7 +54,7 @@ pub(crate) fn character_layers(
         written => format!("{personality}\n\n{written}"),
     };
 
-    let instructions = app_instructions(behaviors, blank);
+    let instructions = app_instructions(behaviors, blank, tools);
 
     match (authored.is_empty(), instructions.is_empty()) {
         (true, true) => String::new(),
@@ -76,9 +77,11 @@ pub(crate) fn named_moment(context: &Context, instance: &str) -> String {
 /// The app layer of the Character Prompt: voice rules, roster, reply contract.
 /// Empty under Blank AI, which the Prompt tab shows frozen. Paid every wake,
 /// so the tools describe themselves over MCP; a copy here would drift.
+/// `tools` is whether the Completer has any: only a Harness does.
 pub fn app_instructions(
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
+    tools: bool,
 ) -> String {
     if blank {
         return String::new();
@@ -95,6 +98,12 @@ pub fn app_instructions(
     // The universal voice rules, written once for every Character rather
     // than copied into personality files to drift. A personality
     // supplies the material; this paragraph governs the delivery.
+    let invite = if tools {
+        "\n\nWhen you are asked for something, use the tools you have. Then \
+         reply as above."
+    } else {
+        ""
+    };
     format!(
         "You may propose one of these behaviors: {declared}\n\
          \n\
@@ -108,10 +117,7 @@ pub fn app_instructions(
          have not used yet, though a signature phrase may recur, and \
          lean away from the behaviors listed as recently played. React to \
          this moment when there is something worth remarking on: what just \
-         happened to you, and what you are standing on.\n\
-         \n\
-         When you are asked for something, use the tools you have. Then \
-         reply as above."
+         happened to you, and what you are standing on.{invite}"
     )
 }
 

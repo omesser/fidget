@@ -545,6 +545,8 @@ struct SettingsState {
     /// the one the opening turn names.
     behavior_names: Arc<BTreeMap<String, Vec<String>>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
+    /// The frame loop locks `settings` then this. Never hold this while you
+    /// take `settings`, or the two threads deadlock.
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
@@ -2219,8 +2221,8 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
     }
 }
 
-/// The overlay heard a possession key. Repeats are dropped in the page. Edges wait
-/// for the frame loop, which owns the session.
+/// An overlay heard a possession key. Every overlay sends its keyups; the frame
+/// loop's session drops any for a key it never saw go down.
 #[tauri::command]
 fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
     possession::push_key(window.label(), &key, down);
@@ -2619,27 +2621,24 @@ fn build_overlay(
     Ok(())
 }
 
-/// Build one Instance's Chat surface. No overlay flags: click-through would
+/// Build one Instance's hidden Chat. No overlay flags: click-through would
 /// swallow the caret click; always-on-top would follow the user out of the app.
 /// Stays under the overlay as a Perch; typing reaches it via key focus.
 fn build_chat(
     app: &tauri::AppHandle,
     label: &str,
     title: &str,
-    at: Option<(f64, f64)>,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
         .min_inner_size(320.0, 320.0)
         // See-through only where it draws right: some X11 setups lose an
         // unrepainted see-through page to black or to the desktop.
         .transparent(platform::see_through_draws())
-        .focused(true);
-    if let Some((x, y)) = at {
-        builder = builder.position(x, y);
-    }
+        .visible(false)
+        .focused(false);
     let started = Instant::now();
     let window = builder.build()?;
     if dev_flags::TRACE_BUBBLE.is_on() {
@@ -2659,6 +2658,20 @@ fn build_chat(
     .ok();
     let observer = std::cell::Cell::new(observer);
     window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // Keep the native webview warm; rebuilding it holds the main thread.
+            if let Some(window) = handle.get_webview_window(&label) {
+                match window.hide() {
+                    Ok(()) => {
+                        api.prevent_close();
+                        if dev_flags::TRACE_BUBBLE.is_on() {
+                            eprintln!("chat: {label} is closed");
+                        }
+                    }
+                    Err(why) => eprintln!("chat: {label} could not be hidden: {why}"),
+                }
+            }
+        }
         if matches!(event, tauri::WindowEvent::Destroyed) {
             observer.take();
         }
@@ -2747,9 +2760,9 @@ fn chat_ui_now(state: Option<&SettingsState>) -> String {
         .unwrap_or_else(|| "minimal".to_string())
 }
 
-/// Open this Instance's Chat surface, or raise the one it has, beside `feet`
-/// when known. The lookup posts to the main thread too: Ok from
-/// `run_on_main_thread` means queued, so two Summons would each build.
+/// Show this Instance's Chat beside `feet`, building it on first use. The
+/// lookup posts to the main thread: Ok from `run_on_main_thread` means queued,
+/// so two Summons would each build.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Option<Point>) {
     let label = chat_label(id);
     let at = feet
@@ -2763,10 +2776,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
                 if let Err(why) = window.set_title(&title) {
                     eprintln!("chat: {label} could not be retitled: {why}");
                 }
-                let _ = window.unminimize();
                 window
             }
-            None => match build_chat(&handle, &label, &title, at) {
+            None => match build_chat(&handle, &label, &title) {
                 Ok(window) => window,
                 Err(why) => {
                     eprintln!("chat: {label}: {why}");
@@ -2774,8 +2786,19 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
                 }
             },
         };
-        // Both paths: `focused(true)` only orders within this app. Activate for
-        // typing, but keep Chat under the overlay so it stays a Perch.
+        if !window.is_visible().unwrap_or(false) {
+            if let Some((x, y)) = at {
+                if let Err(why) = window.set_position(LogicalPosition::new(x, y)) {
+                    eprintln!("chat: {label} could not be placed: {why}");
+                }
+            }
+        }
+        let _ = window.unminimize();
+        if let Err(why) = window.show() {
+            eprintln!("chat: {label} could not be shown: {why}");
+            return;
+        }
+        // Keep Chat under the overlay so it stays a Perch while typing.
         if let Err(why) = platform::activate_for_typing(&window) {
             eprintln!("chat: {label} could not be raised: {why}");
         }
@@ -2787,16 +2810,16 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String, feet: Optio
     }
 }
 
-/// Shut the Chat surface belonging to `id`, if it has one. Nothing else
-/// closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps. Main thread only, for `open_chat`'s reason.
+/// Destroy a dismissed Instance's Chat, bypassing the user-close handler that
+/// keeps it for the next Summon. Nothing else ends a `chat-*`: they sit outside
+/// the `overlay-` namespace `place_overlays` sweeps. Main thread only.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     let label = chat_label(id);
     let handle = app.clone();
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
-            if let Err(why) = window.close() {
-                eprintln!("chat: {label} could not be closed: {why}");
+            if let Err(why) = window.destroy() {
+                eprintln!("chat: {label} could not be destroyed: {why}");
             }
         }
     }) {
@@ -3042,8 +3065,8 @@ struct ChatOpening {
     /// Which Chat UI design the user picked: "minimal", "terminal", or "glass".
     chat_ui: String,
     chat_appearance: ChatAppearance,
-    /// `std::env::consts::OS`. Glass tints harder on "linux", where the
-    /// webview cannot blur the desktop behind Chat.
+    /// `std::env::consts::OS`. Glass tints harder on "linux" and "windows",
+    /// where the webview cannot blur the desktop behind Chat.
     platform: &'static str,
     /// A Harness is attached but not signed in. Names the login command for
     /// the user's own terminal.
@@ -3158,7 +3181,7 @@ fn chat_opening_layers(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        instructions: app_instructions(behaviors, blank),
+        instructions: app_instructions(behaviors, blank, inspect.harness.is_some()),
         personality: if blank {
             String::new()
         } else {
@@ -3209,10 +3232,12 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         .unwrap_or_default();
     // Re-read on every opening: a login the user ran mid-session moves the
     // Harness out of the not-authenticated state, and nothing else pushes it.
-    if let Ok(mut inspect) = state.inspect.lock() {
-        inspect.harness = harness::attached().map(|session| session.inspect());
-    }
-    let inspect = state.inspect.lock().ok();
+    // A copy, not the guard: the frame loop locks settings then inspect, so
+    // holding inspect into the settings reads below deadlocks.
+    let inspect = state.inspect.lock().ok().map(|mut guard| {
+        guard.harness = harness::attached().map(|session| session.inspect());
+        guard.clone()
+    });
     let blank = model::blank();
     ChatOpening {
         instructions: app_instructions(
@@ -3222,6 +3247,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
                 .map(|rows| declared_behaviors(&rows, &state.behavior_names, &instance))
                 .unwrap_or_default(),
             blank,
+            inspect.as_ref().is_some_and(|read| read.harness.is_some()),
         ),
         personality: if blank {
             String::new()
@@ -3236,7 +3262,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
-        harness: inspect.as_ref().and_then(|read| chat_harness(read)),
+        harness: inspect.as_ref().and_then(chat_harness),
         model: inspect
             .as_ref()
             .map(|read| read.model.clone())

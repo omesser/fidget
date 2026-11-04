@@ -53,23 +53,29 @@ const SIGN_IN = {
 const MODEL_API = { ...opening(null), configured: true, model: "gpt-4o-mini", host: "https://api.example.test/v1" };
 const MODEL_API_OFF = { ...MODEL_API, enabled: false };
 
-function drive() {
+function drive({ focusDuringSignIn = false } = {}) {
   const stub = `
 <script>
   ${pageWait()}
   const heard = {};
   const calls = [];
   let releaseSignIn = () => {};
+  let currentOpening = ${JSON.stringify(opening(null))};
+  let holdOpening = false;
+  let releaseOpening = () => {};
   window.__TAURI__ = {
     core: { invoke(name, args) {
       calls.push([name, args?.harness ?? null]);
       if (name === "sign_in") return new Promise((r) => { releaseSignIn = r; });
-      return name === "chat_opening" ? Promise.resolve(${JSON.stringify(opening(null))}) : Promise.resolve();
+      if (name === "chat_opening" && holdOpening) {
+        return new Promise((resolve) => { releaseOpening = () => resolve(currentOpening); });
+      }
+      return name === "chat_opening" ? Promise.resolve(currentOpening) : Promise.resolve();
     } },
     event: { listen(name, handler) { heard[name] = handler; listeningNow(name); return Promise.resolve(() => {}); } },
     webviewWindow: { getCurrentWebviewWindow: () => ({ label: "chat-test" }) },
   };
-  const show = (payload) => heard["chat-opening"]({ payload });
+  const show = (payload) => { currentOpening = payload; heard["chat-opening"]({ payload }); };
   function seen() {
     const buttons = [...document.querySelectorAll(".connect-btn")].filter((b) => {
       const box = b.getBoundingClientRect();
@@ -80,6 +86,8 @@ function drive() {
     return {
       composer: !document.getElementById("line").disabled,
       signIn: signIn.hidden ? [] : [...signIn.querySelectorAll(".sign-in-btn")].map((b) => b.textContent),
+      signInDisabled: signIn.querySelector(".sign-in-btn")?.disabled ?? false,
+      waiting: signIn.querySelector(".sign-in-waiting")?.textContent ?? "",
       disabled: [...document.querySelectorAll(".connect-btn, #landing-retry")].filter((b) => b.disabled).length,
       landing: !document.getElementById("empty").hidden && !document.getElementById("landing").hidden,
       title: document.getElementById("landing-title").textContent,
@@ -90,6 +98,7 @@ function drive() {
   async function run() {
     console.log("__PROBE_READY__");
     await ready("chat-opening");
+    await ready("tauri://focus");
     const out = {};
     for (const [state, payload] of Object.entries(${JSON.stringify(FAILED_PICKS)})) {
       show(${JSON.stringify(opening(null))});
@@ -111,9 +120,24 @@ function drive() {
     await settle();
     out.signIn = seen();
     calls.length = 0;
+    let focusRefresh;
+    if (${focusDuringSignIn}) {
+      holdOpening = true;
+      focusRefresh = heard["tauri://focus"]({ payload: null });
+    }
     document.querySelector("#landing-sign-in .sign-in-btn").click();
     await settle();
     out.signingIn = seen();
+    if (${focusDuringSignIn}) {
+      releaseOpening();
+      holdOpening = false;
+      await focusRefresh;
+      await heard["tauri://focus"]({ payload: null });
+      out.refocusedSigningIn = seen();
+      document.querySelector("#landing-sign-in .sign-in-btn").click();
+      document.querySelectorAll("#landing-sign-in .sign-in-btn")[1].click();
+      out.refocusedSignInCalls = calls.filter(([name]) => name === "sign_in");
+    }
     document.querySelector('.connect-btn[data-harness="claude"]').click();
     document.getElementById("landing-retry").click();
     await settle();
@@ -121,6 +145,11 @@ function drive() {
     releaseSignIn();
     await settle();
     out.signedIn = seen();
+    if (${focusDuringSignIn}) {
+      currentOpening = ${JSON.stringify(ANSWERING)};
+      await heard["tauri://focus"]({ payload: null });
+      out.refocusedSignedIn = seen();
+    }
 
     for (const [state, payload] of [["modelApi", ${JSON.stringify(MODEL_API)}], ["modelApiOff", ${JSON.stringify(MODEL_API_OFF)}]]) {
       show(${JSON.stringify(opening(null))});
@@ -202,6 +231,17 @@ test("a sign-in in flight disables the branded buttons and Retry, and a press do
   assert.equal(seen.signingIn.disabled, 11, "ten branded buttons and Retry");
   assert.deepEqual(seen.signingInCalls, [["sign_in", null]], "no pick or retry reached the Shell");
   assert.equal(seen.signedIn.disabled, 0, "they come back when the sign-in ends");
+});
+
+test("refocusing during sign-in preserves browser progress until authentication finishes", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const seen = await drive({ focusDuringSignIn: true });
+  assert.equal(seen.error, undefined, seen.error);
+  assert.equal(seen.refocusedSigningIn.signInDisabled, true);
+  assert.match(seen.refocusedSigningIn.waiting, /Finish signing in in your browser/);
+  assert.equal(seen.refocusedSigningIn.disabled, seen.signingIn.disabled, "refocus leaves them disabled");
+  assert.deepEqual(seen.refocusedSignInCalls, [["sign_in", null]]);
+  assert.equal(seen.refocusedSignedIn.composer, true);
+  assert.equal(seen.refocusedSignedIn.landing, false);
 });
 
 test("a model API that connects clears the buttons, and a switched-off one does too", { skip: chromeSkip, timeout: 60000 }, async () => {

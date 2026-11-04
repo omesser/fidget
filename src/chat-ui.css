@@ -746,6 +746,23 @@
   text-shadow: none;
 }
 
+/* WebView2 can't blur the desktop, so Windows always gets this tint. */
+[data-platform="windows"].chat-ui-glass {
+  --chat-panel: rgba(14,17,24,.84);
+}
+
+[data-platform="windows"][data-chat-palette="light"].chat-ui-glass {
+  --chat-panel: rgba(242,244,248,.98);
+}
+
+[data-platform="windows"].chat-ui-glass body {
+  background: linear-gradient(rgba(14,17,24,.72), var(--chat-panel));
+}
+
+[data-platform="windows"][data-chat-palette="light"].chat-ui-glass body {
+  background: linear-gradient(rgba(248,249,252,.95), var(--chat-panel));
+}
+
 /* WebKitGTK blurs only its own page, so the desktop shows through the
    tint unblurred. A stronger tint stands in for the blur. */
 [data-platform="linux"].chat-ui-glass body {
@@ -760,8 +777,29 @@
    drops after another Fidget window closes. The cause is unproven, and
    the native view sits outside WebKit's layers. */
 [data-platform="macos"].chat-ui-glass body {
+  background: linear-gradient(rgba(14,17,24,.22), rgba(14,17,24,.30));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+[data-platform="macos"][data-chat-palette="light"].chat-ui-glass body {
+  background: linear-gradient(rgba(248,249,252,.55), rgba(242,244,248,.65));
+}
+
+/* The body already tints the footer. A fill of its own would stack on it. */
+.chat-ui-glass .prompt-actions {
+  background: transparent;
+}
+
+.chat-ui-glass .prompt textarea {
+  border-radius: 14px;
+}
+
+/* One radius with the editor: the frozen layers are prose for the eye, not
+   controls, and Glass's 999px control capsule rounds a short one into a
+   circle. The plain platforms' 10px control radius reads fine. */
+.chat-ui-glass .prompt .frozen {
+  border-radius: 14px;
 }
 
 [data-chat-palette="light"].chat-ui-glass .tb button {

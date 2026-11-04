@@ -4,7 +4,17 @@
 
 export const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
-export const RESUME_LABEL = "Click to resume";
+export const PAUSED_HEADING = "Paused";
+
+export const FOCUS_PRESSED_LABEL = "Focused";
+
+export const FOCUS_RAISED_LABEL = "Focus";
+
+// Both states name the action, since the visible label is one word.
+export const FOCUS_ARIA_LABEL = "Click to focus";
+
+// The button carries the Esc hint, so the bindings list does not repeat it.
+export const RELEASE_LABEL = "Release Possession (Esc)";
 
 // Clear of the screen edge, on the display the sprite stands on. The card
 // stays put while the sprite walks, so the background under it stays visible.
@@ -17,7 +27,6 @@ const KEYS = [
   ["↑", "Climb"],
   ["↓", "Drop"],
   ["Space", "Jump"],
-  ["Esc", "Release Possession"],
 ];
 
 // Walk and Jump are written as labels. A Behavior name is a key (`nod`).
@@ -35,14 +44,29 @@ function bindingRows(behaviors) {
 }
 
 // Null while the sprite is not possessed. Paused keeps the card and replaces
-// the explanation with the resume line.
+// the explanation with the paused line. The whole paused card is the resume
+// click, so it has no release button. The focus button shows which it is.
 export function possessionCard({ possessed, paused, behaviors }) {
   if (!possessed) return null;
   const keys = bindingRows(behaviors);
   if (paused) {
-    return { paused: true, dimmed: true, heading: RESUME_LABEL, keys };
+    return {
+      paused: true,
+      dimmed: true,
+      heading: PAUSED_HEADING,
+      keys,
+      release: null,
+      focus: { label: FOCUS_RAISED_LABEL, pressed: false },
+    };
   }
-  return { paused: false, dimmed: false, heading: POSSESSION_HEADING, keys };
+  return {
+    paused: false,
+    dimmed: false,
+    heading: POSSESSION_HEADING,
+    keys,
+    release: RELEASE_LABEL,
+    focus: { label: FOCUS_PRESSED_LABEL, pressed: true },
+  };
 }
 
 // Null hides the bar. A number is the fill, clamped to 0..1.
@@ -52,10 +76,13 @@ export function chargeFill(charge) {
 }
 
 // The card takes the resume click only while paused. Otherwise a sprite
-// perched under it cannot be grabbed. The bar is only drawn.
-export function possessionRects(card, bar, paused) {
+// perched under it cannot be grabbed, so only the buttons' own rects take a
+// click. The bar is only drawn.
+export function possessionRects(card, bar, release, focus, paused) {
   const rects = [];
   if (card) rects.push({ rect: card, clickable: Boolean(paused) });
+  if (release) rects.push({ rect: release, clickable: true });
+  if (focus) rects.push({ rect: focus, clickable: true });
   if (bar) rects.push({ rect: bar, clickable: false });
   return rects;
 }
@@ -76,7 +103,43 @@ const painted = new WeakMap();
 
 function modelStamp(model) {
   if (!model) return "";
-  return JSON.stringify([Boolean(model.paused), model.heading, model.keys]);
+  return JSON.stringify([Boolean(model.paused), model.heading, model.keys, model.release, model.focus]);
+}
+
+function focusButton({ label, pressed }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "possession-focus";
+  button.setAttribute("aria-pressed", pressed);
+  button.setAttribute("aria-label", FOCUS_ARIA_LABEL);
+  const icon = document.createElement("span");
+  icon.className = "possession-focus-icon";
+  const text = document.createElement("span");
+  text.className = "possession-focus-label";
+  text.textContent = label;
+  button.append(icon, text);
+  return button;
+}
+
+// One press handler, so a press on the focus button inside a paused card asks
+// for focus once. A press here is not a press on the art, so it must not poke.
+export function wirePossessionCard(card, invoke) {
+  const report = (command) => (err) => console.error(command, err);
+  card.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    const onFocus = Boolean(event.target.closest(".possession-focus"));
+    if (!onFocus && !card.classList.contains("paused")) return;
+    invoke("overlay_request_focus").catch(report("overlay_request_focus"));
+  });
+  card.addEventListener("pointerup", (event) => event.stopPropagation());
+  // The release button presses Esc, so Possession ends on the path the key takes.
+  card.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!event.target.closest(".possession-release")) return;
+    for (const down of [true, false]) {
+      invoke("overlay_possession_key", { key: "escape", down }).catch(report("overlay_possession_key"));
+    }
+  });
 }
 
 // Paint `model` into `card`. `bar` is the track. `fill` is from `chargeFill`.
@@ -99,6 +162,17 @@ export function paintPossession(card, bar, model, fill) {
         for (const [keys, does] of model.keys) list.append(row(keys, does));
         card.append(list);
       }
+      const footer = document.createElement("div");
+      footer.className = "possession-footer";
+      if (model.release) {
+        const release = document.createElement("button");
+        release.type = "button";
+        release.className = "possession-release";
+        release.textContent = model.release;
+        footer.append(release);
+      }
+      footer.append(focusButton(model.focus));
+      card.append(footer);
     }
   }
   const shown = fill != null && model && !model.paused;

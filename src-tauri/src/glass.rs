@@ -30,7 +30,8 @@ fn effects(chat_ui: &str) -> Option<WindowEffectsConfig> {
 }
 
 /// Put on or take off Glass's blur to match `chat_ui`. Nothing off macOS:
-/// Windows keeps its CSS blur, Linux its stronger tint.
+/// Windows keeps its CSS blur, which cannot see the desktop, so Windows
+/// tints harder like Linux.
 pub(crate) fn wear(window: &tauri::WebviewWindow, chat_ui: &str) {
     #[cfg(target_os = "macos")]
     if let Err(why) = window.set_effects(effects(chat_ui)) {

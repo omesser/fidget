@@ -21,10 +21,10 @@ function digitFromCode(code) {
 }
 
 // `down` is true for a keydown. A repeat, or any other key, is not an edge.
-// The pill's field keeps its keydowns, but not its keyups: the pill can take
-// focus while a key is held, and the walk must still end when it comes up.
-export function possessionEdge(key, repeat, down, code, inField = false) {
-  if (repeat || (down && inField)) return null;
+// The pill's field and an unpossessed overlay keep keydowns but pass keyups, so
+// a walk still ends when its key comes up after focus moved away mid-hold.
+export function possessionEdge(key, repeat, down, code, inField = false, possessed = true) {
+  if (repeat || (down && (inField || !possessed))) return null;
   const digit = digitFromCode(code);
   if (digit) return { key: digit, down };
   const name = NAMES[key];

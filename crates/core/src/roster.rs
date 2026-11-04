@@ -443,6 +443,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
         behaviors.insert(
@@ -452,6 +453,7 @@ mod tests {
                 then: None,
                 weight: 1,
                 trigger: None,
+                not_in_manifest: false,
             },
         );
 

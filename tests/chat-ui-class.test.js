@@ -111,13 +111,13 @@ test("applyChatUiClass handles empty/null design gracefully", () => {
   assert.equal(root.className, "chat-ui-minimal");
 });
 
-test("applyPlatform flags Linux and macOS and nothing else", () => {
+test("applyPlatform flags supported operating systems and clears unknown values", () => {
   const root = { dataset: {} };
-  for (const flagged of ["linux", "macos"]) {
+  for (const flagged of ["linux", "macos", "windows"]) {
     applyPlatform(root, flagged);
     assert.equal(root.dataset.platform, flagged);
   }
-  for (const other of ["windows", "", undefined]) {
+  for (const other of ["unknown", "", undefined]) {
     applyPlatform(root, other);
     assert.equal(root.dataset.platform, undefined, String(other));
   }
