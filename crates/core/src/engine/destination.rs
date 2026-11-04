@@ -80,8 +80,10 @@ pub enum MoveRefusal {
     DoNotDisturb,
     /// The target is inside `ARRIVAL_THRESHOLD`, so the walk would end before its first stride.
     AlreadyThere,
-    /// The reachable target is inside the arrival band, or footing is unknown.
+    /// The reachable target is inside the arrival band.
     AtEdge,
+    /// No tick has checked the surface at the current position.
+    FootingUnknown,
 }
 
 impl fmt::Display for MoveRefusal {
@@ -102,6 +104,9 @@ impl fmt::Display for MoveRefusal {
             Self::DoNotDisturb => {
                 f.write_str("Do Not Disturb is on, so the Character starts nothing.")
             }
+            Self::FootingUnknown => f.write_str(
+                "The Character's footing has not been checked at its new position yet. Try again in a moment.",
+            ),
             Self::AtEdge => f.write_str(
                 "The Character has no room to walk that way at the edge of what it stands on.",
             ),
@@ -154,7 +159,10 @@ impl Engine {
         if let Heading::Arrived = heading_to(self.position.x, target.0) {
             return Err(MoveRefusal::AlreadyThere);
         }
-        let stop_x = self.move_reach.ok_or(MoveRefusal::AtEdge)?.clamp(target.0);
+        let stop_x = self
+            .move_reach
+            .ok_or(MoveRefusal::FootingUnknown)?
+            .clamp(target.0);
         if let Heading::Arrived = heading_to(self.position.x, stop_x) {
             return Err(MoveRefusal::AtEdge);
         }

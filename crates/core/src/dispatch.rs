@@ -414,6 +414,11 @@ pub fn list_tools() -> Vec<ToolInfo> {
                                 "minimum": 0,
                                 "description": "Which display, by the index whereabouts lists. whereabouts names it on_display, and that name is accepted too. A spot on another display than the Character's own is walked toward, and the walk stops at the edge of its own display."
                             },
+                            "on_display": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Alias for display, using the field name returned by whereabouts. Pass either display or on_display."
+                            },
                             "x": {
                                 "type": "number",
                                 "description": "Points from that display's left edge, as whereabouts reports an Instance's x."
@@ -423,7 +428,11 @@ pub fn list_tools() -> Vec<ToolInfo> {
                                 "description": "Points from that display's top edge, as whereabouts reports an Instance's y. Required, and ignored, since a walk never changes height."
                             }
                         },
-                        "required": ["display", "x", "y"]
+                        "required": ["x", "y"],
+                        "oneOf": [
+                            {"required": ["display"]},
+                            {"required": ["on_display"]}
+                        ]
                     }
                 }
             }),
@@ -1192,11 +1201,15 @@ mod tests {
                 "to.{field} has a description"
             );
         }
+        assert_eq!(spot["required"], json!(["x", "y"]));
         assert_eq!(
-            spot["required"],
-            json!(["display", "x", "y"]),
+            spot["oneOf"],
+            json!([{"required": ["display"]}, {"required": ["on_display"]}]),
             "a whereabouts spot passes back whole"
         );
+        assert_eq!(spot["properties"]["on_display"]["type"], "integer");
+        assert_eq!(spot["properties"]["on_display"]["minimum"], 0);
+        assert!(spot["properties"]["on_display"]["description"].is_string());
     }
 
     /// The ask end to end: the argument turns the Instance before its first
@@ -1554,6 +1567,7 @@ mod tests {
             json!({"display": 1, "x": 5000, "y": 900}),
             json!({"display": 1, "x": -10, "y": 900}),
             json!({"display": 1, "x": 400}),
+            json!({"display": 1, "on_display": 1, "x": 400, "y": 900}),
         ] {
             let refused =
                 call_move_on(&mut roster, json!({ "to": spot }), &frames, &world.displays);
@@ -1848,6 +1862,29 @@ mod tests {
         });
         let later = tick_for(&mut roster, &id, &world, 600);
         assert_eq!(later.position.x, 900.0, "it stays where it was brought");
+    }
+
+    #[test]
+    fn a_move_after_relocation_waits_for_footing_then_can_start() {
+        let world = test_snapshot();
+        let (mut roster, id, landed) = landed_walker(500.0, &world);
+        roster.get_mut(&id).unwrap().stand_at(crate::engine::Point {
+            x: 900.0,
+            y: landed.position.y,
+        });
+        let request = json!({"direction": "left", "distance": 200});
+        let waiting =
+            call_move(&mut roster, request.clone(), &world.displays).expect("dispatch succeeds");
+        assert_eq!(waiting["started"], false, "{waiting}");
+        assert!(
+            waiting["reason"].as_str().unwrap().contains("footing"),
+            "{waiting}"
+        );
+        tick_for(&mut roster, &id, &world, 1);
+        let started = call_move(&mut roster, request, &world.displays).expect("dispatch succeeds");
+        assert_eq!(started, json!({"started": true}));
+        let stopped = tick_until_still(&mut roster, &id, &world);
+        assert!((stopped.position.x - 700.0).abs() <= 30.0, "{stopped:?}");
     }
 
     #[test]
