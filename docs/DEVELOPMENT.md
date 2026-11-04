@@ -268,15 +268,18 @@ Any other name draws only as a Variant or a Left Strip of one of these.
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name. Starting that base draws one member of its ring by weight: the base or any of its Variants. | |
+| `variant_of` | No | Another Animation's name. The base and its Variants are one ring. The Engine's own idle alternates rest with one pass of a member; every other ring draws one member until the Animation changes. | |
 | `weight` | No | Whole number: this Animation's share of its Variant ring. Read only in a ring. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
+| `rest_ms` | No | `[min, max]` in milliseconds, inclusive, on base `idle` only. How long the Engine holds frame 0 between gestures. | `[3000, 10000]` |
 
 The loader checks each frame against the art:
 
 - Every frame is an 8-bit RGBA PNG in the package, at most 1024 pixels on either side, and every frame of one Animation is the same size.
 - All of a package's distinct frames add up to at most 256 megapixels (256 × 1024 × 1024 pixels). A frame two Animations share counts once.
 - A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
+- Members of the `idle` ring share the base's frame size. They swap in the middle of a stretch. A walk or talk ring is drawn once and may differ.
+- The Engine's own idle holds base `idle` frame 0 for a seeded duration inside `rest_ms`, then plays one weighted member — the base included — for a single pass (`frames / fps`) and holds frame 0 again. Every idle stretch starts on that hold, including after a landing, a talk, a poke, or a perched idle. A Behavior's `idle` Primitive still draws one member and loops it for its turn.
 - A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
 
 Pixels with alpha below 128 do not catch clicks.

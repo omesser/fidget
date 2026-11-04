@@ -76,6 +76,7 @@ mod tests {
             animation: "idle",
             animation_ms: 0,
             variant_draw: 0,
+            idle_beat: None,
             dialogue: None,
             behavior: None,
             playing_behavior: None,

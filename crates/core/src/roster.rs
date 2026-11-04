@@ -181,6 +181,7 @@ impl Instance {
             character.near_reaction,
             character.rush_reaction,
         );
+        self.engine.set_idle_ring(character.idle_ring());
     }
 
     /// The name the user gave, which is what the menu and settings print.
@@ -278,7 +279,8 @@ impl Roster {
             .with_gravity_scale(character.gravity_scale)
             // The id is this Instance's one random number, so two characters of
             // one Character do not draw the same idle variants at the same moments.
-            .with_variant_seed(variant_seed(&id));
+            .with_variant_seed(variant_seed(&id))
+            .with_idle_ring(character.idle_ring());
         let name = if self.instances.is_empty() {
             adopted_name(
                 &name,
@@ -431,6 +433,7 @@ mod tests {
                     variants: Vec::new(),
                     left_strip: None,
                     weight: DEFAULT_WEIGHT,
+                    rest_ms: None,
                 },
             );
         }

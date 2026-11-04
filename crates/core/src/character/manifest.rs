@@ -43,6 +43,9 @@ pub(super) struct DeclaredAnimation {
     /// This Animation's share of its variant ring, against its fellow
     /// members'. `DEFAULT_WEIGHT` when undeclared, exactly as on a Behavior.
     pub(super) weight: u32,
+    /// `[rest_ms]` on base idle. `None` everywhere else, including an idle
+    /// that leaves the Engine default in place.
+    pub(super) rest_ms: Option<(u32, u32)>,
 }
 
 pub(super) struct DeclaredBehavior {
@@ -395,6 +398,7 @@ fn parse_animation(
     let mut variant_of = None;
     let mut left_of = None;
     let mut weight = DEFAULT_WEIGHT;
+    let mut rest_ms = None;
 
     for (key, item) in table.iter() {
         match key {
@@ -443,11 +447,26 @@ fn parse_animation(
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            "rest_ms" => match rest_bounds(item) {
+                Some(pair) => rest_ms = Some(pair),
+                None => errors.push(format!(
+                    "rest_ms for animation {name:?} is {}, and must be [min, max] \
+                     in milliseconds with min <= max",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps, loop, variant_of, left_of and weight"
+                 an Animation declares frames, fps, loop, variant_of, left_of, \
+                 weight and rest_ms"
             )),
         }
+    }
+
+    if rest_ms.is_some() && (name != "idle" || variant_of.is_some()) {
+        errors.push(format!(
+            "rest_ms for animation {name:?} is only for the base idle"
+        ));
     }
 
     // The table rather than `frames`: `frame_list` already reports an empty
@@ -466,7 +485,20 @@ fn parse_animation(
         variant_of,
         left_of,
         weight,
+        rest_ms,
     })
+}
+
+/// `[min, max]` in milliseconds, inclusive. A single number or a reversed
+/// pair is the author's mistake, not a range the Engine can roll.
+fn rest_bounds(item: &Item) -> Option<(u32, u32)> {
+    let list = item.as_array()?;
+    if list.len() != 2 {
+        return None;
+    }
+    let min = u32::try_from(list.get(0)?.as_integer()?).ok()?;
+    let max = u32::try_from(list.get(1)?.as_integer()?).ok()?;
+    (min <= max).then_some((min, max))
 }
 
 /// An Animation's `frames` list, counted before the names are copied, so a
@@ -936,7 +968,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop, variant_of, left_of and weight"
+                 frames, fps, loop, variant_of, left_of, weight and rest_ms"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
                  as play = [\"react\", \"talk\"]"

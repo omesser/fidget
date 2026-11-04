@@ -272,11 +272,16 @@ member on every machine.
 | Jotaro `idle` | `idle` 30, `waiting` 10 | 40 | 75%, 25% |
 | Timber Wolf `idle` | `idle` 30, `scan` 10 | 40 | 75%, 25% |
 | Trump `idle` | `idle` 30, `waiting` 20 | 50 | 60%, 40% |
+| Tux `idle` | `idle` 80, `look-around` 10, `checking-work` 3, `recover-card` 4, `waddle-in-place` 3 | 100 | 80%, 10%, 3%, 4%, 3% |
+| Rubber Duck `idle` | 10 each to `idle`, `wave`, `thinking`, `pondering`, `look-right`, `look-left` | 60 | about 17% each |
 
-Only two of the seven rings declare more than one number, because an undeclared
-member is already 10: `idle = 80` against two silent variants is the whole of
-80/10/10. The shares above are what a million draws actually produced, not what
-the arithmetic promises.
+An undeclared member is already 10, so a ring can set one number and leave the
+rest: `idle = 80` against two silent variants is 80/10/10. Tux sets a number
+on every member. These shares are the gesture mix. The Engine's own idle
+rests on base `idle` frame 0 for a seeded span (`rest_ms`, or 3 to 10
+seconds), plays one weighted member for a single pass, and rests again. Most
+of a stretch is that rest. A Behavior's `idle`, and the walk and talk rings,
+still draw one member and loop it.
 
 ### 7. Physics, Perches, and five verbs
 

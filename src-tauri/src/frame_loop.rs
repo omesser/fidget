@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use fidget_core::character::RingChoice;
 use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
@@ -829,7 +830,7 @@ pub(crate) fn run_frame_loop(
                             let art = live.character.draw(
                                 last.animation,
                                 last.animation_ms,
-                                last.variant_draw,
+                                RingChoice::from_beat(last.idle_beat.as_ref(), last.variant_draw),
                                 last.facing,
                             )?;
                             Some((
@@ -2151,15 +2152,11 @@ pub(crate) fn run_frame_loop(
 
                 let needs_active_for_animation =
                     if let Some(character) = characters.get(instance.character_name()) {
-                        character
-                            .animations
-                            .get(frame.animation)
-                            .is_some_and(|anim| {
-                                anim.looping || {
-                                    let current_frame = anim.frame_at(frame.animation_ms);
-                                    current_frame + 1 < anim.frames.len()
-                                }
-                            })
+                        character.art_still_advancing(
+                            frame.animation,
+                            frame.animation_ms,
+                            frame.idle_beat.as_ref(),
+                        )
                     } else {
                         false
                     };
@@ -2432,7 +2429,7 @@ pub(crate) fn run_frame_loop(
                 let Some(drawn) = live.character.draw(
                     frame.animation,
                     frame.animation_ms,
-                    frame.variant_draw,
+                    frame.ring_choice(),
                     frame.facing,
                 ) else {
                     // No drawable Animation, which a validated package cannot
@@ -2487,6 +2484,7 @@ pub(crate) fn run_frame_loop(
                     animation: frame.animation,
                     animation_ms: frame.animation_ms,
                     variant_draw: frame.variant_draw,
+                    idle_beat: frame.idle_beat.clone(),
                     facing: frame.facing,
                 });
 
@@ -3599,6 +3597,7 @@ mod tests {
                         looping: true,
                         variants: Vec::new(),
                         left_strip: None,
+                        rest_ms: None,
                         // core keeps its own default private, and this test
                         // only needs a Behavior something can pick.
                         weight: 10,

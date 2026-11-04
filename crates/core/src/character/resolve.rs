@@ -84,6 +84,7 @@ pub(super) fn resolve_animations(
                     variants: Vec::new(),
                     left_strip: None,
                     weight: declaration.weight,
+                    rest_ms: declaration.rest_ms,
                 },
             );
         }
@@ -584,6 +585,42 @@ mod tests {
             )],
             "the author is told how much art they declared and how much a Character may hold"
         );
+    }
+
+    /// Idle swaps members in the middle of a stretch, so a different frame
+    /// size would jump the sprite. A walk ring is drawn once and may differ.
+    #[test]
+    fn an_idle_ring_member_must_share_the_base_frame_size() {
+        let mut idle_package = art();
+        idle_package.insert("wide-0.png".to_string(), png_bytes(4, 4));
+        idle_package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            format!(
+                "{}[animations.spin]\nframes = [\"wide-0.png\"]\nvariant_of = \"idle\"\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            )
+            .into_bytes(),
+        );
+        assert_eq!(
+            errors(load(&idle_package)),
+            vec![
+                "animation \"spin\" frames are 4x4, and its base \"idle\" is 2x2; \
+                 an idle ring swaps members mid-stretch, so they share a frame size"
+                    .to_string()
+            ]
+        );
+
+        let mut walk_package = art();
+        walk_package.insert("wide-0.png".to_string(), png_bytes(4, 4));
+        walk_package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            format!(
+                "{}[animations.ballwalk]\nframes = [\"wide-0.png\"]\nvariant_of = \"walk\"\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            )
+            .into_bytes(),
+        );
+        load(&walk_package).expect("a walk ring is drawn once and may differ in size");
     }
 
     /// A left strip stands in for its base when the sprite travels left, so a

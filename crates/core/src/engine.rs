@@ -5,7 +5,10 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{animation_of, Behavior, CursorReaction, GravityScale, Primitive};
+use crate::character::{
+    animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdleRing,
+    Primitive, RingChoice, DEFAULT_REST_MAX_MS, DEFAULT_REST_MIN_MS,
+};
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
 use crate::possession::{digit_behaviors, Charge, Intent, Walk};
@@ -222,10 +225,13 @@ pub struct Frame {
     /// frame index: `character::Animation::frame_at` maps it via the Manifest.
     pub animation_ms: u32,
 
-    /// The draw that picks which member of the Animation's variant ring shows.
-    /// Held while the Animation plays, redrawn when it changes, so a Behavior
-    /// stepping through `idle` shows one strip instead of swapping costumes.
+    /// The draw that picks a ring member, held for the whole Animation.
+    /// The Engine's own idle does not use it: `idle_beat` names Rest or the
+    /// member, and a weighed draw would play a different strip.
     pub variant_draw: u64,
+    /// Set while the Engine plays its own idle. `None` for a Behavior's idle
+    /// and for every other Animation, which still weigh `variant_draw`.
+    pub idle_beat: Option<IdleBeat>,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 
@@ -272,16 +278,21 @@ pub struct Frame {
     pub possessed: bool,
 }
 
+impl Frame {
+    /// What `Character::draw` should weigh this frame with.
+    pub fn ring_choice(&self) -> RingChoice<'_> {
+        RingChoice::from_beat(self.idle_beat.as_ref(), self.variant_draw)
+    }
+}
+
 /// How long one Primitive holds the screen.
 ///
-/// ponytail: one duration for every Primitive of every Character. The Engine
-/// deliberately does not know an Animation's length — fps and loop mode are the
-/// Character Manifest's — so it cannot play a Primitive until the art runs out.
-/// Art shorter than the turn costs nothing: `loop = once` holds its last frame
-/// for the remainder, which is what a brief startle looks like. Longer art is
-/// the ceiling, and Blip already sits on it — sleep's `fps = 1` over
-/// two frames is a 2000ms strip the sprite leaves at frame 0. Give a Primitive
-/// its own duration when a Character's art needs to outlast this one.
+/// ponytail: one duration for every Primitive of every Character. A Primitive
+/// is not timed to its art — fps and loop stay the manifest's — so it cannot
+/// play until the art runs out. The Engine's own idle is the exception: it
+/// plays one pass of the member it picked, then rests. Art shorter than the
+/// turn holds its last frame. Longer art is the ceiling; give a Primitive its
+/// own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;
 
 /// How long a poked sprite stands still after reacting. `PRIMITIVE_MS` is the
@@ -387,11 +398,16 @@ pub struct Engine {
 
     animation_ms: u32,
 
-    /// The draw the renderer weighs against the variant ring, and its source.
-    /// The Engine knows when an Animation starts, not the art; which strip the
-    /// number lands on is the Character's.
+    /// The draw the renderer weighs against a ring other than the Engine's
+    /// own idle. Idle names its member on `idle_beat` instead of reweighing.
     variant_draw: u64,
     variants: Seeded,
+    /// Idle ring members in draw order. Empty holds Rest: there is no pass
+    /// length to invent.
+    idle_members: Vec<IdleMember>,
+    rest_min_ms: u32,
+    rest_max_ms: u32,
+    own_idle: OwnIdle,
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
 
@@ -680,6 +696,37 @@ fn row_clears(xs: &[f64], spans: &[f64], stayers: &[(f64, f64)]) -> bool {
     })
 }
 
+/// Where the Engine's own idle is inside its stretch. `Away` for a Behavior's
+/// idle and for every other Animation.
+enum OwnIdle {
+    Away,
+    Rest { elapsed_ms: u32, duration_ms: u32 },
+    Gesture { name: String, pass_ms: u32 },
+}
+
+impl OwnIdle {
+    fn beat(&self) -> Option<IdleBeat> {
+        match self {
+            OwnIdle::Away => None,
+            OwnIdle::Rest { .. } => Some(IdleBeat::Rest),
+            OwnIdle::Gesture { name, .. } => Some(IdleBeat::Gesture(name.clone())),
+        }
+    }
+
+    fn is_playing(&self) -> bool {
+        !matches!(self, OwnIdle::Away)
+    }
+}
+
+/// The first millisecond at which a looping strip would wrap. The gesture
+/// ends there, so the drawn frame stays inside the one pass.
+fn one_pass_ms(frames: u32, fps: u32) -> u32 {
+    if frames == 0 || fps == 0 {
+        return 1;
+    }
+    frames.saturating_mul(1000).saturating_add(fps - 1) / fps
+}
+
 impl Engine {
     /// A sprite placed at `position`, falling until the world says otherwise.
     pub fn new(position: Point) -> Self {
@@ -693,6 +740,10 @@ impl Engine {
             animation_ms: 0,
             variant_draw: 0,
             variants: Seeded::new(0),
+            idle_members: Vec::new(),
+            rest_min_ms: DEFAULT_REST_MIN_MS,
+            rest_max_ms: DEFAULT_REST_MAX_MS,
+            own_idle: OwnIdle::Away,
             behaviors: BTreeMap::new(),
             sprite_height: None,
             gravity: GRAVITY,
@@ -779,6 +830,119 @@ impl Engine {
         self.variants = Seeded::new(seed);
         self.variant_draw = self.variants.draw();
         self
+    }
+
+    /// The idle ring and rest range. Without one the Engine can only rest:
+    /// it does not invent a pass length. A retarget starts the next stretch
+    /// on Rest, because the previous member may not exist on the new art.
+    pub fn with_idle_ring(mut self, ring: IdleRing) -> Self {
+        self.set_idle_ring(ring);
+        self
+    }
+
+    pub fn set_idle_ring(&mut self, ring: IdleRing) {
+        self.rest_min_ms = ring.rest_min_ms;
+        self.rest_max_ms = ring.rest_max_ms.max(ring.rest_min_ms);
+        self.idle_members = ring.members;
+        self.own_idle = OwnIdle::Away;
+    }
+
+    /// A seeded rest. Inclusive, so a fixed `[n, n]` is exactly `n`.
+    fn roll_rest(&mut self) -> u32 {
+        let min = self.rest_min_ms;
+        let max = self.rest_max_ms.max(min);
+        let span = u64::from(max - min);
+        if span == 0 {
+            min
+        } else {
+            min + (self.variants.draw() % (span + 1)) as u32
+        }
+    }
+
+    fn begin_rest(&mut self) {
+        let duration_ms = self.roll_rest();
+        self.animation_ms = 0;
+        self.own_idle = OwnIdle::Rest {
+            elapsed_ms: 0,
+            duration_ms,
+        };
+    }
+
+    /// The next weighted member, from its first frame. False when the ring
+    /// has no weight to land on, in which case the pose stays Rest.
+    fn begin_gesture(&mut self) -> bool {
+        let weights: Vec<u32> = self
+            .idle_members
+            .iter()
+            .map(|member| member.weight)
+            .collect();
+        let Some(index) = self.variants.pick_index(&weights) else {
+            return false;
+        };
+        let Some(member) = self.idle_members.get(index) else {
+            return false;
+        };
+        let name = member.name.clone();
+        let pass_ms = one_pass_ms(member.frames, member.fps);
+        self.animation_ms = 0;
+        self.own_idle = OwnIdle::Gesture { name, pass_ms };
+        true
+    }
+
+    /// Carry `dt` through rest and gesture. A tick longer than one beat lands
+    /// in the beat it reached, still on the snapshot clock.
+    fn advance_own_idle(&mut self, mut dt: u32) {
+        loop {
+            match &self.own_idle {
+                OwnIdle::Away => self.begin_rest(),
+                OwnIdle::Rest {
+                    elapsed_ms,
+                    duration_ms,
+                } => {
+                    let (elapsed_ms, duration_ms) = (*elapsed_ms, *duration_ms);
+                    let left = duration_ms.saturating_sub(elapsed_ms);
+                    if dt < left {
+                        self.own_idle = OwnIdle::Rest {
+                            elapsed_ms: elapsed_ms + dt,
+                            duration_ms,
+                        };
+                        self.animation_ms = 0;
+                        return;
+                    }
+                    dt -= left;
+                    if !self.begin_gesture() {
+                        self.animation_ms = 0;
+                        self.own_idle = OwnIdle::Rest {
+                            elapsed_ms: duration_ms,
+                            duration_ms,
+                        };
+                        return;
+                    }
+                    if dt == 0 {
+                        return;
+                    }
+                }
+                OwnIdle::Gesture { pass_ms, .. } => {
+                    let left = pass_ms.saturating_sub(self.animation_ms);
+                    if left == 0 || dt < left {
+                        if left == 0 {
+                            self.begin_rest();
+                            if dt == 0 {
+                                return;
+                            }
+                            continue;
+                        }
+                        self.animation_ms = self.animation_ms.saturating_add(dt);
+                        return;
+                    }
+                    dt -= left;
+                    self.begin_rest();
+                    if dt == 0 {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /// The Character's cursor reactions.
@@ -897,6 +1061,7 @@ impl Engine {
         self.state = State::Grounded;
         self.animation = animation_for(State::Grounded);
         self.animation_ms = 0;
+        self.own_idle = OwnIdle::Away;
         self.idle_ms = 0;
         self.perched_rest_ms = 0;
         self.stop_playing();
@@ -1406,13 +1571,23 @@ impl Engine {
             }
             None => animation_for(self.state),
         };
-        // A fresh variant draw on the Animation, not on the Primitive: `idle`
-        // and a variant of `idle` are one family, and re-drawing every turn of
-        // a 600ms Primitive would flicker between strips mid-Behavior.
+        // One draw per family, not per Primitive turn, or a 600ms Idle would
+        // flicker strips. The Engine's own idle spends that draw on the rest
+        // length: the beat names the member, so nothing reweighs it.
+        let engine_idle = animation == "idle" && self.on_screen() != Some(Primitive::Idle);
+        let behavior_idle = animation == "idle" && self.on_screen() == Some(Primitive::Idle);
+        let was_own = self.own_idle.is_playing();
         let new_family = animation != self.animation;
         if new_family {
             self.animation = animation;
+            if !engine_idle {
+                self.variant_draw = self.variants.draw();
+            }
+        } else if behavior_idle && was_own {
+            // Rest picked no member, and a gesture may be mid-pass. The
+            // Behavior draws once here, from the member's first frame.
             self.variant_draw = self.variants.draw();
+            self.animation_ms = 0;
         }
 
         // `react` is `loop = once`, so a second Poke restarts its clock or
@@ -1420,10 +1595,20 @@ impl Engine {
         // keep their clock, or each turn draws only the strip's first 600ms.
         let startled = self.on_screen() == Some(Primitive::React);
         // A paused climb holds one pose rather than climbing in place.
-        if new_family || (started && startled) {
+        // Own idle freezes that clock on Rest and runs it for one gesture pass.
+        if engine_idle {
+            if !was_own {
+                self.begin_rest();
+            }
+            self.advance_own_idle(snapshot.elapsed_ms);
+        } else if new_family || (started && startled) {
+            self.own_idle = OwnIdle::Away;
             self.animation_ms = 0;
         } else if !(self.climb_paused() && animation == "climb") {
+            self.own_idle = OwnIdle::Away;
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
+        } else {
+            self.own_idle = OwnIdle::Away;
         }
 
         self.previous_windows.clone_from(&snapshot.windows);
@@ -1448,6 +1633,7 @@ impl Engine {
             animation: self.animation,
             animation_ms: self.animation_ms,
             variant_draw: self.variant_draw,
+            idle_beat: self.own_idle.beat(),
             dialogue: snapshot
                 .proposal
                 .as_ref()
@@ -2989,9 +3175,9 @@ mod tests {
         );
     }
 
-    /// `PRIMITIVE_MS` is how long the Engine gives a Primitive, not how long
-    /// the art runs. Every base `idle` is longer (750ms to twelve seconds), so
-    /// a restarted clock would draw only the opening of the strip.
+    /// `PRIMITIVE_MS` is the Primitive's turn, not the art's length, so the
+    /// clock runs across Idle turns instead of restarting on each. Landing
+    /// rests at 0, and the Engine's own idle after the Behavior rests again.
     #[test]
     fn a_behaviors_idle_keeps_one_clock_across_its_primitive_turns() {
         let mut engine =
@@ -3006,7 +3192,7 @@ mod tests {
                 },
             )]));
         let base = settle(&mut engine, &snapshot(100)).animation_ms;
-        assert!(base > 0, "the sprite has been idling since it landed");
+        assert_eq!(base, 0, "landing rests, and rest holds the idle clock");
 
         let started = engine.tick(&proposing("ponder"));
         assert_eq!(started.behavior.as_deref(), Some("ponder"), "it plays");
@@ -3019,10 +3205,16 @@ mod tests {
         }
 
         assert_eq!(
-            clock,
-            (1..=19).map(|tick| base + tick * 100).collect::<Vec<u32>>(),
-            "three Primitive turns of the same Animation are one loop, and the \
-             idle it interrupted was already that Animation"
+            &clock[..18],
+            (1..=18)
+                .map(|tick| tick * 100)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            "three Primitive turns of the same Animation are one loop"
+        );
+        assert_eq!(
+            clock[18], 0,
+            "once the Behavior ends, the Engine's own idle rests and holds the clock"
         );
     }
 

@@ -417,7 +417,7 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
             .draw(
                 frame.animation,
                 frame.animation_ms,
-                frame.variant_draw,
+                frame.ring_choice(),
                 frame.facing,
             )
             .expect("the actual duck package draws every jump phase");
@@ -1017,7 +1017,8 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
     };
     let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
         .with_behaviors(character.behaviors.clone())
-        .with_variant_seed(seed);
+        .with_variant_seed(seed)
+        .with_idle_ring(character.idle_ring());
 
     let mut art = Vec::new();
     let mut idling = false;
@@ -1044,7 +1045,7 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
                     .draw(
                         frame.animation,
                         frame.animation_ms,
-                        frame.variant_draw,
+                        frame.ring_choice(),
                         frame.facing,
                     )
                     .expect("Timber Wolf draws the idle it is playing")
@@ -1102,10 +1103,10 @@ fn the_same_seed_draws_timber_wolfs_variants_in_the_same_order() {
     );
 }
 
-/// A quiet perch leaves sit for idle, and that start is a draw like any
-/// other, whatever `PERCHED_IDLE_AFTER_MS` is.
+/// A quiet perch leaves sit for idle on Rest. The first gesture after that
+/// rest is the weighted draw, whatever the seed, and it is not the opening frame.
 #[test]
-fn timber_wolf_scans_on_the_first_perched_idle_whatever_the_seed() {
+fn timber_wolf_scans_on_the_first_perched_gesture_whatever_the_seed() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
     let perch = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1122,39 +1123,45 @@ fn timber_wolf_scans_on_the_first_perched_idle_whatever_the_seed() {
         ..WorldSnapshot::default()
     };
 
-    // The art on the first idle tick of each Instance's perched rest, however
-    // long that rest then lasts: no proposal, no Behavior, only the switch out
-    // of sit.
-    let first_idle = |seed: u64| {
+    // Rest is base idle frame 0, so the first frame that is not that pose is
+    // inside the gesture: `scan`, or the base strip once it leaves frame 0.
+    let first_gesture = |seed: u64| {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
             .with_behaviors(character.behaviors.clone())
-            .with_variant_seed(seed);
-        (0..200)
-            .map(|_| engine.tick(&perch))
-            .find(|frame| frame.animation == "idle")
-            .map(|frame| {
-                character
-                    .draw(
-                        frame.animation,
-                        frame.animation_ms,
-                        frame.variant_draw,
-                        frame.facing,
-                    )
-                    .expect("draws")
-                    .animation
-                    .to_string()
-            })
-            .expect("a quietly perched sprite leaves sit for idle")
+            .with_variant_seed(seed)
+            .with_idle_ring(character.idle_ring());
+        let mut saw_rest = false;
+        for _ in 0..250 {
+            let frame = engine.tick(&perch);
+            if frame.animation != "idle" {
+                continue;
+            }
+            let drawn = character
+                .draw(
+                    frame.animation,
+                    frame.animation_ms,
+                    frame.ring_choice(),
+                    frame.facing,
+                )
+                .expect("draws");
+            if drawn.animation == "idle" && drawn.index == 0 {
+                saw_rest = true;
+                continue;
+            }
+            assert!(saw_rest, "seed {seed} gestured before it rested");
+            return drawn.animation.to_string();
+        }
+        panic!("seed {seed} never left rest");
     };
 
-    let drawn: BTreeSet<String> = (0..32).map(first_idle).collect();
+    let drawn: BTreeSet<String> = (0..32).map(first_gesture).collect();
     assert!(
         drawn.contains("scan"),
-        "the laser sweeps on a window: {drawn:?}"
+        "the laser sweeps on the first gesture: {drawn:?}"
     );
     assert!(
         drawn.contains("idle"),
-        "and mostly it only stands: {drawn:?}"
+        "and the base still takes a gesture: {drawn:?}"
     );
 }
 
@@ -1546,11 +1553,11 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
     );
 }
 
-/// `PRIMITIVE_MS` is the Engine's turn, not the art's length. Restarting that
-/// clock would replay the opening of the strip and never the rest. The test
-/// goes through the Engine, because `draw` with a chosen `ms` starts its own.
+/// `PRIMITIVE_MS` is the turn, not the strip. The clock runs through that
+/// turn, and the Engine's own idle after it holds base frame 0 instead of
+/// the frames the turn never reached.
 #[test]
-fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
+fn a_behaviors_idle_sweeps_the_opening_then_rests() {
     let character = load_package("cat").expect("cat package is valid");
     let ground = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1562,17 +1569,23 @@ fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
     for seed in 0..16 {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
             .with_behaviors(character.behaviors.clone())
-            .with_variant_seed(seed);
+            .with_variant_seed(seed)
+            .with_idle_ring(character.idle_ring());
         let idling = (0..40)
             .map(|_| engine.tick(&ground))
             .find(|frame| frame.animation == "idle")
             .expect("the cat lands and the landing gives way to idling");
-        assert_eq!(idling.animation_ms, 0, "seed {seed} idles from frame zero");
+        assert_eq!(
+            shown_cat(&character, &idling),
+            ("idle".to_string(), 0),
+            "seed {seed} rests on the base before the Behavior"
+        );
 
         // `groom` is a single Idle Primitive over an idle already on screen:
         // the Behavior with nothing to restart.
-        let mut swept = BTreeSet::new();
+        let mut during = BTreeSet::new();
         let mut drew = BTreeSet::new();
+        let mut after = Vec::new();
         for tick in 0..13 {
             let frame = engine.tick(&WorldSnapshot {
                 proposal: (tick == 0).then(|| BehaviorProposal {
@@ -1589,22 +1602,22 @@ fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
                     "seed {seed} played the Behavior rather than refusing it"
                 );
             }
-            let art = character
-                .draw(
-                    frame.animation,
-                    frame.animation_ms,
-                    frame.variant_draw,
-                    frame.facing,
-                )
-                .expect("the cat draws the idle it is playing");
-            drew.insert(art.animation.to_string());
-            swept.insert(art.index);
+            let art = shown_cat(&character, &frame);
+            if frame.playing_primitive == Some(character::Primitive::Idle) {
+                drew.insert(art.0.clone());
+                during.insert(art.1);
+            } else if frame.animation == "idle" {
+                after.push(art);
+            }
         }
 
-        assert_eq!(
-            swept,
-            BTreeSet::from([0, 1, 2, 3, 4, 5]),
-            "seed {seed} drew {drew:?} end to end"
+        assert!(
+            during.len() > 1,
+            "seed {seed} advanced {drew:?} during the turn: {during:?}"
+        );
+        assert!(
+            after.iter().all(|art| art == &("idle".to_string(), 0)),
+            "seed {seed} rested on the base after the turn: {after:?}"
         );
         strips.extend(drew);
     }
@@ -1615,4 +1628,19 @@ fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
         "and both members of the ring took a turn, so the variant is pinned \
          with the base"
     );
+}
+
+fn shown_cat(
+    character: &character::Character,
+    frame: &fidget_core::engine::Frame,
+) -> (String, usize) {
+    let drawn = character
+        .draw(
+            frame.animation,
+            frame.animation_ms,
+            frame.ring_choice(),
+            frame.facing,
+        )
+        .expect("the cat draws the idle it is playing");
+    (drawn.animation.to_string(), drawn.index)
 }

@@ -77,7 +77,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use fidget_core::character::{Character, Primitive};
+use fidget_core::character::{Character, IdleBeat, Primitive};
 use fidget_core::director::{
     app_instructions, happened_cell, Happened, ModelDirector, Pace, Recency, Seeded, StaticDirector,
 };
@@ -403,7 +403,9 @@ struct Drawn {
     animation_ms: u32,
     /// The variant draw the art was picked with, so the hit-test measures the
     /// strip the user saw rather than whatever the next draw lands on.
+    /// Ignored while `idle_beat` is set: that beat already named the member.
     variant_draw: u64,
+    idle_beat: Option<IdleBeat>,
     /// Which way the sprite was pointed, so the hit-test resolves the strip
     /// the art was drawn from and mirrors it the same way — this tick's
     /// facing may already differ.

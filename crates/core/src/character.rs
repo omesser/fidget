@@ -117,6 +117,11 @@ pub(crate) const DEFAULT_FPS: u32 = 8;
 /// down: a default of one is also the floor.
 pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 
+/// How long the Engine holds base `idle` frame 0 when the manifest declares
+/// no `rest_ms`. Short of sleep, long enough that a gesture reads as a choice.
+pub(crate) const DEFAULT_REST_MIN_MS: u32 = 3_000;
+pub(crate) const DEFAULT_REST_MAX_MS: u32 = 10_000;
+
 /// The scale the renderer uses when a Character does not say.
 /// Four is what the shipped pixel-art Characters have always been drawn at.
 pub(crate) const DEFAULT_SCALE: u32 = 4;
@@ -289,9 +294,8 @@ pub struct Animation {
     pub fps: u32,
     /// Whether the Animation repeats or holds its last frame.
     pub looping: bool,
-    /// Names of the Animations that declared `variant_of` this one, in name
-    /// order. Starting this Animation draws one of this and those by weight
-    /// until the engine asks for something else.
+    /// Variants of this Animation, in name order. Draw order is the base
+    /// and then this list, so one seed lands on the same member everywhere.
     pub variants: Vec<String>,
     /// The Animation drawn in this one's place when the sprite travels left,
     /// from the package's `left_of`. `None` mirrors this Animation's own art.
@@ -300,6 +304,9 @@ pub struct Animation {
     /// manifest does not say. An Animation in no ring carries the default all
     /// the same, and nothing reads it.
     pub weight: u32,
+    /// `[rest_ms]` on base `idle`: how long frame 0 is held between gestures.
+    /// `None` on every other Animation, and on an idle that doesn't say.
+    pub rest_ms: Option<(u32, u32)>,
 }
 
 impl Animation {
@@ -465,27 +472,138 @@ pub struct Drawn<'a> {
     pub mirrored: bool,
 }
 
+/// How the Engine's own idle is drawn. Absent on every other Animation,
+/// including a Behavior's `idle`, which still weighs a draw and loops.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IdleBeat {
+    /// Base `idle`, frame 0, held still.
+    Rest,
+    /// One ring member, already picked, playing from its first frame.
+    Gesture(String),
+}
+
+/// One idle-ring member the Engine can gesture: the base, or a variant.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdleMember {
+    pub(crate) name: String,
+    pub(crate) weight: u32,
+    pub(crate) frames: u32,
+    pub(crate) fps: u32,
+}
+
+/// The idle ring and the rest range, handed to the Engine beside the seed.
+/// The Engine picks; `draw` does not weigh this ring a second time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdleRing {
+    pub(crate) members: Vec<IdleMember>,
+    pub(crate) rest_min_ms: u32,
+    pub(crate) rest_max_ms: u32,
+}
+
+/// What `Character::draw` uses to choose a ring member.
+pub enum RingChoice<'a> {
+    /// Weigh the ring with this draw. Zero is the base only when the mixer
+    /// lands there, which a ring can refuse.
+    Weighed(u64),
+    /// The Engine's own idle, already decided.
+    Beat(&'a IdleBeat),
+}
+
+impl From<u64> for RingChoice<'static> {
+    fn from(draw: u64) -> Self {
+        RingChoice::Weighed(draw)
+    }
+}
+
+impl<'a> RingChoice<'a> {
+    pub fn from_beat(beat: Option<&'a IdleBeat>, variant_draw: u64) -> Self {
+        match beat {
+            Some(beat) => RingChoice::Beat(beat),
+            None => RingChoice::Weighed(variant_draw),
+        }
+    }
+}
+
 impl Character {
-    /// How tall this Character stands, in points: the idle Animation's frame
-    /// at this Character's scale. The art hangs above the feet, so this is the
-    /// room a Perch near the top has to leave. Idle is the usual drawn size.
+    /// How tall the base idle frame stands, in points, at this Character's
+    /// scale. A weighed zero can land on a variant, so this asks for the base.
+    /// The art hangs above the feet, which is the room a high Perch must leave.
     pub fn sprite_height(&self) -> f64 {
-        self.draw("idle", 0, 0, 1.0)
+        self.draw("idle", 0, RingChoice::Beat(&IdleBeat::Rest), 1.0)
             .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
             * f64::from(self.scale)
     }
 
-    /// Which frame of `animation` is on screen `animation_ms` after it started.
-    /// `variant_draw` is held while it plays; zero draws the base. `None` rather
-    /// than a substitute, because the renderer was told the name it asked for.
-    pub fn draw(
+    /// The idle ring in draw order — base, then variants by name — and the
+    /// rest range the manifest set, or the Engine default.
+    pub fn idle_ring(&self) -> IdleRing {
+        let Some(base) = self.animations.get("idle") else {
+            return IdleRing {
+                members: Vec::new(),
+                rest_min_ms: DEFAULT_REST_MIN_MS,
+                rest_max_ms: DEFAULT_REST_MAX_MS,
+            };
+        };
+        let mut members = vec![idle_member("idle", base)];
+        for name in &base.variants {
+            if let Some(animation) = self.animations.get(name) {
+                members.push(idle_member(name, animation));
+            }
+        }
+        let (rest_min_ms, rest_max_ms) = base
+            .rest_ms
+            .unwrap_or((DEFAULT_REST_MIN_MS, DEFAULT_REST_MAX_MS));
+        IdleRing {
+            members,
+            rest_min_ms,
+            rest_max_ms,
+        }
+    }
+
+    /// Whether a later tick of this beat would show a different frame. Rest
+    /// is a held pose, so it must not keep the renderer hot; a Behavior's
+    /// idle loops, so it stays on the clock until the turn ends.
+    pub fn art_still_advancing(
         &self,
         animation: &str,
         animation_ms: u32,
-        variant_draw: u64,
+        beat: Option<&IdleBeat>,
+    ) -> bool {
+        match beat {
+            Some(IdleBeat::Rest) => false,
+            Some(IdleBeat::Gesture(name)) => self.animations.get(name).is_some_and(|anim| {
+                anim.frames.len() > 1 && anim.frame_at(animation_ms) + 1 < anim.frames.len()
+            }),
+            None => self.animations.get(animation).is_some_and(|anim| {
+                anim.looping || anim.frame_at(animation_ms) + 1 < anim.frames.len()
+            }),
+        }
+    }
+
+    /// Which frame of `animation` is on screen. A weighed draw picks a ring
+    /// member; `IdleBeat::Rest` is the base's first frame, held, and a
+    /// `Gesture` is the member the Engine already picked.
+    pub fn draw<'c>(
+        &self,
+        animation: &str,
+        animation_ms: u32,
+        choice: impl Into<RingChoice<'c>>,
         heading: f64,
     ) -> Option<Drawn<'_>> {
-        let (name, animation) = self.resolve(animation, variant_draw)?;
+        let (name, animation, elapsed) = match choice.into() {
+            RingChoice::Weighed(draw) => {
+                let (name, animation) = self.resolve(animation, draw)?;
+                (name, animation, animation_ms)
+            }
+            RingChoice::Beat(IdleBeat::Rest) => {
+                let (name, animation) = self.named(animation)?;
+                (name, animation, 0)
+            }
+            RingChoice::Beat(IdleBeat::Gesture(member)) => {
+                let (name, animation) = self.ring_member(animation, member)?;
+                (name, animation, animation_ms)
+            }
+        };
         let travel = if heading < 0.0 {
             Facing::Left
         } else {
@@ -500,7 +618,7 @@ impl Character {
             Some((left_name, left)) => (left_name.as_str(), left),
             None => (name, animation),
         };
-        let index = animation.frame_at(animation_ms);
+        let index = animation.frame_at(elapsed);
         let art = self.art.get(animation.frames.get(index)?)?;
 
         Some(Drawn {
@@ -512,24 +630,47 @@ impl Character {
         })
     }
 
-    /// Which Animation actually draws: the one asked for, its fallback, or the
-    /// variant-ring member the draw weighs out. Same mixer as the Static
-    /// Director, and members in `BTreeMap` order: the draw walks a running total.
-    fn resolve(&self, requested: &str, draw: u64) -> Option<(&str, &Animation)> {
-        let (name, base) = match self.animations.get_key_value(requested) {
-            Some(found) => found,
+    /// The Animation asked for, or its fallback. No ring: Rest and a missing
+    /// optional both want the strip the manifest named, not a weighed member.
+    fn named(&self, requested: &str) -> Option<(&str, &Animation)> {
+        match self.animations.get_key_value(requested) {
+            Some((name, animation)) => Some((name.as_str(), animation)),
             None => {
                 let (_, fallback) = OPTIONAL_FALLBACKS
                     .iter()
                     .find(|(optional, _)| *optional == requested)?;
-                self.animations.get_key_value(*fallback)?
+                self.animations
+                    .get_key_value(*fallback)
+                    .map(|(name, animation)| (name.as_str(), animation))
             }
-        };
+        }
+    }
+
+    /// `member` when it is `requested` or one of that ring. Anything else
+    /// draws nothing, so a stale gesture name cannot show another strip.
+    fn ring_member(&self, requested: &str, member: &str) -> Option<(&str, &Animation)> {
+        let (name, base) = self.named(requested)?;
+        if member == name {
+            return Some((name, base));
+        }
+        if !base.variants.iter().any(|variant| variant == member) {
+            return None;
+        }
+        self.animations
+            .get_key_value(member)
+            .map(|(found, animation)| (found.as_str(), animation))
+    }
+
+    /// Which Animation actually draws: the one asked for, its fallback, or the
+    /// variant-ring member the draw weighs out. Same mixer as the Static
+    /// Director, and members in `BTreeMap` order: the draw walks a running total.
+    fn resolve(&self, requested: &str, draw: u64) -> Option<(&str, &Animation)> {
+        let (name, base) = self.named(requested)?;
         if base.variants.is_empty() {
-            return Some((name.as_str(), base));
+            return Some((name, base));
         }
 
-        let members: Vec<(&str, &Animation)> = std::iter::once((name.as_str(), base))
+        let members: Vec<(&str, &Animation)> = std::iter::once((name, base))
             .chain(base.variants.iter().filter_map(|variant| {
                 self.animations
                     .get_key_value(variant)
@@ -541,6 +682,15 @@ impl Character {
         // and the base is what the engine asked for.
         let picked = Seeded::new(draw).pick_index(&weights).unwrap_or(0);
         members.get(picked).copied()
+    }
+}
+
+fn idle_member(name: &str, animation: &Animation) -> IdleMember {
+    IdleMember {
+        name: name.to_string(),
+        weight: animation.weight,
+        frames: animation.frames.len() as u32,
+        fps: animation.fps,
     }
 }
 
@@ -629,6 +779,24 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         if animations.contains_key(&variant) {
             if let Some(base) = animations.get_mut(&base) {
                 base.variants.push(variant);
+            }
+        }
+    }
+    // Idle swaps members mid-stretch, so a different size would jump the
+    // sprite. A walk or talk ring is drawn once and may differ.
+    if let Some(idle) = animations.get("idle") {
+        let base_size = idle.frame_size;
+        let names = idle.variants.clone();
+        for name in names {
+            let Some(member) = animations.get(&name) else {
+                continue;
+            };
+            if member.frame_size != base_size {
+                errors.push(format!(
+                    "animation {name:?} frames are {}x{}, and its base \"idle\" is {}x{}; \
+                     an idle ring swaps members mid-stretch, so they share a frame size",
+                    member.frame_size.0, member.frame_size.1, base_size.0, base_size.1
+                ));
             }
         }
     }
@@ -761,6 +929,7 @@ pub(crate) mod tests {
             variants: Vec::new(),
             left_strip: None,
             weight: DEFAULT_WEIGHT,
+            rest_ms: None,
         }
     }
 
@@ -1426,9 +1595,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// Whole loops: a drawn member starts at its own first frame and runs on
-    /// the clock the family is already keeping, so nothing is cut mid-stride.
-    /// `check_variants` refusing a `loop = "once"` member is the other half.
+    /// A weighed member starts at its own first frame and wraps, because the
+    /// strip loops. The Engine's own idle stops after one pass and rests;
+    /// that cut is the Engine's clock, not this wrap.
     #[test]
     fn a_drawn_variant_plays_from_its_first_frame() {
         let mut package = art();
