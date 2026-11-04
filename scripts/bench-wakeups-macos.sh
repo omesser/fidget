@@ -53,12 +53,14 @@ fi
 
 mkdir -p "$OUT"
 LOG="$OUT/app.log"
+DATA_DIR="$OUT/data"
 PM="$OUT/powermetrics.txt"
 META="$OUT/meta.txt"
 
 APP_PID=""
 PROP_PID=""
-trap 'kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" 2> /dev/null' EXIT INT TERM
+PUMP_PID=""
+trap 'kill "$APP_PID" "$PROP_PID" "$PUMP_PID" 2> /dev/null' EXIT INT TERM
 
 # Other agents build and run fidget on this machine. A baseline with one of
 # theirs alive is not a baseline, and powermetrics cannot tell whose it is.
@@ -69,16 +71,33 @@ if [ "$SCENARIO" = "baseline" ] && [ -n "$STRAY_BEFORE" ]; then
 fi
 
 if [ "$SCENARIO" != "baseline" ]; then
+  mkdir -p "$DATA_DIR"
+  # The first-run tour would open its window mid-sample; ship the settings
+  # file the runner's own profile would already hold.
+  echo '{"first_run_tour_shown": true}' > "$DATA_DIR/settings.json"
+  # A private data dir keeps this run's process.log away from any other
+  # fidget instance's, and keeps settings and memory out of the measurement.
   FIDGET_DIRECTOR_API_KEY=bench-placeholder \
     FIDGET_DIRECTOR=0 \
     FIDGET_TRACE_FRAMES=1 \
     FIDGET_TRACE_ENGINE=1 \
     FIDGET_CAPTURABLE=1 \
-    "$BINARY" > "$LOG" 2>&1 &
+    FIDGET_DATA_DIR="$DATA_DIR" \
+    "$BINARY" > "$OUT/app.out" 2>&1 &
   APP_PID=$!
+  # A release binary writes nothing to that redirect: eprintln! sits behind
+  # debug_assertions and process_log.rs has already swapped stderr for
+  # $DATA_DIR/process.log, whose lines carry an epoch-second prefix. Pump it
+  # into LOG with the prefix stripped, so the wait helpers' ^overlay:-
+  # and ^frame:-style anchors match on a debug or a release binary alike.
+  # tail -F tolerates process.log appearing after the launch; awk's fflush
+  # keeps the helpers' tail checks fed line by line.
+  tail -F "$DATA_DIR/process.log" 2> /dev/null |
+    awk '{ sub(/^[0-9]+ /, ""); print; fflush() }' > "$LOG" &
+  PUMP_PID=$!
   # shellcheck disable=SC2034 # read by the sourced wait helpers
   pid=$APP_PID
-  echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
+  echo "launched pid=$APP_PID binary=$BINARY data=$DATA_DIR log=$LOG" >&2
 fi
 
 if [ "$SCENARIO" != "baseline" ] && ! wait_for_up "$LOG"; then
