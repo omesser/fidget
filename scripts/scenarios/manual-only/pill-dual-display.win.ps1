@@ -8,8 +8,9 @@
 #   and the sprite is pressed, carried to the middle of another display and let go.
 #   Keep hands off the mouse and keyboard for the run.
 # Duration: a few seconds. Launch gets the shared startup budget (Wait-ForUp);
-#   every other wait gives up 3 s after its trigger (landing, poke, held wake
-#   going out, hover, keys, press, move, drop).
+#   the held-wake go-out wait is 5 s (Oded's exception, outlasts PAGE_LOAD_LIMIT);
+#   every other wait gives up 3 s after its trigger (landing, poke, hover, keys,
+#   press, move, drop).
 # Grants: a desktop session with two or more displays. A loopback TCP port.
 #   Nothing is pressed unless Fidget owns the window under the cursor, and
 #   nothing is typed unless Fidget holds the foreground.
