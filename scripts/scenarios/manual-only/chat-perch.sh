@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Scenario: chat-perch (macOS), Chat as a Perch (#1502).
-# Chat is moved to fit primary-display CG bounds when it opens elsewhere.
-# On screen: launches one private-HOME BMO, focuses Chat, perches it on Chat's
-#   ledge, clicks the question bubble and types into the composer. It captures
-#   two crops, then exits.
+# On screen: launches one private-HOME BMO, moves Chat to a ledge on the
+#   primary display, focuses it, perches BMO there, clicks the question bubble
+#   and types into the composer. It captures two crops, then exits.
 # Input: synthetic mouse clicks and typing inside Fidget only; no Finder or Poke.
 # Duration: a few seconds, 45 s at most.
 # Grants: Accessibility and Screen Recording for the terminal running it.
@@ -12,10 +11,10 @@
 # Evidence: a fresh fidget-scenario-chat-perch directory under TMPDIR.
 # Usage: chat-perch.sh --go <fidget binary> <fidget test binary>
 # Setup: --prepare compiles helpers without touching the GUI.
-# Offline: --main-fit <screen x,y,w,h> <Chat x,y,w,h> prints a fitting origin.
-#   --check-hit-test <log> <baseline matches> <x> <y> <on|OFF> checks a trace.
-# Trace wait: hit-test lines emit on state flips or every 120 ticks, so point/state
-# checks wait 7 s for a fresh match.
+# Offline: --check-click <log> <first new line> <instance> checks a saved trace.
+# Without --go this prints the takeover header and exits 2.
+# Trace wait: hit-test lines emit on state flips or every 120 ticks, so
+#   point/state checks wait 7 s for a fresh match.
 set -euo pipefail
 
 click_traced() {
@@ -24,28 +23,14 @@ click_traced() {
     'NR >= first && $0 == marker { found = 1 } END { exit !found }' "$trace"
 }
 
-hit_test_pattern() {
-  local x=$1 y=$2 state=$3 result
-  [[ "$x" =~ ^-?[0-9]+$ && "$y" =~ ^-?[0-9]+$ && ("$state" = on || "$state" = OFF) ]] || return 2
-  case "$state" in
-    on) result='miss click-through on' ;;
-    OFF) result='click-through OFF' ;;
-  esac
-  printf '^hit-test:.*point\\(%s,%s\\).*%s([[:space:]]|$)' "$x" "$y" "$result"
+hit_test_pattern() { # <x> <y> <on|OFF>
+  local result='miss click-through on'
+  [ "$3" = OFF ] && result='click-through OFF'
+  printf '^hit-test:.*point\\(%s,%s\\).*%s([[:space:]]|$)' "$1" "$2" "$result"
 }
 
-hit_test_match_count() {
-  local pattern count
-  pattern=$(hit_test_pattern "$2" "$3" "$4") || return $?
-  count=$(grep -cE "$pattern" "$1" 2> /dev/null) || true
-  printf '%s\n' "${count:-0}"
-}
-
-hit_test_traced() {
-  local trace=$1 baseline=$2 x=$3 y=$4 state=$5 count
-  [[ "$baseline" =~ ^[0-9]+$ ]] || return 2
-  count=$(hit_test_match_count "$trace" "$x" "$y" "$state") || return $?
-  [ "$count" -gt "$baseline" ]
+hit_test_match_count() { # <log> <x> <y> <on|OFF>
+  grep -cE "$(hit_test_pattern "$2" "$3" "$4")" "$1" || true
 }
 
 allow_button_center() {
@@ -62,48 +47,9 @@ else:
 PY
 }
 
-if [ "${1:-}" = --main-fit ]; then
-  [ "$#" -eq 3 ] || exit 2
-  for bounds in "$2" "$3"; do
-    [[ "$bounds" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]] || exit 2
-  done
-  IFS=, read -r sx sy sw sh <<< "$2"
-  IFS=, read -r cx cy cw ch <<< "$3"
-  [ "$sw" -gt 0 ] && [ "$sh" -gt 0 ] && [ "$cw" -gt 0 ] && [ "$ch" -gt 0 ] || exit 2
-  [ "$cw" -le "$sw" ] && [ "$ch" -le "$sh" ] || {
-    echo "FAIL: Chat is too large for the primary display" >&2
-    exit 1
-  }
-  tx=$cx
-  ty=$cy
-  [ "$tx" -ge "$sx" ] || tx=$sx
-  [ "$ty" -ge "$sy" ] || ty=$sy
-  max_x=$((sx + sw - cw))
-  max_y=$((sy + sh - ch))
-  [ "$tx" -le "$max_x" ] || tx=$max_x
-  [ "$ty" -le "$max_y" ] || ty=$max_y
-  printf '%s,%s\n' "$tx" "$ty"
-  exit 0
-fi
-
 if [ "${1:-}" = --check-click ]; then
   [ "$#" -eq 4 ] && [[ "$3" =~ ^[1-9][0-9]*$ ]] && [ -n "$4" ] || exit 2
   click_traced "$2" "$3" "$4"
-  exit $?
-fi
-
-if [ "${1:-}" = --check-hit-test ]; then
-  [ "$#" -eq 6 ] && [[ "$3" =~ ^[0-9]+$ ]] || exit 2
-  if hit_test_traced "$2" "$3" "$4" "$5" "$6"; then
-    exit 0
-  else
-    exit $?
-  fi
-fi
-
-if [ "${1:-}" = --allow-button ]; then
-  [ "$#" -eq 2 ] || exit 2
-  allow_button_center "$2"
   exit $?
 fi
 
@@ -276,18 +222,8 @@ point_cursor_at() {
     fail "cursor landed at $landed instead of Fidget target ($x,$y)"
 }
 
-wait_for_hit_test() {
-  local baseline=$1 x=$2 y=$3 state=$4 pattern
-  pattern=$(hit_test_pattern "$x" "$y" "$state") || return $?
-  wait_for_count 7 "$log" "$pattern" "$baseline"
-}
-
-rect_fits_main_display() {
-  local x=$1 y=$2 width=$3 height=$4
-  [ "$width" -gt 0 ] && [ "$height" -gt 0 ] &&
-    [ "$x" -ge "$screen_x" ] && [ "$y" -ge "$screen_y" ] &&
-    [ $((x + width)) -le $((screen_x + screen_w)) ] &&
-    [ $((y + height)) -le $((screen_y + screen_h)) ]
+wait_for_hit_test() { # <baseline> <x> <y> <on|OFF>
+  wait_for_count 7 "$log" "$(hit_test_pattern "$2" "$3" "$4")" "$1"
 }
 
 screen=$("$tools/chat-window" screen)
@@ -322,18 +258,17 @@ echo "screen=$screen" >> "$out/run.txt"
 wait_until 3 info || fail "Chat window did not open"
 wait_for_marks 3 "$marks" '^asked$' || fail "fixture did not ask its question"
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-main_target=$(bash "$0" --main-fit "$screen" "$chat_x,$chat_y,$chat_w,$chat_h") ||
-  fail "Chat cannot fit on the primary display"
-IFS=, read -r main_x main_y <<< "$main_target"
-if [ "$chat_x" -ne "$main_x" ] || [ "$chat_y" -ne "$main_y" ]; then
-  "$tools/chat-window" move "$pid" BMO "$main_x" "$main_y" ||
-    fail "could not move Chat onto the primary display"
-  wait_until 3 chat_at_position "$main_x" "$main_y" ||
-    fail "Chat never reached the primary-display position"
+chat_left=$((screen_x + (screen_w - chat_w) / 2))
+target_y=$((screen_y + 160))
+[ "$chat_w" -le "$screen_w" ] && [ $((target_y + chat_h)) -le $((screen_y + screen_h)) ] ||
+  fail "primary display is too small for the bubble-over-Chat placement"
+if [ "$chat_x" -ne "$chat_left" ] || [ "$chat_y" -ne "$target_y" ]; then
+  "$tools/chat-window" move "$pid" BMO "$chat_left" "$target_y" ||
+    fail "could not move Chat to a perchable ledge on the primary display"
+  wait_until 3 chat_at_position "$chat_left" "$target_y" ||
+    fail "Chat never reached ($chat_left,$target_y) after the move"
 fi
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-rect_fits_main_display "$chat_x" "$chat_y" "$chat_w" "$chat_h" ||
-  fail "Chat is not wholly on the primary display"
 chat_title_x=$((chat_x + chat_w / 2))
 chat_title_y=$((chat_y + 14))
 before_pointer_matches=$(hit_test_match_count "$log" "$chat_title_x" "$chat_title_y" on)
@@ -351,19 +286,8 @@ probe_chat > "$out/initial-chat-state.txt"
 echo 'normal_level=pass' >> "$out/result.txt"
 
 IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-target_y=$((screen_y + 160))
-[ $((target_y + chat_h)) -le $((screen_y + screen_h)) ] ||
-  fail "display is too short for the bubble-over-Chat placement"
-if [ "$chat_y" -ne "$target_y" ]; then
-  "$tools/chat-window" move "$pid" BMO "$chat_x" "$target_y" ||
-    fail "could not move Chat to a perchable ledge"
-  wait_until 3 chat_at_position "$chat_x" "$target_y" || fail "Chat never reached y=$target_y after the move"
-fi
-IFS=, read -r chat_x chat_y chat_w chat_h chat_layer <<< "$(info)"
-rect_fits_main_display "$chat_x" "$chat_y" "$chat_w" "$chat_h" ||
-  fail "Chat moved outside the primary display"
 echo "chat=$chat_x,$chat_y,$chat_w,$chat_h,$chat_layer" >> "$out/run.txt"
-[ "$chat_layer" -eq 0 ] || fail "Chat rose to layer $chat_layer after move"
+[ "$chat_layer" -eq 0 ] || fail "Chat rose to layer $chat_layer after focus"
 
 ledge_x=$((chat_x + chat_w / 2))
 ledge_y=$chat_y
@@ -376,8 +300,6 @@ capture_x=$chat_x
 capture_y=$((chat_y - 120))
 [ "$capture_y" -ge "$screen_y" ] || capture_y=$screen_y
 capture_h=$((chat_h + chat_y - capture_y))
-rect_fits_main_display "$capture_x" "$capture_y" "$chat_w" "$capture_h" ||
-  fail "screenshot crop is outside the primary display"
 screencapture -x -R "$capture_x,$capture_y,$chat_w,$capture_h" "$out/perched.png" ||
   fail "could not capture perched Character"
 
