@@ -8,11 +8,12 @@ async function glassStyles() {
   <head><link rel="stylesheet" href="chat-ui.css"></head>
   <body>
     <div class="prompt-actions"></div>
-    <section class="prompt"><textarea></textarea></section>
+    <section class="prompt"><div class="frozen" id="instructions"></div><textarea></textarea></section>
     <script>
       const root = document.documentElement;
       const actions = document.querySelector(".prompt-actions");
       const textarea = document.querySelector(".prompt textarea");
+      const frozen = document.querySelector(".prompt .frozen");
       const alphaValues = (value) => [...value.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((match) => Number(match[1]));
       const alpha = (value) => Number(value.match(/rgba?\\([^)]*,\\s*([\\d.]+)\\)/)?.[1]);
       const out = {};
@@ -26,6 +27,7 @@ async function glassStyles() {
             panel: alpha(getComputedStyle(root).getPropertyValue("--chat-panel")),
             footer: getComputedStyle(actions).backgroundColor,
             promptRadius: getComputedStyle(textarea).borderRadius,
+            frozenRadius: getComputedStyle(frozen).borderRadius,
           };
         }
       }
@@ -52,14 +54,18 @@ test("Windows Glass paints the panel at the body's heavier bottom tint", { skip:
     assert.ok(windows.bodyTints[1] > plain.bodyTints[1],
       `${palette}: Windows opaque ${windows.bodyTints[1]} must exceed plain Glass ${plain.bodyTints[1]}`);
     assert.equal(windows.promptRadius, "14px", palette);
+    for (const [styles, label] of [[windows, "Windows"], [plain, "plain Glass"]]) {
+      assert.equal(styles.frozenRadius, styles.promptRadius,
+        `${palette}: a frozen layer shares the ${label} editor's box shape, not the control capsule`);
+    }
   }
 });
 
 test("Linux Glass keeps its tint and uses a box-shaped Prompt editor", { skip: chromeSkip, timeout: 60000 }, async () => {
   const styles = await sharedGlassStyles();
-  const tint = ({ bodyTints, panel, promptRadius }) => ({ bodyTints, panel, promptRadius });
-  assert.deepEqual(tint(styles["linux dark"]), { bodyTints: [0.92, 0.93], panel: 0.62, promptRadius: "14px" });
-  assert.deepEqual(tint(styles["linux light"]), { bodyTints: [0.93, 0.95], panel: 0.85, promptRadius: "14px" });
+  const tint = ({ bodyTints, panel, promptRadius, frozenRadius }) => ({ bodyTints, panel, promptRadius, frozenRadius });
+  assert.deepEqual(tint(styles["linux dark"]), { bodyTints: [0.92, 0.93], panel: 0.62, promptRadius: "14px", frozenRadius: "14px" });
+  assert.deepEqual(tint(styles["linux light"]), { bodyTints: [0.93, 0.95], panel: 0.85, promptRadius: "14px", frozenRadius: "14px" });
 });
 
 // The footer sits on the body, so any fill of its own darkens it twice.

@@ -10,20 +10,22 @@ async function bodyStyles() {
 <html class="chat-ui-glass">
   <head><link rel="stylesheet" href="chat-ui.css"></head>
   <body>
-    <section class="prompt"><textarea></textarea></section>
+    <section class="prompt"><div class="frozen" id="personality"></div><textarea></textarea></section>
     <script>
       const root = document.documentElement;
-      const out = { backdrops: {}, tints: {}, promptTextareaRadii: {} };
+      const out = { backdrops: {}, tints: {}, promptTextareaRadii: {}, promptFrozenRadii: {} };
       for (const platform of ["macos", null]) {
         if (platform) root.dataset.platform = platform; else delete root.dataset.platform;
         out.backdrops[platform || "other"] = getComputedStyle(document.body).backdropFilter;
       }
       const promptTextarea = document.querySelector(".prompt textarea");
+      const promptFrozen = document.querySelector(".prompt .frozen");
       root.dataset.platform = "macos";
       for (const palette of ["dark", "light"]) {
         root.dataset.chatPalette = palette;
         out.tints[palette] = [...getComputedStyle(document.body).backgroundImage.matchAll(/rgba\\([^)]*,\\s*([\\d.]+)\\)/g)].map((m) => Number(m[1]));
         out.promptTextareaRadii[palette] = getComputedStyle(promptTextarea).borderRadius;
+        out.promptFrozenRadii[palette] = getComputedStyle(promptFrozen).borderRadius;
       }
       console.log("__PROBE_RESULT__" + JSON.stringify(out));
     </script>
@@ -59,4 +61,10 @@ test("Glass macOS Prompt textarea keeps a box-shaped radius in both palettes", {
     dark: "14px",
     light: "14px",
   });
+});
+
+test("Glass macOS frozen Prompt layers share the textarea's box-shaped radius", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const styles = await sharedStyles();
+  assert.deepEqual(styles.promptFrozenRadii, styles.promptTextareaRadii,
+    "App-level instructions and Personality read as prose blocks, not control capsules");
 });

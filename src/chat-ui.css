@@ -795,6 +795,13 @@
   border-radius: 14px;
 }
 
+/* One radius with the editor: the frozen layers are prose for the eye, not
+   controls, and Glass's 999px control capsule rounds a short one into a
+   circle. The plain platforms' 10px control radius reads fine. */
+.chat-ui-glass .prompt .frozen {
+  border-radius: 14px;
+}
+
 [data-chat-palette="light"].chat-ui-glass .tb button {
   background: rgba(0,0,0,.08);
 }
