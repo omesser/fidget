@@ -175,12 +175,9 @@ pub fn set_overlay_listening(label: &str, listening: bool) {
 /// How many times each overlay's page has started loading.
 static OVERLAY_PAGE_LOADS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
 
-/// `label`'s page started loading again, so it no longer hears frames.
-///
-/// WebView2 maps ContentLoading to Started and can deliver that after the page
-/// has already called `overlay_listening` for the first document (still load
-/// 0). Clearing then drops the only listen report. Keep listening across that
-/// first Started; a later Started (reload) still clears.
+/// `label`'s page started loading again, so it no longer hears frames. WebView2
+/// can send the first Started after the page already listened, so a listen on
+/// load 0 survives it; a later Started (reload) still clears.
 pub fn overlay_page_load_started(label: &str) {
     let keep = overlay_page_loads(label) == 0 && overlay_listening(label);
     if !keep {

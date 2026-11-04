@@ -2155,30 +2155,18 @@ pub(crate) fn run_frame_loop(
                 // the trace at the end of this Instance's turn reads it.
                 let happened = live.happened.clone();
                 let mut asking = false;
-                let mut held = false;
                 let reactive_wake = if let (Some(model), Some(activity)) =
-                    (live.model.clone(), last_activity.as_ref())
+                    (&live.model, last_activity.as_ref())
                 {
-                    let gate = WakeGate {
-                        displays_asleep: activity.displays_asleep,
-                        do_not_disturb: instance.do_not_disturb(),
-                        proactive_allowed: config.proactive_allowed,
-                        possessed: instance.possessed(),
-                        enabled: config.enabled,
-                        loading: loading_overlay(
-                            (frame.position.x, frame.position.y),
-                            &displays.frames,
-                            platform::overlay_listening,
-                            platform::overlay_page_loads,
-                        ),
-                        now: Instant::now(),
-                    };
-                    let wake = spend_wake(live, gate);
-                    held = wake == WakeTurn::Held;
-                    if let WakeTurn::Spent {
-                        happened: spent,
-                        was_addressed,
-                    } = wake
+                    if director::session_due(
+                        live.addressed,
+                        live.since_proactive,
+                        &live.pace,
+                        activity.displays_asleep,
+                        instance.do_not_disturb(),
+                        config.proactive_allowed,
+                        instance.possessed(),
+                    ) && config.enabled
                     {
                         let context = Context {
                             activity: activity.clone(),
@@ -2189,8 +2177,8 @@ pub(crate) fn run_frame_loop(
                             personality: live.character.personality.clone(),
                             instance_prompt: instance.prompt().to_string(),
                             state: frame.state,
-                            lately: live.recency.take(&spent),
-                            happened: spent,
+                            happened: live.happened.clone(),
+                            lately: live.recency.take(&live.happened),
                             standing: assembler.standing_on(frame.position),
                             front_title: activity
                                 .frontmost_application
@@ -2199,6 +2187,15 @@ pub(crate) fn run_frame_loop(
                             caffeinate: caffeinate_fact,
                             possessed: instance.possessed(),
                         };
+                        let was_addressed = live.addressed;
+                        if live.addressed {
+                            live.pace.after_reactive();
+                        } else {
+                            live.pace.after_ambient();
+                        }
+                        live.addressed = false;
+                        live.happened = Happened::Proactive;
+                        live.since_proactive = Duration::ZERO;
                         let line = instance
                             .whereabouts(&displays.frames, &displays.usable_frames)
                             .prompt_line();
@@ -2217,7 +2214,7 @@ pub(crate) fn run_frame_loop(
                         let touched =
                             director::claim(&context.happened) == director::Claim::Interaction;
                         let cell = director::happened_cell(&context.happened);
-                        match slots.wake_with_prompt(&live.id, model, context, line) {
+                        match slots.wake_with_prompt(&live.id, Arc::clone(model), context, line) {
                             // The call on the wire is the truer one
                             // (ADR-0016). This wake is dropped, not queued:
                             // the bookkeeping above has already spent it.
@@ -2279,8 +2276,6 @@ pub(crate) fn run_frame_loop(
                         .is_some_and(|activity| activity.displays_asleep)
                     {
                         "asleep"
-                    } else if held {
-                        "overlay-loading"
                     } else {
                         "not-due"
                     };
@@ -2469,10 +2464,13 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                let dialogue = super::carry_line(
+                let listening =
+                    owner.is_some_and(|index| platform::overlay_listening(&overlay_label(index)));
+                let dialogue = super::draw_response(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),
                     owner,
+                    listening,
                     Instant::now(),
                 );
                 let overlay_drops_the_bubble = !presence.visible && presence.fade_ms == 0;
@@ -3467,134 +3465,6 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
     eprintln!("click-trace: {name} t={:.1}", platform::trace_ms());
 }
 
-/// The overlay that would draw the bubble but whose page doesn't listen yet:
-/// a Thinking bubble or line sent to a page still loading is never drawn.
-fn loading_overlay(
-    feet: (f64, f64),
-    displays: &[Rect],
-    listening: impl Fn(&str) -> bool,
-    loads: impl Fn(&str) -> u32,
-) -> Option<LoadingPage> {
-    let label = overlay_label(bubble_owner(feet, displays)?);
-    (!listening(&label)).then(|| LoadingPage {
-        load: loads(&label),
-        label,
-    })
-}
-
-/// One load of an overlay's page: a reload is a new page to wait on.
-#[derive(Debug, PartialEq)]
-pub(crate) struct LoadingPage {
-    label: String,
-    load: u32,
-}
-
-impl std::fmt::Display for LoadingPage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} load {}", self.label, self.load)
-    }
-}
-
-/// What decides whether this tick wakes the Director.
-struct WakeGate {
-    displays_asleep: bool,
-    do_not_disturb: bool,
-    proactive_allowed: bool,
-    possessed: bool,
-    enabled: bool,
-    /// The overlay under the feet that doesn't listen yet, if any.
-    loading: Option<LoadingPage>,
-    now: Instant,
-}
-
-/// How long a wake waits on a page that doesn't listen. A page loads in
-/// well under this, so one that hasn't by now never will.
-const PAGE_LOAD_LIMIT: Duration = Duration::from_secs(3);
-
-/// A due wake's wait on the overlay page under the feet.
-#[derive(Debug, PartialEq)]
-pub(crate) enum WakeHold {
-    Waiting {
-        page: LoadingPage,
-        since: Instant,
-    },
-    /// It didn't listen within `PAGE_LOAD_LIMIT`, so wakes on it go out at once.
-    GaveUp {
-        page: LoadingPage,
-    },
-}
-
-#[derive(Debug, PartialEq)]
-enum WakeTurn {
-    NotDue,
-    /// Due, but held until `WakeGate::loading` listens.
-    Held,
-    Spent {
-        happened: Happened,
-        was_addressed: bool,
-    },
-}
-
-/// Spend `live`'s wake if one is due and its bubble can be drawn. A held
-/// wake keeps `addressed` and `happened`, so pokes during the hold make one
-/// wake once the page listens, or after `PAGE_LOAD_LIMIT` if it never does.
-fn spend_wake(live: &mut InstanceState, gate: WakeGate) -> WakeTurn {
-    if gate.loading.is_none() {
-        if let Some(WakeHold::Waiting { page, .. }) = live.wake_held_on.take() {
-            eprintln!("director: {} wake released, was held on {page}", live.id);
-        }
-    }
-    let due = gate.enabled
-        && director::session_due(
-            live.addressed,
-            live.since_proactive,
-            &live.pace,
-            gate.displays_asleep,
-            gate.do_not_disturb,
-            gate.proactive_allowed,
-            gate.possessed,
-        );
-    if !due {
-        return WakeTurn::NotDue;
-    }
-    if let Some(page) = gate.loading {
-        match &mut live.wake_held_on {
-            Some(WakeHold::GaveUp { page: held }) if *held == page => {}
-            // A load that starts mid-hold keeps the hold's clock.
-            Some(WakeHold::Waiting { page: held, since }) if held.label == page.label => {
-                if gate.now.duration_since(*since) < PAGE_LOAD_LIMIT {
-                    *held = page;
-                    return WakeTurn::Held;
-                }
-                eprintln!(
-                    "director: {} wake sent anyway, {page} never listened",
-                    live.id
-                );
-                live.wake_held_on = Some(WakeHold::GaveUp { page });
-            }
-            _ => {
-                eprintln!("director: {} wake held until {page} listens", live.id);
-                live.wake_held_on = Some(WakeHold::Waiting {
-                    page,
-                    since: gate.now,
-                });
-                return WakeTurn::Held;
-            }
-        }
-    }
-    let was_addressed = std::mem::take(&mut live.addressed);
-    if was_addressed {
-        live.pace.after_reactive();
-    } else {
-        live.pace.after_ambient();
-    }
-    live.since_proactive = Duration::ZERO;
-    WakeTurn::Spent {
-        happened: std::mem::replace(&mut live.happened, Happened::Proactive),
-        was_addressed,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3606,203 +3476,6 @@ mod tests {
     use fidget_core::window_source::{Capabilities, WorldGeometry};
     use serde_json::json;
     use std::collections::BTreeMap;
-
-    #[test]
-    fn the_bubble_waits_on_the_overlay_under_the_feet() {
-        let left = Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 100.0,
-            height: 100.0,
-        };
-        let right = Rect { x: 100.0, ..left };
-        let displays = [left, right];
-        let only_left = |label: &str| label == overlay_label(0);
-        let loads = |_: &str| 2;
-        assert_eq!(
-            loading_overlay((50.0, 50.0), &displays, only_left, loads),
-            None
-        );
-        assert_eq!(
-            loading_overlay((150.0, 50.0), &displays, only_left, loads),
-            Some(LoadingPage {
-                label: overlay_label(1),
-                load: 2,
-            })
-        );
-        // Feet on no display have no bubble to lose.
-        assert_eq!(
-            loading_overlay((500.0, 500.0), &displays, |_| false, loads),
-            None
-        );
-    }
-
-    fn gate(loading: Option<&str>) -> WakeGate {
-        gate_on_load(loading, 0)
-    }
-
-    fn gate_on_load(loading: Option<&str>, load: u32) -> WakeGate {
-        WakeGate {
-            displays_asleep: false,
-            do_not_disturb: false,
-            proactive_allowed: false,
-            possessed: false,
-            enabled: true,
-            loading: loading.map(|label| LoadingPage {
-                label: label.to_string(),
-                load,
-            }),
-            now: Instant::now(),
-        }
-    }
-
-    /// Production change that would fail this: a wake sent while the page
-    /// under the feet still loads, or a held wake that drops its Poke.
-    #[test]
-    fn pokes_while_the_overlay_loads_make_one_wake_once_it_listens() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            for _ in 0..2 {
-                note_happened(&mut live.happened, Happened::Poke);
-                live.addressed = true;
-                assert_eq!(
-                    spend_wake(&mut live, gate(Some("overlay-1"))),
-                    WakeTurn::Held
-                );
-            }
-            assert_eq!(
-                spend_wake(&mut live, gate(None)),
-                WakeTurn::Spent {
-                    happened: Happened::Poke,
-                    was_addressed: true,
-                }
-            );
-            assert_eq!(spend_wake(&mut live, gate(None)), WakeTurn::NotDue);
-        });
-    }
-
-    /// Production change that would fail this: a page that never listens
-    /// (its overlay failed to build) holding the Director, Chat included, for good.
-    #[test]
-    fn a_wake_held_past_the_page_load_limit_goes_out_anyway() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            live.happened = Happened::Chat("hi".to_string());
-            live.addressed = true;
-            let start = Instant::now();
-            let at = |now| WakeGate {
-                now,
-                ..gate(Some("overlay-1"))
-            };
-            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
-            assert_eq!(
-                spend_wake(
-                    &mut live,
-                    at(start + PAGE_LOAD_LIMIT - Duration::from_millis(1))
-                ),
-                WakeTurn::Held
-            );
-            assert_eq!(
-                spend_wake(&mut live, at(start + PAGE_LOAD_LIMIT)),
-                WakeTurn::Spent {
-                    happened: Happened::Chat("hi".to_string()),
-                    was_addressed: true,
-                }
-            );
-        });
-    }
-
-    /// Production change that would fail this: every later wake on a page
-    /// that never listened waiting out `PAGE_LOAD_LIMIT` again.
-    #[test]
-    fn after_a_page_never_listened_later_wakes_on_it_go_out_at_once() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            let start = Instant::now();
-            let at = |now| WakeGate {
-                now,
-                ..gate(Some("overlay-1"))
-            };
-            live.addressed = true;
-            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
-            let gave_up = start + PAGE_LOAD_LIMIT;
-            assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
-            live.addressed = true;
-            assert_ne!(spend_wake(&mut live, at(gave_up)), WakeTurn::Held);
-        });
-    }
-
-    /// Production change that would fail this: a hold that starts before the
-    /// first page load restarting its 3 s when that load begins.
-    #[test]
-    fn a_hold_across_a_page_load_still_ends_at_the_limit() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            let start = Instant::now();
-            live.addressed = true;
-            let first = WakeGate {
-                now: start,
-                ..gate_on_load(Some("overlay-1"), 0)
-            };
-            assert_eq!(spend_wake(&mut live, first), WakeTurn::Held);
-            let later = WakeGate {
-                now: start + PAGE_LOAD_LIMIT,
-                ..gate_on_load(Some("overlay-1"), 1)
-            };
-            assert_ne!(spend_wake(&mut live, later), WakeTurn::Held);
-        });
-    }
-
-    /// Production change that would fail this: a page that gave up and then
-    /// reloads sending wakes before its listener is back, losing the bubble.
-    #[test]
-    fn a_page_that_gave_up_holds_wakes_again_after_a_reload() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            let start = Instant::now();
-            let at = |now| WakeGate {
-                now,
-                ..gate(Some("overlay-1"))
-            };
-            live.addressed = true;
-            assert_eq!(spend_wake(&mut live, at(start)), WakeTurn::Held);
-            assert_ne!(
-                spend_wake(&mut live, at(start + PAGE_LOAD_LIMIT)),
-                WakeTurn::Held
-            );
-            live.addressed = true;
-            assert_eq!(
-                spend_wake(&mut live, gate_on_load(Some("overlay-1"), 1)),
-                WakeTurn::Held
-            );
-        });
-    }
-
-    /// Production change that would fail this: the "released" line waiting
-    /// for the next due wake after the page already listens.
-    #[test]
-    fn a_hold_is_released_when_the_page_listens_even_with_no_wake_due() {
-        model::tests::with_env(None, None, None, || {
-            let director = model::resolve("http://localhost:11434", "gemma4", None);
-            let mut live = instance_state("buddy-1", &director);
-            live.addressed = true;
-            assert_eq!(
-                spend_wake(&mut live, gate(Some("overlay-1"))),
-                WakeTurn::Held
-            );
-            let not_due = WakeGate {
-                enabled: false,
-                ..gate(None)
-            };
-            assert_eq!(spend_wake(&mut live, not_due), WakeTurn::NotDue);
-            assert_eq!(live.wake_held_on, None);
-        });
-    }
 
     fn activity(frontmost: Option<&str>) -> Activity {
         Activity {
@@ -4366,7 +4039,6 @@ mod tests {
             traced_last: None,
             status_last: None,
             status_wake_ms: None,
-            wake_held_on: None,
         }
     }
 

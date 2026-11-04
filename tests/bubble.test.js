@@ -550,7 +550,7 @@ test("a turn the bubble carried away comes back with its dots at once, and its r
 
 test("a line crossing the seam hides on the old display before it shows on the new", () => {
   // Two overlays, two machines: the shell hands the line to the owner, and on a
-  // crossing says it again to the new one (`carry_line`), while the old one
+  // crossing says it again to the new one (`draw_response`), while the old one
   // hides on the tick it loses ownership — the way main.js does on `!bubble`.
   const a = machineHarness();
   const b = machineHarness();

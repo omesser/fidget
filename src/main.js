@@ -932,9 +932,8 @@ async function start() {
     },
     { target: overlay.label },
   );
-  // Rust holds a wake until this, so no bubble is sent before it can be drawn.
-  // Before character and the other awaits: NavigationCompleted can fire while
-  // those are still in flight, and PAGE_LOAD_LIMIT would give up first.
+  // Rust keeps a reply line until this, then sends it. Before character and
+  // the other awaits, so a reply waits only on the listener, not on them.
   window.__TAURI__.core.invoke("overlay_listening").catch(console.error);
 
   characters = (await window.__TAURI__.core.invoke("character")).characters;
