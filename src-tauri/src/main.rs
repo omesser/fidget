@@ -5811,15 +5811,39 @@ mod tests {
     fn a_reload_holds_wakes_until_the_page_listens_again() {
         use tauri::webview::PageLoadEvent;
         let label = "overlay-reload-test";
+        // First navigation lands normally: Started, then the page listens.
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
         super::platform::set_overlay_listening(label, true);
         super::overlay_page_loading(label, PageLoadEvent::Finished);
         assert!(super::platform::overlay_listening(label));
         let loads = super::platform::overlay_page_loads(label);
+        assert!(loads >= 1);
+        // Reload: Started must clear so wakes hold until the new page listens.
         super::overlay_page_loading(label, PageLoadEvent::Started);
         assert!(!super::platform::overlay_listening(label));
         assert_eq!(super::platform::overlay_page_loads(label), loads + 1);
         super::platform::set_overlay_listening(label, true);
         assert!(super::platform::overlay_listening(label));
+    }
+
+    /// Production change that would fail this: the first Started clearing a
+    /// listen that already landed on load 0. WebView2 can deliver ContentLoading
+    /// after the page has called overlay_listening; clearing then leaves the
+    /// hold waiting out PAGE_LOAD_LIMIT with no second listen from the page.
+    #[test]
+    fn the_first_started_keeps_a_listen_that_landed_on_load_zero() {
+        use tauri::webview::PageLoadEvent;
+        let label = "overlay-started-after-listen";
+        assert_eq!(super::platform::overlay_page_loads(label), 0);
+        super::platform::set_overlay_listening(label, true);
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), 1);
+        // A later Started is a reload and still clears.
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), 2);
     }
 
     #[test]

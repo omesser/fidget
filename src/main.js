@@ -841,38 +841,10 @@ function flushCadence() {
 }
 
 async function start() {
-  characters = (await window.__TAURI__.core.invoke("character")).characters;
-  // Caught, because the overlay is worth more than the control: an unanswered
-  // question leaves `clickableOffArt` false, where an uncaught reject would
-  // abort the rest of `start` and there would be no sprite at all.
-  try {
-    clickableOffArt = await window.__TAURI__.core.invoke(
-      "overlay_hit_tests_hotspots",
-    );
-  } catch (err) {
-    console.error("overlay_hit_tests_hotspots", err);
-  }
-  try {
-    if (await window.__TAURI__.core.invoke("overlay_traces_cadence")) cadence = [];
-  } catch (err) {
-    console.error("overlay_traces_cadence", err);
-  }
-
   // One overlay per display, each told every sprite in its own coordinates. A
   // listener with no target is an `Any` listener that tauri hands every emit,
   // so without this each display would draw whichever overlay's frame came last.
   const overlay = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
-
-  // Same event Chat's composer freezes on. Addressed here too, because
-  // emit_to the Chat label does not reach this window, and Chat may not
-  // be open when the harness settles.
-  await window.__TAURI__.event.listen(
-    "chat-opening",
-    ({ payload }) => {
-      noteQuickOpening(payload);
-    },
-    { target: overlay.label },
-  );
 
   await window.__TAURI__.event.listen(
     "frame",
@@ -961,7 +933,37 @@ async function start() {
     { target: overlay.label },
   );
   // Rust holds a wake until this, so no bubble is sent before it can be drawn.
+  // Before character and the other awaits: NavigationCompleted can fire while
+  // those are still in flight, and PAGE_LOAD_LIMIT would give up first.
   window.__TAURI__.core.invoke("overlay_listening").catch(console.error);
+
+  characters = (await window.__TAURI__.core.invoke("character")).characters;
+  // Caught, because the overlay is worth more than the control: an unanswered
+  // question leaves `clickableOffArt` false, where an uncaught reject would
+  // abort the rest of `start` and there would be no sprite at all.
+  try {
+    clickableOffArt = await window.__TAURI__.core.invoke(
+      "overlay_hit_tests_hotspots",
+    );
+  } catch (err) {
+    console.error("overlay_hit_tests_hotspots", err);
+  }
+  try {
+    if (await window.__TAURI__.core.invoke("overlay_traces_cadence")) cadence = [];
+  } catch (err) {
+    console.error("overlay_traces_cadence", err);
+  }
+
+  // Same event Chat's composer freezes on. Addressed here too, because
+  // emit_to the Chat label does not reach this window, and Chat may not
+  // be open when the harness settles.
+  await window.__TAURI__.event.listen(
+    "chat-opening",
+    ({ payload }) => {
+      noteQuickOpening(payload);
+    },
+    { target: overlay.label },
+  );
 
   arm();
 
