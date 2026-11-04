@@ -256,6 +256,21 @@ function Drive-PillAcrossSeam {
         if (-not (Wait-ForCount 3 $log $pressPattern $presses)) { Fail "Fidget did not see the press on the sprite in 3 s; see $log" }
         $null = [PillDrag]::SetCursorPos($p.ToX, $p.ToY)
         if (-not (Wait-ForTrace 3 $log $draggedPattern)) { Fail "the press did not grab the sprite in 3 s; see $log" }
+        # Hold still before release so the 60 ms throw-velocity window forgets the
+        # teleport. One SetCursorPos jump otherwise reads as a Throw; same idea as
+        # poke-mid-climb's still hold before release.
+        $script:stillAt = $null
+        $script:stillSince = $null
+        if (-not (Wait-Until 3 {
+            $spot = Get-LastSpriteSpot $log
+            if (-not $spot) { return $false }
+            if (-not $script:stillAt -or [Math]::Abs($spot.X - $script:stillAt.X) -gt 2 -or [Math]::Abs($spot.Y - $script:stillAt.Y) -gt 2) {
+                $script:stillAt = $spot
+                $script:stillSince = Get-Date
+                return $false
+            }
+            ((Get-Date) - $script:stillSince).TotalMilliseconds -ge 100
+        })) { Fail "the carried sprite never held still at the drop in 3 s; see $log" }
     } finally {
         $releases = Count $releasePattern
         [PillDrag]::Button($true)
