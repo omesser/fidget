@@ -128,6 +128,10 @@ unless Chat is open.
 
 ## Windows and X11
 
+`quick-grab.win.ps1` presses on a resting sprite and drags away immediately,
+without waiting for a hit-test flip. It asserts that the recorded press remains
+on the sprite after the cursor leaves and that the gesture becomes a Grab.
+
 `thinking-row`, `chat-header-narrow`, `landing-link-click`,
 `launcher-dies-at-startup`, `sign-in-button`, `question-bubble`,
 `control-click-menu` and `poke-mid-climb` each have `.x11.sh` and `.win.ps1`

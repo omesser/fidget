@@ -4,6 +4,8 @@
 //! loop reads the cursor when it wakes, and a drag in between has left the
 //! sprite.
 
+use std::time::{Duration, Instant};
+
 /// What a pointer message means for a press.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PointerEdge {
@@ -17,7 +19,7 @@ pub enum PointerEdge {
 /// The cursor at the latest button-down. A move does not change it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PressRecord {
-    at: Option<(i32, i32)>,
+    at: Option<((i32, i32), Instant)>,
 }
 
 impl PressRecord {
@@ -30,7 +32,7 @@ impl PressRecord {
     pub fn observe(&mut self, edge: PointerEdge, at: (i32, i32)) -> bool {
         match edge {
             PointerEdge::PrimaryDown | PointerEdge::SecondaryDown => {
-                self.at = Some(at);
+                self.at = Some((at, Instant::now()));
                 true
             }
             PointerEdge::PrimaryUp | PointerEdge::SecondaryUp => true,
@@ -38,8 +40,14 @@ impl PressRecord {
         }
     }
 
-    pub fn at(self) -> Option<(i32, i32)> {
+    /// Consume a recent press so a lost hook cannot aim subsequent clicks.
+    pub fn at(&mut self) -> Option<(i32, i32)> {
+        // Twice the longest idle poll allows scheduling slack without keeping
+        // an old press alive through a hidden or suspended frame loop.
         self.at
+            .take()
+            .filter(|(_, when)| when.elapsed() < Duration::from_secs(2))
+            .map(|(at, _)| at)
     }
 }
 
@@ -93,6 +101,22 @@ mod tests {
         record.observe(PointerEdge::SecondaryDown, (1, 2));
         record.observe(PointerEdge::PrimaryDown, (3, 4));
         assert_eq!(record.at(), Some((3, 4)));
+    }
+
+    #[test]
+    fn a_press_is_consumed_before_a_later_unhooked_click() {
+        let mut record = PressRecord::new();
+        record.observe(PointerEdge::PrimaryDown, (10, 20));
+        assert_eq!(record.at(), Some((10, 20)));
+        assert_eq!(record.at(), None);
+    }
+
+    #[test]
+    fn a_press_from_before_a_long_pause_is_not_reused() {
+        let mut record = PressRecord {
+            at: Some(((10, 20), Instant::now() - Duration::from_secs(3))),
+        };
+        assert_eq!(record.at(), None);
     }
 
     #[test]

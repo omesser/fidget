@@ -809,8 +809,9 @@ pub(crate) fn run_frame_loop(
             button_was_down = held;
             // A press is hit-tested where it began: a drag started within
             // a tick has moved the cursor off the sprite by now.
-            let press_at = platform::press_point()
-                .filter(|_| button_edge == Some("down") || buttons.secondary)
+            let press_at = (button_edge == Some("down") || buttons.secondary)
+                .then(platform::press_point)
+                .flatten()
                 .map_or(cursor_at, |(x, y)| {
                     (
                         (f64::from(x) / cursor_scale).round() as i32,

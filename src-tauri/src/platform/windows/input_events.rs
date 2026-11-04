@@ -26,8 +26,8 @@ use super::super::press_origin::{self, PressRecord};
 static PRESS: Mutex<PressRecord> = Mutex::new(PressRecord::new());
 static WAKE: OnceLock<SyncSender<()>> = OnceLock::new();
 
-/// Where the latest button-down happened, in screen pixels, or `None` before
-/// the first one. The same space `GetCursorPos` reports.
+/// Consume the latest recent button-down in `GetCursorPos` screen pixels.
+/// A missing, consumed, or expired record falls back to the sampled cursor.
 pub fn press_point() -> Option<(i32, i32)> {
     PRESS.lock().unwrap_or_else(PoisonError::into_inner).at()
 }

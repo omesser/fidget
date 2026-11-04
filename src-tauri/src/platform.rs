@@ -1144,8 +1144,8 @@ pub fn press_point() -> Option<(i32, i32)> {
     x11::press_point()
 }
 
-/// The low-level hook's button-down point. `None` before the first press,
-/// and the tick's cursor stands in.
+/// Consume the low-level hook's recent button-down point. Without one,
+/// the tick's cursor stands in.
 #[cfg(not(unix))]
 pub fn press_point() -> Option<(i32, i32)> {
     windows::press_point()
