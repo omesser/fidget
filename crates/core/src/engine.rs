@@ -502,8 +502,7 @@ pub struct Engine {
     /// at the start so a proposal later in the tick sees the same hold.
     feet_held: bool,
 
-    /// Where a move is walking to. Beside `playing` and not in it, so no
-    /// Primitive's turn ends it.
+    /// Where a move is walking to.
     destination: Option<GlobalX>,
     /// Reach at the last tick's feet, so a move can be judged between ticks.
     move_reach: Option<Reach>,
@@ -1386,7 +1385,7 @@ impl Engine {
             // startle rather than sliding under them.
             _ if self.possessed && self.is_walking() => "walk",
             // So does a move's, over a line or a startle.
-            _ if self.feet_owned() && self.is_walking() => animation_of(Primitive::Chase),
+            _ if self.feet_owned() && self.is_walking() => "walk",
             Some(primitive) => animation_of(primitive),
             // A walk outlasts the Primitive that starts it: the velocity holds
             // until the sprite runs out of Perch, so the Animation has to hold
@@ -8454,6 +8453,30 @@ mod tests {
             engine.position.x,
             sprite_x + 50.0
         );
+    }
+
+    #[test]
+    fn a_move_ends_the_chase_it_interrupts() {
+        let mut engine = a_resting_sprite();
+        let sprite_x = engine.position.x;
+        engine.play(&[Primitive::Chase]);
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 300.0,
+                y: engine.position.y,
+            },
+            ..snapshot(100)
+        });
+
+        let heading = Extent::Distance(Distance::new(200.0).unwrap());
+        engine
+            .start_move(MoveRequest::Along {
+                heading: Direction::Left,
+                extent: heading,
+            })
+            .expect("a grounded sprite takes a move");
+
+        assert!(engine.playing.is_empty(), "{:?}", engine.playing);
     }
 
     #[test]

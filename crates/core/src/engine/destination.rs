@@ -167,6 +167,11 @@ impl Engine {
             return Err(MoveRefusal::AtEdge);
         }
         self.destination = Some(target);
+        // A Primitive the move's hold would refuse stops now, or a Chase
+        // still swats at the cursor under the walk.
+        if !self.permitted(&self.playing) {
+            self.stop_playing();
+        }
         // A move is activity, as a proposal is, or a drowsy sprite nods off on arrival.
         self.idle_ms = 0;
         Ok(())

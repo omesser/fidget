@@ -254,8 +254,7 @@ mod helpers {
     }
 
     /// Resolve the Instance an Expression tool acts on, and the handle that
-    /// reaches it. The `Err` is the whole answer a Harness gets about why the
-    /// Expression landed nowhere, so it names the reason rather than a code.
+    /// reaches it.
     fn reach_instance<'h>(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
