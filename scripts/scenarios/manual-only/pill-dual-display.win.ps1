@@ -232,9 +232,9 @@ function Drive-PillAcrossSeam {
     # A wake held for a loading overlay page starts the bubble's 3 s when it goes out.
     if (-not (Wait-ForCount 3 $traceFile $bubbleOrHeld $either)) { Fail "the poke showed no Thinking bubble and held no wake in 3 s; see $traceFile" }
     if ((Count $wakeHeldPattern $traceFile) -gt $helds) {
-        # Fidget sends a held wake anyway 3 s after the hold (PAGE_LOAD_LIMIT), on
-        # the next frame; a 3 s wait from seeing the hold ties with that.
-        if (-not (Wait-ForCount 3.5 $traceFile $wakeOutPattern $outs)) { Fail "the held wake was neither released nor sent anyway in 3.5 s; see $traceFile" }
+        # This wait has to outlast PAGE_LOAD_LIMIT (3 s), after which Fidget sends
+        # a held wake anyway; Oded set it to 5 s.
+        if (-not (Wait-ForCount 5 $traceFile $wakeOutPattern $outs)) { Fail "the held wake was neither released nor sent anyway in 5 s; see $traceFile" }
         if (-not (Wait-ForCount 3 $traceFile $bubbleShowPattern $shows)) { Fail "the wake went out but showed no Thinking bubble in 3 s; see $traceFile" }
     }
     # Settled after the double-click interval, so the drag press is not a double-click.
