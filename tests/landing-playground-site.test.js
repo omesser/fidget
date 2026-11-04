@@ -365,10 +365,29 @@ const touches = `
       await frame();
       const longPress = { after, poked: layer.querySelectorAll(".cue-ring").length, open: pill.classList.contains("visible") };
       const box = desk.getBoundingClientRect();
-      const away = once(document, "pointerup");
-      finger("touchStart", [box.left + 20, box.bottom - 20]);
+      // The sprite walks the floor, so a fixed corner is sometimes the character.
+      // A press on it leaves the pill up. Land off the sprite, the pill, and the
+      // wallpaper switch, then wait until that press removes the visible class.
+      let spot = null;
+      for (let y = box.top + 24; spot === null && y < box.bottom - 8; y += 18) {
+        for (let x = box.left + 16; x < box.right - 16 && spot === null; x += 18) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit && !sprite.contains(hit) && !pill.contains(hit) && !hit.closest("#play-walls")) spot = [x, y];
+        }
+      }
+      if (!spot) throw new Error("nowhere to tap away from the pill");
+      const closed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("pill stayed open")), 5000);
+        new MutationObserver((_, observer) => {
+          if (pill.classList.contains("visible")) return;
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve();
+        }).observe(pill, { attributes: true, attributeFilter: ["class"] });
+      });
+      finger("touchStart", spot);
       finger("touchEnd");
-      await away;
+      await closed;
       longPress.dismissed = !pill.classList.contains("visible");
 
       // Flick toward the wider side: one the desk's edge cuts short is too slow to throw.
