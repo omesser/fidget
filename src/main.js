@@ -474,9 +474,9 @@ function syncQuick(view) {
   arm();
 }
 
-// Possession, Do Not Disturb, hiding, or one tick of `aside` (another surface).
-// The next hover report is the pointer already resting here, so the pill stays
-// down until it leaves. The first frame only records the mode.
+// Possession, Do Not Disturb, the Character leaving the screen, or one tick
+// of `aside`. The next hover is the pointer already here, so the pill stays
+// down. The first frame only records the mode.
 function noteQuickMessageMode(view, sprite, payload) {
   const mode = {
     possessed: Boolean(sprite.possessed),

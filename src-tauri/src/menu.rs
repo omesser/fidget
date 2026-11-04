@@ -54,8 +54,7 @@ pub enum MenuAction {
 
 /// Menu choices that yield the quick-message pill because the frame does not already show them.
 ///
-/// Possession, Do Not Disturb, and Go away change fields the overlay watches.
-/// These open another surface, so the frame carries the choice for one tick.
+/// Possession, Do Not Disturb, and Go away already change fields the overlay watches.
 pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
     match action {
         MenuAction::OpenSettings => Some("settings"),
@@ -513,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_another_surface_yields_the_quick_message_pill() {
+    fn opening_chat_memory_the_action_log_or_settings_yields_the_pill() {
         assert_eq!(
             quick_message_aside(&MenuAction::OpenSettings),
             Some("settings")

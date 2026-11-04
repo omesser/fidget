@@ -1,9 +1,5 @@
-// Seam: the overlay document. Input is a Shell `frame`. Output is the
-// quick-message pill's opacity, which `.bubble.visible` sets to 1 and the
-// closed pill leaves at 0 (src/main.css). One test per mode the user can
-// pick. Catches the pill staying on screen, or the dwell opening it again
-// while the pointer never left. Misses a shell that never reports the mode;
-// `quick_message_aside` covers the choices the frame does not already show.
+// Overlay seam: a Shell frame in, pill opacity out (`.bubble.visible` is 1).
+// One mode per test. A shell that never reports the mode is quick_message_aside.
 
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -121,7 +117,6 @@ async function withOverlay(run) {
   }
 }
 
-// Open the pill, pick the mode, and require it to stay shut through another dwell.
 async function picks(evalJs, mode) {
   const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
   assert.equal(Number(await shown(frame(mode.open))), 0, "the pill waits out the dwell");

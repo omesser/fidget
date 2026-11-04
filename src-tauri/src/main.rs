@@ -755,7 +755,7 @@ struct Placement<'a> {
     hover_delay_ms: u64,
     /// Do Not Disturb, on every frame, so the overlay sees the switch.
     do_not_disturb: bool,
-    /// One tick when the user opened another surface. Null on every other frame.
+    /// A menu choice that dismisses the quick-message pill, for this tick only.
     aside: Option<&'static str>,
     /// The display's usable area in this overlay's coordinates. The window
     /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
