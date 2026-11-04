@@ -110,6 +110,10 @@ gtk = "0.18"
 # the same PNG the bundle uses as its icon.
 gdk-pixbuf = "0.18"
 
+[target.'cfg(all(unix, not(target_os = "macos")))'.dev-dependencies]
+# XTEST fakes pointer motion for the XI2 listener test on Xvfb.
+x11rb = { version = "0.14", features = ["xtest"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
 # tokio feature reuses the tokio already here under async-process / ACP SDK.
@@ -235,7 +239,3 @@ block2 = "0.6"
 
 [dev-dependencies]
 uuid = { version = "1.11", features = ["v4"] }
-
-[target.'cfg(all(unix, not(target_os = "macos")))'.dev-dependencies]
-# XTEST fakes pointer motion for the XI2 listener test on Xvfb.
-x11rb = { version = "0.14", features = ["xtest"] }
