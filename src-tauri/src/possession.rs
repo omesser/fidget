@@ -54,6 +54,13 @@ impl Session {
         self.paused
     }
 
+    /// A press on the sprite. While paused it swallows its click and asks for
+    /// focus, as the card's Focus button does.
+    pub fn press(&mut self) -> bool {
+        self.swallow_click |= self.paused;
+        self.paused
+    }
+
     pub fn apply(&mut self, edge: &Edge, now: Instant) {
         let window = match edge {
             Edge::Key { window, .. } | Edge::Focus { window, .. } => window,
@@ -296,6 +303,18 @@ mod tests {
         session.apply(&on("overlay-1", focus(true)), t0 + BLUR_SETTLE);
         session.tick(16, t0 + BLUR_SETTLE);
         assert!(!session.paused());
+    }
+
+    #[test]
+    fn only_a_press_while_paused_asks_for_focus_and_swallows_its_click() {
+        let mut session = Session::start("a", "overlay-0");
+        let t0 = Instant::now();
+        assert!(!session.press());
+        assert!(!session.swallow_click);
+        session.apply(&focus(false), t0);
+        session.tick(16, t0 + BLUR_SETTLE);
+        assert!(session.press());
+        assert!(session.swallow_click);
     }
 
     #[test]

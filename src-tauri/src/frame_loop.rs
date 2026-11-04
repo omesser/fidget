@@ -1542,8 +1542,15 @@ pub(crate) fn run_frame_loop(
                     .as_mut()
                     .filter(|session| session.instance == live.id)
                 {
-                    if !was_gesturing && live.pointer.gesturing() && session.paused() {
-                        session.swallow_click = true;
+                    if !was_gesturing && live.pointer.gesturing() && session.press() {
+                        if let Some(overlay) = app.get_webview_window(&session.window) {
+                            if let Err(why) = overlay_request_focus(overlay) {
+                                eprintln!(
+                                    "possession: {} could not take the keyboard: {why}",
+                                    session.window
+                                );
+                            }
+                        }
                     }
                     if session.swallow_click {
                         let grabbing = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab));
