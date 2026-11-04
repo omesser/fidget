@@ -501,6 +501,8 @@ pub struct Engine {
     /// Where a move is walking to. Beside `playing` and not in it, so no
     /// Primitive's turn ends it.
     destination: Option<GlobalX>,
+    /// Reach at the last tick's feet, so a move can be judged between ticks.
+    move_reach: Option<Reach>,
 
     /// Whether the previous tick carried `Verb::Menu`. The Shell re-injects it
     /// every tick the popup is held, so the press edge is the cue; a gap clears
@@ -727,6 +729,7 @@ impl Engine {
             poke_cooldown_ms: 0,
             feet_held: false,
             destination: None,
+            move_reach: None,
             menu_held: false,
         }
     }
@@ -886,6 +889,7 @@ impl Engine {
         self.position = feet;
         self.previous_position = feet;
         self.previous_windows.clear();
+        self.move_reach = None;
         self.velocity = Point::default();
         self.state = State::Grounded;
         self.animation = animation_for(State::Grounded);
@@ -1415,6 +1419,7 @@ impl Engine {
         }
 
         self.previous_windows.clone_from(&snapshot.windows);
+        self.move_reach = standing_reach(self.position, self.state, snapshot);
         self.previous_position = self.position;
         self.last_poll_generation = snapshot.poll_generation;
         if matches!(self.state, State::Perched | State::Asleep) {

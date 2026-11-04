@@ -80,6 +80,8 @@ pub enum MoveRefusal {
     DoNotDisturb,
     /// The target is inside `ARRIVAL_THRESHOLD`, so the walk would end before its first stride.
     AlreadyThere,
+    /// The reachable target is inside the arrival band, or footing is unknown.
+    AtEdge,
 }
 
 impl fmt::Display for MoveRefusal {
@@ -100,6 +102,9 @@ impl fmt::Display for MoveRefusal {
             Self::DoNotDisturb => {
                 f.write_str("Do Not Disturb is on, so the Character starts nothing.")
             }
+            Self::AtEdge => f.write_str(
+                "The Character has no room to walk that way at the edge of what it stands on.",
+            ),
             Self::AlreadyThere => write!(
                 f,
                 "The Character already stands within {ARRIVAL_THRESHOLD} points of where it was sent, so it did not walk."
@@ -148,6 +153,10 @@ impl Engine {
         }
         if let Heading::Arrived = heading_to(self.position.x, target.0) {
             return Err(MoveRefusal::AlreadyThere);
+        }
+        let stop_x = self.move_reach.ok_or(MoveRefusal::AtEdge)?.clamp(target.0);
+        if let Heading::Arrived = heading_to(self.position.x, stop_x) {
+            return Err(MoveRefusal::AtEdge);
         }
         self.destination = Some(target);
         // A move is activity, as a proposal is, or a drowsy sprite nods off on arrival.

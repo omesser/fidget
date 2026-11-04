@@ -1994,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn a_move_toward_an_edge_it_already_stands_past_never_turns_it_round() {
+    fn a_move_toward_an_edge_it_already_stands_past_is_refused() {
         let (frames, world) = side_by_side();
         let abutting = crate::engine::WorldSnapshot {
             displays: frames.to_vec(),
@@ -2010,7 +2010,8 @@ mod tests {
             &abutting.displays,
         )
         .expect("dispatch succeeds");
-        assert_eq!(said["started"], true, "{said}");
+        assert_eq!(said["started"], false, "{said}");
+        assert!(said["reason"].as_str().unwrap().contains("edge"), "{said}");
         let later = tick_for(&mut roster, &id, &abutting, 100);
         assert_eq!(later.position.x, 1930.0, "{later:?}");
     }
@@ -2028,6 +2029,46 @@ mod tests {
                 },
             }],
             ..test_snapshot()
+        }
+    }
+
+    #[test]
+    fn a_move_outward_at_a_surface_edge_is_refused_but_inward_still_works() {
+        let floor = test_snapshot();
+        let perch = a_perch();
+        for (world, x, outward, inward) in [
+            (&floor, 70.0, "left", "right"),
+            (&floor, 1850.0, "right", "left"),
+            (&perch, 310.0, "left", "right"),
+            (&perch, 890.0, "right", "left"),
+        ] {
+            let (mut roster, id, landed) = landed_walker(x, world);
+            let refused = call_move(
+                &mut roster,
+                json!({"direction": outward, "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(refused["started"], false, "x={x}: {refused}");
+            assert!(
+                refused["reason"].as_str().unwrap().contains("edge"),
+                "{refused}"
+            );
+            let still = tick_for(&mut roster, &id, world, 100);
+            assert_eq!(still.position, landed.position);
+
+            let accepted = call_move(
+                &mut roster,
+                json!({"direction": inward, "distance": 200}),
+                &world.displays,
+            )
+            .expect("dispatch succeeds");
+            assert_eq!(accepted, json!({"started": true}));
+            let stopped = tick_until_still(&mut roster, &id, world);
+            let target = x + if inward == "left" { -200.0 } else { 200.0 };
+            assert!((stopped.position.x - target).abs() <= 30.0, "{stopped:?}");
+            assert_eq!(stopped.position.y, landed.position.y);
+            assert_eq!(stopped.state, landed.state);
         }
     }
 
