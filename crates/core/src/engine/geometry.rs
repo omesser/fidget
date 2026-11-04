@@ -167,20 +167,13 @@ pub(super) fn usable_height_under(feet: Point, snapshot: &WorldSnapshot) -> Opti
 /// can stop a walk short and never turn it round.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Reach {
-    lo: f64,
-    hi: f64,
+    left_x: f64,
+    right_x: f64,
 }
 
 impl Reach {
-    fn around(feet_x: f64, lo: f64, hi: f64) -> Self {
-        Self {
-            lo: lo.min(feet_x),
-            hi: hi.max(feet_x),
-        }
-    }
-
     pub(super) fn clamp(self, x: f64) -> f64 {
-        x.clamp(self.lo, self.hi)
+        x.clamp(self.left_x, self.right_x)
     }
 }
 
@@ -190,15 +183,18 @@ impl Reach {
 pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot) -> Option<Reach> {
     let display = displays_spanning(feet.x, snapshot)
         .find(|display| feet.y >= display.y && feet.y <= display.bottom())?;
-    let mut lo = display.x + EDGE_CLEARANCE;
-    let mut hi = display.x + display.width - EDGE_CLEARANCE;
+    let mut left_x = display.x + EDGE_CLEARANCE;
+    let mut right_x = display.x + display.width - EDGE_CLEARANCE;
     if state == State::Perched {
         if let Some(perch) = perch_at(feet, &snapshot.windows) {
-            lo = lo.max(perch.rect.x);
-            hi = hi.min(perch.rect.x + perch.rect.width);
+            left_x = left_x.max(perch.rect.x);
+            right_x = right_x.min(perch.rect.x + perch.rect.width);
         }
     }
-    Some(Reach::around(feet.x, lo, hi))
+    Some(Reach {
+        left_x: left_x.min(feet.x),
+        right_x: right_x.max(feet.x),
+    })
 }
 
 /// Whether a step at `x` heading `direction` would leave the outermost display

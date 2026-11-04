@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
-use crate::display::Placement;
+use crate::display;
 use crate::engine::{Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED};
 use crate::memory::MemoryManifest;
 use crate::tools;
@@ -118,14 +118,12 @@ struct MoveArgs {
 }
 
 /// A spot from `whereabouts`. The report names the display `on_display`.
-/// `y` is optional, and a walk never reads it.
+/// Its `y` is accepted and dropped, since a walk never changes height.
 #[derive(Clone, Copy, Deserialize)]
 struct SpotArg {
     #[serde(alias = "on_display")]
     display: usize,
     x: f64,
-    #[serde(default)]
-    y: f64,
 }
 
 impl MoveArgs {
@@ -146,9 +144,9 @@ impl MoveArgs {
                 Some(ms) => Ok(along(heading, Extent::Time { ms })),
                 None => refuse("duration_ms must be more than 0."),
             },
-            (None, None, None, Some(spot)) => Placement::at(spot.display, spot.x, spot.y)
-                .engine_x(frames)
-                .map(MoveRequest::To),
+            (None, None, None, Some(spot)) => {
+                display::engine_x(spot.display, spot.x, frames).map(MoveRequest::To)
+            }
             (_, _, _, Some(_)) => {
                 refuse("Pass either to, or direction with distance or duration_ms. Not both.")
             }
@@ -380,7 +378,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
             description: format!(
                 "Walk a Character Instance left or right along the display floor or window top it stands on. \
                  Pass direction with distance in points or duration_ms in milliseconds, at {WALK_SPEED} points per second. \
-                 Or pass to.display, to.x, and to.y. whereabouts calls that index on_display, and that name is accepted too. \
+                 Or pass to.display and to.x, as whereabouts reports a spot, and on_display is accepted for to.display. \
                  to.y is optional, and y is ignored, since a walk never changes height. \
                  It answers at once with started true, or with started false and the reason, such as falling or being held. \
                  It does not wait to arrive. \
