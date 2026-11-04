@@ -474,6 +474,26 @@ function syncQuick(view) {
   arm();
 }
 
+// Possession, Do Not Disturb, hiding, or one tick of `aside` (another surface).
+// The next hover report is the pointer already resting here, so the pill stays
+// down until it leaves. The first frame only records the mode.
+function noteQuickMessageMode(view, sprite, payload) {
+  const mode = {
+    possessed: Boolean(sprite.possessed),
+    dnd: Boolean(payload.do_not_disturb),
+    visible: payload.visible !== false,
+  };
+  const prev = view.mode;
+  view.mode = mode;
+  const chose =
+    payload.aside ||
+    (prev &&
+      (mode.possessed !== prev.possessed ||
+        mode.dnd !== prev.dnd ||
+        (prev.visible && !mode.visible)));
+  if (chose) view.quickMachine.aside();
+}
+
 // Click-through can drop the pointerleave. The next frame still knows the
 // cursor is gone, because :hover is clear once the window ignores it.
 // Runs before the pill is up too: a leave during the dwell cancels it.
@@ -950,6 +970,7 @@ async function start() {
         // The pill goes where the bubble goes, carrying the Shell's draft.
         const owned = view.quickMachine.owner;
         view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
+        noteQuickMessageMode(view, sprite, payload);
         if (!owned && view.quickMachine.owner && view.quickMachine.visible) {
           // A length, not the text: a trace is no place for what was typed.
           const chars = view.quickMachine.text.length;

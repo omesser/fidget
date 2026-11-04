@@ -38,8 +38,8 @@ use super::{
     push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
     switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
     FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
-    SENSE_INTERVAL,
+    QuickMessageAside, SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT,
+    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
@@ -464,6 +464,7 @@ pub(crate) fn run_frame_loop(
 
         let mut button_was_down = false;
         let mut sound_allowed = true;
+        let mut do_not_disturb = false;
         let mut ticks: u32 = 0;
         // Counted apart from `frame:` lines, so the tick rate can be read with
         // FIDGET_TRACE_FRAMES off and its per-tick print ruled out as the cause.
@@ -1479,6 +1480,7 @@ pub(crate) fn run_frame_loop(
                 config.proactive_allowed = settings.proactive_wakes;
                 config.apply_switch(settings.director_enabled);
                 let dnd = settings.do_not_disturb;
+                do_not_disturb = dnd;
                 // Reread every tick, like the flags above, so a mute in
                 // Settings lands on the next frame and not the next launch.
                 sound_allowed = settings.sound_allowed();
@@ -2619,6 +2621,10 @@ pub(crate) fn run_frame_loop(
                 }
             }
 
+            let aside = app
+                .try_state::<QuickMessageAside>()
+                .and_then(|slot| slot.take());
+
             for (index, frame) in displays.frames.iter().enumerate() {
                 let label = overlay_label(index);
                 let Some(window) = app.get_webview_window(&label) else {
@@ -2693,6 +2699,8 @@ pub(crate) fn run_frame_loop(
                     fade_ms: presence.fade_ms,
                     sound: sound_allowed,
                     hover_delay_ms: crate::hover_delay_ms(),
+                    do_not_disturb,
+                    aside,
                     work_area: WorkArea {
                         x: local.x,
                         y: local.y,

@@ -510,6 +510,37 @@ struct MenuChannel {
     quit_generation: Arc<AtomicU64>,
 }
 
+/// The next frame tells every overlay why the quick-message pill should yield.
+/// Taken once, so a choice does not dismiss the pill on every later tick.
+#[derive(Default)]
+struct QuickMessageAside(Mutex<Option<&'static str>>);
+
+impl QuickMessageAside {
+    fn note(&self, reason: &'static str) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(reason);
+        }
+    }
+
+    fn take(&self) -> Option<&'static str> {
+        self.0.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+#[cfg(test)]
+mod quick_message_aside_slot {
+    use super::QuickMessageAside;
+
+    #[test]
+    fn a_choice_is_told_once() {
+        let slot = QuickMessageAside::default();
+        assert_eq!(slot.take(), None);
+        slot.note("settings");
+        assert_eq!(slot.take(), Some("settings"));
+        assert_eq!(slot.take(), None, "the next frame does not repeat it");
+    }
+}
+
 /// Settings plus the live roster the settings window reads.
 /// Where the next Settings snapshot points, once.
 #[derive(Default)]
@@ -722,6 +753,10 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
+    /// Do Not Disturb, on every frame, so the overlay sees the switch.
+    do_not_disturb: bool,
+    /// One tick when the user opened another surface. Null on every other frame.
+    aside: Option<&'static str>,
     /// The display's usable area in this overlay's coordinates. The window
     /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
     work_area: WorkArea,
@@ -2002,6 +2037,9 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
     if app.try_state::<SettingsState>().is_none() {
         eprintln!("settings: opened before the shell was ready");
         return;
+    }
+    if let Some(slot) = app.try_state::<QuickMessageAside>() {
+        slot.note("settings");
     }
 
     // Same clone-then-post as `open_chat`: the closure takes the handle,
@@ -3988,6 +4026,11 @@ fn apply_menu_action(
     monitors: &[Rect],
     floors: &[Rect],
 ) -> MenuEffect {
+    if let Some(reason) = menu::quick_message_aside(&action) {
+        if let Some(slot) = app.try_state::<QuickMessageAside>() {
+            slot.note(reason);
+        }
+    }
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
@@ -5655,6 +5698,7 @@ fn main() {
                 rebuild_after_destroy: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&rules));
+            app.manage(QuickMessageAside::default());
 
             // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
