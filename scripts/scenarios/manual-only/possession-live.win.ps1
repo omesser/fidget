@@ -198,6 +198,7 @@ public static class PossessionLiveInput {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
@@ -207,9 +208,11 @@ public static class PossessionLiveInput {
     [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] i, int size);
     static IntPtr foundWindow;
     static string wantTitle;
-    static Callback titleAlive;
+    static Callback keepAlive;
     static bool OnTitled(IntPtr h, IntPtr l) {
-        if (!IsWindowVisible(h)) return true;
+        int cloaked;
+        // 14 is DWMWA_CLOAKED. A cloaked window still reports visible.
+        if (!IsWindowVisible(h) || (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0)) return true;
         StringBuilder text = new StringBuilder(512);
         GetWindowText(h, text, text.Capacity);
         if (text.ToString().IndexOf(wantTitle, StringComparison.Ordinal) < 0) return true;
@@ -220,8 +223,8 @@ public static class PossessionLiveInput {
         foundWindow = IntPtr.Zero;
         if (string.IsNullOrEmpty(titlePart)) return foundWindow;
         wantTitle = titlePart;
-        if (titleAlive == null) titleAlive = OnTitled;
-        EnumWindows(titleAlive, IntPtr.Zero);
+        if (keepAlive == null) keepAlive = OnTitled;
+        EnumWindows(keepAlive, IntPtr.Zero);
         return foundWindow;
     }
     static void Send(INPUT[] all) {
@@ -374,9 +377,7 @@ try {
     Release-Keys
     if (-not (Wait-Until 3 {
                 $front = [PossessionLiveInput]::GetForegroundWindow()
-                $owner = [uint32]0
-                [void][PossessionLiveInput]::GetWindowThreadProcessId($front, [ref]$owner)
-                $owner -eq [uint32]$script:notepad.Id
+                (Owner-Of $front) -eq [uint32]$script:notepad.Id
             })) {
         Fail "Notepad did not take focus"
     }
