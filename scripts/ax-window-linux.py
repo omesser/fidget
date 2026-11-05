@@ -391,11 +391,70 @@ def showing_menu_items(acc, found, depth=0):
             pass
 
 
+def showing_named_item(acc, name, depth=0):
+    """The showing menu item titled `name`, or None."""
+    import pyatspi
+
+    if depth > 30:
+        return None
+    try:
+        if not acc.getState().contains(pyatspi.STATE_SHOWING):
+            return None
+        role = acc.getRoleName()
+    except Exception:
+        return None
+    if role in MENU_ITEM_ROLES and node_name(acc) == name:
+        return acc
+    try:
+        count = acc.childCount
+    except Exception:
+        return None
+    for i in range(count):
+        try:
+            found = showing_named_item(acc.getChildAtIndex(i), name, depth + 1)
+        except Exception:
+            continue
+        if found is not None:
+            return found
+    return None
+
+
+def activate_menu_item(item):
+    """Press a menu row. A real click is the fallback when the row has no action."""
+    import subprocess
+
+    try:
+        action = item.queryAction()
+        for i in range(action.nActions):
+            if action.getName(i).lower() in ("click", "press") and action.doAction(i):
+                return True
+    except Exception:
+        pass
+    box = extents(item)
+    if not box or box[2] <= 0 or box[3] <= 0:
+        return False
+    subprocess.check_call(
+        [
+            "xdotool",
+            "mousemove",
+            "--sync",
+            str(box[0] + box[2] // 2),
+            str(box[1] + box[3] // 2),
+            "click",
+            "1",
+        ]
+    )
+    return True
+
+
 def cmd_menu(argv):
-    if len(argv) != 5:
-        print("usage: ax-window-linux.py menu PID X Y", file=sys.stderr)
+    # ROW, when given, is pressed instead of Escape. manual-drive takes Possess
+    # from the same open menu control-click-menu reads.
+    if len(argv) not in (5, 6):
+        print("usage: ax-window-linux.py menu PID X Y [ROW]", file=sys.stderr)
         return 2
     pid, x, y = int(argv[2]), argv[3], argv[4]
+    row = argv[5] if len(argv) == 6 else None
     try:
         import pyatspi
     except ImportError:
@@ -419,11 +478,31 @@ def cmd_menu(argv):
         return bool(items)
 
     wait_until(pid, menu_showing, 5, MENU_EVENTS)
-    subprocess.call(["xdotool", "key", "Escape"])
     if not items:
+        subprocess.call(["xdotool", "key", "Escape"])
         print(f"pid {pid} showed no menu within 5s", file=sys.stderr)
         return 1
     print("\n".join(items))
+    if row:
+        app = find_app(pyatspi.Registry.getDesktop(0), pid)
+        item = None
+        for j in range(app.childCount if app else 0):
+            item = showing_named_item(app.getChildAtIndex(j), row)
+            if item is not None:
+                break
+        if item is None or not activate_menu_item(item):
+            subprocess.call(["xdotool", "key", "Escape"])
+            print(f"the menu has no {row} row", file=sys.stderr)
+            return 1
+
+        def menu_closed():
+            return not menu_showing()
+
+        if not wait_until(pid, menu_closed, 2, MENU_EVENTS):
+            print(f"{row} did not close the menu", file=sys.stderr)
+            return 1
+        return 0
+    subprocess.call(["xdotool", "key", "Escape"])
     return 0
 
 

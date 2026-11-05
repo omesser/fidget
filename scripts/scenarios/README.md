@@ -199,7 +199,14 @@ trace, as on macOS. `question-bubble` pokes it with a real click and dumps the
 overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
 `control-click-menu` right-clicks the sprite instead. `ax-window-linux.py menu`
 and `ax-window-win.ps1 menu` send that click, print the open menu's items and
-press Escape.
+press Escape. Pass a row name and that row is pressed instead.
+
+`manual-drive` opens that same menu and presses Possess. It holds Right and
+Space, clicks a scratch editor, and checks the frame trace: the sprite walked,
+the pause did not launch the held jump, and Escape released possession after
+a click on the paused card. The editor's text has to contain the letter typed
+while the card was paused. The X11 leaf is in `ci/`. The macOS and Windows
+leaves stay in `manual-only/` until they pass an automatic run.
 
 `poke-mid-climb` clicks the same way as on macOS, from the frame trace and
 the `overlay:` lines, but places the sprite instead of throwing it. It holds

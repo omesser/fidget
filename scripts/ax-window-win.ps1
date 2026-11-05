@@ -324,10 +324,27 @@ if ($Command -eq "menu") {
         } else {
             $items | ForEach-Object { Write-Output $_.Current.Name }
         }
-        [FidgetWinEnum]::Escape()
+        # Arg3 is a row to press instead of Escape. manual-drive takes Possess
+        # from the same menu control-click-menu reads.
+        if ($Arg3) {
+            $menuRow = Find-MenuRow $pidArg $Arg3
+            if ($null -eq $menuRow) {
+                [FidgetWinEnum]::Escape()
+                Write-Error "the menu has no $Arg3 row"
+                exit 1
+            }
+            [FidgetWinEnum]::SetCursorPos([int](($menuRow.Left + $menuRow.Right) / 2), [int](($menuRow.Top + $menuRow.Bottom) / 2)) | Out-Null
+            [FidgetWinEnum]::Press()
+        } else {
+            [FidgetWinEnum]::Escape()
+        }
         $deadline = [DateTime]::UtcNow.AddSeconds(2)
         while (@(Get-PopupMenuItems -FidgetPid $pidArg).Count -gt 0 -and
             $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) {
+        }
+        if ($Arg3 -and @(Get-PopupMenuItems -FidgetPid $pidArg).Count -gt 0) {
+            Write-Error "$Arg3 did not close the menu"
+            exit 1
         }
     } finally {
         $signal.Dispose()
