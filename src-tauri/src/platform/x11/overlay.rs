@@ -10,7 +10,7 @@
 //! and unwired. DESIGN.md decision 3.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex, Once};
 use std::time::Instant;
 
@@ -20,11 +20,6 @@ use x11rb::protocol::xproto::{self, AtomEnum, ConfigureWindowAux, PropMode, Stac
 use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-static MASK_UPDATE_COUNT: AtomicU64 = AtomicU64::new(0);
-static MASK_UPDATE_NANOS: AtomicU64 = AtomicU64::new(0);
-static FULL_REBUILD_COUNT: AtomicU64 = AtomicU64::new(0);
-static POSITION_ONLY_COUNT: AtomicU64 = AtomicU64::new(0);
 
 static WINDOW_ID_MAP: LazyLock<Mutex<HashMap<String, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -240,10 +235,8 @@ fn sprite_pixmap(
 
     let mut cache = PIXMAP_CACHE.lock().unwrap();
     if !should_rebuild_mask(&cache, slot, &current_shape) {
-        POSITION_ONLY_COUNT.fetch_add(1, Ordering::Relaxed);
         return Ok((cache.get(&slot).unwrap().pixmap, false));
     }
-    FULL_REBUILD_COUNT.fetch_add(1, Ordering::Relaxed);
 
     if let Some(cached) = cache.remove(&slot) {
         xproto::free_gc(conn, cached.gc).ok();
@@ -371,8 +364,6 @@ fn apply_input_mask(
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
 
     let rebuild_elapsed = rebuild_start.elapsed().as_nanos() as u64;
-    MASK_UPDATE_COUNT.fetch_add(1, Ordering::Relaxed);
-    MASK_UPDATE_NANOS.fetch_add(rebuild_elapsed, Ordering::Relaxed);
 
     if std::env::var("FIDGET_TRACE_MASK_REBUILD").is_ok() {
         for (sprite, shape_changed) in sprites.iter().zip(rebuilt) {
@@ -889,21 +880,5 @@ mod tests {
         );
         assert!(!takes_click(0, 0) && !takes_click(25, 25), "clear pixels");
         free_cached_pixmaps(&conn, window, 0);
-    }
-
-    #[test]
-    fn stats_tracking() {
-        MASK_UPDATE_COUNT.store(0, Ordering::Relaxed);
-        MASK_UPDATE_NANOS.store(0, Ordering::Relaxed);
-        FULL_REBUILD_COUNT.store(0, Ordering::Relaxed);
-        POSITION_ONLY_COUNT.store(0, Ordering::Relaxed);
-
-        let total = MASK_UPDATE_COUNT.load(Ordering::Relaxed);
-        let full = FULL_REBUILD_COUNT.load(Ordering::Relaxed);
-        let position_only = POSITION_ONLY_COUNT.load(Ordering::Relaxed);
-
-        assert_eq!(total, 0);
-        assert_eq!(full, 0);
-        assert_eq!(position_only, 0);
     }
 }

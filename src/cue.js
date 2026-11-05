@@ -324,7 +324,7 @@ export function ghostPath(cue, { cx, cy, gw, gh, stageW }) {
 
 // Everywhere the ghost is drawn in flight, as [x, y, width, height]: its
 // path's reach plus its frame turned any way. Windows draws only there.
-export function ghostFlight(cue, { cx, cy, gw, gh }, { dir, ky }) {
+function ghostFlight(cue, { cx, cy, gw, gh }, { dir, ky }) {
   const { rise, span, scale } = GHOSTS[cue];
   const r = (Math.hypot(gw, gh) / 2) * scale;
   const xs = span.map((dx) => cx + dx * dir);

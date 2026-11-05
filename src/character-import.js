@@ -2,11 +2,11 @@
 // The Rust commands own all filesystem paths and validation; the webview never
 // receives read/write access to arbitrary files.
 
-export function importMessage(name) {
+function importMessage(name) {
   return `${name} installed. Restart Fidget to use it.`;
 }
 
-export function removeMessage(name) {
+function removeMessage(name) {
   return `Fidget's copy of ${name} removed. Restart Fidget to update the Character menu.`;
 }
 

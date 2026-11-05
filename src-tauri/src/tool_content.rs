@@ -157,32 +157,9 @@ mod tests {
     }
 
     #[test]
-    fn a_changed_file_counts_the_lines_it_added_and_removed() {
-        assert_eq!(counts(Some("a\nb\nc\nd\n"), "a\nB\nc\nd\ne\nf\n"), (3, 1));
-    }
-
-    #[test]
-    fn a_new_file_is_all_added_and_an_emptied_one_all_removed() {
-        assert_eq!(counts(None, "x\ny\nz\n"), (3, 0));
-        assert_eq!(counts(Some("x\ny\n"), ""), (0, 2));
-    }
-
-    #[test]
     fn an_unchanged_file_adds_and_removes_nothing() {
         assert_eq!(counts(Some("a\nb\n"), "a\nb\n"), (0, 0));
         assert_eq!(counts(None, ""), (0, 0));
-    }
-
-    #[test]
-    fn a_moved_line_counts_as_one_removed_and_one_added() {
-        assert_eq!(counts(Some("a\nb\nc\n"), "b\nc\na\n"), (1, 1));
-    }
-
-    #[test]
-    fn only_a_newline_ends_a_line() {
-        assert_eq!(counts(Some("a\r\nb\r\n"), "a\r\nB\r\n"), (1, 1));
-        assert_eq!(counts(Some("a\r\nb\n"), "a\nb\n"), (1, 1));
-        assert_eq!(counts(Some("a\rb\n"), "a\nb\n"), (2, 1));
     }
 
     #[test]

@@ -2,23 +2,23 @@
 // decides whether the sprite is possessed, whether focus has left, and how
 // full the bar is.
 
-export const POSSESSION_HEADING = "Manually drive the fidget on your screen";
+const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
-export const PAUSED_HEADING = "Paused";
+const PAUSED_HEADING = "Paused";
 
-export const FOCUS_PRESSED_LABEL = "Focused";
+const FOCUS_PRESSED_LABEL = "Focused";
 
-export const FOCUS_RAISED_LABEL = "Focus";
+const FOCUS_RAISED_LABEL = "Focus";
 
 // Both states name the action, since the visible label is one word.
-export const FOCUS_ARIA_LABEL = "Click to focus";
+const FOCUS_ARIA_LABEL = "Click to focus";
 
 // The button carries the Esc hint, so the bindings list does not repeat it.
-export const RELEASE_LABEL = "Release Possession (Esc)";
+const RELEASE_LABEL = "Release Possession (Esc)";
 
 // Clear of the screen edge, on the display the sprite stands on. The card
 // stays put while the sprite walks, so the background under it stays visible.
-export const POSSESSION_INSET = 16;
+const POSSESSION_INSET = 16;
 
 // Digit rows are the list the Shell already mapped, in that order. The card
 // only numbers them.

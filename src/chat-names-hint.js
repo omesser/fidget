@@ -3,7 +3,7 @@
 // at import, so node can load this.
 const HEADING = "Window names are off";
 
-export const BODY =
+const BODY =
   "The fidget knows where your windows are, not what they are. One switch in Settings turns on titles and application names together.";
 
 const BUTTONS = [
