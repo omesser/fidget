@@ -1022,7 +1022,7 @@ struct PickFills {
 }
 
 #[cfg(test)]
-mod overlay_page_load_tests {
+mod page_load_tests {
     use super::page_loaded_line;
 
     // A scenario chains its startup waits on this line: the overlay's own
@@ -2568,8 +2568,9 @@ fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tau
     window.set_position(LogicalPosition::new(display.x, display.y))
 }
 
-/// The trace once a window's own document loads; `who` is `overlay` or `chat`.
-/// `about:blank` finishes first and is skipped.
+/// The trace once a window's own document loads. Scenarios chain on the
+/// overlay's, between its first frame and first draft report. `about:blank`
+/// finishes first and is skipped.
 fn page_loaded_line(who: &str, label: &str, finished: bool, url: &str) -> Option<String> {
     (finished && !url.starts_with("about:")).then(|| format!("{who}: {label} page loaded"))
 }
@@ -2711,7 +2712,7 @@ fn build_chat(
         .transparent(platform::see_through_draws())
         .visible(false)
         .focused(false)
-        // The page loads off the main thread; this times it against the build.
+        // The page loads off the main thread, so `built in` leaves it out.
         .on_page_load(move |webview, payload| {
             if !dev_flags::TRACE_BUBBLE.is_on() {
                 return;
@@ -2721,8 +2722,8 @@ fn build_chat(
                 page_loaded_line("chat", webview.label(), finished, payload.url().as_str())
             {
                 eprintln!(
-                    "{line} {}ms after the build began",
-                    started.elapsed().as_millis()
+                    "{line} {:.1}ms after the build began",
+                    millis(started.elapsed())
                 );
             }
         });
@@ -2783,14 +2784,18 @@ fn build_chat(
     if dev_flags::TRACE_BUBBLE.is_on() {
         let built = started.elapsed();
         eprintln!(
-            "chat: {} built in {}ms (webview {}ms, setup {}ms)",
+            "chat: {} built in {:.1}ms (webview {:.1}ms, setup {:.1}ms)",
             window.label(),
-            built.as_millis(),
-            created.as_millis(),
-            (built - created).as_millis(),
+            millis(built),
+            millis(created),
+            millis(built - created),
         );
     }
     Ok(window)
+}
+
+fn millis(span: std::time::Duration) -> f64 {
+    span.as_secs_f64() * 1000.0
 }
 
 /// A new Chat window's inner size, in points.
