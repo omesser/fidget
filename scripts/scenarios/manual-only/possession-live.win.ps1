@@ -1,3 +1,4 @@
+#!/usr/bin/env pwsh
 # Scenario: possession-live (Windows)
 # On screen: launches Fidget as BMO with a fixture Harness. Notepad opens on a
 #   scratch file. The scenario right-clicks the sprite, presses Possess, holds
