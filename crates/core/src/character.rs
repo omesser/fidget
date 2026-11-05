@@ -120,7 +120,7 @@ pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 
 /// Seconds between idle-gestures when the manifest does not say. Inclusive.
 /// Short enough to read as alive, long enough that the loop is the baseline.
-pub const DEFAULT_GESTURE_EVERY_S: (u32, u32) = (10, 30);
+pub const DEFAULT_IDLE_GESTURE_EVERY_S: (u32, u32) = (10, 30);
 
 /// Seconds of Grounded or Perched time with no user interaction before sleep.
 pub const DEFAULT_SLEEP_AFTER_S: (u32, u32) = (120, 600);
@@ -446,7 +446,7 @@ pub struct Character {
     pub rush_reaction: CursorReaction,
     pub gravity_scale: GravityScale,
     /// Inclusive seconds between idle-gestures. The manifest, or the default.
-    pub gesture_every_s: (u32, u32),
+    pub idle_gesture_every_s: (u32, u32),
     /// Inclusive seconds awake and untouched before sleep.
     pub sleep_after_s: (u32, u32),
     /// Inclusive seconds asleep before waking into an idle loop.
@@ -509,11 +509,10 @@ pub struct Drawn<'a> {
 /// `idle`, and for walk, talk, and every other Animation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IdleBeat {
-    /// Base `idle`, or a `variant_of` it. `draw` plays it from `animation_ms`.
-    Loop(String),
-    /// A `gesture_of` idle, one pass from frame 0. The Engine cuts it before
-    /// the strip wraps.
-    Gesture(String),
+    /// An idle loop: base `idle`, or a `variant_of` it.
+    IdleLoop(String),
+    /// An idle-gesture: a `gesture_of` idle, one pass from frame 0.
+    IdleGesture(String),
 }
 
 /// One idle loop or idle-gesture the Engine can pick.
@@ -531,7 +530,7 @@ pub struct IdleMember {
 pub struct IdlePlan {
     pub(crate) loops: Vec<IdleMember>,
     pub(crate) gestures: Vec<IdleMember>,
-    pub(crate) gesture_every_s: (u32, u32),
+    pub(crate) idle_gesture_every_s: (u32, u32),
     pub(crate) sleep_after_s: (u32, u32),
     pub(crate) sleep_for_s: (u32, u32),
 }
@@ -565,7 +564,7 @@ impl Character {
     /// scale. Asks for the base idle loop by name: a weighed zero can land
     /// on a variant. The art hangs above the feet a high Perch must clear.
     pub fn sprite_height(&self) -> f64 {
-        let beat = IdleBeat::Loop("idle".to_string());
+        let beat = IdleBeat::IdleLoop("idle".to_string());
         self.draw("idle", 0, RingChoice::Beat(&beat), 1.0)
             .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
             * f64::from(self.scale)
@@ -578,7 +577,7 @@ impl Character {
             return IdlePlan {
                 loops: Vec::new(),
                 gestures: Vec::new(),
-                gesture_every_s: self.gesture_every_s,
+                idle_gesture_every_s: self.idle_gesture_every_s,
                 sleep_after_s: self.sleep_after_s,
                 sleep_for_s: self.sleep_for_s,
             };
@@ -598,7 +597,7 @@ impl Character {
         IdlePlan {
             loops,
             gestures,
-            gesture_every_s: self.gesture_every_s,
+            idle_gesture_every_s: self.idle_gesture_every_s,
             sleep_after_s: self.sleep_after_s,
             sleep_for_s: self.sleep_for_s,
         }
@@ -614,11 +613,11 @@ impl Character {
         beat: Option<&IdleBeat>,
     ) -> bool {
         match beat {
-            Some(IdleBeat::Loop(name)) => self.animations.get(name).is_some_and(|anim| {
+            Some(IdleBeat::IdleLoop(name)) => self.animations.get(name).is_some_and(|anim| {
                 (anim.looping && anim.frames.len() > 1)
                     || anim.frame_at(animation_ms) + 1 < anim.frames.len()
             }),
-            Some(IdleBeat::Gesture(name)) => self.animations.get(name).is_some_and(|anim| {
+            Some(IdleBeat::IdleGesture(name)) => self.animations.get(name).is_some_and(|anim| {
                 anim.frames.len() > 1 && anim.frame_at(animation_ms) + 1 < anim.frames.len()
             }),
             None => self.animations.get(animation).is_some_and(|anim| {
@@ -641,7 +640,7 @@ impl Character {
                 let (name, animation) = self.resolve(animation, draw)?;
                 (name, animation, animation_ms)
             }
-            RingChoice::Beat(IdleBeat::Loop(member) | IdleBeat::Gesture(member)) => {
+            RingChoice::Beat(IdleBeat::IdleLoop(member) | IdleBeat::IdleGesture(member)) => {
                 let (name, animation) = self.beat_member(animation, member)?;
                 (name, animation, animation_ms)
             }
@@ -891,7 +890,9 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             near_reaction: declared.near_reaction.unwrap_or_default(),
             rush_reaction: declared.rush_reaction.unwrap_or_default(),
             gravity_scale: declared.gravity_scale.unwrap_or(GravityScale::DEFAULT),
-            gesture_every_s: declared.gesture_every_s.unwrap_or(DEFAULT_GESTURE_EVERY_S),
+            idle_gesture_every_s: declared
+                .idle_gesture_every_s
+                .unwrap_or(DEFAULT_IDLE_GESTURE_EVERY_S),
             sleep_after_s: declared.sleep_after_s.unwrap_or(DEFAULT_SLEEP_AFTER_S),
             sleep_for_s: declared.sleep_for_s.unwrap_or(DEFAULT_SLEEP_FOR_S),
             source: declared.source,

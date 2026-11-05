@@ -909,7 +909,7 @@ mod tests {
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
             Animation, Behavior, Character, CursorReaction, GravityScale, Primitive, Step,
-            DEFAULT_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+            DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
             DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, DEFAULT_WEIGHT,
         };
         use std::collections::BTreeMap;
@@ -960,7 +960,7 @@ mod tests {
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             gravity_scale: GravityScale::DEFAULT,
-            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
             source: None,

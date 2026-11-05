@@ -30,7 +30,7 @@ pub(super) struct Declared {
     pub(super) frame_facing: BTreeMap<String, Facing>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
-    pub(super) gesture_every_s: Option<(u32, u32)>,
+    pub(super) idle_gesture_every_s: Option<(u32, u32)>,
     pub(super) sleep_after_s: Option<(u32, u32)>,
     pub(super) sleep_for_s: Option<(u32, u32)>,
 }
@@ -169,7 +169,7 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             "idle_gesture_every_s" => match inclusive_pair(item) {
-                Some(pair) => declared.gesture_every_s = Some(pair),
+                Some(pair) => declared.idle_gesture_every_s = Some(pair),
                 None => errors.push(format!(
                     "idle_gesture_every_s is {}, and must be [min, max] \
                      in seconds with min <= max",

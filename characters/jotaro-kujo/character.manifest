@@ -28,18 +28,18 @@ rush_reaction = "face"
 model_base = 2
 model_power = 1
 
-# The two stands differ by a coat-flick, and Jotaro's whole register is not
-# moving, so the stand is weighed three times the wait:
-# a quarter of it is as much shifting about as he does.
+# The calm loop is the wait. The coat-flick stand is an idle-gesture, not
+# the baseline: a still frame of him standing would read as the loop.
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png"]
-fps = 2
-weight = 30
-
-[animations.waiting]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png"]
 fps = 2
+weight = 10
+
+[animations.coat-flick]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 2
 gesture_of = "idle"
+weight = 30
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]

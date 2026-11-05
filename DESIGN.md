@@ -269,7 +269,7 @@ member on every machine.
 | BMO `walk` | `walk` 30, `ballwalk` 10 | 40 | 75%, 25% |
 | Buddy Bot `idle` | loop `idle` 20; gestures `idle-blink`, `idle-breathe`, `idle-listen` at 10 | | the loop is the base; the gestures split evenly |
 | Cat `idle` | loop `idle` 20; gestures `grooming` 10, `waiting` 10 | | the loop is the base; the gestures split evenly |
-| Jotaro `idle` | loop `idle` 30; gesture `waiting` 10 | | the loop is the base |
+| Jotaro `idle` | loop `idle` (the waiting strip) 10; gesture `coat-flick` 30 | | the loop is the wait; the stand is a gesture |
 | Timber Wolf `idle` | loop `idle` 30; gesture `scan` 10 | | the loop is the base |
 | Trump `idle` | loop `idle` 30; gesture `waiting` 20 | | the loop is the base |
 | Tux `idle` | loop `idle` 80; gestures `restless-sitting` 10, `look-around` 10, `checking-work` 3, `recover-card` 4, `waddle-in-place` 3 | | the loop is the base; gestures use those weights |

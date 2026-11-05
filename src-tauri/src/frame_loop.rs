@@ -2508,8 +2508,8 @@ pub(crate) fn run_frame_loop(
                     // did when one character was all there was.
                     // scripts/verify-overlay.sh matches this prefix.
                     let token = match &frame.idle_beat {
-                        Some(IdleBeat::Gesture(_)) => "gesture",
-                        Some(IdleBeat::Loop(_)) => "idle",
+                        Some(IdleBeat::IdleGesture(_)) => "gesture",
+                        Some(IdleBeat::IdleLoop(_)) => "idle",
                         None => art_name,
                     };
                     eprintln!(
@@ -3555,8 +3555,8 @@ mod tests {
     use super::*;
     use fidget_core::character::{
         Animation, Behavior, Character, CursorReaction, GravityScale, Primitive, Step,
-        DEFAULT_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_SLEEP_AFTER_S,
-        DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
+        DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+        DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
     };
     use fidget_core::engine::Point;
     use fidget_core::window_source::{Capabilities, WorldGeometry};
@@ -3672,7 +3672,7 @@ mod tests {
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             gravity_scale: GravityScale::DEFAULT,
-            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
             source: None,

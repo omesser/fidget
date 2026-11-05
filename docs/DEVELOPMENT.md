@@ -308,11 +308,11 @@ The loader rejects any other value, and a `[frame_facing]` entry naming a frame 
 
 #### Behaviors
 
-A Behavior is a named sequence of Primitives that the Static Director picks by weight, or that a model proposes. A Character composes Behaviors from Primitives and cannot define new ones. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
+A Behavior is a named sequence of steps that the Static Director picks by weight, or that a model proposes. A step is a Primitive, or the name of an idle-gesture, which plays one pass. A Character composes Behaviors from those steps and cannot define new Primitives. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
 
 | Key | Required | Value | Default |
 |---|---|---|---|
-| `play` | No | A list of Primitives, played in order. A Behavior with none plays nothing. | `[]` |
+| `play` | No | A list of steps, in order. Each step is a Primitive, or the name of an idle-gesture, which plays one pass. A Behavior with none plays nothing. | `[]` |
 | `then` | No | The name of the Behavior that follows this one. | |
 | `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |

@@ -448,7 +448,7 @@ fn assert_idle_gesture(character: &character::Character, name: &str) {
         "{name} is outside the calm loop"
     );
     let animation = &character.animations[name];
-    let beat = IdleBeat::Gesture(name.to_string());
+    let beat = IdleBeat::IdleGesture(name.to_string());
     for index in 0..animation.frames.len() {
         let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
         let drawn = character
@@ -1119,7 +1119,7 @@ fn timber_wolf_perched_idle_opens_on_the_calm_loop() {
         if frame.animation != "idle" {
             continue;
         }
-        assert!(matches!(frame.idle_beat, Some(IdleBeat::Loop(_))));
+        assert!(matches!(frame.idle_beat, Some(IdleBeat::IdleLoop(_))));
         let drawn = character
             .draw(
                 frame.animation,
@@ -1542,7 +1542,7 @@ fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
         ("idle".to_string(), 0),
         "the calm loop starts at frame 0"
     );
-    assert!(matches!(idling.idle_beat, Some(IdleBeat::Loop(_))));
+    assert!(matches!(idling.idle_beat, Some(IdleBeat::IdleLoop(_))));
 
     let mut during = Vec::new();
     let mut after = Vec::new();

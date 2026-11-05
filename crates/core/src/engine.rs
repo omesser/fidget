@@ -7,7 +7,7 @@
 
 use crate::character::{
     animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan,
-    Primitive, RingChoice, Step, DEFAULT_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
+    Primitive, RingChoice, Step, DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
     DEFAULT_SLEEP_FOR_S,
 };
 use crate::director::Seeded;
@@ -415,7 +415,7 @@ pub struct Engine {
     /// Idle-gestures in name order. Empty stays on the loop and rolls no gap.
     idle_gestures: Vec<IdleMember>,
     /// Inclusive seconds. Rolled into milliseconds when a loop starts.
-    gesture_every_s: (u32, u32),
+    idle_gesture_every_s: (u32, u32),
     /// Inclusive seconds before sleep, and asleep. Rolled per stretch.
     sleep_after_s: (u32, u32),
     sleep_for_s: (u32, u32),
@@ -732,8 +732,8 @@ impl OwnIdle {
     fn beat(&self) -> Option<IdleBeat> {
         match self {
             OwnIdle::Off => None,
-            OwnIdle::Loop { name, .. } => Some(IdleBeat::Loop(name.clone())),
-            OwnIdle::Gesture { name, .. } => Some(IdleBeat::Gesture(name.clone())),
+            OwnIdle::Loop { name, .. } => Some(IdleBeat::IdleLoop(name.clone())),
+            OwnIdle::Gesture { name, .. } => Some(IdleBeat::IdleGesture(name.clone())),
         }
     }
 
@@ -774,7 +774,7 @@ impl Engine {
             variants: Seeded::new(0),
             idle_loops: Vec::new(),
             idle_gestures: Vec::new(),
-            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
             sleep_after_ms: None,
@@ -879,7 +879,7 @@ impl Engine {
     }
 
     pub fn set_idle_plan(&mut self, plan: IdlePlan) {
-        self.gesture_every_s = plan.gesture_every_s;
+        self.idle_gesture_every_s = plan.idle_gesture_every_s;
         self.sleep_after_s = plan.sleep_after_s;
         self.sleep_for_s = plan.sleep_for_s;
         self.sleep_after_ms = None;
@@ -1005,7 +1005,7 @@ impl Engine {
         let gap_left_ms = if self.idle_gestures.is_empty() {
             0
         } else {
-            self.roll_seconds(self.gesture_every_s)
+            self.roll_seconds(self.idle_gesture_every_s)
         };
         self.animation_ms = 0;
         self.own_idle = OwnIdle::Loop { name, gap_left_ms };

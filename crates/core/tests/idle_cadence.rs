@@ -125,7 +125,7 @@ fn an_idle_stretch_loops_before_its_first_gesture() {
     let mut engine = engine_for(&character, 1);
     let frame = first_idle(&mut engine);
     assert!(
-        matches!(frame.idle_beat, Some(IdleBeat::Loop(_))),
+        matches!(frame.idle_beat, Some(IdleBeat::IdleLoop(_))),
         "the stretch opens on a loop: {:?}",
         frame.idle_beat
     );
@@ -148,7 +148,7 @@ fn a_gesture_plays_one_pass_and_the_stretch_returns_to_a_loop() {
         let drawn = shown(&character, &frame);
         if drawn.0 == "spin" {
             assert!(
-                matches!(frame.idle_beat, Some(IdleBeat::Gesture(_))),
+                matches!(frame.idle_beat, Some(IdleBeat::IdleGesture(_))),
                 "a gesture names itself: {:?}",
                 frame.idle_beat
             );
@@ -156,7 +156,7 @@ fn a_gesture_plays_one_pass_and_the_stretch_returns_to_a_loop() {
             spin.push(drawn.1);
         } else if !spin.is_empty() {
             assert!(
-                matches!(frame.idle_beat, Some(IdleBeat::Loop(_))),
+                matches!(frame.idle_beat, Some(IdleBeat::IdleLoop(_))),
                 "the pass hands back to a loop"
             );
             back = Some(drawn);
@@ -370,7 +370,7 @@ fn a_poke_during_a_gesture_still_wins() {
             saw_talk = true;
         }
         if frame.animation == "idle" {
-            assert!(matches!(frame.idle_beat, Some(IdleBeat::Loop(_))));
+            assert!(matches!(frame.idle_beat, Some(IdleBeat::IdleLoop(_))));
             assert_eq!(shown(&character, &frame).1, 0);
             looped = true;
             break;
@@ -407,8 +407,8 @@ fn perched_idle_uses_the_same_loop_and_gesture() {
         }
         if frame.animation == "idle" {
             match &frame.idle_beat {
-                Some(IdleBeat::Loop(_)) => saw_loop = true,
-                Some(IdleBeat::Gesture(_)) => {
+                Some(IdleBeat::IdleLoop(_)) => saw_loop = true,
+                Some(IdleBeat::IdleGesture(_)) => {
                     assert!(saw_loop, "the gesture follows a loop");
                     saw_gesture = true;
                     break;
@@ -477,7 +477,7 @@ fn an_idle_typed_behavior_uses_the_loop_and_gesture_machine() {
     let started = engine.tick(&propose("muse"));
     assert_eq!(started.playing_primitive, Some(Primitive::Idle));
     assert!(
-        matches!(started.idle_beat, Some(IdleBeat::Loop(_))),
+        matches!(started.idle_beat, Some(IdleBeat::IdleLoop(_))),
         "the idle step opens on a loop: {:?}",
         started.idle_beat
     );
@@ -490,12 +490,12 @@ fn an_idle_typed_behavior_uses_the_loop_and_gesture_machine() {
             break;
         }
         match &frame.idle_beat {
-            Some(IdleBeat::Gesture(_)) => {
+            Some(IdleBeat::IdleGesture(_)) => {
                 assert_eq!(shown(&character, &frame).0, "spin");
                 saw_gesture = true;
             }
-            Some(IdleBeat::Loop(_)) if saw_gesture => back = true,
-            Some(IdleBeat::Loop(_)) => {}
+            Some(IdleBeat::IdleLoop(_)) if saw_gesture => back = true,
+            Some(IdleBeat::IdleLoop(_)) => {}
             None => panic!("the idle-typed step left the machine"),
         }
     }
@@ -647,7 +647,7 @@ fn waking_returns_to_an_idle_loop() {
     let woken = engine.tick(&world(1_000));
     assert_eq!(woken.state, State::Grounded, "the sleep timer woke it");
     assert!(
-        matches!(woken.idle_beat, Some(IdleBeat::Loop(_))),
+        matches!(woken.idle_beat, Some(IdleBeat::IdleLoop(_))),
         "it wakes into a loop: {:?}",
         woken.idle_beat
     );
