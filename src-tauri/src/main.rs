@@ -1023,22 +1023,34 @@ struct PickFills {
 
 #[cfg(test)]
 mod overlay_page_load_tests {
-    use super::overlay_page_loaded_line;
+    use super::page_loaded_line;
 
     // A scenario chains its startup waits on this line: the overlay's own
     // document has loaded, between the first frame and the first draft report.
     #[test]
     fn only_the_overlay_document_finishing_is_traced() {
         assert_eq!(
-            overlay_page_loaded_line("overlay-0", true, "http://tauri.localhost/").as_deref(),
+            page_loaded_line("overlay", "overlay-0", true, "http://tauri.localhost/").as_deref(),
             Some("overlay: overlay-0 page loaded")
         );
         assert_eq!(
-            overlay_page_loaded_line("overlay-0", false, "http://tauri.localhost/"),
+            page_loaded_line("overlay", "overlay-0", false, "http://tauri.localhost/"),
             None
         );
         assert_eq!(
-            overlay_page_loaded_line("overlay-0", true, "about:blank"),
+            page_loaded_line("overlay", "overlay-0", true, "about:blank"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_chat_document_finishing_is_traced_under_chat() {
+        assert_eq!(
+            page_loaded_line("chat", "chat-a", true, "http://tauri.localhost/chat.html").as_deref(),
+            Some("chat: chat-a page loaded")
+        );
+        assert_eq!(
+            page_loaded_line("chat", "chat-a", true, "about:blank"),
             None
         );
     }
@@ -2556,10 +2568,10 @@ fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tau
     window.set_position(LogicalPosition::new(display.x, display.y))
 }
 
-/// The trace once the overlay's own document loads, between its first frame
-/// and its first draft report. `about:blank` finishes first and is skipped.
-fn overlay_page_loaded_line(label: &str, finished: bool, url: &str) -> Option<String> {
-    (finished && !url.starts_with("about:")).then(|| format!("overlay: {label} page loaded"))
+/// The trace once a window's own document loads; `who` is `overlay` or `chat`.
+/// `about:blank` finishes first and is skipped.
+fn page_loaded_line(who: &str, label: &str, finished: bool, url: &str) -> Option<String> {
+    (finished && !url.starts_with("about:")).then(|| format!("{who}: {label} page loaded"))
 }
 
 /// X11: build the overlay refusing focus, or the window manager focuses it at
@@ -2600,7 +2612,7 @@ fn build_overlay(
             }
             let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
             if let Some(line) =
-                overlay_page_loaded_line(webview.label(), finished, payload.url().as_str())
+                page_loaded_line("overlay", webview.label(), finished, payload.url().as_str())
             {
                 eprintln!("{line}");
             }
@@ -2689,6 +2701,7 @@ fn build_chat(
     title: &str,
 ) -> Result<tauri::WebviewWindow, tauri::Error> {
     let _spawned_ctrl_c = platform::SpawnedCtrlC::hold();
+    let started = Instant::now();
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(CHAT_SIZE.0, CHAT_SIZE.1)
@@ -2697,12 +2710,24 @@ fn build_chat(
         // unrepainted see-through page to black or to the desktop.
         .transparent(platform::see_through_draws())
         .visible(false)
-        .focused(false);
-    let started = Instant::now();
+        .focused(false)
+        // The page loads off the main thread; this times it against the build.
+        .on_page_load(move |webview, payload| {
+            if !dev_flags::TRACE_BUBBLE.is_on() {
+                return;
+            }
+            let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
+            if let Some(line) =
+                page_loaded_line("chat", webview.label(), finished, payload.url().as_str())
+            {
+                eprintln!(
+                    "{line} {}ms after the build began",
+                    started.elapsed().as_millis()
+                );
+            }
+        });
     let window = builder.build()?;
-    if dev_flags::TRACE_BUBBLE.is_on() {
-        eprintln!("chat: {label} built in {}ms", started.elapsed().as_millis());
-    }
+    let created = started.elapsed();
     glass::wear(&window, &chat_ui_now(app.try_state().as_deref()));
     let (handle, label) = (app.clone(), label.to_string());
     let observer = platform::observe_minimize(&window, {
@@ -2755,6 +2780,16 @@ fn build_chat(
             eprintln!("chat: {label} level: {why}");
         }
     });
+    if dev_flags::TRACE_BUBBLE.is_on() {
+        let built = started.elapsed();
+        eprintln!(
+            "chat: {} built in {}ms (webview {}ms, setup {}ms)",
+            window.label(),
+            built.as_millis(),
+            created.as_millis(),
+            (built - created).as_millis(),
+        );
+    }
     Ok(window)
 }
 
