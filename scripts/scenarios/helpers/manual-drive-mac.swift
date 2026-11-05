@@ -1,9 +1,5 @@
-// The macOS half of manual-drive's menu gesture. A Control-click, the same
-// gesture control-click-menu sends, then the Possess row. The Control flag is
-// cleared before this process exits: a later Right arrow must not switch
-// Spaces.
-// possess <pid> <x> <y>
-// window <owner name>  prints "x y w h" of that owner's top window at layer 0.
+// A Control-click, the same gesture as control-click-menu, then Possess.
+// The Control flag is cleared before exit: a later Right must not switch Spaces.
 
 import AppKit
 import ApplicationServices

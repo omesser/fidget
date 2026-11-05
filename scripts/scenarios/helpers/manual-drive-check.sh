@@ -1,10 +1,7 @@
 # shellcheck shell=bash
-# The manual-drive trace check, shared by the macOS and X11 leaves.
-# manual-drive.win.ps1 carries a PowerShell copy; keep the messages identical.
-#
-# check_manual_drive <trace> <letter file> [pause]
+# Shared by the macOS and X11 leaves. The Windows leaf keeps the same messages.
+# A full check wants Escape in the trace and k or K in the letter file.
 # pause: the click-away has landed and Escape has not been pressed yet.
-# The letter file is read only for the full check. It must contain k or K.
 
 # The focus button, else the Paused heading. The heading sits against the
 # quick-message field, so a click on its centre can miss the card.
