@@ -375,6 +375,7 @@ const touches = `
         }
       }
       if (!spot) throw new Error("nowhere to tap away from the pill");
+      if (!pill.classList.contains("visible")) throw new Error("pill closed before the observer attached");
       const closed = new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("pill stayed open")), 5000);
         new MutationObserver((_, observer) => {
@@ -387,7 +388,6 @@ const touches = `
       finger("touchStart", spot);
       finger("touchEnd");
       await closed;
-      longPress.dismissed = !pill.classList.contains("visible");
 
       // Flick toward the wider side: one the desk's edge cuts short is too slow to throw.
       let [x, y] = center();
@@ -578,11 +578,11 @@ test("every Character's sprite fills its picker button the same, whatever paddin
 
 test("on a phone, a long-press opens the pill and pokes nothing, a flick throws, and the wallpaper follows the OS scheme until the switch repaints it", { skip: chromeSkip }, async () => {
   const result = await play([], touches, "390,844");
-  assert.deepEqual(result.errors, [], "the page threw nothing");
+  assert.deepEqual(result.errors, [], "the page threw nothing, and a tap away closed the pill");
   const { after, ...longPress } = result.longPress;
   assert.ok(after >= result.hoverDelayMs && after < result.hoverDelayMs + 500,
     `the pill opened after the app's hover delay, ${result.hoverDelayMs}ms, held still: ${after}ms`);
-  assert.deepEqual(longPress, { poked: 0, open: true, dismissed: true }, "lifting the finger leaves the pill open and pokes nothing; a tap away closes it");
+  assert.deepEqual(longPress, { poked: 0, open: true }, "lifting the finger leaves the pill open and pokes nothing");
   assert.ok(result.thrown, "a moving finger grabbed and threw, with no pill");
   const stripes = "repeating-linear-gradient(45deg, rgb(200, 107, 74) 0px, rgb(200, 107, 74) 18px";
   assert.deepEqual([result.first.wall, result.first.pressed], ["light", ["light"]], "in a light page the desk starts light");
