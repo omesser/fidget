@@ -127,7 +127,12 @@ func possessRow(in rect: CGRect, step: Double = 6) -> AXUIElement? {
 // beside the cursor, above it near the bottom of the display.
 func possessRowNearClick() -> AXUIElement? {
     // Rows are about 22 points tall, so a 12-point step lands on each.
-    possessRow(in: CGRect(x: point.x + 16, y: point.y - 600, width: 0, height: 1200), step: 12)
+    // Right of the click, or left of it when the sprite is near the right edge.
+    for dx in [16.0, -16.0] {
+        let column = CGRect(x: point.x + dx, y: point.y - 600, width: 0, height: 1200)
+        if let row = possessRow(in: column, step: 12) { return row }
+    }
+    return nil
 }
 
 // What the window list shows above the overlay, for when the lookup misses.
@@ -146,22 +151,19 @@ func describeHighWindows() -> String {
 mouse(.rightMouseDown)
 var row: AXUIElement?
 var how = "window list"
-// ponytail: a menu owned by another process posts no notification to this
-// observer, so the wait also re-reads every 100 ms. Drop the slice once the
-// owner is known and observed.
-let deadline = Date().addingTimeInterval(3)
-while row == nil && Date() < deadline {
+// Each AX notification from Fidget wakes the check, so the menu opening and
+// filling in drives it. No timer re-reads.
+_ = waitUntil(seconds: 3) {
     if let rect = menuWindow() {
         row = possessRow(in: rect)
-        if row == nil { break }
     } else if let near = possessRowNearClick() {
         row = near
         how = "Accessibility near the click"
-    } else {
-        CFRunLoopRunInMode(.defaultMode, 0.1, true)
     }
+    return row != nil
 }
-FileHandle.standardError.write(Data("possess: found the row by \(how): \(row != nil)\n".utf8))
+FileHandle.standardError.write(
+    Data("possess: found the row by \(how): \(row != nil); heard \(seen.sorted())\n".utf8))
 if row == nil { FileHandle.standardError.write(Data((describeHighWindows() + "\n").utf8)) }
 // A person's press-drag-release: drag the held right button onto the row and
 // release it there. AXPress picks the row without the overlay ever taking key.

@@ -100,7 +100,7 @@ app log to run only the check, as `fixtures/poke-mid-climb-trace.txt` does in
 `crates/verify`.
 
 `possession-keyup.sh` takes only the app binary and runs no Harness. It
-right-clicks the sprite, presses Possess
+right-drags from the sprite onto the Possess row
 (`scripts/scenarios/helpers/possession-input.swift`), and posts arrow key
 edges. From the frame trace, it checks that a held arrow walks the sprite and
 that its keyup stops it for the next 30 frames. It then holds the arrow, brings
