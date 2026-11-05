@@ -193,6 +193,12 @@ const modes = [
     pick: { aside: "action-log" },
     hold: {},
   },
+  {
+    name: "toggling hide in fullscreen apps",
+    open: {},
+    pick: { aside: "fullscreen-hide" },
+    hold: {},
+  },
 ];
 
 for (const mode of modes) {

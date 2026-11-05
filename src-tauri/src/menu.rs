@@ -61,6 +61,7 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
         MenuAction::Summon => Some("chat"),
         MenuAction::OpenMemory => Some("memory"),
         MenuAction::OpenActionLog => Some("action-log"),
+        MenuAction::ToggleFullscreenHide => Some("fullscreen-hide"),
         MenuAction::SwitchCharacter(_)
         | MenuAction::SpawnInstance
         | MenuAction::ToggleDirector
@@ -68,7 +69,6 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
         | MenuAction::TogglePossession
         | MenuAction::Hide
         | MenuAction::BringToThisDisplay
-        | MenuAction::ToggleFullscreenHide
         | MenuAction::ToggleCaffeinate
         | MenuAction::Quit => None,
     }
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_chat_memory_the_action_log_or_settings_yields_the_pill() {
+    fn chat_memory_settings_the_log_or_fullscreen_hide_yields_the_pill() {
         assert_eq!(
             quick_message_aside(&MenuAction::OpenSettings),
             Some("settings")
@@ -522,6 +522,10 @@ mod tests {
         assert_eq!(
             quick_message_aside(&MenuAction::OpenActionLog),
             Some("action-log")
+        );
+        assert_eq!(
+            quick_message_aside(&MenuAction::ToggleFullscreenHide),
+            Some("fullscreen-hide")
         );
     }
 
@@ -538,7 +542,6 @@ mod tests {
         );
         assert_eq!(quick_message_aside(&MenuAction::SpawnInstance), None);
         assert_eq!(quick_message_aside(&MenuAction::BringToThisDisplay), None);
-        assert_eq!(quick_message_aside(&MenuAction::ToggleFullscreenHide), None);
         assert_eq!(quick_message_aside(&MenuAction::Quit), None);
     }
 
