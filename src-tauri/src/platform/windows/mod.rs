@@ -7,6 +7,7 @@
 
 mod console;
 mod focus_return;
+mod input_events;
 mod overlay;
 mod pointer;
 mod process;
@@ -15,6 +16,7 @@ mod settings_raise;
 mod window_source;
 
 pub(super) use console::{restore_ctrl_c, suppress_ctrl_c_for_children};
+pub(super) use input_events::{press_point, spawn_press_listener};
 pub use overlay::{
     configure_overlay, set_click_through, toggle_click_through_only, update_input_region,
 };

@@ -454,7 +454,7 @@ struct InstanceState {
     happened: Happened,
     pointer: Pointer,
     /// The last line spoken and which overlay showed it, so a crossing
-    /// carries it. See `carry_line`.
+    /// carries it. See `draw_response`.
     spoken: Option<Spoken>,
     speech: SpeechBubble,
     drawn_last: Option<Drawn>,
@@ -510,6 +510,37 @@ struct MenuChannel {
     sender: mpsc::Sender<MenuSignal>,
     receiver: mpsc::Receiver<MenuSignal>,
     quit_generation: Arc<AtomicU64>,
+}
+
+/// The next frame tells every overlay why the quick-message pill should yield.
+/// Taken once, so a choice does not dismiss the pill on every later tick.
+#[derive(Default)]
+struct QuickMessageAside(Mutex<Option<&'static str>>);
+
+impl QuickMessageAside {
+    fn note(&self, reason: &'static str) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(reason);
+        }
+    }
+
+    fn take(&self) -> Option<&'static str> {
+        self.0.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+#[cfg(test)]
+mod quick_message_aside_slot {
+    use super::QuickMessageAside;
+
+    #[test]
+    fn a_choice_is_told_once() {
+        let slot = QuickMessageAside::default();
+        assert_eq!(slot.take(), None);
+        slot.note("settings");
+        assert_eq!(slot.take(), Some("settings"));
+        assert_eq!(slot.take(), None, "the next frame does not repeat it");
+    }
 }
 
 /// Settings plus the live roster the settings window reads.
@@ -724,6 +755,10 @@ struct Placement<'a> {
     /// How long a hover waits before the quick message pill opens, in ms. On
     /// every frame, so a change in Settings lands on the next hover.
     hover_delay_ms: u64,
+    /// Do Not Disturb, on every frame, so the overlay sees the switch.
+    do_not_disturb: bool,
+    /// A menu choice that dismisses the quick-message pill, for this tick only.
+    aside: Option<&'static str>,
     /// The display's usable area in this overlay's coordinates. The window
     /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
     work_area: WorkArea,
@@ -749,22 +784,25 @@ struct Spoken {
 /// so it is never carried.
 const CARRY_WINDOW: Duration = Duration::from_secs(8);
 
-/// Dialogue this tick: the Engine's new line, or the last one re-pulsed to a
-/// new owner. Only the overlay that owns the bubble latches the one-tick
-/// pulse, so a seam crossing mid-line would otherwise lose it.
-fn carry_line(
+/// Dialogue this tick: the Engine's new line, or the last one re-pulsed to an
+/// owner that hasn't heard it, after a seam crossing or once its page listens.
+/// Only the bubble owner latches the one-tick pulse, so either would lose it.
+fn draw_response(
     spoken: &mut Option<Spoken>,
     said: Option<&str>,
     owner: Option<usize>,
+    listening: bool,
     now: Instant,
 ) -> Option<String> {
+    let unheard = owner.is_some() && !listening;
+    let owner = owner.filter(|_| listening);
     if let Some(line) = said {
         *spoken = Some(Spoken {
             line: line.to_string(),
             at: now,
             owner,
         });
-        return Some(line.to_string());
+        return (!unheard).then(|| line.to_string());
     }
     let carried = spoken.as_mut()?;
     if carried.owner == owner || now.duration_since(carried.at) > CARRY_WINDOW {
@@ -2005,6 +2043,9 @@ fn dispatch_settings(app: tauri::AppHandle, reload: bool) {
         eprintln!("settings: opened before the shell was ready");
         return;
     }
+    if let Some(slot) = app.try_state::<QuickMessageAside>() {
+        slot.note("settings");
+    }
 
     // Same clone-then-post as `open_chat`: the closure takes the handle,
     // `run_on_main_thread` still borrows `app`.
@@ -2227,6 +2268,10 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
 /// loop's session drops any for a key it never saw go down.
 #[tauri::command]
 fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
+    if dev_flags::TRACE_FRAMES.is_on() {
+        let edge = if down { "down" } else { "up" };
+        eprintln!("possession: key {} {key} {edge}", window.label());
+    }
     possession::push_key(window.label(), &key, down);
 }
 
@@ -2296,6 +2341,19 @@ fn overlay_cadence(window: tauri::Window, frames: Vec<(f64, bool, Option<f64>, f
 #[tauri::command]
 fn overlay_rects(window: tauri::Window, rects: Vec<fidget_core::overlay_region::OverlayRect>) {
     platform::set_overlay_rects(window.label(), rects);
+}
+
+/// The overlay's page now hears frames; until then its reply line is kept.
+#[tauri::command]
+fn overlay_listening(window: tauri::Window) {
+    platform::set_overlay_listening(window.label(), true);
+}
+
+/// A page that starts loading again no longer hears frames until it says so.
+fn overlay_page_loading(label: &str, event: tauri::webview::PageLoadEvent) {
+    if event == tauri::webview::PageLoadEvent::Started {
+        platform::overlay_page_load_started(label);
+    }
 }
 
 /// Trace frontend bubble events to stderr when FIDGET_TRACE_BUBBLE is on.
@@ -2538,6 +2596,7 @@ fn build_overlay(
         .skip_taskbar(true)
         .visible(false)
         .on_page_load(|webview, payload| {
+            overlay_page_loading(webview.label(), payload.event());
             if !dev_flags::TRACE_BUBBLE.is_on() {
                 return;
             }
@@ -3990,6 +4049,11 @@ fn apply_menu_action(
     monitors: &[Rect],
     floors: &[Rect],
 ) -> MenuEffect {
+    if let Some(reason) = menu::quick_message_aside(&action) {
+        if let Some(slot) = app.try_state::<QuickMessageAside>() {
+            slot.note(reason);
+        }
+    }
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
@@ -5299,6 +5363,7 @@ fn main() {
             chat_send,
             chat_prompt,
             chat_ready,
+            overlay_listening,
             names_hint_act,
             permission_answer,
             elicitation_answer,
@@ -5657,6 +5722,7 @@ fn main() {
                 rebuild_after_destroy: AtomicBool::new(false),
             });
             app.manage(Arc::clone(&rules));
+            app.manage(QuickMessageAside::default());
 
             // Dev/test hook: open settings immediately if FIDGET_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
@@ -5813,6 +5879,46 @@ mod anchor_icon_tests {
 
 #[cfg(test)]
 mod tests {
+    /// Production change that would fail this: a reload that leaves the page
+    /// marked listening, so a reply line goes out before its listener is back.
+    #[test]
+    fn a_reloaded_page_is_not_listening_until_it_says_so_again() {
+        use tauri::webview::PageLoadEvent;
+        let label = "overlay-reload-test";
+        // First navigation lands normally: Started, then the page listens.
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
+        super::platform::set_overlay_listening(label, true);
+        super::overlay_page_loading(label, PageLoadEvent::Finished);
+        assert!(super::platform::overlay_listening(label));
+        let loads = super::platform::overlay_page_loads(label);
+        assert!(loads >= 1);
+        // Reload: Started clears it until the new page listens.
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), loads + 1);
+        super::platform::set_overlay_listening(label, true);
+        assert!(super::platform::overlay_listening(label));
+    }
+
+    /// Production change that would fail this: the first Started clearing a
+    /// listen that landed on load 0 (WebView2 can send ContentLoading late),
+    /// so the page never listens again and its reply lines are never shown.
+    #[test]
+    fn the_first_started_keeps_a_listen_that_landed_on_load_zero() {
+        use tauri::webview::PageLoadEvent;
+        let label = "overlay-started-after-listen";
+        assert_eq!(super::platform::overlay_page_loads(label), 0);
+        super::platform::set_overlay_listening(label, true);
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), 1);
+        // A later Started is a reload and still clears.
+        super::overlay_page_loading(label, PageLoadEvent::Started);
+        assert!(!super::platform::overlay_listening(label));
+        assert_eq!(super::platform::overlay_page_loads(label), 2);
+    }
+
     #[test]
     fn an_overlay_label_is_the_prefix_chat_and_settings_do_not_share() {
         assert!(super::is_overlay_label(&super::overlay_label(0)));
@@ -7356,30 +7462,50 @@ mod tests {
         let mut spoken = None;
 
         assert_eq!(
-            carry_line(&mut spoken, Some("Yare yare daze."), Some(0), t0).as_deref(),
+            draw_response(&mut spoken, Some("Yare yare daze."), Some(0), true, t0).as_deref(),
             Some("Yare yare daze."),
             "the pulse itself goes to the owner of the tick"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(0), t0 + Duration::from_secs(1)),
+            draw_response(
+                &mut spoken,
+                None,
+                Some(0),
+                true,
+                t0 + Duration::from_secs(1)
+            ),
             None,
             "the same owner is not told twice"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            draw_response(
+                &mut spoken,
+                None,
+                Some(1),
+                true,
+                t0 + Duration::from_secs(2)
+            )
+            .as_deref(),
             Some("Yare yare daze."),
             "mid-reading, the new owner is told the line"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(3)),
+            draw_response(
+                &mut spoken,
+                None,
+                Some(1),
+                true,
+                t0 + Duration::from_secs(3)
+            ),
             None,
             "and then not again while it stays there"
         );
         assert_eq!(
-            carry_line(
+            draw_response(
                 &mut spoken,
                 None,
                 Some(0),
+                true,
                 t0 + CARRY_WINDOW + Duration::from_secs(1)
             ),
             None,
@@ -7387,12 +7513,13 @@ mod tests {
         );
 
         let mut spoken = None;
-        carry_line(&mut spoken, Some("first"), Some(0), t0);
+        draw_response(&mut spoken, Some("first"), Some(0), true, t0);
         assert_eq!(
-            carry_line(
+            draw_response(
                 &mut spoken,
                 Some("second"),
                 Some(0),
+                true,
                 t0 + Duration::from_secs(1)
             )
             .as_deref(),
@@ -7400,9 +7527,47 @@ mod tests {
             "a new line replaces the remembered one"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            draw_response(
+                &mut spoken,
+                None,
+                Some(1),
+                true,
+                t0 + Duration::from_secs(2)
+            )
+            .as_deref(),
             Some("second"),
             "and it is the new line that crosses"
+        );
+    }
+
+    /// Production change that would fail this: a reply line pulsed to an
+    /// overlay page that isn't listening yet and never pulsed again (#2037).
+    #[test]
+    fn a_reply_said_before_the_page_listens_is_shown_once_it_listens() {
+        let t0 = Instant::now();
+        let at = |secs| t0 + Duration::from_secs(secs);
+        let mut spoken = None;
+        assert_eq!(
+            draw_response(&mut spoken, Some("hi"), Some(0), false, t0),
+            None
+        );
+        assert_eq!(
+            draw_response(&mut spoken, None, Some(0), false, at(1)),
+            None
+        );
+        assert_eq!(
+            draw_response(&mut spoken, None, Some(0), true, at(2)).as_deref(),
+            Some("hi")
+        );
+        assert_eq!(draw_response(&mut spoken, None, Some(0), true, at(3)), None);
+
+        let mut spoken = None;
+        draw_response(&mut spoken, Some("hi"), Some(0), false, t0);
+        let late = t0 + CARRY_WINDOW + Duration::from_secs(1);
+        assert_eq!(
+            draw_response(&mut spoken, None, Some(0), true, late),
+            None,
+            "a page that listens after the line would have expired never shows it"
         );
     }
 
@@ -7411,12 +7576,12 @@ mod tests {
         let t0 = Instant::now();
         let mut spoken = None;
 
-        let dialogue = carry_line(&mut spoken, Some("hello there"), Some(0), t0);
+        let dialogue = draw_response(&mut spoken, Some("hello there"), Some(0), true, t0);
 
         assert_eq!(
             dialogue.as_deref(),
             Some("hello there"),
-            "under DND, dialogue still reaches carry_line and the bubble"
+            "under DND, dialogue still reaches draw_response and the bubble"
         );
     }
 

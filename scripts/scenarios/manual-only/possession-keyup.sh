@@ -4,7 +4,7 @@
 #   possesses it from its menu, and walks it with an arrow key. Finder comes to
 #   the front once, mid-walk. Fidget quits when the scenario ends. No
 #   screenshots.
-# Input: a right-click on the sprite, a press on the menu's Possess row,
+# Input: a right-drag from the sprite onto the menu's Possess row,
 #   synthetic arrow key edges, `open -a Finder`, and one click back on the
 #   sprite. Keep hands off the mouse and keyboard for the run.
 # Duration: about 10 s.
@@ -92,11 +92,15 @@ cx=$((sx + w / 2)) cy=$((sy + h / 2))
 # Walk toward the roomier side of the display: 124 is Right, 123 Left.
 if [ $((cx - dx)) -lt $((dw / 2)) ]; then arrow=124 sign=1; else arrow=123 sign=-1; fi
 
-focuses=$(line_count "$log" '^overlay [^:]+: window focus')
+# The overlay passes clicks through until a tick sees the cursor on the art.
+"$tools/possession-input" move "$cx" "$cy" >> "$out/input.txt" 2>&1 || fail "could not move the cursor onto the sprite"
+before=$(line_count "$log" '^frame: ')
+wait_for_count 2 "$log" '^frame: ' "$((before + 1))" || fail "no frames after the cursor moved; see $log"
 "$tools/possession-input" possess "$pid" "$cx" "$cy" >> "$out/input.txt" 2>&1 || fail "could not press Possess; see $out/input.txt"
 wait_for_trace 3 "$log" '^menu: possession on' || fail "the Possess row did not possess the sprite; see $log"
-wait_for_count 3 "$log" '^overlay [^:]+: window focus' "$focuses" || fail "the possessed overlay never took focus; see $log"
-echo "ok: possessed, and the overlay has the keyboard"
+# No focus-line gate: the overlay often logs none after Possess, and the walk
+# below proves it has the keyboard.
+echo "ok: possessed"
 
 key down
 expect_walk "$(sprite_x)"

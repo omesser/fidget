@@ -365,11 +365,29 @@ const touches = `
       await frame();
       const longPress = { after, poked: layer.querySelectorAll(".cue-ring").length, open: pill.classList.contains("visible") };
       const box = desk.getBoundingClientRect();
-      const away = once(document, "pointerup");
-      finger("touchStart", [box.left + 20, box.bottom - 20]);
+      // The sprite walks the floor, so a fixed corner is sometimes the character,
+      // and a press there leaves the pill up.
+      let spot = null;
+      for (let y = box.top + 24; spot === null && y < box.bottom - 8; y += 18) {
+        for (let x = box.left + 16; x < box.right - 16 && spot === null; x += 18) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit && !sprite.contains(hit) && !pill.contains(hit) && !hit.closest("#play-walls")) spot = [x, y];
+        }
+      }
+      if (!spot) throw new Error("nowhere to tap away from the pill");
+      if (!pill.classList.contains("visible")) throw new Error("pill closed before the observer attached");
+      const closed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("pill stayed open")), 5000);
+        new MutationObserver((_, observer) => {
+          if (pill.classList.contains("visible")) return;
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve();
+        }).observe(pill, { attributes: true, attributeFilter: ["class"] });
+      });
+      finger("touchStart", spot);
       finger("touchEnd");
-      await away;
-      longPress.dismissed = !pill.classList.contains("visible");
+      await closed;
 
       // Flick toward the wider side: one the desk's edge cuts short is too slow to throw.
       let [x, y] = center();
@@ -560,11 +578,11 @@ test("every Character's sprite fills its picker button the same, whatever paddin
 
 test("on a phone, a long-press opens the pill and pokes nothing, a flick throws, and the wallpaper follows the OS scheme until the switch repaints it", { skip: chromeSkip }, async () => {
   const result = await play([], touches, "390,844");
-  assert.deepEqual(result.errors, [], "the page threw nothing");
+  assert.deepEqual(result.errors, [], "the page threw nothing, and a tap away closed the pill");
   const { after, ...longPress } = result.longPress;
   assert.ok(after >= result.hoverDelayMs && after < result.hoverDelayMs + 500,
     `the pill opened after the app's hover delay, ${result.hoverDelayMs}ms, held still: ${after}ms`);
-  assert.deepEqual(longPress, { poked: 0, open: true, dismissed: true }, "lifting the finger leaves the pill open and pokes nothing; a tap away closes it");
+  assert.deepEqual(longPress, { poked: 0, open: true }, "lifting the finger leaves the pill open and pokes nothing");
   assert.ok(result.thrown, "a moving finger grabbed and threw, with no pill");
   const stripes = "repeating-linear-gradient(45deg, rgb(200, 107, 74) 0px, rgb(200, 107, 74) 18px";
   assert.deepEqual([result.first.wall, result.first.pressed], ["light", ["light"]], "in a light page the desk starts light");

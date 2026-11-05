@@ -1,0 +1,16 @@
+overlay: 1 display(s); sprite 126x128; BMO as BMO
+frame: 1000 Falling pos(80,80) sprite(17,0) fall#0 id
+frame: 2000 Grounded pos(80,400) sprite(17,272) idle#0 id
+menu: possession on
+overlay overlay-0: window focus dnd=off
+frame: 3000 Grounded pos(80,400) sprite(17,272) idle#1 id
+frame: 3100 Grounded pos(100,400) sprite(37,272) walk#0 id
+frame: 3200 Grounded pos(140,400) sprite(77,272) walk#1 id
+frame: 3300 Grounded pos(140,400) sprite(77,272) idle#9 id
+frame: 3400 Grounded pos(140,400) sprite(77,272) idle#9 id
+frame: 3500 Grounded pos(140,400) sprite(77,272) idle#9 id
+frame: 3600 Grounded pos(140,400) sprite(77,272) idle#9 id
+frame: 3700 Grounded pos(140,400) sprite(77,272) idle#9 id
+overlay overlay-0: window blur foreground=false dnd=off
+overlay overlay-0: window focus dnd=off
+possession: escape

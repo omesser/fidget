@@ -52,6 +52,28 @@ pub enum MenuAction {
     Quit,
 }
 
+/// Menu choices that yield the quick-message pill because the frame does not already show them.
+///
+/// Possession, Do Not Disturb, and Go away already change fields the overlay watches.
+pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
+    match action {
+        MenuAction::OpenSettings => Some("settings"),
+        MenuAction::Summon => Some("chat"),
+        MenuAction::OpenMemory => Some("memory"),
+        MenuAction::OpenActionLog => Some("action-log"),
+        MenuAction::ToggleFullscreenHide => Some("fullscreen-hide"),
+        MenuAction::SwitchCharacter(_)
+        | MenuAction::SpawnInstance
+        | MenuAction::ToggleDirector
+        | MenuAction::ToggleDnd
+        | MenuAction::TogglePossession
+        | MenuAction::Hide
+        | MenuAction::BringToThisDisplay
+        | MenuAction::ToggleCaffeinate
+        | MenuAction::Quit => None,
+    }
+}
+
 /// Everything `describe` needs to draw one menu. Tray and sprite build the
 /// same description from this, so a row cannot exist in one and not the other.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -487,6 +509,40 @@ mod tests {
                 enabled: true,
             },
         }
+    }
+
+    #[test]
+    fn chat_memory_settings_the_log_or_fullscreen_hide_yields_the_pill() {
+        assert_eq!(
+            quick_message_aside(&MenuAction::OpenSettings),
+            Some("settings")
+        );
+        assert_eq!(quick_message_aside(&MenuAction::Summon), Some("chat"));
+        assert_eq!(quick_message_aside(&MenuAction::OpenMemory), Some("memory"));
+        assert_eq!(
+            quick_message_aside(&MenuAction::OpenActionLog),
+            Some("action-log")
+        );
+        assert_eq!(
+            quick_message_aside(&MenuAction::ToggleFullscreenHide),
+            Some("fullscreen-hide")
+        );
+    }
+
+    #[test]
+    fn possession_dnd_and_go_away_ride_the_frame_instead() {
+        assert_eq!(quick_message_aside(&MenuAction::TogglePossession), None);
+        assert_eq!(quick_message_aside(&MenuAction::ToggleDnd), None);
+        assert_eq!(quick_message_aside(&MenuAction::Hide), None);
+        assert_eq!(quick_message_aside(&MenuAction::ToggleDirector), None);
+        assert_eq!(quick_message_aside(&MenuAction::ToggleCaffeinate), None);
+        assert_eq!(
+            quick_message_aside(&MenuAction::SwitchCharacter("bmo".to_string())),
+            None
+        );
+        assert_eq!(quick_message_aside(&MenuAction::SpawnInstance), None);
+        assert_eq!(quick_message_aside(&MenuAction::BringToThisDisplay), None);
+        assert_eq!(quick_message_aside(&MenuAction::Quit), None);
     }
 
     /// The description exists so it can cross to the main thread. A compile-time

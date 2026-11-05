@@ -1,4 +1,4 @@
-# Drive one window through UI Automation (dump, size, press/link NAME, click or
+# Use one window through UI Automation (dump, size, press/link NAME, click or
 # menu at -X/-Y, tray ROW). Every command but click and menu wants -ProcessId and
 # -Title; dump prints `role|name`, plus `|x,y,w,h` with `frames`. FromHandle, not
 # RootElement.FindFirst: a desktop-wide search can hang across monitors.
@@ -324,10 +324,27 @@ if ($Command -eq "menu") {
         } else {
             $items | ForEach-Object { Write-Output $_.Current.Name }
         }
-        [FidgetWinEnum]::Escape()
+        # Arg3 is a row to press instead of Escape. possession-live takes Possess
+        # from the same menu control-click-menu reads.
+        if ($Arg3) {
+            $menuRow = Find-MenuRow $pidArg $Arg3
+            if ($null -eq $menuRow) {
+                [FidgetWinEnum]::Escape()
+                Write-Error "the menu has no $Arg3 row"
+                exit 1
+            }
+            [FidgetWinEnum]::SetCursorPos([int](($menuRow.Left + $menuRow.Right) / 2), [int](($menuRow.Top + $menuRow.Bottom) / 2)) | Out-Null
+            [FidgetWinEnum]::Press()
+        } else {
+            [FidgetWinEnum]::Escape()
+        }
         $deadline = [DateTime]::UtcNow.AddSeconds(2)
         while (@(Get-PopupMenuItems -FidgetPid $pidArg).Count -gt 0 -and
             $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) {
+        }
+        if ($Arg3 -and @(Get-PopupMenuItems -FidgetPid $pidArg).Count -gt 0) {
+            Write-Error "$Arg3 did not close the menu"
+            exit 1
         }
     } finally {
         $signal.Dispose()

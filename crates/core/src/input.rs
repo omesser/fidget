@@ -46,8 +46,11 @@ pub struct Pointer {
     /// Secondary button last tick. Menu is the press edge, not held state.
     was_secondary_held: bool,
     /// Where the press began, so travel is measured from it rather than from
-    /// the previous tick — a slow drag never moves far in 16ms.
+    /// the previous tick. A slow drag never moves far in 16ms.
     pressed_at: Point,
+    /// Where the platform saw the button go down, if that was not the cursor
+    /// this tick. Consumed by the press that starts a gesture.
+    press_origin: Option<Point>,
     pressed_ms: u32,
     /// `None` until the first tick. Assuming an origin would make the first
     /// tick's travel the whole cursor position, and a Grab that began inside
@@ -92,6 +95,7 @@ impl Pointer {
             was_held: false,
             was_secondary_held: false,
             pressed_at: Point::default(),
+            press_origin: None,
             pressed_ms: 0,
             cursor: None,
             travel: Point::default(),
@@ -134,6 +138,9 @@ impl Pointer {
 
         let pressed = held && !self.was_held;
         self.was_held = held;
+        // Taken even when this tick does not start a gesture, so a miss
+        // cannot aim the next press.
+        let began = self.press_origin.take();
 
         let secondary_pressed = secondary_held && !self.was_secondary_held;
         self.was_secondary_held = secondary_held;
@@ -149,7 +156,7 @@ impl Pointer {
             // already down when the cursor arrives was never pressed here.
             (Phase::Idle, true) if over_sprite && pressed => {
                 self.phase = Phase::Pressed;
-                self.pressed_at = cursor;
+                self.pressed_at = began.unwrap_or(cursor);
                 self.pressed_ms = 0;
                 Vec::new()
             }
@@ -233,6 +240,12 @@ impl Pointer {
     /// the Instance it landed on, or one press could pick up two Instances.
     pub fn gesturing(&self) -> bool {
         self.phase != Phase::Idle
+    }
+
+    /// Where the button went down, when the platform saw that point and the
+    /// cursor has since moved. The next press measures its travel from here.
+    pub fn began_at(&mut self, at: Point) {
+        self.press_origin = Some(at);
     }
 
     /// Where the press under way landed, or `None` with no press under way.
@@ -401,6 +414,24 @@ mod tests {
         pointer.update(true, false, false, at(120.0, 100.0), TICK);
 
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+    }
+
+    /// The cursor can already be off the sprite when the tick that sees the
+    /// press runs. Travel still starts where the button went down.
+    #[test]
+    fn a_drag_that_finished_before_the_tick_is_a_grab_on_the_next_one() {
+        let mut pointer = Pointer::default();
+        pointer.began_at(at(100.0, 100.0));
+        assert!(
+            pointer
+                .update(true, true, false, at(140.0, 100.0), TICK)
+                .is_empty(),
+            "the press tick records the gesture"
+        );
+        assert_eq!(
+            pointer.update(true, true, false, at(140.0, 100.0), TICK),
+            vec![Verb::Grab]
+        );
     }
 
     #[test]

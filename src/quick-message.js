@@ -192,6 +192,14 @@ export function createQuickMessage({
     return true;
   }
 
+  // `hold` is the Summon rule: a pointer still on the Character must not
+  // reopen the pill. A choice made after the pointer left must not swallow
+  // the next hover.
+  function yieldPill(hold) {
+    if (hold) yielded = true;
+    dismissOpen();
+  }
+
   return {
     get visible() {
       return visible;
@@ -304,8 +312,11 @@ export function createQuickMessage({
     // The overlay lost the keyboard to another window. The same as a drag.
     away: keepTyped,
     summon() {
-      yielded = true;
-      dismissOpen();
+      yieldPill(true);
+    },
+    // The user picked another activity. Hold only while the pointer is still here.
+    aside() {
+      yieldPill(overSprite || overPill);
     },
     submit,
     restore(value) {

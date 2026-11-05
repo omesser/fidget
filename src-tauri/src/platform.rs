@@ -157,6 +157,57 @@ static OVERLAY_RECTS: Mutex<Vec<(String, OverlayRect)>> = Mutex::new(Vec::new())
 /// Empty elsewhere, so every overlay is drawn from the frame it asked for.
 static OVERLAY_ORIGINS: Mutex<Vec<(String, (f64, f64))>> = Mutex::new(Vec::new());
 
+/// Overlays whose page has attached its frame listener. Cleared whenever the
+/// page starts loading again.
+static OVERLAYS_LISTENING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Mark whether `label`'s page hears frames.
+pub fn set_overlay_listening(label: &str, listening: bool) {
+    let Ok(mut all) = OVERLAYS_LISTENING.lock() else {
+        return;
+    };
+    all.retain(|owner| owner != label);
+    if listening {
+        all.push(label.to_string());
+    }
+}
+
+/// How many times each overlay's page has started loading.
+static OVERLAY_PAGE_LOADS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+/// `label`'s page started loading again, so it no longer hears frames. WebView2
+/// can send the first Started after the page already listened, so a listen on
+/// load 0 survives it; a later Started (reload) still clears.
+pub fn overlay_page_load_started(label: &str) {
+    let keep = overlay_page_loads(label) == 0 && overlay_listening(label);
+    if !keep {
+        set_overlay_listening(label, false);
+    }
+    let Ok(mut all) = OVERLAY_PAGE_LOADS.lock() else {
+        return;
+    };
+    match all.iter_mut().find(|(owner, _)| owner == label) {
+        Some((_, loads)) => *loads += 1,
+        None => all.push((label.to_string(), 1)),
+    }
+}
+
+/// How many times `label`'s page has started loading.
+pub fn overlay_page_loads(label: &str) -> u32 {
+    OVERLAY_PAGE_LOADS.lock().map_or(0, |all| {
+        all.iter()
+            .find(|(owner, _)| owner == label)
+            .map_or(0, |(_, loads)| *loads)
+    })
+}
+
+/// Whether `label`'s page hears frames yet.
+pub fn overlay_listening(label: &str) -> bool {
+    OVERLAYS_LISTENING
+        .lock()
+        .is_ok_and(|all| all.iter().any(|owner| owner == label))
+}
+
 /// The window manager reported where `label`'s overlay now is.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn set_overlay_origin(label: &str, origin: (f64, f64)) {
@@ -334,6 +385,9 @@ mod x11;
 
 #[cfg(not(unix))]
 mod windows;
+
+#[cfg(any(test, not(unix)))]
+mod press_origin;
 
 #[cfg(any(test, not(unix)))]
 mod windows_perch;
@@ -911,6 +965,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Click-through for one overlay.
 /// On Windows the tool-window bits are put back after tao's style rewrite,
 /// on the event-loop thread, or that rewrite lands last and clears them.
+#[cfg_attr(all(unix, not(target_os = "macos")), allow(dead_code))]
 pub fn set_overlay_click_through(
     window: &tauri::WebviewWindow,
     ignore: bool,
@@ -1134,18 +1189,31 @@ pub fn buttons_down() -> ButtonsDown {
     x11::buttons_down().unwrap_or(overlay)
 }
 
-/// Where the latest press began, in the cursor's pixels, when the source
-/// knows: XI2 on X11. A press dragged away before the tick is hit-tested here,
-/// not where the tick finds the cursor.
+/// Where the latest XI2 press began, in the cursor's pixels. A drag before
+/// the tick is hit-tested here, not where the tick finds the cursor.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn press_point() -> Option<(i32, i32)> {
     x11::press_point()
 }
 
-/// Elsewhere the tick's cursor stands in for where the press began.
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+/// Consume the low-level hook's recent button-down point. Without one,
+/// the tick's cursor stands in.
+#[cfg(not(unix))]
+pub fn press_point() -> Option<(i32, i32)> {
+    windows::press_point()
+}
+
+/// macOS wakes on the press, so the tick's cursor is still where it began.
+#[cfg(target_os = "macos")]
 pub fn press_point() -> Option<(i32, i32)> {
     None
+}
+
+/// A button edge wakes the Windows idle wait. `None` when the hook will not
+/// install, and the loop keeps sleeping out its back-off.
+#[cfg(not(unix))]
+pub fn spawn_press_listener() -> Option<std::sync::mpsc::Receiver<()>> {
+    windows::spawn_press_listener()
 }
 
 /// Windows: GetAsyncKeyState for both buttons, or the overlay latch. Both

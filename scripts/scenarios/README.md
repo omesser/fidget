@@ -1,6 +1,6 @@
 # Scenarios
 
-End-to-end scenarios that drive the real app and assert on what it shows. Each
+End-to-end scenarios that run the real app and assert on what it shows. Each
 one launches Fidget, so each run is a GUI takeover. Read
 [`docs/agents/gui-takeover.md`](../../docs/agents/gui-takeover.md) before you
 run one: set up, post the prompt, and wait for a go-ahead for that run.
@@ -100,7 +100,7 @@ app log to run only the check, as `fixtures/poke-mid-climb-trace.txt` does in
 `crates/verify`.
 
 `possession-keyup.sh` takes only the app binary and runs no Harness. It
-right-clicks the sprite, presses Possess
+right-drags from the sprite onto the Possess row
 (`scripts/scenarios/helpers/possession-input.swift`), and posts arrow key
 edges. From the frame trace, it checks that a held arrow walks the sprite and
 that its keyup stops it for the next 30 frames. It then holds the arrow, brings
@@ -136,6 +136,10 @@ double-click on: the first-run gesture tour bubble fires 25 s after launch
 unless Chat is open.
 
 ## Windows and X11
+
+`quick-grab.win.ps1` presses on a resting sprite and drags away immediately,
+without waiting for a hit-test flip. It asserts that the recorded press remains
+on the sprite after the cursor leaves and that the gesture becomes a Grab.
 
 `thinking-row`, `chat-header-narrow`, `landing-link-click`,
 `launcher-dies-at-startup`, `sign-in-button`, `question-bubble`,
@@ -199,7 +203,21 @@ trace, as on macOS. `question-bubble` pokes it with a real click and dumps the
 overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
 `control-click-menu` right-clicks the sprite instead. `ax-window-linux.py menu`
 and `ax-window-win.ps1 menu` send that click, print the open menu's items and
-press Escape.
+press Escape. Pass a row name and that row is pressed instead.
+
+`possession-live` opens that same menu and presses Possess. It holds Right and
+Space, clicks a scratch editor, and checks the frame trace: the sprite walked,
+the pause did not launch the held jump, and Escape released possession after
+a click on the paused card. The editor's text has to contain the letter typed
+while the card was paused. The X11 leaf is in `ci/`. The macOS and Windows
+leaves stay in `manual-only/` until they pass an automatic run.
+
+The macOS leaf asserts each step live instead of reading the trace afterwards.
+It right-drags from the sprite onto the Possess row, which it finds through
+Accessibility: on macOS 27 the pop-up menu is not in the window list as a
+Fidget window at layer 100. It types into `helpers/type-target.swift`, a
+window that logs the keys it receives, and after the card click it checks
+that Right walks again.
 
 `poke-mid-climb` clicks the same way as on macOS, from the frame trace and
 the `overlay:` lines, but places the sprite instead of throwing it. It holds
