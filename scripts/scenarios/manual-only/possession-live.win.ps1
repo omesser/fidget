@@ -141,6 +141,22 @@ if ($env:FIDGET_SCENARIO_TRACE -or $env:FIDGET_SCENARIO_LETTER) {
     exit 0
 }
 
+function Get-StillManifest([string[]]$Lines) {
+    $section = ""
+    foreach ($line in $Lines) {
+        if ($line.StartsWith("[")) { $section = $line }
+        if ($line.StartsWith("weight = ") -and $section.StartsWith("[behaviors.") -and ($section -ne "[behaviors.fidget]")) {
+            "weight = 0"
+        } else {
+            $line
+        }
+    }
+}
+if ($env:FIDGET_SCENARIO_STILL_MANIFEST) {
+    Get-StillManifest @(Get-Content -LiteralPath $env:FIDGET_SCENARIO_STILL_MANIFEST)
+    exit 0
+}
+
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
     if ($script:Evidence) { [Console]::Error.WriteLine("evidence in $($script:Evidence)") }
@@ -186,7 +202,16 @@ $env:FIDGET_TRACE_FRAMES = "1"
 $env:FIDGET_TRACE_HITTEST = "1"
 $env:FIDGET_TRACE_BUBBLE = "1"
 $env:FIDGET_CHARACTER = "bmo"
-$env:FIDGET_CHARACTERS = Join-Path $root "characters"
+# The menu click aims at where BMO landed. Greet then patrols, so the stock
+# package is copied with every ambient behavior but fidget held at weight 0.
+$chars = Join-Path $out "characters"
+New-Item -ItemType Directory -Force -Path $chars | Out-Null
+Copy-Item -Recurse (Join-Path (Join-Path $root "characters") "bmo") $chars
+$manifest = Join-Path (Join-Path $chars "bmo") "character.manifest"
+$still = Get-StillManifest @(Get-Content -LiteralPath $manifest)
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllLines($manifest, [string[]]$still, $utf8)
+$env:FIDGET_CHARACTERS = $chars
 
 Add-Type @"
 using System;
