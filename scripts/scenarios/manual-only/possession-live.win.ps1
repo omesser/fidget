@@ -325,7 +325,9 @@ try {
     $script:pad = [IntPtr]$found
     $script:notepad = Get-Process -Id (Owner-Of $script:pad)
     if ($script:notepad.ProcessName -ne "Notepad") {
-        Fail "the $script:docName window belongs to $($script:notepad.ProcessName), not Notepad"
+        $ownerName = $script:notepad.ProcessName
+        $script:notepad = $null
+        Fail "the $script:docName window belongs to $ownerName, not Notepad"
     }
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
@@ -412,9 +414,14 @@ try {
 } finally {
     Release-Keys
     Stop-FidgetTree $script:proc "count=$marksBash"
+    # A title match can belong to some other process. Leave that one alone.
     foreach ($held in @($script:notepad, $script:launched)) {
-        if ($held -and -not $held.HasExited) {
-            Stop-Process -Id $held.Id -Force -ErrorAction SilentlyContinue
-        }
+        if (-not $held) { continue }
+        $alive = $false
+        try { $alive = -not $held.HasExited } catch { continue }
+        if (-not $alive) { continue }
+        $stub = $script:launched -and ($held.Id -eq $script:launched.Id)
+        if (-not $stub -and $held.ProcessName -ne "Notepad") { continue }
+        Stop-Process -Id $held.Id -Force -ErrorAction SilentlyContinue
     }
 }
