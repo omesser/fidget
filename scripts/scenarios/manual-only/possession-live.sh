@@ -17,8 +17,7 @@
 #
 # Usage: possession-live.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
-# FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER check a saved log and the
-# editor text, and skip the GUI.
+# FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER skip the GUI.
 set -euo pipefail
 
 if [ "${1:-}" != --go ]; then
