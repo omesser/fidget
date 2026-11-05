@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: manual-drive (X11)
+# Scenario: possession-live (X11)
 # On screen: launches Fidget as BMO with a fixture Harness, and mousepad on a
 #   scratch file. The scenario opens the sprite's menu, presses Possess, holds
 #   Right and Space, clicks mousepad, clicks the paused card, and presses
@@ -16,7 +16,7 @@
 #   k reaches mousepad; a click on the paused card returns the keyboard; Escape
 #   releases possession. Frame waits go through wait_for_trace.
 #
-# Usage: manual-drive.x11.sh --go <fidget binary> <fidget test binary>
+# Usage: possession-live.x11.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER check a saved log and the
 # editor text, and skip the GUI.
@@ -26,11 +26,11 @@ if [ "${1:-}" != --go ]; then
   sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0" || true
   exit 2
 fi
-bin=${2:?usage: manual-drive.x11.sh --go <fidget binary> <fidget test binary>}
-test_bin=${3:?usage: manual-drive.x11.sh --go <fidget binary> <fidget test binary>}
+bin=${2:?usage: possession-live.x11.sh --go <fidget binary> <fidget test binary>}
+test_bin=${3:?usage: possession-live.x11.sh --go <fidget binary> <fidget test binary>}
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 . "$root/scripts/scenarios/helpers/wait-helpers.x11.sh"
-. "$root/scripts/scenarios/helpers/manual-drive-check.sh"
+. "$root/scripts/scenarios/helpers/possession-live-check.sh"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -44,13 +44,13 @@ if [ -n "${FIDGET_SCENARIO_TRACE:-}" ] || [ -n "${FIDGET_SCENARIO_LETTER:-}" ]; 
   if [ -z "${FIDGET_SCENARIO_TRACE:-}" ] || [ -z "${FIDGET_SCENARIO_LETTER:-}" ]; then
     fail "set both FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER"
   fi
-  check_manual_drive "$FIDGET_SCENARIO_TRACE" "$FIDGET_SCENARIO_LETTER" || exit 1
+  check_possession_live "$FIDGET_SCENARIO_TRACE" "$FIDGET_SCENARIO_LETTER" || exit 1
   echo "PASS: fixture trace"
   exit 0
 fi
 
 if [ -z "${DISPLAY:-}" ]; then
-  echo "SKIP: DISPLAY is unset. X11 manual-drive needs a session, or set FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER." >&2
+  echo "SKIP: DISPLAY is unset. X11 possession-live needs a session, or set FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER." >&2
   exit 2
 fi
 python3 -c 'import pyatspi' > /dev/null 2>&1 || {
@@ -65,11 +65,11 @@ for tool in xdotool mousepad inotifywait xprop stdbuf timeout; do
 done
 
 test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
-out="${TMPDIR:-/tmp}/fidget-scenario-manual-drive-$(date +%Y%m%d-%H%M%S)"
+out="${TMPDIR:-/tmp}/fidget-scenario-possession-live-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out/home/.local/share/fidget" "$out/editor-home"
-log="$out/app.log" marks="$out/harness.log" doc="$out/manual-drive-letter.txt"
+log="$out/app.log" marks="$out/harness.log" doc="$out/possession-live-letter.txt"
 : > "$marks"
-printf 'drive ' > "$doc"
+printf 'mark ' > "$doc"
 cat > "$out/home/.local/share/fidget/settings.json" << 'SETTINGS_EOF'
 {"first_run_tour_shown": true}
 SETTINGS_EOF
@@ -96,7 +96,7 @@ root_prop_matches() { # <property> <ERE>
 }
 HOME="$out/editor-home" mousepad --disable-server "$doc" > "$out/mousepad.log" 2>&1 &
 started+=($!)
-editor_window() { xdotool search --name "manual-drive-letter\\.txt" 2> /dev/null | head -1 | grep .; }
+editor_window() { xdotool search --name "possession-live-letter\\.txt" 2> /dev/null | head -1 | grep .; }
 wait_on_source 3 root_events probe_each_line editor_window || fail "mousepad did not map in 3 s"
 editor=$(editor_window)
 read -r screen_w _ < <(xdotool getdisplaygeometry)
@@ -106,11 +106,11 @@ active_is() { # <window id>
 }
 
 # The editor's text: Ctrl+S, then the save's rename. A keyup that missed the
-# editor would leave "drive " with no k.
+# editor would leave "mark " with no k.
 editor_text() {
   active_is "$editor" || return 1
   local w line
-  exec {w}< <(timeout 3 inotifywait -e moved_to --include '/manual-drive-letter\.txt$' "$(dirname "$doc")" 2>&1)
+  exec {w}< <(timeout 3 inotifywait -e moved_to --include '/possession-live-letter\.txt$' "$(dirname "$doc")" 2>&1)
   while read -r -t 3 line <&"$w" && [ "$line" != "Watches established." ]; do :; done
   [ "$line" = "Watches established." ] || {
     exec {w}<&-
@@ -157,7 +157,7 @@ eval "$(xdotool getwindowgeometry --shell "$editor")"
 xdotool mousemove "$((X + WIDTH / 2))" "$((Y + HEIGHT / 2))" click 1
 wait_for_count 3 "$log" '^overlay [^:]+: window blur' "$blurs" || fail "the overlay never lost focus to mousepad; see $log"
 wait_until 3 sprite_at_rest "$log" || fail "the sprite kept walking after mousepad took focus; see $log"
-check_manual_drive "$log" "$doc" pause || fail "the pause check failed; see $log"
+check_possession_live "$log" "$doc" pause || fail "the pause check failed; see $log"
 release_keys
 
 active_is "$editor" || fail "mousepad did not take focus"
@@ -198,9 +198,9 @@ for wid_text in sys.argv[5:]:
             area = int(r.width) * int(r.height)
             overlaps = not (r.x + r.width <= sx or sx + sw <= r.x or r.y + r.height <= sy or sy + sh <= r.y)
             print(f"window {wid} {name} {r.x},{r.y} {r.width}x{r.height} overlap={overlaps}", file=sys.stderr)
-            # Input stays a dot until the pointer is over the card, so the
-            # drawn shape is where the card actually sits.
-            if kind != 0 or overlaps or area < 400:
+            # The paused card is a clickable hotspot, so it is an input rect
+            # that does not cover the sprite. A 1x1 dot is not that rect.
+            if kind != 2 or overlaps or area < 400:
                 continue
             # The focus button sits in the card's bottom-right corner. The
             # middle of a live card is the key list, which does not take a click.
@@ -220,15 +220,14 @@ card_from_shape "$sx" "$sy" "$w" "$h" "${windows[@]}" > "$out/card-point.txt" 2>
   fail "the input shape has no card; see $out/card-shape.txt"
 read -r card_window card_x card_y < "$out/card-point.txt"
 echo "ok: paused card at ($card_x,$card_y) on window $card_window"
-# A server hit-test misses the card: its input shape stays a dot, so the
-# click is addressed to the overlay window that draws it.
+# The shape already holds the card, so a hit-tested click lands on it.
 focuses=$(line_count "$log" '^overlay [^:]+: window focus')
-xdotool mousemove --window "$card_window" --sync "$card_x" "$card_y" click --window "$card_window" 1
+xdotool mousemove --sync "$card_x" "$card_y" click 1
 wait_for_count 3 "$log" '^overlay [^:]+: window focus' "$focuses" || fail "the card click did not resume; see $log"
 echo "ok: the card click resumed"
 
 xdotool key Escape
 wait_for_trace 3 "$log" '^possession: escape' || fail "Escape did not release possession; see $log"
-check_manual_drive "$log" "$out/letter.txt" || fail "the drive check failed; see $log"
+check_possession_live "$log" "$out/letter.txt" || fail "the possession check failed; see $log"
 
 echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)"

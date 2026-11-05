@@ -962,6 +962,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Click-through for one overlay.
 /// On Windows the tool-window bits are put back after tao's style rewrite,
 /// on the event-loop thread, or that rewrite lands last and clears them.
+#[cfg_attr(all(unix, not(target_os = "macos")), allow(dead_code))]
 pub fn set_overlay_click_through(
     window: &tauri::WebviewWindow,
     ignore: bool,

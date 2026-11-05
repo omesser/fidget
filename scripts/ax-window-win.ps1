@@ -1,4 +1,4 @@
-# Drive one window through UI Automation (dump, size, press/link NAME, click or
+# Use one window through UI Automation (dump, size, press/link NAME, click or
 # menu at -X/-Y, tray ROW). Every command but click and menu wants -ProcessId and
 # -Title; dump prints `role|name`, plus `|x,y,w,h` with `frames`. FromHandle, not
 # RootElement.FindFirst: a desktop-wide search can hang across monitors.
@@ -324,7 +324,7 @@ if ($Command -eq "menu") {
         } else {
             $items | ForEach-Object { Write-Output $_.Current.Name }
         }
-        # Arg3 is a row to press instead of Escape. manual-drive takes Possess
+        # Arg3 is a row to press instead of Escape. possession-live takes Possess
         # from the same menu control-click-menu reads.
         if ($Arg3) {
             $menuRow = Find-MenuRow $pidArg $Arg3

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario: manual-drive (macOS)
+# Scenario: possession-live (macOS)
 # On screen: launches Fidget as BMO with a fixture Harness. TextEdit opens on a
 #   scratch file. The scenario Control-clicks the sprite, presses Possess,
 #   holds Right and Space, clicks TextEdit, clicks the paused card, and presses
@@ -15,7 +15,7 @@
 #   the held Space; k reaches TextEdit; a click on the paused card returns the
 #   keyboard; Escape releases possession. Frame waits go through wait_for_trace.
 #
-# Usage: manual-drive.sh --go <fidget binary> <fidget test binary>
+# Usage: possession-live.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER check a saved log and the
 # editor text, and skip the GUI.
@@ -25,12 +25,12 @@ if [ "${1:-}" != --go ]; then
   sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0" || true
   exit 2
 fi
-bin=${2:?usage: manual-drive.sh --go <fidget binary> <fidget test binary>}
-test_bin=${3:?usage: manual-drive.sh --go <fidget binary> <fidget test binary>}
+bin=${2:?usage: possession-live.sh --go <fidget binary> <fidget test binary>}
+test_bin=${3:?usage: possession-live.sh --go <fidget binary> <fidget test binary>}
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 tools="${TMPDIR:-/tmp}/fidget-scenario-tools"
 . "$root/scripts/scenarios/helpers/wait-helpers.mac.sh"
-. "$root/scripts/scenarios/helpers/manual-drive-check.sh"
+. "$root/scripts/scenarios/helpers/possession-live-check.sh"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -44,19 +44,19 @@ if [ -n "${FIDGET_SCENARIO_TRACE:-}" ] || [ -n "${FIDGET_SCENARIO_LETTER:-}" ]; 
   if [ -z "${FIDGET_SCENARIO_TRACE:-}" ] || [ -z "${FIDGET_SCENARIO_LETTER:-}" ]; then
     fail "set both FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER"
   fi
-  check_manual_drive "$FIDGET_SCENARIO_TRACE" "$FIDGET_SCENARIO_LETTER" || exit 1
+  check_possession_live "$FIDGET_SCENARIO_TRACE" "$FIDGET_SCENARIO_LETTER" || exit 1
   echo "PASS: fixture trace"
   exit 0
 fi
 
 test_bin=$(cd "$(dirname "$test_bin")" && pwd)/$(basename "$test_bin")
-out="${TMPDIR:-/tmp}/fidget-scenario-manual-drive-$(date +%Y%m%d-%H%M%S)"
+out="${TMPDIR:-/tmp}/fidget-scenario-possession-live-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out/home" "$tools"
 seed_tour_shown "$out/home"
 log="$out/app.log" marks="$out/harness.log" doc="$out/letter-doc.txt"
 : > "$marks"
 # A leading word, so TextEdit does not capitalize the letter that proves the hand-off.
-printf 'drive ' > "$doc"
+printf 'mark ' > "$doc"
 
 # Runs a helper, stopping it after <seconds>, so a stuck osascript cannot hang the run.
 capped() { # <seconds> <command...>
@@ -89,7 +89,7 @@ build() { # <source> <name>
   [ "$tools/$2" -nt "$1" ] && return 0
   swiftc -O "$1" -o "$tools/$2.$$" && mv -f "$tools/$2.$$" "$tools/$2"
 }
-build "$root/scripts/scenarios/helpers/manual-drive-mac.swift" manual-drive-mac
+build "$root/scripts/scenarios/helpers/possession-live-mac.swift" possession-live-mac
 build "$root/scripts/scenarios/helpers/possession-input.swift" possession-input
 build "$root/scripts/click-cursor.swift" click-cursor
 [ "$tools/ax" -nt "$root/scripts/ax-settings.swift" ] || swiftc -O "$root/scripts/ax-settings.swift" -o "$tools/ax"
@@ -136,7 +136,7 @@ cx=$((x + w / 2))
 cy=$((y + h / 2))
 echo "ok: sprite at ($x,$y) size ${w}x${h}, centre ($cx,$cy)"
 
-"$tools/manual-drive-mac" possess "$pid" "$cx" "$cy" > "$out/menu.txt" 2>&1 ||
+"$tools/possession-live-mac" possess "$pid" "$cx" "$cy" > "$out/menu.txt" 2>&1 ||
   fail "could not press Possess; see $out/menu.txt"
 wait_for_trace 3 "$log" '^menu: possession on' || fail "the Possess row did not possess the sprite; see $log"
 wait_for_trace 3 "$log" '^overlay [^:]+: window focus' || fail "the possessed overlay never took focus; see $log"
@@ -148,12 +148,12 @@ wait_for_trace 3 "$log" '^frame: .* walk#' || fail "the held Right did not walk 
 
 blurs=$(line_count "$log" '^overlay [^:]+: window blur')
 capped 3 open -a TextEdit "$doc" || fail "could not bring TextEdit forward"
-read -r tx ty tw th < <("$tools/manual-drive-mac" window TextEdit) || fail "TextEdit has no window"
+read -r tx ty tw th < <("$tools/possession-live-mac" window TextEdit) || fail "TextEdit has no window"
 "$tools/click-cursor" "$((tx + tw / 2))" "$((ty + th / 2))" 1 >> "$out/keys.txt" 2>&1 ||
   fail "could not click TextEdit"
 wait_for_count 3 "$log" '^overlay [^:]+: window blur' "$blurs" || fail "the overlay never lost focus to TextEdit; see $log"
 wait_until 3 sprite_at_rest "$log" || fail "the sprite kept walking after TextEdit took focus; see $log"
-check_manual_drive "$log" "$doc" pause || fail "the pause check failed; see $log"
+check_possession_live "$log" "$doc" pause || fail "the pause check failed; see $log"
 release_keys
 
 "$tools/ax" type "$textedit_pid" k >> "$out/keys.txt" 2>&1 || fail "could not type into TextEdit"
@@ -171,6 +171,6 @@ echo "ok: the card click resumed"
 "$tools/possession-input" key 53 down >> "$out/keys.txt" 2>&1 || fail "could not press Escape"
 "$tools/possession-input" key 53 up >> "$out/keys.txt" 2>&1 || fail "could not release Escape"
 wait_for_trace 3 "$log" '^possession: escape' || fail "Escape did not release possession; see $log"
-check_manual_drive "$log" "$out/letter.txt" || fail "the drive check failed; see $log"
+check_possession_live "$log" "$out/letter.txt" || fail "the possession check failed; see $log"
 
 echo "PASS: evidence in $out ($(($(now_ms) - start_ms))ms)"

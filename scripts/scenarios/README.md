@@ -1,6 +1,6 @@
 # Scenarios
 
-End-to-end scenarios that drive the real app and assert on what it shows. Each
+End-to-end scenarios that run the real app and assert on what it shows. Each
 one launches Fidget, so each run is a GUI takeover. Read
 [`docs/agents/gui-takeover.md`](../../docs/agents/gui-takeover.md) before you
 run one: set up, post the prompt, and wait for a go-ahead for that run.
@@ -201,7 +201,7 @@ overlay window, titled `Fidget`. X11 and Windows have no Control-click, so
 and `ax-window-win.ps1 menu` send that click, print the open menu's items and
 press Escape. Pass a row name and that row is pressed instead.
 
-`manual-drive` opens that same menu and presses Possess. It holds Right and
+`possession-live` opens that same menu and presses Possess. It holds Right and
 Space, clicks a scratch editor, and checks the frame trace: the sprite walked,
 the pause did not launch the held jump, and Escape released possession after
 a click on the paused card. The editor's text has to contain the letter typed

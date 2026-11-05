@@ -448,7 +448,7 @@ def activate_menu_item(item):
 
 
 def cmd_menu(argv):
-    # ROW, when given, is pressed instead of Escape. manual-drive takes Possess
+    # ROW, when given, is pressed instead of Escape. possession-live takes Possess
     # from the same open menu control-click-menu reads.
     if len(argv) not in (5, 6):
         print("usage: ax-window-linux.py menu PID X Y [ROW]", file=sys.stderr)

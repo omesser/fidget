@@ -1,4 +1,4 @@
-# Scenario: manual-drive (Windows)
+# Scenario: possession-live (Windows)
 # On screen: launches Fidget as BMO with a fixture Harness. Notepad opens on a
 #   scratch file. The scenario right-clicks the sprite, presses Possess, holds
 #   Right and Space, clicks Notepad, clicks the paused card, and presses
@@ -18,7 +18,7 @@
 # Skips (exit 2) when Notepad is already open, or when a fullscreen window
 #   would take the right-click.
 #
-# Usage: manual-drive.win.ps1 --go <fidget binary> <fidget test binary>
+# Usage: possession-live.win.ps1 --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # Set FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER to check a saved log and
 # the editor text, and skip the GUI.
@@ -42,8 +42,8 @@ function Show-Header {
     $header -join "`n"
 }
 
-# manual-drive-check.sh is the bash copy; keep the messages identical.
-function Test-ManualDrive([string]$TracePath, [string]$LetterPath, [string]$Mode = "done") {
+# possession-live-check.sh is the bash copy; keep the messages identical.
+function Test-PossessionLive([string]$TracePath, [string]$LetterPath, [string]$Mode = "done") {
     $xs = [System.Collections.Generic.List[int]]::new()
     $fall = [System.Collections.Generic.List[bool]]::new()
     $walk = [System.Collections.Generic.List[bool]]::new()
@@ -127,7 +127,7 @@ if ($Go -ne "--go") {
     exit 2
 }
 if (-not $Bin -or -not $TestBin) {
-    Write-Error "usage: manual-drive.win.ps1 --go <fidget binary> <fidget test binary>"
+    Write-Error "usage: possession-live.win.ps1 --go <fidget binary> <fidget test binary>"
     exit 1
 }
 if ($env:FIDGET_SCENARIO_TRACE -or $env:FIDGET_SCENARIO_LETTER) {
@@ -135,7 +135,7 @@ if ($env:FIDGET_SCENARIO_TRACE -or $env:FIDGET_SCENARIO_LETTER) {
         [Console]::Error.WriteLine("FAIL: set both FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER")
         exit 1
     }
-    if (-not (Test-ManualDrive $env:FIDGET_SCENARIO_TRACE $env:FIDGET_SCENARIO_LETTER)) { exit 1 }
+    if (-not (Test-PossessionLive $env:FIDGET_SCENARIO_TRACE $env:FIDGET_SCENARIO_LETTER)) { exit 1 }
     Write-Output "PASS: fixture trace"
     exit 0
 }
@@ -160,15 +160,15 @@ if (@(Get-Process -Name Notepad -ErrorAction SilentlyContinue).Count -gt 0) {
 
 $TestBin = (Resolve-Path -LiteralPath $TestBin).Path
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$out = Join-Path $env:TEMP "fidget-scenario-manual-drive-$stamp"
+$out = Join-Path $env:TEMP "fidget-scenario-possession-live-$stamp"
 $script:Evidence = $out
 $data = Initialize-ScenarioData $out @{ hide_in_fullscreen = $false }
 $log = Join-Path $out "app.log"
 $err = Join-Path $out "app.err"
 $marks = Join-Path $out "harness.log"
-$doc = Join-Path $out "manual-drive-letter.txt"
+$doc = Join-Path $out "possession-live-letter.txt"
 Set-Content -LiteralPath $marks -Value "" -Encoding ascii
-[System.IO.File]::WriteAllText($doc, "drive ")
+[System.IO.File]::WriteAllText($doc, "mark ")
 
 $rootBash = $root -replace '\\', '/'
 $testBinBash = $TestBin -replace '\\', '/'
@@ -189,7 +189,7 @@ $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public static class ManualDriveInput {
+public static class PossessionLiveInput {
     public delegate bool Callback(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(Callback cb, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
@@ -260,10 +260,10 @@ public static class ManualDriveInput {
 "@
 
 function Release-Keys {
-    if (-not ("ManualDriveInput" -as [type])) { return }
+    if (-not ("PossessionLiveInput" -as [type])) { return }
     try {
-        [ManualDriveInput]::Key(0x27, $true)
-        [ManualDriveInput]::Key(0x20, $true)
+        [PossessionLiveInput]::Key(0x27, $true)
+        [PossessionLiveInput]::Key(0x20, $true)
     } catch { }
 }
 
@@ -298,7 +298,7 @@ try {
     $script:notepad = Start-Process -FilePath notepad.exe -ArgumentList $doc -PassThru
     $proc = Start-FidgetPiped $Bin @() $log $err
     $script:proc = $proc
-    if (-not (Wait-Until 3 { [ManualDriveInput]::FindVisible([uint32]$script:notepad.Id) -ne [IntPtr]::Zero })) {
+    if (-not (Wait-Until 3 { [PossessionLiveInput]::FindVisible([uint32]$script:notepad.Id) -ne [IntPtr]::Zero })) {
         Fail "Notepad did not open its window; see $out"
     }
     $traceFile = Join-Path $data "process.log"
@@ -328,40 +328,40 @@ try {
         Fail "the possessed overlay never took the keyboard; see $traceFile"
     }
     Write-Output "ok: possessed, and the overlay has the keyboard"
-    [ManualDriveInput]::Key(0x27, $false)
-    [ManualDriveInput]::Key(0x20, $false)
+    [PossessionLiveInput]::Key(0x27, $false)
+    [PossessionLiveInput]::Key(0x20, $false)
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ frame: .* walk#')) {
         Fail "the held Right did not walk the sprite; see $traceFile"
     }
-    $pad = [ManualDriveInput]::FindVisible([uint32]$script:notepad.Id)
-    $rect = New-Object ManualDriveInput+RECT
-    if ($pad -eq [IntPtr]::Zero -or -not [ManualDriveInput]::GetWindowRect($pad, [ref]$rect)) {
+    $pad = [PossessionLiveInput]::FindVisible([uint32]$script:notepad.Id)
+    $rect = New-Object PossessionLiveInput+RECT
+    if ($pad -eq [IntPtr]::Zero -or -not [PossessionLiveInput]::GetWindowRect($pad, [ref]$rect)) {
         Fail "Notepad has no window to click"
     }
     $blurs = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window blur' }).Count
-    [ManualDriveInput]::SetCursorPos([int](($rect.Left + $rect.Right) / 2), [int](($rect.Top + $rect.Bottom) / 2)) | Out-Null
-    [ManualDriveInput]::Click()
+    [PossessionLiveInput]::SetCursorPos([int](($rect.Left + $rect.Right) / 2), [int](($rect.Top + $rect.Bottom) / 2)) | Out-Null
+    [PossessionLiveInput]::Click()
     if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay [^:]+: window blur' $blurs)) {
         Fail "the overlay never lost focus to Notepad; see $traceFile"
     }
     if (-not (Wait-Until 3 { Get-SpriteAtRest $traceFile })) {
         Fail "the sprite kept walking after Notepad took focus; see $traceFile"
     }
-    if (-not (Test-ManualDrive $traceFile $doc "pause")) { Fail "the pause check failed; see $traceFile" }
+    if (-not (Test-PossessionLive $traceFile $doc "pause")) { Fail "the pause check failed; see $traceFile" }
     Release-Keys
     if (-not (Wait-Until 3 {
-                $front = [ManualDriveInput]::GetForegroundWindow()
+                $front = [PossessionLiveInput]::GetForegroundWindow()
                 $owner = [uint32]0
-                [void][ManualDriveInput]::GetWindowThreadProcessId($front, [ref]$owner)
+                [void][PossessionLiveInput]::GetWindowThreadProcessId($front, [ref]$owner)
                 $owner -eq [uint32]$script:notepad.Id
             })) {
         Fail "Notepad did not take focus"
     }
-    [ManualDriveInput]::Text("k")
-    [ManualDriveInput]::Key(0x11, $false)
-    [ManualDriveInput]::Key(0x53, $false)
-    [ManualDriveInput]::Key(0x53, $true)
-    [ManualDriveInput]::Key(0x11, $true)
+    [PossessionLiveInput]::Text("k")
+    [PossessionLiveInput]::Key(0x11, $false)
+    [PossessionLiveInput]::Key(0x53, $false)
+    [PossessionLiveInput]::Key(0x53, $true)
+    [PossessionLiveInput]::Key(0x11, $true)
     if (-not (Wait-Until 3 { (Read-Shared $doc) -match 'k' })) {
         Fail "the letter did not reach Notepad (it holds $(Read-Shared $doc))"
     }
@@ -372,18 +372,18 @@ try {
     $card = Get-CardCenter $cardFile
     if (-not $card) { Fail "the paused card did not appear; see $cardFile" }
     $focuses = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window focus' }).Count
-    [ManualDriveInput]::SetCursorPos($card.X, $card.Y) | Out-Null
-    [ManualDriveInput]::Click()
+    [PossessionLiveInput]::SetCursorPos($card.X, $card.Y) | Out-Null
+    [PossessionLiveInput]::Click()
     if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay [^:]+: window focus' $focuses)) {
         Fail "the card click did not resume; see $traceFile"
     }
     Write-Output "ok: the card click resumed"
-    [ManualDriveInput]::Key(0x1B, $false)
-    [ManualDriveInput]::Key(0x1B, $true)
+    [PossessionLiveInput]::Key(0x1B, $false)
+    [PossessionLiveInput]::Key(0x1B, $true)
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ possession: escape')) {
         Fail "Escape did not release possession; see $traceFile"
     }
-    if (-not (Test-ManualDrive $traceFile $doc)) { Fail "the drive check failed; see $traceFile" }
+    if (-not (Test-PossessionLive $traceFile $doc)) { Fail "the possession check failed; see $traceFile" }
     Write-Output "PASS: evidence in $out ($((Get-NowMs) - $startMs)ms)"
 } finally {
     Release-Keys

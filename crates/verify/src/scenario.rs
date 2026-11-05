@@ -943,40 +943,40 @@ mod tests {
         fixture_cases("control-click-menu.x11.sh", MENU_GOOD, MENU_CASES);
     }
 
-    const DRIVE_TRACE: &str = "FIDGET_SCENARIO_TRACE";
-    const DRIVE_LETTER: &str = "FIDGET_SCENARIO_LETTER";
-    const DRIVE_GOOD: &[(&str, &str)] = &[
-        (DRIVE_TRACE, "fixtures/manual-drive-trace.txt"),
-        (DRIVE_LETTER, "fixtures/manual-drive-letter.txt"),
+    const LIVE_TRACE: &str = "FIDGET_SCENARIO_TRACE";
+    const LIVE_LETTER: &str = "FIDGET_SCENARIO_LETTER";
+    const LIVE_GOOD: &[(&str, &str)] = &[
+        (LIVE_TRACE, "fixtures/possession-live-trace.txt"),
+        (LIVE_LETTER, "fixtures/possession-live-letter.txt"),
     ];
-    const DRIVE_CASES: &[(&str, Mutate, &str)] = &[
+    const LIVE_CASES: &[(&str, Mutate, &str)] = &[
         (
-            DRIVE_TRACE,
+            LIVE_TRACE,
             |t| drop_lines(t, "menu: possession on"),
             "possession never turned on",
         ),
         (
-            DRIVE_TRACE,
+            LIVE_TRACE,
             |t| drop_lines(t, "possession: escape"),
             "Escape did not release possession",
         ),
         (
-            DRIVE_TRACE,
+            LIVE_TRACE,
             |t| drop_lines(t, "walk#"),
             "the held Right did not walk the sprite",
         ),
         (
-            DRIVE_TRACE,
+            LIVE_TRACE,
             |t| t.replace("frame: 3300 Grounded", "frame: 3300 Falling"),
             "the pause launched a jump",
         ),
         (
-            DRIVE_TRACE,
+            LIVE_TRACE,
             |t| t.replace("idle#9", "walk#9"),
             "the sprite kept walking after the other window took focus",
         ),
         (
-            DRIVE_LETTER,
+            LIVE_LETTER,
             |_| "q\n".into(),
             "the letter did not reach the other window",
         ),
@@ -984,14 +984,14 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn manual_drive_x11_fails_on_each_broken_assertion() {
-        fixture_cases("manual-drive.x11.sh", DRIVE_GOOD, DRIVE_CASES);
+    fn possession_live_x11_fails_on_each_broken_assertion() {
+        fixture_cases("possession-live.x11.sh", LIVE_GOOD, LIVE_CASES);
     }
 
     #[cfg(unix)]
     #[test]
-    fn manual_drive_macos_fails_on_each_broken_assertion() {
-        fixture_cases("manual-drive.sh", DRIVE_GOOD, DRIVE_CASES);
+    fn possession_live_macos_fails_on_each_broken_assertion() {
+        fixture_cases("possession-live.sh", LIVE_GOOD, LIVE_CASES);
     }
 
     #[cfg(windows)]
@@ -1008,8 +1008,8 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn manual_drive_win_fails_on_each_broken_assertion() {
-        fixture_cases("manual-drive.win.ps1", DRIVE_GOOD, DRIVE_CASES);
+    fn possession_live_win_fails_on_each_broken_assertion() {
+        fixture_cases("possession-live.win.ps1", LIVE_GOOD, LIVE_CASES);
     }
 
     #[cfg(unix)]
@@ -1109,7 +1109,7 @@ mod tests {
             "question-bubble.x11.sh",
             "control-click-menu.x11.sh",
             "poke-mid-climb.x11.sh",
-            "manual-drive.x11.sh",
+            "possession-live.x11.sh",
         ] {
             assert_exit(&fixture_run(script, &[]), 2, "DISPLAY is unset");
         }

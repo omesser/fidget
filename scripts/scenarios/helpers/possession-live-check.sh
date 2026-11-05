@@ -27,7 +27,7 @@ card_center() { # <dump>
   ' "$1"
 }
 
-check_manual_drive() { # <trace> <letter file> [pause]
+check_possession_live() { # <trace> <letter file> [pause]
   local trace=$1 letter=$2 mode=${3:-done}
   if ! awk -v mode="$mode" '
     function miss(m) { print m > "/dev/stderr"; exit 1 }

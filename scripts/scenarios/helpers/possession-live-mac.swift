@@ -10,10 +10,10 @@ func fail(_ message: String, _ code: Int32 = 1) -> Never {
 }
 
 let args = CommandLine.arguments
-guard args.count >= 2 else { fail("usage: manual-drive-mac possess|window ...", 2) }
+guard args.count >= 2 else { fail("usage: possession-live-mac possess|window ...", 2) }
 
 if args[1] == "window" {
-    guard args.count == 3 else { fail("usage: manual-drive-mac window <owner>", 2) }
+    guard args.count == 3 else { fail("usage: possession-live-mac window <owner>", 2) }
     let info =
         CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: AnyObject]]
         ?? []
@@ -28,7 +28,7 @@ if args[1] == "window" {
 
 guard args[1] == "possess", args.count == 5, let pid = pid_t(args[2]), let x = Double(args[3]),
     let y = Double(args[4])
-else { fail("usage: manual-drive-mac possess <pid> <x> <y>", 2) }
+else { fail("usage: possession-live-mac possess <pid> <x> <y>", 2) }
 let point = CGPoint(x: x, y: y)
 
 func mouse(_ type: CGEventType) {

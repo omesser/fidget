@@ -2602,7 +2602,12 @@ pub(crate) fn run_frame_loop(
                 })
             });
 
+            // X11 does not read this. Its input shape is the click-through, and
+            // tao's ignore-cursor call would replace that shape with a 1x1 dot.
+            #[cfg_attr(all(unix, not(target_os = "macos")), allow(unused_variables))]
             let ignore = !(presence.visible && (over_sprite || over_control || holding));
+            // macOS and Windows assign this when click-through flips. X11 does not.
+            #[cfg_attr(all(unix, not(target_os = "macos")), allow(unused_mut))]
             let mut flipped = false;
 
             #[cfg(all(unix, not(target_os = "macos")))]
@@ -2773,15 +2778,16 @@ pub(crate) fn run_frame_loop(
 
                 // Click-through is per-window. Every other overlay passes
                 // clicks through, so a click on one display is never swallowed
-                // by a sprite on another.
+                // by a sprite on another. X11 uses the input shape instead.
+                #[cfg(not(all(unix, not(target_os = "macos"))))]
                 let ignore = ignore || on_overlay != Some(index);
 
-                // XShape carves the input region; Tauri must still receive
-                // events. Marshal on the GTK main thread. Only set
-                // ignore-cursor-events false after the mask applies, or the overlay is a click-eater.
+                // XShape is the click-through. tao's ignore-cursor call replaces it
+                // with a 1x1 dot or the whole window, so the mask stays applied
+                // while the overlay is visible and a paused card still takes a click.
                 #[cfg(all(unix, not(target_os = "macos")))]
                 {
-                    if !ignore && presence.visible {
+                    if presence.visible {
                         let sprites_on_overlay = characters_on_display(&placed, *display);
 
                         if !sprites_on_overlay.is_empty() {
@@ -2881,20 +2887,6 @@ pub(crate) fn run_frame_loop(
                                     }
                                 });
                             }
-
-                            if mask_applied
-                                .lock()
-                                .unwrap()
-                                .get(index)
-                                .copied()
-                                .unwrap_or(false)
-                                && ignoring[index] != Some(false)
-                            {
-                                flipped = true;
-                                if platform::set_overlay_click_through(&window, false).is_ok() {
-                                    ignoring[index] = Some(false);
-                                }
-                            }
                         } else {
                             let mask_params: MaskParams = Default::default();
 
@@ -2918,13 +2910,6 @@ pub(crate) fn run_frame_loop(
                                         }
                                     }
                                 });
-                            }
-
-                            if ignoring[index] != Some(true) {
-                                flipped = true;
-                                if platform::set_overlay_click_through(&window, true).is_ok() {
-                                    ignoring[index] = Some(true);
-                                }
                             }
                         }
                     } else {
@@ -2950,13 +2935,6 @@ pub(crate) fn run_frame_loop(
                                     }
                                 }
                             });
-                        }
-
-                        if ignoring[index] != Some(true) {
-                            flipped = true;
-                            if platform::set_overlay_click_through(&window, true).is_ok() {
-                                ignoring[index] = Some(true);
-                            }
                         }
                     }
                 }
