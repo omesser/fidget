@@ -889,6 +889,14 @@ impl Engine {
         self.deferred = None;
     }
 
+    /// A test gap shorter than the loader's 5 second floor. The manifest
+    /// cannot say it. Clears the beat so the next idle rolls this range.
+    pub fn with_idle_gesture_every_s(mut self, range: (u32, u32)) -> Self {
+        self.idle_gesture_every_s = range;
+        self.own_idle = OwnIdle::Off;
+        self
+    }
+
     /// A short range keeps a test from waiting minutes. Clears the rolled limit.
     pub fn with_sleep_after_s(mut self, range: (u32, u32)) -> Self {
         self.set_sleep_after_s(range);

@@ -169,10 +169,17 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             "idle_gesture_every_s" => match inclusive_pair(item) {
-                Some(pair) => declared.idle_gesture_every_s = Some(pair),
+                Some((min, max)) if in_gesture_gap(min) && in_gesture_gap(max) => {
+                    declared.idle_gesture_every_s = Some((min, max));
+                }
+                Some(_) => errors.push(format!(
+                    "idle_gesture_every_s is {}, and must be [min, max] \
+                     in seconds from 5 to 60",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
                 None => errors.push(format!(
                     "idle_gesture_every_s is {}, and must be [min, max] \
-                     in seconds with min <= max",
+                     in seconds from 5 to 60, with min <= max",
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
@@ -510,6 +517,12 @@ fn parse_animation(
         left_of,
         weight,
     })
+}
+
+/// An idle-gesture gap is 5 to 60 seconds. Shorter reads as twitching.
+/// Longer is a Character that never gestures.
+fn in_gesture_gap(seconds: u32) -> bool {
+    (5..=60).contains(&seconds)
 }
 
 /// `[min, max]`, inclusive. A single number or a reversed pair is the

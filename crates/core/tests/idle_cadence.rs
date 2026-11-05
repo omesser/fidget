@@ -29,7 +29,9 @@ fn package(manifest: &str) -> BTreeMap<String, Vec<u8>> {
 /// `every` is `idle_gesture_every_s` when set. `spin_fps` is the gesture's cadence.
 fn character(every: Option<&str>, spin_fps: u32, sway_weight: u32) -> Character {
     let mut manifest = String::from("name = \"Blip\"\n");
-    if let Some(every) = every {
+    // A gap under 5 seconds is a test seam on the Engine, not a manifest.
+    // The loader rejects it.
+    if let Some(every) = every.filter(|line| !line.contains("[1,")) {
         manifest.push_str(every);
         manifest.push('\n');
     }
@@ -67,10 +69,19 @@ fn world(elapsed_ms: u32) -> WorldSnapshot {
 }
 
 fn engine_for(character: &Character, seed: u64) -> Engine {
-    Engine::new(Point { x: 100.0, y: 0.0 })
+    paced(character, seed, None)
+}
+
+/// `every` is a gap the loader would refuse, so the test sets it on the Engine.
+fn paced(character: &Character, seed: u64, every: Option<(u32, u32)>) -> Engine {
+    let engine = Engine::new(Point { x: 100.0, y: 0.0 })
         .with_behaviors(character.behaviors.clone())
         .with_variant_seed(seed)
-        .with_idle_plan(character.idle_plan())
+        .with_idle_plan(character.idle_plan());
+    match every {
+        Some(range) => engine.with_idle_gesture_every_s(range),
+        None => engine,
+    }
 }
 
 fn shown(character: &Character, frame: &fidget_core::engine::Frame) -> (String, usize) {
@@ -137,7 +148,7 @@ fn an_idle_stretch_loops_before_its_first_gesture() {
 #[test]
 fn a_gesture_plays_one_pass_and_the_stretch_returns_to_a_loop() {
     let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
-    let mut engine = engine_for(&character, 1);
+    let mut engine = paced(&character, 1, Some((1, 1)));
     let _ = first_idle(&mut engine);
 
     let mut spin = Vec::new();
@@ -180,8 +191,8 @@ fn a_gesture_plays_one_pass_and_the_stretch_returns_to_a_loop() {
 }
 
 /// Milliseconds from the start of idle until the gesture is on screen.
-fn gap_until_gesture(character: &Character, seed: u64) -> u32 {
-    let mut engine = engine_for(character, seed);
+fn gap_until_gesture(character: &Character, seed: u64, every: Option<(u32, u32)>) -> u32 {
+    let mut engine = paced(character, seed, every);
     let mut held_ms = 0;
     for _ in 0..400 {
         let frame = engine.tick(&world(100));
@@ -200,7 +211,7 @@ fn gap_until_gesture(character: &Character, seed: u64) -> u32 {
 fn a_fixed_gap_holds_the_loop_for_that_long() {
     let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
     assert_eq!(
-        gap_until_gesture(&character, 1),
+        gap_until_gesture(&character, 1, Some((1, 1))),
         1_000,
         "one second of loop before the gesture"
     );
@@ -210,7 +221,7 @@ fn a_fixed_gap_holds_the_loop_for_that_long() {
 fn a_gap_stays_inside_the_declared_range() {
     let character = character(Some("idle_gesture_every_s = [1, 3]"), 1, 0);
     for seed in [1_u64, 2, 9, 40] {
-        let held_ms = gap_until_gesture(&character, seed);
+        let held_ms = gap_until_gesture(&character, seed, Some((1, 3)));
         assert!(
             (1_000..=3_000).contains(&held_ms),
             "seed {seed} waited {held_ms}ms, outside 1 to 3 seconds"
@@ -222,7 +233,7 @@ fn a_gap_stays_inside_the_declared_range() {
 fn the_default_gap_stays_inside_ten_to_thirty_seconds() {
     let character = character(None, 1, 0);
     for seed in [1_u64, 4, 11] {
-        let held_ms = gap_until_gesture(&character, seed);
+        let held_ms = gap_until_gesture(&character, seed, None);
         assert!(
             (10_000..=30_000).contains(&held_ms),
             "seed {seed} waited {held_ms}ms, outside the default"
@@ -234,7 +245,7 @@ fn the_default_gap_stays_inside_ten_to_thirty_seconds() {
 fn the_same_seed_loops_and_gestures_alike() {
     let beats = |seed: u64| {
         let character = character(Some("idle_gesture_every_s = [1, 3]"), 1, 1);
-        let mut engine = engine_for(&character, seed);
+        let mut engine = paced(&character, seed, Some((1, 3)));
         let frame = first_idle(&mut engine);
         let mut drawn = vec![shown(&character, &frame)];
         for _ in 0..40 {
@@ -253,7 +264,7 @@ fn the_same_seed_loops_and_gestures_alike() {
 
 #[test]
 fn no_gestures_do_not_burn_the_seed() {
-    let mut manifest = String::from("name = \"Blip\"\nidle_gesture_every_s = [1, 3]\n");
+    let mut manifest = String::from("name = \"Blip\"\n");
     for name in REQUIRED_ANIMATIONS {
         let weight = if name == "idle" { "weight = 1\n" } else { "" };
         manifest.push_str(&format!(
@@ -307,7 +318,8 @@ fn a_proposal_during_a_gesture_plays_when_the_pass_ends() {
     let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
         .with_behaviors(behaviors)
         .with_variant_seed(1)
-        .with_idle_plan(character.idle_plan());
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
     let _ = first_idle(&mut engine);
 
     let mut proposed = false;
@@ -342,7 +354,8 @@ fn a_poke_during_a_gesture_still_wins() {
     let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
         .with_behaviors(behaviors)
         .with_variant_seed(1)
-        .with_idle_plan(character.idle_plan());
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
     let _ = first_idle(&mut engine);
     let mut saw_spin = false;
     for _ in 0..40 {
@@ -395,7 +408,7 @@ fn perched_idle_uses_the_same_loop_and_gesture() {
         }],
         ..world(100)
     };
-    let mut engine = engine_for(&character, 1);
+    let mut engine = paced(&character, 1, Some((1, 1)));
     let mut saw_sit = false;
     let mut saw_loop = false;
     let mut saw_gesture = false;
@@ -430,7 +443,8 @@ fn a_behaviors_idle_loops_the_loop_ring_only() {
             behavior(vec![Primitive::Idle], false),
         )]))
         .with_variant_seed(1)
-        .with_idle_plan(character.idle_plan());
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
     let _ = first_idle(&mut engine);
     engine.tick(&propose("ponder"));
 
@@ -471,7 +485,8 @@ fn an_idle_typed_behavior_uses_the_loop_and_gesture_machine() {
     let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
         .with_behaviors(behaviors)
         .with_variant_seed(1)
-        .with_idle_plan(character.idle_plan());
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
     let _ = first_idle(&mut engine);
     engine.tick(&propose("linger"));
     let started = engine.tick(&propose("muse"));
@@ -618,7 +633,10 @@ fn a_long_dwell_resets_sleep_without_replacing_the_short_dwell() {
 #[test]
 fn an_idle_gesture_finishes_before_sleep() {
     let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
-    let mut engine = rested(&character, 1);
+    let mut engine = paced(&character, 1, Some((1, 1)));
+    let _ = first_idle(&mut engine);
+    engine.set_sleep_after_s((1, 1));
+    engine.set_sleep_for_s((1, 1));
     let mut saw_second = false;
     let mut asleep_after = false;
     for _ in 0..50 {
@@ -663,6 +681,22 @@ fn manifest_naming(tail_for: &str, tail: &str) -> String {
         ));
     }
     manifest
+}
+
+#[test]
+fn a_gap_outside_five_to_sixty_seconds_is_rejected_by_name() {
+    for written in ["[4, 10]", "[1, 1]", "[10, 61]", "[60, 90]"] {
+        let errors = load(&package(&format!(
+            "name = \"Blip\"\nidle_gesture_every_s = {written}\n"
+        )))
+        .expect_err("outside 5 to 60");
+        assert!(
+            errors.iter().any(|error| {
+                error.contains("idle_gesture_every_s") && error.contains("5 to 60")
+            }),
+            "{written}: {errors:?}"
+        );
+    }
 }
 
 #[test]

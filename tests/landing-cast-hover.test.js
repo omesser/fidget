@@ -127,7 +127,9 @@ test("a hovered cast card plays its gesture, links its gallery section, and rest
     const id = card.href.replace(/^characters\.html#/, "");
     assert.notEqual(id, card.href, `${name} links ${card.href}`);
     assert.ok(gallery.ids.includes(id), `${name} links #${id}, which the gallery lacks`);
-    assert.match(card.after, /^idle-0\.png$/, `${name} did not rest again from its first idle after the mouse left`);
+    // Jotaro's idle loop is the waiting strip, so rest is waiting-0, not idle-0.
+    const first = name === "Jotaro Kujo" ? "waiting-0.png" : "idle-0.png";
+    assert.equal(card.after, first, `${name} did not rest on the first frame of its idle loop`);
   }
   assert.deepEqual(cards["Rubber Duck"], { href: "characters.html#rubber-duck", resting: true,
     hovered: "wave-0.png", after: "idle-0.png" });
