@@ -504,6 +504,155 @@ fn an_idle_typed_behavior_uses_the_loop_and_gesture_machine() {
     );
 }
 
+fn rested(character: &Character, seed: u64) -> Engine {
+    let mut engine = engine_for(character, seed);
+    let _ = first_idle(&mut engine);
+    engine.set_sleep_after_s((1, 1));
+    engine.set_sleep_for_s((1, 1));
+    engine
+}
+
+#[test]
+fn sleep_waits_until_the_behavior_ends() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut behaviors = character.behaviors.clone();
+    behaviors.insert(
+        "ponder".to_string(),
+        behavior(vec![Primitive::Idle; 3], false),
+    );
+    let mut engine = rested(&character, 1).with_behaviors(behaviors);
+    engine.tick(&propose("ponder"));
+
+    let mut during = false;
+    let mut asleep_after = false;
+    for _ in 0..40 {
+        let frame = engine.tick(&world(100));
+        if frame.playing_behavior.as_deref() == Some("ponder") {
+            assert_ne!(frame.state, State::Asleep, "the behavior finishes first");
+            during = true;
+        } else if during {
+            assert_eq!(frame.state, State::Asleep, "then it sleeps");
+            asleep_after = true;
+            break;
+        }
+    }
+    assert!(
+        during && asleep_after,
+        "the behavior ran and sleep followed it"
+    );
+}
+
+#[test]
+fn a_proposal_does_not_reset_sleep_and_a_poke_does() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut behaviors = character.behaviors.clone();
+    behaviors.insert("wave".to_string(), behavior(vec![Primitive::Talk], false));
+
+    let mut engine = rested(&character, 1).with_behaviors(behaviors);
+    engine.tick(&world(500));
+    engine.tick(&propose("wave"));
+    let mut asleep = false;
+    for _ in 0..20 {
+        let frame = engine.tick(&world(100));
+        if frame.state == State::Asleep {
+            asleep = true;
+            break;
+        }
+    }
+    assert!(asleep, "the line did not put the clock back");
+
+    let mut engine = rested(&character, 1);
+    engine.tick(&world(500));
+    engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..world(100)
+    });
+    let later = engine.tick(&world(500));
+    assert_ne!(later.state, State::Asleep, "a poke starts the clock over");
+}
+
+#[test]
+fn a_chat_line_resets_sleep() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut engine = rested(&character, 1);
+    engine.tick(&world(500));
+    engine.tick(&WorldSnapshot {
+        chat: true,
+        ..world(100)
+    });
+    let later = engine.tick(&world(500));
+    assert_ne!(
+        later.state,
+        State::Asleep,
+        "a line to the AI starts the clock over"
+    );
+}
+
+#[test]
+fn a_long_dwell_resets_sleep_without_replacing_the_short_dwell() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut engine = rested(&character, 1);
+    let at = engine.tick(&world(100)).position;
+    let on_sprite = |elapsed| WorldSnapshot {
+        cursor: at,
+        elapsed_ms: elapsed,
+        ..world(elapsed)
+    };
+    let noticed = engine.tick(&on_sprite(500));
+    assert!(
+        noticed.addressed,
+        "the 400ms dwell still addresses the Director"
+    );
+    assert_ne!(noticed.state, State::Asleep);
+
+    engine.tick(&on_sprite(10_000));
+    let later = engine.tick(&world(500));
+    assert_ne!(
+        later.state,
+        State::Asleep,
+        "ten seconds on the sprite starts the clock over"
+    );
+}
+
+#[test]
+fn an_idle_gesture_finishes_before_sleep() {
+    let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
+    let mut engine = rested(&character, 1);
+    let mut saw_second = false;
+    let mut asleep_after = false;
+    for _ in 0..50 {
+        let frame = engine.tick(&world(100));
+        if shown(&character, &frame).0 == "spin" {
+            assert_ne!(frame.state, State::Asleep, "the pass is not cut");
+            if shown(&character, &frame).1 == 1 {
+                saw_second = true;
+            }
+        } else if saw_second && frame.state == State::Asleep {
+            asleep_after = true;
+            break;
+        }
+    }
+    assert!(
+        saw_second && asleep_after,
+        "the pass played out, then sleep"
+    );
+}
+
+#[test]
+fn waking_returns_to_an_idle_loop() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut engine = rested(&character, 1);
+    assert_eq!(engine.tick(&world(1_000)).state, State::Asleep);
+    let woken = engine.tick(&world(1_000));
+    assert_eq!(woken.state, State::Grounded, "the sleep timer woke it");
+    assert!(
+        matches!(woken.idle_beat, Some(IdleBeat::Loop(_))),
+        "it wakes into a loop: {:?}",
+        woken.idle_beat
+    );
+    assert_ne!(shown(&character, &woken).0, "spin");
+}
+
 fn manifest_naming(tail_for: &str, tail: &str) -> String {
     let mut manifest = String::from("name = \"Blip\"\n");
     for name in REQUIRED_ANIMATIONS {

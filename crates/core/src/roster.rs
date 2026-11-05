@@ -173,6 +173,11 @@ impl Instance {
         self.engine.stand_at(feet);
     }
 
+    /// A short range so a test can reach sleep without waiting minutes.
+    pub fn set_sleep_after_s(&mut self, range: (u32, u32)) {
+        self.engine.set_sleep_after_s(range);
+    }
+
     /// Switch this Instance to another Character without moving it.
     pub fn retarget(&mut self, character: &Character) {
         self.character_name = character.name.clone();
@@ -499,6 +504,7 @@ mod tests {
             elapsed_ms: 16,
             proposal: None,
             poll_generation: 0,
+            chat: false,
             composing: false,
             locomotion_frozen: false,
             possession: Default::default(),

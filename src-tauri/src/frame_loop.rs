@@ -1398,6 +1398,7 @@ pub(crate) fn run_frame_loop(
                 }
                 live.addressed = true;
                 live.happened = Happened::Chat(line.text);
+                live.chat_said = true;
             }
 
             // A `tools/call` from the attached Harness, here because the `Roster` and
@@ -2079,6 +2080,7 @@ pub(crate) fn run_frame_loop(
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);
                 world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
+                world.chat = std::mem::take(&mut live.chat_said);
                 let ending = match session
                     .as_mut()
                     .filter(|session| session.instance == live.id)
@@ -2198,10 +2200,12 @@ pub(crate) fn run_frame_loop(
                         false
                     };
 
-                // idle_ms accrues when Grounded/Perched but not Asleep.
-                // Keep Active while accruing so sleep-after happens on time.
-                let needs_active_for_sleep_accrual =
-                    matches!(frame.state, State::Grounded | State::Perched);
+                // The awake clock and the sleep timer both run on ticks, so a
+                // sprite left alone still reaches sleep and wakes from it.
+                let needs_active_for_sleep_accrual = matches!(
+                    frame.state,
+                    State::Grounded | State::Perched | State::Asleep
+                );
 
                 any_moving |= scheduler::moving(&frame);
                 // Windows hears button edges, not motion, so a press that is
@@ -4115,6 +4119,7 @@ mod tests {
             since_proactive: Duration::ZERO,
             previous_idle: Duration::MAX,
             chat_turn: false,
+            chat_said: false,
             happened_last: None,
             since_state: Duration::ZERO,
             last_state: None,

@@ -444,6 +444,9 @@ struct InstanceState {
     /// told when newest-wins throws that answer away (ADR-0016). `Slots` knows
     /// only that a call is out, and the wake clears `happened` as it sends.
     chat_turn: bool,
+    /// A line the user sent this tick. Taken into the Engine's snapshot so a
+    /// chat resets sleep, then cleared. The chat channel is the signal.
+    chat_said: bool,
     /// The `Happened` that drove the last session wake, as `happened_cell`
     /// names it. `None` until one has: nothing has been asked here yet.
     happened_last: Option<&'static str>,
@@ -4484,6 +4487,7 @@ fn spawn_live(
         addressed: false,
         happened: Happened::Proactive,
         chat_turn: false,
+        chat_said: false,
         pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
         spoken: None,
         speech: SpeechBubble::default(),
@@ -4845,6 +4849,7 @@ fn spawn_instances(
             addressed: false,
             happened: Happened::Proactive,
             chat_turn: false,
+            chat_said: false,
             pointer: Pointer::with_double_click_ms(platform::double_click_interval_ms()),
             spoken: None,
             speech: SpeechBubble::default(),

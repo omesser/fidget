@@ -7,7 +7,7 @@
 
 use crate::character::{
     animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan,
-    Primitive, RingChoice, DEFAULT_GESTURE_EVERY_S,
+    Primitive, RingChoice, DEFAULT_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S,
 };
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
@@ -205,6 +205,9 @@ pub struct WorldSnapshot {
     /// A speech bubble or the quick-message pill is showing. Walk and chase
     /// stop and none starts; a sprite on its feet draws `talk` meanwhile.
     pub locomotion_frozen: bool,
+    /// The user sent a line to the AI this tick. Not a sixth verb: the Shell
+    /// already hears that line on the chat channel and sets this for one tick.
+    pub chat: bool,
     /// What the keys ask of a possessed sprite this tick. Read only while
     /// possessed; the default asks for nothing.
     pub possession: Intent,
@@ -300,10 +303,10 @@ const PRIMITIVE_MS: u32 = 600;
 /// a click ever feeling like a freeze.
 const POKE_COOLDOWN_MS: u32 = 2_500;
 
-/// How long a resting, untouched sprite waits before it goes to sleep. A tuning
-/// knob: long enough not to nod off mid-chat, short enough that a sprite
-/// on an unattended desktop settles down.
-const SLEEP_AFTER_MS: u32 = 60_000;
+/// How long the cursor rests inside the dwell radius before that counts as
+/// the user staying, and resets sleep. Longer than `DWELL_MS`, which only
+/// addresses the Director.
+const SLEEP_DWELL_MS: u32 = 10_000;
 
 /// How long a sprite rests on a Perch before leaving sit and idling in place.
 /// Long enough to read as settling, short of nodding off. It bounds how much of
@@ -408,6 +411,13 @@ pub struct Engine {
     idle_gestures: Vec<IdleMember>,
     /// Inclusive seconds. Rolled into milliseconds when a loop starts.
     gesture_every_s: (u32, u32),
+    /// Inclusive seconds before sleep, and asleep. Rolled per stretch.
+    sleep_after_s: (u32, u32),
+    sleep_for_s: (u32, u32),
+    /// The rolled awake limit for this stretch. `None` until the first check.
+    sleep_after_ms: Option<u32>,
+    /// Milliseconds of sleep left. Rolled when the sprite nods off.
+    asleep_left_ms: u32,
     own_idle: OwnIdle,
     /// A proposal that arrived during an idle-gesture. Applied when the pass
     /// ends. A user interaction clears it.
@@ -760,6 +770,10 @@ impl Engine {
             idle_loops: Vec::new(),
             idle_gestures: Vec::new(),
             gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            sleep_after_ms: None,
+            asleep_left_ms: 0,
             own_idle: OwnIdle::Off,
             deferred: None,
             latched_behavior: None,
@@ -861,10 +875,35 @@ impl Engine {
 
     pub fn set_idle_plan(&mut self, plan: IdlePlan) {
         self.gesture_every_s = plan.gesture_every_s;
+        self.sleep_after_s = plan.sleep_after_s;
+        self.sleep_for_s = plan.sleep_for_s;
+        self.sleep_after_ms = None;
         self.idle_loops = plan.loops;
         self.idle_gestures = plan.gestures;
         self.own_idle = OwnIdle::Off;
         self.deferred = None;
+    }
+
+    /// A short range keeps a test from waiting minutes. Clears the rolled limit.
+    pub fn with_sleep_after_s(mut self, range: (u32, u32)) -> Self {
+        self.set_sleep_after_s(range);
+        self
+    }
+
+    pub fn set_sleep_after_s(&mut self, range: (u32, u32)) {
+        self.sleep_after_s = range;
+        self.sleep_after_ms = None;
+        // The accrued stretch belonged to the previous range.
+        self.idle_ms = 0;
+    }
+
+    pub fn with_sleep_for_s(mut self, range: (u32, u32)) -> Self {
+        self.set_sleep_for_s(range);
+        self
+    }
+
+    pub fn set_sleep_for_s(&mut self, range: (u32, u32)) {
+        self.sleep_for_s = range;
     }
 
     /// Inclusive seconds, as milliseconds. A fixed `[n, n]` is exactly `n`.
@@ -878,6 +917,66 @@ impl Engine {
             min + (self.variants.draw() % (span + 1)) as u32
         };
         seconds.saturating_mul(1000)
+    }
+
+    /// The rolled awake limit for this stretch.
+    fn sleep_limit_ms(&mut self) -> u32 {
+        if let Some(limit) = self.sleep_after_ms {
+            return limit;
+        }
+        let limit = self.roll_seconds(self.sleep_after_s);
+        self.sleep_after_ms = Some(limit);
+        limit
+    }
+
+    /// True when this tick finishes the sleep the sprite is already in.
+    fn count_sleep(&mut self, elapsed: u32) -> bool {
+        if self.state != State::Asleep {
+            return false;
+        }
+        self.asleep_left_ms = self.asleep_left_ms.saturating_sub(elapsed);
+        self.asleep_left_ms == 0
+    }
+
+    /// The cursor has stayed inside the dwell radius long enough to count as
+    /// the user remaining, which is past the Director's 400ms dwell.
+    fn long_dwell(&self, snapshot: &WorldSnapshot) -> bool {
+        if self.possessed {
+            return false;
+        }
+        let distance =
+            (snapshot.cursor.x - self.position.x).hypot(snapshot.cursor.y - self.position.y);
+        distance < DWELL_RADIUS
+            && self.cursor_dwell_ms.saturating_add(snapshot.elapsed_ms) >= SLEEP_DWELL_MS
+    }
+
+    /// A poke, drag, grab, summon, chat line, possession, or a long dwell.
+    /// A proposal, a Behavior, and a menu do not.
+    fn resets_sleep(&self, snapshot: &WorldSnapshot, long_dwell: bool) -> bool {
+        long_dwell
+            || snapshot.chat
+            || self.possessed
+            || snapshot.verbs.iter().any(|verb| {
+                matches!(
+                    verb,
+                    Verb::Poke | Verb::Grab | Verb::Summon | Verb::Throw { .. }
+                )
+            })
+    }
+
+    /// The awake clock has run out, the sprite is still, and nothing is left
+    /// to finish: no Behavior on screen and no idle-gesture pass.
+    fn ready_to_sleep(&mut self) -> bool {
+        if self.velocity.x != 0.0 || !self.playing.is_empty() {
+            return false;
+        }
+        if matches!(self.own_idle, OwnIdle::Gesture { .. }) {
+            return false;
+        }
+        if !matches!(self.state, State::Grounded | State::Perched) {
+            return false;
+        }
+        self.idle_ms >= self.sleep_limit_ms()
     }
 
     /// Index into `weights`. An empty list is nothing to pick. A list whose
@@ -1127,6 +1226,7 @@ impl Engine {
         self.own_idle = OwnIdle::Off;
         self.deferred = None;
         self.idle_ms = 0;
+        self.sleep_after_ms = None;
         self.perched_rest_ms = 0;
         self.stop_playing();
         self.end_move(self.state);
@@ -1157,19 +1257,16 @@ impl Engine {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
         self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
 
-        // Idling is resting untouched. Time spent in the air or in someone's
-        // hand does not count towards nodding off, nor does being possessed.
-        if self.possessed {
+        // Awake time counts on the ground only. Air and a hand pause the
+        // clock. A user reaching for the sprite, or the sleep timer ending,
+        // starts it over.
+        let long_dwell = self.long_dwell(snapshot);
+        let timed_wake = self.count_sleep(snapshot.elapsed_ms);
+        if self.resets_sleep(snapshot, long_dwell) || timed_wake {
             self.idle_ms = 0;
-        } else if snapshot.verbs.is_empty() {
-            self.idle_ms = match self.state {
-                State::Grounded | State::Perched | State::Asleep => {
-                    self.idle_ms.saturating_add(snapshot.elapsed_ms)
-                }
-                _ => 0,
-            };
-        } else {
-            self.idle_ms = 0;
+            self.sleep_after_ms = None;
+        } else if matches!(self.state, State::Grounded | State::Perched) {
+            self.idle_ms = self.idle_ms.saturating_add(snapshot.elapsed_ms);
         }
 
         let quietly_resting_perched = matches!(self.state, State::Perched)
@@ -1181,13 +1278,6 @@ impl Engine {
             self.perched_rest_ms = self.perched_rest_ms.saturating_add(snapshot.elapsed_ms);
         } else {
             self.perched_rest_ms = 0;
-        }
-
-        // A proposal holds off sleep but wakes nobody; only a verb does. Reset
-        // here, before the Behavior plays at tick's end, or a sprite nodding
-        // off first is asleep at the gate. Under DND a proposal does not count.
-        if snapshot.proposal.is_some() && !self.do_not_disturb {
-            self.idle_ms = 0;
         }
 
         // Chase times out on wall time, not Primitive turns, so the clock
@@ -1203,8 +1293,8 @@ impl Engine {
 
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
-        let (state, woke, dragged) =
-            transition::on_verbs(self.state, &snapshot.verbs, self.possessed);
+        let wake = timed_wake || self.resets_sleep(snapshot, long_dwell);
+        let (state, woke, dragged) = transition::on_verbs(self.state, &snapshot.verbs, wake);
 
         // A grab or a release ends the cooldown, or it would refuse the first
         // walk after landing. A fall the world causes clears it a tick late, at
@@ -1366,11 +1456,10 @@ impl Engine {
 
         let contact = self.integrate(state, dt, snapshot);
 
-        // Still moving is still awake. A walk proposed just before the timer
-        // comes due would otherwise leave the sprite gliding along the edge
-        // playing `sleep`.
-        let rested = self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0;
-        self.state = transition::on_contact(state, contact, rested);
+        // Sleep waits until after a proposal: one that starts this tick is a
+        // Behavior to finish, not a pose to cut. Physics settles the footing
+        // first, with `rested` false.
+        self.state = transition::on_contact(state, contact, false);
         self.steering = self.possessed
             && self.state == State::Falling
             && (self.steering || matches!(state, State::Grounded | State::Perched));
@@ -1472,7 +1561,6 @@ impl Engine {
         // as landing. Holding on is not resting, so an Asleep sprite that
         // has to ride wakes rather than sleeping through the move.
         if self.riding {
-            self.idle_ms = 0;
             self.state = State::Perched;
             if self.on_screen() != Some(Primitive::Hold) {
                 started |= self.play(&[Primitive::Hold]);
@@ -1549,7 +1637,6 @@ impl Engine {
                 if let Some(moment) = self.moment_queue.pop_front() {
                     if self.play(&[moment.primitive()]) {
                         started = true;
-                        self.idle_ms = 0;
                     } else {
                         self.moment_queue.push_front(moment);
                     }
@@ -1600,6 +1687,16 @@ impl Engine {
             .or(digit_started.then_some(Cue::Poke))
             .or_else(|| self.possession_cue.take());
         self.menu_held = menu_now;
+
+        // Nothing left on screen, and the awake clock has run out. An
+        // idle-gesture still in its pass waits until the pass ends.
+        let was_asleep = self.state == State::Asleep;
+        if self.ready_to_sleep() {
+            self.state = State::Asleep;
+        }
+        if self.state == State::Asleep && !was_asleep {
+            self.asleep_left_ms = self.roll_seconds(self.sleep_for_s);
+        }
 
         // A Behavior is drawn over whatever the sprite is doing, so a Poke
         // shows even mid-fall. It changes nothing about where the sprite is.
@@ -2499,7 +2596,9 @@ mod tests {
     }
 
     fn play(script: &[WorldSnapshot]) -> Vec<Frame> {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+            .with_sleep_after_s((1, 1))
+            .with_sleep_for_s((600, 600));
         script.iter().map(|s| engine.tick(s)).collect()
     }
 
@@ -2855,8 +2954,8 @@ mod tests {
     /// than a fall. `settle` opens on `sit`, which neither draws.
     #[test]
     fn a_behavior_that_settles_is_refused_asleep_and_mid_climb() {
-        let mut engine = a_resting_sprite();
-        assert_eq!(engine.tick(&snapshot(60_000)).state, State::Asleep);
+        let mut engine = a_resting_sprite().with_sleep_after_s((1, 1));
+        assert_eq!(engine.tick(&snapshot(1_000)).state, State::Asleep);
 
         let asleep = engine.tick(&proposing("settle"));
         assert_eq!(asleep.state, State::Asleep);
@@ -3492,7 +3591,9 @@ mod tests {
         ] {
             // Replay the day only as far as the first tick in this State, so
             // the Grab lands on a sprite that is genuinely in it.
-            let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+            let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+                .with_sleep_after_s((1, 1))
+                .with_sleep_for_s((600, 600));
             assert!(
                 day.iter().any(|s| engine.tick(s).state == state),
                 "{state:?} is never reached, so the Grab is untested from it"
@@ -3516,18 +3617,18 @@ mod tests {
         }
     }
 
-    /// Summon opens the chat surface and Menu opens the tray's menu; neither
-    /// moves the sprite. They are still the user reaching for it, so a sleeping
-    /// one wakes, and the Director hears it.
+    /// Summon opens chat and Menu opens the tray. Neither moves the sprite.
+    /// Summon wakes a sleeper. Menu does not. Both address the Director.
     #[test]
-    fn a_summon_or_a_menu_wakes_the_sprite_and_addresses_the_director() {
+    fn a_summon_wakes_a_sleeper_and_a_menu_does_not() {
         for verb in [Verb::Summon, Verb::Menu] {
             let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
             let resting = settle(&mut engine, &snapshot(100));
             assert_eq!(resting.state, State::Grounded);
+            engine.set_sleep_after_s((1, 1));
+            engine.set_sleep_for_s((600, 600));
 
-            // A full minute of nobody touching it.
-            assert_eq!(engine.tick(&snapshot(60_000)).state, State::Asleep);
+            assert_eq!(engine.tick(&snapshot(1_000)).state, State::Asleep);
 
             let addressed = engine.tick(&WorldSnapshot {
                 cursor: Point { x: 900.0, y: 700.0 },
@@ -3535,7 +3636,8 @@ mod tests {
                 ..snapshot(100)
             });
 
-            assert_eq!(addressed.state, State::Grounded, "awake, after {verb:?}");
+            let awake = verb == Verb::Summon;
+            assert_eq!(addressed.state == State::Grounded, awake, "after {verb:?}");
             assert_eq!(
                 addressed.position, resting.position,
                 "{verb:?} does not walk the sprite to the cursor"
@@ -4619,10 +4721,12 @@ mod tests {
         };
         let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
         assert_eq!(settle(&mut engine, &resting).state, State::Perched);
+        engine.set_sleep_after_s((1, 1));
+        engine.set_sleep_for_s((600, 600));
         assert_eq!(
             engine
                 .tick(&WorldSnapshot {
-                    elapsed_ms: 60_000,
+                    elapsed_ms: 1_000,
                     ..resting
                 })
                 .state,
@@ -5043,9 +5147,9 @@ mod tests {
     fn a_sprite_left_alone_falls_asleep_and_a_poke_wakes_it() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
         assert_eq!(settle(&mut engine, &snapshot(100)).state, State::Grounded);
+        engine.set_sleep_after_s((1, 1));
 
-        // A full minute of nobody touching it.
-        let asleep = engine.tick(&snapshot(60_000));
+        let asleep = engine.tick(&snapshot(1_000));
         assert_eq!(asleep.state, State::Asleep);
 
         let woken = engine.tick(&WorldSnapshot {
@@ -5326,8 +5430,8 @@ mod tests {
     /// standing on the floor whether it is in mid-air.
     #[test]
     fn a_proposal_is_gated_on_the_state_the_tick_ends_in() {
-        let mut engine = a_resting_sprite();
-        assert_eq!(engine.tick(&snapshot(60_000)).state, State::Asleep);
+        let mut engine = a_resting_sprite().with_sleep_after_s((1, 1));
+        assert_eq!(engine.tick(&snapshot(1_000)).state, State::Asleep);
 
         let woken = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Summon],
@@ -5809,14 +5913,16 @@ mod tests {
     fn a_walking_sprite_does_not_nod_off_mid_stride() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
+        engine.set_sleep_after_s((3, 3));
 
         // Poked, then left alone until it is one tick short of nodding off.
+        // The wait also outlasts the post-poke cooldown, so the walk may start.
         engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Poke],
             ..a_long_perch()
         });
         let nearly_asleep = engine.tick(&WorldSnapshot {
-            elapsed_ms: SLEEP_AFTER_MS - 100,
+            elapsed_ms: 2_900,
             ..a_long_perch()
         });
         assert_eq!(nearly_asleep.state, State::Perched, "not asleep yet");
@@ -6279,7 +6385,7 @@ mod tests {
     /// and sleeps later.
     #[test]
     fn a_perched_sprite_idles_then_sleeps_if_left_alone() {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_sleep_after_s((10, 10));
         settle(&mut engine, &perch(50.0, 400.0));
 
         let idling = engine.tick(&WorldSnapshot {
@@ -6290,7 +6396,7 @@ mod tests {
         assert_eq!(idling.animation, "idle", "idle before sleep");
 
         let asleep = engine.tick(&WorldSnapshot {
-            elapsed_ms: SLEEP_AFTER_MS,
+            elapsed_ms: 10_000,
             ..perch(50.0, 400.0)
         });
         assert_eq!(asleep.state, State::Asleep, "then sleep");
@@ -8198,7 +8304,7 @@ mod tests {
 
     #[test]
     fn idle_behaviors_do_not_start_and_the_buddy_settles_to_sleep() {
-        let mut engine = a_resting_sprite();
+        let mut engine = a_resting_sprite().with_sleep_after_s((5, 5));
         engine.set_do_not_disturb(true);
 
         let quietening: Vec<Frame> = (0..20)
@@ -9152,8 +9258,8 @@ mod tests {
     /// The Frame reports the refusal instead of dropping it.
     #[test]
     fn a_jump_is_refused_while_asleep_and_says_it_was() {
-        let mut engine = a_resting_sprite();
-        let asleep = engine.tick(&snapshot(SLEEP_AFTER_MS));
+        let mut engine = a_resting_sprite().with_sleep_after_s((1, 1));
+        let asleep = engine.tick(&snapshot(1_000));
         assert_eq!(asleep.state, State::Asleep, "asleep to begin with");
         let resting_at = engine.position;
 
@@ -10152,10 +10258,10 @@ mod tests {
         #[test]
         fn a_possessed_sprite_never_falls_asleep() {
             let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
+            let mut engine = possessed_at(500.0, &world).with_sleep_after_s((1, 1));
 
             let frame = engine.tick(&WorldSnapshot {
-                elapsed_ms: SLEEP_AFTER_MS * 2,
+                elapsed_ms: 5_000,
                 ..world.clone()
             });
             assert_eq!(frame.state, State::Grounded, "{frame:?}");
@@ -10166,9 +10272,9 @@ mod tests {
         #[test]
         fn possessing_a_sleeping_sprite_wakes_it() {
             let world = on(one_display());
-            let mut engine = resting_at(500.0, &world);
+            let mut engine = resting_at(500.0, &world).with_sleep_after_s((1, 1));
             let asleep = engine.tick(&WorldSnapshot {
-                elapsed_ms: SLEEP_AFTER_MS,
+                elapsed_ms: 1_000,
                 ..world.clone()
             });
             assert_eq!(asleep.state, State::Asleep);

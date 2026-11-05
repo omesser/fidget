@@ -985,6 +985,7 @@ mod tests {
             elapsed_ms: 16,
             proposal: None,
             poll_generation: 0,
+            chat: false,
             composing: false,
             locomotion_frozen: false,
             possession: Default::default(),
@@ -1765,6 +1766,7 @@ mod tests {
                 assert!(climbing, "thrown at the wall, it climbs");
             }),
             ("asleep", |roster, id, world| {
+                roster.get_mut(id).unwrap().set_sleep_after_s((1, 1));
                 let a_second = WorldSnapshot {
                     elapsed_ms: 1000,
                     ..world.clone()

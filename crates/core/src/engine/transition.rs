@@ -34,9 +34,9 @@ pub enum Edge {
 
 /// State after the verbs, whether they woke the sprite, and the [`Edge`] when
 /// the hand picked it up or let go. Reported here so a caller does not
-/// re-derive them. Possession wakes it: the keys move a sprite on its feet.
-pub fn on_verbs(state: State, verbs: &[Verb], possessed: bool) -> (State, bool, Option<Edge>) {
-    let woke = state == State::Asleep && (!verbs.is_empty() || possessed);
+/// re-derive them. `wake` is the Engine's call for who rouses a sleeper.
+pub fn on_verbs(state: State, verbs: &[Verb], wake: bool) -> (State, bool, Option<Edge>) {
+    let woke = state == State::Asleep && wake;
 
     if verbs.contains(&Verb::Grab) {
         let edge = match state {
@@ -90,7 +90,7 @@ mod tests {
         let (state, woke, edge) = on_verbs(State::Dragged, &[Verb::Grab], false);
         assert_eq!((state, woke, edge), (State::Dragged, false, None));
 
-        let (state, woke, edge) = on_verbs(State::Asleep, &[Verb::Grab], false);
+        let (state, woke, edge) = on_verbs(State::Asleep, &[Verb::Grab], true);
         assert_eq!(
             (state, woke, edge),
             (State::Dragged, true, Some(super::Edge::PickedUp))

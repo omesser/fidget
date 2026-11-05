@@ -242,6 +242,7 @@ mod tests {
     #[test]
     fn poked_awake_the_wake_says_it_was_asleep() {
         let mut sprite = Instance::at(100.0, 0.0);
+        sprite.engine.set_sleep_after_s((1, 1));
         sprite.tick(snapshot(60_000, vec![]));
         sprite.wait(30_000);
 
@@ -408,6 +409,7 @@ mod tests {
     #[test]
     fn possession_preserves_the_gesture_snapshot_from_before_it() {
         let mut sprite = Instance::at(500.0, 0.0);
+        sprite.engine.set_sleep_after_s((1, 1));
         sprite.tick(snapshot(60_000, vec![]));
         sprite.wait(30_000);
         sprite.verb(Verb::Poke);
