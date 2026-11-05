@@ -190,11 +190,13 @@ $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class PossessionLiveInput {
     public delegate bool Callback(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(Callback cb, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -204,21 +206,22 @@ public static class PossessionLiveInput {
     [StructLayout(LayoutKind.Explicit)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT k; [FieldOffset(8)] public MOUSEINPUT m; }
     [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] i, int size);
     static IntPtr foundWindow;
-    static uint wantPid;
-    static Callback keepAlive;
-    static bool OnWindow(IntPtr h, IntPtr l) {
+    static string wantTitle;
+    static Callback titleAlive;
+    static bool OnTitled(IntPtr h, IntPtr l) {
         if (!IsWindowVisible(h)) return true;
-        uint owner;
-        GetWindowThreadProcessId(h, out owner);
-        if (owner != wantPid) return true;
+        StringBuilder text = new StringBuilder(512);
+        GetWindowText(h, text, text.Capacity);
+        if (text.ToString().IndexOf(wantTitle, StringComparison.Ordinal) < 0) return true;
         foundWindow = h;
         return false;
     }
-    public static IntPtr FindVisible(uint pid) {
+    public static IntPtr FindTitled(string titlePart) {
         foundWindow = IntPtr.Zero;
-        wantPid = pid;
-        if (keepAlive == null) keepAlive = OnWindow;
-        EnumWindows(keepAlive, IntPtr.Zero);
+        if (string.IsNullOrEmpty(titlePart)) return foundWindow;
+        wantTitle = titlePart;
+        if (titleAlive == null) titleAlive = OnTitled;
+        EnumWindows(titleAlive, IntPtr.Zero);
         return foundWindow;
     }
     static void Send(INPUT[] all) {
@@ -272,6 +275,12 @@ function Read-Shared([string]$Path) {
     try { return [System.IO.File]::ReadAllText($Path) } catch { return "" }
 }
 
+function Owner-Of([IntPtr]$H) {
+    $owner = [uint32]0
+    [void][PossessionLiveInput]::GetWindowThreadProcessId($H, [ref]$owner)
+    $owner
+}
+
 function Get-CardCenter([string]$File) {
     # The focus button, else the Paused heading. The heading sits against the
     # quick-message field, so a click on its centre can miss the card.
@@ -293,14 +302,27 @@ function Get-CardCenter([string]$File) {
 
 . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
 $script:notepad = $null
+$script:launched = $null
+$script:pad = [IntPtr]::Zero
 $script:proc = $null
 $startMs = Get-NowMs
 try {
-    $script:notepad = Start-Process -FilePath notepad.exe -ArgumentList $doc -PassThru
+    $script:launched = Start-Process -FilePath notepad.exe -ArgumentList $doc -PassThru
     $proc = Start-FidgetPiped $Bin @() $log $err
     $script:proc = $proc
-    if (-not (Wait-Until 3 { [PossessionLiveInput]::FindVisible([uint32]$script:notepad.Id) -ne [IntPtr]::Zero })) {
-        Fail "Notepad did not open its window; see $out"
+    # Windows 11 Store Notepad is two processes. Start-Process's pid owns no
+    # window; the one titled with this file does.
+    $script:docName = Split-Path -Leaf $doc
+    $found = Wait-UiaChange 0 3 {
+        $h = [PossessionLiveInput]::FindTitled($script:docName)
+        if ($h -eq [IntPtr]::Zero) { return $null }
+        return $h
+    }
+    if (-not $found) { Fail "Notepad did not open its window; see $out" }
+    $script:pad = [IntPtr]$found
+    $script:notepad = Get-Process -Id (Owner-Of $script:pad)
+    if ($script:notepad.ProcessName -ne "Notepad") {
+        Fail "the $script:docName window belongs to $($script:notepad.ProcessName), not Notepad"
     }
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
@@ -334,7 +356,7 @@ try {
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ frame: .* walk#')) {
         Fail "the held Right did not walk the sprite; see $traceFile"
     }
-    $pad = [PossessionLiveInput]::FindVisible([uint32]$script:notepad.Id)
+    $pad = $script:pad
     $rect = New-Object PossessionLiveInput+RECT
     if ($pad -eq [IntPtr]::Zero -or -not [PossessionLiveInput]::GetWindowRect($pad, [ref]$rect)) {
         Fail "Notepad has no window to click"
@@ -389,7 +411,9 @@ try {
 } finally {
     Release-Keys
     Stop-FidgetTree $script:proc "count=$marksBash"
-    if ($script:notepad -and -not $script:notepad.HasExited) {
-        Stop-Process -Id $script:notepad.Id -Force -ErrorAction SilentlyContinue
+    foreach ($held in @($script:notepad, $script:launched)) {
+        if ($held -and -not $held.HasExited) {
+            Stop-Process -Id $held.Id -Force -ErrorAction SilentlyContinue
+        }
     }
 }
