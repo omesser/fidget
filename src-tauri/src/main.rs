@@ -2266,6 +2266,10 @@ fn apply_keyboard_flips(app: &tauri::AppHandle, flips: Vec<(String, bool)>, proc
 /// loop's session drops any for a key it never saw go down.
 #[tauri::command]
 fn overlay_possession_key(window: tauri::Window, key: String, down: bool) {
+    if dev_flags::TRACE_FRAMES.is_on() {
+        let edge = if down { "down" } else { "up" };
+        eprintln!("possession: key {} {key} {edge}", window.label());
+    }
     possession::push_key(window.label(), &key, down);
 }
 

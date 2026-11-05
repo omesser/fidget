@@ -208,6 +208,13 @@ a click on the paused card. The editor's text has to contain the letter typed
 while the card was paused. The X11 leaf is in `ci/`. The macOS and Windows
 leaves stay in `manual-only/` until they pass an automatic run.
 
+The macOS leaf asserts each step live instead of reading the trace afterwards.
+It right-drags from the sprite onto the Possess row, which it finds through
+Accessibility: on macOS 27 the pop-up menu is not in the window list as a
+Fidget window at layer 100. It types into `helpers/type-target.swift`, a
+window that logs the keys it receives, and after the card click it checks
+that Right walks again.
+
 `poke-mid-climb` clicks the same way as on macOS, from the frame trace and
 the `overlay:` lines, but places the sprite instead of throwing it. It holds
 the sprite a quarter of its width inboard of its centre and drags the pointer
