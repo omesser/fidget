@@ -786,6 +786,10 @@ function drawView(view, now) {
     paintPossession(view.card, view.bar, null, null);
   }
 
+  // Frames arrive before the art does. Drawing now would show an art-less box
+  // and record it as drawn; the redraw after the character load fills it.
+  if (!characters[latest.character]) return;
+
   const placement = `${latest.character} ${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === view.drawn) {
     return;

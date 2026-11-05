@@ -12,6 +12,8 @@ import { pageWait } from "./page-wait.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const HOVER_DELAY_MS = 400;
+const ART =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const frame = (hovered) => ({
   sprites: [
@@ -43,7 +45,7 @@ const stub = `
   window.__TAURI__ = {
     core: {
       invoke(name) {
-        if (name === "character") return Promise.resolve({ characters: {} });
+        if (name === "character") return Promise.resolve({ characters: { "Buddy Bot": { art: { idle: [${JSON.stringify(ART)}] } } } });
         return Promise.resolve();
       },
     },
@@ -67,7 +69,8 @@ const stub = `
     return { pill: pill().classList.contains("visible"), hover: sprite().matches(":hover") };
   };
   window.__start = async (payload) => {
-    await ready("frame");
+    // Listened for once the art has loaded, so the sprite is drawn to hover.
+    await ready("chat-opening");
     handlers.frame({ payload });
     await settle();
     const box = sprite().getBoundingClientRect();
