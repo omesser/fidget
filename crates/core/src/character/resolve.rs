@@ -7,7 +7,7 @@ use crate::overlay::AlphaMask;
 
 use super::manifest::{Declared, DeclaredAnimation, DeclaredBehavior};
 use super::{
-    Animation, Art, Behavior, Facing, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
+    Animation, Art, Behavior, Facing, PackageBytes, Step, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
     MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS,
 };
 
@@ -269,16 +269,19 @@ fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -
         if declared.contains_key(name) {
             continue;
         }
-        let already_played = declared
-            .values()
-            .any(|behavior| behavior.primitives.contains(&primitive));
+        let already_played = declared.values().any(|behavior| {
+            behavior
+                .steps
+                .iter()
+                .any(|step| matches!(step, Step::Primitive(found) if *found == primitive))
+        });
         if already_played {
             continue;
         }
         declared.insert(
             name.to_string(),
             DeclaredBehavior {
-                primitives: vec![primitive],
+                steps: vec![Step::Primitive(primitive)],
                 then: None,
                 weight: 0,
                 trigger: None,
@@ -348,7 +351,7 @@ pub(super) fn resolve_behaviors(
             (
                 name,
                 Behavior {
-                    primitives: declaration.primitives,
+                    steps: declaration.steps,
                     then: declaration.then,
                     weight: declaration.weight,
                     trigger: declaration.trigger,
@@ -358,6 +361,32 @@ pub(super) fn resolve_behaviors(
             )
         })
         .collect()
+}
+
+/// A `play` word that is not a Primitive must name an idle-gesture.
+pub(super) fn check_play_steps(
+    behaviors: &BTreeMap<String, Behavior>,
+    animations: &BTreeMap<String, Animation>,
+    errors: &mut Vec<String>,
+) {
+    let gestures = animations
+        .get("idle")
+        .map(|idle| idle.gestures.clone())
+        .unwrap_or_default();
+    for (name, behavior) in behaviors {
+        for step in &behavior.steps {
+            let Step::Gesture(gesture) = step else {
+                continue;
+            };
+            if gestures.iter().any(|known| known == gesture) {
+                continue;
+            }
+            errors.push(format!(
+                "play for behavior {name:?} names {gesture:?}, which is not a Primitive \
+                 or an idle-gesture"
+            ));
+        }
+    }
 }
 
 /// The loop a chain closes, from where it closes, for the author to read.

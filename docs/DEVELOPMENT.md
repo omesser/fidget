@@ -380,7 +380,7 @@ frames = [
   # ... frames/idle-blink-1.png to frames/idle-blink-5.png
 ]
 fps = 8
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.land]
 frames = [
@@ -415,7 +415,7 @@ weight = 40
 when = "idle over 2m"
 ```
 
-Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its proactive calls keep their first wait, two minutes by default, instead of backing off. `idle` weighs 20 against 10 for each of its three variants (`idle-blink` is one), so a bare idle draws on two turns in five. `land` plays once and holds its last frame into idle. `greet` hands over to `stroll`, and `settle` hands over to `nap`, which ends the chain. Buddy Bot declares no `grab`, so a drag plays its `fall`.
+Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its proactive calls keep their first wait, two minutes by default, instead of backing off. `idle-blink`, `idle-breathe`, and `idle-listen` are idle-gestures, one pass between calm loops. `land` plays once and holds its last frame into idle. `greet` hands over to `stroll`, and `settle` hands over to `nap`, which ends the chain. Buddy Bot declares no `grab`, so a drag plays its `fall`.
 
 #### Declaring where the art came from
 

@@ -406,6 +406,8 @@ struct Drawn {
     /// Ignored while `idle_beat` is set: that beat already named the member.
     variant_draw: u64,
     idle_beat: Option<IdleBeat>,
+    /// A Behavior's named idle-gesture, when that step is what's on screen.
+    playing_gesture: Option<String>,
     /// Which way the sprite was pointed, so the hit-test resolves the strip
     /// the art was drawn from and mirrors it the same way — this tick's
     /// facing may already differ.

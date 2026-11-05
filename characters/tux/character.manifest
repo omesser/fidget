@@ -1,5 +1,5 @@
 # Source rows are documented in DEVELOPMENT.md; importer indices start at zero.
-# All nine source loops are retained, including checking-work as one idle variant.
+# All nine source loops are retained. Seated fidgets are idle-gestures.
 
 name = "Tux"
 render_mode = "smooth"
@@ -22,6 +22,16 @@ rush_reaction = "react"
 [animations.idle]
 frames = [
   "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+]
+fps = 2
+weight = 80
+
+[animations.restless-sitting]
+frames = [
+  "frames/idle-0.png",
   "frames/idle-1.png",
   "frames/idle-2.png",
   "frames/idle-3.png",
@@ -29,7 +39,8 @@ frames = [
   "frames/idle-5.png",
 ]
 fps = 2
-weight = 80
+gesture_of = "idle"
+weight = 10
 
 [animations.look-around]
 frames = [
@@ -41,7 +52,7 @@ frames = [
   "frames/look-around-5.png",
 ]
 fps = 2
-variant_of = "idle"
+gesture_of = "idle"
 weight = 10
 
 [animations.checking-work]
@@ -54,7 +65,7 @@ frames = [
   "frames/checking-work-5.png",
 ]
 fps = 3
-variant_of = "idle"
+gesture_of = "idle"
 weight = 3
 
 [animations.recover-card]
@@ -69,7 +80,7 @@ frames = [
   "frames/recover-card-7.png",
 ]
 fps = 3
-variant_of = "idle"
+gesture_of = "idle"
 weight = 4
 
 [animations.waddle-in-place]
@@ -82,7 +93,7 @@ frames = [
   "frames/waddle-in-place-5.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 weight = 3
 
 [animations.walk]

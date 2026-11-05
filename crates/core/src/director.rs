@@ -1184,7 +1184,7 @@ mod tests {
     /// A Behavior of one Primitive, which is all selection cares about.
     fn behavior(weight: u32, trigger: Option<Trigger>) -> Behavior {
         Behavior {
-            primitives: vec![Primitive::Idle],
+            steps: vec![crate::character::Step::Primitive(Primitive::Idle)],
             then: None,
             weight,
             trigger,

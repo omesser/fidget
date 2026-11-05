@@ -75,6 +75,7 @@ mod tests {
             state: State::Grounded,
             animation: "idle",
             animation_ms: 0,
+            playing_gesture: None,
             variant_draw: 0,
             idle_beat: None,
             dialogue: None,

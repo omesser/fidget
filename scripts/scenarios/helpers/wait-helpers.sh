@@ -205,12 +205,12 @@ stop_fidget() {
   wait "$timer" 2> /dev/null || true
 }
 
-# True when the newest five frame lines all show the sprite resting
-# (Grounded or Perched, not walking) in one spot. Frames land every draw, so
-# this needs no second look after a pause.
+# True when the newest five frame lines all show the sprite resting: Grounded
+# or Perched, in one spot, on an idle loop. A gesture, a sit, or a walk is
+# still in motion even when the feet have not moved. The frame index may change.
 sprite_at_rest() { # <log>
   grep '^frame: ' "$1" 2> /dev/null | tail -5 | awk '
-    !/ (Grounded|Perched) / || / walk#/ { bad = 1 }
+    !/ (Grounded|Perched) / || !/ idle#[0-9]+($| )/ { bad = 1 }
     { match($0, /sprite\(-?[0-9]+,-?[0-9]+\)/); at = substr($0, RSTART, RLENGTH); if (n++ && at != last) bad = 1; last = at }
     END { exit (bad || n < 5) }'
 }

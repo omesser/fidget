@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::{animation_of, Behavior, Primitive};
+use crate::character::{animation_of, Behavior, Primitive, Step};
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,13 +29,18 @@ pub enum Key {
 pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
     let mut groups: Vec<(Vec<&str>, Vec<&str>)> = Vec::new();
     for (name, behavior) in behaviors {
-        let own = behavior.primitives.as_slice();
+        let own = behavior.steps.as_slice();
         // Idle between moves is the pause in a stroll, which the arrows
-        // already give. Idle alone is not movement.
-        let moves = own.iter().any(Primitive::owned_by_arrows_and_space);
+        // already give. Idle alone is not movement. A gesture is not movement.
+        let moves = own.iter().any(|step| {
+            matches!(step, Step::Primitive(primitive) if primitive.owned_by_arrows_and_space())
+        });
         let only_moves = moves
-            && own.iter().all(|primitive| {
-                *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
+            && own.iter().all(|step| match step {
+                Step::Primitive(primitive) => {
+                    *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
+                }
+                Step::Gesture(_) => false,
             });
         if behavior.not_in_manifest || only_moves {
             continue;
@@ -44,7 +49,10 @@ pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>>
         // `animation_of` alone says what is drawn.
         let drawn: Vec<&str> = own
             .iter()
-            .map(|primitive| animation_of(*primitive))
+            .map(|step| match step {
+                Step::Primitive(primitive) => animation_of(*primitive),
+                Step::Gesture(name) => name.as_str(),
+            })
             .collect();
         match groups.iter_mut().find(|(played, _)| *played == drawn) {
             Some((_, names)) => names.push(name),
@@ -370,7 +378,7 @@ mod tests {
             .iter()
             .map(|(name, primitives, then)| {
                 let behavior = Behavior {
-                    primitives: primitives.to_vec(),
+                    steps: primitives.iter().copied().map(Step::Primitive).collect(),
                     then: then.map(str::to_string),
                     weight: 1,
                     trigger: None,

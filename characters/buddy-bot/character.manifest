@@ -50,12 +50,9 @@ frames = [
 fps = 5
 weight = 20
 
-# Idle variants, not Behaviors: mood art on the idle ring without Director
-# weight. Brow-sensor glow (mirror-safe) pairs with the cheek LED; walk still
-# omits the cheek mark (#345). All three are micro-motions a foot away from
-# the base — a breath, a blink, a tilt — so the ring is nearly even: the base
-# is weighed twice each of the three. A bot that only
-# ever held still would read as switched off.
+# Breath, blink, and tilt are idle-gestures, not Behaviors. A bot that only
+# held still would read as switched off. Brow-sensor glow pairs with the
+# cheek LED; walk still omits the cheek mark (#345).
 
 [animations.idle-breathe]
 frames = [
@@ -69,7 +66,7 @@ frames = [
   "frames/idle-breathe-7.png",
 ]
 fps = 5
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.idle-blink]
 frames = [
@@ -81,7 +78,7 @@ frames = [
   "frames/idle-blink-5.png",
 ]
 fps = 8
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.idle-listen]
 frames = [
@@ -94,7 +91,7 @@ frames = [
   "frames/idle-listen-6.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
 # 3/4 right stride after pack flip; cheek LED omitted on walk only.

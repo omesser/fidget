@@ -25,18 +25,23 @@ model_power = 1
 near_reaction = "toward"
 rush_reaction = "away"
 
-# A cat spends real time sitting and staring at nothing, so the stand takes
-# the idling weighed twice the wait: a third of it goes to staring,
-# which is a habit rather than a surprise.
+# The calm loop is the still stand. Grooming plays the full strip once.
+# Staring is a habit, so it is a gesture rather than the baseline.
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
+frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png"]
 fps = 5
 weight = 20
+
+[animations.grooming]
+frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
+fps = 5
+gesture_of = "idle"
+weight = 10
 
 [animations.waiting]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
 fps = 6
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
@@ -109,7 +114,7 @@ weight = 20
 when = "idle under 1m"
 
 [behaviors.groom]
-play = ["idle"]
+play = ["grooming"]
 weight = 20
 when = "idle over 10s"
 

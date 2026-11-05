@@ -234,14 +234,23 @@ test("seed_tour_shown marks the first-run tour as shown", (t) => {
 });
 
 // The Windows helper blocks on FileSystemWatcher events. pwsh runs it here.
-test("sprite_at_rest needs the same spot in all five frames", (t) => {
-  const frames = (xs) => xs.map((x) => `echo "frame: 1 Grounded pos(1,1) sprite(${x},20) idle#1" >> "$log"`).join("; ");
+test("sprite_at_rest needs an idle loop standing still", (t) => {
+  const line = (x, token) => `echo "frame: 1 Grounded pos(1,1) sprite(${x},20) ${token}" >> "$log"`;
+  const frames = (xs, token = "idle#1") => xs.map((x) => line(x, token)).join("; ");
   const still = run(t, `${frames([10, 10, 10, 10, 10])}; sprite_at_rest "$log"`);
   assert.strictEqual(still.code, 0, still.out);
+  const advancing = run(t, `${[0, 1, 2, 3, 4].map((i) => line(10, `idle#${i}`)).join("; ")}; sprite_at_rest "$log"`);
+  assert.strictEqual(advancing.code, 0, advancing.out);
   const moved = run(t, `${frames([10, 10, 10, 10, 11])}; sprite_at_rest "$log"`);
   assert.notStrictEqual(moved.code, 0, "a frame in another spot counted as rest");
   const walked = run(t, `${frames([10, 30, 50, 70, 90])}; sprite_at_rest "$log"`);
   assert.notStrictEqual(walked.code, 0, "five spots counted as rest");
+  const gesture = run(t, `${frames([10, 10, 10, 10, 10], "gesture#1")}; sprite_at_rest "$log"`);
+  assert.notStrictEqual(gesture.code, 0, "a gesture counted as rest");
+  const sitting = run(t, `${frames([10, 10, 10, 10, 10], "sit#0")}; sprite_at_rest "$log"`);
+  assert.notStrictEqual(sitting.code, 0, "a sit counted as rest");
+  const striding = run(t, `${frames([10, 10, 10, 10, 10], "walk#1")}; sprite_at_rest "$log"`);
+  assert.notStrictEqual(striding.code, 0, "a walk counted as rest");
 });
 
 test("wait_for_rest keeps waiting while the sprite walks, past 3 s", (t) => {

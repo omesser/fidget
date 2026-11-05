@@ -265,19 +265,19 @@ member on every machine.
 
 | Ring | Declared shares | Ring total | Share |
 |---|---|---|---|
-| BMO `idle` | `idle` 80, `sing` 10, `skate` 10 | 100 | 80%, 10%, 10% |
+| BMO `idle` | loop `idle` 80; gestures `sing` 10, `skate` 10 | | the loop is the base; the gestures split evenly |
 | BMO `walk` | `walk` 30, `ballwalk` 10 | 40 | 75%, 25% |
-| Buddy Bot `idle` | `idle` 20, and 10 each to `idle-blink`, `idle-breathe`, `idle-listen` | 50 | 40%, 20%, 20%, 20% |
-| Cat `idle` | `idle` 20, `waiting` 10 | 30 | 67%, 33% |
-| Jotaro `idle` | `idle` 30, `waiting` 10 | 40 | 75%, 25% |
-| Timber Wolf `idle` | `idle` 30, `scan` 10 | 40 | 75%, 25% |
-| Trump `idle` | `idle` 30, `waiting` 20 | 50 | 60%, 40% |
-| Tux `idle` | `idle` 80, `look-around` 10, `checking-work` 3, `recover-card` 4, `waddle-in-place` 3 | 100 | 80%, 10%, 3%, 4%, 3% |
-| Rubber Duck `idle` | 10 each to `idle`, `wave`, `thinking`, `pondering`, `look-right`, `look-left` | 60 | about 17% each |
+| Buddy Bot `idle` | loop `idle` 20; gestures `idle-blink`, `idle-breathe`, `idle-listen` at 10 | | the loop is the base; the gestures split evenly |
+| Cat `idle` | loop `idle` 20; gestures `grooming` 10, `waiting` 10 | | the loop is the base; the gestures split evenly |
+| Jotaro `idle` | loop `idle` 30; gesture `waiting` 10 | | the loop is the base |
+| Timber Wolf `idle` | loop `idle` 30; gesture `scan` 10 | | the loop is the base |
+| Trump `idle` | loop `idle` 30; gesture `waiting` 20 | | the loop is the base |
+| Tux `idle` | loop `idle` 80; gestures `restless-sitting` 10, `look-around` 10, `checking-work` 3, `recover-card` 4, `waddle-in-place` 3 | | the loop is the base; gestures use those weights |
+| Rubber Duck `idle` | loop `idle` 10; gestures `wave`, `thinking`, `pondering`, `look-right`, `look-left` at 10 | | the loop is the base; the gestures split evenly |
 
 An undeclared member is already 10, so a ring can set one number and leave the
-rest: `idle = 80` against two silent variants is 80/10/10. Tux sets a number
-on every member. These shares weigh the idle ring. The Engine's own idle plays
+rest. Loops and idle-gestures are separate draws: the calm loop is base `idle`
+plus any `variant_of` it, and a gesture is `gesture_of` idle. The Engine plays
 one weighted loop, waits a seeded gap (`idle_gesture_every_s`, or 10 to 30
 seconds), plays one idle-gesture for a single pass, and picks a loop again. A
 Behavior's `idle`, and the walk and talk rings, still draw one member and loop it.

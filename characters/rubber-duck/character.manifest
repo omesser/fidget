@@ -46,7 +46,7 @@ frames = [
   "frames/wave-5.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.thinking]
 frames = [
@@ -58,7 +58,7 @@ frames = [
   "frames/thinking-5.png",
 ]
 fps = 3
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.pondering]
 frames = [
@@ -70,7 +70,7 @@ frames = [
   "frames/pondering-5.png",
 ]
 fps = 3
-variant_of = "idle"
+gesture_of = "idle"
 
 # Each head sweep returns along its own poses, avoiding a snap at the loop seam.
 [animations.look-right]
@@ -91,7 +91,7 @@ frames = [
   "frames/look-right-1.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.look-left]
 frames = [
@@ -111,7 +111,7 @@ frames = [
   "frames/look-left-1.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 
 [animations.walk]
 frames = [

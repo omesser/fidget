@@ -217,15 +217,16 @@ function Wait-ForAxDump([double]$Seconds, [int]$ProcessId, [string]$Title, [stri
 }
 
 # The sprite's position when it is at rest, else $null: the newest five frame
-# lines are all Grounded or Perched, not walking or falling, in one spot (within 2 px).
-# Frames land every draw, so this needs no second look after a pause.
+# lines are Grounded or Perched, on an idle loop, in one spot (within 2 px).
+# A gesture, a sit, or a walk is not rest. The frame index may change.
 function Get-SpriteAtRest([string]$TraceFile) {
     if (-not (Test-Path -LiteralPath $TraceFile)) { return $null }
     $frames = @(Get-Content -LiteralPath $TraceFile | Where-Object { $_ -match '^\d+\.?\d* frame: ' } | Select-Object -Last 5)
     if ($frames.Count -lt 5) { return $null }
     $at = $null
     foreach ($line in $frames) {
-        if ($line -match 'walk#|Falling' -or $line -notmatch ' (?:Grounded|Perched) .* sprite\((-?\d+),(-?\d+)\) ') { return $null }
+        if ($line -notmatch ' (?:Grounded|Perched) ' -or $line -notmatch ' idle#\d+' -or $line -match 'walk#|gesture#|sit#|Falling') { return $null }
+        if ($line -notmatch ' sprite\((-?\d+),(-?\d+)\) ') { return $null }
         $here = @{ X = [int]$Matches[1]; Y = [int]$Matches[2] }
         # Within 2 px of the first frame, so a slow drift is not rest.
         if ($at -and ([Math]::Abs($here.X - $at.X) -gt 2 -or [Math]::Abs($here.Y - $at.Y) -gt 2)) { return $null }

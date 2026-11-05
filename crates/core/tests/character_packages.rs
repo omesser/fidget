@@ -12,7 +12,9 @@
 //! shipped character's load and required animations are covered by the shell
 //! crate's integration test.
 
-use fidget_core::character::{self, CursorReaction, IdleBeat, Primitive, REQUIRED_ANIMATIONS};
+use fidget_core::character::{
+    self, CursorReaction, IdleBeat, Primitive, RingChoice, REQUIRED_ANIMATIONS,
+};
 use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -149,11 +151,11 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
 
     let engage = &character.behaviors["engage"];
     assert!(
-        engage.primitives.len() >= 2,
+        engage.steps.len() >= 2,
         "engage composes multiple primitives"
     );
     assert!(
-        engage.primitives.contains(&character::Primitive::React),
+        engage.plays(character::Primitive::React),
         "engage includes react (weapon raise)"
     );
 
@@ -163,7 +165,7 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
     );
     let pursue = &character.behaviors["pursue"];
     assert!(
-        pursue.primitives.contains(&character::Primitive::Chase),
+        pursue.plays(character::Primitive::Chase),
         "pursue includes Chase primitive for walk-toward-cursor movement"
     );
 }
@@ -433,8 +435,37 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
     assert_eq!(landed.expect("the duck lands").animation, "land");
 }
 
+/// The beat names an idle-gesture, so draw plays that strip from frame 0.
+/// A weighed idle draw stays on the calm loop.
+fn assert_idle_gesture(character: &character::Character, name: &str) {
+    let idle = &character.animations["idle"];
+    assert!(
+        idle.gestures.iter().any(|gesture| gesture == name),
+        "{name} is an idle-gesture"
+    );
+    assert!(
+        !idle.variants.iter().any(|variant| variant == name),
+        "{name} is outside the calm loop"
+    );
+    let animation = &character.animations[name];
+    let beat = IdleBeat::Gesture(name.to_string());
+    for index in 0..animation.frames.len() {
+        let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
+        let drawn = character
+            .draw("idle", elapsed, RingChoice::Beat(&beat), 1.0)
+            .unwrap_or_else(|| panic!("{name} draws"));
+        assert_eq!(drawn.animation, name);
+        assert_eq!(drawn.index, index, "{name} plays from frame 0");
+    }
+    let weighed = character.draw("idle", 0, 0, 1.0).expect("idle draws");
+    assert_eq!(
+        weighed.animation, "idle",
+        "a weighed idle stays on the loop"
+    );
+}
+
 #[test]
-fn rubber_duck_plays_thinking_and_looking_in_its_idle_rotation() {
+fn rubber_duck_plays_thinking_and_looking_as_idle_gestures() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");
     assert_eq!(
         character.art.len(),
@@ -450,45 +481,26 @@ fn rubber_duck_plays_thinking_and_looking_in_its_idle_rotation() {
         ("look-right", 8),
         ("look-left", 8),
     ] {
-        assert!(character.animations["idle"]
-            .variants
-            .contains(&name.to_string()));
-        let animation = &character.animations[name];
-        assert!(animation.looping, "{name} repeats while idling");
         assert_eq!(
-            animation.frames.iter().collect::<BTreeSet<_>>().len(),
+            character.animations[name]
+                .frames
+                .iter()
+                .collect::<BTreeSet<_>>()
+                .len(),
             source_frames
         );
-
-        let seed = (0..4096)
-            .find(|seed| character.draw("idle", 0, *seed, 1.0).unwrap().animation == name)
-            .unwrap_or_else(|| panic!("{name} is unreachable from idle"));
-        for index in 0..animation.frames.len() {
-            let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
-            let drawn = character.draw("idle", elapsed, seed, 1.0).unwrap();
-            assert_eq!(drawn.animation, name);
-            assert_eq!(drawn.index, index, "{name} reaches its complete loop");
-        }
+        assert_idle_gesture(&character, name);
     }
 }
 
-/// Every listed idle variant is reachable from idle and plays one complete
-/// loop, and the left walk draws its own poses rather than mirroring.
-fn assert_idle_loops_and_drawn_left_walk(package: &str, art: usize, loops: &[(&str, usize)]) {
+/// Every listed idle-gesture plays from frame 0, and the left walk draws its
+/// own poses rather than mirroring.
+fn assert_idle_gestures_and_drawn_left_walk(package: &str, art: usize, gestures: &[(&str, usize)]) {
     let character = load_package(package).unwrap_or_else(|e| panic!("{package} is valid: {e:?}"));
     assert_eq!(character.art.len(), art, "all source rows are retained");
-    for &(name, count) in loops {
-        let animation = &character.animations[name];
-        assert_eq!(animation.frames.len(), count);
-        let seed = (0..4096)
-            .find(|seed| character.draw("idle", 0, *seed, 1.0).unwrap().animation == name)
-            .unwrap_or_else(|| panic!("{name} is unreachable while idling"));
-        for index in 0..=count {
-            let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
-            let drawn = character.draw("idle", elapsed, seed, 1.0).unwrap();
-            assert_eq!(drawn.animation, name);
-            assert_eq!(drawn.index, index % count, "{name} plays one complete loop");
-        }
+    for &(name, count) in gestures {
+        assert_eq!(character.animations[name].frames.len(), count);
+        assert_idle_gesture(&character, name);
     }
     let left = character.draw("walk", 0, 0, -1.0).expect("left walk draws");
     assert_eq!(left.animation, "walk-left");
@@ -496,35 +508,23 @@ fn assert_idle_loops_and_drawn_left_walk(package: &str, art: usize, loops: &[(&s
 }
 
 #[test]
-fn tux_draws_each_idle_loop_and_its_left_waddle() {
-    let character = load_package("tux").expect("Tux package is valid");
-    assert_eq!(character.art.len(), 57, "all nine source rows are retained");
-    for (name, count) in [
-        ("look-around", 6),
-        ("checking-work", 6),
-        ("recover-card", 8),
-        ("waddle-in-place", 6),
-    ] {
-        let animation = &character.animations[name];
-        assert_eq!(animation.frames.len(), count);
-        let seed = (0..4096)
-            .find(|seed| character.draw("idle", 0, *seed, 1.0).unwrap().animation == name)
-            .unwrap_or_else(|| panic!("{name} is unreachable while idling"));
-        for index in 0..=count {
-            let elapsed = (index as u32 * 1000).div_ceil(animation.fps);
-            let drawn = character.draw("idle", elapsed, seed, 1.0).unwrap();
-            assert_eq!(drawn.animation, name);
-            assert_eq!(drawn.index, index % count, "{name} plays one complete loop");
-        }
-    }
-    let left = character.draw("walk", 0, 0, -1.0).expect("left walk draws");
-    assert_eq!(left.animation, "walk-left");
-    assert!(!left.mirrored, "Tux uses the drawn left-facing poses");
+fn tux_draws_each_idle_gesture_and_its_left_waddle() {
+    assert_idle_gestures_and_drawn_left_walk(
+        "tux",
+        57,
+        &[
+            ("restless-sitting", 6),
+            ("look-around", 6),
+            ("checking-work", 6),
+            ("recover-card", 8),
+            ("waddle-in-place", 6),
+        ],
+    );
 }
 
 #[test]
-fn tuxedo_bean_draws_each_idle_loop_and_its_left_walk() {
-    assert_idle_loops_and_drawn_left_walk(
+fn tuxedo_bean_draws_each_idle_gesture_and_its_left_walk() {
+    assert_idle_gestures_and_drawn_left_walk(
         "tuxedo-bean",
         57,
         &[
@@ -537,7 +537,7 @@ fn tuxedo_bean_draws_each_idle_loop_and_its_left_walk() {
 }
 
 /// Every row of the `tuxedo-bean` sheet reaches the screen without a model:
-/// as an idle variant, or through a Behavior the Static Director can pick.
+/// as an idle-gesture, or through a Behavior the Static Director can pick.
 /// Row 2, the left walk, is checked by the test above.
 #[test]
 fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
@@ -550,9 +550,9 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
     ] {
         assert!(
             character.animations["idle"]
-                .variants
+                .gestures
                 .contains(&name.to_string()),
-            "row {row} ({name}) plays while idling"
+            "row {row} ({name}) plays between idle loops"
         );
     }
     for (row, primitive) in [
@@ -565,7 +565,7 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
             character
                 .behaviors
                 .values()
-                .any(|behavior| behavior.weight > 0 && behavior.primitives.contains(&primitive)),
+                .any(|behavior| behavior.weight > 0 && behavior.plays(primitive)),
             "row {row} ({primitive:?}) needs a Behavior the Static Director can pick"
         );
     }
@@ -930,10 +930,10 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser: optional idle variant only (scan-1..3; scan-0 is a dupe of
-/// idle-0). Not baked into sit — perched sit→idle escape is #311.
+/// TAC laser is an idle-gesture (scan-1..3; scan-0 is a dupe of idle-0).
+/// Sit stays a hunker. Perched sit then idle is #311.
 #[test]
-fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
+fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
@@ -941,20 +941,15 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
         "scan animation is declared"
     );
     let scan = &character.animations["scan"];
-    assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC loop");
-    assert!(
-        character.animations["idle"]
-            .variants
-            .contains(&"scan".to_string()),
-        "scan is an idle variant"
-    );
+    assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC sweep");
+    assert_idle_gesture(&character, "scan");
     assert!(
         character.animations["sit"].variants.is_empty(),
         "sit is not where the laser lives"
     );
     assert!(
         !character.behaviors.contains_key("scan"),
-        "no scan Behavior — the variant ring is enough"
+        "no scan Behavior; the gesture plays between loops"
     );
     for name in [
         "frames/scan-1.png",
@@ -978,18 +973,18 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
 
     let engage = &character.behaviors["engage"];
     assert!(
-        engage.primitives.contains(&character::Primitive::Idle),
-        "engage steps through idle, which is where a scan can be drawn"
+        engage.plays(character::Primitive::Idle),
+        "engage still stands on the calm loop before it raises weapons"
     );
     assert!(
-        engage.primitives.contains(&character::Primitive::React),
+        engage.plays(character::Primitive::React),
         "engage still raises weapons"
     );
 
     assert!(character.behaviors.contains_key("patrol"), "patrol stays");
     let pursue = &character.behaviors["pursue"];
     assert!(
-        pursue.primitives.contains(&character::Primitive::Chase),
+        pursue.plays(character::Primitive::Chase),
         "pursue still walks toward the cursor"
     );
 }
@@ -1061,32 +1056,24 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
     art
 }
 
-/// The TAC laser is a weighted draw taken when idle starts, so it
-/// surfaces inside a Behavior's idle Primitive — a turn of under a second,
-/// which is the case an author is most likely to think is broken.
+/// A Behavior's `idle` plays the calm loop. `scan` is an idle-gesture, so it
+/// stays out of that step.
 #[test]
-fn timber_wolf_scans_inside_a_behaviors_idle_primitive() {
+fn timber_wolf_behavior_idle_stays_on_the_calm_loop() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     let art = patrol_idle_art(&character, 0x5EED, 40);
 
     assert_eq!(art.len(), 40, "forty patrols reached their idle: {art:?}");
     assert!(
-        art.iter().any(|name| name == "scan"),
-        "the laser sweeps on some of them: {art:?}"
-    );
-    assert!(
-        art.iter().filter(|name| *name == "idle").count() * 2 > art.len(),
-        "and the base still dominates, because the manifest says so — the sweep \
-         declares a quarter of the ring: {art:?}"
+        art.iter().all(|name| name == "idle"),
+        "the behavior loops the calm idle, not the scan gesture: {art:?}"
     );
 }
 
-/// The same seed and Character draw the same members in the same order.
-/// A draw is the only thing deciding which member plays, so nothing else pins
-/// this.
+/// The same seed and Character draw the same idle art in the same order.
 #[test]
-fn the_same_seed_draws_timber_wolfs_variants_in_the_same_order() {
+fn the_same_seed_draws_timber_wolfs_idle_in_the_same_order() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     let art = patrol_idle_art(&character, 7, 16);
@@ -1096,17 +1083,16 @@ fn the_same_seed_draws_timber_wolfs_variants_in_the_same_order() {
         patrol_idle_art(&character, 7, 16),
         "same seed, same art"
     );
-    assert_ne!(
-        art,
-        patrol_idle_art(&character, 8, 16),
-        "and two Instances of one Character do not idle in lockstep"
+    assert!(
+        art.iter().all(|name| name == "idle"),
+        "the patrol's idle step is the calm loop: {art:?}"
     );
 }
 
-/// A quiet perch sits, then runs the same idle machine as the floor. With no
-/// idle-gesture declared, that is one weighted loop for the stretch.
+/// A quiet perch sits, then the calm idle loop. `scan` is a gesture, so the
+/// opening of perched idle is the base loop.
 #[test]
-fn timber_wolf_picks_one_perched_idle_loop_whatever_the_seed() {
+fn timber_wolf_perched_idle_opens_on_the_calm_loop() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
     let perch = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1123,56 +1109,33 @@ fn timber_wolf_picks_one_perched_idle_loop_whatever_the_seed() {
         ..WorldSnapshot::default()
     };
 
-    let chosen_loop = |seed: u64| {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
-            .with_behaviors(character.behaviors.clone())
-            .with_variant_seed(seed)
-            .with_idle_plan(character.idle_plan());
-        for _ in 0..250 {
-            let frame = engine.tick(&perch);
-            if frame.animation != "idle" {
-                continue;
-            }
-            assert!(
-                matches!(frame.idle_beat, Some(IdleBeat::Loop(_))),
-                "seed {seed} perched into {:?}",
-                frame.idle_beat
-            );
-            let drawn = character
-                .draw(
-                    frame.animation,
-                    frame.animation_ms,
-                    frame.ring_choice(),
-                    frame.facing,
-                )
-                .expect("draws");
-            assert_eq!(drawn.index, 0, "seed {seed} starts the loop at frame 0");
-            let name = drawn.animation.to_string();
-            for _ in 0..4 {
-                let frame = engine.tick(&perch);
-                let again = character
-                    .draw(
-                        frame.animation,
-                        frame.animation_ms,
-                        frame.ring_choice(),
-                        frame.facing,
-                    )
-                    .expect("draws");
-                assert_eq!(again.animation, name, "seed {seed} stays on the loop");
-            }
-            return name;
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan());
+    let mut opened = None;
+    for _ in 0..80 {
+        let frame = engine.tick(&perch);
+        if frame.animation != "idle" {
+            continue;
         }
-        panic!("seed {seed} never idled on the perch");
-    };
-
-    let drawn: BTreeSet<String> = (0..32).map(chosen_loop).collect();
-    assert!(
-        drawn.contains("scan"),
-        "the laser is one of the loops: {drawn:?}"
-    );
-    assert!(
-        drawn.contains("idle"),
-        "and the base is the other: {drawn:?}"
+        assert!(matches!(frame.idle_beat, Some(IdleBeat::Loop(_))));
+        let drawn = character
+            .draw(
+                frame.animation,
+                frame.animation_ms,
+                frame.ring_choice(),
+                frame.facing,
+            )
+            .expect("draws");
+        opened = Some(drawn.animation.to_string());
+        assert_eq!(drawn.index, 0, "the loop starts at frame 0");
+        break;
+    }
+    assert_eq!(
+        opened.as_deref(),
+        Some("idle"),
+        "perched idle opens on the calm loop"
     );
 }
 
@@ -1324,7 +1287,7 @@ fn buddy_bot_frames_are_90_square_rgba() {
     assert_eq!(
         frames.len(),
         78,
-        "the pack ships 78 PNG frames (57 base + 21 idle variants)"
+        "the pack ships 78 PNG frames (57 base + 21 idle-gesture frames)"
     );
 
     for (animation, frame, bytes) in frames {
@@ -1345,10 +1308,9 @@ fn buddy_bot_frames_are_90_square_rgba() {
     }
 }
 
-/// Idle mood variants ring with base idle (BMO / Timber Wolf pattern). Declared
-/// as art, not Behaviors — the ring is enough without Director weight.
+/// Mood strips are idle-gestures, declared as art rather than Behaviors.
 #[test]
-fn buddy_bot_declares_idle_life_variants() {
+fn buddy_bot_declares_idle_life_gestures() {
     let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
 
     let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-listen", 7)];
@@ -1361,17 +1323,12 @@ fn buddy_bot_declares_idle_life_variants() {
         assert_eq!(
             anim.frames.len(),
             count,
-            "{name} must carry the shipped {count}-frame loop"
+            "{name} must carry the shipped {count}-frame strip"
         );
-        assert!(
-            character.animations["idle"]
-                .variants
-                .contains(&name.to_string()),
-            "{name} is an idle variant"
-        );
+        assert_idle_gesture(&character, name);
         assert!(
             !character.behaviors.contains_key(name),
-            "no {name} Behavior — the variant ring is enough"
+            "no {name} Behavior; the gesture plays between loops"
         );
     }
 
@@ -1535,9 +1492,7 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
         "stroll outranks fidget/help so the mascot actually walks the desk"
     );
     assert!(
-        character.behaviors["stroll"]
-            .primitives
-            .contains(&character::Primitive::Walk),
+        character.behaviors["stroll"].plays(character::Primitive::Walk),
         "stroll is a Walk"
     );
     assert_eq!(
@@ -1557,9 +1512,7 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
         "nap opens at idle over 2m (was 5m — too rare against walk)"
     );
     assert!(
-        character.behaviors["nap"]
-            .primitives
-            .contains(&character::Primitive::Sleep),
+        character.behaviors["nap"].plays(character::Primitive::Sleep),
         "nap ends on sleep for an empty desk"
     );
 }
@@ -1567,7 +1520,7 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
 /// `PRIMITIVE_MS` is the turn, not the strip. The clock runs through that
 /// turn, and the Engine's own idle after it starts a loop at frame 0.
 #[test]
-fn a_behaviors_idle_sweeps_the_opening_then_loops() {
+fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
     let character = load_package("cat").expect("cat package is valid");
     let ground = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1575,88 +1528,70 @@ fn a_behaviors_idle_sweeps_the_opening_then_loops() {
         ..WorldSnapshot::default()
     };
 
-    let mut strips = BTreeSet::new();
-    for seed in 0..16 {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
-            .with_behaviors(character.behaviors.clone())
-            .with_variant_seed(seed)
-            .with_idle_plan(character.idle_plan());
-        let idling = (0..40)
-            .map(|_| engine.tick(&ground))
-            .find(|frame| frame.animation == "idle")
-            .expect("the cat lands and the landing gives way to idling");
-        let opening = shown_cat(&character, &idling);
-        assert_eq!(opening.1, 0, "seed {seed} starts its loop at frame 0");
-        assert!(
-            matches!(idling.idle_beat, Some(IdleBeat::Loop(_))),
-            "seed {seed} is on a loop"
-        );
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan());
+    let idling = (0..40)
+        .map(|_| engine.tick(&ground))
+        .find(|frame| frame.animation == "idle" && frame.playing_gesture.is_none())
+        .expect("the cat lands and the landing gives way to idling");
+    let opening = shown_cat(&character, &idling);
+    assert_eq!(
+        opening,
+        ("idle".to_string(), 0),
+        "the calm loop starts at frame 0"
+    );
+    assert!(matches!(idling.idle_beat, Some(IdleBeat::Loop(_))));
 
-        // `groom` is a single Idle Primitive over an idle already on screen:
-        // the Behavior with nothing to restart.
-        let mut during = BTreeSet::new();
-        let mut drew = BTreeSet::new();
-        let mut after = Vec::new();
-        for tick in 0..13 {
-            let frame = engine.tick(&WorldSnapshot {
-                proposal: (tick == 0).then(|| BehaviorProposal {
-                    behavior: "groom".to_string(),
-                    dialogue: None,
-                    direction: None,
-                }),
-                ..ground.clone()
-            });
-            if tick == 0 {
-                assert_eq!(
-                    frame.behavior.as_deref(),
-                    Some("groom"),
-                    "seed {seed} played the Behavior rather than refusing it"
-                );
-            }
-            let art = shown_cat(&character, &frame);
-            if frame.playing_primitive == Some(character::Primitive::Idle) {
-                drew.insert(art.0.clone());
-                during.insert(art.1);
-            } else if frame.animation == "idle" {
-                after.push(art);
+    let mut during = Vec::new();
+    let mut after = Vec::new();
+    for tick in 0..20 {
+        let frame = engine.tick(&WorldSnapshot {
+            proposal: (tick == 0).then(|| BehaviorProposal {
+                behavior: "groom".to_string(),
+                dialogue: None,
+                direction: None,
+            }),
+            ..ground.clone()
+        });
+        if tick == 0 {
+            assert_eq!(frame.behavior.as_deref(), Some("groom"));
+        }
+        let art = shown_cat(&character, &frame);
+        if frame.playing_gesture.as_deref() == Some("grooming") {
+            during.push(art.1);
+        } else if frame.animation == "idle" && !during.is_empty() {
+            after.push(art);
+            if after.len() == 4 {
+                break;
             }
         }
-
-        assert!(
-            during.len() > 1,
-            "seed {seed} advanced {drew:?} during the turn: {during:?}"
-        );
-        assert_eq!(
-            after.first().map(|art| art.1),
-            Some(0),
-            "seed {seed} starts the next loop at frame 0: {after:?}"
-        );
-        assert!(
-            after.iter().any(|art| art.1 != 0),
-            "seed {seed} keeps the loop moving: {after:?}"
-        );
-        strips.extend(drew);
     }
 
-    assert_eq!(
-        strips,
-        BTreeSet::from(["idle".to_string(), "waiting".to_string()]),
-        "and both members of the ring took a turn, so the variant is pinned \
-         with the base"
+    assert!(
+        during.windows(2).any(|pair| pair[1] == pair[0] + 1),
+        "grooming plays the full strip forward: {during:?}"
     );
+    assert!(
+        !during.windows(2).any(|pair| pair[0] == 5 && pair[1] == 0),
+        "grooming does not wrap: {during:?}"
+    );
+    assert_eq!(
+        after.first().map(|art| art.0.as_str()),
+        Some("idle"),
+        "the calm loop returns: {after:?}"
+    );
+    assert_eq!(after.first().map(|art| art.1), Some(0));
 }
 
 fn shown_cat(
     character: &character::Character,
     frame: &fidget_core::engine::Frame,
 ) -> (String, usize) {
+    let name = frame.playing_gesture.as_deref().unwrap_or(frame.animation);
     let drawn = character
-        .draw(
-            frame.animation,
-            frame.animation_ms,
-            frame.ring_choice(),
-            frame.facing,
-        )
+        .draw(name, frame.animation_ms, frame.ring_choice(), frame.facing)
         .expect("the cat draws the idle it is playing");
     (drawn.animation.to_string(), drawn.index)
 }

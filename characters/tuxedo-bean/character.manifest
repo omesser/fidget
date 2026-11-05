@@ -1,5 +1,5 @@
 # Source rows are documented in DEVELOPMENT.md; importer indices start at zero.
-# All nine source loops are retained: a seated idle with four idle variants.
+# All nine source loops are retained. Seated fidgets are idle-gestures.
 
 name = "Tuxedo Bean"
 render_mode = "smooth"
@@ -40,7 +40,7 @@ frames = [
   "frames/look-around-5.png",
 ]
 fps = 3
-variant_of = "idle"
+gesture_of = "idle"
 weight = 10
 
 [animations.nod-off]
@@ -55,7 +55,7 @@ frames = [
   "frames/nod-off-7.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 weight = 4
 
 [animations.review]
@@ -68,7 +68,7 @@ frames = [
   "frames/review-5.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 weight = 3
 
 [animations.wave]
@@ -79,7 +79,7 @@ frames = [
   "frames/wave-3.png",
 ]
 fps = 4
-variant_of = "idle"
+gesture_of = "idle"
 weight = 3
 
 [animations.walk]
