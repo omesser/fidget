@@ -480,6 +480,9 @@ struct InstanceState {
     /// falls a millisecond per millisecond and the window subtracts for itself;
     /// only a deadline that *moved* is worth a push.
     status_wake_ms: Option<u64>,
+    /// Whether this Instance's clock waits for its overlay's first draw: an
+    /// Instance that comes up with the app waits, a later Summon runs.
+    first_draw: FirstDraw,
 }
 
 /// One open menu, from the frame loop's side.
@@ -813,13 +816,11 @@ fn draw_response(
 /// The longest a launch Instance waits for its first draw. A page whose
 /// `character` load failed never draws, and WebView2 can listen seconds late.
 /// A calibration knob: hold plus fall must fit `wait_for_rest`'s 10 s.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
 const FIRST_DRAW_CEILING: Duration = Duration::from_secs(3);
 
 /// Whether an Instance's clock runs yet. A launch Instance waits until the
 /// overlay under its feet has drawn its art, so the user first sees the spawn
 /// pose, not a sprite halfway down its fall. `Running` is terminal.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FirstDraw {
     /// Spawned with the app and not yet seen. `held` is wall time spent waiting.
@@ -830,7 +831,6 @@ enum FirstDraw {
 }
 
 /// What one tick of `FirstDraw` decided.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Step {
     /// The Engine and this Instance's clocks get no time this tick.
@@ -843,7 +843,6 @@ enum Step {
     },
 }
 
-#[expect(dead_code, reason = "wired in by the fix")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Release {
     /// The overlay under the feet drew the art.
@@ -854,12 +853,26 @@ enum Release {
     Ceiling,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
 impl FirstDraw {
     /// Advance by one tick of `elapsed` wall time. The releasing tick runs on
     /// that tick's time only, never the time held, so the drop starts from rest.
     fn step(&mut self, elapsed: Duration, owner_drew: bool, visible: bool) -> Step {
-        todo!("{elapsed:?} {owner_drew} {visible}")
+        let FirstDraw::Waiting { held } = *self else {
+            return Step::Run;
+        };
+        let held = held + elapsed;
+        let by = if owner_drew {
+            Release::Drew
+        } else if !visible {
+            Release::Hidden
+        } else if held >= FIRST_DRAW_CEILING {
+            Release::Ceiling
+        } else {
+            *self = FirstDraw::Waiting { held };
+            return Step::Wait;
+        };
+        *self = FirstDraw::Running;
+        Step::Released { by, after: held }
     }
 }
 
@@ -2398,6 +2411,13 @@ fn overlay_rects(window: tauri::Window, rects: Vec<fidget_core::overlay_region::
 #[tauri::command]
 fn overlay_listening(window: tauri::Window) {
     platform::set_overlay_listening(window.label(), true);
+}
+
+/// The overlay's page has put a Character's art on screen, so a launch
+/// Instance under it may start moving.
+#[tauri::command]
+fn overlay_drew(window: tauri::Window) {
+    platform::set_overlay_drew(window.label());
 }
 
 /// A page that starts loading again no longer hears frames until it says so.
@@ -4547,6 +4567,7 @@ fn spawn_live(
         happened_last: None,
         verbs: Vec::new(),
         menu_hold: None,
+        first_draw: FirstDraw::Running,
         character,
     });
 }
@@ -4908,6 +4929,9 @@ fn spawn_instances(
             happened_last: None,
             verbs: Vec::new(),
             menu_hold: None,
+            first_draw: FirstDraw::Waiting {
+                held: Duration::ZERO,
+            },
         });
     }
 
@@ -5415,6 +5439,7 @@ fn main() {
             chat_prompt,
             chat_ready,
             overlay_listening,
+            overlay_drew,
             names_hint_act,
             permission_answer,
             elicitation_answer,

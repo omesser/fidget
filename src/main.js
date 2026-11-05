@@ -807,12 +807,27 @@ function drawView(view, now) {
   const src = art?.art[latest.animation]?.[latest.frame_index];
   if (src) {
     view.sprite.src = src;
+    tellDrew(view.sprite);
   }
   view.sprite.style.width = `${latest.width}px`;
   view.sprite.style.height = `${latest.height}px`;
   view.sprite.dataset.animation = latest.animation;
   view.sprite.dataset.frameIndex = latest.frame_index;
   view.sprite.style.visibility = "visible";
+}
+
+// The Shell holds a launch sprite's drop until the overlay under it shows the
+// spawn pose. Once per page load, a frame after decode, so the report follows
+// a paint. A failed decode reports too: a broken image is not worth the ceiling.
+let toldDrew = false;
+
+function tellDrew(sprite) {
+  if (toldDrew) return;
+  toldDrew = true;
+  sprite
+    .decode()
+    .catch(() => {})
+    .then(() => requestAnimationFrame(() => window.__TAURI__.core.invoke("overlay_drew").catch(console.error)));
 }
 
 // Armed rather than looping. A looping overlay keeps a CVDisplayLink running

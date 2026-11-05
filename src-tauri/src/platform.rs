@@ -172,6 +172,27 @@ pub fn set_overlay_listening(label: &str, listening: bool) {
     }
 }
 
+/// Overlays whose page has put a Character's art on screen. Never cleared: only
+/// a launch Instance reads it, once, so a reloaded page's stale mark holds nothing.
+static OVERLAYS_DREW: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Record that `label`'s page drew. A reload says it again.
+pub fn set_overlay_drew(label: &str) {
+    let Ok(mut all) = OVERLAYS_DREW.lock() else {
+        return;
+    };
+    if !all.iter().any(|owner| owner == label) {
+        all.push(label.to_string());
+    }
+}
+
+/// Whether `label`'s page has drawn a Character's art yet.
+pub fn overlay_drew(label: &str) -> bool {
+    OVERLAYS_DREW
+        .lock()
+        .is_ok_and(|all| all.iter().any(|owner| owner == label))
+}
+
 /// How many times each overlay's page has started loading.
 static OVERLAY_PAGE_LOADS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
 
