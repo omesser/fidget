@@ -416,12 +416,9 @@ try {
     Stop-FidgetTree $script:proc "count=$marksBash"
     # A title match can belong to some other process. Leave that one alone.
     foreach ($held in @($script:notepad, $script:launched)) {
-        if (-not $held) { continue }
-        $alive = $false
-        try { $alive = -not $held.HasExited } catch { continue }
-        if (-not $alive) { continue }
-        $stub = $script:launched -and ($held.Id -eq $script:launched.Id)
-        if (-not $stub -and $held.ProcessName -ne "Notepad") { continue }
+        if (-not $held -or $held.HasExited) { continue }
+        $started = $script:launched -and ($held.Id -eq $script:launched.Id)
+        if (-not $started -and $held.ProcessName -ne "Notepad") { continue }
         Stop-Process -Id $held.Id -Force -ErrorAction SilentlyContinue
     }
 }
