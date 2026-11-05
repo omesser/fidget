@@ -15,7 +15,6 @@
 #   at least 8 px; the click away pauses it without launching the held Space;
 #   k reaches mousepad; a click on the paused card returns the keyboard; Escape
 #   releases possession. Frame waits go through wait_for_trace.
-#
 # Usage: possession-live.x11.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 # FIDGET_SCENARIO_TRACE and FIDGET_SCENARIO_LETTER skip the GUI.
