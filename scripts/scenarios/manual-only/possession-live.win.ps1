@@ -202,8 +202,7 @@ $env:FIDGET_TRACE_FRAMES = "1"
 $env:FIDGET_TRACE_HITTEST = "1"
 $env:FIDGET_TRACE_BUBBLE = "1"
 $env:FIDGET_CHARACTER = "bmo"
-# The menu click aims at where BMO landed. Greet then patrols, so the stock
-# package is copied with every ambient behavior but fidget held at weight 0.
+# The menu click aims at where BMO landed, and greet then patrols.
 $chars = Join-Path $out "characters"
 New-Item -ItemType Directory -Force -Path $chars | Out-Null
 Copy-Item -Recurse (Join-Path (Join-Path $root "characters") "bmo") $chars
