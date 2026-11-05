@@ -82,7 +82,6 @@ pub(super) fn resolve_animations(
                     fps: declaration.fps,
                     looping: declaration.looping,
                     variants: Vec::new(),
-                    gestures: Vec::new(),
                     left_strip: None,
                     weight: declaration.weight,
                 },
@@ -154,9 +153,6 @@ pub(super) fn check_variants(
             None => errors.push(format!(
                 "animation {name:?} is a variant_of {base:?}, which is not declared"
             )),
-            Some(_) if animation.gesture_of.is_some() => errors.push(format!(
-                "animation {name:?} declares both variant_of and gesture_of"
-            )),
             Some(target) if target.variant_of.is_some() => errors.push(format!(
                 "animation {name:?} is a variant_of {base:?}, itself a variant; \
                  variants ring one base"
@@ -168,41 +164,13 @@ pub(super) fn check_variants(
             Some(_) => pairs.push((name.clone(), base.clone())),
         }
     }
-    pairs
-}
-
-/// Validate every `gesture_of`. An idle-gesture is one pass between loops,
-/// so it names base `idle` and nothing that is already a variant or a gesture.
-pub(super) fn check_gestures(
-    declared: &BTreeMap<String, DeclaredAnimation>,
-    errors: &mut Vec<String>,
-) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-    for (name, animation) in declared {
-        let Some(base) = &animation.gesture_of else {
-            continue;
-        };
-        // `check_variants` already names the animation that declares both.
-        if animation.variant_of.is_some() {
-            continue;
-        }
-        match declared.get(base) {
-            _ if base == name => errors.push(format!("animation {name:?} is a gesture_of itself")),
-            None => errors.push(format!(
-                "animation {name:?} is a gesture_of {base:?}, which is not declared"
-            )),
-            Some(target) if target.variant_of.is_some() => errors.push(format!(
-                "animation {name:?} is a gesture_of {base:?}, itself a variant; \
-                 a gesture_of names \"idle\""
-            )),
-            Some(target) if target.gesture_of.is_some() => errors.push(format!(
-                "animation {name:?} is a gesture_of {base:?}, itself a gesture; \
-                 a gesture_of names \"idle\""
-            )),
-            Some(_) if base != "idle" => errors.push(format!(
-                "animation {name:?} is a gesture_of {base:?}, and a gesture_of names \"idle\""
-            )),
-            Some(_) => pairs.push((name.clone(), base.clone())),
+    if let Some(family) = declared.get(super::IDLE_GESTURE) {
+        if let Some(base) = &family.variant_of {
+            errors.push(format!(
+                "animation {:?} is a variant_of {base:?}, and the idle-gesture \
+                 family base is not a variant",
+                super::IDLE_GESTURE
+            ));
         }
     }
     pairs
@@ -369,10 +337,23 @@ pub(super) fn check_play_steps(
     animations: &BTreeMap<String, Animation>,
     errors: &mut Vec<String>,
 ) {
-    let gestures = animations
-        .get("idle")
-        .map(|idle| idle.gestures.clone())
-        .unwrap_or_default();
+    let Some(family) = animations.get(super::IDLE_GESTURE) else {
+        // No family: every non-Primitive play word is unnamed.
+        for (name, behavior) in behaviors {
+            for step in &behavior.steps {
+                let Step::Gesture(gesture) = step else {
+                    continue;
+                };
+                errors.push(format!(
+                    "play for behavior {name:?} names {gesture:?}, which is not a Primitive \
+                     or an idle-gesture"
+                ));
+            }
+        }
+        return;
+    };
+    let mut gestures = vec![super::IDLE_GESTURE.to_string()];
+    gestures.extend(family.variants.iter().cloned());
     for (name, behavior) in behaviors {
         for step in &behavior.steps {
             let Step::Gesture(gesture) = step else {
@@ -698,7 +679,8 @@ mod tests {
         gesture_package.insert(
             CHARACTER_MANIFEST_FILE.to_string(),
             format!(
-                "{}[animations.groom]\nframes = [\"wide-0.png\"]\ngesture_of = \"idle\"\n",
+                "{}[animations.idle-gesture]\nframes = [\"idle-0.png\"]\n\
+                 [animations.groom]\nframes = [\"wide-0.png\"]\nvariant_of = \"idle-gesture\"\n",
                 declaring(&REQUIRED_ANIMATIONS)
             )
             .into_bytes(),

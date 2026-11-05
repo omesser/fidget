@@ -3639,7 +3639,6 @@ mod tests {
                         looping: true,
                         variants: Vec::new(),
                         left_strip: None,
-                        gestures: Vec::new(),
                         // core keeps its own default private, and this test
                         // only needs a Behavior something can pick.
                         weight: 10,

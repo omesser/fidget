@@ -39,7 +39,7 @@ frames = [
   "frames/idle-5.png",
 ]
 fps = 2
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 10
 
 [animations.look-around]
@@ -52,7 +52,7 @@ frames = [
   "frames/look-around-5.png",
 ]
 fps = 2
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 10
 
 [animations.checking-work]
@@ -65,7 +65,7 @@ frames = [
   "frames/checking-work-5.png",
 ]
 fps = 3
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 3
 
 [animations.recover-card]
@@ -80,10 +80,10 @@ frames = [
   "frames/recover-card-7.png",
 ]
 fps = 3
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 4
 
-[animations.waddle-in-place]
+[animations.idle-gesture]
 frames = [
   "frames/waddle-in-place-0.png",
   "frames/waddle-in-place-1.png",
@@ -93,7 +93,6 @@ frames = [
   "frames/waddle-in-place-5.png",
 ]
 fps = 4
-gesture_of = "idle"
 weight = 3
 
 [animations.walk]

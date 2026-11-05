@@ -39,14 +39,13 @@ weight = 80
 [animations.sing]
 frames = ["frames/sing-0.png", "frames/sing-1.png", "frames/sing-2.png", "frames/sing-3.png"]
 fps = 3
-gesture_of = "idle"
+variant_of = "idle-gesture"
 
 # Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
 # that vanishes mid-loop reads as a glitch, not a trick.
-[animations.skate]
+[animations.idle-gesture]
 frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]
 fps = 3
-gesture_of = "idle"
 
 # Dribbling the whole way is a mood rather than the usual walk: three plain
 # walks to each one that goes out with the football.

@@ -40,8 +40,6 @@ pub(super) struct DeclaredAnimation {
     pub(super) fps: u32,
     pub(super) looping: bool,
     pub(super) variant_of: Option<String>,
-    /// `gesture_of`: an idle-gesture, one pass between idle loops. Not a variant.
-    pub(super) gesture_of: Option<String>,
     /// The Animation this one is the left-facing strip of, when the package
     /// draws its leftward travel rather than letting the renderer mirror it.
     pub(super) left_of: Option<String>,
@@ -432,7 +430,6 @@ fn parse_animation(
     let mut fps = DEFAULT_FPS;
     let mut looping = true;
     let mut variant_of = None;
-    let mut gesture_of = None;
     let mut left_of = None;
     let mut weight = DEFAULT_WEIGHT;
 
@@ -444,14 +441,6 @@ fn parse_animation(
                 _ => errors.push(format!(
                     "variant_of for animation {name:?} is {}, and must name \
                      an animation, as variant_of = \"idle\"",
-                    wrote(manifest, item.span()).unwrap_or("?")
-                )),
-            },
-            "gesture_of" => match item.as_str() {
-                Some(base) if !base.is_empty() => gesture_of = Some(base.to_string()),
-                _ => errors.push(format!(
-                    "gesture_of for animation {name:?} is {}, and must name \
-                     an animation, as gesture_of = \"idle\"",
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
@@ -493,7 +482,7 @@ fn parse_animation(
             },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps, loop, variant_of, gesture_of, \
+                 an Animation declares frames, fps, loop, variant_of, \
                  left_of and weight"
             )),
         }
@@ -513,7 +502,6 @@ fn parse_animation(
         fps,
         looping,
         variant_of,
-        gesture_of,
         left_of,
         weight,
     })
@@ -1016,7 +1004,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop, variant_of, gesture_of, left_of and weight"
+                 frames, fps, loop, variant_of, left_of and weight"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives or idle-gestures, \
                  as play = [\"react\", \"talk\"]"

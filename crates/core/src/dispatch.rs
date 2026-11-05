@@ -929,7 +929,6 @@ mod tests {
                     variants: Vec::new(),
                     left_strip: None,
                     weight: DEFAULT_WEIGHT,
-                    gestures: Vec::new(),
                 },
             );
         }

@@ -438,11 +438,10 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
 /// The beat names an idle-gesture, so draw plays that strip from frame 0.
 /// A weighed idle draw stays on the calm loop.
 fn assert_idle_gesture(character: &character::Character, name: &str) {
+    let family = &character.animations["idle-gesture"];
+    let in_family = name == "idle-gesture" || family.variants.iter().any(|variant| variant == name);
+    assert!(in_family, "{name} is an idle-gesture");
     let idle = &character.animations["idle"];
-    assert!(
-        idle.gestures.iter().any(|gesture| gesture == name),
-        "{name} is an idle-gesture"
-    );
     assert!(
         !idle.variants.iter().any(|variant| variant == name),
         "{name} is outside the calm loop"
@@ -479,7 +478,7 @@ fn rubber_duck_plays_thinking_and_looking_as_idle_gestures() {
         ("thinking", 6),
         ("pondering", 6),
         ("look-right", 8),
-        ("look-left", 8),
+        ("idle-gesture", 8),
     ] {
         assert_eq!(
             character.animations[name]
@@ -517,7 +516,7 @@ fn tux_draws_each_idle_gesture_and_its_left_waddle() {
             ("look-around", 6),
             ("checking-work", 6),
             ("recover-card", 8),
-            ("waddle-in-place", 6),
+            ("idle-gesture", 6),
         ],
     );
 }
@@ -530,7 +529,7 @@ fn tuxedo_bean_draws_each_idle_gesture_and_its_left_walk() {
         &[
             ("look-around", 6),
             ("nod-off", 8),
-            ("review", 6),
+            ("idle-gesture", 6),
             ("wave", 4),
         ],
     );
@@ -546,14 +545,12 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
         (0, "look-around"),
         (3, "wave"),
         (5, "nod-off"),
-        (8, "review"),
+        (8, "idle-gesture"),
     ] {
-        assert!(
-            character.animations["idle"]
-                .gestures
-                .contains(&name.to_string()),
-            "row {row} ({name}) plays between idle loops"
-        );
+        let family = &character.animations["idle-gesture"];
+        let in_family =
+            name == "idle-gesture" || family.variants.iter().any(|variant| variant == name);
+        assert!(in_family, "row {row} ({name}) plays between idle loops");
     }
     for (row, primitive) in [
         (1, Primitive::Walk),
@@ -937,12 +934,12 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
-        character.animations.contains_key("scan"),
-        "scan animation is declared"
+        character.animations.contains_key("idle-gesture"),
+        "the TAC sweep is the idle-gesture family"
     );
-    let scan = &character.animations["scan"];
+    let scan = &character.animations["idle-gesture"];
     assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC sweep");
-    assert_idle_gesture(&character, "scan");
+    assert_idle_gesture(&character, "idle-gesture");
     assert!(
         character.animations["sit"].variants.is_empty(),
         "sit is not where the laser lives"
@@ -967,9 +964,9 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     );
 
     let drawn = character
-        .draw("scan", 0, 0, 1.0)
+        .draw("idle-gesture", 0, 0, 1.0)
         .expect("scan draws when asked for by name");
-    assert_eq!(drawn.animation, "scan");
+    assert_eq!(drawn.animation, "idle-gesture");
 
     let engage = &character.behaviors["engage"];
     assert!(
@@ -1313,7 +1310,7 @@ fn buddy_bot_frames_are_90_square_rgba() {
 fn buddy_bot_declares_idle_life_gestures() {
     let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
 
-    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-listen", 7)];
+    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-gesture", 7)];
     for (name, count) in expected {
         assert!(
             character.animations.contains_key(name),

@@ -271,8 +271,7 @@ Any other name draws only as a Variant, an idle-gesture, or a Left Strip of one 
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name. The base and its Variants are one ring. On idle the ring is the calm loops. Every other ring draws one member until the Animation changes. | |
-| `gesture_of` | No | `"idle"` only. This Animation is an idle-gesture: one pass between idle loops, not a member of the loop ring. | |
+| `variant_of` | No | Another Animation's name. The base and its Variants are one ring. `variant_of = "idle"` is a calm loop. `variant_of = "idle-gesture"` is one pass between those loops, and the base Animation is named `idle-gesture`. Every other ring draws one member until the Animation changes. | |
 | `weight` | No | Whole number: this Animation's share of its ring, loop or gesture. Read only there. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
 
@@ -374,13 +373,17 @@ frames = [
 fps = 5
 weight = 20
 
+[animations.idle-gesture]
+frames = ["frames/idle-listen-0.png"]
+fps = 8
+
 [animations.idle-blink]
 frames = [
   "frames/idle-blink-0.png",
   # ... frames/idle-blink-1.png to frames/idle-blink-5.png
 ]
 fps = 8
-gesture_of = "idle"
+variant_of = "idle-gesture"
 
 [animations.land]
 frames = [
@@ -415,7 +418,7 @@ weight = 40
 when = "idle over 2m"
 ```
 
-Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its proactive calls keep their first wait, two minutes by default, instead of backing off. `idle-blink`, `idle-breathe`, and `idle-listen` are idle-gestures, one pass between calm loops. `land` plays once and holds its last frame into idle. `greet` hands over to `stroll`, and `settle` hands over to `nap`, which ends the chain. Buddy Bot declares no `grab`, so a drag plays its `fall`.
+Buddy Bot is drawn art at its own size, so it renders `smooth` at scale 1. Its proactive calls keep their first wait, two minutes by default, instead of backing off. `idle-blink`, `idle-breathe`, and `idle-gesture` (the listen strip) are one idle-gesture family, one pass between calm loops. `land` plays once and holds its last frame into idle. `greet` hands over to `stroll`, and `settle` hands over to `nap`, which ends the chain. Buddy Bot declares no `grab`, so a drag plays its `fall`.
 
 #### Declaring where the art came from
 

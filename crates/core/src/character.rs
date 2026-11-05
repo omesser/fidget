@@ -77,8 +77,8 @@ mod manifest;
 mod resolve;
 use manifest::parse;
 use resolve::{
-    check_frame_facing, check_gestures, check_left_strips, check_play_steps, check_variants,
-    resolve_animations, resolve_behaviors,
+    check_frame_facing, check_left_strips, check_play_steps, check_variants, resolve_animations,
+    resolve_behaviors,
 };
 
 /// A Character Package as bytes: file name to contents. The Shell does the
@@ -98,6 +98,10 @@ pub const PERSONALITY_FILE: &str = "personality.txt";
 pub const REQUIRED_ANIMATIONS: [&str; 9] = [
     "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
+
+/// The variant family of idle-gestures. The base Animation has this name.
+/// Other gestures declare `variant_of` it. Calm loops are `variant_of` `"idle"`.
+pub const IDLE_GESTURE: &str = "idle-gesture";
 
 /// How long a Personality Prompt may be, in characters. Untrusted text in every
 /// Character Prompt the Director sends, so an unbounded one spends tokens and
@@ -310,9 +314,6 @@ pub struct Animation {
     /// manifest does not say. An Animation in no ring carries the default all
     /// the same, and nothing reads it.
     pub weight: u32,
-    /// Idle-gestures of this Animation, in name order. Only base `idle` has
-    /// any. They are not variants: a weighed draw never lands on one.
-    pub gestures: Vec<String>,
 }
 
 impl Animation {
@@ -511,7 +512,7 @@ pub struct Drawn<'a> {
 pub enum IdleBeat {
     /// An idle loop: base `idle`, or a `variant_of` it.
     IdleLoop(String),
-    /// An idle-gesture: a `gesture_of` idle, one pass from frame 0.
+    /// An idle-gesture: the `idle-gesture` family, one pass from frame 0.
     IdleGesture(String),
 }
 
@@ -589,9 +590,12 @@ impl Character {
             }
         }
         let mut gestures = Vec::new();
-        for name in &base.gestures {
-            if let Some(animation) = self.animations.get(name) {
-                gestures.push(idle_member(name, animation));
+        if let Some(family) = self.animations.get(IDLE_GESTURE) {
+            gestures.push(idle_member(IDLE_GESTURE, family));
+            for name in &family.variants {
+                if let Some(animation) = self.animations.get(name) {
+                    gestures.push(idle_member(name, animation));
+                }
             }
         }
         IdlePlan {
@@ -687,14 +691,22 @@ impl Character {
         }
     }
 
-    /// `member` when it is `requested`, a variant of it, or a gesture of it.
-    /// Anything else draws nothing, so a stale name cannot show another strip.
+    /// True when `member` is the idle-gesture base or one of its variants.
+    fn idle_gesture_named(&self, member: &str) -> bool {
+        let Some(family) = self.animations.get(IDLE_GESTURE) else {
+            return false;
+        };
+        member == IDLE_GESTURE || family.variants.iter().any(|variant| variant == member)
+    }
+
+    /// `member` when it is `requested`, a variant of it, or an idle-gesture
+    /// while `requested` is idle. Anything else draws nothing, so a stale
+    /// name cannot show another strip.
     fn beat_member(&self, requested: &str, member: &str) -> Option<(&str, &Animation)> {
         let (name, base) = self.named(requested)?;
-        let linked = member == name
-            || base.variants.iter().any(|variant| variant == member)
-            || base.gestures.iter().any(|gesture| gesture == member);
-        if !linked {
+        let linked = member == name || base.variants.iter().any(|variant| variant == member);
+        let gesture = name == "idle" && self.idle_gesture_named(member);
+        if !linked && !gesture {
             return None;
         }
         self.animations
@@ -805,7 +817,6 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
 
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
-    let gesture_pairs = check_gestures(&declared.animations, &mut errors);
     let left_pairs = check_left_strips(&declared.animations, &mut errors);
     check_frame_facing(&declared, &mut errors);
     let (mut animations, art) = resolve_animations(
@@ -824,23 +835,21 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             }
         }
     }
-    for (gesture, base) in gesture_pairs {
-        if animations.contains_key(&gesture) {
-            if let Some(base) = animations.get_mut(&base) {
-                base.gestures.push(gesture);
-            }
-        }
-    }
     // Idle swaps a loop and a gesture mid-stretch, so a different size would
     // jump the sprite. A walk or talk ring is drawn once and may differ.
-    if let Some(idle) = animations.get("idle") {
-        let base_size = idle.frame_size;
-        let names: Vec<String> = idle
-            .variants
-            .iter()
-            .chain(idle.gestures.iter())
-            .cloned()
-            .collect();
+    let idle_loops = animations
+        .get("idle")
+        .map(|idle| (idle.frame_size, idle.variants.clone()));
+    let gesture_members = animations.get(IDLE_GESTURE).map(|family| {
+        let mut names = vec![IDLE_GESTURE.to_string()];
+        names.extend(family.variants.iter().cloned());
+        names
+    });
+    if let Some((base_size, loops)) = idle_loops {
+        let mut names = loops;
+        if let Some(gestures) = gesture_members {
+            names.extend(gestures);
+        }
         for name in names {
             let Some(member) = animations.get(&name) else {
                 continue;
@@ -987,7 +996,6 @@ pub(crate) mod tests {
             fps,
             looping,
             variants: Vec::new(),
-            gestures: Vec::new(),
             left_strip: None,
             weight: DEFAULT_WEIGHT,
         }

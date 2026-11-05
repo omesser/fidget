@@ -35,13 +35,12 @@ weight = 20
 [animations.grooming]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 5
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 10
 
-[animations.waiting]
+[animations.idle-gesture]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
 fps = 6
-gesture_of = "idle"
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]

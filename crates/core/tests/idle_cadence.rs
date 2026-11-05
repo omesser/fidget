@@ -46,11 +46,15 @@ fn character(every: Option<&str>, spin_fps: u32, sway_weight: u32) -> Character 
             ));
         }
     }
+    // `spin` is a member of the idle-gesture family. The base carries no
+    // weight, so the draw lands on spin. `sway` stays a calm loop.
     manifest.push_str(&format!(
         "[animations.sway]\nframes = [\"idle-0.png\", \"idle-0.png\"]\n\
          fps = 8\nvariant_of = \"idle\"\nweight = {sway_weight}\n\
+         [animations.idle-gesture]\nframes = [\"idle-0.png\"]\n\
+         fps = {spin_fps}\nweight = 0\n\
          [animations.spin]\nframes = [\"idle-0.png\", \"idle-0.png\"]\n\
-         fps = {spin_fps}\ngesture_of = \"idle\"\nweight = 1\n"
+         fps = {spin_fps}\nvariant_of = \"idle-gesture\"\nweight = 1\n"
     ));
     load(&package(&manifest)).unwrap_or_else(|errors| panic!("loads: {errors:?}"))
 }
@@ -726,32 +730,31 @@ fn a_gap_that_is_not_a_pair_is_rejected_by_name() {
 }
 
 #[test]
-fn gesture_of_anything_but_idle_is_rejected_by_name() {
+fn a_gesture_of_key_is_rejected_by_name() {
     let manifest = format!(
-        "{}[animations.spin]\nframes = [\"idle-0.png\"]\ngesture_of = \"walk\"\n",
-        manifest_naming("walk", "")
+        "{}[animations.spin]\nframes = [\"idle-0.png\"]\ngesture_of = \"idle\"\n",
+        manifest_naming("idle", "")
     );
-    let errors = load(&package(&manifest)).expect_err("gesture_of walk");
+    let errors = load(&package(&manifest)).expect_err("gesture_of is not a key");
     assert!(
         errors
             .iter()
-            .any(|error| error.contains("gesture_of") && error.contains("walk")),
+            .any(|error| error.contains("gesture_of") && error.contains("unknown")),
         "{errors:?}"
     );
 }
 
 #[test]
-fn gesture_of_a_variant_is_rejected_by_name() {
+fn the_idle_gesture_base_is_not_itself_a_variant() {
     let manifest = format!(
-        "{}[animations.sway]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle\"\n\
-         [animations.spin]\nframes = [\"idle-0.png\"]\ngesture_of = \"sway\"\n",
+        "{}[animations.idle-gesture]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle\"\n",
         manifest_naming("idle", "")
     );
-    let errors = load(&package(&manifest)).expect_err("gesture of a variant");
+    let errors = load(&package(&manifest)).expect_err("family base is a variant");
     assert!(
-        errors.iter().any(|error| error.contains("spin")
-            && error.contains("sway")
-            && error.contains("variant")),
+        errors
+            .iter()
+            .any(|error| error.contains("idle-gesture") && error.contains("not a variant")),
         "{errors:?}"
     );
 }

@@ -40,7 +40,7 @@ frames = [
   "frames/look-around-5.png",
 ]
 fps = 3
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 10
 
 [animations.nod-off]
@@ -55,10 +55,10 @@ frames = [
   "frames/nod-off-7.png",
 ]
 fps = 4
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 4
 
-[animations.review]
+[animations.idle-gesture]
 frames = [
   "frames/review-0.png",
   "frames/review-1.png",
@@ -68,7 +68,6 @@ frames = [
   "frames/review-5.png",
 ]
 fps = 4
-gesture_of = "idle"
 weight = 3
 
 [animations.wave]
@@ -79,7 +78,7 @@ frames = [
   "frames/wave-3.png",
 ]
 fps = 4
-gesture_of = "idle"
+variant_of = "idle-gesture"
 weight = 3
 
 [animations.walk]

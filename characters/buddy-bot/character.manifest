@@ -66,7 +66,7 @@ frames = [
   "frames/idle-breathe-7.png",
 ]
 fps = 5
-gesture_of = "idle"
+variant_of = "idle-gesture"
 
 [animations.idle-blink]
 frames = [
@@ -78,9 +78,9 @@ frames = [
   "frames/idle-blink-5.png",
 ]
 fps = 8
-gesture_of = "idle"
+variant_of = "idle-gesture"
 
-[animations.idle-listen]
+[animations.idle-gesture]
 frames = [
   "frames/idle-listen-0.png",
   "frames/idle-listen-1.png",
@@ -91,7 +91,6 @@ frames = [
   "frames/idle-listen-6.png",
 ]
 fps = 4
-gesture_of = "idle"
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
 # 3/4 right stride after pack flip; cheek LED omitted on walk only.

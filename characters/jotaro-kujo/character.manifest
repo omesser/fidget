@@ -35,10 +35,9 @@ frames = ["frames/waiting-0.png", "frames/waiting-1.png"]
 fps = 2
 weight = 10
 
-[animations.coat-flick]
+[animations.idle-gesture]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
-gesture_of = "idle"
 weight = 30
 
 [animations.walk]
