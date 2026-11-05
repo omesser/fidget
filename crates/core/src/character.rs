@@ -77,7 +77,8 @@ mod manifest;
 mod resolve;
 use manifest::parse;
 use resolve::{
-    check_frame_facing, check_left_strips, check_variants, resolve_animations, resolve_behaviors,
+    check_frame_facing, check_gestures, check_left_strips, check_variants, resolve_animations,
+    resolve_behaviors,
 };
 
 /// A Character Package as bytes: file name to contents. The Shell does the
@@ -117,10 +118,15 @@ pub(crate) const DEFAULT_FPS: u32 = 8;
 /// down: a default of one is also the floor.
 pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 
-/// How long the Engine holds base `idle` frame 0 when the manifest declares
-/// no `rest_ms`. Short of sleep, long enough that a gesture reads as a choice.
-pub(crate) const DEFAULT_REST_MIN_MS: u32 = 3_000;
-pub(crate) const DEFAULT_REST_MAX_MS: u32 = 10_000;
+/// Seconds between idle-gestures when the manifest does not say. Inclusive.
+/// Short enough to read as alive, long enough that the loop is the baseline.
+pub const DEFAULT_GESTURE_EVERY_S: (u32, u32) = (10, 30);
+
+/// Seconds of Grounded or Perched time with no user interaction before sleep.
+pub const DEFAULT_SLEEP_AFTER_S: (u32, u32) = (120, 600);
+
+/// Seconds asleep before the sprite wakes on its own.
+pub const DEFAULT_SLEEP_FOR_S: (u32, u32) = (300, 600);
 
 /// The scale the renderer uses when a Character does not say.
 /// Four is what the shipped pixel-art Characters have always been drawn at.
@@ -304,9 +310,9 @@ pub struct Animation {
     /// manifest does not say. An Animation in no ring carries the default all
     /// the same, and nothing reads it.
     pub weight: u32,
-    /// `[rest_ms]` on base `idle`: how long frame 0 is held between gestures.
-    /// `None` on every other Animation, and on an idle that doesn't say.
-    pub rest_ms: Option<(u32, u32)>,
+    /// Idle-gestures of this Animation, in name order. Only base `idle` has
+    /// any. They are not variants: a weighed draw never lands on one.
+    pub gestures: Vec<String>,
 }
 
 impl Animation {
@@ -368,6 +374,10 @@ pub struct Behavior {
     pub trigger: Option<Trigger>,
     /// The Character manifest doesn't declare it; the loader added it.
     pub not_in_manifest: bool,
+    /// `type = "idle"`. This Behavior's `idle` steps use the Engine's idle
+    /// loops and idle-gestures. Otherwise an `idle` step draws the loop ring
+    /// and loops that member for the turn.
+    pub idle_type: bool,
 }
 
 /// Which way a frame's art faces, as drawn. The renderer mirrors a frame
@@ -418,6 +428,12 @@ pub struct Character {
     /// How the Character reacts to a cursor rushing at it.
     pub rush_reaction: CursorReaction,
     pub gravity_scale: GravityScale,
+    /// Inclusive seconds between idle-gestures. The manifest, or the default.
+    pub gesture_every_s: (u32, u32),
+    /// Inclusive seconds awake and untouched before sleep.
+    pub sleep_after_s: (u32, u32),
+    /// Inclusive seconds asleep before waking into an idle loop.
+    pub sleep_for_s: (u32, u32),
     /// Where the art came from, when the package says. `None` is silence, not
     /// a claim: a package that declares no `[source]` gets no attribution
     /// printed for it rather than one implying the art is this repository's.
@@ -472,17 +488,18 @@ pub struct Drawn<'a> {
     pub mirrored: bool,
 }
 
-/// How the Engine's own idle is drawn. Absent on every other Animation,
-/// including a Behavior's `idle`, which still weighs a draw and loops.
+/// How the Engine's own idle is drawn. `None` for a Behavior's ordinary
+/// `idle`, and for walk, talk, and every other Animation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IdleBeat {
-    /// Base `idle`, frame 0, held still.
-    Rest,
-    /// One ring member, already picked, playing from its first frame.
+    /// Base `idle`, or a `variant_of` it. `draw` plays it from `animation_ms`.
+    Loop(String),
+    /// A `gesture_of` idle, one pass from frame 0. The Engine cuts it before
+    /// the strip wraps.
     Gesture(String),
 }
 
-/// One idle-ring member the Engine can gesture: the base, or a variant.
+/// One idle loop or idle-gesture the Engine can pick.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdleMember {
     pub(crate) name: String,
@@ -491,13 +508,15 @@ pub struct IdleMember {
     pub(crate) fps: u32,
 }
 
-/// The idle ring and the rest range, handed to the Engine beside the seed.
-/// The Engine picks; `draw` does not weigh this ring a second time.
+/// Loops, idle-gestures, and the timing ranges. The Engine picks; `draw`
+/// does not weigh this a second time.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IdleRing {
-    pub(crate) members: Vec<IdleMember>,
-    pub(crate) rest_min_ms: u32,
-    pub(crate) rest_max_ms: u32,
+pub struct IdlePlan {
+    pub(crate) loops: Vec<IdleMember>,
+    pub(crate) gestures: Vec<IdleMember>,
+    pub(crate) gesture_every_s: (u32, u32),
+    pub(crate) sleep_after_s: (u32, u32),
+    pub(crate) sleep_for_s: (u32, u32),
 }
 
 /// What `Character::draw` uses to choose a ring member.
@@ -526,43 +545,51 @@ impl<'a> RingChoice<'a> {
 
 impl Character {
     /// How tall the base idle frame stands, in points, at this Character's
-    /// scale. A weighed zero can land on a variant, so this asks for the base.
-    /// The art hangs above the feet, which is the room a high Perch must leave.
+    /// scale. Asks for the base idle loop by name: a weighed zero can land
+    /// on a variant. The art hangs above the feet a high Perch must clear.
     pub fn sprite_height(&self) -> f64 {
-        self.draw("idle", 0, RingChoice::Beat(&IdleBeat::Rest), 1.0)
+        let beat = IdleBeat::Loop("idle".to_string());
+        self.draw("idle", 0, RingChoice::Beat(&beat), 1.0)
             .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
             * f64::from(self.scale)
     }
 
-    /// The idle ring in draw order — base, then variants by name — and the
-    /// rest range the manifest set, or the Engine default.
-    pub fn idle_ring(&self) -> IdleRing {
+    /// Idle loops (base, then `variant_of` by name), idle-gestures, and the
+    /// timing ranges. Missing art is an empty plan at the defaults.
+    pub fn idle_plan(&self) -> IdlePlan {
         let Some(base) = self.animations.get("idle") else {
-            return IdleRing {
-                members: Vec::new(),
-                rest_min_ms: DEFAULT_REST_MIN_MS,
-                rest_max_ms: DEFAULT_REST_MAX_MS,
+            return IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                gesture_every_s: self.gesture_every_s,
+                sleep_after_s: self.sleep_after_s,
+                sleep_for_s: self.sleep_for_s,
             };
         };
-        let mut members = vec![idle_member("idle", base)];
+        let mut loops = vec![idle_member("idle", base)];
         for name in &base.variants {
             if let Some(animation) = self.animations.get(name) {
-                members.push(idle_member(name, animation));
+                loops.push(idle_member(name, animation));
             }
         }
-        let (rest_min_ms, rest_max_ms) = base
-            .rest_ms
-            .unwrap_or((DEFAULT_REST_MIN_MS, DEFAULT_REST_MAX_MS));
-        IdleRing {
-            members,
-            rest_min_ms,
-            rest_max_ms,
+        let mut gestures = Vec::new();
+        for name in &base.gestures {
+            if let Some(animation) = self.animations.get(name) {
+                gestures.push(idle_member(name, animation));
+            }
+        }
+        IdlePlan {
+            loops,
+            gestures,
+            gesture_every_s: self.gesture_every_s,
+            sleep_after_s: self.sleep_after_s,
+            sleep_for_s: self.sleep_for_s,
         }
     }
 
-    /// Whether a later tick of this beat would show a different frame. Rest
-    /// is a held pose, so it must not keep the renderer hot; a Behavior's
-    /// idle loops, so it stays on the clock until the turn ends.
+    /// Whether a later tick would show a different frame. A one-frame loop
+    /// is still, so it must not keep the renderer hot. A Behavior's idle
+    /// loops, so it stays on the clock until the turn ends.
     pub fn art_still_advancing(
         &self,
         animation: &str,
@@ -570,7 +597,10 @@ impl Character {
         beat: Option<&IdleBeat>,
     ) -> bool {
         match beat {
-            Some(IdleBeat::Rest) => false,
+            Some(IdleBeat::Loop(name)) => self.animations.get(name).is_some_and(|anim| {
+                (anim.looping && anim.frames.len() > 1)
+                    || anim.frame_at(animation_ms) + 1 < anim.frames.len()
+            }),
             Some(IdleBeat::Gesture(name)) => self.animations.get(name).is_some_and(|anim| {
                 anim.frames.len() > 1 && anim.frame_at(animation_ms) + 1 < anim.frames.len()
             }),
@@ -581,8 +611,7 @@ impl Character {
     }
 
     /// Which frame of `animation` is on screen. A weighed draw picks a ring
-    /// member; `IdleBeat::Rest` is the base's first frame, held, and a
-    /// `Gesture` is the member the Engine already picked.
+    /// member. A beat plays the named loop or gesture from `animation_ms`.
     pub fn draw<'c>(
         &self,
         animation: &str,
@@ -595,12 +624,8 @@ impl Character {
                 let (name, animation) = self.resolve(animation, draw)?;
                 (name, animation, animation_ms)
             }
-            RingChoice::Beat(IdleBeat::Rest) => {
-                let (name, animation) = self.named(animation)?;
-                (name, animation, 0)
-            }
-            RingChoice::Beat(IdleBeat::Gesture(member)) => {
-                let (name, animation) = self.ring_member(animation, member)?;
+            RingChoice::Beat(IdleBeat::Loop(member) | IdleBeat::Gesture(member)) => {
+                let (name, animation) = self.beat_member(animation, member)?;
                 (name, animation, animation_ms)
             }
         };
@@ -630,8 +655,8 @@ impl Character {
         })
     }
 
-    /// The Animation asked for, or its fallback. No ring: Rest and a missing
-    /// optional both want the strip the manifest named, not a weighed member.
+    /// The Animation asked for, or its fallback. A missing optional wants the
+    /// strip the manifest named, not a weighed member.
     fn named(&self, requested: &str) -> Option<(&str, &Animation)> {
         match self.animations.get_key_value(requested) {
             Some((name, animation)) => Some((name.as_str(), animation)),
@@ -646,14 +671,14 @@ impl Character {
         }
     }
 
-    /// `member` when it is `requested` or one of that ring. Anything else
-    /// draws nothing, so a stale gesture name cannot show another strip.
-    fn ring_member(&self, requested: &str, member: &str) -> Option<(&str, &Animation)> {
+    /// `member` when it is `requested`, a variant of it, or a gesture of it.
+    /// Anything else draws nothing, so a stale name cannot show another strip.
+    fn beat_member(&self, requested: &str, member: &str) -> Option<(&str, &Animation)> {
         let (name, base) = self.named(requested)?;
-        if member == name {
-            return Some((name, base));
-        }
-        if !base.variants.iter().any(|variant| variant == member) {
+        let linked = member == name
+            || base.variants.iter().any(|variant| variant == member)
+            || base.gestures.iter().any(|gesture| gesture == member);
+        if !linked {
             return None;
         }
         self.animations
@@ -764,6 +789,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
 
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
+    let gesture_pairs = check_gestures(&declared.animations, &mut errors);
     let left_pairs = check_left_strips(&declared.animations, &mut errors);
     check_frame_facing(&declared, &mut errors);
     let (mut animations, art) = resolve_animations(
@@ -782,11 +808,23 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             }
         }
     }
-    // Idle swaps members mid-stretch, so a different size would jump the
-    // sprite. A walk or talk ring is drawn once and may differ.
+    for (gesture, base) in gesture_pairs {
+        if animations.contains_key(&gesture) {
+            if let Some(base) = animations.get_mut(&base) {
+                base.gestures.push(gesture);
+            }
+        }
+    }
+    // Idle swaps a loop and a gesture mid-stretch, so a different size would
+    // jump the sprite. A walk or talk ring is drawn once and may differ.
     if let Some(idle) = animations.get("idle") {
         let base_size = idle.frame_size;
-        let names = idle.variants.clone();
+        let names: Vec<String> = idle
+            .variants
+            .iter()
+            .chain(idle.gestures.iter())
+            .cloned()
+            .collect();
         for name in names {
             let Some(member) = animations.get(&name) else {
                 continue;
@@ -794,7 +832,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             if member.frame_size != base_size {
                 errors.push(format!(
                     "animation {name:?} frames are {}x{}, and its base \"idle\" is {}x{}; \
-                     an idle ring swaps members mid-stretch, so they share a frame size",
+                     idle loops and idle-gestures share the base frame size",
                     member.frame_size.0, member.frame_size.1, base_size.0, base_size.1
                 ));
             }
@@ -835,6 +873,9 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             near_reaction: declared.near_reaction.unwrap_or_default(),
             rush_reaction: declared.rush_reaction.unwrap_or_default(),
             gravity_scale: declared.gravity_scale.unwrap_or(GravityScale::DEFAULT),
+            gesture_every_s: declared.gesture_every_s.unwrap_or(DEFAULT_GESTURE_EVERY_S),
+            sleep_after_s: declared.sleep_after_s.unwrap_or(DEFAULT_SLEEP_AFTER_S),
+            sleep_for_s: declared.sleep_for_s.unwrap_or(DEFAULT_SLEEP_FOR_S),
             source: declared.source,
         }),
         _ => Err(errors),
@@ -927,9 +968,9 @@ pub(crate) mod tests {
             fps,
             looping,
             variants: Vec::new(),
+            gestures: Vec::new(),
             left_strip: None,
             weight: DEFAULT_WEIGHT,
-            rest_ms: None,
         }
     }
 
@@ -1290,6 +1331,7 @@ pub(crate) mod tests {
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             }
         );
         assert_eq!(character.behaviors["settle"].then, None);
@@ -1311,6 +1353,7 @@ pub(crate) mod tests {
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),
                 not_in_manifest: false,
+                idle_type: false,
             }
         );
     }

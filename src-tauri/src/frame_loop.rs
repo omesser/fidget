@@ -3543,7 +3543,8 @@ mod tests {
     use super::*;
     use fidget_core::character::{
         Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
-        DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
+        DEFAULT_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_SLEEP_AFTER_S,
+        DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
     };
     use fidget_core::engine::Point;
     use fidget_core::window_source::{Capabilities, WorldGeometry};
@@ -3626,7 +3627,7 @@ mod tests {
                         looping: true,
                         variants: Vec::new(),
                         left_strip: None,
-                        rest_ms: None,
+                        gestures: Vec::new(),
                         // core keeps its own default private, and this test
                         // only needs a Behavior something can pick.
                         weight: 10,
@@ -3643,6 +3644,7 @@ mod tests {
                 weight: 1,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
         Character {
@@ -3658,6 +3660,9 @@ mod tests {
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             gravity_scale: GravityScale::DEFAULT,
+            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
             source: None,
         }
     }

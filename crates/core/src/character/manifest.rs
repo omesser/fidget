@@ -30,6 +30,9 @@ pub(super) struct Declared {
     pub(super) frame_facing: BTreeMap<String, Facing>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
+    pub(super) gesture_every_s: Option<(u32, u32)>,
+    pub(super) sleep_after_s: Option<(u32, u32)>,
+    pub(super) sleep_for_s: Option<(u32, u32)>,
 }
 
 pub(super) struct DeclaredAnimation {
@@ -37,15 +40,14 @@ pub(super) struct DeclaredAnimation {
     pub(super) fps: u32,
     pub(super) looping: bool,
     pub(super) variant_of: Option<String>,
+    /// `gesture_of`: an idle-gesture, one pass between idle loops. Not a variant.
+    pub(super) gesture_of: Option<String>,
     /// The Animation this one is the left-facing strip of, when the package
     /// draws its leftward travel rather than letting the renderer mirror it.
     pub(super) left_of: Option<String>,
     /// This Animation's share of its variant ring, against its fellow
     /// members'. `DEFAULT_WEIGHT` when undeclared, exactly as on a Behavior.
     pub(super) weight: u32,
-    /// `[rest_ms]` on base idle. `None` everywhere else, including an idle
-    /// that leaves the Engine default in place.
-    pub(super) rest_ms: Option<(u32, u32)>,
 }
 
 pub(super) struct DeclaredBehavior {
@@ -53,6 +55,8 @@ pub(super) struct DeclaredBehavior {
     pub(super) then: Option<String>,
     pub(super) weight: u32,
     pub(super) trigger: Option<Trigger>,
+    /// `type = "idle"`. The Behavior's idle steps use the Engine's idle machine.
+    pub(super) idle_type: bool,
 }
 
 /// Read the Character Manifest. `None` means it is not TOML at all: one error,
@@ -164,9 +168,34 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
             "source" => parse_source(item, manifest, &mut declared, errors),
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
+            "idle_gesture_every_s" => match inclusive_pair(item) {
+                Some(pair) => declared.gesture_every_s = Some(pair),
+                None => errors.push(format!(
+                    "idle_gesture_every_s is {}, and must be [min, max] \
+                     in seconds with min <= max",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "sleep_after_s" => match inclusive_pair(item) {
+                Some(pair) => declared.sleep_after_s = Some(pair),
+                None => errors.push(format!(
+                    "sleep_after_s is {}, and must be [min, max] \
+                     in seconds with min <= max",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "sleep_for_s" => match inclusive_pair(item) {
+                Some(pair) => declared.sleep_for_s = Some(pair),
+                None => errors.push(format!(
+                    "sleep_for_s is {}, and must be [min, max] \
+                     in seconds with min <= max",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
                  name, render_mode, scale, gravity, facing, frame_facing, \
+                 idle_gesture_every_s, sleep_after_s, sleep_for_s, \
                  source, animations, behaviors, director and cursor"
             )),
         }
@@ -396,9 +425,9 @@ fn parse_animation(
     let mut fps = DEFAULT_FPS;
     let mut looping = true;
     let mut variant_of = None;
+    let mut gesture_of = None;
     let mut left_of = None;
     let mut weight = DEFAULT_WEIGHT;
-    let mut rest_ms = None;
 
     for (key, item) in table.iter() {
         match key {
@@ -408,6 +437,14 @@ fn parse_animation(
                 _ => errors.push(format!(
                     "variant_of for animation {name:?} is {}, and must name \
                      an animation, as variant_of = \"idle\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "gesture_of" => match item.as_str() {
+                Some(base) if !base.is_empty() => gesture_of = Some(base.to_string()),
+                _ => errors.push(format!(
+                    "gesture_of for animation {name:?} is {}, and must name \
+                     an animation, as gesture_of = \"idle\"",
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
@@ -447,26 +484,12 @@ fn parse_animation(
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
-            "rest_ms" => match rest_bounds(item) {
-                Some(pair) => rest_ms = Some(pair),
-                None => errors.push(format!(
-                    "rest_ms for animation {name:?} is {}, and must be [min, max] \
-                     in milliseconds with min <= max",
-                    wrote(manifest, item.span()).unwrap_or("?")
-                )),
-            },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps, loop, variant_of, left_of, \
-                 weight and rest_ms"
+                 an Animation declares frames, fps, loop, variant_of, gesture_of, \
+                 left_of and weight"
             )),
         }
-    }
-
-    if rest_ms.is_some() && (name != "idle" || variant_of.is_some()) {
-        errors.push(format!(
-            "rest_ms for animation {name:?} is only for the base idle"
-        ));
     }
 
     // The table rather than `frames`: `frame_list` already reports an empty
@@ -483,15 +506,15 @@ fn parse_animation(
         fps,
         looping,
         variant_of,
+        gesture_of,
         left_of,
         weight,
-        rest_ms,
     })
 }
 
-/// `[min, max]` in milliseconds, inclusive. A single number or a reversed
-/// pair is the author's mistake, not a range the Engine can roll.
-fn rest_bounds(item: &Item) -> Option<(u32, u32)> {
+/// `[min, max]`, inclusive. A single number or a reversed pair is the
+/// author's mistake, not a range the Engine can roll.
+fn inclusive_pair(item: &Item) -> Option<(u32, u32)> {
     let list = item.as_array()?;
     if list.len() != 2 {
         return None;
@@ -566,6 +589,7 @@ fn parse_behavior(
     let mut then = None;
     let mut weight = DEFAULT_WEIGHT;
     let mut trigger = None;
+    let mut idle_type = false;
 
     for (key, item) in table.iter() {
         match key {
@@ -593,9 +617,16 @@ fn parse_behavior(
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            "type" => match item.as_str() {
+                Some("idle") => idle_type = true,
+                _ => errors.push(format!(
+                    "type for behavior {name:?} is {}, and must be \"idle\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             other => errors.push(format!(
                 "behavior {name:?} declares unknown {other:?}; \
-                 a Behavior declares play, then, weight and when"
+                 a Behavior declares play, then, weight, when and type"
             )),
         }
     }
@@ -605,6 +636,7 @@ fn parse_behavior(
         then,
         weight,
         trigger,
+        idle_type,
     })
 }
 
@@ -795,6 +827,7 @@ mod tests {
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
                  name, render_mode, scale, gravity, facing, frame_facing, \
+                 idle_gesture_every_s, sleep_after_s, sleep_for_s, \
                  source, animations, behaviors, director and cursor"
                     .to_string()
             ],
@@ -968,7 +1001,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop, variant_of, left_of, weight and rest_ms"
+                 frames, fps, loop, variant_of, gesture_of, left_of and weight"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
                  as play = [\"react\", \"talk\"]"

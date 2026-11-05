@@ -73,14 +73,15 @@ _Avoid_: Clip, sprite, sequence
 
 **Variant**:
 An Animation declared `variant_of` another. A base Animation and its variants
-form a ring. The Engine's own idle alternates a still Rest — base `idle`
-frame 0, held — with one weighted member played for a single pass
-(`frames / fps`), then Rest again. Every idle stretch starts on Rest. A
-Behavior's `idle` Primitive, and every other ring, still draws one member
-when that Animation starts and plays it until the engine asks for a different
-Animation. A member's `weight` is its share against the others and 10 when
-undeclared, so a ring nobody weighs is an even split and a member can be
-weighed below the default as well as above it.
+form a ring. On idle, that ring is the calm loops. An idle-gesture is declared
+`gesture_of` idle instead: the Engine plays a loop, waits a seeded gap, plays
+one gesture from its first frame, then picks a loop again. A Behavior's `idle`
+Primitive still draws one loop-ring member and loops it, unless that Behavior
+is `type = "idle"`, which uses the same loops and gestures. Every other ring
+draws one member when that Animation starts and plays it until the engine asks
+for a different Animation. A member's `weight` is its share against the others
+and 10 when undeclared, so a ring nobody weighs is an even split and a member
+can be weighed below the default as well as above it.
 Nothing bounds the total. The draw is seeded: one seed and one Character draw
 the same members on every machine. #316.
 _Avoid_: Alternate, costume, skin, random animation, mood

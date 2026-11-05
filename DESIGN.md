@@ -277,11 +277,10 @@ member on every machine.
 
 An undeclared member is already 10, so a ring can set one number and leave the
 rest: `idle = 80` against two silent variants is 80/10/10. Tux sets a number
-on every member. These shares are the gesture mix. The Engine's own idle
-rests on base `idle` frame 0 for a seeded span (`rest_ms`, or 3 to 10
-seconds), plays one weighted member for a single pass, and rests again. Most
-of a stretch is that rest. A Behavior's `idle`, and the walk and talk rings,
-still draw one member and loop it.
+on every member. These shares weigh the idle ring. The Engine's own idle plays
+one weighted loop, waits a seeded gap (`idle_gesture_every_s`, or 10 to 30
+seconds), plays one idle-gesture for a single pass, and picks a loop again. A
+Behavior's `idle`, and the walk and talk rings, still draw one member and loop it.
 
 ### 7. Physics, Perches, and five verbs
 

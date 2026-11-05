@@ -1189,6 +1189,7 @@ mod tests {
             weight,
             trigger,
             not_in_manifest: false,
+            idle_type: false,
         }
     }
 

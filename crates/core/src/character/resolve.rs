@@ -82,9 +82,9 @@ pub(super) fn resolve_animations(
                     fps: declaration.fps,
                     looping: declaration.looping,
                     variants: Vec::new(),
+                    gestures: Vec::new(),
                     left_strip: None,
                     weight: declaration.weight,
-                    rest_ms: declaration.rest_ms,
                 },
             );
         }
@@ -154,6 +154,9 @@ pub(super) fn check_variants(
             None => errors.push(format!(
                 "animation {name:?} is a variant_of {base:?}, which is not declared"
             )),
+            Some(_) if animation.gesture_of.is_some() => errors.push(format!(
+                "animation {name:?} declares both variant_of and gesture_of"
+            )),
             Some(target) if target.variant_of.is_some() => errors.push(format!(
                 "animation {name:?} is a variant_of {base:?}, itself a variant; \
                  variants ring one base"
@@ -161,6 +164,43 @@ pub(super) fn check_variants(
             Some(target) if !target.looping || !animation.looping => errors.push(format!(
                 "animation {name:?} and its base {base:?} must both loop \"forever\"; \
                  a drawn variant plays until the engine asks for something else"
+            )),
+            Some(_) => pairs.push((name.clone(), base.clone())),
+        }
+    }
+    pairs
+}
+
+/// Validate every `gesture_of`. An idle-gesture is one pass between loops,
+/// so it names base `idle` and nothing that is already a variant or a gesture.
+pub(super) fn check_gestures(
+    declared: &BTreeMap<String, DeclaredAnimation>,
+    errors: &mut Vec<String>,
+) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for (name, animation) in declared {
+        let Some(base) = &animation.gesture_of else {
+            continue;
+        };
+        // `check_variants` already names the animation that declares both.
+        if animation.variant_of.is_some() {
+            continue;
+        }
+        match declared.get(base) {
+            _ if base == name => errors.push(format!("animation {name:?} is a gesture_of itself")),
+            None => errors.push(format!(
+                "animation {name:?} is a gesture_of {base:?}, which is not declared"
+            )),
+            Some(target) if target.variant_of.is_some() => errors.push(format!(
+                "animation {name:?} is a gesture_of {base:?}, itself a variant; \
+                 a gesture_of names \"idle\""
+            )),
+            Some(target) if target.gesture_of.is_some() => errors.push(format!(
+                "animation {name:?} is a gesture_of {base:?}, itself a gesture; \
+                 a gesture_of names \"idle\""
+            )),
+            Some(_) if base != "idle" => errors.push(format!(
+                "animation {name:?} is a gesture_of {base:?}, and a gesture_of names \"idle\""
             )),
             Some(_) => pairs.push((name.clone(), base.clone())),
         }
@@ -242,6 +282,7 @@ fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -
                 then: None,
                 weight: 0,
                 trigger: None,
+                idle_type: false,
             },
         );
         added.insert(name.to_string());
@@ -312,6 +353,7 @@ pub(super) fn resolve_behaviors(
                     weight: declaration.weight,
                     trigger: declaration.trigger,
                     not_in_manifest,
+                    idle_type: declaration.idle_type,
                 },
             )
         })
@@ -605,7 +647,7 @@ mod tests {
             errors(load(&idle_package)),
             vec![
                 "animation \"spin\" frames are 4x4, and its base \"idle\" is 2x2; \
-                 an idle ring swaps members mid-stretch, so they share a frame size"
+                 idle loops and idle-gestures share the base frame size"
                     .to_string()
             ]
         );
@@ -621,6 +663,25 @@ mod tests {
             .into_bytes(),
         );
         load(&walk_package).expect("a walk ring is drawn once and may differ in size");
+
+        let mut gesture_package = art();
+        gesture_package.insert("wide-0.png".to_string(), png_bytes(4, 4));
+        gesture_package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            format!(
+                "{}[animations.groom]\nframes = [\"wide-0.png\"]\ngesture_of = \"idle\"\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            )
+            .into_bytes(),
+        );
+        assert_eq!(
+            errors(load(&gesture_package)),
+            vec![
+                "animation \"groom\" frames are 4x4, and its base \"idle\" is 2x2; \
+                 idle loops and idle-gestures share the base frame size"
+                    .to_string()
+            ]
+        );
     }
 
     /// A left strip stands in for its base when the sprite travels left, so a

@@ -181,7 +181,7 @@ impl Instance {
             character.near_reaction,
             character.rush_reaction,
         );
-        self.engine.set_idle_ring(character.idle_ring());
+        self.engine.set_idle_plan(character.idle_plan());
     }
 
     /// The name the user gave, which is what the menu and settings print.
@@ -280,7 +280,7 @@ impl Roster {
             // The id is this Instance's one random number, so two characters of
             // one Character do not draw the same idle variants at the same moments.
             .with_variant_seed(variant_seed(&id))
-            .with_idle_ring(character.idle_ring());
+            .with_idle_plan(character.idle_plan());
         let name = if self.instances.is_empty() {
             adopted_name(
                 &name,
@@ -411,7 +411,8 @@ mod tests {
     use super::*;
     use crate::character::{
         Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
-        DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
+        DEFAULT_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_SLEEP_AFTER_S,
+        DEFAULT_SLEEP_FOR_S, DEFAULT_WEIGHT,
     };
     use crate::engine::{Point, Rect, Verb};
     use std::collections::BTreeMap;
@@ -433,7 +434,7 @@ mod tests {
                     variants: Vec::new(),
                     left_strip: None,
                     weight: DEFAULT_WEIGHT,
-                    rest_ms: None,
+                    gestures: Vec::new(),
                 },
             );
         }
@@ -447,6 +448,7 @@ mod tests {
                 weight: 1,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
         behaviors.insert(
@@ -457,6 +459,7 @@ mod tests {
                 weight: 1,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
 
@@ -473,6 +476,9 @@ mod tests {
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             gravity_scale: GravityScale::DEFAULT,
+            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
             source: None,
         }
     }

@@ -12,7 +12,7 @@
 //! shipped character's load and required animations are covered by the shell
 //! crate's integration test.
 
-use fidget_core::character::{self, CursorReaction, Primitive, REQUIRED_ANIMATIONS};
+use fidget_core::character::{self, CursorReaction, IdleBeat, Primitive, REQUIRED_ANIMATIONS};
 use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -1018,7 +1018,7 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
     let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
         .with_behaviors(character.behaviors.clone())
         .with_variant_seed(seed)
-        .with_idle_ring(character.idle_ring());
+        .with_idle_plan(character.idle_plan());
 
     let mut art = Vec::new();
     let mut idling = false;
@@ -1103,10 +1103,10 @@ fn the_same_seed_draws_timber_wolfs_variants_in_the_same_order() {
     );
 }
 
-/// A quiet perch leaves sit for idle on Rest. The first gesture after that
-/// rest is the weighted draw, whatever the seed, and it is not the opening frame.
+/// A quiet perch sits, then runs the same idle machine as the floor. With no
+/// idle-gesture declared, that is one weighted loop for the stretch.
 #[test]
-fn timber_wolf_scans_on_the_first_perched_gesture_whatever_the_seed() {
+fn timber_wolf_picks_one_perched_idle_loop_whatever_the_seed() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
     let perch = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1123,19 +1123,21 @@ fn timber_wolf_scans_on_the_first_perched_gesture_whatever_the_seed() {
         ..WorldSnapshot::default()
     };
 
-    // Rest is base idle frame 0, so the first frame that is not that pose is
-    // inside the gesture: `scan`, or the base strip once it leaves frame 0.
-    let first_gesture = |seed: u64| {
+    let chosen_loop = |seed: u64| {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
             .with_behaviors(character.behaviors.clone())
             .with_variant_seed(seed)
-            .with_idle_ring(character.idle_ring());
-        let mut saw_rest = false;
+            .with_idle_plan(character.idle_plan());
         for _ in 0..250 {
             let frame = engine.tick(&perch);
             if frame.animation != "idle" {
                 continue;
             }
+            assert!(
+                matches!(frame.idle_beat, Some(IdleBeat::Loop(_))),
+                "seed {seed} perched into {:?}",
+                frame.idle_beat
+            );
             let drawn = character
                 .draw(
                     frame.animation,
@@ -1144,24 +1146,33 @@ fn timber_wolf_scans_on_the_first_perched_gesture_whatever_the_seed() {
                     frame.facing,
                 )
                 .expect("draws");
-            if drawn.animation == "idle" && drawn.index == 0 {
-                saw_rest = true;
-                continue;
+            assert_eq!(drawn.index, 0, "seed {seed} starts the loop at frame 0");
+            let name = drawn.animation.to_string();
+            for _ in 0..4 {
+                let frame = engine.tick(&perch);
+                let again = character
+                    .draw(
+                        frame.animation,
+                        frame.animation_ms,
+                        frame.ring_choice(),
+                        frame.facing,
+                    )
+                    .expect("draws");
+                assert_eq!(again.animation, name, "seed {seed} stays on the loop");
             }
-            assert!(saw_rest, "seed {seed} gestured before it rested");
-            return drawn.animation.to_string();
+            return name;
         }
-        panic!("seed {seed} never left rest");
+        panic!("seed {seed} never idled on the perch");
     };
 
-    let drawn: BTreeSet<String> = (0..32).map(first_gesture).collect();
+    let drawn: BTreeSet<String> = (0..32).map(chosen_loop).collect();
     assert!(
         drawn.contains("scan"),
-        "the laser sweeps on the first gesture: {drawn:?}"
+        "the laser is one of the loops: {drawn:?}"
     );
     assert!(
         drawn.contains("idle"),
-        "and the base still takes a gesture: {drawn:?}"
+        "and the base is the other: {drawn:?}"
     );
 }
 
@@ -1554,10 +1565,9 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
 }
 
 /// `PRIMITIVE_MS` is the turn, not the strip. The clock runs through that
-/// turn, and the Engine's own idle after it holds base frame 0 instead of
-/// the frames the turn never reached.
+/// turn, and the Engine's own idle after it starts a loop at frame 0.
 #[test]
-fn a_behaviors_idle_sweeps_the_opening_then_rests() {
+fn a_behaviors_idle_sweeps_the_opening_then_loops() {
     let character = load_package("cat").expect("cat package is valid");
     let ground = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1570,15 +1580,16 @@ fn a_behaviors_idle_sweeps_the_opening_then_rests() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
             .with_behaviors(character.behaviors.clone())
             .with_variant_seed(seed)
-            .with_idle_ring(character.idle_ring());
+            .with_idle_plan(character.idle_plan());
         let idling = (0..40)
             .map(|_| engine.tick(&ground))
             .find(|frame| frame.animation == "idle")
             .expect("the cat lands and the landing gives way to idling");
-        assert_eq!(
-            shown_cat(&character, &idling),
-            ("idle".to_string(), 0),
-            "seed {seed} rests on the base before the Behavior"
+        let opening = shown_cat(&character, &idling);
+        assert_eq!(opening.1, 0, "seed {seed} starts its loop at frame 0");
+        assert!(
+            matches!(idling.idle_beat, Some(IdleBeat::Loop(_))),
+            "seed {seed} is on a loop"
         );
 
         // `groom` is a single Idle Primitive over an idle already on screen:
@@ -1615,9 +1626,14 @@ fn a_behaviors_idle_sweeps_the_opening_then_rests() {
             during.len() > 1,
             "seed {seed} advanced {drew:?} during the turn: {during:?}"
         );
+        assert_eq!(
+            after.first().map(|art| art.1),
+            Some(0),
+            "seed {seed} starts the next loop at frame 0: {after:?}"
+        );
         assert!(
-            after.iter().all(|art| art == &("idle".to_string(), 0)),
-            "seed {seed} rested on the base after the turn: {after:?}"
+            after.iter().any(|art| art.1 != 0),
+            "seed {seed} keeps the loop moving: {after:?}"
         );
         strips.extend(drew);
     }

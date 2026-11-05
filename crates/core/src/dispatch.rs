@@ -909,7 +909,8 @@ mod tests {
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
             Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
-            DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
+            DEFAULT_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+            DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, DEFAULT_WEIGHT,
         };
         use std::collections::BTreeMap;
 
@@ -928,7 +929,7 @@ mod tests {
                     variants: Vec::new(),
                     left_strip: None,
                     weight: DEFAULT_WEIGHT,
-                    rest_ms: None,
+                    gestures: Vec::new(),
                 },
             );
         }
@@ -942,6 +943,7 @@ mod tests {
                 weight: 1,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
 
@@ -958,6 +960,9 @@ mod tests {
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
             gravity_scale: GravityScale::DEFAULT,
+            gesture_every_s: DEFAULT_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
             source: None,
         }
     }
@@ -1232,6 +1237,7 @@ mod tests {
                 weight: 0,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
         let instance_id = roster.spawn(
@@ -1964,6 +1970,7 @@ mod tests {
                 weight: 1,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
         let world = test_snapshot();
@@ -2389,6 +2396,7 @@ mod tests {
                 weight: 0,
                 trigger: None,
                 not_in_manifest: false,
+                idle_type: false,
             },
         );
         let instance_id = roster.spawn(

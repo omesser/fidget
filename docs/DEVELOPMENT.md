@@ -241,6 +241,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 | `scale` | No | Whole number from 1 to 4: the factor the art is drawn at. | 4 |
 | `gravity` | No | Number from 0.25 to 2: how hard the Character falls, as a multiple of the default. Below 1, falls are slower and Jumps and Throws go higher. | 1 |
 | `facing` | No | `"left"` or `"right"`: the way the Character's frames face as drawn. See [Which way the art faces](#which-way-the-art-faces). | `"right"` |
+| `idle_gesture_every_s` | No | `[min, max]` in seconds, inclusive. How long the Engine plays an idle loop before one idle-gesture. | `[10, 30]` |
 | `[frame_facing]` | No | Frame files that face the other way from `facing`. | |
 | `[source]` | No | Where the art came from. See [Declaring where the art came from](#declaring-where-the-art-came-from). | |
 | `[director]` | No | How proactive model calls space themselves. | |
@@ -261,25 +262,25 @@ Every Character supplies these nine: `idle`, `walk`, `fall`, `land`, `sit`, `sle
 | `jump` | A Behavior plays the `jump` Primitive | `fall` |
 | `possessed` | The user possesses the fidget | `react` |
 
-Any other name draws only as a Variant or a Left Strip of one of these.
+Any other name draws only as a Variant, an idle-gesture, or a Left Strip of one of these.
 
 | Key | Required | Value | Default |
 |---|---|---|---|
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name. The base and its Variants are one ring. The Engine's own idle alternates rest with one pass of a member; every other ring draws one member until the Animation changes. | |
-| `weight` | No | Whole number: this Animation's share of its Variant ring. Read only in a ring. | 10 |
+| `variant_of` | No | Another Animation's name. The base and its Variants are one ring. On idle the ring is the calm loops. Every other ring draws one member until the Animation changes. | |
+| `gesture_of` | No | `"idle"` only. This Animation is an idle-gesture: one pass between idle loops, not a member of the loop ring. | |
+| `weight` | No | Whole number: this Animation's share of its ring, loop or gesture. Read only there. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
-| `rest_ms` | No | `[min, max]` in milliseconds, inclusive, on base `idle` only. How long the Engine holds frame 0 between gestures. | `[3000, 10000]` |
 
 The loader checks each frame against the art:
 
 - Every frame is an 8-bit RGBA PNG in the package, at most 1024 pixels on either side, and every frame of one Animation is the same size.
 - All of a package's distinct frames add up to at most 256 megapixels (256 × 1024 × 1024 pixels). A frame two Animations share counts once.
 - A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
-- Members of the `idle` ring share the base's frame size. They swap in the middle of a stretch. A walk or talk ring is drawn once and may differ.
-- The Engine's own idle holds base `idle` frame 0 for a seeded duration inside `rest_ms`, then plays one weighted member — the base included — for a single pass (`frames / fps`) and holds frame 0 again. Every idle stretch starts on that hold, including after a landing, a talk, a poke, or a perched idle. A Behavior's `idle` Primitive still draws one member and loops it for its turn.
+- Idle loops and idle-gestures share the base `idle` frame size. They swap in the middle of a stretch. A walk or talk ring is drawn once and may differ.
+- The Engine's own idle starts on a weighted idle loop at frame 0, waits a seeded gap inside `idle_gesture_every_s`, plays one weighted idle-gesture for a single pass (`frames / fps`), then picks a loop again. Every idle stretch starts on a loop, including after a landing, a talk, a poke, or a perched idle. A Behavior's `idle` Primitive still draws one loop-ring member and loops it, unless the Behavior sets `type = "idle"`.
 - A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
 
 Pixels with alpha below 128 do not catch clicks.
@@ -313,6 +314,7 @@ A Behavior is a named sequence of Primitives that the Static Director picks by w
 | `then` | No | The name of the Behavior that follows this one. | |
 | `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |
+| `type` | No | `"idle"` makes this Behavior's `idle` steps use the Engine's idle loops and idle-gestures. | |
 
 The Primitives, and the Animation each plays:
 
