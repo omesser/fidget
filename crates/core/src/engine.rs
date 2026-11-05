@@ -3537,6 +3537,25 @@ mod tests {
         assert_eq!(cues, vec![Cue::Drop], "startup fall plays Drop");
     }
 
+    /// The Shell holds a launch fall by giving the Engine no time. That must
+    /// leave the spawn pose where it is, and the fall must still play its Drop.
+    #[test]
+    fn a_tick_with_no_time_holds_a_startup_fall_at_its_spawn_point() {
+        let spawn = Point { x: 300.0, y: 200.0 };
+        let mut engine = Engine::new(spawn);
+        for _ in 0..30 {
+            let frame = engine.tick(&snapshot(0));
+            assert_eq!(frame.position, spawn, "no time, no motion");
+            assert_eq!(frame.state, State::Falling, "still about to drop");
+            assert_eq!(frame.cue, None, "nothing plays yet");
+            assert_eq!(frame.animation_ms, 0, "the pose does not advance");
+        }
+        let cues: Vec<Cue> = (0..200)
+            .filter_map(|_| engine.tick(&snapshot(100)).cue)
+            .collect();
+        assert_eq!(cues, vec![Cue::Drop], "the held fall still lands with Drop");
+    }
+
     #[test]
     fn wall_ripple_on_negative_origin_display_left_wall() {
         let display = Rect {

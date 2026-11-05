@@ -1,6 +1,6 @@
 // A frame can land before the Character's art does. The sprite stays hidden
-// until its art is there, then shows it. Drives the real src/index.html and
-// main.js.
+// until its art is there, then shows it, and only then tells the Shell it drew.
+// Drives the real src/index.html and main.js.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,6 +15,8 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
 const ART =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+const CHARACTERS = { characters: { "Buddy Bot": { smooth: false, art: { idle: [ART, ART] } } } };
 
 const frame = {
   sprites: [
@@ -37,17 +39,27 @@ const frame = {
   hover_delay_ms: 400,
 };
 
-function startup() {
+const moved = { ...frame, sprites: [{ ...frame.sprites[0], x: 260, frame_index: 1 }] };
+
+// `character` answers through `loadArt`, or rejects when `artFails`. `invoked`
+// lists every command, and `drewWith` is the sprite as `overlay_drew` arrived.
+function startup(drive, { artFails = false } = {}) {
   const stub = `
 <script type="module">
   ${pageClock()}
   ${pageWait()}
   const handlers = {};
+  const invoked = [];
   let loadArt;
+  let drewWith;
   window.__TAURI__ = {
     core: {
       invoke(name) {
-        if (name === "character") return new Promise((resolve) => (loadArt = resolve));
+        invoked.push(name);
+        if (name === "overlay_drew") drewWith = shown();
+        if (name === "character") {
+          return ${artFails ? 'Promise.reject(new Error("no art"))' : "new Promise((resolve) => (loadArt = resolve))"};
+        }
         return Promise.resolve();
       },
     },
@@ -67,15 +79,13 @@ function startup() {
       src: sprite.getAttribute("src"),
     };
   };
+  const drew = () => invoked.filter((name) => name === "overlay_drew").length;
   async function drive() {
     console.log("__PROBE_READY__");
     await ready("frame");
     handlers.frame({ payload: ${JSON.stringify(frame)} });
     await settle();
-    const before = shown();
-    loadArt({ characters: { "Buddy Bot": { smooth: false, art: { idle: [${JSON.stringify(ART)}] } } } });
-    await until(() => shown().visible);
-    console.log("__PROBE_RESULT__" + JSON.stringify({ before: before.visible, after: shown() }));
+    ${drive}
   }
   window.addEventListener("load", drive);
 </script>`;
@@ -87,7 +97,36 @@ function startup() {
   return probePage(html);
 }
 
+const report = (fields) => `console.log("__PROBE_RESULT__" + JSON.stringify({ ${fields} }));`;
+
 test("the sprite shows no art-less box before its art arrives", { skip: chromeSkip, timeout: 60000 }, async () => {
-  const report = await startup();
-  assert.deepEqual(report, { before: false, after: { visible: true, src: ART } });
+  const result = await startup(`
+    const before = shown();
+    loadArt(${JSON.stringify(CHARACTERS)});
+    await until(() => shown().visible);
+    ${report("before: before.visible, after: shown()")}`);
+  assert.deepEqual(result, { before: false, after: { visible: true, src: ART } });
+});
+
+test("the overlay says it drew only after the art is on the sprite, and once", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const result = await startup(`
+    const early = drew();
+    loadArt(${JSON.stringify(CHARACTERS)});
+    await until(() => drew() > 0);
+    handlers.frame({ payload: ${JSON.stringify(moved)} });
+    await settle();
+    await settle();
+    ${report("early, drewWith, drew: drew()")}`);
+  assert.deepEqual(result, { early: 0, drewWith: { visible: true, src: ART }, drew: 1 });
+});
+
+test("an overlay whose art never loads never says it drew", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const result = await startup(
+    `
+    await settle();
+    await settle();
+    ${report("drew: drew(), shown: shown()")}`,
+    { artFails: true },
+  );
+  assert.deepEqual(result, { drew: 0, shown: { visible: false, src: null } });
 });

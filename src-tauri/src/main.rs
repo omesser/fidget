@@ -810,6 +810,59 @@ fn draw_response(
     Some(carried.line.clone())
 }
 
+/// The longest a launch Instance waits for its first draw. A page whose
+/// `character` load failed never draws, and WebView2 can listen seconds late.
+/// A calibration knob: hold plus fall must fit `wait_for_rest`'s 10 s.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
+const FIRST_DRAW_CEILING: Duration = Duration::from_secs(3);
+
+/// Whether an Instance's clock runs yet. A launch Instance waits until the
+/// overlay under its feet has drawn its art, so the user first sees the spawn
+/// pose, not a sprite halfway down its fall. `Running` is terminal.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FirstDraw {
+    /// Spawned with the app and not yet seen. `held` is wall time spent waiting.
+    Waiting {
+        held: Duration,
+    },
+    Running,
+}
+
+/// What one tick of `FirstDraw` decided.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    /// The Engine and this Instance's clocks get no time this tick.
+    Wait,
+    Run,
+    /// Real time from this tick on. `after` is how long the spawn pose waited.
+    Released {
+        by: Release,
+        after: Duration,
+    },
+}
+
+#[expect(dead_code, reason = "wired in by the fix")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Release {
+    /// The overlay under the feet drew the art.
+    Drew,
+    /// Nobody can see the drop, so holding it protects nothing.
+    Hidden,
+    /// No draw came in time.
+    Ceiling,
+}
+
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in by the fix"))]
+impl FirstDraw {
+    /// Advance by one tick of `elapsed` wall time. The releasing tick runs on
+    /// that tick's time only, never the time held, so the drop starts from rest.
+    fn step(&mut self, elapsed: Duration, owner_drew: bool, visible: bool) -> Step {
+        todo!("{elapsed:?} {owner_drew} {visible}")
+    }
+}
+
 /// What one Instance's tick decided to draw, in the space every display
 /// shares. Worked out once, then turned into each overlay's rectangle.
 /// Art names are owned so this outlives the Character borrow.
@@ -7580,6 +7633,69 @@ mod tests {
             dialogue.as_deref(),
             Some("hello there"),
             "under DND, dialogue still reaches draw_response and the bubble"
+        );
+    }
+
+    #[test]
+    fn a_launch_instance_waits_for_its_overlay_to_draw_then_runs_for_good() {
+        let tick = Duration::from_millis(16);
+        let mut hold = FirstDraw::Waiting {
+            held: Duration::ZERO,
+        };
+        assert_eq!(
+            hold.step(tick, false, true),
+            Step::Wait,
+            "not drawn: no time"
+        );
+        assert_eq!(hold.step(tick, false, true), Step::Wait);
+        assert_eq!(
+            hold.step(tick, true, true),
+            Step::Released {
+                by: Release::Drew,
+                after: tick * 3
+            },
+            "the draw releases it on that tick"
+        );
+        assert_eq!(
+            hold.step(tick, false, true),
+            Step::Run,
+            "a reload's lost witness re-holds nothing"
+        );
+    }
+
+    #[test]
+    fn a_launch_instance_nobody_can_see_does_not_wait() {
+        let mut hold = FirstDraw::Waiting {
+            held: Duration::ZERO,
+        };
+        assert!(matches!(
+            hold.step(Duration::from_millis(16), false, false),
+            Step::Released {
+                by: Release::Hidden,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_draw_that_never_comes_releases_at_the_ceiling() {
+        let mut hold = FirstDraw::Waiting {
+            held: Duration::ZERO,
+        };
+        let tick = Duration::from_millis(100);
+        let waited = (0..)
+            .map(|_| hold.step(tick, false, true))
+            .take_while(|step| *step == Step::Wait)
+            .count();
+        assert_eq!(tick * waited as u32 + tick, FIRST_DRAW_CEILING);
+        assert_eq!(hold, FirstDraw::Running);
+    }
+
+    #[test]
+    fn a_summoned_instance_never_waits() {
+        assert_eq!(
+            FirstDraw::Running.step(Duration::from_millis(16), false, true),
+            Step::Run
         );
     }
 
