@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_memory_settings_the_log_or_fullscreen_hide_yields_the_pill() {
+    fn chat_memory_settings_the_log_fullscreen_hide_or_a_character_yields_the_pill() {
         assert_eq!(
             quick_message_aside(&MenuAction::OpenSettings),
             Some("settings")
@@ -527,6 +527,11 @@ mod tests {
             quick_message_aside(&MenuAction::ToggleFullscreenHide),
             Some("fullscreen-hide")
         );
+        // The overlay draws the new Character but does not read it as a choice.
+        assert_eq!(
+            quick_message_aside(&MenuAction::SwitchCharacter("bmo".to_string())),
+            Some("character")
+        );
     }
 
     #[test]
@@ -536,10 +541,6 @@ mod tests {
         assert_eq!(quick_message_aside(&MenuAction::Hide), None);
         assert_eq!(quick_message_aside(&MenuAction::ToggleDirector), None);
         assert_eq!(quick_message_aside(&MenuAction::ToggleCaffeinate), None);
-        assert_eq!(
-            quick_message_aside(&MenuAction::SwitchCharacter("bmo".to_string())),
-            None
-        );
         assert_eq!(quick_message_aside(&MenuAction::SpawnInstance), None);
         assert_eq!(quick_message_aside(&MenuAction::BringToThisDisplay), None);
         assert_eq!(quick_message_aside(&MenuAction::Quit), None);

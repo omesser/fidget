@@ -199,6 +199,12 @@ const modes = [
     pick: { aside: "fullscreen-hide" },
     hold: {},
   },
+  {
+    name: "switching Character",
+    open: {},
+    pick: { sprite: { character: "Nim" }, aside: "character" },
+    hold: { sprite: { character: "Nim" } },
+  },
 ];
 
 for (const mode of modes) {
