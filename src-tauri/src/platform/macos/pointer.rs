@@ -147,7 +147,8 @@ struct Button {
     level: Edges,
     counted: Edges,
     told: Edges,
-    /// A press held at the baseline has no down, so its release is not one.
+    /// A press held at the baseline has no down. Both sources count its
+    /// release, so this absorbs exactly that one release from each.
     held_at_start: bool,
     down: bool,
 }
@@ -630,6 +631,30 @@ mod tests {
             sample(false, 4, 4),
             sample(true, 4, 4),
             sample(false, 4, 4),
+            sample(false, 6, 6),
+            sample(false, 6, 6),
+        ];
+        let mut button = Button::new(samples[0]);
+        let mut pointer = Pointer::default();
+        let at = Point { x: 100.0, y: 100.0 };
+        let verbs: Vec<_> = samples[1..]
+            .iter()
+            .flat_map(|&now| pointer.update(true, button.step(now), false, at, 16))
+            .collect();
+        assert_eq!(verbs, vec![Verb::Poke, Verb::Summon]);
+    }
+
+    /// A tap the level missed is told when its count lands, after a press the
+    /// level saw inside the same counter window. Two real clicks that close
+    /// together still read as a double-click: the Poke, then the Summon.
+    #[test]
+    fn a_missed_tap_counted_after_a_level_press_pairs_into_a_summon() {
+        let samples = [
+            sample(false, 4, 4),
+            sample(false, 4, 4),
+            sample(true, 4, 4),
+            sample(false, 4, 4),
+            sample(false, 6, 6),
             sample(false, 6, 6),
             sample(false, 6, 6),
         ];
