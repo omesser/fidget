@@ -1013,6 +1013,10 @@ pub(crate) fn run_frame_loop(
                             &displays.frames,
                         );
                         menu_acted = true;
+                    } else {
+                        // A stale Quit lands here by design; anything else is
+                        // a row whose menu was rebuilt under the click.
+                        eprintln!("menu: {id} is on no open menu");
                     }
                 }
             }
