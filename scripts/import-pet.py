@@ -310,8 +310,7 @@ def gesture_behaviors(animations):
     Director/MCP can ask for it without a second ambient cadence). The calm
     `idle` loop does not get one. A name the starter life already uses is
     left alone."""
-    taken = {line[11:-1] for line in STARTER_BEHAVIORS.splitlines()
-             if line.startswith("[behaviors.") and line.endswith("]")}
+    taken = set(tomllib.loads(STARTER_BEHAVIORS)["behaviors"])
     lines = []
     for name, spec in animations.items():
         if spec.get("variant_of") != "idle-gesture" or name in taken:
