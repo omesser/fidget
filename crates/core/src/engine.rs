@@ -907,6 +907,7 @@ impl Engine {
         self
     }
 
+    /// Replace the idle loops, gestures, and timing ranges; drops the beat.
     pub fn set_idle_plan(&mut self, plan: IdlePlan) {
         self.idle_gesture_every_s = plan.idle_gesture_every_s;
         self.sleep_after_s = plan.sleep_after_s;
@@ -932,6 +933,7 @@ impl Engine {
         self
     }
 
+    /// Inclusive seconds of quiet rest before sleep; clears the rolled limit.
     pub fn set_sleep_after_s(&mut self, range: (u32, u32)) {
         self.sleep_after_s = range;
         self.sleep_after_ms = None;
@@ -939,11 +941,13 @@ impl Engine {
         self.idle_ms = 0;
     }
 
+    /// Builder for the inclusive seconds a sleep lasts once it starts.
     pub fn with_sleep_for_s(mut self, range: (u32, u32)) -> Self {
         self.set_sleep_for_s(range);
         self
     }
 
+    /// Inclusive seconds a sleep lasts once the sprite has nodded off.
     pub fn set_sleep_for_s(&mut self, range: (u32, u32)) {
         self.sleep_for_s = range;
     }
@@ -1073,23 +1077,64 @@ impl Engine {
     /// loop. True when that proposal took the screen, so leftover time is not
     /// fed into a loop that is not on screen.
     fn finish_gesture(&mut self) -> bool {
-        if let Some(proposal) = self.deferred.take() {
-            self.own_idle = OwnIdle::Off;
-            match self.take_proposal(&proposal) {
-                Taken::Started(name) => {
-                    self.latched_behavior = Some(name);
-                    self.animation_ms = 0;
-                    return true;
-                }
-                Taken::Talk => {
-                    self.animation_ms = 0;
-                    return true;
-                }
-                Taken::Refused(name) => self.latched_refusal = Some(name),
-                Taken::Ignored => {}
-            }
+        self.own_idle = OwnIdle::Off;
+        if self.apply_deferred() {
+            return true;
         }
         self.begin_loop();
+        false
+    }
+
+    /// Start a proposal held through a mid-pass. True when it took the screen.
+    fn apply_deferred(&mut self) -> bool {
+        let Some(proposal) = self.deferred.take() else {
+            return false;
+        };
+        match self.take_proposal(&proposal) {
+            Taken::Started(name) => {
+                self.latched_behavior = Some(name);
+                self.animation_ms = 0;
+                true
+            }
+            Taken::Talk => {
+                self.animation_ms = 0;
+                true
+            }
+            Taken::Refused(name) => {
+                self.latched_refusal = Some(name);
+                false
+            }
+            Taken::Ignored => false,
+        }
+    }
+
+    /// The Behavior that should follow `finished` at the pass boundary.
+    /// Primitive `then` targets are already flattened into the pass by
+    /// `chain`; strip targets and anything after a strip are not.
+    fn then_after_pass(&self, finished: &str) -> Option<String> {
+        let behavior = self.behaviors.get(finished)?;
+        let next = behavior.then.as_ref()?;
+        let next_behavior = self.behaviors.get(next)?;
+        if behavior.strip.is_some() || next_behavior.strip.is_some() {
+            Some(next.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Shared completed-pass boundary: deferred Director proposal first, else
+    /// a `then` that `chain` could not flatten. True when something new started.
+    fn complete_pass(&mut self, finished: Option<String>) -> bool {
+        if self.apply_deferred() {
+            return true;
+        }
+        if let Some(name) = finished {
+            if let Some(next) = self.then_after_pass(&name) {
+                if self.start_behavior(&next) == Some(true) {
+                    return true;
+                }
+            }
+        }
         false
     }
 
@@ -1601,7 +1646,7 @@ impl Engine {
 
         // Riding is an event the Director cannot propose in time, the same
         // as landing. An awake sprite holds on. An Asleep sprite stays
-        // asleep: window motion is not a user wake (C03), so the sleep
+        // asleep: window motion is not a user wake, so the sleep
         // countdown keeps running while the perch carries it.
         if self.riding {
             if self.state != State::Asleep {
@@ -1635,7 +1680,7 @@ impl Engine {
             } else if self.gesture_mid_pass() && !self.do_not_disturb && !self.possessed {
                 // One slot. A later proposal in the same pass replaces it.
                 // Covers both the Engine's own-idle gesture and a Behavior
-                // strip mid-pass (C02).
+                // strip mid-pass.
                 self.deferred = Some(proposal.clone());
             } else if !self.do_not_disturb && !self.possessed {
                 match self.take_proposal(proposal) {
@@ -2231,7 +2276,7 @@ impl Engine {
         self.playing_strip.as_deref()
     }
 
-    /// Own-idle gesture or a Behavior strip still in its one pass (C02).
+    /// Own-idle gesture or a Behavior strip still in its one pass.
     fn gesture_mid_pass(&self) -> bool {
         matches!(self.own_idle, OwnIdle::Gesture { .. }) || self.playing_strip.is_some()
     }
@@ -2256,8 +2301,9 @@ impl Engine {
             if elapsed_ms >= self.primitive_ms {
                 self.playing_strip = None;
                 self.primitive_ms = 0;
-                self.playing_behavior = None;
+                let finished = self.playing_behavior.take();
                 self.moment_holding = false;
+                self.complete_pass(finished);
                 return true;
             }
             self.primitive_ms -= elapsed_ms;
@@ -2282,8 +2328,11 @@ impl Engine {
         }
         if self.playing.is_empty() {
             self.primitive_ms = 0;
-            self.playing_behavior = None;
+            let finished = self.playing_behavior.take();
             self.moment_holding = false;
+            if self.complete_pass(finished) {
+                moved_on = true;
+            }
         } else {
             self.primitive_ms -= left;
         }
@@ -2371,10 +2420,14 @@ impl Engine {
             })
     }
 
-    /// Left the Engine's idle. A proposal held for a gesture does not survive
-    /// the cut: the thing that took the screen is what plays.
+    /// Left the Engine's idle. A proposal held for an own-idle gesture does not
+    /// survive the cut: the thing that took the screen is what plays. A
+    /// Behavior strip mid-pass still owns the deferred slot until its pass
+    /// ends or something else clears the strip.
     fn leave_own_idle(&mut self) {
-        self.deferred = None;
+        if self.playing_strip.is_none() {
+            self.deferred = None;
+        }
         self.own_idle = OwnIdle::Off;
     }
 
@@ -6433,10 +6486,279 @@ mod tests {
         assert_eq!(idling_again.animation, "idle", "idle after rest again");
     }
 
-    /// C02: a Director proposal waits out a Behavior strip mid-pass, the same
-    /// as an own-idle gesture. A user poke still cuts in.
+    /// A Director proposal waits out a Behavior strip mid-pass and starts when
+    /// the pass ends — the same deferred slot own-idle gestures use. A poke
+    /// cancels the hold; asleep refuses; a later proposal replaces the slot.
     #[test]
     fn director_proposal_defers_during_behavior_strip_mid_pass() {
+        use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
+        let strip_behaviors = || {
+            let mut behaviors = BTreeMap::new();
+            behaviors.insert(
+                "groom".to_string(),
+                Behavior {
+                    primitives: vec![],
+                    strip: Some("grooming".to_string()),
+                    then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
+                    not_in_manifest: false,
+                    idle_type: false,
+                },
+            );
+            behaviors.insert(
+                "greet".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::React],
+                    strip: None,
+                    then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
+                    not_in_manifest: false,
+                    idle_type: false,
+                },
+            );
+            behaviors.insert(
+                "wave".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Talk],
+                    strip: None,
+                    then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
+                    not_in_manifest: false,
+                    idle_type: false,
+                },
+            );
+            behaviors
+        };
+        let plan = IdlePlan {
+            loops: vec![IdleMember {
+                name: "idle".into(),
+                weight: 1,
+                frames: 1,
+                fps: 1,
+            }],
+            gestures: vec![IdleMember {
+                name: "grooming".into(),
+                weight: 1,
+                frames: 6,
+                fps: 6,
+            }],
+            idle_gesture_every_s: (10, 30),
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+        };
+
+        // Mid-pass proposal is held, then greet actually starts and draws.
+        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        engine.set_idle_plan(plan.clone());
+        let started = engine.tick(&proposing("groom"));
+        assert_eq!(
+            started.playing_gesture.as_deref(),
+            Some("grooming"),
+            "{started:?}"
+        );
+        let mid = engine.tick(&proposing("greet"));
+        assert_eq!(
+            mid.playing_gesture.as_deref(),
+            Some("grooming"),
+            "strip continues: {mid:?}"
+        );
+        assert_ne!(
+            mid.playing_behavior.as_deref(),
+            Some("greet"),
+            "greet not yet: {mid:?}"
+        );
+        // One pass of 6 frames at 6 fps is 1000 ms. Track across the boundary.
+        let mut saw_greet_start = false;
+        let mut saw_greet_art = false;
+        let mut last = mid;
+        for _ in 0..20 {
+            last = engine.tick(&snapshot(100));
+            if last.playing_behavior.as_deref() == Some("greet")
+                || last.behavior.as_deref() == Some("greet")
+            {
+                saw_greet_start = true;
+            }
+            if saw_greet_start {
+                if last.art_name() == "react" || last.animation == "react" {
+                    saw_greet_art = true;
+                    break;
+                }
+            }
+            if last.playing_gesture.is_none()
+                && last.playing_behavior.as_deref() != Some("greet")
+                && last.behavior.as_deref() != Some("greet")
+                && saw_greet_start
+            {
+                break;
+            }
+        }
+        assert!(
+            saw_greet_start,
+            "greet must start after the strip pass: {last:?}"
+        );
+        assert!(
+            saw_greet_art,
+            "greet must draw its react art after starting: {last:?}"
+        );
+
+        // One-slot: a later mid-pass proposal replaces the held one.
+        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        engine.set_idle_plan(plan.clone());
+        engine.tick(&proposing("groom"));
+        engine.tick(&proposing("greet"));
+        engine.tick(&proposing("wave"));
+        let mut saw_wave = false;
+        let mut saw_greet_after = false;
+        for _ in 0..20 {
+            let frame = engine.tick(&snapshot(100));
+            if frame.playing_behavior.as_deref() == Some("wave")
+                || frame.behavior.as_deref() == Some("wave")
+                || frame.animation == "talk"
+            {
+                saw_wave = true;
+            }
+            if frame.playing_behavior.as_deref() == Some("greet")
+                || frame.behavior.as_deref() == Some("greet")
+            {
+                saw_greet_after = true;
+            }
+            if saw_wave {
+                break;
+            }
+        }
+        assert!(
+            saw_wave,
+            "latest mid-pass proposal (wave) must win the slot"
+        );
+        assert!(
+            !saw_greet_after,
+            "replaced greet must not start after wave won"
+        );
+
+        // User poke cancels the held proposal and wins the screen.
+        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        engine.set_idle_plan(plan.clone());
+        engine.tick(&proposing("groom"));
+        engine.tick(&proposing("greet"));
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!(poked.animation, "react", "poke cuts the strip: {poked:?}");
+        let mut saw_greet_after_poke = false;
+        for _ in 0..20 {
+            let frame = engine.tick(&snapshot(100));
+            if frame.playing_behavior.as_deref() == Some("greet")
+                || frame.behavior.as_deref() == Some("greet")
+            {
+                saw_greet_after_poke = true;
+                break;
+            }
+        }
+        assert!(
+            !saw_greet_after_poke,
+            "poke must cancel the held greet proposal"
+        );
+
+        // Asleep refuses rather than deferring into a later wake.
+        let mut engine = a_resting_sprite()
+            .with_behaviors(strip_behaviors())
+            .with_sleep_after_s((1, 1))
+            .with_sleep_for_s((30, 30));
+        engine.set_idle_plan(IdlePlan {
+            sleep_after_s: (1, 1),
+            sleep_for_s: (30, 30),
+            ..plan.clone()
+        });
+        settle(&mut engine, &snapshot(100));
+        let asleep = engine.tick(&WorldSnapshot {
+            elapsed_ms: 1_000,
+            ..snapshot(100)
+        });
+        assert_eq!(asleep.state, State::Asleep, "asleep first: {asleep:?}");
+        let refused = engine.tick(&proposing("greet"));
+        assert_eq!(
+            refused.refused.as_deref(),
+            Some("greet"),
+            "asleep refuses greet: {refused:?}"
+        );
+        assert_ne!(refused.animation, "react", "greet must not start asleep");
+    }
+
+    /// A primitive Behavior's `then` naming a strip actually starts that strip
+    /// after the primitives finish (shipped cat prowl → groom).
+    #[test]
+    fn primitive_then_strip_starts_the_strip_after_the_pass() {
+        use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
+        let mut behaviors = BTreeMap::new();
+        behaviors.insert(
+            "prowl".to_string(),
+            Behavior {
+                primitives: vec![Primitive::Walk],
+                strip: None,
+                then: Some("groom".to_string()),
+                weight: DEFAULT_WEIGHT,
+                trigger: None,
+                not_in_manifest: false,
+                idle_type: false,
+            },
+        );
+        behaviors.insert(
+            "groom".to_string(),
+            Behavior {
+                primitives: vec![],
+                strip: Some("grooming".to_string()),
+                then: None,
+                weight: DEFAULT_WEIGHT,
+                trigger: None,
+                not_in_manifest: false,
+                idle_type: false,
+            },
+        );
+        let mut engine = a_resting_sprite().with_behaviors(behaviors);
+        engine.set_idle_plan(IdlePlan {
+            loops: vec![IdleMember {
+                name: "idle".into(),
+                weight: 1,
+                frames: 1,
+                fps: 1,
+            }],
+            gestures: vec![IdleMember {
+                name: "grooming".into(),
+                weight: 1,
+                frames: 6,
+                fps: 6,
+            }],
+            idle_gesture_every_s: (10, 30),
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+        });
+        let started = engine.tick(&proposing("prowl"));
+        assert_eq!(
+            started.playing_behavior.as_deref(),
+            Some("prowl"),
+            "{started:?}"
+        );
+        // Walk is PRIMITIVE_MS (600). Drain it and the following ticks.
+        let mut saw_groom = false;
+        for _ in 0..20 {
+            let frame = engine.tick(&snapshot(100));
+            if frame.playing_gesture.as_deref() == Some("grooming")
+                || frame.playing_behavior.as_deref() == Some("groom")
+            {
+                saw_groom = true;
+                break;
+            }
+        }
+        assert!(saw_groom, "prowl then=groom must start the grooming strip");
+    }
+
+    /// A strip Behavior's `then` naming primitives starts them after the pass.
+    #[test]
+    fn strip_then_primitive_starts_after_the_strip_pass() {
         use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
         let mut behaviors = BTreeMap::new();
         behaviors.insert(
@@ -6444,7 +6766,7 @@ mod tests {
             Behavior {
                 primitives: vec![],
                 strip: Some("grooming".to_string()),
-                then: None,
+                then: Some("greet".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
                 not_in_manifest: false,
@@ -6487,32 +6809,24 @@ mod tests {
             Some("grooming"),
             "{started:?}"
         );
-        let mid = engine.tick(&proposing("greet"));
-        assert_eq!(
-            mid.playing_gesture.as_deref(),
-            Some("grooming"),
-            "strip continues: {mid:?}"
-        );
-        assert_ne!(
-            mid.playing_behavior.as_deref(),
-            Some("greet"),
-            "greet deferred: {mid:?}"
-        );
-        // One pass of 6 frames at 6 fps is 1000 ms.
-        let mut last = mid;
-        for _ in 0..15 {
-            last = engine.tick(&snapshot(100));
-            if last.playing_gesture.is_none() {
+        let mut saw_greet = false;
+        for _ in 0..20 {
+            let frame = engine.tick(&snapshot(100));
+            if frame.playing_behavior.as_deref() == Some("greet")
+                || frame.behavior.as_deref() == Some("greet")
+                || frame.animation == "react"
+            {
+                saw_greet = true;
                 break;
             }
         }
         assert!(
-            last.playing_gesture.is_none(),
-            "strip finished its pass: {last:?}"
+            saw_greet,
+            "groom then=greet must start greet after the strip"
         );
     }
 
-    /// C03: a moving perch under an asleep sprite does not wake it. Sleep
+    /// A moving perch under an asleep sprite does not wake it. Sleep
     /// countdown keeps running; window motion is not a user interaction.
     #[test]
     fn asleep_sprite_stays_asleep_while_its_perch_moves() {

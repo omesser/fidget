@@ -688,18 +688,14 @@ fn play_list(
             None => strips.push(word.to_string()),
         }
     }
-    if !strips.is_empty() && !primitives.is_empty() {
-        errors.push(format!(
-            "play for behavior {name:?} mixes Primitives and idle-gestures; use one or the other"
-        ));
-        return (Vec::new(), None);
-    }
     if strips.len() > 1 {
         errors.push(format!(
             "play for behavior {name:?} names more than one idle-gesture; a Behavior plays one strip"
         ));
         return (Vec::new(), None);
     }
+    // Mixed Primitive + strip-candidate lists reach resolve so an unknown
+    // token can be named, and a real gesture mixed with Primitives refused.
     (primitives, strips.pop())
 }
 
@@ -831,10 +827,50 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "play for behavior \"greet\" mixes Primitives and idle-gestures; use one or the other"
+                "behavior \"greet\" declares \"pounce\", which is not a Primitive or an idle-gesture"
                     .to_string()
             ],
-            "a mixed play list is refused; pure unknown strips fail later as unnamed gestures"
+            "an unknown token beside Primitives is named, not reported as a mixed play list"
+        );
+    }
+
+    #[test]
+    fn an_invalid_strip_token_is_named_with_readable_whitespace() {
+        let manifest = format!(
+            "{}[behaviors.greet]\nplay = [\"idel\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![
+                "behavior \"greet\" declares \"idel\", which is not a Primitive or an idle-gesture"
+                    .to_string()
+            ],
+            "{errors:#?}"
+        );
+        assert!(
+            !errors.iter().any(|e| e.contains("  ")),
+            "no embedded runs of spaces: {errors:#?}"
+        );
+    }
+
+    #[test]
+    fn a_real_mixed_primitive_and_gesture_play_list_is_refused() {
+        let manifest = format!(
+            "{}\
+             [animations.grooming]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [behaviors.odd]\nplay = [\"walk\", \"grooming\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![
+                "play for behavior \"odd\" mixes Primitives and idle-gestures; use one or the other"
+                    .to_string()
+            ],
+            "{errors:#?}"
         );
     }
 

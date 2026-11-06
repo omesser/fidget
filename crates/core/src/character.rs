@@ -560,6 +560,7 @@ impl From<u64> for RingChoice<'static> {
 }
 
 impl<'a> RingChoice<'a> {
+    /// Prefer a named idle beat; otherwise weigh the family with `variant_draw`.
     pub fn from_beat(beat: Option<&'a IdleBeat>, variant_draw: u64) -> Self {
         match beat {
             Some(beat) => RingChoice::Beat(beat),

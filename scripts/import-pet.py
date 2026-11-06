@@ -770,6 +770,8 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
             "variant_of": variant_of,
         }
     suggestions = classify_idle_gestures(animations)
+    for tip in suggestions:
+        print("suggest:", tip)
 
     # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
     # cut from any other row (--map) faces no way the importer can see.
