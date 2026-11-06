@@ -3794,7 +3794,7 @@ fn chat_status(
     ChatStatus {
         behavior: frame.playing_behavior.clone(),
         primitive: frame.playing_primitive,
-        animation: frame.animation.to_string(),
+        animation: drawn.to_string(),
         asked_animation: frame.animation,
         state: frame.state,
         happened,

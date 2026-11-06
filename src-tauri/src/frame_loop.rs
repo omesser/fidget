@@ -33,14 +33,14 @@ use super::session_log;
 use super::settings::{ChatAppearance, SettingsOp};
 use super::{
     apply_keyboard_flips, apply_menu_action, bring_roster_off_fullscreen, cancelled_caret,
-    chat_label, close_chat, completer, describe_menu, dev_flags, harness, mcp_http, mcp_resources,
-    menu, menu_caffeinate, model, note_caffeinate_view, note_happened, open_chat, overlay_label,
-    overlay_request_focus, paced, place_overlays, platform, possession, publish_instances,
-    push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
-    switch_instance, tray, ChatMsg, ChatReply, chat_status, ChatStatusPush, DirectorRun, Drawn,
-    FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
-    QuickMessageAside, SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT,
-    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    chat_label, chat_status, close_chat, completer, describe_menu, dev_flags, harness, mcp_http,
+    mcp_resources, menu, menu_caffeinate, model, note_caffeinate_view, note_happened, open_chat,
+    overlay_label, overlay_request_focus, paced, place_overlays, platform, possession,
+    publish_instances, push_chat_opening, push_chat_openings, quit_now, remember_instances,
+    spawn_live, sprite_width, switch_instance, tray, ChatMsg, ChatReply, ChatStatusPush,
+    DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal,
+    Placed, Placement, QuickMessageAside, SpritePlacement, Traced, TrayHandle, WorkArea,
+    ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
@@ -3728,7 +3728,8 @@ mod tests {
             "walk-0.png".to_string(),
             fidget_core::character::Art {
                 png: png.to_vec(),
-                mask: fidget_core::overlay::AlphaMask::from_png(png, 128).expect("the fixture decodes"),
+                mask: fidget_core::overlay::AlphaMask::from_png(png, 128)
+                    .expect("the fixture decodes"),
                 facing: fidget_core::character::Facing::Right,
             },
         );
@@ -3739,7 +3740,12 @@ mod tests {
         let mut frame = roster.get_mut(&id).expect("just spawned").tick(&snapshot);
         frame.animation = "climb";
         let drawn = character
-            .draw(frame.art_name(), frame.animation_ms, frame.ring_choice(), frame.facing)
+            .draw(
+                frame.art_name(),
+                frame.animation_ms,
+                frame.ring_choice(),
+                frame.facing,
+            )
             .expect("climb falls back to walk");
 
         let status = chat_status(&frame, drawn.animation, None, false);

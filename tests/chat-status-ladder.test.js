@@ -14,18 +14,18 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const THEMES = ["minimal", "terminal", "glass"];
 const CELL_IDS = [
   "s-behavior",
-  "s-primitive",
   "s-animation",
+  "s-primitive",
   "s-state",
   "s-facing",
   "s-director",
   "s-happened",
 ];
-const SHORT_CELLS = ["walk", "—", "idle", "—", "→", "wake 12s", "—"];
+const SHORT_CELLS = ["walk", "idle", "—", "—", "→", "wake 12s", "—"];
 const LONG_CELLS = [
   "play-with-cursor",
-  "Walk",
   "idle-breathe",
+  "Walk",
   "Climbing",
   "←",
   "wake 12m",
