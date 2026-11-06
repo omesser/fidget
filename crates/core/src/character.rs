@@ -99,8 +99,8 @@ pub const REQUIRED_ANIMATIONS: [&str; 9] = [
     "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
 
-/// The variant family of idle-gestures. The base Animation has this name.
-/// Other gestures declare `variant_of` it. Calm loops are `variant_of` `"idle"`.
+/// The idle-gesture family. It is not an Animation. A strip joins it with
+/// `variant_of = "idle-gesture"` and keeps its own name.
 pub const IDLE_GESTURE: &str = "idle-gesture";
 
 /// How long a Personality Prompt may be, in characters. Untrusted text in every
@@ -314,6 +314,9 @@ pub struct Animation {
     /// manifest does not say. An Animation in no ring carries the default all
     /// the same, and nothing reads it.
     pub weight: u32,
+    /// `variant_of`. `idle-gesture` is a family name, not an Animation, so the
+    /// strip keeps its own name. Other values name a real base.
+    pub variant_of: Option<String>,
 }
 
 impl Animation {
@@ -592,15 +595,13 @@ impl Character {
                 loops.push(idle_member(name, animation));
             }
         }
-        let mut gestures = Vec::new();
-        if let Some(family) = self.animations.get(IDLE_GESTURE) {
-            gestures.push(idle_member(IDLE_GESTURE, family));
-            for name in &family.variants {
-                if let Some(animation) = self.animations.get(name) {
-                    gestures.push(idle_member(name, animation));
-                }
-            }
-        }
+        let mut gestures: Vec<IdleMember> = self
+            .animations
+            .iter()
+            .filter(|(_, animation)| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
+            .map(|(name, animation)| idle_member(name, animation))
+            .collect();
+        gestures.sort_by(|left, right| left.name.cmp(&right.name));
         IdlePlan {
             loops,
             gestures,
@@ -698,12 +699,11 @@ impl Character {
         }
     }
 
-    /// True when `member` is the idle-gesture base or one of its variants.
+    /// True when `member` declares `variant_of = "idle-gesture"`.
     fn idle_gesture_named(&self, member: &str) -> bool {
-        let Some(family) = self.animations.get(IDLE_GESTURE) else {
-            return false;
-        };
-        member == IDLE_GESTURE || family.variants.iter().any(|variant| variant == member)
+        self.animations
+            .get(member)
+            .is_some_and(|animation| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
     }
 
     /// `member` when it is `requested`, a variant of it, or an idle-gesture
@@ -847,16 +847,14 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let idle_loops = animations
         .get("idle")
         .map(|idle| (idle.frame_size, idle.variants.clone()));
-    let gesture_members = animations.get(IDLE_GESTURE).map(|family| {
-        let mut names = vec![IDLE_GESTURE.to_string()];
-        names.extend(family.variants.iter().cloned());
-        names
-    });
+    let gesture_names: Vec<String> = animations
+        .iter()
+        .filter(|(_, animation)| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
+        .map(|(name, _)| name.clone())
+        .collect();
     if let Some((base_size, loops)) = idle_loops {
         let mut names = loops;
-        if let Some(gestures) = gesture_members {
-            names.extend(gestures);
-        }
+        names.extend(gesture_names);
         for name in names {
             let Some(member) = animations.get(&name) else {
                 continue;
@@ -1003,6 +1001,7 @@ pub(crate) mod tests {
             fps,
             looping,
             variants: Vec::new(),
+            variant_of: None,
             left_strip: None,
             weight: DEFAULT_WEIGHT,
         }

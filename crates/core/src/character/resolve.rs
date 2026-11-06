@@ -82,6 +82,7 @@ pub(super) fn resolve_animations(
                     fps: declaration.fps,
                     looping: declaration.looping,
                     variants: Vec::new(),
+                    variant_of: declaration.variant_of.clone(),
                     left_strip: None,
                     weight: declaration.weight,
                 },
@@ -148,6 +149,16 @@ pub(super) fn check_variants(
         let Some(base) = &animation.variant_of else {
             continue;
         };
+        if base == super::IDLE_GESTURE {
+            // The family is a name, not an Animation, so the strip keeps its own.
+            if !animation.looping {
+                errors.push(format!(
+                    "animation {name:?} is a variant_of \"idle-gesture\", and must \
+                     loop \"forever\""
+                ));
+            }
+            continue;
+        }
         match declared.get(base) {
             _ if base == name => errors.push(format!("animation {name:?} is a variant_of itself")),
             None => errors.push(format!(
@@ -162,15 +173,6 @@ pub(super) fn check_variants(
                  a drawn variant plays until the engine asks for something else"
             )),
             Some(_) => pairs.push((name.clone(), base.clone())),
-        }
-    }
-    if let Some(family) = declared.get(super::IDLE_GESTURE) {
-        if let Some(base) = &family.variant_of {
-            errors.push(format!(
-                "animation {:?} is a variant_of {base:?}, and the idle-gesture \
-                 family base is not a variant",
-                super::IDLE_GESTURE
-            ));
         }
     }
     pairs
@@ -337,7 +339,12 @@ pub(super) fn check_play_steps(
     animations: &BTreeMap<String, Animation>,
     errors: &mut Vec<String>,
 ) {
-    let Some(family) = animations.get(super::IDLE_GESTURE) else {
+    let gestures: Vec<&str> = animations
+        .iter()
+        .filter(|(_, animation)| animation.variant_of.as_deref() == Some(super::IDLE_GESTURE))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if gestures.is_empty() {
         // No family: every non-Primitive play word is unnamed.
         for (name, behavior) in behaviors {
             for step in &behavior.steps {
@@ -352,14 +359,12 @@ pub(super) fn check_play_steps(
         }
         return;
     };
-    let mut gestures = vec![super::IDLE_GESTURE.to_string()];
-    gestures.extend(family.variants.iter().cloned());
     for (name, behavior) in behaviors {
         for step in &behavior.steps {
             let Step::Gesture(gesture) = step else {
                 continue;
             };
-            if gestures.iter().any(|known| known == gesture) {
+            if gestures.contains(&gesture.as_str()) {
                 continue;
             }
             errors.push(format!(
@@ -679,8 +684,7 @@ mod tests {
         gesture_package.insert(
             CHARACTER_MANIFEST_FILE.to_string(),
             format!(
-                "{}[animations.idle-gesture]\nframes = [\"idle-0.png\"]\n\
-                 [animations.groom]\nframes = [\"wide-0.png\"]\nvariant_of = \"idle-gesture\"\n",
+                "{}[animations.groom]\nframes = [\"wide-0.png\"]\nvariant_of = \"idle-gesture\"\n",
                 declaring(&REQUIRED_ANIMATIONS)
             )
             .into_bytes(),

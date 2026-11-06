@@ -28,17 +28,18 @@ rush_reaction = "face"
 model_base = 2
 model_power = 1
 
-# The calm loop is the wait. The coat-flick stand is an idle-gesture, not
-# the baseline: a still frame of him standing would read as the loop.
+# The calm loop is the first row of the sheet. There is no separate gesture.
 [animations.idle]
-frames = ["frames/waiting-0.png", "frames/waiting-1.png"]
-fps = 2
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-2.png",
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
+]
+fps = 5
 weight = 10
-
-[animations.idle-gesture]
-frames = ["frames/idle-0.png", "frames/idle-1.png"]
-fps = 2
-weight = 30
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
@@ -126,9 +127,4 @@ when = "idle over 2m"
 "frames/walk-5.png" = "right"
 "frames/walk-6.png" = "right"
 "frames/walk-7.png" = "right"
-
-[behaviors.coat-flick]
-play = ["idle-gesture"]
-weight = 10
-when = "idle over 10s"
 

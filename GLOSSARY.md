@@ -73,8 +73,9 @@ _Avoid_: Clip, sprite, sequence
 
 **Variant**:
 An Animation declared `variant_of` another. A base Animation and its variants
-form a ring. `variant_of` `"idle"` is a calm loop. `variant_of` `"idle-gesture"`
-is an idle-gesture, and the base Animation is named `idle-gesture`. The Engine
+form a ring. `variant_of` `"idle"` is a calm loop of the declared `idle` Animation.
+`variant_of` `"idle-gesture"` classifies a strip as an idle-gesture. That family
+name is not an Animation, so the strip keeps its own name. The Engine
 plays a loop, waits a seeded gap, plays one gesture from its first frame, then
 picks a loop again. A Behavior's `idle`
 Primitive still draws one loop-ring member and loops it, unless that Behavior

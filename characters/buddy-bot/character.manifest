@@ -80,7 +80,7 @@ frames = [
 fps = 8
 variant_of = "idle-gesture"
 
-[animations.idle-gesture]
+[animations.idle-listen]
 frames = [
   "frames/idle-listen-0.png",
   "frames/idle-listen-1.png",
@@ -91,6 +91,7 @@ frames = [
   "frames/idle-listen-6.png",
 ]
 fps = 4
+variant_of = "idle-gesture"
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
 # 3/4 right stride after pack flip; cheek LED omitted on walk only.
@@ -248,7 +249,7 @@ weight = 40
 when = "idle over 2m"
 
 [behaviors.listen]
-play = ["idle-gesture"]
+play = ["idle-listen"]
 weight = 10
 when = "idle over 10s"
 

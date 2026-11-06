@@ -3642,6 +3642,7 @@ mod tests {
                         fps: 8,
                         looping: true,
                         variants: Vec::new(),
+                        variant_of: None,
                         left_strip: None,
                         // core keeps its own default private, and this test
                         // only needs a Behavior something can pick.

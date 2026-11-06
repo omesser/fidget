@@ -438,13 +438,15 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
 /// The beat names an idle-gesture, so draw plays that strip from frame 0.
 /// A weighed idle draw stays on the calm loop.
 fn assert_idle_gesture(character: &character::Character, name: &str) {
-    let family = &character.animations["idle-gesture"];
-    let in_family = name == "idle-gesture" || family.variants.iter().any(|variant| variant == name);
-    assert!(in_family, "{name} is an idle-gesture");
     let idle = &character.animations["idle"];
     assert!(
         !idle.variants.iter().any(|variant| variant == name),
         "{name} is outside the calm loop"
+    );
+    assert_eq!(
+        character.animations[name].variant_of.as_deref(),
+        Some("idle-gesture"),
+        "{name} keeps its name and is classified idle-gesture"
     );
     let animation = &character.animations[name];
     let beat = IdleBeat::IdleGesture(name.to_string());
@@ -478,7 +480,7 @@ fn rubber_duck_plays_thinking_and_looking_as_idle_gestures() {
         ("thinking", 6),
         ("pondering", 6),
         ("look-right", 8),
-        ("idle-gesture", 8),
+        ("look-left", 8),
     ] {
         assert_eq!(
             character.animations[name]
@@ -516,7 +518,7 @@ fn tux_draws_each_idle_gesture_and_its_left_waddle() {
             ("look-around", 6),
             ("checking-work", 6),
             ("recover-card", 8),
-            ("idle-gesture", 6),
+            ("waddle-in-place", 6),
         ],
     );
 }
@@ -529,7 +531,7 @@ fn tuxedo_bean_draws_each_idle_gesture_and_its_left_walk() {
         &[
             ("look-around", 6),
             ("nod-off", 8),
-            ("idle-gesture", 6),
+            ("review", 6),
             ("wave", 4),
         ],
     );
@@ -545,12 +547,14 @@ fn tuxedo_bean_plays_every_sheet_row_without_a_model() {
         (0, "look-around"),
         (3, "wave"),
         (5, "nod-off"),
-        (8, "idle-gesture"),
+        (8, "review"),
     ] {
-        let family = &character.animations["idle-gesture"];
-        let in_family =
-            name == "idle-gesture" || family.variants.iter().any(|variant| variant == name);
-        assert!(in_family, "row {row} ({name}) plays between idle loops");
+        assert!(
+            character.animations.get(name).is_some_and(|animation| {
+                animation.variant_of.as_deref() == Some("idle-gesture")
+            }),
+            "row {row} ({name}) keeps its name inside the idle-gesture family"
+        );
     }
     for (row, primitive) in [
         (1, Primitive::Walk),
@@ -934,12 +938,12 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
-        character.animations.contains_key("idle-gesture"),
-        "the TAC sweep is the idle-gesture family"
+        character.animations.contains_key("scan"),
+        "the TAC sweep keeps the name scan"
     );
-    let scan = &character.animations["idle-gesture"];
+    let scan = &character.animations["scan"];
     assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC sweep");
-    assert_idle_gesture(&character, "idle-gesture");
+    assert_idle_gesture(&character, "scan");
     assert!(
         character.animations["sit"].variants.is_empty(),
         "sit is not where the laser lives"
@@ -947,7 +951,7 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     assert!(
         matches!(
             character.behaviors["scan"].steps.as_slice(),
-            [character::Step::Gesture(name)] if name == "idle-gesture"
+            [character::Step::Gesture(name)] if name == "scan"
         ),
         "scan plays the TAC sweep by name"
     );
@@ -967,9 +971,9 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
     );
 
     let drawn = character
-        .draw("idle-gesture", 0, 0, 1.0)
+        .draw("scan", 0, 0, 1.0)
         .expect("scan draws when asked for by name");
-    assert_eq!(drawn.animation, "idle-gesture");
+    assert_eq!(drawn.animation, "scan");
 
     let engage = &character.behaviors["engage"];
     assert!(
@@ -1313,7 +1317,7 @@ fn buddy_bot_frames_are_90_square_rgba() {
 fn buddy_bot_declares_idle_life_gestures() {
     let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
 
-    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-gesture", 7)];
+    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-listen", 7)];
     for (name, count) in expected {
         assert!(
             character.animations.contains_key(name),
@@ -1593,12 +1597,12 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
 
     // Behavior, the strip it plays, that strip's first frame.
     let cases = [
-        ("bmo", "skate", "idle-gesture", "frames/skate-0.png"),
+        ("bmo", "skate", "skate", "frames/skate-0.png"),
         ("bmo", "sing", "sing", "frames/sing-0.png"),
         (
             "buddy-bot",
             "listen",
-            "idle-gesture",
+            "idle-listen",
             "frames/idle-listen-0.png",
         ),
         (
@@ -1614,17 +1618,11 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             "frames/idle-blink-0.png",
         ),
         ("cat", "groom", "grooming", "frames/idle-0.png"),
-        ("cat", "waiting", "idle-gesture", "frames/waiting-0.png"),
-        (
-            "jotaro-kujo",
-            "coat-flick",
-            "idle-gesture",
-            "frames/idle-0.png",
-        ),
+        ("cat", "waiting", "waiting", "frames/waiting-0.png"),
         (
             "rubber-duck",
             "look-left",
-            "idle-gesture",
+            "look-left",
             "frames/look-left-0.png",
         ),
         ("rubber-duck", "wing-wave", "wave", "frames/wave-0.png"),
@@ -1646,12 +1644,12 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             "look-right",
             "frames/look-right-0.png",
         ),
-        ("timber-wolf", "scan", "idle-gesture", "frames/scan-1.png"),
-        ("trump", "waiting", "idle-gesture", "frames/waiting-0.png"),
+        ("timber-wolf", "scan", "scan", "frames/scan-1.png"),
+        ("trump", "waiting", "waiting", "frames/waiting-0.png"),
         (
             "tux",
             "waddle-in-place",
-            "idle-gesture",
+            "waddle-in-place",
             "frames/waddle-in-place-0.png",
         ),
         (
@@ -1678,12 +1676,7 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             "recover-card",
             "frames/recover-card-0.png",
         ),
-        (
-            "tuxedo-bean",
-            "review",
-            "idle-gesture",
-            "frames/review-0.png",
-        ),
+        ("tuxedo-bean", "review", "review", "frames/review-0.png"),
         (
             "tuxedo-bean",
             "look-around",
@@ -1740,6 +1733,45 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             break;
         }
         assert!(saw, "{package} behavior {behavior} never played {strip}");
+    }
+
+    let jotaro = load_package("jotaro-kujo").expect("jotaro");
+    assert!(
+        !jotaro.animations.contains_key("idle-gesture")
+            && !jotaro.behaviors.contains_key("coat-flick"),
+        "Jotaro's stand is the idle loop, not a gesture"
+    );
+    assert_eq!(jotaro.animations["idle"].frames.len(), 6);
+    assert!(jotaro.animations["idle"]
+        .frames
+        .iter()
+        .all(|frame| frame.starts_with("frames/idle-")));
+
+    for package in shipped_packages() {
+        let character = load_package(&package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
+        assert!(
+            !character.animations.contains_key("idle-gesture"),
+            "{package} must not sacrifice a strip's name to the family"
+        );
+        let family: Vec<&str> = character
+            .animations
+            .iter()
+            .filter(|(_, animation)| animation.variant_of.as_deref() == Some("idle-gesture"))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        for name in &family {
+            assert!(
+                cases.iter().any(|(_, _, strip, _)| strip == name),
+                "{package} {name} has no starring Behavior"
+            );
+            assert_ne!(*name, "idle");
+        }
+        for (_, _, strip, _) in cases.iter().filter(|(pkg, ..)| *pkg == package) {
+            assert!(
+                family.contains(strip),
+                "{package} {strip} is not an idle-gesture"
+            );
+        }
     }
 
     // The Static Director can select a new Behavior once the user has been idle.

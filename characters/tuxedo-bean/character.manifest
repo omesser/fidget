@@ -58,7 +58,7 @@ fps = 4
 variant_of = "idle-gesture"
 weight = 4
 
-[animations.idle-gesture]
+[animations.review]
 frames = [
   "frames/review-0.png",
   "frames/review-1.png",
@@ -69,6 +69,7 @@ frames = [
 ]
 fps = 4
 weight = 3
+variant_of = "idle-gesture"
 
 [animations.wave]
 frames = [
@@ -229,7 +230,7 @@ weight = 0
 "frames/walk-left-7.png" = "left"
 
 [behaviors.review]
-play = ["idle-gesture"]
+play = ["review"]
 weight = 10
 when = "idle over 10s"
 

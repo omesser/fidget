@@ -90,7 +90,7 @@ fps = 1
 
 # TAC laser sweep. scan-0.png is a byte-copy of idle-0 and is omitted.
 # The real sweep is scan-1..3, one pass between calm loops.
-[animations.idle-gesture]
+[animations.scan]
 frames = [
   "frames/scan-1.png",
   "frames/scan-2.png",
@@ -98,6 +98,7 @@ frames = [
   "frames/scan-2.png",
 ]
 fps = 4
+variant_of = "idle-gesture"
 
 # Full-frontal weapon raise from the turn recording: contact acquired.
 [animations.react]
@@ -149,7 +150,7 @@ when = "idle over 30s"
 "frames/sleep-1.png" = "left"
 
 [behaviors.scan]
-play = ["idle-gesture"]
+play = ["scan"]
 weight = 10
 when = "idle over 10s"
 

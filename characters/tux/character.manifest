@@ -83,7 +83,7 @@ fps = 3
 variant_of = "idle-gesture"
 weight = 4
 
-[animations.idle-gesture]
+[animations.waddle-in-place]
 frames = [
   "frames/waddle-in-place-0.png",
   "frames/waddle-in-place-1.png",
@@ -94,6 +94,7 @@ frames = [
 ]
 fps = 4
 weight = 3
+variant_of = "idle-gesture"
 
 [animations.walk]
 frames = [
@@ -228,7 +229,7 @@ weight = 0
 "frames/walk-left-7.png" = "left"
 
 [behaviors.waddle-in-place]
-play = ["idle-gesture"]
+play = ["waddle-in-place"]
 weight = 10
 when = "idle over 10s"
 

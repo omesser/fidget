@@ -43,9 +43,10 @@ variant_of = "idle-gesture"
 
 # Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
 # that vanishes mid-loop reads as a glitch, not a trick.
-[animations.idle-gesture]
+[animations.skate]
 frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]
 fps = 3
+variant_of = "idle-gesture"
 
 # Dribbling the whole way is a mood rather than the usual walk: three plain
 # walks to each one that goes out with the football.
@@ -171,7 +172,7 @@ when = "idle over 10s"
 "frames/fall-1.png" = "left"
 
 [behaviors.skate]
-play = ["idle-gesture"]
+play = ["skate"]
 weight = 10
 when = "idle over 10s"
 

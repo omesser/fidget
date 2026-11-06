@@ -93,7 +93,7 @@ frames = [
 fps = 4
 variant_of = "idle-gesture"
 
-[animations.idle-gesture]
+[animations.look-left]
 frames = [
   "frames/look-left-0.png",
   "frames/look-left-1.png",
@@ -111,6 +111,7 @@ frames = [
   "frames/look-left-1.png",
 ]
 fps = 4
+variant_of = "idle-gesture"
 
 [animations.walk]
 frames = [
@@ -299,7 +300,7 @@ weight = 0
 "frames/walk-7.png" = "right"
 
 [behaviors.look-left]
-play = ["idle-gesture"]
+play = ["look-left"]
 weight = 10
 when = "idle over 10s"
 
