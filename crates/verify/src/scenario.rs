@@ -713,6 +713,11 @@ mod tests {
                 "{script} with {key} broken, want exit 1 and '{message}', got {:?}:\n{stderr}",
                 out.status.code()
             );
+            // A PowerShell throw after the FAIL line also exits 1, so the code alone hides it.
+            assert!(
+                !stderr.contains("FullyQualifiedErrorId"),
+                "{script} with {key} broken threw after its FAIL line:\n{stderr}"
+            );
         }
     }
 

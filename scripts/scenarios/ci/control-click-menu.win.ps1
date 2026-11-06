@@ -26,6 +26,11 @@ $Bin = if ($args.Count -gt 1) { $args[1] } else { "" }
 $TestBin = if ($args.Count -gt 2) { $args[2] } else { "" }
 $ErrorActionPreference = "Stop"
 $Ellipsis = [string][char]0x2026
+# Before the self-check, whose FAIL line carries the ellipsis: a desktop console
+# on an OEM codepage writes it as '.', and only CI's runner switches to 65001.
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
 
 function Show-Header {
     $lines = Get-Content -LiteralPath $PSCommandPath
@@ -73,8 +78,8 @@ $script:Evidence = $null
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
     if ($script:Evidence) { [Console]::Error.WriteLine("evidence in $($script:Evidence)") }
-    $traceFile = Join-Path $data "process.log"
-    if (-not (Test-Path -LiteralPath $traceFile -ErrorAction SilentlyContinue)) {
+    # A self-check fails before the leaf seeds a data dir, so there is none to check.
+    if ($data -and -not (Test-Path -LiteralPath (Join-Path $data "process.log") -ErrorAction SilentlyContinue)) {
         [Console]::Error.WriteLine("data_dir did not resolve to $data")
     }
     exit 1
@@ -128,10 +133,6 @@ $env:FIDGET_TRACE_HITTEST = "1"
 $env:FIDGET_TRACE_WINDOWS = "1"
 $env:FIDGET_CHARACTER = "bmo"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
-
-$utf8 = New-Object System.Text.UTF8Encoding $false
-[Console]::OutputEncoding = $utf8
-$OutputEncoding = $utf8
 
 . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
 
