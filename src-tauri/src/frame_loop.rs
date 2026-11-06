@@ -854,7 +854,7 @@ pub(crate) fn run_frame_loop(
                         .as_ref()
                         .filter(|_| visible)
                         .and_then(|last| {
-                            let name = last.playing_gesture.as_deref().unwrap_or(last.animation);
+                            let name = last.art_name();
                             let art = live.character.draw(
                                 name,
                                 last.animation_ms,
@@ -2197,7 +2197,7 @@ pub(crate) fn run_frame_loop(
                 let needs_active_for_animation =
                     if let Some(character) = characters.get(instance.character_name()) {
                         character.art_still_advancing(
-                            frame.playing_gesture.as_deref().unwrap_or(frame.animation),
+                            frame.art_name(),
                             frame.animation_ms,
                             frame.idle_beat.as_ref(),
                         )
@@ -2477,7 +2477,7 @@ pub(crate) fn run_frame_loop(
                 // The Engine names an Animation and how long it has been
                 // playing. Resolve here, not in the webview, so hit-test and
                 // the frame the user sees stay the same one.
-                let art_name = frame.playing_gesture.as_deref().unwrap_or(frame.animation);
+                let art_name = frame.art_name();
                 let Some(drawn) = live.character.draw(
                     art_name,
                     frame.animation_ms,
@@ -3558,7 +3558,7 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
 mod tests {
     use super::*;
     use fidget_core::character::{
-        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive, Step,
+        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
         DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
         DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
     };
@@ -3655,7 +3655,7 @@ mod tests {
         behaviors.insert(
             "wave".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::React)],
+                primitives: vec![Primitive::React], strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,

@@ -414,6 +414,13 @@ struct Drawn {
     facing: f64,
 }
 
+impl Drawn {
+    /// Strip a Behavior is mid-pass on, else the Engine animation token.
+    fn art_name(&self) -> &str {
+        self.playing_gesture.as_deref().unwrap_or(self.animation)
+    }
+}
+
 /// What the last `engine:` line said about an Instance. Trace prints on
 /// change; everything the line carries is in here, or a field that moved
 /// alone would stop appearing after the first tick that moved only it.

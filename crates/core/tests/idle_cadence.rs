@@ -98,9 +98,9 @@ fn shown(character: &Character, frame: &fidget_core::engine::Frame) -> (String, 
 }
 
 fn behavior(primitives: Vec<Primitive>, idle_type: bool) -> Behavior {
-    use fidget_core::character::Step;
     Behavior {
-        steps: primitives.into_iter().map(Step::Primitive).collect(),
+        primitives: primitives.into_iter().collect(),
+        strip: None,
         then: None,
         weight: 10,
         trigger: None,

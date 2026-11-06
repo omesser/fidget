@@ -151,7 +151,7 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
 
     let engage = &character.behaviors["engage"];
     assert!(
-        engage.steps.len() >= 2,
+        engage.primitives.len() >= 2,
         "engage composes multiple primitives"
     );
     assert!(
@@ -949,10 +949,7 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
         "sit is not where the laser lives"
     );
     assert!(
-        matches!(
-            character.behaviors["scan"].steps.as_slice(),
-            [character::Step::Gesture(name)] if name == "scan"
-        ),
+        matches!(character.behaviors["scan"].strip.as_deref(), Some("scan")),
         "scan plays the TAC sweep by name"
     );
     for name in [
@@ -1593,8 +1590,6 @@ fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
 /// strip's first frame, including the family base, which must not reweigh.
 #[test]
 fn every_idle_gesture_strip_stars_as_its_own_behavior() {
-    use std::time::Duration;
-
     // Behavior, the strip it plays, that strip's first frame.
     let cases = [
         ("bmo", "skate", "skate", "frames/skate-0.png"),
@@ -1774,22 +1769,40 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
         }
     }
 
-    // The Static Director can select a new Behavior once the user has been idle.
+    // New starring wrappers are weight 0: callable via Director/MCP proposal,
+    // not a second ambient cadence beside idle_gesture_every_s.
     let buddy = load_package("buddy-bot").expect("buddy");
+    for name in ["blink", "breathe", "listen"] {
+        let behavior = &buddy.behaviors[name];
+        assert_eq!(
+            behavior.weight, 0,
+            "buddy {name} must be callable-only, not ambient"
+        );
+        assert_eq!(
+            behavior.strip.as_deref(),
+            match name {
+                "blink" => Some("idle-blink"),
+                "breathe" => Some("idle-breathe"),
+                "listen" => Some("idle-listen"),
+                _ => None,
+            },
+            "buddy {name} stars its strip"
+        );
+    }
     let mut context = fidget_core::director::Context::quiet();
-    context.activity.idle = Duration::from_secs(60);
-    let mut seen = BTreeSet::new();
+    context.activity.idle = std::time::Duration::from_secs(60);
+    let mut ambient = BTreeSet::new();
     for seed in 0..400 {
         let mut director =
             fidget_core::director::StaticDirector::new(buddy.behaviors.clone(), seed);
         if let Some(proposal) = director.propose(&context) {
-            seen.insert(proposal.behavior);
+            ambient.insert(proposal.behavior);
         }
     }
     for name in ["blink", "breathe", "listen"] {
         assert!(
-            seen.contains(name),
-            "director never selected buddy {name}: {seen:?}"
+            !ambient.contains(name),
+            "weight-0 buddy {name} must not fire on ambient cadence: {ambient:?}"
         );
     }
 }
@@ -1798,7 +1811,7 @@ fn shown_cat(
     character: &character::Character,
     frame: &fidget_core::engine::Frame,
 ) -> (String, usize) {
-    let name = frame.playing_gesture.as_deref().unwrap_or(frame.animation);
+    let name = frame.art_name();
     let drawn = character
         .draw(name, frame.animation_ms, frame.ring_choice(), frame.facing)
         .expect("the cat draws the idle it is playing");

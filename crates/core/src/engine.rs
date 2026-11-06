@@ -7,7 +7,7 @@
 
 use crate::character::{
     animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan,
-    Primitive, RingChoice, Step, DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
+    Primitive, RingChoice, DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
     DEFAULT_SLEEP_FOR_S,
 };
 use crate::director::Seeded;
@@ -287,6 +287,12 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Animation name `Character::draw` should resolve: a Behavior strip when
+    /// one is mid-pass, otherwise the Engine's animation token.
+    pub fn art_name(&self) -> &str {
+        self.playing_gesture.as_deref().unwrap_or(self.animation)
+    }
+
     /// What `Character::draw` should weigh this frame with.
     pub fn ring_choice(&self) -> RingChoice<'_> {
         Self::choice_for(
@@ -296,8 +302,8 @@ impl Frame {
         )
     }
 
-    /// A gesture step named one strip. The family base's name is also the
-    /// ring, and weighing it would play a sibling. Callers that kept the
+    /// A Behavior strip named one animation. The family base's name is also
+    /// the ring, and weighing it would play a sibling. Callers that kept the
     /// last frame use this so the hit-test matches what was drawn.
     pub fn choice_for<'a>(
         playing_gesture: Option<&'a str>,
@@ -466,11 +472,15 @@ pub struct Engine {
     /// The Behavior's Primitives, last first, so the one on screen is on top.
     /// Not a State: a Behavior plays while standing, falling or perched, and a
     /// State would mean deciding what it resumes as.
-    playing: Vec<Step>,
+    playing: Vec<Primitive>,
 
-    /// The name of the Behavior `playing` was flattened from. `chain` merges
-    /// linked Behaviors and two Characters may share Primitives, so the list
-    /// cannot name it. Cleared with `playing` so the pair is never half true.
+    /// One pass of a named idle-gesture strip from a starring Behavior.
+    /// Mutually exclusive with a non-empty `playing` list.
+    playing_strip: Option<String>,
+
+    /// The name of the Behavior `playing` / `playing_strip` came from. `chain`
+    /// merges linked Behaviors and two Characters may share Primitives, so the
+    /// list cannot name it. Cleared with them so the pair is never half true.
     playing_behavior: Option<String>,
 
     primitive_ms: u32,
@@ -807,6 +817,7 @@ impl Engine {
             previous_windows: Vec::new(),
             previous_position: position,
             playing: Vec::new(),
+            playing_strip: None,
             playing_behavior: None,
             primitive_ms: 0,
             facing: 1.0,
@@ -1001,7 +1012,7 @@ impl Engine {
         if self.velocity.x != 0.0 || !self.playing.is_empty() {
             return false;
         }
-        if matches!(self.own_idle, OwnIdle::Gesture { .. }) {
+        if self.gesture_mid_pass() {
             return false;
         }
         if !matches!(self.state, State::Grounded | State::Perched) {
@@ -1589,12 +1600,15 @@ impl Engine {
         }
 
         // Riding is an event the Director cannot propose in time, the same
-        // as landing. Holding on is not resting, so an Asleep sprite that
-        // has to ride wakes rather than sleeping through the move.
+        // as landing. An awake sprite holds on. An Asleep sprite stays
+        // asleep: window motion is not a user wake (C03), so the sleep
+        // countdown keeps running while the perch carries it.
         if self.riding {
-            self.state = State::Perched;
-            if self.on_screen() != Some(Primitive::Hold) {
-                started |= self.play(&[Primitive::Hold]);
+            if self.state != State::Asleep {
+                self.state = State::Perched;
+                if self.on_screen() != Some(Primitive::Hold) {
+                    started |= self.play(&[Primitive::Hold]);
+                }
             }
         } else if self.on_screen() == Some(Primitive::Hold) {
             self.stop_playing();
@@ -1618,11 +1632,10 @@ impl Engine {
                 {
                     refused = Some(proposal.behavior.clone());
                 }
-            } else if matches!(self.own_idle, OwnIdle::Gesture { .. })
-                && !self.do_not_disturb
-                && !self.possessed
-            {
+            } else if self.gesture_mid_pass() && !self.do_not_disturb && !self.possessed {
                 // One slot. A later proposal in the same pass replaces it.
+                // Covers both the Engine's own-idle gesture and a Behavior
+                // strip mid-pass (C02).
                 self.deferred = Some(proposal.clone());
             } else if !self.do_not_disturb && !self.possessed {
                 match self.take_proposal(proposal) {
@@ -1643,8 +1656,13 @@ impl Engine {
         if self.possessed {
             if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
                 // The Behavior alone: a digit leaves its `then` off.
-                let steps = self.behaviors[&name].steps.clone();
-                if self.play_steps(&steps) {
+                let behavior_ref = &self.behaviors[&name];
+                let started_digit = if let Some(strip) = behavior_ref.strip.clone() {
+                    self.play_strip(&strip)
+                } else {
+                    self.play(&behavior_ref.primitives.clone())
+                };
+                if started_digit {
                     self.playing_behavior = Some(name.clone());
                     started = true;
                     digit_started = true;
@@ -1662,7 +1680,7 @@ impl Engine {
             let playable = self
                 .moment_queue
                 .iter()
-                .position(|moment| self.permitted(&[Step::Primitive(moment.primitive())]));
+                .position(|moment| self.permitted_primitive(moment.primitive()));
             if let Some(index) = playable {
                 self.moment_queue.drain(0..index);
                 if let Some(moment) = self.moment_queue.pop_front() {
@@ -2205,30 +2223,26 @@ impl Engine {
     /// The Primitive being played, if any. Last of `playing`, because `play`
     /// stores the sequence reversed so the one on screen is the one on top.
     fn on_screen(&self) -> Option<Primitive> {
-        match self.playing.last() {
-            Some(Step::Primitive(primitive)) => Some(*primitive),
-            _ => None,
-        }
+        self.playing.last().copied()
     }
 
+    /// The idle-gesture strip a Behavior is mid-pass on, if any.
     fn playing_gesture(&self) -> Option<&str> {
-        match self.playing.last() {
-            Some(Step::Gesture(name)) => Some(name.as_str()),
-            _ => None,
-        }
+        self.playing_strip.as_deref()
     }
 
-    /// How long this step holds the screen. A gesture is one pass of its strip.
-    fn step_ms(&self, step: &Step) -> u32 {
-        match step {
-            Step::Primitive(_) => PRIMITIVE_MS,
-            Step::Gesture(name) => self
-                .idle_gestures
-                .iter()
-                .find(|member| member.name == *name)
-                .map(|member| one_pass_ms(member.frames, member.fps))
-                .unwrap_or(PRIMITIVE_MS),
-        }
+    /// Own-idle gesture or a Behavior strip still in its one pass (C02).
+    fn gesture_mid_pass(&self) -> bool {
+        matches!(self.own_idle, OwnIdle::Gesture { .. }) || self.playing_strip.is_some()
+    }
+
+    /// How long one pass of `strip` holds the screen.
+    fn strip_ms(&self, strip: &str) -> u32 {
+        self.idle_gestures
+            .iter()
+            .find(|member| member.name == strip)
+            .map(|member| one_pass_ms(member.frames, member.fps))
+            .unwrap_or(PRIMITIVE_MS)
     }
 
     /// Under way on foot, rather than in the air with the same speed on it.
@@ -2236,28 +2250,37 @@ impl Engine {
         matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
     }
 
-    /// True when the Primitive on screen changed.
+    /// True when the Primitive on screen changed, or a strip pass ended.
     fn advance(&mut self, elapsed_ms: u32) -> bool {
+        if self.playing_strip.is_some() {
+            if elapsed_ms >= self.primitive_ms {
+                self.playing_strip = None;
+                self.primitive_ms = 0;
+                self.playing_behavior = None;
+                self.moment_holding = false;
+                return true;
+            }
+            self.primitive_ms -= elapsed_ms;
+            return false;
+        }
+
         let mut left = elapsed_ms;
         let mut moved_on = false;
 
         while !self.playing.is_empty() && left >= self.primitive_ms {
             left -= self.primitive_ms;
             self.playing.pop();
-            self.primitive_ms = self
-                .playing
-                .last()
-                .map(|step| self.step_ms(step))
-                .unwrap_or(0);
+            self.primitive_ms = if self.playing.is_empty() {
+                0
+            } else {
+                PRIMITIVE_MS
+            };
             moved_on = true;
             if self.playing.is_empty() {
                 break;
             }
         }
         if self.playing.is_empty() {
-            // Draining is the ordinary end of a Behavior and the only one that
-            // is not an abort, so it drops the name here rather than through
-            // `stop_playing` like every other clear site.
             self.primitive_ms = 0;
             self.playing_behavior = None;
             self.moment_holding = false;
@@ -2272,6 +2295,7 @@ impl Engine {
     /// go together, or the Engine reports a Behavior that stopped ticks ago.
     fn stop_playing(&mut self) {
         self.playing.clear();
+        self.playing_strip = None;
         self.playing_behavior = None;
         self.primitive_ms = 0;
         self.moment_holding = false;
@@ -2360,11 +2384,10 @@ impl Engine {
         match self.start_behavior(&proposal.behavior) {
             Some(true) => {
                 if let Some(direction) = proposal.direction {
-                    if self.chain(&proposal.behavior).is_some_and(|steps| {
-                        steps
-                            .iter()
-                            .any(|step| matches!(step, Step::Primitive(Primitive::Walk)))
-                    }) {
+                    if self
+                        .chain(&proposal.behavior)
+                        .is_some_and(|primitives| primitives.contains(&Primitive::Walk))
+                    {
                         self.facing = direction.facing();
                     }
                 }
@@ -2387,8 +2410,16 @@ impl Engine {
     /// Start `name` through `permitted`. `None` means the Character does not
     /// declare it. `play` clears the Behavior name, so only this puts it back.
     fn start_behavior(&mut self, name: &str) -> Option<bool> {
-        let steps = self.chain(name)?;
-        let started = self.play_steps(&steps);
+        let behavior = self.behaviors.get(name)?;
+        if let Some(strip) = behavior.strip.clone() {
+            let started = self.play_strip(&strip);
+            if started {
+                self.playing_behavior = Some(name.to_string());
+            }
+            return Some(started);
+        }
+        let primitives = self.chain(name)?;
+        let started = self.play(&primitives);
         if started {
             self.playing_behavior = Some(name.to_string());
         }
@@ -2407,16 +2438,12 @@ impl Engine {
     /// Start `primitives` unless the State forbids any of them. True when it
     /// started. All or nothing: half a Behavior stops the sprite mid-thought.
     fn play(&mut self, primitives: &[Primitive]) -> bool {
-        let steps: Vec<Step> = primitives.iter().copied().map(Step::Primitive).collect();
-        self.play_steps(&steps)
-    }
-
-    fn play_steps(&mut self, steps: &[Step]) -> bool {
-        if steps.is_empty() || !self.permitted(steps) {
+        if primitives.is_empty() || !self.permitted(primitives) {
             return false;
         }
 
-        self.playing = steps.iter().rev().cloned().collect();
+        self.playing_strip = None;
+        self.playing = primitives.iter().rev().copied().collect();
         // Nameless until a caller says otherwise. Most callers are the Engine
         // playing a moment of its own — a Land, a Hold, a startle — and the
         // name of the Behavior they interrupted is not theirs to keep.
@@ -2424,57 +2451,69 @@ impl Engine {
 
         // A new Chase is a new pursuit; leftover ms from the last one would
         // time out mid-stride.
-        if steps
-            .iter()
-            .any(|step| matches!(step, Step::Primitive(Primitive::Chase)))
-        {
+        if primitives.contains(&Primitive::Chase) {
             self.chase_ms = 0;
         }
-        self.primitive_ms = self
-            .playing
-            .last()
-            .map(|step| self.step_ms(step))
-            .unwrap_or(PRIMITIVE_MS);
+        self.primitive_ms = PRIMITIVE_MS;
         // A chain is a Behavior. Holding that would make the next turn beat
         // wait out every step in it, not the one-shot it replaced.
-        self.moment_holding = steps.len() == 1;
+        self.moment_holding = primitives.len() == 1;
         true
     }
 
-    /// Whether the sprite's State permits every step. Motion waits out the
-    /// post-Poke cooldown. Walk and chase also wait out a quick message or a
-    /// bubble; a jump still may. A gesture needs the feet, like idle.
-    fn permitted(&self, steps: &[Step]) -> bool {
+    /// One pass of a named idle-gesture strip. True when it started.
+    fn play_strip(&mut self, strip: &str) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
-        steps.iter().all(|step| match step {
-            Step::Gesture(_) => on_feet && !self.feet_owned(),
-            Step::Primitive(primitive) => match primitive {
-                Primitive::React | Primitive::Talk | Primitive::Possessed => true,
-                // A move holds the feet, so nothing that would walk, stop or launch
-                // them starts under it.
-                _ if self.feet_owned() => false,
-                Primitive::Walk | Primitive::Chase => {
-                    footing_refusal(self.state, self.poke_cooldown_ms).is_none() && !self.feet_held
-                }
-                Primitive::Jump => {
-                    let off_a_wall = self.possessed && self.state == State::Climbing;
-                    (on_feet || off_a_wall) && self.poke_cooldown_ms == 0
-                }
-                _ => on_feet,
-            },
-        })
+        if !(on_feet && !self.feet_owned()) {
+            return false;
+        }
+        self.playing.clear();
+        self.playing_strip = Some(strip.to_string());
+        self.playing_behavior = None;
+        self.primitive_ms = self.strip_ms(strip);
+        self.moment_holding = true;
+        true
     }
 
-    /// Every step a named Behavior plays, chained ones included, or `None`
-    /// when undeclared. It stops cycles: Behaviors arrive unvalidated, and
-    /// ADR-0002 promises no package can hang the frame loop.
-    fn chain(&self, behavior: &str) -> Option<Vec<Step>> {
-        let mut steps = Vec::new();
+    /// Whether the sprite's State permits every Primitive. Motion waits out
+    /// the post-Poke cooldown. Walk and chase also wait out a quick message or
+    /// a bubble; a jump still may.
+    fn permitted(&self, primitives: &[Primitive]) -> bool {
+        primitives
+            .iter()
+            .all(|primitive| self.permitted_primitive(*primitive))
+    }
+
+    fn permitted_primitive(&self, primitive: Primitive) -> bool {
+        let on_feet = matches!(self.state, State::Grounded | State::Perched);
+        match primitive {
+            Primitive::React | Primitive::Talk | Primitive::Possessed => true,
+            _ if self.feet_owned() => false,
+            Primitive::Walk | Primitive::Chase => {
+                footing_refusal(self.state, self.poke_cooldown_ms).is_none() && !self.feet_held
+            }
+            Primitive::Jump => {
+                let off_a_wall = self.possessed && self.state == State::Climbing;
+                (on_feet || off_a_wall) && self.poke_cooldown_ms == 0
+            }
+            _ => on_feet,
+        }
+    }
+
+    /// Every Primitive a named Behavior plays, chained ones included, or
+    /// `None` when undeclared. Strip Behaviors are started via `play_strip`,
+    /// not this. It stops cycles: Behaviors arrive unvalidated, and ADR-0002
+    /// promises no package can hang the frame loop.
+    fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
+        let mut primitives = Vec::new();
         let mut walked: BTreeSet<&str> = BTreeSet::new();
         let mut current = self.behaviors.get_key_value(behavior)?;
 
         while walked.insert(current.0.as_str()) {
-            steps.extend(current.1.steps.iter().cloned());
+            if current.1.strip.is_some() {
+                break;
+            }
+            primitives.extend(current.1.primitives.iter().copied());
             match current.1.then.as_deref() {
                 Some(next) => match self.behaviors.get_key_value(next) {
                     Some(next) => current = next,
@@ -2484,7 +2523,7 @@ impl Engine {
             }
         }
 
-        Some(steps)
+        Some(primitives)
     }
 }
 
@@ -2726,7 +2765,8 @@ mod tests {
             (
                 "walk".to_string(),
                 Behavior {
-                    steps: vec![Step::Primitive(Primitive::Walk)],
+                    primitives: vec![Primitive::Walk],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2737,10 +2777,8 @@ mod tests {
             (
                 "greet".to_string(),
                 Behavior {
-                    steps: vec![
-                        Step::Primitive(Primitive::React),
-                        Step::Primitive(Primitive::Talk),
-                    ],
+                    primitives: vec![Primitive::React, Primitive::Talk],
+                    strip: None,
                     then: Some("settle".to_string()),
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2751,10 +2789,8 @@ mod tests {
             (
                 "settle".to_string(),
                 Behavior {
-                    steps: vec![
-                        Step::Primitive(Primitive::Sit),
-                        Step::Primitive(Primitive::Sleep),
-                    ],
+                    primitives: vec![Primitive::Sit, Primitive::Sleep],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2765,7 +2801,8 @@ mod tests {
             (
                 "jump".to_string(),
                 Behavior {
-                    steps: vec![Step::Primitive(Primitive::Jump)],
+                    primitives: vec![Primitive::Jump],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -3086,7 +3123,8 @@ mod tests {
             Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([(
                 "chatter".to_string(),
                 Behavior {
-                    steps: vec![Step::Primitive(Primitive::Talk)],
+                    primitives: vec![Primitive::Talk],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -3106,7 +3144,8 @@ mod tests {
     #[test]
     fn a_behavior_that_chains_back_to_itself_still_ends() {
         let pacing = |then: &str| Behavior {
-            steps: vec![Step::Primitive(Primitive::Idle)],
+            primitives: vec![Primitive::Idle],
+            strip: None,
             then: Some(then.to_string()),
             weight: DEFAULT_WEIGHT,
             trigger: None,
@@ -3507,11 +3546,8 @@ mod tests {
             Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([(
                 "ponder".to_string(),
                 Behavior {
-                    steps: vec![
-                        Step::Primitive(Primitive::Idle),
-                        Step::Primitive(Primitive::Idle),
-                        Step::Primitive(Primitive::Idle),
-                    ],
+                    primitives: vec![Primitive::Idle, Primitive::Idle, Primitive::Idle],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -5462,10 +5498,8 @@ mod tests {
                 // moves before the walk comes up is one moved by the name.
                 "amble".to_string(),
                 Behavior {
-                    steps: vec![
-                        Step::Primitive(Primitive::React),
-                        Step::Primitive(Primitive::Walk),
-                    ],
+                    primitives: vec![Primitive::React, Primitive::Walk],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -5479,7 +5513,8 @@ mod tests {
                 // the name.
                 "walk".to_string(),
                 Behavior {
-                    steps: vec![Step::Primitive(Primitive::Sit)],
+                    primitives: vec![Primitive::Sit],
+                    strip: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -6396,6 +6431,111 @@ mod tests {
         });
         let idling_again = engine.tick(&a_long_perch());
         assert_eq!(idling_again.animation, "idle", "idle after rest again");
+    }
+
+    /// C02: a Director proposal waits out a Behavior strip mid-pass, the same
+    /// as an own-idle gesture. A user poke still cuts in.
+    #[test]
+    fn director_proposal_defers_during_behavior_strip_mid_pass() {
+        use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
+        let mut behaviors = BTreeMap::new();
+        behaviors.insert(
+            "groom".to_string(),
+            Behavior {
+                primitives: vec![],
+                strip: Some("grooming".to_string()),
+                then: None,
+                weight: DEFAULT_WEIGHT,
+                trigger: None,
+                not_in_manifest: false,
+                idle_type: false,
+            },
+        );
+        behaviors.insert(
+            "greet".to_string(),
+            Behavior {
+                primitives: vec![Primitive::React],
+                strip: None,
+                then: None,
+                weight: DEFAULT_WEIGHT,
+                trigger: None,
+                not_in_manifest: false,
+                idle_type: false,
+            },
+        );
+        let mut engine = a_resting_sprite().with_behaviors(behaviors);
+        engine.set_idle_plan(IdlePlan {
+            loops: vec![IdleMember {
+                name: "idle".into(),
+                weight: 1,
+                frames: 1,
+                fps: 1,
+            }],
+            gestures: vec![IdleMember {
+                name: "grooming".into(),
+                weight: 1,
+                frames: 6,
+                fps: 6,
+            }],
+            idle_gesture_every_s: (10, 30),
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+        });
+        let started = engine.tick(&proposing("groom"));
+        assert_eq!(
+            started.playing_gesture.as_deref(),
+            Some("grooming"),
+            "{started:?}"
+        );
+        let mid = engine.tick(&proposing("greet"));
+        assert_eq!(
+            mid.playing_gesture.as_deref(),
+            Some("grooming"),
+            "strip continues: {mid:?}"
+        );
+        assert_ne!(
+            mid.playing_behavior.as_deref(),
+            Some("greet"),
+            "greet deferred: {mid:?}"
+        );
+        // One pass of 6 frames at 6 fps is 1000 ms.
+        let mut last = mid;
+        for _ in 0..15 {
+            last = engine.tick(&snapshot(100));
+            if last.playing_gesture.is_none() {
+                break;
+            }
+        }
+        assert!(
+            last.playing_gesture.is_none(),
+            "strip finished its pass: {last:?}"
+        );
+    }
+
+    /// C03: a moving perch under an asleep sprite does not wake it. Sleep
+    /// countdown keeps running; window motion is not a user interaction.
+    #[test]
+    fn asleep_sprite_stays_asleep_while_its_perch_moves() {
+        let mut engine = a_resting_sprite()
+            .with_sleep_after_s((1, 1))
+            .with_sleep_for_s((30, 30));
+        settle(&mut engine, &perch(50.0, 400.0));
+        let asleep = engine.tick(&WorldSnapshot {
+            elapsed_ms: 1_000,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(asleep.state, State::Asleep, "asleep first: {asleep:?}");
+        let riding = engine.tick(&WorldSnapshot {
+            elapsed_ms: 100,
+            poll_generation: 1,
+            ..perch(90.0, 400.0)
+        });
+        assert_eq!(
+            riding.state,
+            State::Asleep,
+            "window motion must not wake: {riding:?}"
+        );
+        assert_ne!(riding.animation, "hold", "no Hold over sleep: {riding:?}");
     }
 
     /// The timer resets when riding a moving Perch, so a sprite that
@@ -10268,10 +10408,7 @@ mod tests {
             assert_eq!(played.animation, "react");
             assert_eq!(played.refused, None);
             assert!(
-                !engine
-                    .playing
-                    .iter()
-                    .any(|step| matches!(step, Step::Primitive(Primitive::Sit))),
+                !engine.playing.contains(&Primitive::Sit),
                 "greet's then is left off: {:?}",
                 engine.playing
             );
@@ -10327,9 +10464,10 @@ mod tests {
                     (
                         (*name).to_string(),
                         Behavior {
-                            steps: std::iter::repeat_with(|| Step::Primitive(Primitive::Sit))
+                            primitives: std::iter::repeat_with(|| Primitive::Sit)
                                 .take(sits)
                                 .collect(),
+                            strip: None,
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,

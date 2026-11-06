@@ -7,7 +7,7 @@ use crate::overlay::AlphaMask;
 
 use super::manifest::{Declared, DeclaredAnimation, DeclaredBehavior};
 use super::{
-    Animation, Art, Behavior, Facing, PackageBytes, Step, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
+    Animation, Art, Behavior, Facing, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
     MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS,
 };
 
@@ -239,19 +239,17 @@ fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -
         if declared.contains_key(name) {
             continue;
         }
-        let already_played = declared.values().any(|behavior| {
-            behavior
-                .steps
-                .iter()
-                .any(|step| matches!(step, Step::Primitive(found) if *found == primitive))
-        });
+        let already_played = declared
+            .values()
+            .any(|behavior| behavior.primitives.contains(&primitive));
         if already_played {
             continue;
         }
         declared.insert(
             name.to_string(),
             DeclaredBehavior {
-                steps: vec![Step::Primitive(primitive)],
+                primitives: vec![primitive],
+                strip: None,
                 then: None,
                 weight: 0,
                 trigger: None,
@@ -321,7 +319,8 @@ pub(super) fn resolve_behaviors(
             (
                 name,
                 Behavior {
-                    steps: declaration.steps,
+                    primitives: declaration.primitives,
+                    strip: declaration.strip,
                     then: declaration.then,
                     weight: declaration.weight,
                     trigger: declaration.trigger,
@@ -333,45 +332,27 @@ pub(super) fn resolve_behaviors(
         .collect()
 }
 
-/// A `play` word that is not a Primitive must name an idle-gesture.
-pub(super) fn check_play_steps(
+/// A Behavior `strip` must name an idle-gesture animation.
+pub(super) fn check_play_strips(
     behaviors: &BTreeMap<String, Behavior>,
     animations: &BTreeMap<String, Animation>,
     errors: &mut Vec<String>,
 ) {
     let gestures: Vec<&str> = animations
         .iter()
-        .filter(|(_, animation)| animation.variant_of.as_deref() == Some(super::IDLE_GESTURE))
+        .filter(|(_, animation)| animation.is_idle_gesture())
         .map(|(name, _)| name.as_str())
         .collect();
-    if gestures.is_empty() {
-        // No family: every non-Primitive play word is unnamed.
-        for (name, behavior) in behaviors {
-            for step in &behavior.steps {
-                let Step::Gesture(gesture) = step else {
-                    continue;
-                };
-                errors.push(format!(
-                    "play for behavior {name:?} names {gesture:?}, which is not a Primitive \
-                     or an idle-gesture"
-                ));
-            }
-        }
-        return;
-    };
     for (name, behavior) in behaviors {
-        for step in &behavior.steps {
-            let Step::Gesture(gesture) = step else {
-                continue;
-            };
-            if gestures.contains(&gesture.as_str()) {
-                continue;
-            }
-            errors.push(format!(
-                "play for behavior {name:?} names {gesture:?}, which is not a Primitive \
-                 or an idle-gesture"
-            ));
+        let Some(strip) = behavior.strip.as_deref() else {
+            continue;
+        };
+        if gestures.contains(&strip) {
+            continue;
         }
+        errors.push(format!(
+            "play for behavior {name:?} names {strip:?}, which is not a Primitive              or an idle-gesture"
+        ));
     }
 }
 

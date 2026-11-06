@@ -149,5 +149,5 @@ when = "idle over 30s"
 
 [behaviors.waiting]
 play = ["waiting"]
-weight = 10
+weight = 0
 when = "idle over 10s"

@@ -173,10 +173,10 @@ when = "idle over 10s"
 
 [behaviors.skate]
 play = ["skate"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.sing]
 play = ["sing"]
-weight = 10
+weight = 0
 when = "idle over 10s"

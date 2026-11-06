@@ -6,7 +6,7 @@ use std::time::Duration;
 use toml_edit::{Document, Item};
 
 use super::{
-    CursorReaction, Facing, GravityScale, Source, Step, Trigger, CHARACTER_MANIFEST_FILE,
+    CursorReaction, Facing, GravityScale, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE,
     DEFAULT_FPS, DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
 };
 
@@ -49,7 +49,8 @@ pub(super) struct DeclaredAnimation {
 }
 
 pub(super) struct DeclaredBehavior {
-    pub(super) steps: Vec<Step>,
+    pub(super) primitives: Vec<Primitive>,
+    pub(super) strip: Option<String>,
     pub(super) then: Option<String>,
     pub(super) weight: u32,
     pub(super) trigger: Option<Trigger>,
@@ -586,7 +587,8 @@ fn parse_behavior(
         return None;
     };
 
-    let mut steps = Vec::new();
+    let mut primitives = Vec::new();
+    let mut strip = None;
     let mut then = None;
     let mut weight = DEFAULT_WEIGHT;
     let mut trigger = None;
@@ -594,7 +596,11 @@ fn parse_behavior(
 
     for (key, item) in table.iter() {
         match key {
-            "play" => steps = play_list(name, item, manifest, errors),
+            "play" => {
+                let parsed = play_list(name, item, manifest, errors);
+                primitives = parsed.0;
+                strip = parsed.1;
+            }
             "then" => match item.as_str() {
                 Some(next) if !next.is_empty() => then = Some(next.to_string()),
                 _ => errors.push(format!(
@@ -633,7 +639,8 @@ fn parse_behavior(
     }
 
     Some(DeclaredBehavior {
-        steps,
+        primitives,
+        strip,
         then,
         weight,
         trigger,
@@ -641,25 +648,29 @@ fn parse_behavior(
     })
 }
 
-/// A Behavior's `play` list. A word that is not a Primitive is kept as a
-/// gesture name and checked once the animations are known. Anything that is
-/// not a word is reported here.
-fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) -> Vec<Step> {
+/// A Behavior's `play` list: either Primitives in order, or one idle-gesture
+/// strip name. Mixed lists and multi-strip lists are refused here; strip
+/// names are checked against animations once those are known.
+fn play_list(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> (Vec<Primitive>, Option<String>) {
     let Some(list) = item.as_array() else {
         errors.push(format!(
-            "play for behavior {name:?} is {}, and must be a list of \
-             Primitives or idle-gestures, as play = [\"react\", \"talk\"]",
+            "play for behavior {name:?} is {}, and must be a list of Primitives or one idle-gesture, as play = [\"react\", \"talk\"]",
             wrote(manifest, item.span()).unwrap_or("?")
         ));
-        return Vec::new();
+        return (Vec::new(), None);
     };
 
-    let mut steps = Vec::new();
+    let mut primitives = Vec::new();
+    let mut strips = Vec::new();
     for word in list.iter() {
         let Some(word) = word.as_str() else {
             errors.push(format!(
-                "behavior {name:?} declares {}, which is not a Primitive or an idle-gesture; \
-                 the Primitives are {}",
+                "behavior {name:?} declares {}, which is not a Primitive or an idle-gesture; the Primitives are {}",
                 wrote(manifest, word.span()).unwrap_or("?"),
                 PRIMITIVES
                     .iter()
@@ -673,11 +684,23 @@ fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) 
             .iter()
             .find_map(|(known, primitive)| (*known == word).then_some(*primitive))
         {
-            Some(primitive) => steps.push(Step::Primitive(primitive)),
-            None => steps.push(Step::Gesture(word.to_string())),
+            Some(primitive) => primitives.push(primitive),
+            None => strips.push(word.to_string()),
         }
     }
-    steps
+    if !strips.is_empty() && !primitives.is_empty() {
+        errors.push(format!(
+            "play for behavior {name:?} mixes Primitives and idle-gestures; use one or the other"
+        ));
+        return (Vec::new(), None);
+    }
+    if strips.len() > 1 {
+        errors.push(format!(
+            "play for behavior {name:?} names more than one idle-gesture; a Behavior plays one strip"
+        ));
+        return (Vec::new(), None);
+    }
+    (primitives, strips.pop())
 }
 
 /// The line a byte offset falls on, for a syntax error to name.
@@ -808,11 +831,10 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "play for behavior \"greet\" names \"pounce\", which is not a Primitive \
-                 or an idle-gesture"
+                "play for behavior \"greet\" mixes Primitives and idle-gestures; use one or the other"
                     .to_string()
             ],
-            "the author is told the offending word and what they may write instead"
+            "a mixed play list is refused; pure unknown strips fail later as unnamed gestures"
         );
     }
 
@@ -1006,8 +1028,7 @@ mod tests {
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
                  frames, fps, loop, variant_of, left_of and weight"
                     .to_string(),
-                "play for behavior \"chase\" is \"walk\", and must be a list of Primitives or idle-gestures, \
-                 as play = [\"react\", \"talk\"]"
+                "play for behavior \"chase\" is \"walk\", and must be a list of Primitives or one idle-gesture, as play = [\"react\", \"talk\"]"
                     .to_string(),
                 "then for behavior \"chase\" is 3, and must name one Behavior, \
                  as then = \"settle\""

@@ -859,7 +859,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
-    use fidget_core::character::{self, Character, Primitive, Step};
+    use fidget_core::character::{self, Character, Primitive};
     use fidget_core::director::{Context, StaticDirector};
     use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
     use fidget_core::overlay::{AlphaMask, SpriteRect};
@@ -1007,7 +1007,7 @@ mod tests {
                 .behaviors
                 .get(name)
                 .unwrap_or_else(|| panic!("BMO must expose {name} so asking is not a near miss"));
-            assert_eq!(behavior.steps, vec![Step::Primitive(primitive)]);
+            assert_eq!(behavior.primitives, vec![primitive]);
             assert_eq!(behavior.weight, 0, "{name} stays ambient-off until earned");
         }
     }
@@ -1021,7 +1021,7 @@ mod tests {
             .behaviors
             .get("chase")
             .expect("Buddy Bot must expose chase so asking is not a near miss");
-        assert_eq!(chase.steps, vec![Step::Primitive(Primitive::Chase)]);
+        assert_eq!(chase.primitives, vec![Primitive::Chase]);
         assert_eq!(chase.weight, 0, "chase stays ambient-off until earned");
         assert!(
             !character.behaviors.contains_key("sleep"),

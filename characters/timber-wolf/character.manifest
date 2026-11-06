@@ -151,5 +151,5 @@ when = "idle over 30s"
 
 [behaviors.scan]
 play = ["scan"]
-weight = 10
+weight = 0
 when = "idle over 10s"

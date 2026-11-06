@@ -274,10 +274,8 @@ IDLE_GESTURE_NAMES = {
 def suitable_idle_gesture(name):
     """True when this strip name is a calm fidget the importer should mark
     as an idle-gesture. look-* matches common fidgets. An idle-* name with
-    no variant yet is treated as a buddy-bot-style gesture strip; an
-    explicit variant_of = "idle" calm loop is never reclassified."""
-    if name in NOT_IDLE_GESTURES:
-        return False
+    no variant yet is treated as a buddy-bot-style gesture strip. Callers
+    must already skip required/motion names and explicit calm loops."""
     if name in IDLE_GESTURE_NAMES:
         return True
     return name.startswith("look-") or name.startswith("idle-")

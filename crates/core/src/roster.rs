@@ -415,7 +415,7 @@ impl crate::tools::ExpressionHandle for Roster {
 mod tests {
     use super::*;
     use crate::character::{
-        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive, Step,
+        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
         DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
         DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, DEFAULT_WEIGHT,
     };
@@ -448,7 +448,8 @@ mod tests {
         behaviors.insert(
             "wave".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::React)],
+                primitives: vec![Primitive::React],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -459,7 +460,8 @@ mod tests {
         behaviors.insert(
             "sleep".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::Sleep)],
+                primitives: vec![Primitive::Sleep],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,

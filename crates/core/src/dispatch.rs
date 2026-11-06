@@ -908,7 +908,7 @@ mod tests {
 
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
-            Animation, Behavior, Character, CursorReaction, GravityScale, Primitive, Step,
+            Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
             DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
             DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, DEFAULT_WEIGHT,
         };
@@ -938,7 +938,8 @@ mod tests {
         behaviors.insert(
             "wave".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::React)],
+                primitives: vec![Primitive::React],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -1223,7 +1224,7 @@ mod tests {
     /// step, so a right-facing sprite told to walk left goes left.
     #[test]
     fn play_behavior_direction_moves_the_instance_the_way_it_was_asked() {
-        use crate::character::{Behavior, Primitive, Step};
+        use crate::character::{Behavior, Primitive};
         use crate::engine::Point;
 
         let temp = tempfile::tempdir().expect("temp dir is creatable");
@@ -1233,7 +1234,8 @@ mod tests {
         character.behaviors.insert(
             "walk".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::Walk)],
+                primitives: vec![Primitive::Walk],
+                strip: None,
                 then: None,
                 weight: 0,
                 trigger: None,
@@ -1960,14 +1962,15 @@ mod tests {
 
     #[test]
     fn a_behavior_that_needs_the_feet_does_not_cut_a_move_short() {
-        use crate::character::{Behavior, Primitive, Step};
+        use crate::character::{Behavior, Primitive};
         use crate::engine::{BehaviorProposal, Point, State, WorldSnapshot};
 
         let mut character = test_character("Hopper");
         character.behaviors.insert(
             "hop".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::Jump)],
+                primitives: vec![Primitive::Jump],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -2383,7 +2386,7 @@ mod tests {
     /// the floor.
     #[test]
     fn play_behavior_jump_leaves_the_ground() {
-        use crate::character::{Behavior, Primitive, Step};
+        use crate::character::{Behavior, Primitive};
         use crate::engine::Point;
 
         let temp = tempfile::tempdir().expect("temp dir is creatable");
@@ -2393,7 +2396,8 @@ mod tests {
         character.behaviors.insert(
             "jump".to_string(),
             Behavior {
-                steps: vec![Step::Primitive(Primitive::Jump)],
+                primitives: vec![Primitive::Jump],
+                strip: None,
                 then: None,
                 weight: 0,
                 trigger: None,

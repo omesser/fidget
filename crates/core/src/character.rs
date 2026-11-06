@@ -77,7 +77,7 @@ mod manifest;
 mod resolve;
 use manifest::parse;
 use resolve::{
-    check_frame_facing, check_left_strips, check_play_steps, check_variants, resolve_animations,
+    check_frame_facing, check_left_strips, check_play_strips, check_variants, resolve_animations,
     resolve_behaviors,
 };
 
@@ -320,6 +320,11 @@ pub struct Animation {
 }
 
 impl Animation {
+    /// Whether this strip is classified as an idle-gesture.
+    pub fn is_idle_gesture(&self) -> bool {
+        self.variant_of.as_deref() == Some(IDLE_GESTURE)
+    }
+
     /// Which frame is on screen `elapsed_ms` after this Animation started.
     /// The renderer needs no clock of its own because this is the whole of
     /// frame selection.
@@ -363,18 +368,17 @@ pub enum Trigger {
     Frontmost(String),
 }
 
-/// One step of a Behavior's `play` list. A gesture is one pass of a declared
-/// idle-gesture, then the next step.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Step {
-    Primitive(Primitive),
-    Gesture(String),
-}
-
-/// A named sequence of steps, declared as data.
+/// A named sequence of Primitives, or one named idle-gesture strip.
+///
+/// `play = ["react", "talk"]` fills `primitives`. `play = ["grooming"]` for an
+/// idle-gesture strip fills `strip` instead. A Behavior does not mix the two:
+/// every shipped starring wrapper is a single strip, and multi-strip play is
+/// not represented.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Behavior {
-    pub steps: Vec<Step>,
+    pub primitives: Vec<Primitive>,
+    /// One pass of this idle-gesture strip. Empty `primitives` when set.
+    pub strip: Option<String>,
     /// A Behavior that follows this one, by name. Chains are validated to
     /// terminate, so no Character can put the sprite in a loop it never leaves.
     pub then: Option<String>,
@@ -395,9 +399,7 @@ pub struct Behavior {
 impl Behavior {
     /// Whether `play` includes this Primitive.
     pub fn plays(&self, primitive: Primitive) -> bool {
-        self.steps
-            .iter()
-            .any(|step| matches!(step, Step::Primitive(found) if *found == primitive))
+        self.primitives.contains(&primitive)
     }
 }
 
@@ -598,7 +600,7 @@ impl Character {
         let mut gestures: Vec<IdleMember> = self
             .animations
             .iter()
-            .filter(|(_, animation)| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
+            .filter(|(_, animation)| animation.is_idle_gesture())
             .map(|(name, animation)| idle_member(name, animation))
             .collect();
         gestures.sort_by(|left, right| left.name.cmp(&right.name));
@@ -703,7 +705,7 @@ impl Character {
     fn idle_gesture_named(&self, member: &str) -> bool {
         self.animations
             .get(member)
-            .is_some_and(|animation| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
+            .is_some_and(|animation| animation.is_idle_gesture())
     }
 
     /// `member` when it is `requested`, a variant of it, or an idle-gesture
@@ -849,7 +851,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         .map(|idle| (idle.frame_size, idle.variants.clone()));
     let gesture_names: Vec<String> = animations
         .iter()
-        .filter(|(_, animation)| animation.variant_of.as_deref() == Some(IDLE_GESTURE))
+        .filter(|(_, animation)| animation.is_idle_gesture())
         .map(|(name, _)| name.clone())
         .collect();
     if let Some((base_size, loops)) = idle_loops {
@@ -888,7 +890,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         }
     }
     let behaviors = resolve_behaviors(declared.behaviors, &mut errors);
-    check_play_steps(&behaviors, &animations, &mut errors);
+    check_play_strips(&behaviors, &animations, &mut errors);
 
     match (errors.is_empty(), declared.name) {
         (true, Some(name)) => Ok(Character {
@@ -1116,7 +1118,7 @@ pub(crate) mod tests {
             .behaviors
             .get("jump")
             .expect("every Character can be asked to jump");
-        assert_eq!(jump.steps, vec![Step::Primitive(Primitive::Jump)]);
+        assert_eq!(jump.primitives, vec![Primitive::Jump]);
         assert_eq!(jump.weight, 0, "ambient off until the package earns it");
 
         let ground = WorldSnapshot {
@@ -1170,8 +1172,8 @@ pub(crate) mod tests {
             "author-declared jump wins over the engine default"
         );
         assert_eq!(
-            character.behaviors["jump"].steps,
-            vec![Step::Primitive(Primitive::Jump)]
+            character.behaviors["jump"].primitives,
+            vec![Primitive::Jump]
         );
     }
 
@@ -1185,7 +1187,8 @@ pub(crate) mod tests {
                 .behaviors
                 .get(name)
                 .unwrap_or_else(|| panic!("every Character can be asked for {name}"));
-            assert_eq!(behavior.steps, vec![Step::Primitive(primitive)]);
+            assert_eq!(behavior.primitives, vec![primitive]);
+            assert_eq!(behavior.strip, None);
             assert_eq!(behavior.weight, 0, "{name} stays ambient-off until earned");
         }
         for name in ["land", "hold", "idle", "talk"] {
@@ -1218,7 +1221,7 @@ pub(crate) mod tests {
             .behaviors
             .get("chase")
             .expect("chase is still uncovered");
-        assert_eq!(chase.steps, vec![Step::Primitive(Primitive::Chase)]);
+        assert_eq!(chase.primitives, vec![Primitive::Chase]);
         assert_eq!(chase.weight, 0);
     }
 
@@ -1359,10 +1362,8 @@ pub(crate) mod tests {
         assert_eq!(
             character.behaviors["greet"],
             Behavior {
-                steps: vec![
-                    Step::Primitive(Primitive::React),
-                    Step::Primitive(Primitive::Talk)
-                ],
+                primitives: vec![Primitive::React, Primitive::Talk],
+                strip: None,
                 then: Some("settle".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -1384,10 +1385,8 @@ pub(crate) mod tests {
         assert_eq!(
             character.behaviors["nap"],
             Behavior {
-                steps: vec![
-                    Step::Primitive(Primitive::Sit),
-                    Step::Primitive(Primitive::Sleep)
-                ],
+                primitives: vec![Primitive::Sit, Primitive::Sleep],
+                strip: None,
                 then: None,
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),

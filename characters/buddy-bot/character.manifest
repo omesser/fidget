@@ -250,15 +250,15 @@ when = "idle over 2m"
 
 [behaviors.listen]
 play = ["idle-listen"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.breathe]
 play = ["idle-breathe"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.blink]
 play = ["idle-blink"]
-weight = 10
+weight = 0
 when = "idle over 10s"

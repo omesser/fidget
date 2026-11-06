@@ -230,25 +230,25 @@ weight = 0
 
 [behaviors.waddle-in-place]
 play = ["waddle-in-place"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.restless-sitting]
 play = ["restless-sitting"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.look-around]
 play = ["look-around"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.checking-work]
 play = ["checking-work"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.recover-card]
 play = ["recover-card"]
-weight = 10
+weight = 0
 when = "idle over 10s"

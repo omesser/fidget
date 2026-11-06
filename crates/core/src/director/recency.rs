@@ -165,7 +165,8 @@ mod tests {
     impl Instance {
         fn at(x: f64, y: f64) -> Self {
             let walk = Behavior {
-                steps: vec![crate::character::Step::Primitive(Primitive::Walk)],
+                primitives: vec![Primitive::Walk],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,

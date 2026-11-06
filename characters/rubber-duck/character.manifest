@@ -301,25 +301,25 @@ weight = 0
 
 [behaviors.look-left]
 play = ["look-left"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.wing-wave]
 play = ["wave"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.thinking]
 play = ["thinking"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.pondering]
 play = ["pondering"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.look-right]
 play = ["look-right"]
-weight = 10
+weight = 0
 when = "idle over 10s"

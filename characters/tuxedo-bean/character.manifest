@@ -231,20 +231,20 @@ weight = 0
 
 [behaviors.review]
 play = ["review"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.look-around]
 play = ["look-around"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.nod-off]
 play = ["nod-off"]
-weight = 10
+weight = 0
 when = "idle over 10s"
 
 [behaviors.hand-wave]
 play = ["wave"]
-weight = 10
+weight = 0
 when = "idle over 10s"
