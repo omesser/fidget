@@ -289,7 +289,25 @@ pub struct Frame {
 impl Frame {
     /// What `Character::draw` should weigh this frame with.
     pub fn ring_choice(&self) -> RingChoice<'_> {
-        RingChoice::from_beat(self.idle_beat.as_ref(), self.variant_draw)
+        Self::choice_for(
+            self.playing_gesture.as_deref(),
+            self.idle_beat.as_ref(),
+            self.variant_draw,
+        )
+    }
+
+    /// A gesture step named one strip. The family base's name is also the
+    /// ring, and weighing it would play a sibling. Callers that kept the
+    /// last frame use this so the hit-test matches what was drawn.
+    pub fn choice_for<'a>(
+        playing_gesture: Option<&'a str>,
+        idle_beat: Option<&'a IdleBeat>,
+        variant_draw: u64,
+    ) -> RingChoice<'a> {
+        if let Some(name) = playing_gesture {
+            return RingChoice::Named(name);
+        }
+        RingChoice::from_beat(idle_beat, variant_draw)
     }
 }
 

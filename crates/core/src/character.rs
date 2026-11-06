@@ -543,6 +543,9 @@ pub enum RingChoice<'a> {
     Weighed(u64),
     /// The Engine's own idle, already decided.
     Beat(&'a IdleBeat),
+    /// This animation's own frames. A Behavior named a strip. Weighing the
+    /// family would play a sibling of the base.
+    Named(&'a str),
 }
 
 impl From<u64> for RingChoice<'static> {
@@ -647,6 +650,10 @@ impl Character {
             RingChoice::Beat(IdleBeat::IdleLoop(member) | IdleBeat::IdleGesture(member)) => {
                 let (name, animation) = self.beat_member(animation, member)?;
                 (name, animation, animation_ms)
+            }
+            RingChoice::Named(member) => {
+                let (name, animation) = self.animations.get_key_value(member)?;
+                (name.as_str(), animation, animation_ms)
             }
         };
         let travel = if heading < 0.0 {

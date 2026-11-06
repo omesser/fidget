@@ -169,3 +169,14 @@ when = "idle over 10s"
 [frame_facing]
 "frames/fall-0.png" = "left"
 "frames/fall-1.png" = "left"
+
+[behaviors.skate]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.sing]
+play = ["sing"]
+weight = 10
+when = "idle over 10s"
+

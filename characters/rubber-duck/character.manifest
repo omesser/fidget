@@ -297,3 +297,29 @@ weight = 0
 "frames/walk-5.png" = "right"
 "frames/walk-6.png" = "right"
 "frames/walk-7.png" = "right"
+
+[behaviors.look-left]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.wing-wave]
+play = ["wave"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.thinking]
+play = ["thinking"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.pondering]
+play = ["pondering"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.look-right]
+play = ["look-right"]
+weight = 10
+when = "idle over 10s"
+

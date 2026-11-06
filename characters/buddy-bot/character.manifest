@@ -50,9 +50,9 @@ frames = [
 fps = 5
 weight = 20
 
-# Breath, blink, and tilt are idle-gestures, not Behaviors. A bot that only
-# held still would read as switched off. Brow-sensor glow pairs with the
-# cheek LED; walk still omits the cheek mark (#345).
+# Breath, blink, and tilt are idle-gestures, each with a Behavior. A bot
+# that only held still would read as switched off. Brow-sensor glow pairs
+# with the cheek LED; walk still omits the cheek mark (#345).
 
 [animations.idle-breathe]
 frames = [
@@ -246,3 +246,19 @@ when = "idle over 1m"
 play = ["sit", "sleep"]
 weight = 40
 when = "idle over 2m"
+
+[behaviors.listen]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.breathe]
+play = ["idle-breathe"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.blink]
+play = ["idle-blink"]
+weight = 10
+when = "idle over 10s"
+

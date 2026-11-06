@@ -128,3 +128,9 @@ when = "idle over 2m"
 play = ["jump"]
 weight = 3
 when = "idle over 30s"
+
+[behaviors.waiting]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+

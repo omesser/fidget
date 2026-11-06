@@ -110,7 +110,7 @@ loop = "once"
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
-# Patrol, report, engage. The TAC sweep is an idle-gesture, not a Behavior.
+# Patrol, report, engage. The TAC sweep is an idle-gesture, and `scan` plays it.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
@@ -147,3 +147,9 @@ when = "idle over 30s"
 [frame_facing]
 "frames/sleep-0.png" = "left"
 "frames/sleep-1.png" = "left"
+
+[behaviors.scan]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+

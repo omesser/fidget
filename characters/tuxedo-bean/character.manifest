@@ -227,3 +227,24 @@ weight = 0
 "frames/walk-left-5.png" = "left"
 "frames/walk-left-6.png" = "left"
 "frames/walk-left-7.png" = "left"
+
+[behaviors.review]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.look-around]
+play = ["look-around"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.nod-off]
+play = ["nod-off"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.hand-wave]
+play = ["wave"]
+weight = 10
+when = "idle over 10s"
+

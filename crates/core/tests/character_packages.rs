@@ -945,8 +945,11 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
         "sit is not where the laser lives"
     );
     assert!(
-        !character.behaviors.contains_key("scan"),
-        "no scan Behavior; the gesture plays between loops"
+        matches!(
+            character.behaviors["scan"].steps.as_slice(),
+            [character::Step::Gesture(name)] if name == "idle-gesture"
+        ),
+        "scan plays the TAC sweep by name"
     );
     for name in [
         "frames/scan-1.png",
@@ -1580,6 +1583,183 @@ fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
         "the calm loop returns: {after:?}"
     );
     assert_eq!(after.first().map(|art| art.1), Some(0));
+}
+
+/// Every idle-gesture strip stars in one Behavior. The proposal draws that
+/// strip's first frame, including the family base, which must not reweigh.
+#[test]
+fn every_idle_gesture_strip_stars_as_its_own_behavior() {
+    use std::time::Duration;
+
+    // Behavior, the strip it plays, that strip's first frame.
+    let cases = [
+        ("bmo", "skate", "idle-gesture", "frames/skate-0.png"),
+        ("bmo", "sing", "sing", "frames/sing-0.png"),
+        (
+            "buddy-bot",
+            "listen",
+            "idle-gesture",
+            "frames/idle-listen-0.png",
+        ),
+        (
+            "buddy-bot",
+            "breathe",
+            "idle-breathe",
+            "frames/idle-breathe-0.png",
+        ),
+        (
+            "buddy-bot",
+            "blink",
+            "idle-blink",
+            "frames/idle-blink-0.png",
+        ),
+        ("cat", "groom", "grooming", "frames/idle-0.png"),
+        ("cat", "waiting", "idle-gesture", "frames/waiting-0.png"),
+        (
+            "jotaro-kujo",
+            "coat-flick",
+            "idle-gesture",
+            "frames/idle-0.png",
+        ),
+        (
+            "rubber-duck",
+            "look-left",
+            "idle-gesture",
+            "frames/look-left-0.png",
+        ),
+        ("rubber-duck", "wing-wave", "wave", "frames/wave-0.png"),
+        (
+            "rubber-duck",
+            "thinking",
+            "thinking",
+            "frames/thinking-0.png",
+        ),
+        (
+            "rubber-duck",
+            "pondering",
+            "pondering",
+            "frames/pondering-0.png",
+        ),
+        (
+            "rubber-duck",
+            "look-right",
+            "look-right",
+            "frames/look-right-0.png",
+        ),
+        ("timber-wolf", "scan", "idle-gesture", "frames/scan-1.png"),
+        ("trump", "waiting", "idle-gesture", "frames/waiting-0.png"),
+        (
+            "tux",
+            "waddle-in-place",
+            "idle-gesture",
+            "frames/waddle-in-place-0.png",
+        ),
+        (
+            "tux",
+            "restless-sitting",
+            "restless-sitting",
+            "frames/idle-0.png",
+        ),
+        (
+            "tux",
+            "look-around",
+            "look-around",
+            "frames/look-around-0.png",
+        ),
+        (
+            "tux",
+            "checking-work",
+            "checking-work",
+            "frames/checking-work-0.png",
+        ),
+        (
+            "tux",
+            "recover-card",
+            "recover-card",
+            "frames/recover-card-0.png",
+        ),
+        (
+            "tuxedo-bean",
+            "review",
+            "idle-gesture",
+            "frames/review-0.png",
+        ),
+        (
+            "tuxedo-bean",
+            "look-around",
+            "look-around",
+            "frames/look-around-0.png",
+        ),
+        ("tuxedo-bean", "nod-off", "nod-off", "frames/nod-off-0.png"),
+        ("tuxedo-bean", "hand-wave", "wave", "frames/wave-0.png"),
+    ];
+
+    for (package, behavior, strip, first) in cases {
+        let character = load_package(package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
+        let ground = WorldSnapshot {
+            displays: vec![DISPLAY],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+            .with_behaviors(character.behaviors.clone())
+            .with_variant_seed(1)
+            .with_idle_plan(character.idle_plan());
+        let landed = (0..80).any(|_| {
+            let frame = engine.tick(&ground);
+            frame.animation == "idle" && frame.playing_gesture.is_none()
+        });
+        assert!(landed, "{package} never idled");
+
+        let mut saw = false;
+        for tick in 0..30 {
+            let frame = engine.tick(&WorldSnapshot {
+                proposal: (tick == 0).then(|| BehaviorProposal {
+                    behavior: behavior.to_string(),
+                    dialogue: None,
+                    direction: None,
+                }),
+                ..ground.clone()
+            });
+            if frame.playing_gesture.as_deref() != Some(strip) {
+                continue;
+            }
+            let drawn = character
+                .draw(strip, frame.animation_ms, frame.ring_choice(), frame.facing)
+                .unwrap_or_else(|| panic!("{package} {behavior} did not draw"));
+            assert_eq!(drawn.animation, strip, "{package} {behavior}");
+            assert_eq!(
+                drawn.index, 0,
+                "{package} {behavior} did not start at frame 0"
+            );
+            assert_eq!(
+                character.animations[strip].frames[0], first,
+                "{package} {behavior} starred the wrong strip"
+            );
+            saw = true;
+            break;
+        }
+        assert!(saw, "{package} behavior {behavior} never played {strip}");
+    }
+
+    // The Static Director can select a new Behavior once the user has been idle.
+    let buddy = load_package("buddy-bot").expect("buddy");
+    let mut context = fidget_core::director::Context::quiet();
+    context.activity.idle = Duration::from_secs(60);
+    let mut seen = BTreeSet::new();
+    for seed in 0..400 {
+        let mut director =
+            fidget_core::director::StaticDirector::new(buddy.behaviors.clone(), seed);
+        if let Some(proposal) = director.propose(&context) {
+            seen.insert(proposal.behavior);
+        }
+    }
+    for name in ["blink", "breathe", "listen"] {
+        assert!(
+            seen.contains(name),
+            "director never selected buddy {name}: {seen:?}"
+        );
+    }
 }
 
 fn shown_cat(

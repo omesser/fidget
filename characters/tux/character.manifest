@@ -226,3 +226,29 @@ weight = 0
 "frames/walk-left-5.png" = "left"
 "frames/walk-left-6.png" = "left"
 "frames/walk-left-7.png" = "left"
+
+[behaviors.waddle-in-place]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.restless-sitting]
+play = ["restless-sitting"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.look-around]
+play = ["look-around"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.checking-work]
+play = ["checking-work"]
+weight = 10
+when = "idle over 10s"
+
+[behaviors.recover-card]
+play = ["recover-card"]
+weight = 10
+when = "idle over 10s"
+

@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fidget_core::character::{IdleBeat, RingChoice};
+use fidget_core::character::IdleBeat;
 use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::engine::{BehaviorProposal, State, Verb};
+use fidget_core::engine::{BehaviorProposal, Frame, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
@@ -858,7 +858,11 @@ pub(crate) fn run_frame_loop(
                             let art = live.character.draw(
                                 name,
                                 last.animation_ms,
-                                RingChoice::from_beat(last.idle_beat.as_ref(), last.variant_draw),
+                                Frame::choice_for(
+                                    last.playing_gesture.as_deref(),
+                                    last.idle_beat.as_ref(),
+                                    last.variant_draw,
+                                ),
                                 last.facing,
                             )?;
                             Some((

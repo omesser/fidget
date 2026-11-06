@@ -126,3 +126,9 @@ when = "idle over 2m"
 "frames/walk-5.png" = "right"
 "frames/walk-6.png" = "right"
 "frames/walk-7.png" = "right"
+
+[behaviors.coat-flick]
+play = ["idle-gesture"]
+weight = 10
+when = "idle over 10s"
+
