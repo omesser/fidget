@@ -10,7 +10,7 @@
 #   Space held, a click in Notepad, the letter k, a click on the paused card,
 #   and Escape. Fidget treats Control-click as the menu gesture only on macOS;
 #   here the right button is the menu gesture.
-# Duration: about 15 s, 45 s at most.
+# Duration: about 15 s, 75 s at most.
 # Grants: a desktop session. UI Automation for the terminal that runs it. bash
 #   on PATH for the fixture Harness wrapper.
 # Asserts: the menu's Possess row possesses the sprite; holding Right walks it
@@ -382,6 +382,7 @@ try {
     }
     # Notepad can open behind another app's window, and the click away has to land on it.
     [void][PossessionLiveInput]::Bring($script:pad)
+    if (-not (Wait-ForUp $err)) { Fail "Fidget never wrote its overlay line; see $err" }
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
