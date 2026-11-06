@@ -1,7 +1,8 @@
 #!/usr/bin/env pwsh
 # Scenario: possession-live (Windows)
 # On screen: launches Fidget as BMO with a fixture Harness. Notepad opens on a
-#   scratch file. The scenario right-clicks the sprite, presses Possess, holds
+#   scratch file and is brought to the front, taking focus. The scenario
+#   right-clicks the sprite, presses Possess, holds
 #   Right and Space, clicks Notepad, clicks the paused card, and presses
 #   Escape. Fidget quits when the scenario ends, and so does the Notepad this
 #   run started.
@@ -15,7 +16,10 @@
 # Asserts: the menu's Possess row possesses the sprite; holding Right walks it
 #   at least 8 px; the click away pauses it without launching the held Space;
 #   k reaches Notepad; a click on the paused card returns the keyboard; Escape
-#   releases possession. Frame waits go through Wait-ForTrace.
+#   releases possession. Fails before a click or key whose target is not ready:
+#   another window covers Notepad's centre, click-through stays on over the
+#   card, or the Shell never raises the overlay after Possess or the card
+#   click. Frame waits go through Wait-ForTrace.
 # Skips (exit 2) when Notepad is already open, or when a fullscreen window
 #   would take the right-click.
 #
@@ -403,11 +407,13 @@ try {
     }
     # The menu's own focus line comes before possession. The Shell raises the
     # overlay once more after it, and a key sent before that raise is lost.
+    # The success form only: a refused raise logs the same line with -> 0.
+    $raisedLine = '^\d+ overlay: pill open SetForegroundWindow\(0x[0-9a-f]+\) -> 1 '
     $raisedAfterPossess = {
         $seen = $false
         foreach ($line in @(Get-Content -LiteralPath $traceFile)) {
             if ($line -match '^\d+ menu: possession on') { $seen = $true }
-            elseif ($seen -and $line -match '^\d+ overlay: pill open SetForegroundWindow') { return $true }
+            elseif ($seen -and $line -match $raisedLine) { return $true }
         }
         return $false
     }
@@ -429,7 +435,9 @@ try {
     $padY = [int](($rect.Top + $rect.Bottom) / 2)
     $cover = [PossessionLiveInput]::RootAt($padX, $padY)
     if ((Owner-Of $cover) -ne [uint32]$script:notepad.Id) {
-        $coverName = (Get-Process -Id (Owner-Of $cover) -ErrorAction SilentlyContinue).ProcessName
+        $coverPid = Owner-Of $cover
+        $coverName = (Get-Process -Id $coverPid -ErrorAction SilentlyContinue).ProcessName
+        if (-not $coverName) { $coverName = "process $coverPid" }
         Fail "$coverName covers Notepad at ($padX,$padY), so the click would not reach it"
     }
     $blurs = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window blur' }).Count
@@ -468,10 +476,12 @@ try {
     $card = $script:card
     if (-not $card) { Fail "the paused card did not appear; see $cardFile" }
     $focuses = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window focus' }).Count
-    $raises = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay: pill open SetForegroundWindow' }).Count
+    $raises = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match $raisedLine }).Count
+    $offLine = '^\d+ hit-test: .*click-through OFF'
+    $offs = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match $offLine }).Count
     [PossessionLiveInput]::SetCursorPos($card.X, $card.Y) | Out-Null
     # A click before click-through turns off falls through the overlay.
-    if (-not (Wait-ForTrace 3 $traceFile "^\d+ hit-test: cursor\($($card.X),$($card.Y)\) .*click-through OFF")) {
+    if (-not (Wait-ForCount 3 $traceFile $offLine $offs)) {
         Fail "click-through stayed on over the paused card; see $traceFile"
     }
     [PossessionLiveInput]::Click()
@@ -479,7 +489,7 @@ try {
         Fail "the card click did not resume; see $traceFile"
     }
     # The Shell then raises the overlay again, and a key sent before that is lost.
-    if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay: pill open SetForegroundWindow' $raises)) {
+    if (-not (Wait-ForCount 3 $traceFile $raisedLine $raises)) {
         Fail "the Shell never raised the overlay after the card click; see $traceFile"
     }
     Write-Output "ok: the card click resumed"
