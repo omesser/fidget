@@ -10424,17 +10424,15 @@ mod tests {
             slot.session = None;
             slot.forward = None;
         }
-        // Fast and reaped are the same fact. `shutdown` returns when the
-        // wire thread ends after `kill_harness_tree`, or when `REAP` runs
-        // out at 2s. Under half a second is killed. 2s is still running.
+        // Retarget returns on the UI thread. The reap is the switch thread.
+        // Under half a second means this call did not wait for that reap.
         assert!(
             waited < Duration::from_millis(500),
             "retarget waited {waited:?} on the dropped session"
         );
         assert!(attached().is_none(), "the Off pick did not take");
-        // And the child really was killed rather than left behind. The wire
-        // thread ends only after `kill_harness_tree`, and the turn's caller
-        // only returns once that thread has hung up on it.
+        // `alive` drops when shutdown takes the wire, before this caller
+        // returns. The process itself is killed after the wire accepts it.
         assert!(
             worker.join().unwrap().is_err(),
             "the turn outlived the kill"
