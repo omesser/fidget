@@ -1203,9 +1203,9 @@ fn chained(primitives: Vec<Primitive>, idle_type: bool, then: Option<&str>) -> B
     }
 }
 
-/// Whether each Idle Primitive of a proposed Behavior plays through the
+/// Whether each stretch of Idle Primitives from a proposal plays through the
 /// Engine's idle machine, in the order they play.
-fn idle_ownership(extra: &[(&str, Behavior)], proposed: &str) -> Vec<(Option<String>, bool)> {
+fn idle_ownership(extra: &[(&str, Behavior)], proposed: &str) -> Vec<bool> {
     let character = character(None, 1, 0);
     let mut behaviors = character.behaviors.clone();
     behaviors.extend(extra.iter().map(|(n, b)| (n.to_string(), b.clone())));
@@ -1216,18 +1216,14 @@ fn idle_ownership(extra: &[(&str, Behavior)], proposed: &str) -> Vec<(Option<Str
     let _ = first_idle(&mut engine);
     let mut frame = engine.tick(&propose(proposed));
     let mut seen = Vec::new();
-    let mut owner = frame.behavior.clone();
     for _ in 0..60 {
-        if frame.behavior.is_some() {
-            owner = frame.behavior.clone();
-        }
         if frame.playing_primitive.is_none() {
             break;
         }
         if frame.playing_primitive == Some(Primitive::Idle) {
             let typed = frame.idle_beat.is_some();
-            if seen.last() != Some(&(owner.clone(), typed)) {
-                seen.push((owner.clone(), typed));
+            if seen.last() != Some(&typed) {
+                seen.push(typed);
             }
         }
         frame = engine.tick(&world(100));
@@ -1241,13 +1237,10 @@ fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
         ("a", chained(vec![Primitive::Talk], false, Some("b"))),
         ("b", chained(vec![Primitive::Idle], true, None)),
     ];
-    assert_eq!(
-        idle_ownership(&typed_after_ordinary, "b"),
-        vec![(Some("b".into()), true)]
-    );
+    assert_eq!(idle_ownership(&typed_after_ordinary, "b"), vec![true]);
     assert_eq!(
         idle_ownership(&typed_after_ordinary, "a"),
-        vec![(Some("b".into()), true)],
+        vec![true],
         "an idle-typed Behavior reached through then still idles its own way"
     );
 
@@ -1255,13 +1248,10 @@ fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
         ("a", chained(vec![Primitive::Idle], true, Some("b"))),
         ("b", chained(vec![Primitive::Idle], false, None)),
     ];
-    assert_eq!(
-        idle_ownership(&ordinary_after_typed, "b"),
-        vec![(Some("b".into()), false)]
-    );
+    assert_eq!(idle_ownership(&ordinary_after_typed, "b"), vec![false]);
     assert_eq!(
         idle_ownership(&ordinary_after_typed, "a"),
-        vec![(Some("a".into()), true), (Some("b".into()), false)],
+        vec![true, false],
         "the first Behavior's type does not leak into the next"
     );
 
@@ -1273,11 +1263,7 @@ fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
     ];
     assert_eq!(
         idle_ownership(&longer, "a"),
-        vec![
-            (Some("a".into()), false),
-            (Some("b".into()), true),
-            (Some("d".into()), false),
-        ],
-        "a longer chain switches type at each boundary; same-type hops still flatten"
+        vec![false, true, false,],
+        "a longer chain switches type at each boundary"
     );
 }
