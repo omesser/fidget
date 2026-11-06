@@ -26,22 +26,15 @@ model_power = 1
 near_reaction = "away"
 rush_reaction = "react"
 
+# Soft breathing: the robe and hands rise and settle, back through the rest pose.
 [animations.idle]
 frames = [
   "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
   "frames/idle-1.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
-  "frames/idle-0.png",
   "frames/idle-0.png",
   "frames/idle-2.png",
 ]
-fps = 1
+fps = 2
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]

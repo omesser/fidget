@@ -1828,3 +1828,65 @@ fn shown_cat(
         .expect("the cat draws the idle it is playing");
     (drawn.animation.to_string(), drawn.index)
 }
+
+/// Black Mage's own idle softly breathes: on its feet with nothing proposed,
+/// the drawn image changes well inside five seconds and comes back around.
+/// Watched through the Engine at a 16 ms frame, as the renderer draws it.
+#[test]
+fn black_mage_idle_breathes_rather_than_holding_one_image() {
+    let character = load_package("black-mage").expect("Black Mage package is valid");
+    let ground = WorldSnapshot {
+        displays: vec![DISPLAY],
+        elapsed_ms: 16,
+        ..WorldSnapshot::default()
+    };
+    let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan());
+
+    let mut shown: Vec<String> = Vec::new();
+    for _ in 0..2_000 {
+        let frame = engine.tick(&ground);
+        if !matches!(frame.idle_beat, Some(IdleBeat::IdleLoop(_))) {
+            assert!(shown.is_empty(), "the calm loop is not interrupted");
+            continue;
+        }
+        let drawn = character
+            .draw(
+                frame.animation,
+                frame.animation_ms,
+                frame.ring_choice(),
+                frame.facing,
+            )
+            .expect("Black Mage draws its idle");
+        let (file, _) = character
+            .art
+            .iter()
+            .find(|(_, art)| std::ptr::eq(&art.mask, drawn.mask))
+            .expect("the drawn mask is a package frame");
+        shown.push(file.clone());
+        if shown.len() == 750 {
+            break;
+        }
+    }
+    assert_eq!(shown.len(), 750, "twelve seconds of uninterrupted idle");
+
+    let longest = shown
+        .chunk_by(|a, b| a == b)
+        .map(|run| run.len() * 16)
+        .max()
+        .unwrap_or_default();
+    assert!(
+        longest < 2_000,
+        "the idle holds one image for {longest} ms; breathing keeps moving"
+    );
+    let distinct: BTreeSet<_> = shown.iter().collect();
+    assert!(distinct.len() >= 2, "the idle shows more than one pose");
+    let first = &shown[0];
+    let back = shown
+        .iter()
+        .skip_while(|file| *file == first)
+        .any(|file| file == first);
+    assert!(back, "the idle returns to its first pose and repeats");
+}
