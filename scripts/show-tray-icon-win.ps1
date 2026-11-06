@@ -36,6 +36,21 @@ public static class RegistryChange {
 $watched = [RegistryChange]::Open("Control Panel")
 $changed = New-Object System.Threading.AutoResetEvent $false
 $deadline = [DateTime]::UtcNow.AddSeconds(30)
+$launched = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+
+# Which side was late (#2084): Fidget's `tray: menu set` line, which it writes
+# once the icon exists, against Explorer's NotifyIconSettings entry. Both are
+# timed from launch; process.log stamps whole seconds, the registry milliseconds.
+function Write-Timeline([string]$Registry) {
+    $log = if ($env:FIDGET_DATA_DIR) { Join-Path $env:FIDGET_DATA_DIR "process.log" } else { "" }
+    $lines = @(if ($log -and (Test-Path -LiteralPath $log)) { Get-Content -LiteralPath $log -Encoding utf8 })
+    $tray = $lines | Where-Object { $_ -match '^\d+ tray: menu set' } | Select-Object -First 1
+    $fidget = if ($tray) { "{0:+0;-0} s" -f ([long]($tray -split ' ')[0] - [math]::Floor($launched / 1000)) } else { "never" }
+    $alive = if ($proc.HasExited) { "exited $($proc.ExitCode)" } else { "running" }
+    Write-Host "tray timeline: Fidget icon $fidget, Explorer entry $Registry, Fidget $alive"
+    return $lines
+}
+
 $proc = Start-Process $Bin -PassThru
 try {
     while ($true) {
@@ -46,10 +61,17 @@ try {
         if ($icon) { break }
         $left = $deadline - [DateTime]::UtcNow
         if ($left -le [TimeSpan]::Zero -or -not $changed.WaitOne($left)) {
+            $lines = Write-Timeline "never"
+            $paths = @(Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' -ErrorAction SilentlyContinue |
+                    ForEach-Object { (Get-ItemProperty $_.PSPath).ExecutablePath }) -join "; "
+            Write-Output "NotifyIconSettings holds: $paths"
+            Write-Output "process.log, last 20 lines:"
+            $lines | Select-Object -Last 20 | ForEach-Object { Write-Output "  $_" }
             Write-Error "Windows recorded no tray icon for $Bin within 30 s"
             exit 1
         }
     }
+    $null = Write-Timeline ("+{0} ms" -f ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - $launched))
     Set-ItemProperty -Path $icon.PSPath -Name IsPromoted -Value 1 -Type DWord
     Write-Output "promoted the tray icon for $Bin"
 } finally {
