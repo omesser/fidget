@@ -50,9 +50,6 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// Park the next wire this thread spawns when it reads `Msg::Shutdown`.
-/// The sender comes back so the test can release it. Spawn takes the park
-/// on this thread, so one test cannot stop another test's child.
 #[cfg(test)]
 pub(crate) fn arm_shutdown_park(park: sync_mpsc::Sender<sync_mpsc::Sender<()>>) {
     SHUTDOWN_PARK.with(|slot| *slot.borrow_mut() = Some(park));
@@ -1480,9 +1477,6 @@ async fn serve(
         };
         match step {
             Step::Command(Some(Msg::Shutdown)) => {
-                // `Done` goes out after this loop and that is what releases
-                // the caller. The park holds the send so a test can read
-                // `alive` while the caller is still blocked.
                 #[cfg(test)]
                 hold_shutdown(shutdown_park);
                 break TurnError::Lost;

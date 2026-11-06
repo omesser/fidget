@@ -2002,9 +2002,6 @@ impl Session {
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
-        // The wire is already taken. The caller may still be blocked, or it
-        // may return on its own budget, and neither of those writes `alive`.
-        // Chat treats a set `alive` as the child still being attached.
         self.update_inspect(|inspect| {
             inspect.alive = false;
             inspect.initializing = false;
@@ -10443,9 +10440,6 @@ mod tests {
         );
     }
 
-    /// `alive` is what Chat reads as "the child is up". Shutdown has posted
-    /// before the in-flight caller is released, so the flag has to be false
-    /// in that gap. A turn that later comes back as a loss is not the writer.
     #[test]
     fn shutdown_drops_alive_before_the_in_flight_caller_returns() {
         struct RestoreAttachment;
