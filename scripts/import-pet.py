@@ -261,17 +261,21 @@ NOT_IDLE_GESTURES = {
     "climb", "jump", "grab",
 }
 
-# Names the importer will auto-classify as idle-gestures. Ambiguous forever
-# loops (thinking, sing, skate, …) stay unclassified so a human can decide.
+# Known idle-fidget names, including strips shipped characters already use.
+# Motion-like forever maps stay off this list and get a printed suggestion.
 IDLE_GESTURE_NAMES = {
     "waiting", "review", "wave", "grooming", "waddle-in-place",
+    "thinking", "sing", "skate", "scan", "pondering",
+    "look-around", "restless-sitting", "checking-work", "recover-card",
+    "nod-off",
 }
 
 
 def suitable_idle_gesture(name):
     """True when this strip name is a calm fidget the importer should mark
-    as an idle-gesture. look-* and idle-* prefixes match common fidgets;
-    required motion names never qualify."""
+    as an idle-gesture. look-* matches common fidgets. An idle-* name with
+    no variant yet is treated as a buddy-bot-style gesture strip; an
+    explicit variant_of = "idle" calm loop is never reclassified."""
     if name in NOT_IDLE_GESTURES:
         return False
     if name in IDLE_GESTURE_NAMES:
@@ -280,23 +284,36 @@ def suitable_idle_gesture(name):
 
 
 def classify_idle_gestures(animations):
-    """Mark suitable forever loops as idle-gestures. The calm baseline stays
-    `idle`. A loop that is already a variant of some other strip stays there.
-    Unsuitable forever extras keep no variant_of for human review."""
+    """Mark suitable forever loops as idle-gestures. Explicit
+    `variant_of = "idle"` calm loops stay calm. Already-classified strips
+    and required motion names are left alone. Forever loops the name
+    heuristic cannot judge yield a suggestion string for the caller."""
+    suggestions = []
     for name, spec in animations.items():
         if name in NOT_IDLE_GESTURES or spec.get("loop") == "once":
             continue
-        if spec.get("variant_of") not in (None, "idle"):
+        variant = spec.get("variant_of")
+        if variant == "idle":
+            continue
+        if variant not in (None,):
             continue
         if suitable_idle_gesture(name):
             spec["variant_of"] = "idle-gesture"
+        else:
+            suggestions.append(
+                f"left {name!r} unclassified; set variant_of = \"idle-gesture\" "
+                f"or \"idle\" (calm loop) in the manifest if it belongs"
+            )
+    return suggestions
 
 
 def gesture_behaviors(animations):
-    """One ordinary Behavior per idle-gesture strip, playing that strip by
-    name. The calm `idle` loop does not get one. A name the starter life
-    already uses is left alone."""
-    taken = set(re.findall(r"\[behaviors\.([^\]]+)\]", STARTER_BEHAVIORS))
+    """One ordinary callable Behavior per idle-gesture strip (weight 0 so
+    Director/MCP can ask for it without a second ambient cadence). The calm
+    `idle` loop does not get one. A name the starter life already uses is
+    left alone."""
+    taken = {line[11:-1] for line in STARTER_BEHAVIORS.splitlines()
+             if line.startswith("[behaviors.") and line.endswith("]")}
     lines = []
     for name, spec in animations.items():
         if spec.get("variant_of") != "idle-gesture" or name in taken:
@@ -305,7 +322,7 @@ def gesture_behaviors(animations):
             "",
             f"[behaviors.{name}]",
             f'play = ["{name}"]',
-            "weight = 10",
+            "weight = 0",
             'when = "idle over 10s"',
         ]
     return "\n".join(lines)
@@ -754,7 +771,7 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
             "loop": loop,
             "variant_of": variant_of,
         }
-    classify_idle_gestures(animations)
+    suggestions = classify_idle_gestures(animations)
 
     # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
     # cut from any other row (--map) faces no way the importer can see.
@@ -769,6 +786,7 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
 
     described = pet.get("description", "").strip()
     notes = mapping_notes(mappings, animations, rows, synthesized=not only_mapped and "sleep" not in overrides)
+    notes.extend(suggestions)
     if only_mapped:
         notes.append("Explicit source mappings; review animation timing and behavior in the manifest.")
     # A pet.json may carry the key with nothing in it, which is the same
@@ -879,8 +897,10 @@ def read_shimeji(source, name=None):
     if "sleep" not in animations:
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
         chosen.append("sleep<-synthesized from idle")
-    classify_idle_gestures(animations)
+    suggestions = classify_idle_gestures(animations)
     print("mapped:", ", ".join(chosen))
+    for tip in suggestions:
+        print("suggest:", tip)
 
     name = name or source.name
     notes = [
@@ -889,6 +909,7 @@ def read_shimeji(source, name=None):
         "for rightward travel.",
         "Mapping (animation <- this pack's actions.xml action):",
         ", ".join(chosen) + ".",
+        *suggestions,
     ]
     return {
         "name": name,
@@ -1468,11 +1489,11 @@ def self_test():
         selected = read_petscodex(source, overrides=mappings, only_mapped=True)
         assert set(selected["animations"]) == {"idle", "thinking", "look-left"}
         assert len(selected["animations"]["idle"]["frames"]) == 7
-        # only_mapped keeps the calm baseline unnamed; suitable look-left is
-        # classified, ambiguous thinking is not.
+        # only_mapped keeps the calm baseline unnamed; look-left and known
+        # shipped thinking both classify as idle-gestures.
         assert selected["animations"]["idle"].get("variant_of") is None
         assert selected["animations"]["look-left"]["variant_of"] == "idle-gesture"
-        assert selected["animations"]["thinking"].get("variant_of") is None
+        assert selected["animations"]["thinking"]["variant_of"] == "idle-gesture"
         looks = selected["animations"]["look-left"]["frames"]
         assert len(looks) == 4
         assert looks[1].tobytes() == looks[3].tobytes(), "exact playback order survives"
@@ -1482,15 +1503,35 @@ def self_test():
             source, overrides={"look-left": (10, (0, 1, 2, 1)), "thinking": (7, None)},
         )
         assert with_gestures["animations"]["look-left"]["variant_of"] == "idle-gesture"
-        assert with_gestures["animations"]["thinking"].get("variant_of") is None
+        assert with_gestures["animations"]["thinking"]["variant_of"] == "idle-gesture"
         assert with_gestures["animations"]["waiting"]["variant_of"] == "idle-gesture"
         assert with_gestures["animations"]["idle"].get("variant_of") is None
+        # Explicit calm second loop must stay calm even with an idle-* name.
+        calm = dict(with_gestures["animations"])
+        calm["idle-breathe"] = {
+            "frames": calm["idle"]["frames"], "fps": 2, "loop": "forever",
+            "variant_of": "idle",
+        }
+        tips = classify_idle_gestures(calm)
+        assert calm["idle-breathe"]["variant_of"] == "idle"
+        assert tips == []
+        # Unsuitable forever map yields a suggestion, not a silent drop.
+        stray = {
+            "idle": {"frames": calm["idle"]["frames"], "fps": 2, "loop": "forever"},
+            "patrol-loop": {
+                "frames": calm["idle"]["frames"], "fps": 6, "loop": "forever",
+            },
+        }
+        tips = classify_idle_gestures(stray)
+        assert stray["patrol-loop"].get("variant_of") is None
+        assert any("patrol-loop" in tip for tip in tips)
         gesture_out = tmp / "gesture-character"
         emit(with_gestures, gesture_out, validate=False)
         gesture_manifest = (gesture_out / "character.manifest").read_text()
         assert "[behaviors.look-left]" in gesture_manifest
         assert 'play = ["look-left"]' in gesture_manifest
-        assert "[behaviors.thinking]" not in gesture_manifest
+        assert "[behaviors.thinking]" in gesture_manifest
+        assert "weight = 0" in gesture_manifest
         assert "[behaviors.idle]" not in gesture_manifest
         drew_look = subprocess.run(
             ["cargo", "run", "-q", "-p", "fidget-core", "--example", "validate",
@@ -1502,7 +1543,7 @@ def self_test():
         extra = read_petscodex(source, overrides={"thinking": (7, None)})
         assert {"walk", "sleep", "thinking"} <= set(extra["animations"])
         assert extra["animations"]["waiting"]["variant_of"] == "idle-gesture"
-        assert extra["animations"]["thinking"].get("variant_of") is None
+        assert extra["animations"]["thinking"]["variant_of"] == "idle-gesture"
         assert extra["animations"]["idle"].get("variant_of") is None
         try:
             read_petscodex(source, overrides={"thinking": (7, None)}, only_mapped=True)
