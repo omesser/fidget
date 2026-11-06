@@ -38,8 +38,8 @@ use super::{
     push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
     switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
     FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
-    QuickMessageAside, SpritePlacement, Step, Traced, TrayHandle, WorkArea, ENGINE_TICK,
-    FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    QuickMessageAside, SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT,
+    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
@@ -1896,20 +1896,16 @@ pub(crate) fn run_frame_loop(
 
                 let feet = (live.last_position.x, live.last_position.y);
                 let owner_drew = bubble_owner(feet, &displays.frames)
-                    .is_some_and(|index| platform::overlay_drew(&overlay_label(index)));
-                let step = live.first_draw.step(elapsed, owner_drew, presence.visible);
-                if let (Step::Released { by, after }, true) = (step, tracing_frames) {
-                    eprintln!(
-                        "first-draw: {} {by:?} after {}ms",
-                        live.id,
-                        after.as_millis()
-                    );
-                }
+                    .is_some_and(|index| platform::overlay_drew(&overlay_label(index), &live.id));
+                let runs = live
+                    .first_draw
+                    .runs(&live.id, elapsed, owner_drew, presence.visible);
                 // Shadowed for the rest of this turn, so every clock below holds
                 // with the Engine while the spawn pose waits for its first draw.
-                let (elapsed, elapsed_ms) = match step {
-                    Step::Wait => (Duration::ZERO, 0),
-                    Step::Run | Step::Released { .. } => (elapsed, elapsed_ms),
+                let (elapsed, elapsed_ms) = if runs {
+                    (elapsed, elapsed_ms)
+                } else {
+                    (Duration::ZERO, 0)
                 };
                 world.elapsed_ms = if elapsed_ms == 0 { 0 } else { tick_ms };
 

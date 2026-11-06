@@ -830,49 +830,30 @@ enum FirstDraw {
     Running,
 }
 
-/// What one tick of `FirstDraw` decided.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Step {
-    /// The Engine and this Instance's clocks get no time this tick.
-    Wait,
-    Run,
-    /// Real time from this tick on. `after` is how long the spawn pose waited.
-    Released {
-        by: Release,
-        after: Duration,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Release {
-    /// The overlay under the feet drew the art.
-    Drew,
-    /// Nobody can see the drop, so holding it protects nothing.
-    Hidden,
-    /// No draw came in time.
-    Ceiling,
-}
-
 impl FirstDraw {
-    /// Advance by one tick of `elapsed` wall time. The releasing tick runs on
-    /// that tick's time only, never the time held, so the drop starts from rest.
-    fn step(&mut self, elapsed: Duration, owner_drew: bool, visible: bool) -> Step {
+    /// Whether this Instance's clocks advance this tick. The releasing tick
+    /// runs on that tick's time only, so the drop starts from rest. The release
+    /// traces why: the owner overlay drew it, nobody can see it, or the ceiling.
+    fn runs(&mut self, id: &str, elapsed: Duration, owner_drew: bool, visible: bool) -> bool {
         let FirstDraw::Waiting { held } = *self else {
-            return Step::Run;
+            return true;
         };
         let held = held + elapsed;
-        let by = if owner_drew {
-            Release::Drew
+        let why = if owner_drew {
+            "drew"
         } else if !visible {
-            Release::Hidden
+            "hidden"
         } else if held >= FIRST_DRAW_CEILING {
-            Release::Ceiling
+            "ceiling"
         } else {
             *self = FirstDraw::Waiting { held };
-            return Step::Wait;
+            return false;
         };
         *self = FirstDraw::Running;
-        Step::Released { by, after: held }
+        if dev_flags::TRACE_FRAMES.is_on() {
+            eprintln!("first-draw: {id} {why} after {}ms", held.as_millis());
+        }
+        true
     }
 }
 
@@ -2413,11 +2394,11 @@ fn overlay_listening(window: tauri::Window) {
     platform::set_overlay_listening(window.label(), true);
 }
 
-/// The overlay's page has put a Character's art on screen, so a launch
+/// The overlay's page has put this Instance's art on screen, so a launch
 /// Instance under it may start moving.
 #[tauri::command]
-fn overlay_drew(window: tauri::Window) {
-    platform::set_overlay_drew(window.label());
+fn overlay_drew(window: tauri::Window, id: String) {
+    platform::set_overlay_drew(window.label(), &id);
 }
 
 /// A page that starts loading again no longer hears frames until it says so.
@@ -7667,23 +7648,15 @@ mod tests {
         let mut hold = FirstDraw::Waiting {
             held: Duration::ZERO,
         };
-        assert_eq!(
-            hold.step(tick, false, true),
-            Step::Wait,
-            "not drawn: no time"
-        );
-        assert_eq!(hold.step(tick, false, true), Step::Wait);
-        assert_eq!(
-            hold.step(tick, true, true),
-            Step::Released {
-                by: Release::Drew,
-                after: tick * 3
-            },
+        assert!(!hold.runs("bmo", tick, false, true), "not drawn: no time");
+        assert!(!hold.runs("bmo", tick, false, true));
+        assert!(
+            hold.runs("bmo", tick, true, true),
             "the draw releases it on that tick"
         );
-        assert_eq!(
-            hold.step(tick, false, true),
-            Step::Run,
+        assert_eq!(hold, FirstDraw::Running);
+        assert!(
+            hold.runs("bmo", tick, false, true),
             "a reload's lost witness re-holds nothing"
         );
     }
@@ -7693,13 +7666,8 @@ mod tests {
         let mut hold = FirstDraw::Waiting {
             held: Duration::ZERO,
         };
-        assert!(matches!(
-            hold.step(Duration::from_millis(16), false, false),
-            Step::Released {
-                by: Release::Hidden,
-                ..
-            }
-        ));
+        assert!(hold.runs("bmo", Duration::from_millis(16), false, false));
+        assert_eq!(hold, FirstDraw::Running);
     }
 
     #[test]
@@ -7709,8 +7677,7 @@ mod tests {
         };
         let tick = Duration::from_millis(100);
         let waited = (0..)
-            .map(|_| hold.step(tick, false, true))
-            .take_while(|step| *step == Step::Wait)
+            .take_while(|_| !hold.runs("bmo", tick, false, true))
             .count();
         assert_eq!(tick * waited as u32 + tick, FIRST_DRAW_CEILING);
         assert_eq!(hold, FirstDraw::Running);
@@ -7718,10 +7685,21 @@ mod tests {
 
     #[test]
     fn a_summoned_instance_never_waits() {
-        assert_eq!(
-            FirstDraw::Running.step(Duration::from_millis(16), false, true),
-            Step::Run
-        );
+        assert!(FirstDraw::Running.runs("bmo", Duration::from_millis(16), false, true));
+    }
+
+    /// One overlay drawing one Character does not release another Instance
+    /// whose art it has not decoded yet.
+    #[test]
+    fn a_draw_counts_only_for_the_instance_and_overlay_that_reported_it() {
+        let label = "overlay-drew-test";
+        super::platform::set_overlay_drew(label, "first-drawn");
+        assert!(super::platform::overlay_drew(label, "first-drawn"));
+        assert!(!super::platform::overlay_drew(label, "not-yet-drawn"));
+        assert!(!super::platform::overlay_drew(
+            "overlay-other-test",
+            "first-drawn"
+        ));
     }
 
     /// Every overlay is told about every Instance, and only the
