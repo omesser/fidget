@@ -72,8 +72,8 @@ $script:Evidence = $null
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
     if ($script:Evidence) { [Console]::Error.WriteLine("evidence in $($script:Evidence)") }
-    $traceFile = Join-Path $data "process.log"
-    if (-not (Test-Path -LiteralPath $traceFile -ErrorAction SilentlyContinue)) {
+    # A self-check fails before the leaf seeds a data dir, so there is none to check.
+    if ($data -and -not (Test-Path -LiteralPath (Join-Path $data "process.log") -ErrorAction SilentlyContinue)) {
         [Console]::Error.WriteLine("data_dir did not resolve to $data")
     }
     exit 1

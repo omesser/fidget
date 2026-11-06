@@ -713,6 +713,11 @@ mod tests {
                 "{script} with {key} broken, want exit 1 and '{message}', got {:?}:\n{stderr}",
                 out.status.code()
             );
+            // A PowerShell throw after the FAIL line also exits 1, so the code alone hides it.
+            assert!(
+                !stderr.contains("FullyQualifiedErrorId"),
+                "{script} with {key} broken threw after its FAIL line:\n{stderr}"
+            );
         }
     }
 
@@ -1253,6 +1258,68 @@ mod tests {
     #[test]
     fn poke_mid_climb_win_fails_on_each_broken_assertion() {
         fixture_cases("poke-mid-climb.win.ps1", CLIMB_GOOD, CLIMB_CASES);
+    }
+
+    /// The leaf's verdict on one set of anchor icon readings, taken from
+    /// `FIDGET_SCENARIO_ICONS` instead of a live Fidget: nothing launches.
+    #[cfg(windows)]
+    fn icons_verdict(readings: &str) -> (Option<i32>, String) {
+        let out = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(repo_scenarios().join("manual-only/tray-taskbar-icons-hidpi.win.ps1"))
+            .args(["--go", "fidget.exe"])
+            .env("FIDGET_SCENARIO_ICONS", readings)
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.code(), text)
+    }
+
+    // The small icon is judged against SM_CXSMICON at Fidget's own system DPI,
+    // which is what anchor_icons() asked for; a 100% run proves nothing HiDPI.
+    #[cfg(windows)]
+    #[test]
+    fn tray_taskbar_icons_hidpi_win_judges_the_anchor_icons_at_fidgets_dpi() {
+        const GOOD: &str =
+            "aware=2 dpi=144 taskbar=144 small=24x24 classsmall=24x24 big=256x256 classbig=256x256";
+        for readings in [
+            GOOD.to_string(),
+            GOOD.replace("144", "192").replace("24x24", "32x32"),
+            GOOD.replace("aware=2", "aware=1"),
+        ] {
+            let (code, text) = icons_verdict(&readings);
+            assert_eq!(code, Some(0), "{readings}: {text}");
+            assert!(text.contains("PASS: fixture icons"), "{readings}: {text}");
+        }
+        for (from, to, want) in [
+            ("small=24x24", "small=16x16", "FAIL: WM_GETICON ICON_SMALL is 16x16, want 24x24 (SM_CXSMICON x SM_CYSMICON at 144 dpi)"),
+            ("classsmall=24x24", "classsmall=32x32", "FAIL: GCLP_HICONSM is 32x32, want 24x24"),
+            ("small=24x24", "small=none", "FAIL: WM_GETICON ICON_SMALL returned no icon"),
+            ("big=256x256", "big=48x48", "FAIL: WM_GETICON ICON_BIG is 48x48, want 256x256"),
+            ("classbig=256x256", "classbig=32x32", "FAIL: GCLP_HICON is 32x32, want 256x256"),
+            ("aware=2", "aware=0", "FAIL: the anchor window is DPI unaware"),
+            ("dpi=144", "dpi=0", "FAIL: could not read Fidget's system DPI"),
+        ] {
+            let readings = GOOD.replace(from, to);
+            let (code, text) = icons_verdict(&readings);
+            assert_eq!(code, Some(1), "{readings}: {text}");
+            assert!(text.contains(want), "{readings}: {text}");
+        }
+        let at_100 = GOOD.replace("144", "96").replace("24x24", "16x16");
+        let (code, text) = icons_verdict(&at_100);
+        assert_eq!(code, Some(2), "{text}");
+        assert!(
+            text.contains("SKIP: Fidget's system DPI is 96 (100%)"),
+            "{text}"
+        );
+        let stale = at_100.replace("taskbar=96", "taskbar=144");
+        let (code, text) = icons_verdict(&stale);
+        assert_eq!(code, Some(2), "{text}");
+        assert!(text.contains("sign out and back in"), "{text}");
     }
 
     // Two runs into one evidence dir each get a new folder there, and the dir's
