@@ -1347,6 +1347,8 @@ fn a_gesture_begun_inside_an_idle_typed_behavior_finishes_before_its_then() {
     let seen = gesture_across_a_then(talk_b(), false);
     let spin = seen.iter().take_while(|s| s.0 == "spin").count();
     assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    // One tick of the loop at most, while the queue reaches its boundary.
+    let spin = spin + usize::from(seen[spin].0 == "idle");
     assert_eq!(seen[spin].0, "talk", "then `b` starts: {seen:?}");
 }
 
@@ -1371,6 +1373,8 @@ fn a_gesture_inside_a_multi_primitive_idle_typed_behavior_finishes_before_its_ta
     let seen = gesture_across(a(), unused(), false);
     let spin = seen.iter().take_while(|s| s.0 == "spin").count();
     assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    // One tick of the loop at most, while the queue reaches its boundary.
+    let spin = spin + usize::from(seen[spin].0 == "idle");
     assert_eq!(seen[spin].0, "talk", "then a's own Talk: {seen:?}");
     assert_whole_gesture_then(&gesture_across(a(), unused(), true), "wave");
 }
@@ -1382,6 +1386,8 @@ fn a_gesture_inside_a_flattened_same_type_chain_finishes_before_the_next_primiti
     let seen = gesture_across(a(), typed_b(), false);
     let spin = seen.iter().take_while(|s| s.0 == "spin").count();
     assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    // One tick of the loop at most, while the queue reaches its boundary.
+    let spin = spin + usize::from(seen[spin].0 == "idle");
     assert_eq!(seen[spin].0, "talk", "then b's Talk: {seen:?}");
     assert_whole_gesture_then(&gesture_across(a(), typed_b(), true), "wave");
 }
