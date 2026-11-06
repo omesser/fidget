@@ -313,7 +313,7 @@ fn dark_eyes_left_of_silhouette_mid(width: usize, height: usize, rgba: &[[u8; 4]
 }
 
 // Clearance belongs to the art: Buddy Bot hovers, while Duck has planted feet.
-// Fall/grab strips can reserve space below curled feet independently of standing.
+// Fall/grab animations can reserve space below curled feet independently of standing.
 #[test]
 fn shipped_frames_keep_their_authored_floor_clearance() {
     let profiles = BTreeMap::from([
@@ -435,7 +435,7 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
     assert_eq!(landed.expect("the duck lands").animation, "land");
 }
 
-/// The beat names an idle-gesture, so draw plays that strip from frame 0.
+/// The beat names an idle-gesture, so draw plays that animation from frame 0.
 /// A weighed idle draw stays on the calm loop.
 fn assert_idle_gesture(character: &character::Character, name: &str) {
     let idle = &character.animations["idle"];
@@ -619,7 +619,7 @@ fn bmo_panel_offset(bytes: &[u8]) -> f32 {
 }
 
 /// Every frame of `names` as drawn for both ways of travel faces that way,
-/// left strip included. `faces_right` reads the art: positive past `margin`
+/// left animation included. `faces_right` reads the art: positive past `margin`
 /// when the PNG faces right, negative past it when it faces left.
 fn assert_drawn_facing_the_travel(
     package: &str,
@@ -949,7 +949,10 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_gesture() {
         "sit is not where the laser lives"
     );
     assert!(
-        matches!(character.behaviors["scan"].strip.as_deref(), Some("scan")),
+        matches!(
+            character.behaviors["scan"].animation.as_deref(),
+            Some("scan")
+        ),
         "scan plays the TAC sweep by name"
     );
     for name in [
@@ -1309,7 +1312,7 @@ fn buddy_bot_frames_are_90_square_rgba() {
     }
 }
 
-/// Mood strips are idle-gestures, declared as art rather than Behaviors.
+/// Mood animations are idle-gestures, declared as art rather than Behaviors.
 #[test]
 fn buddy_bot_declares_idle_life_gestures() {
     let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
@@ -1324,7 +1327,7 @@ fn buddy_bot_declares_idle_life_gestures() {
         assert_eq!(
             anim.frames.len(),
             count,
-            "{name} must carry the shipped {count}-frame strip"
+            "{name} must carry the shipped {count}-frame animation"
         );
         assert_idle_gesture(&character, name);
         assert!(
@@ -1518,10 +1521,10 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
     );
 }
 
-/// `PRIMITIVE_MS` is the turn, not the strip. The clock runs through that
+/// `PRIMITIVE_MS` is the turn, not the animation. The clock runs through that
 /// turn, and the Engine's own idle after it starts a loop at frame 0.
 #[test]
-fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
+fn groom_plays_the_full_animation_once_then_the_calm_loop_returns() {
     let character = load_package("cat").expect("cat package is valid");
     let ground = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -1572,7 +1575,7 @@ fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
 
     assert!(
         during.windows(2).any(|pair| pair[1] == pair[0] + 1),
-        "grooming plays the full strip forward: {during:?}"
+        "grooming plays the full animation forward: {during:?}"
     );
     assert!(
         !during.windows(2).any(|pair| pair[0] == 5 && pair[1] == 0),
@@ -1586,11 +1589,11 @@ fn groom_plays_the_full_strip_once_then_the_calm_loop_returns() {
     assert_eq!(after.first().map(|art| art.1), Some(0));
 }
 
-/// Every idle-gesture strip stars in one Behavior. The proposal draws that
-/// strip's first frame, including the family base, which must not reweigh.
+/// Every idle-gesture animation stars in one Behavior. The proposal draws that
+/// animation's first frame, including the family base, which must not reweigh.
 #[test]
-fn every_idle_gesture_strip_stars_as_its_own_behavior() {
-    // Behavior, the strip it plays, that strip's first frame.
+fn every_idle_gesture_animation_stars_as_its_own_behavior() {
+    // Behavior, the animation it plays, that animation's first frame.
     let cases = [
         ("bmo", "skate", "skate", "frames/skate-0.png"),
         ("bmo", "sing", "sing", "frames/sing-0.png"),
@@ -1682,7 +1685,7 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
         ("tuxedo-bean", "hand-wave", "wave", "frames/wave-0.png"),
     ];
 
-    for (package, behavior, strip, first) in cases {
+    for (package, behavior, animation, first) in cases {
         let character = load_package(package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
         let ground = WorldSnapshot {
             displays: vec![DISPLAY],
@@ -1709,25 +1712,33 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
                 }),
                 ..ground.clone()
             });
-            if frame.playing_gesture.as_deref() != Some(strip) {
+            if frame.playing_gesture.as_deref() != Some(animation) {
                 continue;
             }
             let drawn = character
-                .draw(strip, frame.animation_ms, frame.ring_choice(), frame.facing)
+                .draw(
+                    animation,
+                    frame.animation_ms,
+                    frame.ring_choice(),
+                    frame.facing,
+                )
                 .unwrap_or_else(|| panic!("{package} {behavior} did not draw"));
-            assert_eq!(drawn.animation, strip, "{package} {behavior}");
+            assert_eq!(drawn.animation, animation, "{package} {behavior}");
             assert_eq!(
                 drawn.index, 0,
                 "{package} {behavior} did not start at frame 0"
             );
             assert_eq!(
-                character.animations[strip].frames[0], first,
-                "{package} {behavior} starred the wrong strip"
+                character.animations[animation].frames[0], first,
+                "{package} {behavior} starred the wrong animation"
             );
             saw = true;
             break;
         }
-        assert!(saw, "{package} behavior {behavior} never played {strip}");
+        assert!(
+            saw,
+            "{package} behavior {behavior} never played {animation}"
+        );
     }
 
     let jotaro = load_package("jotaro-kujo").expect("jotaro");
@@ -1746,7 +1757,7 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
         let character = load_package(&package).unwrap_or_else(|e| panic!("{package}: {e:?}"));
         assert!(
             !character.animations.contains_key("idle-gesture"),
-            "{package} must not sacrifice a strip's name to the family"
+            "{package} must not sacrifice an animation's name to the family"
         );
         let family: Vec<&str> = character
             .animations
@@ -1756,15 +1767,15 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             .collect();
         for name in &family {
             assert!(
-                cases.iter().any(|(_, _, strip, _)| strip == name),
+                cases.iter().any(|(_, _, animation, _)| animation == name),
                 "{package} {name} has no starring Behavior"
             );
             assert_ne!(*name, "idle");
         }
-        for (_, _, strip, _) in cases.iter().filter(|(pkg, ..)| *pkg == package) {
+        for (_, _, animation, _) in cases.iter().filter(|(pkg, ..)| *pkg == package) {
             assert!(
-                family.contains(strip),
-                "{package} {strip} is not an idle-gesture"
+                family.contains(animation),
+                "{package} {animation} is not an idle-gesture"
             );
         }
     }
@@ -1779,14 +1790,14 @@ fn every_idle_gesture_strip_stars_as_its_own_behavior() {
             "buddy {name} must be callable-only, not ambient"
         );
         assert_eq!(
-            behavior.strip.as_deref(),
+            behavior.animation.as_deref(),
             match name {
                 "blink" => Some("idle-blink"),
                 "breathe" => Some("idle-breathe"),
                 "listen" => Some("idle-listen"),
                 _ => None,
             },
-            "buddy {name} stars its strip"
+            "buddy {name} stars its animation"
         );
     }
     let mut context = fidget_core::director::Context::quiet();

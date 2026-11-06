@@ -231,7 +231,7 @@ pub struct Frame {
 
     /// The draw that picks a ring member, held for the whole Animation.
     /// The Engine's own idle does not use it: `idle_beat` names the loop or
-    /// the gesture, and a weighed draw would play a different strip.
+    /// the gesture, and a weighed draw would play a different animation.
     pub variant_draw: u64,
     /// Set while the Engine plays its own idle. `None` for a Behavior's idle
     /// and for every other Animation, which still weigh `variant_draw`.
@@ -287,8 +287,8 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// Animation name `Character::draw` should resolve: a Behavior strip when
-    /// one is mid-pass, otherwise the Engine's animation token.
+    /// Animation name `Character::draw` should resolve: the Animation a Behavior
+    /// is playing, otherwise the Engine's animation token.
     pub fn art_name(&self) -> &str {
         self.playing_gesture.as_deref().unwrap_or(self.animation)
     }
@@ -302,7 +302,7 @@ impl Frame {
         )
     }
 
-    /// A Behavior strip named one animation. The family base's name is also
+    /// A Behavior names one Animation. The family base's name is also
     /// the ring, and weighing it would play a sibling. Callers that kept the
     /// last frame use this so the hit-test matches what was drawn.
     pub fn choice_for<'a>(
@@ -339,7 +339,7 @@ const SLEEP_DWELL_MS: u32 = 10_000;
 
 /// How long a sprite rests on a Perch before leaving sit and idling in place.
 /// Long enough to read as settling, short of nodding off. It bounds how much of
-/// a long idle strip a perched sprite plays before the next wake.
+/// a long idle animation a perched sprite plays before the next wake.
 const PERCHED_IDLE_AFTER_MS: u32 = 4_000;
 
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
@@ -474,11 +474,11 @@ pub struct Engine {
     /// State would mean deciding what it resumes as.
     playing: Vec<Primitive>,
 
-    /// One pass of a named idle-gesture strip from a starring Behavior.
+    /// One pass of a named idle-gesture animation from a starring Behavior.
     /// Mutually exclusive with a non-empty `playing` list.
-    playing_strip: Option<String>,
+    playing_animation: Option<String>,
 
-    /// The name of the Behavior `playing` / `playing_strip` came from. `chain`
+    /// The name of the Behavior `playing` / `playing_animation` came from. `chain`
     /// merges linked Behaviors and two Characters may share Primitives, so the
     /// list cannot name it. Cleared with them so the pair is never half true.
     playing_behavior: Option<String>,
@@ -778,7 +778,7 @@ enum Taken {
     Ignored,
 }
 
-/// The first millisecond at which a looping strip would wrap. The gesture
+/// The first millisecond at which a looping animation would wrap. The gesture
 /// ends there, so the drawn frame stays inside the one pass.
 fn one_pass_ms(frames: u32, fps: u32) -> u32 {
     if frames == 0 || fps == 0 {
@@ -817,7 +817,7 @@ impl Engine {
             previous_windows: Vec::new(),
             previous_position: position,
             playing: Vec::new(),
-            playing_strip: None,
+            playing_animation: None,
             playing_behavior: None,
             primitive_ms: 0,
             facing: 1.0,
@@ -1109,7 +1109,7 @@ impl Engine {
     }
 
     /// The continuation not flattened into the completed pass by `chain`.
-    /// Skip already-played Primitive Behaviors, but never skip a strip's `then`.
+    /// Skip already-played Primitive Behaviors, but never skip an Animation-playing Behavior's `then`.
     fn then_after_pass(&self, finished: &str) -> Option<String> {
         let mut walked = BTreeSet::new();
         let mut current = finished;
@@ -1117,7 +1117,7 @@ impl Engine {
             let behavior = self.behaviors.get(current)?;
             let next = behavior.then.as_deref()?;
             let next_behavior = self.behaviors.get(next)?;
-            if behavior.strip.is_some() || next_behavior.strip.is_some() {
+            if behavior.animation.is_some() || next_behavior.animation.is_some() {
                 return Some(next.to_string());
             }
             current = next;
@@ -1683,7 +1683,7 @@ impl Engine {
             } else if self.gesture_mid_pass() && !self.do_not_disturb && !self.possessed {
                 // One slot. A later proposal in the same pass replaces it.
                 // Covers both the Engine's own-idle gesture and a Behavior
-                // strip mid-pass.
+                // animation mid-pass.
                 self.deferred = Some(proposal.clone());
             } else if !self.do_not_disturb && !self.possessed {
                 match self.take_proposal(proposal) {
@@ -1705,8 +1705,8 @@ impl Engine {
             if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
                 // The Behavior alone: a digit leaves its `then` off.
                 let behavior_ref = &self.behaviors[&name];
-                let started_digit = if let Some(strip) = behavior_ref.strip.clone() {
-                    self.play_strip(&strip)
+                let started_digit = if let Some(animation) = behavior_ref.animation.clone() {
+                    self.play_animation(&animation)
                 } else {
                     self.play(&behavior_ref.primitives.clone())
                 };
@@ -1816,7 +1816,7 @@ impl Engine {
 
         let animation = self.animation_name(snapshot);
         // One draw per family, not per Primitive turn, or a 600ms Idle would
-        // flicker strips. The Engine's own idle names its member on the beat.
+        // flicker animations. The Engine's own idle names its member on the beat.
         let engine_idle = animation == "idle" && self.uses_own_idle();
         let behavior_idle =
             animation == "idle" && self.on_screen() == Some(Primitive::Idle) && !self.idle_typed();
@@ -1835,7 +1835,7 @@ impl Engine {
 
         // `react` is `loop = once`, so a second Poke restarts its clock or
         // shows nothing. `land` re-enters by a fall, a change of name. The rest
-        // keep their clock, or each turn draws only the strip's first 600ms.
+        // keep their clock, or each turn draws only the animation's first 600ms.
         let startled = self.on_screen() == Some(Primitive::React);
         // A paused climb holds one pose rather than climbing in place.
         // A gesture step starts at its first frame, then the clock runs.
@@ -2274,21 +2274,21 @@ impl Engine {
         self.playing.last().copied()
     }
 
-    /// The idle-gesture strip a Behavior is mid-pass on, if any.
+    /// The idle-gesture animation a Behavior is mid-pass on, if any.
     fn playing_gesture(&self) -> Option<&str> {
-        self.playing_strip.as_deref()
+        self.playing_animation.as_deref()
     }
 
-    /// Own-idle gesture or a Behavior strip still in its one pass.
+    /// Own-idle gesture or a Behavior animation still in its one pass.
     fn gesture_mid_pass(&self) -> bool {
-        matches!(self.own_idle, OwnIdle::Gesture { .. }) || self.playing_strip.is_some()
+        matches!(self.own_idle, OwnIdle::Gesture { .. }) || self.playing_animation.is_some()
     }
 
-    /// How long one pass of `strip` holds the screen.
-    fn strip_ms(&self, strip: &str) -> u32 {
+    /// How long one pass of `animation` holds the screen.
+    fn animation_duration_ms(&self, animation: &str) -> u32 {
         self.idle_gestures
             .iter()
-            .find(|member| member.name == strip)
+            .find(|member| member.name == animation)
             .map(|member| one_pass_ms(member.frames, member.fps))
             .unwrap_or(PRIMITIVE_MS)
     }
@@ -2298,11 +2298,11 @@ impl Engine {
         matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
     }
 
-    /// True when the Primitive on screen changed, or a strip pass ended.
+    /// True when the Primitive on screen changed, or an animation pass ended.
     fn advance(&mut self, elapsed_ms: u32) -> bool {
-        if self.playing_strip.is_some() {
+        if self.playing_animation.is_some() {
             if elapsed_ms >= self.primitive_ms {
-                self.playing_strip = None;
+                self.playing_animation = None;
                 self.primitive_ms = 0;
                 let finished = self.playing_behavior.take();
                 self.moment_holding = false;
@@ -2347,7 +2347,7 @@ impl Engine {
     /// go together, or the Engine reports a Behavior that stopped ticks ago.
     fn stop_playing(&mut self) {
         self.playing.clear();
-        self.playing_strip = None;
+        self.playing_animation = None;
         self.playing_behavior = None;
         self.primitive_ms = 0;
         self.moment_holding = false;
@@ -2406,7 +2406,7 @@ impl Engine {
     }
 
     /// Engine idle, or a Behavior declared `type = "idle"` on an idle step.
-    /// A named gesture step plays its own strip and does not enter this.
+    /// A named gesture step plays its own animation and does not enter this.
     fn uses_own_idle(&self) -> bool {
         if self.playing_gesture().is_some() {
             return false;
@@ -2425,10 +2425,10 @@ impl Engine {
 
     /// Left the Engine's idle. A proposal held for an own-idle gesture does not
     /// survive the cut: the thing that took the screen is what plays. A
-    /// Behavior strip mid-pass still owns the deferred slot until its pass
-    /// ends or something else clears the strip.
+    /// Behavior animation mid-pass still owns the deferred slot until its pass
+    /// ends or something else clears the animation.
     fn leave_own_idle(&mut self) {
-        if self.playing_strip.is_none() {
+        if self.playing_animation.is_none() {
             self.deferred = None;
         }
         self.own_idle = OwnIdle::Off;
@@ -2467,8 +2467,8 @@ impl Engine {
     /// declare it. `play` clears the Behavior name, so only this puts it back.
     fn start_behavior(&mut self, name: &str) -> Option<bool> {
         let behavior = self.behaviors.get(name)?;
-        if let Some(strip) = behavior.strip.clone() {
-            let started = self.play_strip(&strip);
+        if let Some(animation) = behavior.animation.clone() {
+            let started = self.play_animation(&animation);
             if started {
                 self.playing_behavior = Some(name.to_string());
             }
@@ -2498,7 +2498,7 @@ impl Engine {
             return false;
         }
 
-        self.playing_strip = None;
+        self.playing_animation = None;
         self.playing = primitives.iter().rev().copied().collect();
         // Nameless until a caller says otherwise. Most callers are the Engine
         // playing a moment of its own — a Land, a Hold, a startle — and the
@@ -2517,16 +2517,16 @@ impl Engine {
         true
     }
 
-    /// One pass of a named idle-gesture strip. True when it started.
-    fn play_strip(&mut self, strip: &str) -> bool {
+    /// One pass of a named idle-gesture animation. True when it started.
+    fn play_animation(&mut self, animation: &str) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         if !(on_feet && !self.feet_owned()) {
             return false;
         }
         self.playing.clear();
-        self.playing_strip = Some(strip.to_string());
+        self.playing_animation = Some(animation.to_string());
         self.playing_behavior = None;
-        self.primitive_ms = self.strip_ms(strip);
+        self.primitive_ms = self.animation_duration_ms(animation);
         self.moment_holding = true;
         true
     }
@@ -2557,7 +2557,7 @@ impl Engine {
     }
 
     /// Every Primitive a named Behavior plays, chained ones included, or
-    /// `None` when undeclared. Strip Behaviors are started via `play_strip`,
+    /// `None` when undeclared. Behaviors playing an Animation start via `play_animation`,
     /// not this. It stops cycles: Behaviors arrive unvalidated, and ADR-0002
     /// promises no package can hang the frame loop.
     fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
@@ -2566,7 +2566,7 @@ impl Engine {
         let mut current = self.behaviors.get_key_value(behavior)?;
 
         while walked.insert(current.0.as_str()) {
-            if current.1.strip.is_some() {
+            if current.1.animation.is_some() {
                 break;
             }
             primitives.extend(current.1.primitives.iter().copied());
@@ -2822,7 +2822,7 @@ mod tests {
                 "walk".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Walk],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2834,7 +2834,7 @@ mod tests {
                 "greet".to_string(),
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Talk],
-                    strip: None,
+                    animation: None,
                     then: Some("settle".to_string()),
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2846,7 +2846,7 @@ mod tests {
                 "settle".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Sit, Primitive::Sleep],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2858,7 +2858,7 @@ mod tests {
                 "jump".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Jump],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -3180,7 +3180,7 @@ mod tests {
                 "chatter".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Talk],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -3201,7 +3201,7 @@ mod tests {
     fn a_behavior_that_chains_back_to_itself_still_ends() {
         let pacing = |then: &str| Behavior {
             primitives: vec![Primitive::Idle],
-            strip: None,
+            animation: None,
             then: Some(then.to_string()),
             weight: DEFAULT_WEIGHT,
             trigger: None,
@@ -3603,7 +3603,7 @@ mod tests {
                 "ponder".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Idle, Primitive::Idle, Primitive::Idle],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -5555,7 +5555,7 @@ mod tests {
                 "amble".to_string(),
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Walk],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -5570,7 +5570,7 @@ mod tests {
                 "walk".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Sit],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -6489,19 +6489,19 @@ mod tests {
         assert_eq!(idling_again.animation, "idle", "idle after rest again");
     }
 
-    /// A Director proposal waits out a Behavior strip mid-pass and starts when
+    /// A Director proposal waits out a Behavior animation mid-pass and starts when
     /// the pass ends — the same deferred slot own-idle gestures use. A poke
     /// cancels the hold; asleep refuses; a later proposal replaces the slot.
     #[test]
-    fn director_proposal_defers_during_behavior_strip_mid_pass() {
+    fn director_proposal_defers_during_behavior_animation_mid_pass() {
         use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
-        let strip_behaviors = || {
+        let animation_behaviors = || {
             let mut behaviors = BTreeMap::new();
             behaviors.insert(
                 "groom".to_string(),
                 Behavior {
                     primitives: vec![],
-                    strip: Some("grooming".to_string()),
+                    animation: Some("grooming".to_string()),
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -6513,7 +6513,7 @@ mod tests {
                 "greet".to_string(),
                 Behavior {
                     primitives: vec![Primitive::React],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -6525,7 +6525,7 @@ mod tests {
                 "wave".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Talk],
-                    strip: None,
+                    animation: None,
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -6554,7 +6554,7 @@ mod tests {
         };
 
         // Mid-pass proposal is held, then greet actually starts and draws.
-        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        let mut engine = a_resting_sprite().with_behaviors(animation_behaviors());
         engine.set_idle_plan(plan.clone());
         let started = engine.tick(&proposing("groom"));
         assert_eq!(
@@ -6566,7 +6566,7 @@ mod tests {
         assert_eq!(
             mid.playing_gesture.as_deref(),
             Some("grooming"),
-            "strip continues: {mid:?}"
+            "animation continues: {mid:?}"
         );
         assert_ne!(
             mid.playing_behavior.as_deref(),
@@ -6598,7 +6598,7 @@ mod tests {
         }
         assert!(
             saw_greet_start,
-            "greet must start after the strip pass: {last:?}"
+            "greet must start after the animation pass: {last:?}"
         );
         assert!(
             saw_greet_art,
@@ -6606,7 +6606,7 @@ mod tests {
         );
 
         // One-slot: a later mid-pass proposal replaces the held one.
-        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        let mut engine = a_resting_sprite().with_behaviors(animation_behaviors());
         engine.set_idle_plan(plan.clone());
         engine.tick(&proposing("groom"));
         engine.tick(&proposing("greet"));
@@ -6640,7 +6640,7 @@ mod tests {
         );
 
         // User poke cancels the held proposal and wins the screen.
-        let mut engine = a_resting_sprite().with_behaviors(strip_behaviors());
+        let mut engine = a_resting_sprite().with_behaviors(animation_behaviors());
         engine.set_idle_plan(plan.clone());
         engine.tick(&proposing("groom"));
         engine.tick(&proposing("greet"));
@@ -6648,7 +6648,10 @@ mod tests {
             verbs: vec![Verb::Poke],
             ..snapshot(100)
         });
-        assert_eq!(poked.animation, "react", "poke cuts the strip: {poked:?}");
+        assert_eq!(
+            poked.animation, "react",
+            "poke cuts the animation: {poked:?}"
+        );
         let mut saw_greet_after_poke = false;
         for _ in 0..20 {
             let frame = engine.tick(&snapshot(100));
@@ -6666,7 +6669,7 @@ mod tests {
 
         // Asleep refuses rather than deferring into a later wake.
         let mut engine = a_resting_sprite()
-            .with_behaviors(strip_behaviors())
+            .with_behaviors(animation_behaviors())
             .with_sleep_after_s((1, 1))
             .with_sleep_for_s((30, 30));
         engine.set_idle_plan(IdlePlan {
@@ -6689,17 +6692,17 @@ mod tests {
         assert_ne!(refused.animation, "react", "greet must not start asleep");
     }
 
-    /// A primitive Behavior's `then` naming a strip actually starts that strip
-    /// after the primitives finish (shipped cat prowl → groom).
+    /// A Primitive Behavior continues into a Behavior playing an Animation
+    /// after its Primitives finish (shipped cat prowl → groom).
     #[test]
-    fn primitive_then_strip_starts_the_strip_after_the_pass() {
+    fn primitive_then_animation_starts_the_animation_after_the_pass() {
         use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
         let mut behaviors = BTreeMap::new();
         behaviors.insert(
             "prowl".to_string(),
             Behavior {
                 primitives: vec![Primitive::Walk],
-                strip: None,
+                animation: None,
                 then: Some("groom".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -6711,7 +6714,7 @@ mod tests {
             "groom".to_string(),
             Behavior {
                 primitives: vec![],
-                strip: Some("grooming".to_string()),
+                animation: Some("grooming".to_string()),
                 then: None,
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -6754,19 +6757,22 @@ mod tests {
                 break;
             }
         }
-        assert!(saw_groom, "prowl then=groom must start the grooming strip");
+        assert!(
+            saw_groom,
+            "prowl then=groom must start the grooming animation"
+        );
     }
 
-    /// A strip Behavior's `then` naming primitives starts them after the pass.
+    /// A Behavior playing an Animation continues into Primitives after one pass.
     #[test]
-    fn strip_then_primitive_starts_after_the_strip_pass() {
+    fn animation_then_primitive_starts_after_the_animation_pass() {
         use crate::character::{Behavior, IdleMember, IdlePlan, DEFAULT_WEIGHT};
         let mut behaviors = BTreeMap::new();
         behaviors.insert(
             "groom".to_string(),
             Behavior {
                 primitives: vec![],
-                strip: Some("grooming".to_string()),
+                animation: Some("grooming".to_string()),
                 then: Some("greet".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -6778,7 +6784,7 @@ mod tests {
             "greet".to_string(),
             Behavior {
                 primitives: vec![Primitive::React],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -6823,7 +6829,7 @@ mod tests {
         }
         assert!(
             saw_greet,
-            "groom then=greet must start greet after the strip"
+            "groom then=greet must start greet after the animation"
         );
     }
 
@@ -10782,7 +10788,7 @@ mod tests {
                             primitives: std::iter::repeat_with(|| Primitive::Sit)
                                 .take(sits)
                                 .collect(),
-                            strip: None,
+                            animation: None,
                             then: None,
                             weight: DEFAULT_WEIGHT,
                             trigger: None,

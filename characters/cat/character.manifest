@@ -25,7 +25,7 @@ model_power = 1
 near_reaction = "toward"
 rush_reaction = "away"
 
-# The calm loop is the still stand. Grooming plays the full strip once.
+# The calm loop is the still stand. Grooming plays the full Animation once.
 # Staring is a habit, so it is a gesture rather than the baseline.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png"]

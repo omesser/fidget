@@ -449,7 +449,7 @@ mod tests {
             "wave".to_string(),
             Behavior {
                 primitives: vec![Primitive::React],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -461,7 +461,7 @@ mod tests {
             "sleep".to_string(),
             Behavior {
                 primitives: vec![Primitive::Sleep],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 1,
                 trigger: None,

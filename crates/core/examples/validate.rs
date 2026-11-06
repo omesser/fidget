@@ -49,10 +49,10 @@ fn main() -> ExitCode {
         Ok(character) => {
             println!("{} is a valid Character Package", character.name);
             if let Some(behavior) = std::env::args().nth(2) {
-                match played_strip(&character, &behavior) {
-                    Some(strip) => println!("played {behavior} -> {strip}"),
+                match played_animation(&character, &behavior) {
+                    Some(animation) => println!("played {behavior} -> {animation}"),
                     None => {
-                        eprintln!("{behavior} did not draw a named strip");
+                        eprintln!("{behavior} did not draw a named animation");
                         return ExitCode::FAILURE;
                     }
                 }
@@ -69,8 +69,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// Land, propose `behavior`, and return the strip that step draws.
-fn played_strip(character: &character::Character, behavior: &str) -> Option<String> {
+/// Land, propose `behavior`, and return the animation that step draws.
+fn played_animation(character: &character::Character, behavior: &str) -> Option<String> {
     let ground = WorldSnapshot {
         displays: vec![Rect {
             x: 0.0,

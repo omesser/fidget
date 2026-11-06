@@ -75,7 +75,7 @@ _Avoid_: Clip, sprite, sequence
 An Animation declared `variant_of` another. A base Animation and its variants
 form a ring. `variant_of` `"idle"` is a calm loop of the declared `idle` Animation.
 `variant_of` `"idle-gesture"` marks this Animation as an idle-gesture. That is
-a category of Animation, not a Behavior type, and no strip is named
+a category of Animation, not a Behavior type, and no Animation is named
 `idle-gesture`. The Engine
 plays a loop, waits a seeded gap, plays one gesture from its first frame, then
 picks a loop again. A Behavior's `idle`
@@ -148,7 +148,7 @@ _Avoid_: Action, command, step
 **Behavior**:
 A named play list with weights and trigger conditions, declared as data in a
 Character Package. `play` is either an ordinary sequence of Primitives, or one
-named idle-gesture strip that plays one pass — not mixed. The unit the Director
+named idle-gesture Animation that plays one pass — not mixed. The unit the Director
 proposes and the engine plays.
 _Avoid_: Routine, script, macro
 

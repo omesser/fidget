@@ -254,14 +254,14 @@ weight = 4
 when = "idle under 10s"
 """
 
-# Required and motion strips are not idle-gestures. The importer may still
+# Required and motion Animations are not idle-gestures. The importer may still
 # cut them. Only suitable idle-like forever loops become the gesture category.
 NOT_IDLE_GESTURES = {
     "idle", "walk", "talk", "fall", "land", "hold", "react", "sit", "sleep",
     "climb", "jump", "grab",
 }
 
-# Known idle-fidget names, including strips shipped characters already use.
+# Known idle-fidget names, including Animations shipped characters already use.
 # Motion-like forever maps stay off this list and get a printed suggestion.
 IDLE_GESTURE_NAMES = {
     "waiting", "review", "wave", "grooming", "waddle-in-place",
@@ -272,9 +272,9 @@ IDLE_GESTURE_NAMES = {
 
 
 def suitable_idle_gesture(name):
-    """True when this strip name is a calm fidget the importer should mark
+    """True when this Animation name is a calm fidget the importer should mark
     as an idle-gesture. look-* matches common fidgets. An idle-* name with
-    no variant yet is treated as a buddy-bot-style gesture strip. Callers
+    no variant yet is treated as a buddy-bot-style gesture Animation. Callers
     must already skip required/motion names and explicit calm loops."""
     if name in IDLE_GESTURE_NAMES:
         return True
@@ -283,7 +283,7 @@ def suitable_idle_gesture(name):
 
 def classify_idle_gestures(animations):
     """Mark suitable forever loops as idle-gestures. Explicit
-    `variant_of = "idle"` calm loops stay calm. Already-classified strips
+    `variant_of = "idle"` calm loops stay calm. Already-classified Animations
     and required motion names are left alone. Forever loops the name
     heuristic cannot judge yield a suggestion string for the caller."""
     suggestions = []
@@ -306,7 +306,7 @@ def classify_idle_gestures(animations):
 
 
 def gesture_behaviors(animations):
-    """One ordinary callable Behavior per idle-gesture strip (weight 0 so
+    """One ordinary callable Behavior per idle-gesture Animation (weight 0 so
     Director/MCP can ask for it without a second ambient cadence). The calm
     `idle` loop does not get one. A name the starter life already uses is
     left alone."""

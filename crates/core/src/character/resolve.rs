@@ -150,7 +150,7 @@ pub(super) fn check_variants(
             continue;
         };
         if base == super::IDLE_GESTURE {
-            // "idle-gesture" is a category. The strip keeps its own name.
+            // "idle-gesture" is a category. The Animation keeps its own name.
             if !animation.looping {
                 errors.push(format!(
                     "animation {name:?} is a variant_of \"idle-gesture\", and must \
@@ -249,7 +249,7 @@ fn ensure_default_behaviors(declared: &mut BTreeMap<String, DeclaredBehavior>) -
             name.to_string(),
             DeclaredBehavior {
                 primitives: vec![primitive],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 0,
                 trigger: None,
@@ -320,7 +320,7 @@ pub(super) fn resolve_behaviors(
                 name,
                 Behavior {
                     primitives: declaration.primitives,
-                    strip: declaration.strip,
+                    animation: declaration.animation,
                     then: declaration.then,
                     weight: declaration.weight,
                     trigger: declaration.trigger,
@@ -332,11 +332,9 @@ pub(super) fn resolve_behaviors(
         .collect()
 }
 
-/// A Behavior `strip` must name an idle-gesture animation. A play list that
-/// kept both Primitives and a strip candidate is classified here: a real
-/// gesture mixed with Primitives is refused as mixed; an unknown token is
-/// named as invalid.
-pub(super) fn check_play_strips(
+/// A Behavior `animation` must name an idle-gesture Animation. A real gesture
+/// mixed with Primitives is refused as mixed; an unknown token is named as invalid.
+pub(super) fn check_play_animations(
     behaviors: &BTreeMap<String, Behavior>,
     animations: &BTreeMap<String, Animation>,
     errors: &mut Vec<String>,
@@ -347,11 +345,11 @@ pub(super) fn check_play_strips(
         .map(|(name, _)| name.as_str())
         .collect();
     for (name, behavior) in behaviors {
-        let Some(strip) = behavior.strip.as_deref() else {
+        let Some(animation) = behavior.animation.as_deref() else {
             continue;
         };
         let mixed = !behavior.primitives.is_empty();
-        let known = gestures.contains(&strip);
+        let known = gestures.contains(&animation);
         if mixed && known {
             errors.push(format!(
                 "play for behavior {name:?} mixes Primitives and idle-gestures; use one or the other"
@@ -360,7 +358,7 @@ pub(super) fn check_play_strips(
         }
         if !known {
             errors.push(format!(
-                "behavior {name:?} declares {strip:?}, which is not a Primitive or an idle-gesture"
+                "behavior {name:?} declares {animation:?}, which is not a Primitive or an idle-gesture"
             ));
             continue;
         }

@@ -77,8 +77,8 @@ mod manifest;
 mod resolve;
 use manifest::parse;
 use resolve::{
-    check_frame_facing, check_left_strips, check_play_strips, check_variants, resolve_animations,
-    resolve_behaviors,
+    check_frame_facing, check_left_strips, check_play_animations, check_variants,
+    resolve_animations, resolve_behaviors,
 };
 
 /// A Character Package as bytes: file name to contents. The Shell does the
@@ -99,7 +99,7 @@ pub const REQUIRED_ANIMATIONS: [&str; 9] = [
     "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
 
-/// Idle-gesture is a category of Animation, not a Behavior type. A strip
+/// Idle-gesture is a category of Animation, not a Behavior type. An Animation
 /// joins it with `variant_of = "idle-gesture"` and keeps its own name.
 pub const IDLE_GESTURE: &str = "idle-gesture";
 
@@ -315,12 +315,12 @@ pub struct Animation {
     /// the same, and nothing reads it.
     pub weight: u32,
     /// `variant_of`. `"idle-gesture"` is a category of Animation, not a
-    /// Behavior type. The strip keeps its own name. Other values name a base.
+    /// Behavior type. The Animation keeps its own name. Other values name a base.
     pub variant_of: Option<String>,
 }
 
 impl Animation {
-    /// Whether this strip is classified as an idle-gesture.
+    /// Whether this Animation is classified as an idle-gesture.
     pub fn is_idle_gesture(&self) -> bool {
         self.variant_of.as_deref() == Some(IDLE_GESTURE)
     }
@@ -368,17 +368,14 @@ pub enum Trigger {
     Frontmost(String),
 }
 
-/// A named sequence of Primitives, or one named idle-gesture strip.
-///
-/// `play = ["react", "talk"]` fills `primitives`. `play = ["grooming"]` for an
-/// idle-gesture strip fills `strip` instead. A Behavior does not mix the two:
-/// every shipped starring wrapper is a single strip, and multi-strip play is
-/// not represented.
+/// A named sequence of Primitives, or one named idle-gesture Animation.
+/// A Behavior fills either `primitives` or `animation`, never both.
+/// The single Animation plays one pass before `then` continues.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Behavior {
     pub primitives: Vec<Primitive>,
-    /// One pass of this idle-gesture strip. Empty `primitives` when set.
-    pub strip: Option<String>,
+    /// One pass of this idle-gesture Animation. Empty `primitives` when set.
+    pub animation: Option<String>,
     /// A Behavior that follows this one, by name. Chains are validated to
     /// terminate, so no Character can put the sprite in a loop it never leaves.
     pub then: Option<String>,
@@ -548,7 +545,7 @@ pub enum RingChoice<'a> {
     Weighed(u64),
     /// The Engine's own idle, already decided.
     Beat(&'a IdleBeat),
-    /// This animation's own frames. A Behavior named a strip. Weighing the
+    /// This animation's own frames. A Behavior named an Animation. Weighing the
     /// family would play a sibling of the base.
     Named(&'a str),
 }
@@ -687,7 +684,7 @@ impl Character {
     }
 
     /// The Animation asked for, or its fallback. A missing optional wants the
-    /// strip the manifest named, not a weighed member.
+    /// Animation the manifest named, not a weighed member.
     fn named(&self, requested: &str) -> Option<(&str, &Animation)> {
         match self.animations.get_key_value(requested) {
             Some((name, animation)) => Some((name.as_str(), animation)),
@@ -711,7 +708,7 @@ impl Character {
 
     /// `member` when it is `requested`, a variant of it, or an idle-gesture
     /// while `requested` is idle. Anything else draws nothing, so a stale
-    /// name cannot show another strip.
+    /// name cannot show another Animation.
     fn beat_member(&self, requested: &str, member: &str) -> Option<(&str, &Animation)> {
         let (name, base) = self.named(requested)?;
         let linked = member == name || base.variants.iter().any(|variant| variant == member);
@@ -891,7 +888,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         }
     }
     let behaviors = resolve_behaviors(declared.behaviors, &mut errors);
-    check_play_strips(&behaviors, &animations, &mut errors);
+    check_play_animations(&behaviors, &animations, &mut errors);
 
     match (errors.is_empty(), declared.name) {
         (true, Some(name)) => Ok(Character {
@@ -1189,7 +1186,7 @@ pub(crate) mod tests {
                 .get(name)
                 .unwrap_or_else(|| panic!("every Character can be asked for {name}"));
             assert_eq!(behavior.primitives, vec![primitive]);
-            assert_eq!(behavior.strip, None);
+            assert_eq!(behavior.animation, None);
             assert_eq!(behavior.weight, 0, "{name} stays ambient-off until earned");
         }
         for name in ["land", "hold", "idle", "talk"] {
@@ -1364,7 +1361,7 @@ pub(crate) mod tests {
             character.behaviors["greet"],
             Behavior {
                 primitives: vec![Primitive::React, Primitive::Talk],
-                strip: None,
+                animation: None,
                 then: Some("settle".to_string()),
                 weight: DEFAULT_WEIGHT,
                 trigger: None,
@@ -1387,7 +1384,7 @@ pub(crate) mod tests {
             character.behaviors["nap"],
             Behavior {
                 primitives: vec![Primitive::Sit, Primitive::Sleep],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 4,
                 trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),

@@ -402,20 +402,20 @@ struct Drawn {
     animation: &'static str,
     animation_ms: u32,
     /// The variant draw the art was picked with, so the hit-test measures the
-    /// strip the user saw rather than whatever the next draw lands on.
+    /// Animation the user saw rather than whatever the next draw lands on.
     /// Ignored while `idle_beat` is set: that beat already named the member.
     variant_draw: u64,
     idle_beat: Option<IdleBeat>,
     /// A Behavior's named idle-gesture, when that step is what's on screen.
     playing_gesture: Option<String>,
-    /// Which way the sprite was pointed, so the hit-test resolves the strip
+    /// Which way the sprite was pointed, so the hit-test resolves the Animation
     /// the art was drawn from and mirrors it the same way — this tick's
     /// facing may already differ.
     facing: f64,
 }
 
 impl Drawn {
-    /// Strip a Behavior is mid-pass on, else the Engine animation token.
+    /// Animation a Behavior is mid-pass on, else the Engine animation token.
     fn art_name(&self) -> &str {
         self.playing_gesture.as_deref().unwrap_or(self.animation)
     }

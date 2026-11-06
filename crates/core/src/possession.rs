@@ -30,10 +30,10 @@ pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>>
     let mut groups: Vec<(Vec<&str>, Vec<&str>)> = Vec::new();
     for (name, behavior) in behaviors {
         // Idle between moves is the pause in a stroll, which the arrows
-        // already give. Idle alone is not movement. A strip Behavior is not
-        // movement.
-        if behavior.strip.is_some() {
-            let drawn = vec![behavior.strip.as_deref().unwrap()];
+        // already give. Idle alone is not movement, nor is a Behavior playing
+        // an Animation.
+        if behavior.animation.is_some() {
+            let drawn = vec![behavior.animation.as_deref().unwrap()];
             match groups.iter_mut().find(|(played, _)| *played == drawn) {
                 Some((_, names)) => names.push(name),
                 None => groups.push((drawn, vec![name])),
@@ -382,7 +382,7 @@ mod tests {
             .map(|(name, primitives, then)| {
                 let behavior = Behavior {
                     primitives: primitives.to_vec(),
-                    strip: None,
+                    animation: None,
                     then: then.map(str::to_string),
                     weight: 1,
                     trigger: None,

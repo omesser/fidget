@@ -166,7 +166,7 @@ mod tests {
         fn at(x: f64, y: f64) -> Self {
             let walk = Behavior {
                 primitives: vec![Primitive::Walk],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 1,
                 trigger: None,

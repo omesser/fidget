@@ -939,7 +939,7 @@ mod tests {
             "wave".to_string(),
             Behavior {
                 primitives: vec![Primitive::React],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -1235,7 +1235,7 @@ mod tests {
             "walk".to_string(),
             Behavior {
                 primitives: vec![Primitive::Walk],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 0,
                 trigger: None,
@@ -1970,7 +1970,7 @@ mod tests {
             "hop".to_string(),
             Behavior {
                 primitives: vec![Primitive::Jump],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 1,
                 trigger: None,
@@ -2397,7 +2397,7 @@ mod tests {
             "jump".to_string(),
             Behavior {
                 primitives: vec![Primitive::Jump],
-                strip: None,
+                animation: None,
                 then: None,
                 weight: 0,
                 trigger: None,

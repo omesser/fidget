@@ -271,7 +271,7 @@ Any other name draws only as a Variant, an idle-gesture, or a Left Strip of one 
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name, or the category `"idle-gesture"`. `variant_of = "idle"` is a calm loop of the declared `idle` Animation. `variant_of = "idle-gesture"` marks this Animation as an idle-gesture. That is a category, not a Behavior type, and the strip keeps its own name. Every other ring draws one member until the Animation changes. | |
+| `variant_of` | No | Another Animation's name, or the category `"idle-gesture"`. `variant_of = "idle"` is a calm loop of the declared `idle` Animation. `variant_of = "idle-gesture"` marks this Animation as an idle-gesture. That is a category, not a Behavior type, and the Animation keeps its own name. Every other ring draws one member until the Animation changes. | |
 | `weight` | No | Whole number: this Animation's share of its ring, loop or gesture. Read only there. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
 
@@ -307,12 +307,12 @@ The loader rejects any other value, and a `[frame_facing]` entry naming a frame 
 
 #### Behaviors
 
-A Behavior is a named play list that the Static Director picks by weight, or that a model proposes. `play` is either an ordinary sequence of Primitives, or one named idle-gesture strip that plays one pass — not a mixed list and not more than one strip. A Character composes Behaviors from those and cannot define new Primitives. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
+A Behavior is a named play list that the Static Director picks by weight, or that a model proposes. `play` is either an ordinary sequence of Primitives, or one named idle-gesture Animation that plays one pass — not a mixed list and not more than one Animation. A Character composes Behaviors from those and cannot define new Primitives. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
 
 | Key | Required | Value | Default |
 |---|---|---|---|
-| `play` | No | Either a list of Primitives in order, or one idle-gesture strip name that plays one pass. Mixed lists and multi-strip lists are refused. A Behavior with none plays nothing. | `[]` |
-| `then` | No | The name of the Behavior that follows this one. A strip Behavior's `then`, and a Primitive Behavior's `then` that names a strip, both start at the end of the pass. | |
+| `play` | No | Either a list of Primitives in order, or one idle-gesture Animation name that plays one pass. Mixed lists and multi-Animation lists are refused. A Behavior with none plays nothing. | `[]` |
+| `then` | No | The name of the Behavior that follows this one. A Behavior playing an Animation continues its `then` after one pass. When a Primitive chain reaches a Behavior playing an Animation, that Behavior starts after the Primitives finish. | |
 | `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |
 | `type` | No | `"idle"` makes this Behavior's `idle` Primitives use the Engine's idle loops and idle-gestures. | |

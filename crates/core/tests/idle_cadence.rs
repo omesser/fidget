@@ -100,7 +100,7 @@ fn shown(character: &Character, frame: &fidget_core::engine::Frame) -> (String, 
 fn behavior(primitives: Vec<Primitive>, idle_type: bool) -> Behavior {
     Behavior {
         primitives: primitives.into_iter().collect(),
-        strip: None,
+        animation: None,
         then: None,
         weight: 10,
         trigger: None,
@@ -470,7 +470,7 @@ fn a_behaviors_idle_loops_the_loop_ring_only() {
     }
     assert!(
         indices.windows(3).any(|triple| triple == [0, 1, 0]),
-        "the behavior's idle looped the strip: {indices:?}"
+        "the behavior's idle looped the animation: {indices:?}"
     );
 }
 
@@ -747,7 +747,7 @@ fn an_idle_gesture_keeps_its_name_without_a_base_animation() {
         "{}[animations.spin]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle-gesture\"\n",
         manifest_naming("idle", "")
     );
-    load(&package(&manifest)).expect("idle-gesture is a category, not a strip's name");
+    load(&package(&manifest)).expect("idle-gesture is a category, not an animation's name");
 }
 
 fn then_character(behaviors: &str) -> Character {
@@ -797,7 +797,7 @@ play = ["spin"]
 }
 
 #[test]
-fn longer_then_chain_crosses_strips_and_finishes_on_primitives() {
+fn longer_then_chain_crosses_animations_and_finishes_on_primitives() {
     let character = then_character(
         r#"
 [animations.bow]

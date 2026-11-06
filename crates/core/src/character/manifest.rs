@@ -40,7 +40,7 @@ pub(super) struct DeclaredAnimation {
     pub(super) fps: u32,
     pub(super) looping: bool,
     pub(super) variant_of: Option<String>,
-    /// The Animation this one is the left-facing strip of, when the package
+    /// The Animation this one faces left for, when the package
     /// draws its leftward travel rather than letting the renderer mirror it.
     pub(super) left_of: Option<String>,
     /// This Animation's share of its variant ring, against its fellow
@@ -50,7 +50,7 @@ pub(super) struct DeclaredAnimation {
 
 pub(super) struct DeclaredBehavior {
     pub(super) primitives: Vec<Primitive>,
-    pub(super) strip: Option<String>,
+    pub(super) animation: Option<String>,
     pub(super) then: Option<String>,
     pub(super) weight: u32,
     pub(super) trigger: Option<Trigger>,
@@ -588,7 +588,7 @@ fn parse_behavior(
     };
 
     let mut primitives = Vec::new();
-    let mut strip = None;
+    let mut animation = None;
     let mut then = None;
     let mut weight = DEFAULT_WEIGHT;
     let mut trigger = None;
@@ -599,7 +599,7 @@ fn parse_behavior(
             "play" => {
                 let parsed = play_list(name, item, manifest, errors);
                 primitives = parsed.0;
-                strip = parsed.1;
+                animation = parsed.1;
             }
             "then" => match item.as_str() {
                 Some(next) if !next.is_empty() => then = Some(next.to_string()),
@@ -640,7 +640,7 @@ fn parse_behavior(
 
     Some(DeclaredBehavior {
         primitives,
-        strip,
+        animation,
         then,
         weight,
         trigger,
@@ -649,8 +649,8 @@ fn parse_behavior(
 }
 
 /// A Behavior's `play` list: either Primitives in order, or one idle-gesture
-/// strip name. Mixed lists and multi-strip lists are refused here; strip
-/// names are checked against animations once those are known.
+/// Animation name. Mixed lists and multiple Animation names are refused; names
+/// are checked against the idle-gesture category once Animations are known.
 fn play_list(
     name: &str,
     item: &Item,
@@ -666,7 +666,7 @@ fn play_list(
     };
 
     let mut primitives = Vec::new();
-    let mut strips = Vec::new();
+    let mut animations = Vec::new();
     for word in list.iter() {
         let Some(word) = word.as_str() else {
             errors.push(format!(
@@ -685,18 +685,18 @@ fn play_list(
             .find_map(|(known, primitive)| (*known == word).then_some(*primitive))
         {
             Some(primitive) => primitives.push(primitive),
-            None => strips.push(word.to_string()),
+            None => animations.push(word.to_string()),
         }
     }
-    if strips.len() > 1 {
+    if animations.len() > 1 {
         errors.push(format!(
-            "play for behavior {name:?} names more than one idle-gesture; a Behavior plays one strip"
+            "play for behavior {name:?} names more than one idle-gesture; a Behavior plays one animation"
         ));
         return (Vec::new(), None);
     }
-    // Mixed Primitive + strip-candidate lists reach resolve so an unknown
+    // Mixed Primitive + animation-candidate lists reach resolve so an unknown
     // token can be named, and a real gesture mixed with Primitives refused.
-    (primitives, strips.pop())
+    (primitives, animations.pop())
 }
 
 /// The line a byte offset falls on, for a syntax error to name.
@@ -835,16 +835,16 @@ mod tests {
     }
 
     #[test]
-    fn an_invalid_strip_token_is_named_with_readable_whitespace() {
+    fn an_invalid_animation_token_is_named_with_readable_whitespace() {
         let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"unknown-strip\"]\n",
+            "{}[behaviors.greet]\nplay = [\"unknown-animation\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
         assert_eq!(
             errors,
             vec![
-                "behavior \"greet\" declares \"unknown-strip\", which is not a Primitive or an idle-gesture"
+                "behavior \"greet\" declares \"unknown-animation\", which is not a Primitive or an idle-gesture"
                     .to_string()
             ],
             "{errors:#?}"
