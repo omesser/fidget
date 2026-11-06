@@ -470,6 +470,8 @@ pub(crate) fn run_frame_loop(
         let mut button_was_down = false;
         let mut sound_allowed = true;
         let mut do_not_disturb = false;
+        let mut chat_ui = String::new();
+        let mut chat_appearance = ChatAppearance::default();
         let mut ticks: u32 = 0;
         // Counted apart from `frame:` lines, so the tick rate can be read with
         // FIDGET_TRACE_FRAMES off and its per-tick print ruled out as the cause.
@@ -1517,6 +1519,10 @@ pub(crate) fn run_frame_loop(
                 // Reread every tick, like the flags above, so a mute in
                 // Settings lands on the next frame and not the next launch.
                 sound_allowed = settings.sound_allowed();
+                if chat_ui != settings.chat_ui {
+                    chat_ui.clone_from(&settings.chat_ui);
+                }
+                chat_appearance = settings.chat_appearance;
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
                     inspect.proactive_wakes = settings.proactive_wakes;
@@ -2762,6 +2768,8 @@ pub(crate) fn run_frame_loop(
                     hover_delay_ms: crate::hover_delay_ms(),
                     do_not_disturb,
                     aside,
+                    chat_ui: chat_ui.clone(),
+                    chat_appearance,
                     work_area: WorkArea {
                         x: local.x,
                         y: local.y,

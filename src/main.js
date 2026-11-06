@@ -9,6 +9,8 @@ import {
   placeBubble,
   readableBubbleRect,
 } from "./bubble.js";
+import { mountChatAppearance } from "./chat-appearance.js";
+import { applyChatUiClass } from "./chat-ui-class.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import { possessionEdge } from "./possession-keys.js";
 import {
@@ -494,6 +496,16 @@ function noteQuickMessageMode(view, sprite, payload) {
   if (chose) view.quickMachine.aside();
 }
 
+// The card and its bar are app chrome, so they wear the Chat UI and
+// Light/Dark the Shell sends on every frame. Repainted only on a change.
+function noteChatTheme(view, payload) {
+  const theme = `${payload.chat_ui}/${payload.chat_appearance}`;
+  if (view.chatTheme === theme) return;
+  view.chatTheme = theme;
+  for (const el of [view.card, view.bar]) applyChatUiClass(el, payload.chat_ui);
+  for (const apply of view.chatAppearance) apply(payload.chat_appearance);
+}
+
 // Click-through can drop the pointerleave. The next frame still knows the
 // cursor is gone, because :hover is clear once the window ignores it.
 // Runs before the pill is up too: a leave during the dwell cancels it.
@@ -581,10 +593,13 @@ function attachQuickMessage(view, id) {
   const charge = document.createElement("div");
   charge.className = "possession-charge-fill";
   bar.append(charge);
+  for (const el of [card, bar]) el.dataset.desktopBlur = "none";
   wirePossessionCard(card, window.__TAURI__.core.invoke);
   stage.append(card, bar);
   view.card = card;
   view.bar = bar;
+  view.chatTheme = null;
+  view.chatAppearance = [card, bar].map((el) => mountChatAppearance(el));
   view.possessionRect = null;
   view.releaseRect = null;
   view.focusRect = null;
@@ -964,6 +979,7 @@ async function start() {
         const owned = view.quickMachine.owner;
         view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
         noteQuickMessageMode(view, sprite, payload);
+        noteChatTheme(view, payload);
         if (!owned && view.quickMachine.owner && view.quickMachine.visible) {
           // A length, not the text: a trace is no place for what was typed.
           const chars = view.quickMachine.text.length;

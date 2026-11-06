@@ -1,40 +1,15 @@
 @import url("./chat-shared.css");
+@import url("./chat-tokens.css");
 
 
-/* One Chat UI, and this file is its definition. :root names the tokens,
-   one .chat-ui-* block sets them, and the rules consume them. No colour,
-   font, or radius literal lives outside that. chat-ui-tokens.test.js checks. */
+/* One Chat UI, and this file draws it. chat-tokens.css names the tokens
+   and sets them per design, and the rules here consume them. No colour,
+   font, or radius literal lives outside a token block. */
 
-/* Named, not set. System keywords carry no literal, so this block passes
-   the hook on the blocks below, and a typo in the root class leaves a
-   plain window rather than an invisible one. */
+/* On the window, not in chat-tokens.css: the overlay imports the tokens
+   and must not take a scheme, whose canvas would paint over the desktop. */
 :root {
   color-scheme: light dark;
-
-  --chat-panel: Canvas;
-  --chat-ink: CanvasText;
-  --chat-ink-2: GrayText;
-  --chat-ink-3: GrayText;
-  --chat-ink-4: GrayText;
-  --chat-accent: AccentColor;
-  --chat-accent-ink: AccentColorText;
-  --chat-accent-soft: ButtonFace;
-
-  --chat-fill: Field;
-  --chat-fill-dim: ButtonFace;
-  --chat-fill-soft: ButtonFace;
-  --chat-rule: ButtonBorder;
-  --chat-line: ButtonBorder;
-  --chat-error: ButtonBorder;
-
-  --chat-radius: 0;
-  --chat-radius-tail: 0;
-  --chat-radius-control: 0;
-  --chat-radius-badge: 0;
-  --chat-radius-tab: 0;
-
-  --chat-sans: system-ui, sans-serif;
-  --chat-mono: ui-monospace, monospace;
 }
 
 :root[data-chat-palette="light"] {
@@ -43,134 +18,6 @@
 
 :root[data-chat-palette="dark"] {
   color-scheme: dark;
-}
-
-/* The ink ramp is four steps because four things are dimmed apart.
-   No web fonts. The app's CSP blocks Google Fonts without saying so. */
-.chat-ui-minimal {
-  --chat-panel: var(--shared-panel);
-  --chat-ink: var(--shared-ink);
-  --chat-ink-2: #9aa2b4;
-  --chat-ink-3: #7c8496;
-  --chat-ink-4: #6c7488;
-  --chat-accent: var(--shared-accent);
-  --chat-accent-ink: #0b231f;
-  --chat-accent-soft: rgba(92, 201, 181, 0.13);
-
-  --chat-fill: rgba(255, 255, 255, 0.04);
-  --chat-fill-dim: rgba(255, 255, 255, 0.02);
-  --chat-fill-soft: rgba(255, 255, 255, 0.06);
-  --chat-rule: rgba(255, 255, 255, 0.07);
-  --chat-line: rgba(255, 255, 255, 0.13);
-  --chat-error: #e5484d;
-
-  --chat-radius: var(--shared-radius);
-  --chat-radius-tail: 3px;
-  --chat-radius-control: 10px;
-  --chat-radius-badge: 5px;
-  --chat-radius-tab: 10px 10px 0 0;
-
-  --chat-sans: system-ui, -apple-system, sans-serif;
-  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  --claude-accent: #E8A78A;
-  --codex-accent: #26C399;
-  /* Simple Icons gives GitHub Copilot #000000, the ground Cursor's accent
-     is lifted off. Primer's dark foreground stays cool next to the warm
-     Cursor accent and the slate Grok accent. */
-  --copilot-accent: #C9D1D9;
-  /* Simple Icons gives Cursor #000000, which is the ground here. Lifted
-     to a warm light grey so it stays off the Grok accent, the other neutral. */
-  --cursor-agent-accent: #C2BCB2;
-  /* Goose docs set the caret and the card glow to #FF4F00. */
-  --goose-accent: #FF4F00;
-  --grok-accent: #7A8FA3;
-  --opencode-accent: #7A9EF0;
-  /* Nous ships #0000F2 on the Hermes surfaces. Lifted so it reads on the
-     dark Chat ground the way the other accents do. */
-  --hermes-accent: #8C8CF2;
-  /* pi.dev's sunkissed. Their accent blue lands between OpenCode and
-     Hermes, and the three read as one blue. Sunkissed stays apart. */
-  --pi-accent: #E1B06E;
-  /* Google red. The blue, green, and yellow already sit on OpenCode,
-     Codex, and Pi. */
-  --antigravity-accent: #EA4335;
-}
-
-[data-chat-palette="light"].chat-ui-minimal {
-  --chat-panel: #f8f9fb;
-  --chat-ink: #1a1d24;
-  --chat-ink-2: #525a6b;
-  --chat-ink-3: #6c7488;
-  --chat-ink-4: #8a92a3;
-  --chat-accent: #169b85;
-  --chat-accent-ink: #ffffff;
-  --chat-accent-soft: rgba(22, 155, 133, 0.12);
-
-  --chat-fill: rgba(0, 0, 0, 0.03);
-  --chat-fill-dim: rgba(0, 0, 0, 0.015);
-  --chat-fill-soft: rgba(0, 0, 0, 0.05);
-  --chat-rule: rgba(0, 0, 0, 0.08);
-  --chat-line: rgba(0, 0, 0, 0.15);
-  --chat-error: #c62828;
-
-  --claude-accent: #C86D4F;
-  --codex-accent: #169b85;
-  /* Primer's light-theme muted foreground. #C9D1D9 vanishes on white. */
-  --copilot-accent: #57606A;
-  --cursor-agent-accent: #7A7469;
-  --grok-accent: #4A6B82;
-  --opencode-accent: #4A72D0;
-  --hermes-accent: #5A5ACF;
-  --pi-accent: #B8854E;
-  --antigravity-accent: #C5221F;
-}
-
-/* A dense monospace log. The clock is a narrow left gutter, the speaker
-   sits beside it, and the words unfold under the speaker. */
-.chat-ui-terminal {
-  --chat-panel: #0A0D12;
-  --chat-ink: #C6D0DC;
-  --chat-ink-2: #8A97A8;
-  --chat-ink-3: #6D7A8A;
-  --chat-ink-4: #46525F;
-  --chat-accent: #7FE0B0;
-  --chat-accent-ink: #0b231f;
-  --chat-accent-soft: #131C1A;
-
-  --chat-fill: #0F141B;
-  --chat-fill-dim: #0A0D12;
-  --chat-fill-soft: #0F141B;
-  --chat-rule: #2A3340;
-  --chat-line: #2A3340;
-  --chat-error: #FF7B72;
-
-  --chat-radius: 3px;
-  --chat-radius-tail: 3px;
-  --chat-radius-control: 3px;
-  --chat-radius-badge: 3px;
-  --chat-radius-tab: 0;
-
-  --chat-sans: system-ui, -apple-system, sans-serif;
-  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-[data-chat-palette="light"].chat-ui-terminal {
-  --chat-panel: #FAFBFC;
-  --chat-ink: #1A2330;
-  --chat-ink-2: #4A5768;
-  --chat-ink-3: #6A778A;
-  --chat-ink-4: #9AA5B5;
-  --chat-accent: #169B85;
-  --chat-accent-ink: #ffffff;
-  --chat-accent-soft: #E8F5F3;
-
-  --chat-fill: #F0F3F6;
-  --chat-fill-dim: #FAFBFC;
-  --chat-fill-soft: #F0F3F6;
-  --chat-rule: #D5DBDF;
-  --chat-line: #D5DBDF;
-  --chat-error: #CF222E;
 }
 
 [data-chat-palette="light"].chat-ui-terminal .tb {
@@ -467,34 +314,6 @@
   outline-offset: -2px;
 }
 
-/* A frosted panel. Backdrop blur and thin light borders, over a
-   transparent window. */
-.chat-ui-glass {
-  --chat-panel: rgba(14,17,24,.62);
-  --chat-ink: #F1F4F9;
-  --chat-ink-2: rgba(241,244,249,.78);
-  --chat-ink-3: rgba(241,244,249,.66);
-  --chat-ink-4: rgba(241,244,249,.55);
-  --chat-accent: rgba(255,255,255,.92);
-  --chat-accent-ink: #16202C;
-  --chat-accent-soft: rgba(255,255,255,.9);
-
-  --chat-fill: rgba(255,255,255,.10);
-  --chat-fill-dim: rgba(255,255,255,.07);
-  --chat-fill-soft: rgba(255,255,255,.16);
-  --chat-rule: rgba(255,255,255,.12);
-  --chat-line: rgba(255,255,255,.22);
-
-  --chat-radius: 14px;
-  --chat-radius-tail: 4px;
-  --chat-radius-control: 999px;
-  --chat-radius-badge: 999px;
-  --chat-radius-tab: 999px;
-
-  --chat-sans: system-ui, -apple-system, sans-serif;
-  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
 /* A root background, even an empty image, keeps the body's tint off the page
    canvas. On the canvas the body's blur would sample it and tint twice. */
 .chat-ui-glass {
@@ -722,37 +541,11 @@
   cursor: default;
 }
 
-[data-chat-palette="light"].chat-ui-glass {
-  --chat-panel: rgba(248,249,252,.85);
-  --chat-ink: #1A1F2B;
-  --chat-ink-2: rgba(26,31,43,.85);
-  --chat-ink-3: rgba(26,31,43,.68);
-  --chat-ink-4: rgba(26,31,43,.52);
-  --chat-accent: rgba(22,155,133,.95);
-  --chat-accent-ink: #FFFFFF;
-  --chat-accent-soft: rgba(22,155,133,.88);
-
-  --chat-fill: rgba(0,0,0,.06);
-  --chat-fill-dim: rgba(0,0,0,.03);
-  --chat-fill-soft: rgba(0,0,0,.10);
-  --chat-rule: rgba(0,0,0,.10);
-  --chat-line: rgba(0,0,0,.18);
-}
-
 [data-chat-palette="light"].chat-ui-glass body {
   background: linear-gradient(rgba(248,249,252,.85), rgba(242,244,248,.92));
   border-color: rgba(0,0,0,.15);
   box-shadow: 0 26px 64px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.85);
   text-shadow: none;
-}
-
-/* WebView2 can't blur the desktop, so Windows always gets this tint. */
-[data-platform="windows"].chat-ui-glass {
-  --chat-panel: rgba(14,17,24,.84);
-}
-
-[data-platform="windows"][data-chat-palette="light"].chat-ui-glass {
-  --chat-panel: rgba(242,244,248,.98);
 }
 
 [data-platform="windows"].chat-ui-glass body {

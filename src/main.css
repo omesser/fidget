@@ -1,4 +1,5 @@
 @import url("./chat-shared.css");
+@import url("./chat-tokens.css");
 @import url("./cue-possess.css");
 
 /* The overlay must never paint a backdrop. Anything opaque here is a grey
@@ -18,9 +19,9 @@ body {
   user-select: none;
 }
 
-/* A piece of the chat panel, carried onto the desktop. The overlay loads
-   no chat-ui.css and takes no `.chat-ui-*` class, so only the shared
-   snippet crosses and a Chat UI class cannot reach here. */
+/* A piece of the chat panel, carried onto the desktop. The bubble is the
+   Character's speech, so it takes no `.chat-ui-*` class: only the shared
+   snippet crosses, and a Chat UI cannot repaint it. */
 .bubble {
   --bubble-panel: var(--shared-panel);
   --bubble-ink: var(--shared-ink);
@@ -528,9 +529,11 @@ body {
   }
 }
 
-/* The bindings card. Same panel tokens as the Speech bubble. Clicks pass
-   through so a sprite under the card can still be grabbed. Paused is the
-   resume click. The bar is drawn and never takes one. */
+/* The bindings card is app chrome, so it wears the user's Chat UI and
+   Light/Dark: main.js puts the `.chat-ui-*` class and palette on the card,
+   and its rules read only the Chat UI's tokens, as Chat and Settings do.
+   Clicks pass through so a sprite under the card can still be grabbed.
+   Paused is the resume click. The bar is drawn and never takes one. */
 .possession {
   position: absolute;
   top: 0;
@@ -540,10 +543,10 @@ body {
   max-width: 280px;
   margin: 0;
   padding: 10px 14px;
-  background: var(--shared-panel);
-  color: var(--shared-ink);
-  border-radius: var(--shared-radius);
-  font-family: var(--shared-sans);
+  background: var(--chat-panel);
+  color: var(--chat-ink);
+  border-radius: var(--chat-radius);
+  font-family: var(--chat-sans);
   font-size: var(--shared-type-size);
   line-height: var(--shared-type-leading);
   pointer-events: none;
@@ -560,9 +563,9 @@ body {
 
 .possession.paused {
   /* Fading the whole card blends the line into a light page. The panel
-     stays dark enough to hold the type; the type stays the shared ink. */
+     thins; the type stays the design's ink. */
   opacity: 1;
-  background: color-mix(in srgb, var(--shared-panel) 78%, transparent);
+  background: color-mix(in srgb, var(--chat-panel) 78%, transparent);
 }
 
 .possession-heading {
@@ -582,7 +585,7 @@ body {
 
 .possession-keys {
   min-width: 4.2em;
-  color: var(--shared-accent);
+  color: var(--chat-accent);
 }
 
 /* Release on the left, Focus on the right, in both states. */
@@ -595,7 +598,8 @@ body {
   margin: 10px 0 0;
 }
 
-/* The card lets pointers through to a sprite under it; the buttons do not. */
+/* Settings' plain button. The card lets pointers through to a sprite
+   under it; the buttons do not. */
 .possession-release {
   display: block;
   flex: 0 1 auto;
@@ -604,13 +608,14 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--shared-accent);
-  border-radius: var(--shared-radius);
+  padding: 4px 10px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
   background: transparent;
-  color: var(--shared-ink);
+  color: var(--chat-ink);
   font: inherit;
   font-size: 12px;
+  font-weight: 800;
   cursor: pointer;
 }
 
@@ -619,42 +624,37 @@ body {
   pointer-events: auto;
 }
 
-/* Raised asks for a click; pressed says the overlay holds the keys. */
+/* Raised is Chat's primary button and asks for a click; pressed is a soft
+   accent chip that says the overlay holds the keys. */
 .possession-focus {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   margin: 0 0 0 auto;
-  padding: 4px 8px;
+  padding: 4px 10px;
   white-space: nowrap;
-  border: 1px solid var(--shared-accent);
-  border-radius: var(--shared-radius);
-  background: var(--shared-accent);
-  color: var(--shared-panel);
+  border: 1px solid transparent;
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 2px 6px rgba(0, 0, 0, 0.45);
+  font-weight: 800;
   cursor: pointer;
-  transition:
-    background 120ms,
-    box-shadow 120ms,
-    transform 120ms;
-}
-
-.possession-focus[aria-pressed="false"]:hover {
-  background: color-mix(in srgb, var(--shared-accent) 88%, #fff);
+  transition: background 120ms;
 }
 
 .possession-focus[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--shared-accent) 16%, var(--shared-panel));
-  color: var(--shared-accent);
-  border-color: color-mix(in srgb, var(--shared-accent) 35%, transparent);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
-  transform: translateY(1px);
+  background: var(--chat-accent-soft);
+  color: var(--chat-accent);
+  border-color: var(--chat-line);
+}
+
+.possession-release:focus-visible,
+.possession-focus:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
 }
 
 /* A 14px keyboard in the text color. The webview writes no HTML, so the
@@ -675,7 +675,7 @@ body {
   left: 0;
   height: 8px;
   border-radius: 4px;
-  background: rgba(232, 235, 242, 0.18);
+  background: var(--chat-fill-soft);
   pointer-events: none;
   overflow: hidden;
   opacity: 0;
@@ -688,7 +688,7 @@ body {
 .possession-charge-fill {
   height: 100%;
   width: 0;
-  background: var(--shared-accent);
+  background: var(--chat-accent);
 }
 
 /* Collapsed rather than removed. The cue still marks the gesture, and

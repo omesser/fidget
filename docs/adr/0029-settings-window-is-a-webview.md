@@ -22,7 +22,7 @@ own copy of the controller (draft, staged, apply, cancel, shortcut fill), and
 #534 was a bug in one copy.
 
 The Chat surface was already a webview, themed by the Chat UI token seam
-([ADR-0036](./0036-chat-ui-is-an-app-wide-design-over-one-token-seam.md)),
+([ADR-0041](./0041-the-chat-ui-dresses-app-chrome-not-character-expression.md)),
 tested with `node --test`, and the window the product's others are judged
 against.
 

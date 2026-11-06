@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { chromeSkip, probePage } from "./chrome-cdp.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
-const CSS = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
+const CSS = readFileSync(new URL("../src/chat-tokens.css", import.meta.url), "utf8");
 const DESIGNS = ["minimal", "terminal", "glass"];
 
 function declaredToken(selector, name) {

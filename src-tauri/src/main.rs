@@ -757,6 +757,10 @@ struct Placement<'a> {
     do_not_disturb: bool,
     /// A menu choice that dismisses the quick-message pill, for this tick only.
     aside: Option<&'static str>,
+    /// The Chat UI and Light/Dark the Possession card wears, on every frame,
+    /// so a switch in Settings repaints an open card on the next tick.
+    chat_ui: String,
+    chat_appearance: ChatAppearance,
     /// The display's usable area in this overlay's coordinates. The window
     /// covers the whole frame, so a card inset from (0, 0) sits on the menu bar.
     work_area: WorkArea,
