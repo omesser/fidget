@@ -2384,7 +2384,7 @@ impl Engine {
         }
     }
 
-    /// Engine idle, or a Behavior declared `type = "idle"` on an idle step.
+    /// Engine idle, or a Behavior declared `type = "idle"` on an idle Primitive.
     /// A named gesture step plays its own animation and does not enter this.
     fn uses_own_idle(&self) -> bool {
         if self.playing_gesture().is_some() {
@@ -2402,10 +2402,9 @@ impl Engine {
             })
     }
 
-    /// Left the Engine's idle. A proposal held for an own-idle gesture does not
-    /// survive the cut: the thing that took the screen is what plays. A
-    /// Behavior animation mid-pass still owns the deferred slot until its pass
-    /// ends or something else clears the animation.
+    /// Left the Engine's idle. A proposal held for an own-idle gesture dies with
+    /// the cut, since what took the screen is what plays. A Behavior animation
+    /// mid-pass keeps the deferred slot until its pass ends or is cleared.
     fn leave_own_idle(&mut self) {
         if self.playing_animation.is_none() {
             self.deferred = None;
@@ -2536,7 +2535,8 @@ impl Engine {
     }
 
     /// A named Behavior's `then` chain: the Primitives that play as one queue,
-    /// and the Behavior that starts when that pass ends. `None` when undeclared.
+    /// and the first non-flattened Behavior that starts when that pass ends.
+    /// `None` when undeclared.
     /// Stops at cycles: ADR-0002 promises no package can hang the frame loop.
     fn walk(&self, behavior: &str) -> Option<(Vec<Primitive>, Option<String>)> {
         let mut primitives = Vec::new();
@@ -6475,6 +6475,39 @@ mod tests {
         assert_eq!(idling_again.animation, "idle", "idle after rest again");
     }
 
+    /// Ticks through the rest of `groom`'s one `grooming` pass (6 frames at
+    /// 6 fps), then asserts `behavior` starts on `primitive`, drawn as `drawn`, the
+    /// tick it ends.
+    fn groom_pass_then(
+        engine: &mut Engine,
+        mut ms: u32,
+        behavior: &str,
+        primitive: Primitive,
+        drawn: &str,
+        proposed: bool,
+    ) {
+        loop {
+            let frame = engine.tick(&snapshot(100));
+            if frame.playing_gesture.is_some() {
+                ms += 100;
+                assert_eq!(frame.playing_gesture.as_deref(), Some("grooming"));
+                assert_eq!(frame.playing_behavior.as_deref(), Some("groom"));
+                assert_eq!(frame.playing_primitive, None);
+                assert_eq!(frame.art_name(), "grooming");
+                assert_eq!(frame.animation_ms, ms, "one unbroken pass: {frame:?}");
+                assert!(ms < 1_000, "the pass ends at 1000 ms: {frame:?}");
+                continue;
+            }
+            assert_eq!(ms, 900, "the whole pass played first: {frame:?}");
+            assert_eq!(frame.playing_behavior.as_deref(), Some(behavior));
+            assert_eq!(frame.behavior.as_deref(), proposed.then_some(behavior));
+            assert_eq!(frame.playing_primitive, Some(primitive));
+            assert_eq!(frame.art_name(), drawn, "{frame:?}");
+            assert_eq!(frame.animation_ms, 0, "{frame:?}");
+            return;
+        }
+    }
+
     /// A Director proposal waits out a Behavior animation mid-pass and starts when
     /// the pass ends — the same deferred slot own-idle gestures use. A poke
     /// cancels the hold; asleep refuses; a later proposal replaces the slot.
@@ -6559,36 +6592,14 @@ mod tests {
             Some("greet"),
             "greet not yet: {mid:?}"
         );
-        // One pass of 6 frames at 6 fps is 1000 ms. Track across the boundary.
-        let mut saw_greet_start = false;
-        let mut saw_greet_art = false;
-        let mut last = mid;
-        for _ in 0..20 {
-            last = engine.tick(&snapshot(100));
-            if last.playing_behavior.as_deref() == Some("greet")
-                || last.behavior.as_deref() == Some("greet")
-            {
-                saw_greet_start = true;
-            }
-            if saw_greet_start && (last.art_name() == "react" || last.animation == "react") {
-                saw_greet_art = true;
-                break;
-            }
-            if last.playing_gesture.is_none()
-                && last.playing_behavior.as_deref() != Some("greet")
-                && last.behavior.as_deref() != Some("greet")
-                && saw_greet_start
-            {
-                break;
-            }
-        }
-        assert!(
-            saw_greet_start,
-            "greet must start after the animation pass: {last:?}"
-        );
-        assert!(
-            saw_greet_art,
-            "greet must draw its react art after starting: {last:?}"
+        // One pass of 6 frames at 6 fps is 1000 ms; greet starts on the tick it ends.
+        groom_pass_then(
+            &mut engine,
+            mid.animation_ms,
+            "greet",
+            Primitive::React,
+            "react",
+            true,
         );
 
         // One-slot: a later mid-pass proposal replaces the held one.
@@ -6596,34 +6607,23 @@ mod tests {
         engine.set_idle_plan(plan.clone());
         engine.tick(&proposing("groom"));
         engine.tick(&proposing("greet"));
-        engine.tick(&proposing("wave"));
-        let mut saw_wave = false;
-        let mut saw_greet_after = false;
+        let latest = engine.tick(&proposing("wave"));
+        groom_pass_then(
+            &mut engine,
+            latest.animation_ms,
+            "wave",
+            Primitive::Talk,
+            "talk",
+            true,
+        );
         for _ in 0..20 {
             let frame = engine.tick(&snapshot(100));
-            if frame.playing_behavior.as_deref() == Some("wave")
-                || frame.behavior.as_deref() == Some("wave")
-                || frame.animation == "talk"
-            {
-                saw_wave = true;
-            }
-            if frame.playing_behavior.as_deref() == Some("greet")
-                || frame.behavior.as_deref() == Some("greet")
-            {
-                saw_greet_after = true;
-            }
-            if saw_wave {
-                break;
-            }
+            assert_ne!(
+                frame.playing_behavior.as_deref(),
+                Some("greet"),
+                "replaced greet must not start after wave won: {frame:?}"
+            );
         }
-        assert!(
-            saw_wave,
-            "latest mid-pass proposal (wave) must win the slot"
-        );
-        assert!(
-            !saw_greet_after,
-            "replaced greet must not start after wave won"
-        );
 
         // User poke cancels the held proposal and wins the screen.
         let mut engine = a_resting_sprite().with_behaviors(animation_behaviors());
@@ -6802,20 +6802,14 @@ mod tests {
             Some("grooming"),
             "{started:?}"
         );
-        let mut saw_greet = false;
-        for _ in 0..20 {
-            let frame = engine.tick(&snapshot(100));
-            if frame.playing_behavior.as_deref() == Some("greet")
-                || frame.behavior.as_deref() == Some("greet")
-                || frame.animation == "react"
-            {
-                saw_greet = true;
-                break;
-            }
-        }
-        assert!(
-            saw_greet,
-            "groom then=greet must start greet after the animation"
+        // A `then` start is not a proposal, so the frame reports no new Behavior.
+        groom_pass_then(
+            &mut engine,
+            started.animation_ms,
+            "greet",
+            Primitive::React,
+            "react",
+            false,
         );
     }
 

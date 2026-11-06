@@ -154,7 +154,8 @@ pub(super) fn check_variants(
             if !animation.looping {
                 errors.push(format!(
                     "animation {name:?} is a variant_of \"idle-gesture\", and must \
-                     loop \"forever\""
+                     loop \"forever\"; its art loops, while the engine schedules one \
+                     pass per idle gesture"
                 ));
             }
             continue;

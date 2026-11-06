@@ -54,7 +54,7 @@ pub(super) struct DeclaredBehavior {
     pub(super) then: Option<String>,
     pub(super) weight: u32,
     pub(super) trigger: Option<Trigger>,
-    /// `type = "idle"`. The Behavior's idle steps use the Engine's idle machine.
+    /// `type = "idle"`. The Behavior's idle Primitives use the Engine's idle machine.
     pub(super) idle_type: bool,
 }
 
