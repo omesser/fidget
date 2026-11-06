@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 # Scenario: possession-displays (X11)
-# On screen: splits the X screen into two side-by-side RandR monitors, launches
-#   Fidget as BMO with a fixture Harness, presses Possess, and holds an arrow
-#   until BMO walks onto the other monitor. There it walks and jumps BMO and
-#   presses Escape. Fidget quits and the monitors are removed at the end.
+# On screen: none. It starts its own Xvfb with two side-by-side Xinerama
+#   screens and xfwm4, launches Fidget as BMO with a fixture Harness, presses
+#   Possess, and holds an arrow until BMO walks onto the other screen. There it
+#   walks and jumps BMO and presses Escape. Everything it started quits.
 # Input: a right-click on the sprite and a click on Possess, an arrow held for
 #   the walk across and again briefly, Space, and Escape. Through xdotool.
 # Duration: about 15 s, 45 s at most.
-# Grants: an X11 session with RandR 1.5, AT-SPI (python3-pyatspi), xdotool and
-#   xrandr.
+# Grants: Xvfb, xfwm4, AT-SPI (python3-pyatspi) and xdotool.
 # Asserts: the held arrow walks the possessed sprite across the border and the
 #   arrow's keyup lands on the new monitor's overlay and stops it; an arrow and
-#   Space drive it there; Escape releases possession. Xvfb monitors share one
-#   framebuffer and one window manager, so a PASS is not proof on real
-#   multi-display hardware.
-# Skips (exit 2) when GTK still sees one monitor after the split.
+#   Space drive it there; Escape releases possession. Xvfb screens are not
+#   monitors on real hardware, so a PASS is not proof there.
+# Skips (exit 2) when GTK sees one monitor.
 # Usage: possession-displays.x11.sh --go <fidget binary> <fidget test binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 set -euo pipefail
@@ -40,9 +38,8 @@ skip() {
   exit 2
 }
 
-[ -n "${DISPLAY:-}" ] || skip "DISPLAY is unset. X11 possession-displays needs a session."
 python3 -c 'import pyatspi' > /dev/null 2>&1 || skip "python3-pyatspi is not installed."
-for tool in xdotool xrandr; do
+for tool in Xvfb xfwm4 xdotool; do
   command -v "$tool" > /dev/null 2>&1 || skip "$tool is not installed."
 done
 
@@ -58,25 +55,25 @@ SETTINGS_EOF
 harness="$root/scripts/scenarios/helpers/fixture-harness.sh $test_bin script=nop count=$marks"
 [ "$(wc -w <<< "$harness")" -eq 4 ] || fail "a path in the Harness line holds a space: $harness"
 
+started=()
 cleanup() {
   xdotool keyup Right Left space 2> /dev/null || true
   stop_fidget
   pkill -f "count=$marks" || true
-  xrandr --delmonitor fidget-left > /dev/null 2>&1 || true
-  xrandr --delmonitor fidget-right > /dev/null 2>&1 || true
+  if [ "${#started[@]}" -gt 0 ]; then
+    kill "${started[@]}" 2> /dev/null || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
-# The left monitor takes the screen's output, so its automatic monitor goes.
-output=$(xrandr | awk '/ connected/ { print $1; exit }')
-[ -n "$output" ] || fail "xrandr lists no connected output"
-read -r screen_w screen_h < <(xdotool getdisplaygeometry)
-half=$((screen_w / 2))
-if ! xrandr --setmonitor fidget-left "$half/254x$screen_h/286+0+0" "$output" > "$out/xrandr.txt" 2>&1 ||
-  ! xrandr --setmonitor fidget-right "$((screen_w - half))/254x$screen_h/286+$half+0" none >> "$out/xrandr.txt" 2>&1; then
-  fail "xrandr could not split the screen; see $out/xrandr.txt"
-fi
-xrandr --listmonitors >> "$out/xrandr.txt" 2>&1
+# GDK lists a RandR monitor only with an output behind it, and Xvfb has one
+# output, so a --setmonitor split stays one display. Xinerama screens are two.
+exec {ready}< <(Xvfb -displayfd 1 +xinerama -screen 0 960x1080x24 -screen 1 960x1080x24 -nolisten tcp 2> "$out/xvfb.log")
+started+=($!)
+read -r -t 3 n <&"$ready" || fail "Xvfb did not start in 3 s; see $out/xvfb.log"
+export DISPLAY=":$n"
+xfwm4 > "$out/xfwm4.log" 2>&1 &
+started+=($!)
 
 last_frame() { grep '^frame: ' "$log" | tail -1; }
 sprite_x() { last_frame | sed -E 's/.*sprite\((-?[0-9]+),.*/\1/'; }
@@ -126,7 +123,7 @@ echo "ok: sprite at ($sx,$sy) size ${w}x${h}"
 
 # Each overlay line is "<label> <x> <y> <w> <h>".
 displays=$(sed -nE 's/^overlay: (overlay-[0-9]+) covers ([0-9]+)x([0-9]+) at \((-?[0-9]+),(-?[0-9]+)\)$/\1 \4 \5 \2 \3/p' "$log")
-[ "$(grep -c . <<< "$displays")" -ge 2 ] || skip "GTK sees one monitor after the split; see $out/xrandr.txt and $log"
+[ "$(grep -c . <<< "$displays")" -ge 2 ] || skip "GTK sees one monitor on two Xinerama screens; see $log"
 read -r here hx _ hw _ < <(awk -v x="$cx" -v y="$cy" '$2 <= x && x < $2 + $4 && $3 <= y && y < $3 + $5' <<< "$displays" | head -1) ||
   fail "no overlay covers the sprite's centre; see $log"
 read -r next nx _ nw _ sign < <(awk -v l="$here" -v x="$hx" -v w="$hw" -v y="$cy" '

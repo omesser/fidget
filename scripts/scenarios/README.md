@@ -180,12 +180,13 @@ click on the card resumes it there, and that Escape releases. Both overlays
 are titled Fidget, so it reads the card through the new overlay's own window,
 found by its top-left corner.
 
-The X11 leaf splits the runner's Xvfb screen into two RandR monitors with
-`xrandr --setmonitor`, and removes them when it ends. It checks the crossing,
+The X11 leaf starts its own Xvfb with two Xinerama screens side by side,
+since GDK drops a `xrandr --setmonitor` monitor that has no output behind it,
+and Xvfb has one output. It checks the crossing,
 the keyup, the arrow and Space, and Escape. It skips the click-away and card
-steps, which `possession-live.x11.sh` covers on one display. The two monitors
-share one framebuffer and one window manager, so a PASS does not prove
-multi-display Linux hardware, which no one has tested.
+steps, which `possession-live.x11.sh` covers on one display. Xvfb screens are not
+monitors on real hardware, so a PASS does not prove multi-display Linux, which
+no one has tested.
 
 These stay macOS only on purpose:
 
