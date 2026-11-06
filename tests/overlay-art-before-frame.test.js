@@ -16,7 +16,18 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const ART =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
+// A second, different image, so each Character's decode can be held apart.
+const OTHER_ART =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z/C/HgAGgwJ/lK3Q6wAAAABJRU5ErkJggg==";
+
 const CHARACTERS = { characters: { "Buddy Bot": { smooth: false, art: { idle: [ART, ART] } } } };
+
+const TWO_CHARACTERS = {
+  characters: {
+    "Buddy Bot": { smooth: false, art: { idle: [ART, ART] } },
+    "Other Bot": { smooth: false, art: { idle: [OTHER_ART, OTHER_ART] } },
+  },
+};
 
 const frame = {
   sprites: [
@@ -41,22 +52,47 @@ const frame = {
 
 const moved = { ...frame, sprites: [{ ...frame.sprites[0], x: 260, frame_index: 1 }] };
 
+const twoSprites = {
+  ...frame,
+  sprites: [frame.sprites[0], { ...frame.sprites[0], id: "ivy", character: "Other Bot", x: 400 }],
+};
+
 // `character` answers through `loadArt`, or rejects when `artFails`. `invoked`
-// lists every command, and `drewWith` is the sprite as `overlay_drew` arrived.
-function startup(drive, { artFails = false } = {}) {
+// lists every command, `drewIds` each `overlay_drew` id, and `drewWith` is the
+// sprite as the first arrived. With `holdDecodes`, an image decodes only when
+// `finishDecode(src)` says so.
+function startup(drive, { artFails = false, holdDecodes = false, first = frame } = {}) {
   const stub = `
 <script type="module">
   ${pageClock()}
   ${pageWait()}
   const handlers = {};
   const invoked = [];
+  const drewIds = [];
   let loadArt;
   let drewWith;
+  const decodes = new Map();
+  const decoded = (src) => {
+    if (!decodes.has(src)) {
+      let finish;
+      decodes.set(src, { done: new Promise((resolve) => (finish = resolve)), finish });
+    }
+    return decodes.get(src);
+  };
+  const finishDecode = (src) => decoded(src).finish();
+  if (${holdDecodes}) {
+    HTMLImageElement.prototype.decode = function () {
+      return decoded(this.getAttribute("src")).done;
+    };
+  }
   window.__TAURI__ = {
     core: {
-      invoke(name) {
+      invoke(name, args) {
         invoked.push(name);
-        if (name === "overlay_drew") drewWith = shown();
+        if (name === "overlay_drew") {
+          drewIds.push(args?.id);
+          drewWith ??= shown();
+        }
         if (name === "character") {
           return ${artFails ? 'Promise.reject(new Error("no art"))' : "new Promise((resolve) => (loadArt = resolve))"};
         }
@@ -83,7 +119,7 @@ function startup(drive, { artFails = false } = {}) {
   async function drive() {
     console.log("__PROBE_READY__");
     await ready("frame");
-    handlers.frame({ payload: ${JSON.stringify(frame)} });
+    handlers.frame({ payload: ${JSON.stringify(first)} });
     await settle();
     ${drive}
   }
@@ -116,8 +152,26 @@ test("the overlay says it drew only after the art is on the sprite, and once", {
     handlers.frame({ payload: ${JSON.stringify(moved)} });
     await settle();
     await settle();
-    ${report("early, drewWith, drew: drew()")}`);
-  assert.deepEqual(result, { early: 0, drewWith: { visible: true, src: ART }, drew: 1 });
+    ${report("early, drewWith, drewIds")}`);
+  assert.deepEqual(result, { early: 0, drewWith: { visible: true, src: ART }, drewIds: ["bmo"] });
+});
+
+test("each Instance is reported only once its own art has decoded", { skip: chromeSkip, timeout: 60000 }, async () => {
+  const result = await startup(
+    `
+    loadArt(${JSON.stringify(TWO_CHARACTERS)});
+    await until(() => document.querySelectorAll(".sprite[src]").length === 2);
+    finishDecode(${JSON.stringify(ART)});
+    await until(() => drewIds.length > 0);
+    await settle();
+    await settle();
+    const firstOnly = [...drewIds];
+    finishDecode(${JSON.stringify(OTHER_ART)});
+    await until(() => drewIds.length > 1);
+    ${report("firstOnly, drewIds")}`,
+    { holdDecodes: true, first: twoSprites },
+  );
+  assert.deepEqual(result, { firstOnly: ["bmo"], drewIds: ["bmo", "ivy"] });
 });
 
 test("an overlay whose art never loads never says it drew", { skip: chromeSkip, timeout: 60000 }, async () => {
