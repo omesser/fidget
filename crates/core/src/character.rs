@@ -99,8 +99,8 @@ pub const REQUIRED_ANIMATIONS: [&str; 9] = [
     "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
 
-/// The idle-gesture family. It is not an Animation. A strip joins it with
-/// `variant_of = "idle-gesture"` and keeps its own name.
+/// Idle-gesture is a category of Animation, not a Behavior type. A strip
+/// joins it with `variant_of = "idle-gesture"` and keeps its own name.
 pub const IDLE_GESTURE: &str = "idle-gesture";
 
 /// How long a Personality Prompt may be, in characters. Untrusted text in every
@@ -314,8 +314,8 @@ pub struct Animation {
     /// manifest does not say. An Animation in no ring carries the default all
     /// the same, and nothing reads it.
     pub weight: u32,
-    /// `variant_of`. `idle-gesture` is a family name, not an Animation, so the
-    /// strip keeps its own name. Other values name a real base.
+    /// `variant_of`. `"idle-gesture"` is a category of Animation, not a
+    /// Behavior type. The strip keeps its own name. Other values name a base.
     pub variant_of: Option<String>,
 }
 

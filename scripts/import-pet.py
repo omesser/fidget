@@ -140,7 +140,7 @@ PETSCODEX_ROWS = {
 # read_petscodex picks the row. Sleep is synthesized; petdex has no sleep row.
 PETSCODEX_MAP = (
     ("idle", "idle", None, "forever", None),
-    ("waiting", "waiting", None, "forever", "idle"),
+    ("waiting", "waiting", None, "forever", "idle-gesture"),
     ("walk", "running-left", None, "forever", None),
     ("talk", "waving", None, "forever", None),
     ("fall", "jumping", (2, 3), "forever", None),
@@ -253,6 +253,42 @@ then = "patrol"
 weight = 4
 when = "idle under 10s"
 """
+
+# Required and motion strips are not idle-gestures. The importer may still
+# cut them. An extra forever loop, such as waiting, is the gesture category.
+NOT_IDLE_GESTURES = {
+    "idle", "walk", "talk", "fall", "land", "hold", "react", "sit", "sleep",
+    "climb", "jump", "grab",
+}
+
+
+def classify_idle_gestures(animations):
+    """Mark extra forever loops as idle-gestures. The calm baseline stays
+    `idle`. A loop that is already a variant of some other strip stays there."""
+    for name, spec in animations.items():
+        if name in NOT_IDLE_GESTURES or spec.get("loop") == "once":
+            continue
+        if spec.get("variant_of") in (None, "idle"):
+            spec["variant_of"] = "idle-gesture"
+
+
+def gesture_behaviors(animations):
+    """One ordinary Behavior per idle-gesture strip, playing that strip by
+    name. The calm `idle` loop does not get one. A name the starter life
+    already uses is left alone."""
+    taken = set(re.findall(r"\[behaviors\.([^\]]+)\]", STARTER_BEHAVIORS))
+    lines = []
+    for name, spec in animations.items():
+        if spec.get("variant_of") != "idle-gesture" or name in taken:
+            continue
+        lines += [
+            "",
+            f"[behaviors.{name}]",
+            f'play = ["{name}"]',
+            "weight = 10",
+            'when = "idle over 10s"',
+        ]
+    return "\n".join(lines)
 
 
 def detect_atlas(width, height):
@@ -609,6 +645,9 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     if turned:
         lines += ["", "[frame_facing]", *turned]
     lines.append(STARTER_BEHAVIORS)
+    extra = gesture_behaviors(animations)
+    if extra:
+        lines.append(extra)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -695,6 +734,7 @@ def read_petscodex(source, walk_row=2, overrides=None, only_mapped=False):
             "loop": loop,
             "variant_of": variant_of,
         }
+    classify_idle_gestures(animations)
 
     # Rows 1 and 2 are the walk rows, drawn heading left and right; a walk
     # cut from any other row (--map) faces no way the importer can see.
@@ -819,6 +859,7 @@ def read_shimeji(source, name=None):
     if "sleep" not in animations:
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
         chosen.append("sleep<-synthesized from idle")
+    classify_idle_gestures(animations)
     print("mapped:", ", ".join(chosen))
 
     name = name or source.name
@@ -1260,7 +1301,8 @@ def self_test():
             "react", "sit", "sleep",
         }
         assert pet["animations"]["land"]["loop"] == "once"
-        assert pet["animations"]["waiting"]["variant_of"] == "idle"
+        assert pet["animations"]["waiting"]["variant_of"] == "idle-gesture"
+        assert pet["animations"]["idle"].get("variant_of") is None
         assert pet["license"] is None
 
         # --walk-row swaps the walk source row (the synthetic sheet colors
@@ -1300,6 +1342,17 @@ def self_test():
         assert "[director]" in manifest
         assert "model_base = 2" in manifest
         assert "model_power = 1" in manifest
+        assert 'variant_of = "idle-gesture"' in manifest
+        assert "[behaviors.waiting]" in manifest
+        assert 'play = ["waiting"]' in manifest
+        assert "[behaviors.idle]" not in manifest
+        drew = subprocess.run(
+            ["cargo", "run", "-q", "-p", "fidget-core", "--example", "validate",
+             "--", str(out), "waiting"],
+            cwd=REPO, capture_output=True, text=True,
+        )
+        assert drew.returncode == 0, drew.stderr
+        assert "played waiting -> waiting" in drew.stdout, drew.stdout
         # A personality is authored, never derived from the pet description.
         assert not (out / "personality.txt").exists()
 

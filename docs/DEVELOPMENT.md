@@ -271,7 +271,7 @@ Any other name draws only as a Variant, an idle-gesture, or a Left Strip of one 
 | `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
-| `variant_of` | No | Another Animation's name, or the family `"idle-gesture"`. `variant_of = "idle"` is a calm loop of the declared `idle` Animation. `variant_of = "idle-gesture"` classifies this strip as an idle-gesture and leaves its own name in place. `"idle-gesture"` is not an Animation. Every other ring draws one member until the Animation changes. | |
+| `variant_of` | No | Another Animation's name, or the category `"idle-gesture"`. `variant_of = "idle"` is a calm loop of the declared `idle` Animation. `variant_of = "idle-gesture"` marks this Animation as an idle-gesture. That is a category, not a Behavior type, and the strip keeps its own name. Every other ring draws one member until the Animation changes. | |
 | `weight` | No | Whole number: this Animation's share of its ring, loop or gesture. Read only there. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
 

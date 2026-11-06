@@ -747,5 +747,5 @@ fn an_idle_gesture_keeps_its_name_without_a_base_animation() {
         "{}[animations.spin]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle-gesture\"\n",
         manifest_naming("idle", "")
     );
-    load(&package(&manifest)).expect("the family name is not an Animation");
+    load(&package(&manifest)).expect("idle-gesture is a category, not a strip's name");
 }

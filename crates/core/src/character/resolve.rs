@@ -150,7 +150,7 @@ pub(super) fn check_variants(
             continue;
         };
         if base == super::IDLE_GESTURE {
-            // The family is a name, not an Animation, so the strip keeps its own.
+            // "idle-gesture" is a category. The strip keeps its own name.
             if !animation.looping {
                 errors.push(format!(
                     "animation {name:?} is a variant_of \"idle-gesture\", and must \
