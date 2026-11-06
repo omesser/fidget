@@ -5890,8 +5890,8 @@ fn main() {
             let live_quit = Arc::clone(&quit_generation);
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                // Windows drops a click whose item a rebuild retired before the
-                // hook, so a press with no line here never reached Fidget.
+                // muda on Windows matches a click against the menu attached
+                // now, so a row of a menu replaced while open never lands here.
                 eprintln!("menu: event {id}");
                 // Native Quit ids are per tray draw. A dismiss rebuilds the
                 // tray and muda can click the item it just dropped; that id

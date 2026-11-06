@@ -368,9 +368,8 @@ if ($Command -eq "tray") {
         exit 1
     }
     $r = $icon.Current.BoundingRectangle
-    # One press. A retry here once covered a dropped UI Automation Invoke on
-    # the row; since #2081 the row takes a real click, and Fidget logs
-    # `tray: menu set` and `menu: event` to show where a lost press went (#1747).
+    # One press, no retry: Fidget's `tray: menu set`, `tray: Left click` and
+    # `menu: event` lines show where a lost press went.
     [FidgetTrail]::Mark("tray: click icon")
     $signal = [FidgetUiaSignal]::new(0)
     try {

@@ -1014,8 +1014,8 @@ pub(crate) fn run_frame_loop(
                         );
                         menu_acted = true;
                     } else {
-                        // A stale Quit lands here by design; anything else is
-                        // a row whose menu was rebuilt under the click.
+                        // A stale Quit, or a row of a tray menu replaced
+                        // since it opened.
                         eprintln!("menu: {id} is on no open menu");
                     }
                 }
