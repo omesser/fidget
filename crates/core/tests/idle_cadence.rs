@@ -975,7 +975,7 @@ play = ["spin"]
 }
 
 #[test]
-fn a_behavior_on_a_wall_spends_the_awake_budget_before_landing() {
+fn a_behavior_on_a_wall_counts_as_awake_time_before_landing() {
     let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
     let mut behaviors = BTreeMap::new();
     behaviors.insert(
@@ -1055,7 +1055,7 @@ fn a_behavior_on_a_wall_spends_the_awake_budget_before_landing() {
             assert_eq!(
                 frame.state,
                 State::Asleep,
-                "the wall Behavior already spent the awake budget: {frame:?}"
+                "the wall Behavior already used up the awake time: {frame:?}"
             );
             return;
         }
@@ -1131,7 +1131,7 @@ fn awake_behavior_time_counts_in_air_but_unrelated_falling_does_not() {
 }
 
 #[test]
-fn sleep_does_not_spend_the_next_awake_stretch() {
+fn sleep_does_not_count_as_the_next_awake_time() {
     let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
     let mut engine = engine_for(&character, 1);
     first_idle(&mut engine);
