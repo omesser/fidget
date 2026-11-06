@@ -168,8 +168,8 @@ starts it cold, and that run says to rerun if it misses a step.
 `fidget-verify scenario <name>` prints the leaf for this host. With `--go` it
 runs that leaf, or skips when this host has none.
 
-`possession-displays` has a `.win.ps1` leaf and an X11 leaf in `ci/`. It
-needs a display
+`possession-displays` has only a `.win.ps1` leaf, since only Windows moves
+possession to the display the sprite walks onto (#2089). It needs a display
 beside the sprite's display at the sprite's height, and skips without one. It
 possesses BMO from the menu and holds the arrow toward that display until the
 whole sprite is past the border. It checks that the new display's overlay
@@ -179,14 +179,6 @@ follows to that display, that a click into Notepad pauses possession and a
 click on the card resumes it there, and that Escape releases. Both overlays
 are titled Fidget, so it reads the card through the new overlay's own window,
 found by its top-left corner.
-
-The X11 leaf starts its own Xvfb with two Xinerama screens side by side,
-since GDK drops a `xrandr --setmonitor` monitor that has no output behind it,
-and Xvfb has one output. It checks the crossing,
-the keyup, the arrow and Space, and Escape. It skips the click-away and card
-steps, which `possession-live.x11.sh` covers on one display. Xvfb screens are not
-monitors on real hardware, so a PASS does not prove multi-display Linux, which
-no one has tested.
 
 These stay macOS only on purpose:
 

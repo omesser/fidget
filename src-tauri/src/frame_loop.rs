@@ -2549,8 +2549,8 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                // Proven live on macOS and Windows. On Linux it is speculative:
-                // no multi-display Linux machine has run it, only Xvfb monitors.
+                // Tested live on macOS and Windows. On Linux it is speculative:
+                // no multi-display Linux machine has run it.
                 let possessed_here = session
                     .as_mut()
                     .filter(|session| session.instance == live.id);
