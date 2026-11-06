@@ -225,8 +225,8 @@ fn begin_possession(
     }
 }
 
-/// Windows: only the overlay drawing the card hears keys, so the keyboard moves
-/// with the card. A paused session only relabels: the user's app keeps focus.
+/// Only the overlay drawing the card hears keys, so the keyboard moves with the
+/// card. A paused session only relabels: the user's app keeps focus.
 fn follow_possession_display(
     app: &tauri::AppHandle,
     session: &mut possession::Session,
@@ -2549,18 +2549,13 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                if cfg!(target_os = "windows") {
-                    let possessed_here = session
-                        .as_mut()
-                        .filter(|session| session.instance == live.id);
-                    if let (Some(session), Some(index)) = (possessed_here, owner) {
-                        follow_possession_display(
-                            &app,
-                            session,
-                            overlay_label(index),
-                            Instant::now(),
-                        );
-                    }
+                // Proven live on macOS and Windows. On Linux it is speculative:
+                // no multi-display Linux machine has run it, only Xvfb monitors.
+                let possessed_here = session
+                    .as_mut()
+                    .filter(|session| session.instance == live.id);
+                if let (Some(session), Some(index)) = (possessed_here, owner) {
+                    follow_possession_display(&app, session, overlay_label(index), Instant::now());
                 }
                 let listening =
                     owner.is_some_and(|index| platform::overlay_listening(&overlay_label(index)));
