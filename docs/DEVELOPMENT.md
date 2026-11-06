@@ -312,7 +312,7 @@ A Behavior is a named play list that the Static Director picks by weight, or tha
 | Key | Required | Value | Default |
 |---|---|---|---|
 | `play` | No | Either a list of Primitives in order, or one idle-gesture Animation name that plays one pass. Mixed lists and multi-Animation lists are refused. A Behavior with none plays nothing. | `[]` |
-| `then` | No | The name of the Behavior that follows this one. A Behavior playing an Animation continues its `then` after one pass. When a Primitive chain reaches a Behavior playing an Animation, that Behavior starts after the Primitives finish. | |
+| `then` | No | The name of the Behavior that follows this one. A Behavior playing an Animation continues its `then` after one pass. When a Primitive chain reaches a Behavior playing an Animation, or one with a different `type`, that Behavior starts after the Primitives finish. | |
 | `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |
 | `type` | No | `"idle"` makes this Behavior's `idle` Primitives use the Engine's idle loops and idle-gestures. | |

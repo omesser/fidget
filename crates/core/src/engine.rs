@@ -1117,7 +1117,7 @@ impl Engine {
             let behavior = self.behaviors.get(current)?;
             let next = behavior.then.as_deref()?;
             let next_behavior = self.behaviors.get(next)?;
-            if behavior.animation.is_some() || next_behavior.animation.is_some() {
+            if !flattens(behavior, next_behavior) {
                 return Some(next.to_string());
             }
             current = next;
@@ -1127,8 +1127,9 @@ impl Engine {
 
     /// Shared completed-pass boundary: deferred Director proposal first, else
     /// a `then` that `chain` could not flatten. True when something new started.
+    /// An own-idle gesture still on screen keeps its proposal for `finish_gesture`.
     fn complete_pass(&mut self, finished: Option<String>) -> bool {
-        if self.apply_deferred() {
+        if !matches!(self.own_idle, OwnIdle::Gesture { .. }) && self.apply_deferred() {
             return true;
         }
         if let Some(name) = finished {
@@ -2559,10 +2560,9 @@ impl Engine {
         }
     }
 
-    /// Every Primitive a named Behavior plays, chained ones included, or
-    /// `None` when undeclared. Behaviors playing an Animation start via `play_animation`,
-    /// not this. It stops cycles: Behaviors arrive unvalidated, and ADR-0002
-    /// promises no package can hang the frame loop.
+    /// Every Primitive a named Behavior plays, flattened `then`s included, or
+    /// `None` when undeclared. Stops at cycles: Behaviors arrive unvalidated,
+    /// and ADR-0002 promises no package can hang the frame loop.
     fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
         let mut primitives = Vec::new();
         let mut walked: BTreeSet<&str> = BTreeSet::new();
@@ -2575,8 +2575,8 @@ impl Engine {
             primitives.extend(current.1.primitives.iter().copied());
             match current.1.then.as_deref() {
                 Some(next) => match self.behaviors.get_key_value(next) {
-                    Some(next) => current = next,
-                    None => break,
+                    Some(next) if flattens(current.1, next.1) => current = next,
+                    _ => break,
                 },
                 None => break,
             }
@@ -2584,6 +2584,12 @@ impl Engine {
 
         Some(primitives)
     }
+}
+
+/// Whether `next` joins `current`'s Primitive queue. An Animation, or a change
+/// of `type`, waits for the pass boundary so the right Behavior owns its idle.
+fn flattens(current: &Behavior, next: &Behavior) -> bool {
+    current.animation.is_none() && next.animation.is_none() && current.idle_type == next.idle_type
 }
 
 /// Where a Poke stops the sprite for the cooldown: on its feet or on a wall.
