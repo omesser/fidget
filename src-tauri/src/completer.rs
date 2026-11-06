@@ -470,10 +470,7 @@ pub(crate) mod tests {
                 &settings,
                 config.configured,
             );
-            assert!(
-                model.is_some(),
-                "Director off must still leave a Completer for ToggleDirector"
-            );
+            assert!(model.is_some(), "Director off must still leave a Completer");
         });
     }
 

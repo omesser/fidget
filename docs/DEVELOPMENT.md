@@ -39,7 +39,7 @@ To inspect it:
 - macOS: `tail -f ~/Library/Application\ Support/fidget/action-log.jsonl`
 - Linux: `tail -f ~/.local/share/fidget/action-log.jsonl`
 - Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\fidget\action-log.jsonl`
-- The **Action Log…** row in the tray and sprite menus opens the current file in the system editor.
+- Settings → Development → Action Log → Open in editor opens the current file in the system editor.
 
 ### Memory size
 
@@ -610,7 +610,7 @@ sudo apt install libayatana-appindicator3-dev
 
 ### Install packages (tray, cue audio, AppImage)
 
-**Tray.** The tray icon is how you reach Settings, Character, Memory, and Quit, so the `.deb` depends on `libayatana-appindicator3-1` (the older `libappindicator3-1` is not accepted). The AppImage carries its own copy. Showing the icon also needs a StatusNotifier host, which the desktop provides and no package can declare: GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts; Plank and a Wayland compositor with no tray protocol are not. Without a host, the sprite's right-click menu is the same menu.
+**Tray.** The tray icon is how you reach Settings, Character, and Quit, so the `.deb` depends on `libayatana-appindicator3-1` (the older `libappindicator3-1` is not accepted). The AppImage carries its own copy. Showing the icon also needs a StatusNotifier host, which the desktop provides and no package can declare: GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts; Plank and a Wayland compositor with no tray protocol are not. Without a host, the sprite's right-click menu is that menu without Bring to this display.
 
 **Cue audio** is Web Audio in WebKitGTK, played through GStreamer. `libwebkit2gtk-4.1-0` already depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (which ships `pulsesink`), enough under PipeWire-pulse or PulseAudio. An ALSA-only machine also needs `gstreamer1.0-alsa`. With no sound device the fidget stays silent and still draws the visual cue.
 

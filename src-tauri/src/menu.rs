@@ -25,8 +25,6 @@ pub enum MenuAction {
     SwitchCharacter(String),
     /// Spawn another fidget of the current Character.
     SpawnInstance,
-    /// Session Director on/off. Off leaves Static weights running the life.
-    ToggleDirector,
     /// Quiet without hiding. Proposals stop; the Character stays on screen.
     ToggleDnd,
     /// Possess this Instance, or let it go.
@@ -35,12 +33,6 @@ pub enum MenuAction {
     Hide,
     /// Move every on-screen Character onto the display the cursor is on.
     BringToThisDisplay,
-    /// Fade away when a fullscreen application is frontmost. Settings writes the same flag.
-    ToggleFullscreenHide,
-    /// Open Memory in the user's editor.
-    OpenMemory,
-    /// Open the Action Log in the user's editor. The log's only reader.
-    OpenActionLog,
     /// Open the settings window. Tray and sprite both reach it this way.
     OpenSettings,
     /// Open the Chat surface. The same action a Summon performs.
@@ -60,12 +52,8 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
     match action {
         MenuAction::OpenSettings => Some("settings"),
         MenuAction::Summon => Some("chat"),
-        MenuAction::OpenMemory => Some("memory"),
-        MenuAction::OpenActionLog => Some("action-log"),
-        MenuAction::ToggleFullscreenHide => Some("fullscreen-hide"),
         MenuAction::SwitchCharacter(_) => Some("character"),
         MenuAction::SpawnInstance
-        | MenuAction::ToggleDirector
         | MenuAction::ToggleDnd
         | MenuAction::TogglePossession
         | MenuAction::Hide
@@ -75,26 +63,28 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
     }
 }
 
-/// Everything `describe` needs to draw one menu. Tray and sprite build the
-/// same description from this, so a row cannot exist in one and not the other.
+/// Which surface is asking for the one menu. Bring to this display is the
+/// only row that follows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuSurface {
+    /// The menu bar icon. Left-click opens the same menu.
+    Tray,
+    /// The sprite's right-click. The sprite is already on this display.
+    Sprite,
+}
+
+/// Everything `describe` needs to draw one menu. Tray and sprite both pass
+/// this. `surface` is the only reason a row exists on one and not the other.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuSnapshot<'a> {
+    pub surface: MenuSurface,
     pub installed: &'a [String],
     pub current_character: &'a str,
     pub instances: &'a [(String, String)],
-    /// The value in force, the file's or the variable's.
-    pub director_enabled: bool,
-    /// `FIDGET_DIRECTOR` decided the line above. Passed in rather than read
-    /// in `describe`, which stays a pure function of this snapshot so it can
-    /// cross to the main thread and be compared against the last one.
-    pub director_env_owned: bool,
     pub do_not_disturb: bool,
     /// The user possesses this Instance. The row's label follows it.
     pub possessed: bool,
     pub hidden: bool,
-    pub hide_in_fullscreen: bool,
-    /// Already in this machine's words — `settings::Hotkey::display` printed it.
-    pub hide_hotkey: &'a str,
     pub caffeinate: CaffeinateRow,
 }
 
@@ -155,20 +145,9 @@ const CHAT_ID: &str = "chat";
 
 const CAFFEINATE_ID: &str = "caffeinate";
 
-const DIRECTOR_ID: &str = "director";
-
-const MEMORY_ID: &str = "memory";
-
-const ACTION_LOG_ID: &str = "action-log";
-
-/// The id of the Settings row, and of Hotkey… which opens the same window.
 const SETTINGS_ID: &str = "settings";
 
 const SPAWN_ID: &str = "spawn";
-
-const FULLSCREEN_ID: &str = "fullscreen";
-
-const HOTKEY_ID: &str = "hotkey";
 
 /// The id of Quit. Owned here so the tray event hook and the action table
 /// cannot drift onto different strings.
@@ -193,6 +172,7 @@ const CHARACTER_PREFIX: &str = "character:";
 /// Describe the menu. Tray and sprite both call this.
 ///
 /// Checkboxes report the Engine and settings rather than a copy that could drift.
+/// Bring to this display is inserted only for the tray.
 pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     let mut entries = Vec::new();
     let mut actions = HashMap::new();
@@ -262,19 +242,6 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         });
     }
 
-    // Disabled, not merely drawn: clicking it would flip the saved value and
-    // change nothing the Director does.
-    entries.push(MenuEntry::Check {
-        id: DIRECTOR_ID.to_string(),
-        label: match snapshot.director_env_owned {
-            true => format!("AI (set by {})", crate::model::ENABLED),
-            false => "AI".to_string(),
-        },
-        enabled: !snapshot.director_env_owned,
-        checked: snapshot.director_enabled,
-    });
-    actions.insert(DIRECTOR_ID.to_string(), MenuAction::ToggleDirector);
-
     entries.push(MenuEntry::Check {
         id: DND_ID.to_string(),
         label: "Do Not Disturb".to_string(),
@@ -309,46 +276,15 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(HIDE_ID.to_string(), MenuAction::Hide);
 
-    // Next to Go away: both say where the Character is, not how it behaves.
-    entries.push(MenuEntry::Item {
-        id: BRING_ID.to_string(),
-        label: "Bring to this display".to_string(),
-        enabled: true,
-    });
-    actions.insert(BRING_ID.to_string(), MenuAction::BringToThisDisplay);
-
-    entries.push(MenuEntry::Submenu {
-        label: "Hide rules".to_string(),
-        items: vec![
-            MenuEntry::Check {
-                id: FULLSCREEN_ID.to_string(),
-                label: "Hide in fullscreen apps".to_string(),
-                enabled: true,
-                checked: snapshot.hide_in_fullscreen,
-            },
-            MenuEntry::Item {
-                id: HOTKEY_ID.to_string(),
-                label: format!("Hotkey: {}", snapshot.hide_hotkey),
-                enabled: true,
-            },
-        ],
-    });
-    actions.insert(FULLSCREEN_ID.to_string(), MenuAction::ToggleFullscreenHide);
-    actions.insert(HOTKEY_ID.to_string(), MenuAction::OpenSettings);
-
-    entries.push(MenuEntry::Item {
-        id: MEMORY_ID.to_string(),
-        label: "Memory…".to_string(),
-        enabled: true,
-    });
-    actions.insert(MEMORY_ID.to_string(), MenuAction::OpenMemory);
-
-    entries.push(MenuEntry::Item {
-        id: ACTION_LOG_ID.to_string(),
-        label: "Action Log…".to_string(),
-        enabled: true,
-    });
-    actions.insert(ACTION_LOG_ID.to_string(), MenuAction::OpenActionLog);
+    // A sprite you can right-click is already on this display.
+    if snapshot.surface == MenuSurface::Tray {
+        entries.push(MenuEntry::Item {
+            id: BRING_ID.to_string(),
+            label: "Bring to this display".to_string(),
+            enabled: true,
+        });
+        actions.insert(BRING_ID.to_string(), MenuAction::BringToThisDisplay);
+    }
 
     entries.push(MenuEntry::Item {
         id: SETTINGS_ID.to_string(),
@@ -495,16 +431,13 @@ mod tests {
         do_not_disturb: bool,
     ) -> MenuSnapshot<'a> {
         MenuSnapshot {
+            surface: MenuSurface::Sprite,
             installed,
             current_character: current,
             instances: &[],
-            director_enabled: true,
-            director_env_owned: false,
             do_not_disturb,
             possessed: false,
             hidden: false,
-            hide_in_fullscreen: true,
-            hide_hotkey: "Control-Option-Command-B",
             caffeinate: CaffeinateRow {
                 on: false,
                 enabled: true,
@@ -513,21 +446,12 @@ mod tests {
     }
 
     #[test]
-    fn chat_memory_settings_the_log_fullscreen_hide_or_a_character_yields_the_pill() {
+    fn chat_settings_or_a_character_yields_the_pill() {
         assert_eq!(
             quick_message_aside(&MenuAction::OpenSettings),
             Some("settings")
         );
         assert_eq!(quick_message_aside(&MenuAction::Summon), Some("chat"));
-        assert_eq!(quick_message_aside(&MenuAction::OpenMemory), Some("memory"));
-        assert_eq!(
-            quick_message_aside(&MenuAction::OpenActionLog),
-            Some("action-log")
-        );
-        assert_eq!(
-            quick_message_aside(&MenuAction::ToggleFullscreenHide),
-            Some("fullscreen-hide")
-        );
         // The overlay draws the new Character but does not read it as a choice.
         assert_eq!(
             quick_message_aside(&MenuAction::SwitchCharacter("bmo".to_string())),
@@ -540,7 +464,6 @@ mod tests {
         assert_eq!(quick_message_aside(&MenuAction::TogglePossession), None);
         assert_eq!(quick_message_aside(&MenuAction::ToggleDnd), None);
         assert_eq!(quick_message_aside(&MenuAction::Hide), None);
-        assert_eq!(quick_message_aside(&MenuAction::ToggleDirector), None);
         assert_eq!(quick_message_aside(&MenuAction::ToggleCaffeinate), None);
         assert_eq!(quick_message_aside(&MenuAction::SpawnInstance), None);
         assert_eq!(quick_message_aside(&MenuAction::BringToThisDisplay), None);
@@ -571,33 +494,63 @@ mod tests {
         })
     }
 
-    /// The tray must not offer a toggle that cannot take effect, and must
-    /// draw what is in force rather than what the file saved.
-    #[test]
-    fn an_env_owned_director_is_named_and_not_offered() {
-        let installed = names(&["bmo"]);
-        for in_force in [true, false] {
-            let mut owned = snapshot(&installed, "bmo", false);
-            owned.director_enabled = in_force;
-            owned.director_env_owned = true;
+    fn top_rows(description: &MenuDescription) -> Vec<(String, Option<bool>)> {
+        description
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                MenuEntry::Item { label, enabled, .. }
+                | MenuEntry::Check { label, enabled, .. } => (label.clone(), Some(*enabled)),
+                MenuEntry::Submenu { label, .. } => (label.clone(), None),
+            })
+            .collect()
+    }
 
-            let description = describe(owned);
-            match entry_with_id(&description, DIRECTOR_ID).expect("the Director row exists") {
-                MenuEntry::Check {
-                    label,
-                    enabled,
-                    checked,
-                    ..
-                } => {
-                    assert!(!enabled, "a switch the env owns is not the user's");
-                    assert_eq!(*checked, in_force, "the tray draws the value in force");
-                    assert!(
-                        label.contains(crate::model::ENABLED),
-                        "the row must name the variable, not {label:?}"
-                    );
-                }
-                _ => panic!("the Director row must be a Check"),
-            }
+    /// Sprite and tray share one description. Bring to this display is the only
+    /// row that differs, because a sprite you can click is already on this display.
+    #[test]
+    fn sprite_and_tray_share_every_row_except_bring_to_this_display() {
+        let installed = names(&["bmo"]);
+        let sprite = describe(snapshot(&installed, "bmo", false));
+        let expected = vec![
+            ("Chat…".to_string(), Some(true)),
+            ("Caffeinate".to_string(), Some(true)),
+            ("Character".to_string(), None),
+            ("Instances".to_string(), None),
+            ("Do Not Disturb".to_string(), Some(true)),
+            ("Possess".to_string(), Some(true)),
+            ("Go away".to_string(), Some(true)),
+            ("Settings…".to_string(), Some(true)),
+            ("Quit".to_string(), Some(true)),
+        ];
+        assert_eq!(top_rows(&sprite), expected);
+        let mut tray_snap = snapshot(&installed, "bmo", false);
+        tray_snap.surface = MenuSurface::Tray;
+        let mut tray_rows = expected.clone();
+        tray_rows.insert(7, ("Bring to this display".to_string(), Some(true)));
+        let tray = describe(tray_snap);
+        assert_eq!(top_rows(&tray), tray_rows);
+        assert_eq!(
+            tray.actions.get("bring-to-display"),
+            Some(&MenuAction::BringToThisDisplay)
+        );
+        assert_eq!(sprite.actions.get("bring-to-display"), None);
+        for gone in [
+            "AI",
+            "Hide rules",
+            "Memory…",
+            "Action Log…",
+            "Bring to this display",
+        ] {
+            assert!(
+                sprite.entries.iter().all(|entry| match entry {
+                    MenuEntry::Item { label, .. }
+                    | MenuEntry::Check { label, .. }
+                    | MenuEntry::Submenu { label, .. } =>
+                        label != gone && !label.starts_with("AI "),
+                }),
+                "{gone} is not on the sprite"
+            );
         }
     }
 
@@ -900,17 +853,11 @@ mod tests {
         assert_eq!(description.actions.get("dnd"), Some(&MenuAction::ToggleDnd));
         assert_eq!(description.actions.get("hide"), Some(&MenuAction::Hide));
         assert_eq!(
-            description.actions.get("director"),
-            Some(&MenuAction::ToggleDirector)
-        );
-        assert_eq!(
-            description.actions.get("memory"),
-            Some(&MenuAction::OpenMemory)
-        );
-        assert_eq!(
             description.actions.get("settings"),
             Some(&MenuAction::OpenSettings)
         );
+        assert_eq!(description.actions.get("director"), None);
+        assert_eq!(description.actions.get("memory"), None);
     }
 
     /// A package called `hide` must not become the Hide row.
@@ -932,87 +879,6 @@ mod tests {
         );
     }
 
-    /// Settings and Memory are how the tray reaches configuration without
-    /// finding the sprite. Both entry points share this description.
-    #[test]
-    fn settings_and_memory_are_reachable() {
-        let description = describe(snapshot(&[], "bmo", false));
-
-        assert_eq!(
-            entry_with_id(&description, "settings"),
-            Some(&MenuEntry::Item {
-                id: "settings".to_string(),
-                label: "Settings…".to_string(),
-                enabled: true,
-            })
-        );
-        assert_eq!(
-            entry_with_id(&description, "memory"),
-            Some(&MenuEntry::Item {
-                id: "memory".to_string(),
-                label: "Memory…".to_string(),
-                enabled: true,
-            })
-        );
-    }
-
-    /// Every reply is already in `action-log.jsonl`; this row is the whole reader.
-    #[test]
-    fn the_action_log_is_reachable() {
-        let description = describe(snapshot(&[], "bmo", false));
-
-        assert_eq!(
-            entry_with_id(&description, "action-log"),
-            Some(&MenuEntry::Item {
-                id: "action-log".to_string(),
-                label: "Action Log…".to_string(),
-                enabled: true,
-            })
-        );
-        assert_eq!(
-            description.actions.get("action-log"),
-            Some(&MenuAction::OpenActionLog)
-        );
-    }
-
-    /// The Director checkbox is how ambient life is turned off without
-    /// hunting the sprite. Settings owns the same flag.
-    #[test]
-    fn the_director_checkbox_reports_whether_it_is_on() {
-        let installed = names(&["bmo"]);
-        let mut off = snapshot(&installed, "bmo", false);
-        off.director_enabled = false;
-        let description = describe(off);
-
-        assert!(
-            matches!(
-                entry_with_id(&description, "director"),
-                Some(MenuEntry::Check { checked: false, .. })
-            ),
-            "unchecked when the Director is off"
-        );
-    }
-
-    /// The row sits with Go away. Choosing it moves Characters onto the
-    /// display under the cursor; the click handler is what knows that display.
-    #[test]
-    fn bring_to_this_display_is_listed_and_enabled() {
-        let description = describe(snapshot(&[], "bmo", false));
-
-        assert_eq!(
-            entry_with_id(&description, "bring-to-display"),
-            Some(&MenuEntry::Item {
-                id: "bring-to-display".to_string(),
-                label: "Bring to this display".to_string(),
-                enabled: true,
-            })
-        );
-        assert_eq!(
-            description.actions.get("bring-to-display"),
-            Some(&MenuAction::BringToThisDisplay)
-        );
-    }
-
     /// Go away / Come back is the same flag as the hotkey, so the label has
     /// to say which way it is pointing.
     #[test]
@@ -1029,41 +895,6 @@ mod tests {
                 label: "Come back".to_string(),
                 enabled: true,
             })
-        );
-    }
-
-    #[test]
-    fn hide_rules_include_fullscreen_and_the_hotkey() {
-        let description = describe(snapshot(&[], "bmo", false));
-        let items = description.entries.iter().find_map(|entry| match entry {
-            MenuEntry::Submenu { label, items } if label == "Hide rules" => Some(items),
-            _ => None,
-        });
-        let items = items.expect("Hide rules submenu");
-
-        assert!(
-            items.iter().any(|entry| matches!(
-                entry,
-                MenuEntry::Check {
-                    id,
-                    checked: true,
-                    ..
-                } if id == "fullscreen"
-            )),
-            "fullscreen hide is on by default"
-        );
-        assert_eq!(
-            description.actions.get("hotkey"),
-            Some(&MenuAction::OpenSettings),
-            "the hotkey row opens settings, where it is bound"
-        );
-        // Quiet is not gone. DND lives on the menu, not in this list.
-        assert!(
-            items.iter().all(|entry| match entry {
-                MenuEntry::Check { id, .. } | MenuEntry::Item { id, .. } => id != "dnd",
-                _ => true,
-            }),
-            "Do Not Disturb is not a hide rule"
         );
     }
 

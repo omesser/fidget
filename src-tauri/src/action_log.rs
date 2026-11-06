@@ -2,8 +2,8 @@
 //!
 //! Append-only, in the data folder beside Memory. It points at the Harness's
 //! own session (session id, tool call ids) rather than copying a transcript,
-//! which is what GLOSSARY.md asks of it. There is still no reader in the app:
-//! the tray hands the current file to the user's editor, and `tail -f` is the UI.
+//! which is what GLOSSARY.md asks of it. Settings → Development opens the
+//! current file in the user's editor, and `tail -f` is the other way to read it.
 //!
 //! ## Growth policy
 //!

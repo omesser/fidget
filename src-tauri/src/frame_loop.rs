@@ -378,9 +378,9 @@ pub(crate) fn run_frame_loop(
                 &current,
                 &roster,
                 &id,
-                &settings_now,
                 rules_now.as_deref().unwrap_or(&HideRules::default()),
                 menu_caffeinate(&settings_now, None),
+                menu::MenuSurface::Tray,
             );
             (description.actions.clone(), Some(description))
         };
@@ -1470,9 +1470,9 @@ pub(crate) fn run_frame_loop(
                     &current,
                     &roster,
                     &id,
-                    &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
                     menu_caffeinate(&settings_now, caffeinate_drawn.as_ref()),
+                    menu::MenuSurface::Tray,
                 );
                 let notice = crate::names_hint::live();
                 if notice.armed() {
@@ -1643,9 +1643,9 @@ pub(crate) fn run_frame_loop(
                         &live.character.name,
                         &roster,
                         &live.id,
-                        &settings_now,
                         rules_now.as_deref().unwrap_or(&HideRules::default()),
                         menu_caffeinate(&settings_now, caffeinate_drawn.as_ref()),
+                        menu::MenuSurface::Sprite,
                     );
 
                     // The overlay the cursor is on, and where in it the cursor

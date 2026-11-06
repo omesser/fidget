@@ -1254,6 +1254,10 @@ mod settings_event_tests {
             self.note("open_memory")
         }
 
+        fn open_action_log(&self) -> Result<(), String> {
+            self.note("open_action_log")
+        }
+
         fn wipe_memory(&self) -> Result<(), String> {
             self.note("wipe_memory")
         }
@@ -1303,6 +1307,19 @@ mod settings_event_tests {
             Ok(SettingsEventResponse::Refresh)
         );
         assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
+    }
+
+    /// The log opens in Rust, the same way Memory does, so the page never sees a path.
+    #[test]
+    fn opening_the_action_log_runs_here_and_does_not_cross_to_the_page() {
+        use settings::form::RowOperation;
+
+        let session = Recorded::default();
+        assert_eq!(
+            run_operation(&session, &RowOperation::OpenActionLog, &no_fields()),
+            Ok(SettingsEventResponse::Nothing)
+        );
+        assert_eq!(session.ran(), ["open_action_log"]);
     }
 
     /// `AiDraft` carries neither the name nor the Character, so they
@@ -1819,6 +1836,7 @@ fn respond(
 /// seam a test cannot see a press that reaches no method at all.
 trait Operations {
     fn open_memory(&self) -> Result<(), String>;
+    fn open_action_log(&self) -> Result<(), String>;
     fn wipe_memory(&self) -> Result<(), String>;
     fn spawn(&self, character: String, name: String);
     fn dismiss(&self, id: String);
@@ -1827,6 +1845,10 @@ trait Operations {
 impl Operations for settings::SettingsSession {
     fn open_memory(&self) -> Result<(), String> {
         settings::SettingsSession::open_memory(self)
+    }
+
+    fn open_action_log(&self) -> Result<(), String> {
+        settings::SettingsSession::open_action_log(self)
     }
 
     fn wipe_memory(&self) -> Result<(), String> {
@@ -1870,6 +1892,9 @@ fn run_operation(
     match op {
         RowOperation::OpenMemory => session
             .open_memory()
+            .map(|()| SettingsEventResponse::Nothing),
+        RowOperation::OpenActionLog => session
+            .open_action_log()
             .map(|()| SettingsEventResponse::Nothing),
         // The file is gone, so the window redraws from what is left.
         RowOperation::WipeMemory => session
@@ -4117,8 +4142,9 @@ fn stand_roster(
     }
 }
 
-// One over the clippy cap. Settings, hide rules, and the Director each have
-// to hear the same click, and folding them would mix persist with proposal.
+// One over the clippy cap. The roster, the settings file, and the hide rules
+// hear one click, and splitting the match would pass that same set through
+// several functions.
 #[allow(clippy::too_many_arguments)]
 fn apply_menu_action(
     action: menu::MenuAction,
@@ -4201,32 +4227,6 @@ fn apply_menu_action(
                 );
             }
         }
-        menu::MenuAction::ToggleDirector => {
-            let enabled = if let Ok(mut guard) = settings.lock() {
-                guard.director_enabled = !guard.director_enabled;
-                let chat_ui = guard.chat_ui.clone();
-                let chat_appearance = guard.chat_appearance;
-                config.apply_switch(guard.director_enabled);
-                if let Ok(mut inspect) = inspect.lock() {
-                    inspect.enabled = config.enabled;
-                    push_chat_openings(
-                        app,
-                        roster,
-                        &inspect,
-                        characters,
-                        &chat_ui,
-                        chat_appearance,
-                    );
-                }
-                Some(guard.director_enabled)
-            } else {
-                None
-            };
-            if let Some(enabled) = enabled {
-                persist_settings(settings, settings_path);
-                eprintln!("menu: Director {}", if enabled { "on" } else { "off" });
-            }
-        }
         menu::MenuAction::ToggleDnd => {
             if let Some(instance) = roster.get_mut(instance_id) {
                 let new_state = !instance.do_not_disturb();
@@ -4293,28 +4293,6 @@ fn apply_menu_action(
                 .collect();
             bring_roster_to_display(roster, &widths, monitors, floors, cursor);
             eprintln!("menu: bring to this display");
-        }
-        menu::MenuAction::ToggleFullscreenHide => {
-            if let Ok(mut r) = rules.lock() {
-                let next = !r.hide_in_fullscreen();
-                r.set_hide_in_fullscreen(next);
-                let saved = if let Ok(mut guard) = settings.lock() {
-                    guard.hide_in_fullscreen = r.hide_in_fullscreen();
-                    true
-                } else {
-                    false
-                };
-                drop(r);
-                if saved {
-                    persist_settings(settings, settings_path);
-                }
-            }
-        }
-        menu::MenuAction::OpenMemory => {
-            let _ = platform::open_path(&memory::shared_path());
-        }
-        menu::MenuAction::OpenActionLog => {
-            let _ = platform::open_path(&action_log::current_path());
         }
         menu::MenuAction::OpenSettings => present_settings(app.clone()),
         menu::MenuAction::ToggleCaffeinate => {
@@ -4660,20 +4638,16 @@ fn describe_menu(
     current: &str,
     roster: &Roster,
     instance_id: &str,
-    settings: &Settings,
     rules: &HideRules,
     caffeinate: menu::CaffeinateRow,
+    surface: menu::MenuSurface,
 ) -> menu::MenuDescription {
     let instances = roster.list();
-    let hide_hotkey = settings
-        .hide_hotkey
-        .display(settings::ModifierWords::current());
     menu::describe(menu::MenuSnapshot {
+        surface,
         installed,
         current_character: current,
         instances: &instances,
-        director_enabled: model::director_in_force(settings.director_enabled),
-        director_env_owned: model::env_switch(model::ENABLED).is_some(),
         do_not_disturb: roster
             .get(instance_id)
             .map(|instance| instance.do_not_disturb())
@@ -4683,8 +4657,6 @@ fn describe_menu(
             .map(|instance| instance.possessed())
             .unwrap_or(false),
         hidden: rules.is_away(),
-        hide_in_fullscreen: rules.hide_in_fullscreen(),
-        hide_hotkey: &hide_hotkey,
         caffeinate,
     })
 }
@@ -5858,9 +5830,9 @@ fn main() {
                     &current,
                     &roster,
                     &id,
-                    &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
                     menu_caffeinate(&settings_now, None),
+                    menu::MenuSurface::Tray,
                 );
                 #[cfg(target_os = "macos")]
                 platform::seed_tray_position();

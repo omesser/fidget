@@ -982,6 +982,29 @@
           "comment": "Also for development and testing. Leave empty for the default.",
           "disclosure": "Hover delay: how long the pointer rests on the Character before the quick message opens. Leave empty for 2500 milliseconds (the default). A change applies to the next hover.",
           "status": null
+        },
+        {
+          "heading": "Action Log",
+          "serves": null,
+          "rows": [
+            {
+              "type": "Composite",
+              "id": "action_log_actions",
+              "controls": [
+                {
+                  "type": "Button",
+                  "id": "action_log_open",
+                  "label": "Open in editor",
+                  "frozen": false
+                }
+              ],
+              "help": null,
+              "disclosure": null
+            }
+          ],
+          "comment": "Also for development and testing. Opens the log of Harness actions.",
+          "disclosure": "The Action Log is one JSON line per Harness action. Open in editor hands the current file to the system editor. Rotated copies stay beside it.",
+          "status": null
         }
       ]
     }
@@ -992,6 +1015,7 @@
     "clear_key": "clear_key",
     "director_apply": "apply",
     "director_cancel": "cancel",
+    "action_log_open": "open_action_log",
     "memory_open": "open_memory",
     "memory_wipe": "wipe_memory",
     "new_session": "new_session",

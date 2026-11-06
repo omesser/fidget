@@ -1503,6 +1503,12 @@ impl SettingsSession {
         crate::platform::open_path(&self.memory_path)
     }
 
+    /// Read at the click, so a data-folder move after launch is the file
+    /// the editor sees.
+    pub fn open_action_log(&self) -> Result<(), String> {
+        crate::platform::open_path(&crate::action_log::current_path())
+    }
+
     pub fn wipe_memory(&self) -> Result<(), String> {
         MemoryManifest::new(&self.memory_path)
             .wipe()

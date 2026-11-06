@@ -182,24 +182,6 @@ const modes = [
     reopen: true,
   },
   {
-    name: "opening Memory",
-    open: {},
-    pick: { aside: "memory" },
-    hold: {},
-  },
-  {
-    name: "opening the Action Log",
-    open: {},
-    pick: { aside: "action-log" },
-    hold: {},
-  },
-  {
-    name: "toggling hide in fullscreen apps",
-    open: {},
-    pick: { aside: "fullscreen-hide" },
-    hold: {},
-  },
-  {
     name: "switching Character",
     open: {},
     pick: { sprite: { character: "Nim" }, aside: "character" },
