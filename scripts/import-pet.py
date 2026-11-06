@@ -255,20 +255,40 @@ when = "idle under 10s"
 """
 
 # Required and motion strips are not idle-gestures. The importer may still
-# cut them. An extra forever loop, such as waiting, is the gesture category.
+# cut them. Only suitable idle-like forever loops become the gesture category.
 NOT_IDLE_GESTURES = {
     "idle", "walk", "talk", "fall", "land", "hold", "react", "sit", "sleep",
     "climb", "jump", "grab",
 }
 
+# Names the importer will auto-classify as idle-gestures. Ambiguous forever
+# loops (thinking, sing, skate, …) stay unclassified so a human can decide.
+IDLE_GESTURE_NAMES = {
+    "waiting", "review", "wave", "grooming", "waddle-in-place",
+}
+
+
+def suitable_idle_gesture(name):
+    """True when this strip name is a calm fidget the importer should mark
+    as an idle-gesture. look-* and idle-* prefixes match common fidgets;
+    required motion names never qualify."""
+    if name in NOT_IDLE_GESTURES:
+        return False
+    if name in IDLE_GESTURE_NAMES:
+        return True
+    return name.startswith("look-") or name.startswith("idle-")
+
 
 def classify_idle_gestures(animations):
-    """Mark extra forever loops as idle-gestures. The calm baseline stays
-    `idle`. A loop that is already a variant of some other strip stays there."""
+    """Mark suitable forever loops as idle-gestures. The calm baseline stays
+    `idle`. A loop that is already a variant of some other strip stays there.
+    Unsuitable forever extras keep no variant_of for human review."""
     for name, spec in animations.items():
         if name in NOT_IDLE_GESTURES or spec.get("loop") == "once":
             continue
-        if spec.get("variant_of") in (None, "idle"):
+        if spec.get("variant_of") not in (None, "idle"):
+            continue
+        if suitable_idle_gesture(name):
             spec["variant_of"] = "idle-gesture"
 
 
@@ -1448,12 +1468,42 @@ def self_test():
         selected = read_petscodex(source, overrides=mappings, only_mapped=True)
         assert set(selected["animations"]) == {"idle", "thinking", "look-left"}
         assert len(selected["animations"]["idle"]["frames"]) == 7
+        # only_mapped keeps the calm baseline unnamed; suitable look-left is
+        # classified, ambiguous thinking is not.
+        assert selected["animations"]["idle"].get("variant_of") is None
+        assert selected["animations"]["look-left"]["variant_of"] == "idle-gesture"
+        assert selected["animations"]["thinking"].get("variant_of") is None
         looks = selected["animations"]["look-left"]["frames"]
         assert len(looks) == 4
-        assert looks[1].tobytes() == looks[3].tobytes(), "explicit playback order survives"
+        assert looks[1].tobytes() == looks[3].tobytes(), "exact playback order survives"
         assert (40, 82, 100, 255) in {color for _, color in looks[2].getcolors()}
+        # Full required set plus both extras: load, star look-left, draw it.
+        with_gestures = read_petscodex(
+            source, overrides={"look-left": (10, (0, 1, 2, 1)), "thinking": (7, None)},
+        )
+        assert with_gestures["animations"]["look-left"]["variant_of"] == "idle-gesture"
+        assert with_gestures["animations"]["thinking"].get("variant_of") is None
+        assert with_gestures["animations"]["waiting"]["variant_of"] == "idle-gesture"
+        assert with_gestures["animations"]["idle"].get("variant_of") is None
+        gesture_out = tmp / "gesture-character"
+        emit(with_gestures, gesture_out, validate=False)
+        gesture_manifest = (gesture_out / "character.manifest").read_text()
+        assert "[behaviors.look-left]" in gesture_manifest
+        assert 'play = ["look-left"]' in gesture_manifest
+        assert "[behaviors.thinking]" not in gesture_manifest
+        assert "[behaviors.idle]" not in gesture_manifest
+        drew_look = subprocess.run(
+            ["cargo", "run", "-q", "-p", "fidget-core", "--example", "validate",
+             "--", str(gesture_out), "look-left"],
+            cwd=REPO, capture_output=True, text=True,
+        )
+        assert drew_look.returncode == 0, drew_look.stderr
+        assert "played look-left -> look-left" in drew_look.stdout, drew_look.stdout
         extra = read_petscodex(source, overrides={"thinking": (7, None)})
         assert {"walk", "sleep", "thinking"} <= set(extra["animations"])
+        assert extra["animations"]["waiting"]["variant_of"] == "idle-gesture"
+        assert extra["animations"]["thinking"].get("variant_of") is None
+        assert extra["animations"]["idle"].get("variant_of") is None
         try:
             read_petscodex(source, overrides={"thinking": (7, None)}, only_mapped=True)
         except SystemExit as error:
