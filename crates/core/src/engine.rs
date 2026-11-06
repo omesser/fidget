@@ -422,7 +422,7 @@ pub struct Engine {
     velocity: Point,
     state: State,
     /// Untouched milliseconds on its feet or playing an awake Behavior.
-    idle_ms: u32,
+    awake_ms: u32,
     /// Milliseconds the sprite has been quietly resting while Perched: not
     /// riding, not walking, no Primitive playing.
     perched_rest_ms: u32,
@@ -794,7 +794,7 @@ impl Engine {
             position,
             velocity: Point::default(),
             state: State::Falling,
-            idle_ms: 0,
+            awake_ms: 0,
             perched_rest_ms: 0,
             animation: animation_for(State::Falling),
             animation_ms: 0,
@@ -938,7 +938,7 @@ impl Engine {
         self.sleep_after_s = range;
         self.sleep_after_ms = None;
         // The accrued stretch belonged to the previous range.
-        self.idle_ms = 0;
+        self.awake_ms = 0;
     }
 
     /// Builder for the inclusive seconds a sleep lasts once it starts.
@@ -1022,7 +1022,7 @@ impl Engine {
         if !matches!(self.state, State::Grounded | State::Perched) {
             return false;
         }
-        self.idle_ms >= self.sleep_limit_ms()
+        self.awake_ms >= self.sleep_limit_ms()
     }
 
     /// Index into `weights`. An empty list is nothing to pick. A list whose
@@ -1315,7 +1315,7 @@ impl Engine {
         self.animation_ms = 0;
         self.own_idle = OwnIdle::Off;
         self.deferred = None;
-        self.idle_ms = 0;
+        self.awake_ms = 0;
         self.sleep_after_ms = None;
         self.perched_rest_ms = 0;
         self.stop_playing();
@@ -1353,13 +1353,13 @@ impl Engine {
         let long_dwell = self.long_dwell(snapshot);
         let timed_wake = self.count_sleep(snapshot.elapsed_ms);
         if self.resets_sleep(snapshot, long_dwell) || timed_wake {
-            self.idle_ms = 0;
+            self.awake_ms = 0;
             self.sleep_after_ms = None;
         } else if matches!(self.state, State::Grounded | State::Perched)
             || (self.playing_behavior.is_some()
                 && !matches!(self.state, State::Asleep | State::Dragged))
         {
-            self.idle_ms = self.idle_ms.saturating_add(snapshot.elapsed_ms);
+            self.awake_ms = self.awake_ms.saturating_add(snapshot.elapsed_ms);
         }
 
         let quietly_resting_perched = matches!(self.state, State::Perched)

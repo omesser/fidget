@@ -2188,7 +2188,7 @@ pub(crate) fn run_frame_loop(
                 live.last_position = frame.position;
 
                 // Stay Active while moving, a multi-frame animation still
-                // advancing, or idle_ms accruing toward sleep.
+                // advancing, or awake_ms accruing toward sleep.
                 let behavior_playing = frame.playing_behavior.is_some();
                 let needs_active_for_motion =
                     scheduler::mode(&frame, presence.visible, behavior_playing)

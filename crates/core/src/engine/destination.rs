@@ -173,7 +173,7 @@ impl Engine {
             self.stop_playing();
         }
         // A move is activity, as a proposal is, or a drowsy sprite nods off on arrival.
-        self.idle_ms = 0;
+        self.awake_ms = 0;
         Ok(())
     }
 

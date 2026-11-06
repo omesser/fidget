@@ -97,6 +97,20 @@ fn shown(character: &Character, frame: &fidget_core::engine::Frame) -> (String, 
     (drawn.animation.to_string(), drawn.index)
 }
 
+fn a_poke() -> WorldSnapshot {
+    WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..world(100)
+    }
+}
+
+/// Nothing is left playing and the sprite shows its idle.
+fn assert_back_to_idle(character: &Character, frame: &fidget_core::engine::Frame) {
+    assert_eq!(frame.playing_behavior, None);
+    assert_eq!(frame.playing_gesture, None);
+    assert_eq!(shown(character, frame).0, "idle");
+}
+
 fn behavior(primitives: Vec<Primitive>, idle_type: bool) -> Behavior {
     Behavior {
         primitives: primitives.into_iter().collect(),
@@ -370,10 +384,7 @@ fn a_poke_during_a_gesture_still_wins() {
 
     let held = engine.tick(&propose("wave"));
     assert_eq!(held.animation, "idle", "the proposal waits");
-    let poked = engine.tick(&WorldSnapshot {
-        verbs: vec![Verb::Poke],
-        ..world(100)
-    });
+    let poked = engine.tick(&a_poke());
     assert_eq!(poked.animation, "react", "the poke takes the screen");
 
     let mut saw_talk = false;
@@ -580,10 +591,7 @@ fn a_proposal_does_not_reset_sleep_and_a_poke_does() {
 
     let mut engine = rested(&character, 1);
     engine.tick(&world(500));
-    engine.tick(&WorldSnapshot {
-        verbs: vec![Verb::Poke],
-        ..world(100)
-    });
+    engine.tick(&a_poke());
     let later = engine.tick(&world(500));
     assert_ne!(later.state, State::Asleep, "a poke starts the clock over");
 }
@@ -750,7 +758,7 @@ fn an_idle_gesture_keeps_its_name_without_a_base_animation() {
     load(&package(&manifest)).expect("idle-gesture is a category, not an animation's name");
 }
 
-fn then_character(behaviors: &str) -> Character {
+fn chained_behaviors_character(behaviors: &str) -> Character {
     let mut manifest = String::from("name = \"Then test\"\n");
     for name in REQUIRED_ANIMATIONS {
         manifest.push_str(&format!(
@@ -766,7 +774,7 @@ fn then_character(behaviors: &str) -> Character {
 
 #[test]
 fn primitive_then_chain_draws_each_behavior_before_the_named_gesture() {
-    let character = then_character(
+    let character = chained_behaviors_character(
         r#"
 [behaviors.a]
 play = ["react"]
@@ -791,14 +799,12 @@ play = ["spin"]
     let last = engine.tick(&world(500));
     assert_eq!(shown(&character, &last), ("spin".into(), 1));
     let complete = engine.tick(&world(500));
-    assert_eq!(complete.playing_behavior, None);
-    assert_eq!(complete.playing_gesture, None);
-    assert_eq!(shown(&character, &complete).0, "idle");
+    assert_back_to_idle(&character, &complete);
 }
 
 #[test]
 fn longer_then_chain_crosses_animations_and_finishes_on_primitives() {
-    let character = then_character(
+    let character = chained_behaviors_character(
         r#"
 [animations.bow]
 frames = ["idle-0.png", "idle-0.png"]
@@ -851,14 +857,12 @@ play = ["react", "sit"]
     assert_eq!(shown(&character, &finish).0, "react");
     assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
     let complete = engine.tick(&world(600));
-    assert_eq!(complete.playing_behavior, None);
-    assert_eq!(complete.playing_gesture, None);
-    assert_eq!(shown(&character, &complete).0, "idle");
+    assert_back_to_idle(&character, &complete);
 }
 
 #[test]
 fn gesture_reached_through_then_honors_latest_proposal_and_poke_cancellation() {
-    let character = then_character(
+    let character = chained_behaviors_character(
         r#"
 [behaviors.a]
 play = ["react"]
@@ -891,10 +895,7 @@ play = ["sit"]
             assert_eq!(shown(&character, &held).0, "spin");
         }
         if poke {
-            let poked = engine.tick(&WorldSnapshot {
-                verbs: vec![Verb::Poke],
-                ..world(100)
-            });
+            let poked = engine.tick(&a_poke());
             assert_eq!(shown(&character, &poked).0, "react");
             for _ in 0..20 {
                 let frame = engine.tick(&world(100));
@@ -922,7 +923,7 @@ play = ["sit"]
 
 #[test]
 fn primitive_only_then_chain_finishes_without_replaying() {
-    let character = then_character(
+    let character = chained_behaviors_character(
         r#"
 [behaviors.a]
 play = ["react"]
@@ -941,15 +942,13 @@ play = ["sit"]
     assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
     for _ in 0..3 {
         let complete = engine.tick(&world(600));
-        assert_eq!(complete.playing_behavior, None);
-        assert_eq!(complete.playing_gesture, None);
-        assert_eq!(shown(&character, &complete).0, "idle");
+        assert_back_to_idle(&character, &complete);
     }
 }
 
 #[test]
 fn poke_during_flattened_primitives_cancels_the_gesture_continuation() {
-    let character = then_character(
+    let character = chained_behaviors_character(
         r#"
 [behaviors.a]
 play = ["talk"]
@@ -965,10 +964,7 @@ play = ["spin"]
     first_idle(&mut engine);
     assert_eq!(shown(&character, &engine.tick(&propose("a"))).0, "talk");
     assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
-    let poked = engine.tick(&WorldSnapshot {
-        verbs: vec![Verb::Poke],
-        ..world(100)
-    });
+    let poked = engine.tick(&a_poke());
     assert_eq!(shown(&character, &poked).0, "react");
     for _ in 0..20 {
         let frame = engine.tick(&world(100));
