@@ -182,7 +182,7 @@ found by its top-left corner.
 
 `tray-taskbar-icons-hidpi` has only a `.win.ps1` leaf. It is the live check
 for the taskbar icon at a HiDPI scale (#2054), and it never changes the scale:
-set a display to 150% or 200% before the run. It sends no input. It reads the
+set the primary display to 150% or 200% before the run. It sends no input. It reads the
 icons off Fidget's `FidgetAnchor` window and checks that `WM_GETICON`
 `ICON_SMALL` and `GCLP_HICONSM` are `SM_CXSMICON`×`SM_CYSMICON` at Fidget's
 own system DPI (`GetSystemDpiForProcess`), and that `ICON_BIG` and

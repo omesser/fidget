@@ -4,10 +4,10 @@
 #   and taskbar button appear, and nothing takes focus. The scenario captures
 #   two small regions, the taskbar button and the tray icon. Fidget quits when
 #   the scenario ends. It never changes the display scale or any setting: set
-#   a display to 150% or 200% yourself first (sign out and back in if Windows
-#   asks), and put it back afterwards.
+#   the primary display to 150% or 200% yourself first (sign out and back in
+#   if Windows asks), and put it back afterwards.
 # Input: none.
-# Duration: a few seconds, 45 s at most.
+# Duration: a few seconds, 60 s at most.
 # Grants: a desktop session with the taskbar showing. UI Automation for the
 #   terminal that runs it. Fidget's tray icon must not sit in the hidden-icons
 #   overflow.
@@ -17,8 +17,9 @@
 #   its ICON_BIG and GCLP_HICON icons are 256x256; the taskbar button and the
 #   tray icon are found and captured. Whether they look sharp is for the eye:
 #   compare taskbar-button.png and tray-icon.png with a 100% run.
-# Skips (exit 2) when the icon checks pass but Fidget's system DPI is 96
-#   (100%), since that run proves nothing about HiDPI.
+# Skips (exit 2) when Fidget is already running, or when the icon checks pass
+#   but Fidget's system DPI is 96 (100%), since that run proves nothing about
+#   HiDPI.
 # Fixture: FIDGET_SCENARIO_ICONS="aware=2 dpi=144 taskbar=144 small=24x24
 #   classsmall=24x24 big=256x256 classbig=256x256" judges those readings and
 #   launches nothing.
@@ -88,6 +89,11 @@ public static class TrayIconsProbe {
     [DllImport("gdi32.dll")] static extern int GetObject(IntPtr h, int size, out BITMAP bitmap);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr h);
 
+    const int SM_CXSMICON = 49, SM_CYSMICON = 50;
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, MONITOR_DEFAULTTONEAREST = 2;
+    const int MDT_EFFECTIVE_DPI = 0;
+    public const int ICON_SMALL = 0, ICON_BIG = 1, GCLP_HICONSM = -34, GCLP_HICON = -14;
+
     // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, so UI Automation rectangles
     // and CopyFromScreen both speak physical pixels. The process call fails
     // when a manifest already set it; the thread call covers that case.
@@ -99,7 +105,7 @@ public static class TrayIconsProbe {
 
     // SM_CXSMICON and SM_CYSMICON as a window at this DPI sees them.
     public static string SmallIconSize(uint dpi) {
-        return GetSystemMetricsForDpi(49, dpi) + "x" + GetSystemMetricsForDpi(50, dpi);
+        return GetSystemMetricsForDpi(SM_CXSMICON, dpi) + "x" + GetSystemMetricsForDpi(SM_CYSMICON, dpi);
     }
 
     public static IntPtr FindAnchor(uint pid) {
@@ -112,6 +118,16 @@ public static class TrayIconsProbe {
         return IntPtr.Zero;
     }
 
+    // The primary taskbar first, then one per other display.
+    public static IntPtr[] Taskbars() {
+        var all = new System.Collections.Generic.List<IntPtr>();
+        IntPtr h = FindWindow("Shell_TrayWnd", null);
+        if (h != IntPtr.Zero) all.Add(h);
+        h = IntPtr.Zero;
+        while ((h = FindWindowEx(IntPtr.Zero, h, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) all.Add(h);
+        return all.ToArray();
+    }
+
     // 0 unaware, 1 system aware, 2 per monitor.
     public static int Awareness(IntPtr hWnd) {
         return GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(hWnd));
@@ -120,14 +136,14 @@ public static class TrayIconsProbe {
     // System DPI is per process since Windows 10 1803: the one Fidget's own
     // GetSystemMetrics answered at, not this script's.
     public static uint SystemDpiOf(uint pid) {
-        IntPtr process = OpenProcess(0x1000, false, pid);
+        IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         if (process == IntPtr.Zero) return 0;
         try { return GetSystemDpiForProcess(process); } finally { CloseHandle(process); }
     }
 
     public static uint MonitorDpiOf(IntPtr hWnd) {
         uint x, y;
-        return GetDpiForMonitor(MonitorFromWindow(hWnd, 2), 0, out x, out y) == 0 ? x : 0;
+        return GetDpiForMonitor(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, out x, out y) == 0 ? x : 0;
     }
 
     public static IntPtr SentIcon(IntPtr hWnd, int which) {
@@ -201,7 +217,7 @@ function Test-Icons([string]$Readings) {
     if ($failures.Count -gt 0) { return 1 }
 
     if ($dpi -le 96) {
-        $skip = "SKIP: Fidget's system DPI is 96 (100%), so its small icon is the 100% size. Set a display to 150% or 200% and rerun."
+        $skip = "SKIP: Fidget's system DPI is $dpi ($(Scale $dpi)), so its small icon is the 100% size. Set the primary display to 150% or 200% and rerun."
         if ($taskbar -gt 96) {
             $skip += " The taskbar's display is at $(Scale $taskbar) but Fidget took 100% as its system DPI at launch: sign out and back in, then rerun."
         }
@@ -218,6 +234,13 @@ if ($env:FIDGET_SCENARIO_ICONS) {
     $code = Test-Icons $env:FIDGET_SCENARIO_ICONS
     if ($code -eq 0) { Write-Output "PASS: fixture icons" }
     exit $code
+}
+
+# A Fidget already here owns a taskbar button and tray icon of its own.
+$already = @(Get-Process -Name fidget -ErrorAction SilentlyContinue | ForEach-Object { "fidget $($_.Id)" })
+if ($already.Count) {
+    [Console]::Error.WriteLine("SKIP: Fidget is already running: $($already -join ', ')")
+    exit 2
 }
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
@@ -238,15 +261,18 @@ $env:FIDGET_DIRECTOR_API_KEY = "x"
 $env:FIDGET_CHARACTERS = Join-Path $root "characters"
 Remove-Item Env:FIDGET_NO_ANCHOR -ErrorAction SilentlyContinue
 
-function Find-TaskbarButton([string]$NameLike) {
-    $taskbar = [TrayIconsProbe]::FindWindow("Shell_TrayWnd", $null)
-    if ($taskbar -eq [IntPtr]::Zero) { return $null }
+# The first button on any taskbar whose name matches, the primary's first.
+function Find-TaskbarElement([string]$NameLike) {
     $cond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Button)
-    $buttons = [System.Windows.Automation.AutomationElement]::FromHandle($taskbar).FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants, $cond)
-    $buttons | Where-Object { $_.Current.Name -clike $NameLike } | Select-Object -First 1
+    foreach ($taskbar in [TrayIconsProbe]::Taskbars()) {
+        $buttons = [System.Windows.Automation.AutomationElement]::FromHandle($taskbar).FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants, $cond)
+        $found = $buttons | Where-Object { $_.Current.Name -clike $NameLike } | Select-Object -First 1
+        if ($found) { return $found }
+    }
+    return $null
 }
 
 # A few pixels of taskbar around the element, so the edge of the art shows.
@@ -277,27 +303,27 @@ try {
     $anchor = [TrayIconsProbe]::FindAnchor([uint32]$proc.Id)
     if ($anchor -eq [IntPtr]::Zero) { Fail "no FidgetAnchor window belongs to pid $($proc.Id)" }
 
-    $taskbar = [TrayIconsProbe]::FindWindow("Shell_TrayWnd", $null)
+    $taskbar = @([TrayIconsProbe]::Taskbars())[0]
     $systemDpi = [int][TrayIconsProbe]::SystemDpiOf([uint32]$proc.Id)
     $readings = @(
         "aware=$([TrayIconsProbe]::Awareness($anchor))",
         "dpi=$systemDpi",
         "taskbar=$([TrayIconsProbe]::MonitorDpiOf($taskbar))",
-        "small=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::SentIcon($anchor, 0)))",
-        "classsmall=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::ClassIcon($anchor, -34)))",
-        "big=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::SentIcon($anchor, 1)))",
-        "classbig=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::ClassIcon($anchor, -14)))"
+        "small=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::SentIcon($anchor, [TrayIconsProbe]::ICON_SMALL)))",
+        "classsmall=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::ClassIcon($anchor, [TrayIconsProbe]::GCLP_HICONSM)))",
+        "big=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::SentIcon($anchor, [TrayIconsProbe]::ICON_BIG)))",
+        "classbig=$([TrayIconsProbe]::IconSize([TrayIconsProbe]::ClassIcon($anchor, [TrayIconsProbe]::GCLP_HICON)))"
     ) -join " "
     Set-Content -LiteralPath (Join-Path $out "readings.txt") -Value $readings -Encoding ascii
     $code = Test-Icons $readings
 
     # Case-sensitive: the anchor's button is "Fidget", the tray icon's tooltip "fidget".
-    $button = Wait-UiaChange 0 5 { Find-TaskbarButton "Fidget*" }
+    $button = Wait-UiaChange 0 5 { Find-TaskbarElement "Fidget*" }
     if ($button) { Save-Crop $button (Join-Path $out "taskbar-button.png") } else {
         [Console]::Error.WriteLine("FAIL: no Fidget button on the taskbar after 5 s")
         $code = 1
     }
-    $tray = Wait-UiaChange 0 5 { Find-TaskbarButton "fidget*" }
+    $tray = Wait-UiaChange 0 5 { Find-TaskbarElement "fidget*" }
     if ($tray) { Save-Crop $tray (Join-Path $out "tray-icon.png") } else {
         [Console]::Error.WriteLine("FAIL: no fidget tray icon on the taskbar after 5 s; is it in the hidden-icons overflow?")
         $code = 1
