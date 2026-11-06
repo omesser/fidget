@@ -1150,3 +1150,134 @@ fn sleep_does_not_spend_the_next_awake_stretch() {
     assert_eq!(engine.tick(&world(2_900)).state, State::Grounded);
     assert_eq!(engine.tick(&world(100)).state, State::Asleep);
 }
+
+#[test]
+fn a_deferred_proposal_waits_out_the_whole_gesture_pass() {
+    // `spin` is two frames at 1 fps: a two-second pass.
+    let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
+    let mut behaviors = character.behaviors.clone();
+    behaviors.insert("wave".to_string(), behavior(vec![Primitive::Talk], false));
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_behaviors(behaviors)
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
+    let _ = first_idle(&mut engine);
+    let mut start = None;
+    for _ in 0..80 {
+        let frame = engine.tick(&world(100));
+        if shown(&character, &frame).0 == "spin" {
+            start = Some(frame.animation_ms);
+            break;
+        }
+    }
+    let start = start.expect("the stretch reached the gesture");
+    let held = engine.tick(&propose("wave"));
+    assert_eq!(shown(&character, &held).0, "spin", "the proposal is held");
+
+    let mut last = (held.animation_ms, shown(&character, &held).1);
+    let mut talked = false;
+    for _ in 0..40 {
+        let frame = engine.tick(&world(100));
+        if frame.animation == "talk" {
+            talked = true;
+            break;
+        }
+        let (name, index) = shown(&character, &frame);
+        assert_eq!(name, "spin", "nothing else plays before the line");
+        last = (frame.animation_ms, index);
+    }
+    assert!(talked, "the held line plays when the pass ends");
+    assert!(
+        last.0 + 100 >= 2_000,
+        "the pass ran its full two seconds from {start} ms, not cut at {} ms",
+        last.0
+    );
+    assert_eq!(last.1, 1, "the gesture's last frame shows before the line");
+}
+
+fn chained(primitives: Vec<Primitive>, idle_type: bool, then: Option<&str>) -> Behavior {
+    Behavior {
+        then: then.map(str::to_string),
+        ..behavior(primitives, idle_type)
+    }
+}
+
+/// Whether each Idle Primitive of a proposed Behavior plays through the
+/// Engine's idle machine, in the order they play.
+fn idle_ownership(extra: &[(&str, Behavior)], proposed: &str) -> Vec<(Option<String>, bool)> {
+    let character = character(None, 1, 0);
+    let mut behaviors = character.behaviors.clone();
+    behaviors.extend(extra.iter().map(|(n, b)| (n.to_string(), b.clone())));
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_behaviors(behaviors)
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan());
+    let _ = first_idle(&mut engine);
+    let mut frame = engine.tick(&propose(proposed));
+    let mut seen = Vec::new();
+    let mut owner = frame.behavior.clone();
+    for _ in 0..60 {
+        if frame.behavior.is_some() {
+            owner = frame.behavior.clone();
+        }
+        if frame.playing_primitive.is_none() {
+            break;
+        }
+        if frame.playing_primitive == Some(Primitive::Idle) {
+            let typed = frame.idle_beat.is_some();
+            if seen.last() != Some(&(owner.clone(), typed)) {
+                seen.push((owner.clone(), typed));
+            }
+        }
+        frame = engine.tick(&world(100));
+    }
+    seen
+}
+
+#[test]
+fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
+    let typed_after_ordinary = [
+        ("a", chained(vec![Primitive::Talk], false, Some("b"))),
+        ("b", chained(vec![Primitive::Idle], true, None)),
+    ];
+    assert_eq!(
+        idle_ownership(&typed_after_ordinary, "b"),
+        vec![(Some("b".into()), true)]
+    );
+    assert_eq!(
+        idle_ownership(&typed_after_ordinary, "a"),
+        vec![(Some("b".into()), true)],
+        "an idle-typed Behavior reached through then still idles its own way"
+    );
+
+    let ordinary_after_typed = [
+        ("a", chained(vec![Primitive::Idle], true, Some("b"))),
+        ("b", chained(vec![Primitive::Idle], false, None)),
+    ];
+    assert_eq!(
+        idle_ownership(&ordinary_after_typed, "b"),
+        vec![(Some("b".into()), false)]
+    );
+    assert_eq!(
+        idle_ownership(&ordinary_after_typed, "a"),
+        vec![(Some("a".into()), true), (Some("b".into()), false)],
+        "the first Behavior's type does not leak into the next"
+    );
+
+    let longer = [
+        ("a", chained(vec![Primitive::Idle], false, Some("b"))),
+        ("b", chained(vec![Primitive::Idle], true, Some("c"))),
+        ("c", chained(vec![Primitive::Idle], true, Some("d"))),
+        ("d", chained(vec![Primitive::Idle], false, None)),
+    ];
+    assert_eq!(
+        idle_ownership(&longer, "a"),
+        vec![
+            (Some("a".into()), false),
+            (Some("b".into()), true),
+            (Some("d".into()), false),
+        ],
+        "a longer chain switches type at each boundary; same-type hops still flatten"
+    );
+}
