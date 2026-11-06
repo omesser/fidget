@@ -1066,3 +1066,87 @@ fn a_behavior_on_a_wall_spends_the_awake_budget_before_landing() {
     }
     panic!("the sprite never finished landing: {frame:?}");
 }
+
+#[test]
+fn awake_behavior_time_counts_in_air_but_unrelated_falling_does_not() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    for playing_behavior in [false, true] {
+        let mut behaviors = BTreeMap::new();
+        behaviors.insert(
+            "ponder".to_string(),
+            behavior(vec![Primitive::Talk; 5], false),
+        );
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 })
+            .with_behaviors(behaviors)
+            .with_idle_plan(character.idle_plan())
+            .with_sleep_after_s((2, 2));
+        let air = WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1_000.0,
+                height: 1_000_000.0,
+            }],
+            proposal: playing_behavior.then(|| propose("ponder").proposal.unwrap()),
+            ..world(100)
+        };
+        let mut frame = engine.tick(&air);
+        for tick in 0..30 {
+            assert_eq!(frame.state, State::Falling);
+            if playing_behavior {
+                assert_eq!(frame.playing_behavior.as_deref(), Some("ponder"));
+                assert_eq!(shown(&character, &frame).0, "talk");
+            } else {
+                assert_eq!(frame.playing_behavior, None);
+            }
+            frame = engine.tick(&WorldSnapshot {
+                proposal: None,
+                ..air.clone()
+            });
+            if tick == 29 {
+                assert!(frame.playing_behavior.is_none());
+            }
+        }
+        let landing = WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1_000.0,
+                height: frame.position.y + 10.0,
+            }],
+            ..world(100)
+        };
+        let landed = engine.tick(&landing);
+        assert_eq!(landed.playing_primitive, Some(Primitive::Land));
+        let rested = engine.tick(&WorldSnapshot {
+            elapsed_ms: 600,
+            ..landing
+        });
+        assert_eq!(
+            rested.state,
+            if playing_behavior {
+                State::Asleep
+            } else {
+                State::Grounded
+            },
+            "only the awake Behavior spends the air interval: {rested:?}"
+        );
+    }
+}
+
+#[test]
+fn sleep_does_not_spend_the_next_awake_stretch() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut engine = engine_for(&character, 1);
+    first_idle(&mut engine);
+    engine.set_sleep_after_s((3, 3));
+    engine.set_sleep_for_s((10, 10));
+    assert_eq!(engine.tick(&world(2_900)).state, State::Grounded);
+    assert_eq!(engine.tick(&world(100)).state, State::Asleep);
+    assert_eq!(engine.tick(&world(9_900)).state, State::Asleep);
+    let woken = engine.tick(&world(100));
+    assert_eq!(woken.state, State::Grounded);
+    assert!(matches!(woken.idle_beat, Some(IdleBeat::IdleLoop(_))));
+    assert_eq!(engine.tick(&world(2_900)).state, State::Grounded);
+    assert_eq!(engine.tick(&world(100)).state, State::Asleep);
+}

@@ -242,7 +242,7 @@ A Character Package is a directory or `.zip` holding a `character.manifest`, an 
 | `gravity` | No | Number from 0.25 to 2: how hard the Character falls, as a multiple of the default. Below 1, falls are slower and Jumps and Throws go higher. | 1 |
 | `facing` | No | `"left"` or `"right"`: the way the Character's frames face as drawn. See [Which way the art faces](#which-way-the-art-faces). | `"right"` |
 | `idle_gesture_every_s` | No | `[min, max]` in seconds, inclusive, each end from 5 to 60. How long the Engine plays an idle loop before one idle-gesture. | `[10, 30]` |
-| `sleep_after_s` | No | `[min, max]` in seconds, inclusive. Untouched Grounded or Perched time before sleep. A Behavior counts, and does not reset it. | `[120, 600]` |
+| `sleep_after_s` | No | `[min, max]` in seconds, inclusive. Untouched Grounded or Perched time before sleep, plus awake Behavior time off its feet. Unscripted air and being held pause it. A Behavior does not reset it. | `[120, 600]` |
 | `sleep_for_s` | No | `[min, max]` in seconds, inclusive. How long sleep lasts before the sprite wakes into an idle loop. | `[300, 600]` |
 | `[frame_facing]` | No | Frame files that face the other way from `facing`. | |
 | `[source]` | No | Where the art came from. See [Declaring where the art came from](#declaring-where-the-art-came-from). | |

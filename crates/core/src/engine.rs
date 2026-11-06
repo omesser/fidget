@@ -421,7 +421,7 @@ pub struct Engine {
     position: Point,
     velocity: Point,
     state: State,
-    /// Milliseconds the sprite has spent on its feet, untouched.
+    /// Untouched milliseconds on its feet or playing an awake Behavior.
     idle_ms: u32,
     /// Milliseconds the sprite has been quietly resting while Perched: not
     /// riding, not walking, no Primitive playing.
@@ -1347,15 +1347,18 @@ impl Engine {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
         self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
 
-        // Awake time counts on the ground only. Air and a hand pause the
-        // clock. A user reaching for the sprite, or the sleep timer ending,
-        // starts it over.
+        // A Behavior spends awake time even off its feet. Unscripted air
+        // and a hand pause the clock. A user interaction or timed wake
+        // starts a fresh awake stretch.
         let long_dwell = self.long_dwell(snapshot);
         let timed_wake = self.count_sleep(snapshot.elapsed_ms);
         if self.resets_sleep(snapshot, long_dwell) || timed_wake {
             self.idle_ms = 0;
             self.sleep_after_ms = None;
-        } else if matches!(self.state, State::Grounded | State::Perched) {
+        } else if matches!(self.state, State::Grounded | State::Perched)
+            || (self.playing_behavior.is_some()
+                && !matches!(self.state, State::Asleep | State::Dragged))
+        {
             self.idle_ms = self.idle_ms.saturating_add(snapshot.elapsed_ms);
         }
 
