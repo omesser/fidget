@@ -837,14 +837,14 @@ mod tests {
     #[test]
     fn an_invalid_strip_token_is_named_with_readable_whitespace() {
         let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"idel\"]\n",
+            "{}[behaviors.greet]\nplay = [\"unknown-strip\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
         assert_eq!(
             errors,
             vec![
-                "behavior \"greet\" declares \"idel\", which is not a Primitive or an idle-gesture"
+                "behavior \"greet\" declares \"unknown-strip\", which is not a Primitive or an idle-gesture"
                     .to_string()
             ],
             "{errors:#?}"

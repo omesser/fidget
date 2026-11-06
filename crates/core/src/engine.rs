@@ -6581,11 +6581,9 @@ mod tests {
             {
                 saw_greet_start = true;
             }
-            if saw_greet_start {
-                if last.art_name() == "react" || last.animation == "react" {
-                    saw_greet_art = true;
-                    break;
-                }
+            if saw_greet_start && (last.art_name() == "react" || last.animation == "react") {
+                saw_greet_art = true;
+                break;
             }
             if last.playing_gesture.is_none()
                 && last.playing_behavior.as_deref() != Some("greet")
