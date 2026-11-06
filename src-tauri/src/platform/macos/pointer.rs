@@ -8,11 +8,11 @@
 //! The Shell reads it beside the cursor position it already reads each tick.
 //! A drag that outruns the art still has to be seen, and the overlay is
 //! click-through wherever the sprite is not drawn, so the webview alone would
-//! drop the button the moment the cursor left the pixels. Each button's down
-//! and up event counters say when a press began and ended, so a click between
-//! two ticks still counts; the button level only says whether a counted press
-//! is still held. In the #1858 trace the counters saw every press the overlay
-//! saw, and presses it missed, so the overlay is not a second source here.
+//! drop the button the moment the cursor left the pixels. The button level
+//! says when a press began and ended. Each button's down and up event
+//! counters catch a click between two ticks, which the level misses. In the
+//! #1858 trace the counters saw every press the overlay saw, and presses it
+//! missed, so the overlay is not a third source here.
 
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -81,18 +81,19 @@ fn control_click(raw: ButtonsDown) -> ButtonsDown {
 
 /// The overlay felt a primary press. Settle what it means now, while Control
 /// is still held: an idle frame loop can tick up to a second later. Whether
-/// there was a press at all is still the counters' call, so a pointerdown
-/// with no counted press pending is ignored.
+/// there was a press at all is still the session's call, so a pointerdown
+/// with no press pending is ignored.
 pub fn primary_press_began() {
-    let downs = CGEventSource::counter_for_event_type(
-        CGEventSourceStateID::CombinedSessionState,
+    let now = ButtonSample::read(
+        CGMouseButton::Left,
         CGEventType::LeftMouseDown,
+        CGEventType::LeftMouseUp,
     );
     let pending = SESSION
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .as_ref()
-        .is_some_and(|session| session.left.pending(downs));
+        .is_some_and(|session| session.left.pending(now));
     let mut press = PRIMARY_PRESS.lock().unwrap_or_else(PoisonError::into_inner);
     *press = press_began(*press, pending, control_key_down());
 }
@@ -128,70 +129,83 @@ impl ButtonSample {
     }
 }
 
-/// One button as the frame loop is told it, one level per tick. The counters
-/// say a press began or ended; the level only says a counted press is still
-/// held. `Tapped` and `Owed` report a level the button no longer has, so a
-/// press or a release that fit between two ticks still gets a tick of its own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Press {
-    Up,
-    /// Pressed, and the level says still held.
-    Held,
-    /// Pressed and let go since the last tick: down now, up next tick.
-    Tapped,
-    /// Let go and pressed again since the last tick: up now, down next tick.
-    Owed,
+/// Presses and releases one source has seen since the baseline.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Edges {
+    downs: u64,
+    ups: u64,
 }
 
-impl Press {
-    fn step(self, downs: u32, ups: u32, level: bool) -> Self {
-        let pressed = if level { Self::Held } else { Self::Tapped };
-        let let_go = if downs > 0 { Self::Owed } else { Self::Up };
-        match self {
-            Self::Up if downs > 0 => pressed,
-            Self::Up => Self::Up,
-            Self::Held if ups > 0 || !level => let_go,
-            Self::Held => Self::Held,
-            Self::Tapped => let_go,
-            Self::Owed => pressed,
-        }
-    }
-
-    fn down(self) -> bool {
-        matches!(self, Self::Held | Self::Tapped)
-    }
-}
-
-/// One button's last sample and where its press stands.
+/// One button as the frame loop is told it, one edge per tick. The level and
+/// the counters each see a subset of the real presses: the level misses a
+/// press that fits between two ticks, and since macOS 27.2 the counters move
+/// only every 500 ms. Neither overcounts, so the larger count of each edge is
+/// the truth so far, and the level's is the prompt one.
 #[derive(Clone, Copy, Debug)]
 struct Button {
     last: ButtonSample,
-    press: Press,
+    level: Edges,
+    counted: Edges,
+    told: Edges,
+    /// A press held at the baseline has no down, so its release is not one.
+    held_at_start: bool,
+    down: bool,
 }
 
 impl Button {
     /// The first sample is the baseline: a button already held when Fidget
-    /// starts has no counted press, so it is not one.
+    /// starts was never pressed here.
     fn new(first: ButtonSample) -> Self {
         Self {
             last: first,
-            press: Press::Up,
+            level: Edges::default(),
+            counted: Edges::default(),
+            told: Edges::default(),
+            held_at_start: first.level,
+            down: false,
         }
     }
 
-    /// Whether a counted press is still under way: the down counter moved
-    /// past the last sample, or the last tick left the button held or owed
-    /// a press to the next tick.
-    fn pending(&self, downs: u32) -> bool {
-        downs != self.last.downs || matches!(self.press, Press::Held | Press::Owed)
+    fn observe(&mut self, now: ButtonSample) {
+        self.counted.downs += u64::from(now.downs.wrapping_sub(self.last.downs));
+        self.counted.ups += u64::from(now.ups.wrapping_sub(self.last.ups));
+        match (self.last.level, now.level) {
+            (false, true) => self.level.downs += 1,
+            (true, false) => self.level.ups += 1,
+            _ => {}
+        }
+        self.last = now;
     }
 
+    fn presses(&self) -> u64 {
+        self.level.downs.max(self.counted.downs)
+    }
+
+    fn releases(&self) -> u64 {
+        let ups = self.level.ups.max(self.counted.ups);
+        ups.saturating_sub(u64::from(self.held_at_start))
+    }
+
+    /// Whether a press is under way at `now`: held, or seen and not yet told.
+    fn pending(&self, now: ButtonSample) -> bool {
+        let mut ahead = *self;
+        ahead.observe(now);
+        ahead.down || ahead.presses() > ahead.told.downs
+    }
+
+    /// One edge per tick, so a press or a release that fit between two ticks
+    /// still gets a tick of its own, and a double-click the counters report
+    /// at once still reaches the frame loop as two presses.
     fn step(&mut self, now: ButtonSample) -> bool {
-        let downs = now.downs.wrapping_sub(self.last.downs);
-        let ups = now.ups.wrapping_sub(self.last.ups);
-        self.press = self.press.step(downs, ups, now.level);
-        self.last = now;
-        self.press.down()
+        self.observe(now);
+        if !self.down && self.presses() > self.told.downs {
+            self.told.downs += 1;
+            self.down = true;
+        } else if self.down && self.releases() > self.told.ups {
+            self.told.ups += 1;
+            self.down = false;
+        }
+        self.down
     }
 }
 
@@ -549,13 +563,99 @@ mod tests {
         );
     }
 
-    /// Only a counted press starts one, so a button held before the first
-    /// sample, or a level the counters never backed, is not a click.
+    /// A button held before the first sample was never pressed here, and its
+    /// release must not end the next press early.
     #[test]
-    fn the_level_alone_never_starts_a_press() {
+    fn a_button_held_at_the_baseline_is_not_a_press() {
         assert_eq!(
-            levels(&[sample(true, 4, 3), sample(true, 4, 3), sample(false, 4, 4)]),
-            vec![false, false]
+            levels(&[
+                sample(true, 4, 3),
+                sample(true, 4, 3),
+                sample(false, 4, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+            ]),
+            vec![false, false, true, true]
+        );
+    }
+
+    /// macOS 27.2 moves the counters every 500 ms. The level's press is told
+    /// at once, and the counts that catch up later are the same press.
+    #[test]
+    fn a_press_the_counters_report_late_is_one_press_told_on_time() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 4, 4),
+                sample(false, 4, 4),
+                sample(false, 5, 5),
+                sample(false, 5, 5),
+            ]),
+            vec![true, false, false, false]
+        );
+    }
+
+    /// The counters missed the press, the level went down: a press.
+    #[test]
+    fn a_level_edge_with_no_count_is_a_press() {
+        assert_eq!(
+            levels(&[sample(false, 4, 4), sample(true, 4, 4), sample(true, 4, 4)]),
+            vec![true, true]
+        );
+    }
+
+    /// Two taps between ticks that the counters report at once still reach
+    /// the frame loop as two presses.
+    #[test]
+    fn two_taps_counted_at_once_are_two_presses() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, false]
+        );
+    }
+
+    /// A double-click the level saw press by press, with the counters
+    /// catching up after it: the Summon, and no third press.
+    #[test]
+    fn a_double_click_seen_by_the_level_is_a_summon_with_late_counters() {
+        let samples = [
+            sample(false, 4, 4),
+            sample(true, 4, 4),
+            sample(false, 4, 4),
+            sample(true, 4, 4),
+            sample(false, 4, 4),
+            sample(false, 6, 6),
+            sample(false, 6, 6),
+        ];
+        let mut button = Button::new(samples[0]);
+        let mut pointer = Pointer::default();
+        let at = Point { x: 100.0, y: 100.0 };
+        let verbs: Vec<_> = samples[1..]
+            .iter()
+            .flat_map(|&now| pointer.update(true, button.step(now), false, at, 16))
+            .collect();
+        assert_eq!(verbs, vec![Verb::Poke, Verb::Summon]);
+    }
+
+    /// The 27.2 Control-click: Control is let go before the counters move,
+    /// but the level saw the press while it was held.
+    #[test]
+    fn a_control_click_with_late_counters_is_a_menu() {
+        use Step::Tick;
+        assert_eq!(
+            session(&[
+                Tick(sample(false, 4, 4), false),
+                Tick(sample(true, 4, 4), true),
+                Tick(sample(false, 4, 4), false),
+                Tick(sample(false, 5, 5), false),
+            ]),
+            vec![Verb::Menu]
         );
     }
 
@@ -589,7 +689,7 @@ mod tests {
     /// landing between ticks with the down counter where it then stood.
     enum Step {
         Tick(ButtonSample, bool),
-        PointerDown(u32, bool),
+        PointerDown(ButtonSample, bool),
     }
 
     /// Runs the left button through the counters, the overlay's pointerdown
@@ -619,8 +719,8 @@ mod tests {
                     );
                     verbs.extend(pointer.update(true, buttons.primary, buttons.secondary, at, 400));
                 }
-                Step::PointerDown(downs, control) => {
-                    press = press_began(press, left.pending(downs), control);
+                Step::PointerDown(now, control) => {
+                    press = press_began(press, left.pending(now), control);
                 }
             }
         }
@@ -638,7 +738,7 @@ mod tests {
                 Tick(sample(false, 4, 4), false),
                 Tick(sample(false, 5, 5), true),
                 Tick(sample(false, 5, 5), true),
-                PointerDown(5, true),
+                PointerDown(sample(false, 5, 5), true),
                 Tick(sample(true, 6, 5), false),
                 Tick(sample(false, 6, 6), false),
             ]),
@@ -656,7 +756,7 @@ mod tests {
                 Tick(sample(false, 4, 4), false),
                 Tick(sample(false, 5, 5), false),
                 Tick(sample(false, 5, 5), false),
-                PointerDown(5, false),
+                PointerDown(sample(false, 5, 5), false),
                 Tick(sample(true, 6, 5), true),
                 Tick(sample(false, 6, 6), true),
             ]),
@@ -675,7 +775,7 @@ mod tests {
                 Tick(sample(false, 4, 4), false),
                 Tick(sample(true, 5, 4), false),
                 Tick(sample(true, 6, 5), true),
-                PointerDown(6, true),
+                PointerDown(sample(true, 6, 5), true),
                 Tick(sample(true, 6, 5), false),
                 Tick(sample(false, 6, 6), false),
             ]),
@@ -691,7 +791,7 @@ mod tests {
         assert_eq!(
             session(&[
                 Tick(sample(false, 4, 4), false),
-                PointerDown(5, true),
+                PointerDown(sample(true, 5, 4), true),
                 Tick(sample(true, 5, 4), false),
                 Tick(sample(false, 5, 5), false),
             ]),
