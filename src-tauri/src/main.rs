@@ -5890,12 +5890,12 @@ fn main() {
             let live_quit = Arc::clone(&quit_generation);
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                // muda on Windows matches a click against the menu attached
-                // now, so a row of a menu replaced while open never lands here.
                 eprintln!("menu: event {id}");
-                // Native Quit ids are per tray draw. A dismiss rebuilds the
-                // tray and muda can click the item it just dropped; that id
-                // is the previous draw's, so it must not call quit_now.
+                // Native Quit ids are per tray draw. Off Windows, a dismiss
+                // rebuilds the tray and muda can click the item it just
+                // dropped; that id is the previous draw's, so it must not call
+                // quit_now. muda on Windows matches a click against the menu
+                // attached now, so a dropped tray row never lands here.
                 if menu::is_live_quit(&id, live_quit.load(Ordering::SeqCst)) {
                     quit_now();
                 }

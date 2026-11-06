@@ -1014,8 +1014,9 @@ pub(crate) fn run_frame_loop(
                         );
                         menu_acted = true;
                     } else {
-                        // A stale Quit, or a row of a tray menu replaced
-                        // since it opened.
+                        // Tray Quit ids carry a draw generation, so every
+                        // Quit lands here. Other ids outlive a rebuild: one
+                        // here is a row the current draw no longer has.
                         eprintln!("menu: {id} is on no open menu");
                     }
                 }
