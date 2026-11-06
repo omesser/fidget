@@ -1081,10 +1081,6 @@ impl Engine {
         if self.apply_deferred() {
             return true;
         }
-        // A Behavior whose Primitives ran out mid-gesture ends with the pass.
-        if self.playing.is_empty() && self.playing_behavior.is_some() && self.end_queue() {
-            return true;
-        }
         self.begin_loop();
         false
     }
@@ -1127,13 +1123,6 @@ impl Engine {
             current = next;
         }
         None
-    }
-
-    /// The Primitive queue is done: the Behavior's pass completes.
-    fn end_queue(&mut self) -> bool {
-        let finished = self.playing_behavior.take();
-        self.moment_holding = false;
-        self.complete_pass(finished)
     }
 
     /// Shared completed-pass boundary: deferred Director proposal first, else
@@ -2327,6 +2316,12 @@ impl Engine {
             return false;
         }
 
+        // An own-idle gesture owns the screen until its pass ends: the
+        // Primitive clock runs, but every boundary it reaches waits for it.
+        if matches!(self.own_idle, OwnIdle::Gesture { .. }) {
+            self.primitive_ms = self.primitive_ms.saturating_sub(elapsed_ms);
+            return false;
+        }
         let mut left = elapsed_ms;
         let mut moved_on = false;
 
@@ -2345,8 +2340,9 @@ impl Engine {
         }
         if self.playing.is_empty() {
             self.primitive_ms = 0;
-            // An own-idle gesture on screen is mid-pass: `finish_gesture` ends it.
-            if !matches!(self.own_idle, OwnIdle::Gesture { .. }) && self.end_queue() {
+            let finished = self.playing_behavior.take();
+            self.moment_holding = false;
+            if self.complete_pass(finished) {
                 moved_on = true;
             }
         } else {
