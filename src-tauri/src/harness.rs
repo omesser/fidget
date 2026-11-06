@@ -10438,6 +10438,68 @@ mod tests {
         );
     }
 
+    /// `alive` is what Chat reads as "the child is up". Shutdown has posted
+    /// before the in-flight caller is released, so the flag has to be false
+    /// in that gap. A turn that later comes back as a loss is not the writer.
+    #[test]
+    fn shutdown_drops_alive_before_the_in_flight_caller_returns() {
+        struct RestoreAttachment;
+        impl Drop for RestoreAttachment {
+            fn drop(&mut self) {
+                let mut slot = attachment();
+                slot.session = None;
+                slot.forward = None;
+            }
+        }
+        for iteration in 0..10 {
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (fx, session) = Fixture::new("slow");
+            let session = Arc::new(session);
+            let worker = {
+                let session = Arc::clone(&session);
+                thread::spawn(move || {
+                    crate::acp_wire::arm_shutdown_park(entered_tx);
+                    session.complete(&asking("hi"), &|_| {})
+                })
+            };
+            assert!(
+                fx.wait_for("prompt", 1),
+                "iteration {iteration}: the turn never went out"
+            );
+            {
+                let mut slot = attachment();
+                slot.forward = Some(silent());
+                slot.session = Some(Arc::clone(&session));
+            }
+            let _restore = RestoreAttachment;
+            let start = Instant::now();
+            retarget(None, false);
+            assert!(
+                start.elapsed() < Duration::from_millis(500),
+                "iteration {iteration}: retarget waited {:?} on the dropped session",
+                start.elapsed()
+            );
+            let release = entered_rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap_or_else(|_| {
+                    panic!("iteration {iteration}: shutdown never reached the wire")
+                });
+            assert!(
+                !session.inspect().alive,
+                "iteration {iteration}: the dropped session still reads live"
+            );
+            let _ = release.send(());
+            assert!(
+                worker.join().unwrap().is_err(),
+                "iteration {iteration}: the turn outlived the kill"
+            );
+            assert!(
+                !session.inspect().alive,
+                "iteration {iteration}: the dropped session still reads live"
+            );
+        }
+    }
+
     /// The stalled open has to stay unanswered until the session is dropped.
     /// A stall that ends on its own lets `session/new` succeed before a slow
     /// runner's cancel lands.

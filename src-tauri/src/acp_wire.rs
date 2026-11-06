@@ -2,6 +2,8 @@
 //! No SDK type leaves the file. Reversing the crate choice rewrites this
 //! file only. The frame loop never sees it.
 
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -41,6 +43,37 @@ use tokio::sync::mpsc;
 /// After `session/cancel`, how long the turn lock waits for the `cancelled`
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
+
+#[cfg(test)]
+thread_local! {
+    static SHUTDOWN_PARK: RefCell<Option<sync_mpsc::Sender<sync_mpsc::Sender<()>>>> =
+        const { RefCell::new(None) };
+}
+
+/// Park the next wire this thread spawns when it reads `Msg::Shutdown`.
+/// The sender comes back so the test can release it. Spawn takes the park
+/// on this thread, so one test cannot stop another test's child.
+#[cfg(test)]
+pub(crate) fn arm_shutdown_park(park: sync_mpsc::Sender<sync_mpsc::Sender<()>>) {
+    SHUTDOWN_PARK.with(|slot| *slot.borrow_mut() = Some(park));
+}
+
+#[cfg(test)]
+fn take_shutdown_park() -> Option<sync_mpsc::Sender<sync_mpsc::Sender<()>>> {
+    SHUTDOWN_PARK.with(|slot| slot.borrow_mut().take())
+}
+
+#[cfg(test)]
+fn hold_shutdown(park: &mut Option<sync_mpsc::Sender<sync_mpsc::Sender<()>>>) {
+    let Some(park) = park.take() else {
+        return;
+    };
+    let (release_tx, release_rx) = sync_mpsc::channel();
+    if park.send(release_tx).is_err() {
+        return;
+    }
+    let _ = release_rx.recv();
+}
 
 /// How long a cancelled turn may go without one frame from the child before
 /// the child counts as hung and is retired. The default turn budget: no frame
@@ -670,9 +703,21 @@ impl Wire {
         let (tx, rx) = mpsc::unbounded_channel();
         let (ready_tx, ready_rx) = sync_mpsc::channel();
         let (done_tx, done) = sync_mpsc::channel();
+        #[cfg(test)]
+        let shutdown_park = take_shutdown_park();
         thread::Builder::new()
             .name("acp-wire".into())
-            .spawn(move || run(command, rx, ready_tx, done_tx, on_event))
+            .spawn(move || {
+                run(
+                    command,
+                    rx,
+                    ready_tx,
+                    done_tx,
+                    on_event,
+                    #[cfg(test)]
+                    shutdown_park,
+                )
+            })
             .map_err(|why| SpawnError::Failed(format!("could not start the wire thread: {why}")))?;
         let handshake = match ready_rx.recv_timeout(timeout) {
             Ok(Ok(handshake)) => handshake,
@@ -906,6 +951,7 @@ fn run(
     // is what `wait_for_exit` waits for.
     _done: sync_mpsc::Sender<()>,
     on_event: OnEvent,
+    #[cfg(test)] mut shutdown_park: Option<sync_mpsc::Sender<sync_mpsc::Sender<()>>>,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -1022,7 +1068,15 @@ fn run(
                             if let Some(ready) = ready.take() {
                                 let _ = ready.send(Ok(handshake));
                             }
-                            serve(&cx, rx, incoming_rx, &on_event).await;
+                            serve(
+                                &cx,
+                                rx,
+                                incoming_rx,
+                                &on_event,
+                                #[cfg(test)]
+                                &mut shutdown_park,
+                            )
+                            .await;
                         }
                         Err(why) => refused = Some(error_text(why)),
                     }
@@ -1344,6 +1398,7 @@ async fn serve(
     mut rx: mpsc::UnboundedReceiver<Msg>,
     mut incoming: mpsc::UnboundedReceiver<Incoming>,
     on_event: &OnEvent,
+    #[cfg(test)] shutdown_park: &mut Option<sync_mpsc::Sender<sync_mpsc::Sender<()>>>,
 ) {
     let mut auth: Option<(Flight<'_, Result<(), String>>, sync_mpsc::Sender<_>)> = None;
     let mut job = Job::Idle;
@@ -1424,9 +1479,15 @@ async fn serve(
             () = cx.incoming_closed() => Step::Closed,
         };
         match step {
-            Step::Heard(None) | Step::Command(None | Some(Msg::Shutdown)) | Step::Closed => {
-                break TurnError::Lost
+            Step::Command(Some(Msg::Shutdown)) => {
+                // `Done` goes out after this loop and that is what releases
+                // the caller. The park holds the send so a test can read
+                // `alive` while the caller is still blocked.
+                #[cfg(test)]
+                hold_shutdown(shutdown_park);
+                break TurnError::Lost;
             }
+            Step::Heard(None) | Step::Command(None) | Step::Closed => break TurnError::Lost,
             Step::Heard(Some(message)) => {
                 if let Job::Turn {
                     quiet_until: Some(at),
