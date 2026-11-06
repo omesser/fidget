@@ -2002,6 +2002,13 @@ impl Session {
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
+        // The wire is already taken. The caller may still be blocked, or it
+        // may return on its own budget, and neither of those writes `alive`.
+        // Chat treats a set `alive` as the child still being attached.
+        self.update_inspect(|inspect| {
+            inspect.alive = false;
+            inspect.initializing = false;
+        });
         wire.shutdown();
         if !wire.wait_for_exit(REAP) {
             eprintln!(
