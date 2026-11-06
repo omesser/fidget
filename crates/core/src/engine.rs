@@ -2385,7 +2385,7 @@ impl Engine {
     }
 
     /// Engine idle, or a Behavior declared `type = "idle"` on an idle Primitive.
-    /// A named gesture step plays its own animation and does not enter this.
+    /// A named gesture plays its own animation and does not enter this.
     fn uses_own_idle(&self) -> bool {
         if self.playing_gesture().is_some() {
             return false;
@@ -2534,10 +2534,9 @@ impl Engine {
         }
     }
 
-    /// A named Behavior's `then` chain: the Primitives that play as one queue,
-    /// and the first non-flattened Behavior that starts when that pass ends.
-    /// `None` when undeclared.
-    /// Stops at cycles: ADR-0002 promises no package can hang the frame loop.
+    /// A named Behavior's `then` chain, or `None` when undeclared: the Primitives
+    /// that play as one queue, and the first non-flattened Behavior after that
+    /// pass. Stops at cycles: ADR-0002 promises no package can hang the frame loop.
     fn walk(&self, behavior: &str) -> Option<(Vec<Primitive>, Option<String>)> {
         let mut primitives = Vec::new();
         let mut walked: BTreeSet<&str> = BTreeSet::new();
