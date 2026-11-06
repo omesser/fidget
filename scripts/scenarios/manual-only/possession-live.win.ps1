@@ -226,6 +226,28 @@ public static class PossessionLiveInput {
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint attach, uint to, bool on);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool IsGUIThread(bool convert);
+    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X; public int Y; }
+    public static IntPtr RootAt(int x, int y) { var p = new POINT(); p.X = x; p.Y = y; return GetAncestor(WindowFromPoint(p), 2); }
+    // Windows refuses the foreground to a background script, so for the call
+    // this thread's input joins the foreground thread's, as the pill leaf does.
+    public static bool Bring(IntPtr h) {
+        if (SetForegroundWindow(h) && GetForegroundWindow() == h) return true;
+        IsGUIThread(true);
+        uint unused;
+        uint front = GetWindowThreadProcessId(GetForegroundWindow(), out unused);
+        uint me = GetCurrentThreadId();
+        bool joined = front != 0 && front != me && AttachThreadInput(me, front, true);
+        try { BringWindowToTop(h); SetForegroundWindow(h); }
+        finally { if (joined) AttachThreadInput(me, front, false); }
+        return GetForegroundWindow() == h;
+    }
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk; public ushort scan; public uint flags; public uint time; public IntPtr extra; }
     [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx; public int dy; public uint data; public uint flags; public uint time; public IntPtr extra; }
@@ -354,6 +376,8 @@ try {
         $script:notepad = $null
         Fail "the $script:docName window belongs to $ownerName, not Notepad"
     }
+    # Notepad can open behind another app's window, and the click away has to land on it.
+    [void][PossessionLiveInput]::Bring($script:pad)
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
@@ -377,7 +401,17 @@ try {
     if (-not (Wait-ForTrace 3 $traceFile '^\d+ menu: possession on')) {
         Fail "the Possess row did not possess the sprite; see $traceFile"
     }
-    if (-not (Wait-ForTrace 3 $traceFile '^\d+ overlay [^:]+: window focus')) {
+    # The menu's own focus line comes before possession. The Shell raises the
+    # overlay once more after it, and a key sent before that raise is lost.
+    $raisedAfterPossess = {
+        $seen = $false
+        foreach ($line in @(Get-Content -LiteralPath $traceFile)) {
+            if ($line -match '^\d+ menu: possession on') { $seen = $true }
+            elseif ($seen -and $line -match '^\d+ overlay: pill open SetForegroundWindow') { return $true }
+        }
+        return $false
+    }
+    if (-not (Wait-OnChanges 3 $data $raisedAfterPossess)) {
         Fail "the possessed overlay never took the keyboard; see $traceFile"
     }
     Write-Output "ok: possessed, and the overlay has the keyboard"
@@ -391,8 +425,15 @@ try {
     if ($pad -eq [IntPtr]::Zero -or -not [PossessionLiveInput]::GetWindowRect($pad, [ref]$rect)) {
         Fail "Notepad has no window to click"
     }
+    $padX = [int](($rect.Left + $rect.Right) / 2)
+    $padY = [int](($rect.Top + $rect.Bottom) / 2)
+    $cover = [PossessionLiveInput]::RootAt($padX, $padY)
+    if ((Owner-Of $cover) -ne [uint32]$script:notepad.Id) {
+        $coverName = (Get-Process -Id (Owner-Of $cover) -ErrorAction SilentlyContinue).ProcessName
+        Fail "$coverName covers Notepad at ($padX,$padY), so the click would not reach it"
+    }
     $blurs = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window blur' }).Count
-    [PossessionLiveInput]::SetCursorPos([int](($rect.Left + $rect.Right) / 2), [int](($rect.Top + $rect.Bottom) / 2)) | Out-Null
+    [PossessionLiveInput]::SetCursorPos($padX, $padY) | Out-Null
     [PossessionLiveInput]::Click()
     if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay [^:]+: window blur' $blurs)) {
         Fail "the overlay never lost focus to Notepad; see $traceFile"
@@ -417,16 +458,29 @@ try {
         Fail "the letter did not reach Notepad (it holds $(Read-Shared $doc))"
     }
     $cardFile = Join-Path $out "card.txt"
-    if (-not (Invoke-AxWin $cardFile @{ Command = "dump"; ProcessId = $proc.Id; Title = "Fidget"; Arg3 = "frames" })) {
-        Fail "could not read the paused card; see $cardFile"
-    }
-    $card = Get-CardCenter $cardFile
+    # The first dump after the pause can hold the Web content pane with none of
+    # the card inside it, so poll as the x11 leaf does.
+    $script:card = $null
+    [void](Wait-ForUia 3 $proc.Id {
+            if (-not (Invoke-AxWin $cardFile @{ Command = "dump"; ProcessId = $proc.Id; Title = "Fidget"; Arg3 = "frames" })) { return $false }
+            [bool]($script:card = Get-CardCenter $cardFile)
+        })
+    $card = $script:card
     if (-not $card) { Fail "the paused card did not appear; see $cardFile" }
     $focuses = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay [^:]+: window focus' }).Count
+    $raises = @(Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ overlay: pill open SetForegroundWindow' }).Count
     [PossessionLiveInput]::SetCursorPos($card.X, $card.Y) | Out-Null
+    # A click before click-through turns off falls through the overlay.
+    if (-not (Wait-ForTrace 3 $traceFile "^\d+ hit-test: cursor\($($card.X),$($card.Y)\) .*click-through OFF")) {
+        Fail "click-through stayed on over the paused card; see $traceFile"
+    }
     [PossessionLiveInput]::Click()
     if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay [^:]+: window focus' $focuses)) {
         Fail "the card click did not resume; see $traceFile"
+    }
+    # The Shell then raises the overlay again, and a key sent before that is lost.
+    if (-not (Wait-ForCount 3 $traceFile '^\d+ overlay: pill open SetForegroundWindow' $raises)) {
+        Fail "the Shell never raised the overlay after the card click; see $traceFile"
     }
     Write-Output "ok: the card click resumed"
     [PossessionLiveInput]::Key(0x1B, $false)
