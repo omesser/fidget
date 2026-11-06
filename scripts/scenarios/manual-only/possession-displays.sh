@@ -50,6 +50,9 @@ build() { # <source> <name>
 build "$root/scripts/scenarios/helpers/possession-input.swift" possession-input
 build "$root/scripts/scenarios/helpers/type-target.swift" type-target
 build "$root/scripts/click-cursor.swift" click-cursor
+build "$root/scripts/ax-settings.swift" ax
+build_ax_events
+. "$root/scripts/scenarios/helpers/possession-live-check.sh"
 
 last_frame() { grep '^frame: ' "$log" | tail -1; }
 sprite_x() { last_frame | sed -E 's/.*sprite\((-?[0-9]+),.*/\1/'; }
@@ -78,6 +81,15 @@ key() { # <virtual key> down|up
 }
 click() { # <x> <y>
   "$tools/click-cursor" "$1" "$2" 1 >> "$out/input.txt" 2>&1 || fail "could not click ($1,$2)"
+}
+# The paused card's centre on the new display, from every overlay's dump: each
+# overlay is titled Fidget. Fails until the card shows there.
+card_on_next() {
+  "$tools/ax" dump "$pid" Fidget frames > "$out/overlays-ax.txt" 2>&1 || return 1
+  awk -F'|' -v x="$nx" -v y="$ny" -v w="$nw" -v h="$nh" '
+    split($NF, a, ",") == 4 && a[1] >= x && a[1] < x + w && a[2] >= y && a[2] < y + h
+  ' "$out/overlays-ax.txt" > "$out/card-ax.txt"
+  [ -n "$(card_center "$out/card-ax.txt")" ]
 }
 # Hold the arrow until the sprite walks 8 px, then let go and wait for rest.
 step_arrow() { # <what>
@@ -172,8 +184,8 @@ wait_for_trace 3 "$target_log" '^focus$' || fail "the target window never became
 wait_for_count 3 "$log" "^overlay $next: window blur" "$blurs" || fail "$next never lost focus to the target window; see $log"
 echo "ok: the click away gave the target window the keyboard"
 
-# The card sits at the work area's top left of the display that draws it.
-card_x=$((ax + 16 + 24)) card_y=$((ay + 16 + 12))
+wait_for_ax 3 "$pid" card_on_next || fail "the paused card did not show on $next; see $out/overlays-ax.txt"
+read -r card_x card_y < <(card_center "$out/card-ax.txt")
 off_line="^hit-test: .* on overlay $next_index .*click-through OFF"
 offs=$(line_count "$log" "$off_line")
 "$tools/possession-input" move "$card_x" "$card_y" >> "$out/input.txt" 2>&1 || fail "could not move the cursor onto the card"

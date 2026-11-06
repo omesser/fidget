@@ -180,8 +180,8 @@ follows to that display, that a click into Notepad pauses possession and a
 click on the card resumes it there, and that Escape releases. Both overlays
 are titled Fidget, so it reads the card through the new overlay's own window,
 found by its top-left corner. The macOS leaf clicks a fidget-type-target
-window instead of Notepad, and clicks the card at the new display's work-area
-top left.
+window instead of Notepad, and reads the card from every overlay's
+Accessibility dump, keeping the one on the new display.
 
 These stay macOS only on purpose:
 
