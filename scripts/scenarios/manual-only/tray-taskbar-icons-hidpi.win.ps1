@@ -92,6 +92,7 @@ public static class TrayIconsProbe {
     const int SM_CXSMICON = 49, SM_CYSMICON = 50;
     const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, MONITOR_DEFAULTTONEAREST = 2;
     const int MDT_EFFECTIVE_DPI = 0;
+    const uint WM_GETICON = 0x7F, SMTO_ABORTIFHUNG = 2;
     public const int ICON_SMALL = 0, ICON_BIG = 1, GCLP_HICONSM = -34, GCLP_HICON = -14;
 
     // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, so UI Automation rectangles
@@ -103,7 +104,6 @@ public static class TrayIconsProbe {
         return GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext());
     }
 
-    // SM_CXSMICON and SM_CYSMICON as a window at this DPI sees them.
     public static string SmallIconSize(uint dpi) {
         return GetSystemMetricsForDpi(SM_CXSMICON, dpi) + "x" + GetSystemMetricsForDpi(SM_CYSMICON, dpi);
     }
@@ -118,7 +118,6 @@ public static class TrayIconsProbe {
         return IntPtr.Zero;
     }
 
-    // The primary taskbar first, then one per other display.
     public static IntPtr[] Taskbars() {
         var all = new System.Collections.Generic.List<IntPtr>();
         IntPtr h = FindWindow("Shell_TrayWnd", null);
@@ -148,8 +147,7 @@ public static class TrayIconsProbe {
 
     public static IntPtr SentIcon(IntPtr hWnd, int which) {
         IntPtr icon;
-        // WM_GETICON, SMTO_ABORTIFHUNG.
-        if (SendMessageTimeout(hWnd, 0x7F, new IntPtr(which), IntPtr.Zero, 2, 2000, out icon) == IntPtr.Zero) return IntPtr.Zero;
+        if (SendMessageTimeout(hWnd, WM_GETICON, new IntPtr(which), IntPtr.Zero, SMTO_ABORTIFHUNG, 2000, out icon) == IntPtr.Zero) return IntPtr.Zero;
         return icon;
     }
 
