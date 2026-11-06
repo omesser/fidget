@@ -2207,7 +2207,7 @@ pub(crate) fn run_frame_loop(
 
                 // The awake clock and the sleep timer both run on ticks, so a
                 // sprite left alone still reaches sleep and wakes from it.
-                let needs_active_for_sleep_accrual = matches!(
+                let needs_active_for_sleep_timers = matches!(
                     frame.state,
                     State::Grounded | State::Perched | State::Asleep
                 );
@@ -2219,7 +2219,7 @@ pub(crate) fn run_frame_loop(
                 let resolving_press = cfg!(not(unix)) && live.pointer.gesturing();
                 if needs_active_for_motion
                     || needs_active_for_animation
-                    || needs_active_for_sleep_accrual
+                    || needs_active_for_sleep_timers
                     || resolving_press
                 {
                     any_needs_active = true;
