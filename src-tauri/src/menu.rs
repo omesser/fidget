@@ -55,6 +55,7 @@ pub enum MenuAction {
 /// Menu choices that yield the quick-message pill because the frame does not already show them.
 ///
 /// Possession, Do Not Disturb, and Go away already change fields the overlay watches.
+/// A Character switch changes the frame too, but the overlay only draws it.
 pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
     match action {
         MenuAction::OpenSettings => Some("settings"),
@@ -62,8 +63,8 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
         MenuAction::OpenMemory => Some("memory"),
         MenuAction::OpenActionLog => Some("action-log"),
         MenuAction::ToggleFullscreenHide => Some("fullscreen-hide"),
-        MenuAction::SwitchCharacter(_)
-        | MenuAction::SpawnInstance
+        MenuAction::SwitchCharacter(_) => Some("character"),
+        MenuAction::SpawnInstance
         | MenuAction::ToggleDirector
         | MenuAction::ToggleDnd
         | MenuAction::TogglePossession
