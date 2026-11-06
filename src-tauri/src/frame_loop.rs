@@ -10,7 +10,7 @@ use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::engine::{BehaviorProposal, Frame, State, Verb};
+use fidget_core::engine::{BehaviorProposal, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
@@ -854,16 +854,11 @@ pub(crate) fn run_frame_loop(
                         .as_ref()
                         .filter(|_| visible)
                         .and_then(|last| {
-                            let name = last.art_name();
                             let art = live.character.draw(
-                                name,
-                                last.animation_ms,
-                                Frame::choice_for(
-                                    last.playing_gesture.as_deref(),
-                                    last.idle_beat.as_ref(),
-                                    last.variant_draw,
-                                ),
-                                last.facing,
+                                last.frame.art_name(),
+                                last.frame.animation_ms,
+                                last.frame.ring_choice(),
+                                last.frame.facing,
                             )?;
                             Some((
                                 art.mask
@@ -2538,12 +2533,7 @@ pub(crate) fn run_frame_loop(
                     .hit(&sprite, cursor_at.0, cursor_at.1, drawn.mirrored);
                 live.drawn_last = Some(Drawn {
                     rect: sprite,
-                    animation: frame.animation,
-                    animation_ms: frame.animation_ms,
-                    variant_draw: frame.variant_draw,
-                    idle_beat: frame.idle_beat.clone(),
-                    playing_gesture: frame.playing_gesture.clone(),
-                    facing: frame.facing,
+                    frame: frame.clone(),
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);

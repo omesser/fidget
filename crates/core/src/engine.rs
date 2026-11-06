@@ -293,27 +293,14 @@ impl Frame {
         self.playing_gesture.as_deref().unwrap_or(self.animation)
     }
 
-    /// What `Character::draw` should weigh this frame with.
+    /// What `Character::draw` should weigh this frame with. A Behavior names
+    /// one Animation: the family base's name is also the ring, and weighing it
+    /// would play a sibling.
     pub fn ring_choice(&self) -> RingChoice<'_> {
-        Self::choice_for(
-            self.playing_gesture.as_deref(),
-            self.idle_beat.as_ref(),
-            self.variant_draw,
-        )
-    }
-
-    /// A Behavior names one Animation. The family base's name is also
-    /// the ring, and weighing it would play a sibling. Callers that kept the
-    /// last frame use this so the hit-test matches what was drawn.
-    pub fn choice_for<'a>(
-        playing_gesture: Option<&'a str>,
-        idle_beat: Option<&'a IdleBeat>,
-        variant_draw: u64,
-    ) -> RingChoice<'a> {
-        if let Some(name) = playing_gesture {
+        if let Some(name) = self.playing_gesture.as_deref() {
             return RingChoice::Named(name);
         }
-        RingChoice::from_beat(idle_beat, variant_draw)
+        RingChoice::from_beat(self.idle_beat.as_ref(), self.variant_draw)
     }
 }
 
@@ -478,7 +465,7 @@ pub struct Engine {
     /// Mutually exclusive with a non-empty `playing` list.
     playing_animation: Option<String>,
 
-    /// The name of the Behavior `playing` / `playing_animation` came from. `chain`
+    /// The name of the Behavior `playing` / `playing_animation` came from. `walk`
     /// merges linked Behaviors and two Characters may share Primitives, so the
     /// list cannot name it. Cleared with them so the pair is never half true.
     playing_behavior: Option<String>,
@@ -1108,31 +1095,14 @@ impl Engine {
         }
     }
 
-    /// The continuation not flattened into the completed pass by `chain`.
-    /// Skip already-played Primitive Behaviors, but never skip an Animation-playing Behavior's `then`.
-    fn then_after_pass(&self, finished: &str) -> Option<String> {
-        let mut walked = BTreeSet::new();
-        let mut current = finished;
-        while walked.insert(current) {
-            let behavior = self.behaviors.get(current)?;
-            let next = behavior.then.as_deref()?;
-            let next_behavior = self.behaviors.get(next)?;
-            if !flattens(behavior, next_behavior) {
-                return Some(next.to_string());
-            }
-            current = next;
-        }
-        None
-    }
-
     /// Shared completed-pass boundary: deferred Director proposal first, else
-    /// a `then` that `chain` could not flatten. True when something new started.
+    /// a `then` that `walk` could not flatten. True when something new started.
     fn complete_pass(&mut self, finished: Option<String>) -> bool {
         if self.apply_deferred() {
             return true;
         }
         if let Some(name) = finished {
-            if let Some(next) = self.then_after_pass(&name) {
+            if let Some((_, Some(next))) = self.walk(&name) {
                 if self.start_behavior(&next) == Some(true) {
                     return true;
                 }
@@ -1347,9 +1317,9 @@ impl Engine {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
         self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
 
-        // A Behavior spends awake time even off its feet. Unscripted air
+        // A Behavior counts as awake time even off its feet. Unscripted air
         // and a hand pause the clock. A user interaction or timed wake
-        // starts a fresh awake stretch.
+        // starts the awake time over.
         let long_dwell = self.long_dwell(snapshot);
         let timed_wake = self.count_sleep(snapshot.elapsed_ms);
         if self.resets_sleep(snapshot, long_dwell) || timed_wake {
@@ -2450,8 +2420,8 @@ impl Engine {
             Some(true) => {
                 if let Some(direction) = proposal.direction {
                     if self
-                        .chain(&proposal.behavior)
-                        .is_some_and(|primitives| primitives.contains(&Primitive::Walk))
+                        .walk(&proposal.behavior)
+                        .is_some_and(|(primitives, _)| primitives.contains(&Primitive::Walk))
                     {
                         self.facing = direction.facing();
                     }
@@ -2483,7 +2453,7 @@ impl Engine {
             }
             return Some(started);
         }
-        let primitives = self.chain(name)?;
+        let (primitives, _) = self.walk(name)?;
         let started = self.play(&primitives);
         if started {
             self.playing_behavior = Some(name.to_string());
@@ -2565,29 +2535,31 @@ impl Engine {
         }
     }
 
-    /// Every Primitive a named Behavior plays, flattened `then`s included, or
-    /// `None` when undeclared. Stops at cycles: Behaviors arrive unvalidated,
-    /// and ADR-0002 promises no package can hang the frame loop.
-    fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
+    /// A named Behavior's `then` chain: the Primitives that play as one queue,
+    /// and the Behavior that starts when that pass ends. `None` when undeclared.
+    /// Stops at cycles: ADR-0002 promises no package can hang the frame loop.
+    fn walk(&self, behavior: &str) -> Option<(Vec<Primitive>, Option<String>)> {
         let mut primitives = Vec::new();
         let mut walked: BTreeSet<&str> = BTreeSet::new();
         let mut current = self.behaviors.get_key_value(behavior)?;
-
         while walked.insert(current.0.as_str()) {
-            if current.1.animation.is_some() {
+            if current.1.animation.is_none() {
+                primitives.extend(current.1.primitives.iter().copied());
+            }
+            let Some(next) = current
+                .1
+                .then
+                .as_deref()
+                .and_then(|next| self.behaviors.get_key_value(next))
+            else {
                 break;
+            };
+            if !flattens(current.1, next.1) {
+                return Some((primitives, Some(next.0.clone())));
             }
-            primitives.extend(current.1.primitives.iter().copied());
-            match current.1.then.as_deref() {
-                Some(next) => match self.behaviors.get_key_value(next) {
-                    Some(next) if flattens(current.1, next.1) => current = next,
-                    _ => break,
-                },
-                None => break,
-            }
+            current = next;
         }
-
-        Some(primitives)
+        Some((primitives, None))
     }
 }
 
