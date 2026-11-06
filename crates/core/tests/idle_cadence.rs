@@ -749,3 +749,49 @@ fn an_idle_gesture_keeps_its_name_without_a_base_animation() {
     );
     load(&package(&manifest)).expect("idle-gesture is a category, not a strip's name");
 }
+
+fn then_character(behaviors: &str) -> Character {
+    let mut manifest = String::from("name = \"Then test\"\n");
+    for name in REQUIRED_ANIMATIONS {
+        manifest.push_str(&format!(
+            "[animations.{name}]\nframes = [\"{name}-0.png\"]\n"
+        ));
+    }
+    manifest.push_str(
+        "[animations.spin]\nframes = [\"idle-0.png\", \"idle-0.png\"]\nfps = 2\nvariant_of = \"idle-gesture\"\n",
+    );
+    manifest.push_str(behaviors);
+    load(&package(&manifest)).unwrap_or_else(|errors| panic!("loads: {errors:?}"))
+}
+
+#[test]
+fn primitive_then_chain_draws_each_behavior_before_the_named_gesture() {
+    let character = then_character(
+        r#"
+[behaviors.a]
+play = ["react"]
+then = "b"
+[behaviors.b]
+play = ["talk"]
+then = "c"
+[behaviors.c]
+play = ["spin"]
+"#,
+    );
+    let mut engine = engine_for(&character, 1);
+    first_idle(&mut engine);
+    let a = engine.tick(&propose("a"));
+    assert_eq!(shown(&character, &a), ("react".into(), 0), "A draws first");
+    let b = engine.tick(&world(600));
+    assert_eq!(shown(&character, &b), ("talk".into(), 0), "B follows A");
+    let c = engine.tick(&world(600));
+    assert_eq!(c.playing_behavior.as_deref(), Some("c"), "C starts: {c:?}");
+    assert_eq!(c.playing_gesture.as_deref(), Some("spin"));
+    assert_eq!(shown(&character, &c), ("spin".into(), 0));
+    let last = engine.tick(&world(500));
+    assert_eq!(shown(&character, &last), ("spin".into(), 1));
+    let complete = engine.tick(&world(500));
+    assert_eq!(complete.playing_behavior, None);
+    assert_eq!(complete.playing_gesture, None);
+    assert_eq!(shown(&character, &complete).0, "idle");
+}
