@@ -977,3 +977,92 @@ play = ["spin"]
         assert_ne!(shown(&character, &frame).0, "spin");
     }
 }
+
+#[test]
+fn a_behavior_on_a_wall_spends_the_awake_budget_before_landing() {
+    let character = character(Some("idle_gesture_every_s = [30, 30]"), 1, 0);
+    let mut behaviors = BTreeMap::new();
+    behaviors.insert(
+        "ponder".to_string(),
+        behavior(vec![Primitive::Talk; 5], false),
+    );
+    let mut engine = Engine::new(Point {
+        x: 900.0,
+        y: 4_000.0,
+    })
+    .with_behaviors(behaviors)
+    .with_idle_plan(character.idle_plan());
+    let wall = WorldSnapshot {
+        displays: vec![Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1_000.0,
+            height: 8_000.0,
+        }],
+        ..world(100)
+    };
+    engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Grab],
+        cursor: Point {
+            x: 900.0,
+            y: 4_000.0,
+        },
+        ..wall.clone()
+    });
+    let climbing = engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Throw {
+            velocity: Point { x: 1_000.0, y: 0.0 },
+        }],
+        ..wall.clone()
+    });
+    assert_eq!(climbing.state, State::Climbing);
+    engine.set_sleep_after_s((2, 2));
+    let mut frame = engine.tick(&WorldSnapshot {
+        proposal: propose("ponder").proposal,
+        ..wall.clone()
+    });
+    assert_eq!(frame.playing_behavior.as_deref(), Some("ponder"));
+    let mut behavior_ticks = 0;
+    for _ in 0..40 {
+        if frame.playing_behavior.is_none() {
+            break;
+        }
+        assert_eq!(
+            frame.state,
+            State::Climbing,
+            "finishes on the wall: {frame:?}"
+        );
+        assert_eq!(shown(&character, &frame).0, "talk");
+        behavior_ticks += 1;
+        frame = engine.tick(&wall);
+    }
+    assert_eq!(
+        behavior_ticks, 30,
+        "the full three-second Behavior finishes"
+    );
+    assert!(frame.playing_behavior.is_none());
+    let landing = WorldSnapshot {
+        displays: vec![Rect {
+            x: 0.0,
+            y: frame.position.y - 10.0,
+            width: 1_000.0,
+            height: 100.0,
+        }],
+        ..world(100)
+    };
+    let mut saw_land = false;
+    for _ in 0..20 {
+        frame = engine.tick(&landing);
+        if frame.playing_primitive == Some(Primitive::Land) {
+            saw_land = true;
+        } else if saw_land {
+            assert_eq!(
+                frame.state,
+                State::Asleep,
+                "the wall Behavior already spent the awake budget: {frame:?}"
+            );
+            return;
+        }
+    }
+    panic!("the sprite never finished landing: {frame:?}");
+}
