@@ -1272,9 +1272,22 @@ fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
 /// ends, then `next`. With `wave` held mid-gesture or not, returns what showed
 /// from the gesture's start: (drawn name, animation ms, behavior) per tick.
 fn gesture_across_a_then(next: Behavior, hold_wave: bool) -> Vec<(String, u32, Option<String>)> {
+    gesture_across(
+        chained(vec![Primitive::Idle], true, Some("b")),
+        next,
+        hold_wave,
+    )
+}
+
+/// The same, for any idle-typed `a` and its `b`.
+fn gesture_across(
+    a: Behavior,
+    next: Behavior,
+    hold_wave: bool,
+) -> Vec<(String, u32, Option<String>)> {
     let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
     let mut behaviors = character.behaviors.clone();
-    behaviors.insert("a".into(), chained(vec![Primitive::Idle], true, Some("b")));
+    behaviors.insert("a".into(), a);
     behaviors.insert("b".into(), next);
     behaviors.insert("wave".into(), behavior(vec![Primitive::Talk], false));
     let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
@@ -1349,4 +1362,26 @@ fn a_proposal_held_inside_an_idle_typed_behavior_outranks_an_animation_then() {
         ..behavior(vec![], false)
     };
     assert_whole_gesture_then(&gesture_across_a_then(animation_b, true), "wave");
+}
+
+#[test]
+fn a_gesture_inside_a_multi_primitive_idle_typed_behavior_finishes_before_its_talk() {
+    let a = || chained(vec![Primitive::Idle, Primitive::Talk], true, None);
+    let unused = || behavior(vec![], false);
+    let seen = gesture_across(a(), unused(), false);
+    let spin = seen.iter().take_while(|s| s.0 == "spin").count();
+    assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    assert_eq!(seen[spin].0, "talk", "then a's own Talk: {seen:?}");
+    assert_whole_gesture_then(&gesture_across(a(), unused(), true), "wave");
+}
+
+#[test]
+fn a_gesture_inside_a_flattened_same_type_chain_finishes_before_the_next_primitive() {
+    let a = || chained(vec![Primitive::Idle], true, Some("b"));
+    let typed_b = || chained(vec![Primitive::Talk], true, None);
+    let seen = gesture_across(a(), typed_b(), false);
+    let spin = seen.iter().take_while(|s| s.0 == "spin").count();
+    assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    assert_eq!(seen[spin].0, "talk", "then b's Talk: {seen:?}");
+    assert_whole_gesture_then(&gesture_across(a(), typed_b(), true), "wave");
 }
