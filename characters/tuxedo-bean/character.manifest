@@ -248,4 +248,3 @@ when = "idle over 10s"
 play = ["wave"]
 weight = 10
 when = "idle over 10s"
-

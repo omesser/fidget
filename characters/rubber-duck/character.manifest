@@ -323,4 +323,3 @@ when = "idle over 10s"
 play = ["look-right"]
 weight = 10
 when = "idle over 10s"
-

@@ -151,4 +151,3 @@ when = "idle over 30s"
 play = ["waiting"]
 weight = 10
 when = "idle over 10s"
-

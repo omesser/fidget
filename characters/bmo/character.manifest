@@ -180,4 +180,3 @@ when = "idle over 10s"
 play = ["sing"]
 weight = 10
 when = "idle over 10s"
-

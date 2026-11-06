@@ -252,4 +252,3 @@ when = "idle over 10s"
 play = ["recover-card"]
 weight = 10
 when = "idle over 10s"
-
