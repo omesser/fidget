@@ -2002,10 +2002,7 @@ impl Session {
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
-        self.update_inspect(|inspect| {
-            inspect.alive = false;
-            inspect.initializing = false;
-        });
+        self.update_inspect(|inspect| inspect.alive = false);
         wire.shutdown();
         if !wire.wait_for_exit(REAP) {
             eprintln!(
@@ -10497,6 +10494,55 @@ mod tests {
                 "iteration {iteration}: the dropped session still reads live"
             );
         }
+    }
+
+    #[test]
+    fn a_budget_return_after_shutdown_does_not_read_live() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(1)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || {
+                crate::acp_wire::arm_shutdown_park(entered_tx);
+                session.complete(&asking("hi"), &|_| {})
+            })
+        };
+        assert!(fx.wait_for("prompt", 1), "the turn never went out");
+        {
+            let mut slot = attachment();
+            slot.forward = Some(silent());
+            slot.session = Some(Arc::clone(&session));
+        }
+        struct RestoreAttachment;
+        impl Drop for RestoreAttachment {
+            fn drop(&mut self) {
+                let mut slot = attachment();
+                slot.session = None;
+                slot.forward = None;
+            }
+        }
+        let _restore = RestoreAttachment;
+        let start = Instant::now();
+        retarget(None, false);
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "retarget waited {:?} on the dropped session",
+            start.elapsed()
+        );
+        let release = entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("shutdown never reached the wire");
+        let err = worker.join().unwrap().unwrap_err();
+        assert!(
+            err.contains("exceeded"),
+            "the turn was not released on its budget: {err}"
+        );
+        assert!(
+            !session.inspect().alive,
+            "the dropped session still reads live"
+        );
+        let _ = release.send(());
     }
 
     /// The stalled open has to stay unanswered until the session is dropped.
