@@ -1267,3 +1267,86 @@ fn each_behavior_in_a_then_chain_keeps_its_own_idle_type() {
         "a longer chain switches type at each boundary"
     );
 }
+
+/// An idle-typed `a` whose Idle starts the Engine's gesture just before it
+/// ends, then `next`. With `wave` held mid-gesture or not, returns what showed
+/// from the gesture's start: (drawn name, animation ms, behavior) per tick.
+fn gesture_across_a_then(next: Behavior, hold_wave: bool) -> Vec<(String, u32, Option<String>)> {
+    let character = character(Some("idle_gesture_every_s = [1, 1]"), 1, 0);
+    let mut behaviors = character.behaviors.clone();
+    behaviors.insert("a".into(), chained(vec![Primitive::Idle], true, Some("b")));
+    behaviors.insert("b".into(), next);
+    behaviors.insert("wave".into(), behavior(vec![Primitive::Talk], false));
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_behaviors(behaviors)
+        .with_variant_seed(1)
+        .with_idle_plan(character.idle_plan())
+        .with_idle_gesture_every_s((1, 1));
+    let _ = first_idle(&mut engine);
+    for _ in 0..8 {
+        let _ = engine.tick(&world(100));
+    }
+    let mut frame = engine.tick(&propose("a"));
+    assert_eq!(frame.behavior.as_deref(), Some("a"));
+    let mut seen = Vec::new();
+    let mut held = false;
+    for _ in 0..60 {
+        let (name, _) = shown(&character, &frame);
+        if name == "spin" || !seen.is_empty() {
+            seen.push((name.clone(), frame.animation_ms, frame.behavior.clone()));
+            if frame.animation == "talk" {
+                break;
+            }
+        }
+        let world = if hold_wave && name == "spin" && !held {
+            held = true;
+            propose("wave")
+        } else {
+            world(100)
+        };
+        frame = engine.tick(&world);
+    }
+    seen
+}
+
+fn assert_whole_gesture_then(seen: &[(String, u32, Option<String>)], talker: &str) {
+    let spin: Vec<_> = seen.iter().take_while(|s| s.0 == "spin").collect();
+    assert!(!spin.is_empty(), "the gesture started inside a: {seen:?}");
+    assert!(
+        spin.windows(2).all(|w| w[1].1 > w[0].1),
+        "one gesture pass, never restarted: {seen:?}"
+    );
+    assert!(
+        spin.last().unwrap().1 + 100 >= 2_000,
+        "the gesture ran its whole pass: {seen:?}"
+    );
+    let after = &seen[spin.len()];
+    assert_eq!(after.0, "talk", "then the line: {seen:?}");
+    assert_eq!(after.2.as_deref(), Some(talker), "{seen:?}");
+}
+
+fn talk_b() -> Behavior {
+    chained(vec![Primitive::Talk], false, None)
+}
+
+#[test]
+fn a_gesture_begun_inside_an_idle_typed_behavior_finishes_before_its_then() {
+    let seen = gesture_across_a_then(talk_b(), false);
+    let spin = seen.iter().take_while(|s| s.0 == "spin").count();
+    assert!(spin > 0 && seen[spin - 1].1 + 100 >= 2_000, "{seen:?}");
+    assert_eq!(seen[spin].0, "talk", "then `b` starts: {seen:?}");
+}
+
+#[test]
+fn a_proposal_held_inside_an_idle_typed_behavior_outranks_its_then() {
+    assert_whole_gesture_then(&gesture_across_a_then(talk_b(), true), "wave");
+}
+
+#[test]
+fn a_proposal_held_inside_an_idle_typed_behavior_outranks_an_animation_then() {
+    let animation_b = Behavior {
+        animation: Some("spin".into()),
+        ..behavior(vec![], false)
+    };
+    assert_whole_gesture_then(&gesture_across_a_then(animation_b, true), "wave");
+}
