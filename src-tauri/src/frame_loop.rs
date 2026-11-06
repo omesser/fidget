@@ -3655,7 +3655,8 @@ mod tests {
         behaviors.insert(
             "wave".to_string(),
             Behavior {
-                primitives: vec![Primitive::React], strip: None,
+                primitives: vec![Primitive::React],
+                strip: None,
                 then: None,
                 weight: 1,
                 trigger: None,
