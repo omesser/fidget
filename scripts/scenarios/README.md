@@ -180,6 +180,19 @@ click on the card resumes it there, and that Escape releases. Both overlays
 are titled Fidget, so it reads the card through the new overlay's own window,
 found by its top-left corner.
 
+`tray-taskbar-icons-hidpi` has only a `.win.ps1` leaf. It is the live check
+for the taskbar icon at a HiDPI scale (#2054), and it never changes the scale:
+set a display to 150% or 200% before the run. It sends no input. It reads the
+icons off Fidget's `FidgetAnchor` window and checks that `WM_GETICON`
+`ICON_SMALL` and `GCLP_HICONSM` are `SM_CXSMICON`×`SM_CYSMICON` at Fidget's
+own system DPI (`GetSystemDpiForProcess`), and that `ICON_BIG` and
+`GCLP_HICON` are 256×256. System DPI is set per process at launch, so a scale
+changed in this session can leave Fidget at 100% until you sign out. The run
+prints Fidget's scale and the taskbar display's scale, and skips when Fidget's
+is 100%. It saves `taskbar-button.png` and `tray-icon.png`, small crops around
+each, for a person to compare with a 100% run. `FIDGET_SCENARIO_ICONS` judges
+a line of saved readings, as `readings.txt` holds them, and launches nothing.
+
 These stay macOS only on purpose:
 
 - `chat-level` asserts focused Chat stays at macOS layer 0 so it remains a
