@@ -121,6 +121,8 @@ ENGINE = {"engine.rs": ROOT / "crates" / "core" / "src" / "engine.rs",
           "main.rs": ROOT / "src-tauri" / "src" / "main.rs"}
 CUES = ROOT / "src" / "main.css"
 CHAT_UI = ROOT / "src" / "chat-ui.css"
+# The design token blocks chat-ui.css imports, read ahead of it as the browser does.
+CHAT_TOKENS = ROOT / "src" / "chat-tokens.css"
 CHAT_SHARED = ROOT / "src" / "chat-shared.css"
 # The Chat UI rules the playground's chat mock wears.
 CHAT_RULES = (".log", ".empty", ".empty > div", ".empty p", ".empty p b", ".composer", ".composer textarea",
@@ -981,7 +983,8 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
         **how_slots(words["how"], shell),
         "cue_css": cue_css(CUES.read_text(encoding="utf-8")),
         "bubble_css": bubble_css(CUES.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
-        "chat_css": chat_css(CHAT_UI.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
+        "chat_css": chat_css(CHAT_TOKENS.read_text(encoding="utf-8") + CHAT_UI.read_text(encoding="utf-8"),
+                             CHAT_SHARED.read_text(encoding="utf-8")),
         "play_tiles": play_tiles(characters_root, defaults["fps"]),
         # The scenes name shipped Characters, so they check against characters/
         # even when a fixture cast fills the rest of the page.

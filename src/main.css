@@ -529,11 +529,9 @@ body {
   }
 }
 
-/* The bindings card is app chrome, so it wears the user's Chat UI and
-   Light/Dark: main.js puts the `.chat-ui-*` class and palette on the card,
-   and its rules read only the Chat UI's tokens, as Chat and Settings do.
-   Clicks pass through so a sprite under the card can still be grabbed.
-   Paused is the resume click. The bar is drawn and never takes one. */
+/* The Possession card is app chrome, so it wears the Chat UI, unlike the
+   Speech bubble. Clicks pass through so a sprite under the card can still
+   be grabbed; paused is the resume click; the bar never takes one. */
 .possession {
   position: absolute;
   top: 0;
@@ -614,7 +612,7 @@ body {
   background: transparent;
   color: var(--chat-ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -624,8 +622,8 @@ body {
   pointer-events: auto;
 }
 
-/* Raised is Chat's primary button and asks for a click; pressed is a soft
-   accent chip that says the overlay holds the keys. */
+/* Raised is Chat's primary button and asks for a click; pressed is a sunken
+   chip, legible in every design, that says the overlay holds the keys. */
 .possession-focus {
   display: inline-flex;
   flex: 0 0 auto;
@@ -639,15 +637,15 @@ body {
   background: var(--chat-accent);
   color: var(--chat-accent-ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
   transition: background 120ms;
 }
 
 .possession-focus[aria-pressed="true"] {
-  background: var(--chat-accent-soft);
-  color: var(--chat-accent);
+  background: var(--chat-fill-soft);
+  color: var(--chat-ink);
   border-color: var(--chat-line);
 }
 
@@ -675,7 +673,7 @@ body {
   left: 0;
   height: 8px;
   border-radius: 4px;
-  background: var(--chat-fill-soft);
+  background: var(--chat-line);
   pointer-events: none;
   overflow: hidden;
   opacity: 0;

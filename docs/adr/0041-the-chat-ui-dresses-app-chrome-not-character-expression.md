@@ -32,15 +32,12 @@ outside a design's token block breaks the seam.
 The line is drawn by what a surface is, not by which window draws it:
 
 - **App chrome wears the Chat UI and Light/Dark:** Chat, Settings, and the
-  overlay's Possession card. The Shell sends the choice to the overlay on
-  every frame, so a switch repaints an open card on the next tick.
+  overlay's Possession card. A switch in Settings repaints it while it is
+  open.
 - **Character expression does not:** the Speech bubble, the quick-message
   pill, and the gesture cues. They share only the opaque panel snippet with
   the default design. Changing the Chat UI never changes a Character's
   expression.
-
-The overlay can't blur the desktop, so its chrome takes a design's unblurred
-tint wherever the design assumes a blur behind it.
 
 ## Considered Options
 

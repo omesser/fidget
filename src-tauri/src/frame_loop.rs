@@ -2768,7 +2768,7 @@ pub(crate) fn run_frame_loop(
                     hover_delay_ms: crate::hover_delay_ms(),
                     do_not_disturb,
                     aside,
-                    chat_ui: chat_ui.clone(),
+                    chat_ui: &chat_ui,
                     chat_appearance,
                     work_area: WorkArea {
                         x: local.x,

@@ -1,6 +1,6 @@
-// The Possession card wears the Chat UI the user picked, the way Chat and
-// Settings do: the real overlay page, sent frames that carry the theme, in
-// headless Chrome. Expected values are the design blocks' tokens, written out.
+// The Possession card wears the Chat UI and Light/Dark the user picked, the
+// way Chat and Settings do: the real overlay page, sent frames that carry the
+// choice, in headless Chrome. Expected values are the token blocks', written out.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,9 +12,9 @@ import { pageWait } from "./page-wait.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
-// Panel, ink, accent, accent ink, line and control radius per design. Glass
-// is its unblurred tint: the overlay never blurs the desktop.
-const THEMES = {
+// Panel, ink, accent, accent ink, line and control radius per Chat UI and
+// Light/Dark. Glass is its unblurred tint: the overlay never blurs the desktop.
+const CHAT_UIS = {
   "minimal/dark": ["rgb(20, 23, 30)", "rgb(232, 235, 242)", "rgb(92, 201, 181)", "rgb(11, 35, 31)", "rgba(255, 255, 255, 0.13)", "10px"],
   "minimal/light": ["rgb(248, 249, 251)", "rgb(26, 29, 36)", "rgb(22, 155, 133)", "rgb(255, 255, 255)", "rgba(0, 0, 0, 0.15)", "10px"],
   "terminal/dark": ["rgb(10, 13, 18)", "rgb(198, 208, 220)", "rgb(127, 224, 176)", "rgb(11, 35, 31)", "rgb(42, 51, 64)", "3px"],
@@ -66,8 +66,8 @@ function run() {
     console.log("__PROBE_READY__");
     await ready("frame");
     const seen = {};
-    for (const theme of ${JSON.stringify(Object.keys(THEMES))}) {
-      const [chat_ui, chat_appearance] = theme.split("/");
+    for (const chatUi of ${JSON.stringify(Object.keys(CHAT_UIS))}) {
+      const [chat_ui, chat_appearance] = chatUi.split("/");
       const frame = (paused) => ({
         sprites: [{ ...${JSON.stringify(sprite)}, paused }],
         visible: true,
@@ -85,6 +85,9 @@ function run() {
         release: read(card.querySelector(".possession-release"), [
           "backgroundColor", "color", "borderTopColor", "borderTopLeftRadius",
         ]),
+        pressed: read(card.querySelector('.possession-focus[aria-pressed="true"]'), [
+          "backgroundColor", "color",
+        ]),
       };
       handlers.frame({ payload: frame(true) });
       await until(() => document.querySelector(".possession.paused .possession-focus"));
@@ -92,7 +95,7 @@ function run() {
       const raised = read(document.querySelector(".possession-focus"), [
         "backgroundColor", "color", "borderTopLeftRadius", "boxShadow",
       ]);
-      seen[theme] = { ...live, raised };
+      seen[chatUi] = { ...live, raised };
     }
     console.log("__PROBE_RESULT__" + JSON.stringify(seen));
   }
@@ -105,14 +108,14 @@ function run() {
 let report = null;
 const probe = () => (report ??= run());
 
-for (const [theme, [panel, ink, accent, accentInk, line, radius]] of Object.entries(THEMES)) {
-  test(`the card is ${theme}'s panel and ink`, { skip: chromeSkip, timeout: 60000 }, async () => {
-    const { card } = (await probe())[theme];
+for (const [chatUi, [panel, ink, accent, accentInk, line, radius]] of Object.entries(CHAT_UIS)) {
+  test(`the card is ${chatUi}'s panel and ink`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { card } = (await probe())[chatUi];
     assert.deepEqual(card, { backgroundColor: panel, color: ink });
   });
 
-  test(`Release is ${theme}'s plain button, outlined in its line`, { skip: chromeSkip, timeout: 60000 }, async () => {
-    const { release } = (await probe())[theme];
+  test(`Release is ${chatUi}'s plain button, outlined in its line`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { release } = (await probe())[chatUi];
     assert.deepEqual(release, {
       backgroundColor: "rgba(0, 0, 0, 0)",
       color: ink,
@@ -121,13 +124,19 @@ for (const [theme, [panel, ink, accent, accentInk, line, radius]] of Object.entr
     });
   });
 
-  test(`a raised Focus is ${theme}'s flat accent button`, { skip: chromeSkip, timeout: 60000 }, async () => {
-    const { raised } = (await probe())[theme];
+  test(`a raised Focus is ${chatUi}'s flat accent button`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { raised } = (await probe())[chatUi];
     assert.deepEqual(raised, {
       backgroundColor: accent,
       color: accentInk,
       borderTopLeftRadius: radius,
       boxShadow: "none",
     });
+  });
+
+  test(`a pressed Focus reads in ${chatUi}'s ink, not the accent it sits on`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { pressed } = (await probe())[chatUi];
+    assert.equal(pressed.color, ink);
+    assert.notEqual(pressed.backgroundColor, accent);
   });
 }
