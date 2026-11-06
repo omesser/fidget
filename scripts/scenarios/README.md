@@ -216,7 +216,7 @@ header row with no sideways scroll.
 `landing-link-click`, `launcher-dies-at-startup` and `sign-in-button` open
 Chat from the tray's Chat… row. X11 clicks it over the tray's dbusmenu
 (`ax-window-linux.py tray`), so it needs a StatusNotifierWatcher and skips
-without one. Windows clicks the taskbar icon and invokes the row
+without one. Windows clicks the taskbar icon and then the row
 (`ax-window-win.ps1 tray`), so the icon must not sit in the hidden-icons
 overflow. On X11 a recording `xdg-open` on `PATH` takes the URL, as `open`
 does on macOS. Windows hands it to `ShellExecuteW`, which is not a program

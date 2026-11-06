@@ -368,53 +368,49 @@ if ($Command -eq "tray") {
         exit 1
     }
     $r = $icon.Current.BoundingRectangle
-    $findRow = { Find-MenuRow $ProcessId $Arg3 }
-    # The icon is drawn before its click handler settles, so a press can open
-    # no menu or drop the row's click. Each retry waits on the window, not a clock.
-    $why = ""
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        [FidgetTrail]::Mark("tray: click $attempt")
-        $signal = [FidgetUiaSignal]::new(0)
-        try {
-            [FidgetWinEnum]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
-            [FidgetWinEnum]::Press()
-            $deadline = [DateTime]::UtcNow.AddSeconds(3)
-            $row = & $findRow
-            while ($null -eq $row -and $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) {
-                $row = & $findRow
-            }
-        } finally {
-            $signal.Dispose()
+    # One press. A retry here once covered a dropped UI Automation Invoke on
+    # the row; since #2081 the row takes a real click, and Fidget logs
+    # `tray: menu set` and `menu: event` to show where a lost press went (#1747).
+    [FidgetTrail]::Mark("tray: click icon")
+    $signal = [FidgetUiaSignal]::new(0)
+    try {
+        [FidgetWinEnum]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
+        [FidgetWinEnum]::Press()
+        $deadline = [DateTime]::UtcNow.AddSeconds(3)
+        $row = Find-MenuRow $ProcessId $Arg3
+        while ($null -eq $row -and $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) {
+            $row = Find-MenuRow $ProcessId $Arg3
         }
-        if ($null -eq $row) {
-            $menus = @([FidgetWinEnum]::OfClass("#32768", $false) | ForEach-Object {
-                    $menuPid = 0
-                    [FidgetWinEnum]::GetWindowThreadProcessId($_, [ref]$menuPid) | Out-Null
-                    "pid=$menuPid visible=$([FidgetWinEnum]::IsWindowVisible($_))"
-                }) -join "; "
-            $why = "the tray menu has no $Arg3 row (clicked `"$($icon.Current.Name)`" at $r; fidget pid=$ProcessId; #32768 windows: $menus)"
-            continue
-        }
-        $signal = [FidgetUiaSignal]::new($ProcessId)
-        try {
-            [FidgetTrail]::Mark("tray: click $Arg3")
-            [FidgetWinEnum]::SetCursorPos([int](($row.Left + $row.Right) / 2), [int](($row.Top + $row.Bottom) / 2)) | Out-Null
-            [FidgetWinEnum]::Press()
-            $deadline = [DateTime]::UtcNow.AddSeconds(2)
-            while ($true) {
-                if ([FidgetWinEnum]::Find([uint32]$ProcessId, $Title) -ne [IntPtr]::Zero) {
-                    [FidgetTrail]::Mark("tray: $Title open, unregister")
-                    exit 0
-                }
-                if (-not $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) { break }
-            }
-        } finally {
-            $signal.Dispose()
-        }
-        $why = "$Title did not open within 2s of $Arg3"
-        [FidgetWinEnum]::Escape()
+    } finally {
+        $signal.Dispose()
     }
-    Write-Error "$why, after 3 tries"
+    if ($null -eq $row) {
+        $menus = @([FidgetWinEnum]::OfClass("#32768", $false) | ForEach-Object {
+                $menuPid = 0
+                [FidgetWinEnum]::GetWindowThreadProcessId($_, [ref]$menuPid) | Out-Null
+                "pid=$menuPid visible=$([FidgetWinEnum]::IsWindowVisible($_))"
+            }) -join "; "
+        Write-Error "the tray menu has no $Arg3 row (clicked `"$($icon.Current.Name)`" at $r; fidget pid=$ProcessId; #32768 windows: $menus)"
+        exit 1
+    }
+    $signal = [FidgetUiaSignal]::new($ProcessId)
+    try {
+        [FidgetTrail]::Mark("tray: click $Arg3")
+        [FidgetWinEnum]::SetCursorPos([int](($row.Left + $row.Right) / 2), [int](($row.Top + $row.Bottom) / 2)) | Out-Null
+        [FidgetWinEnum]::Press()
+        $deadline = [DateTime]::UtcNow.AddSeconds(2)
+        while ($true) {
+            if ([FidgetWinEnum]::Find([uint32]$ProcessId, $Title) -ne [IntPtr]::Zero) {
+                [FidgetTrail]::Mark("tray: $Title open, unregister")
+                exit 0
+            }
+            if (-not $signal.Wait([int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)) { break }
+        }
+    } finally {
+        $signal.Dispose()
+    }
+    [FidgetWinEnum]::Escape()
+    Write-Error "$Title did not open within 2s of $Arg3; a menu: event line in Fidget's log means the press reached Fidget"
     exit 1
 }
 
