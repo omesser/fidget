@@ -3766,7 +3766,11 @@ struct ChatStatus {
     /// or a startle no Director proposed. The bar draws a dash, as the trace does.
     behavior: Option<String>,
     primitive: Option<Primitive>,
-    animation: &'static str,
+    /// The Animation whose art is on screen, as `Character::draw` resolved it.
+    animation: String,
+    /// The name the Engine asked with. A variant or a fallback makes it differ
+    /// from `animation`, and the bar shows both.
+    asked_animation: &'static str,
     state: State,
     /// What drove the last wake, in `happened_cell`'s word for it.
     happened: Option<&'static str>,
@@ -3777,6 +3781,26 @@ struct ChatStatus {
     /// A turn is on the wire, and the character is not waiting on the user.
     /// The thinking ellipsis draws from this.
     thinking: bool,
+}
+
+/// One tick's status for the bar, from the Engine's frame and the Animation
+/// `Character::draw` resolved it to.
+fn chat_status(
+    frame: &fidget_core::engine::Frame,
+    drawn: &str,
+    happened: Option<&'static str>,
+    thinking: bool,
+) -> ChatStatus {
+    ChatStatus {
+        behavior: frame.playing_behavior.clone(),
+        primitive: frame.playing_primitive,
+        animation: frame.animation.to_string(),
+        asked_animation: frame.animation,
+        state: frame.state,
+        happened,
+        facing: frame.facing as i8,
+        thinking,
+    }
 }
 
 #[derive(Clone, Serialize)]

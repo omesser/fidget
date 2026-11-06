@@ -37,7 +37,7 @@ use super::{
     menu, menu_caffeinate, model, note_caffeinate_view, note_happened, open_chat, overlay_label,
     overlay_request_focus, paced, place_overlays, platform, possession, publish_instances,
     push_chat_opening, push_chat_openings, quit_now, remember_instances, spawn_live, sprite_width,
-    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
+    switch_instance, tray, ChatMsg, ChatReply, chat_status, ChatStatusPush, DirectorRun, Drawn,
     FrameExtras, InstanceState, MenuChannel, MenuEffect, MenuHold, MenuSignal, Placed, Placement,
     QuickMessageAside, SpritePlacement, Traced, TrayHandle, WorkArea, ENGINE_TICK, FRAME_EVENT,
     MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
@@ -2445,7 +2445,22 @@ pub(crate) fn run_frame_loop(
                     live.traced_last = None;
                 }
 
-                // Pushed on change for the same reason. `proactive_coming` is
+                // The Engine names an Animation and how long it has been
+                // playing. Resolve here, not in the webview, so hit-test and
+                // the frame the user sees stay the same one.
+                let art_name = frame.art_name();
+                let Some(drawn) = live.character.draw(
+                    art_name,
+                    frame.animation_ms,
+                    frame.ring_choice(),
+                    frame.facing,
+                ) else {
+                    // No drawable Animation, which a validated package cannot
+                    // be. Left out of `placed`; the webview reads absence as
+                    // dismissal. Why nothing else in this loop may skip an Instance silently.
+                    continue;
+                };
+                // Pushed on change, like the trace. `proactive_coming` is
                 // `session_due`'s proactive arm, so the bar counts down only
                 // to a wake that is coming.
                 let proactive_coming = config.enabled
@@ -2461,15 +2476,7 @@ pub(crate) fn run_frame_loop(
                         .saturating_sub(live.since_proactive)
                         .as_millis() as u64
                 });
-                let status = ChatStatus {
-                    behavior: frame.playing_behavior.clone(),
-                    primitive: frame.playing_primitive,
-                    animation: frame.animation,
-                    state: frame.state,
-                    happened: live.happened_last,
-                    facing: frame.facing as i8,
-                    thinking,
-                };
+                let status = chat_status(&frame, drawn.animation, live.happened_last, thinking);
                 // Asks whether the deadline moved — a wake landing, the pace
                 // growing under it — not whether it ran down, which it does
                 // every tick and which no push has to say.
@@ -2490,21 +2497,6 @@ pub(crate) fn run_frame_loop(
                     live.status_wake_ms = wake_ms;
                 }
 
-                // The Engine names an Animation and how long it has been
-                // playing. Resolve here, not in the webview, so hit-test and
-                // the frame the user sees stay the same one.
-                let art_name = frame.art_name();
-                let Some(drawn) = live.character.draw(
-                    art_name,
-                    frame.animation_ms,
-                    frame.ring_choice(),
-                    frame.facing,
-                ) else {
-                    // No drawable Animation, which a validated package cannot
-                    // be. Left out of `placed`; the webview reads absence as
-                    // dismissal. Why nothing else in this loop may skip an Instance silently.
-                    continue;
-                };
                 let scale = live.character.scale as i32;
                 let (width, height) = (
                     drawn.frame_size.0 as i32 * scale,
@@ -3724,6 +3716,36 @@ mod tests {
         let frame = roster.get_mut(&id).expect("still there").tick(&snapshot);
         assert_eq!(frame.behavior.as_deref(), Some("wave"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The bar names the art on screen and the name the Engine asked with.
+    /// A Character with no climb art climbs in its walk art.
+    #[test]
+    fn the_status_names_the_drawn_animation_and_the_one_asked_for() {
+        let png = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
+        let mut character = character();
+        character.art.insert(
+            "walk-0.png".to_string(),
+            fidget_core::character::Art {
+                png: png.to_vec(),
+                mask: fidget_core::overlay::AlphaMask::from_png(png, 128).expect("the fixture decodes"),
+                facing: fidget_core::character::Facing::Right,
+            },
+        );
+        let mut roster = Roster::new();
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 0.0, y: 0.0 });
+        let snapshot =
+            SnapshotAssembler::new(EmptyDesktop).assemble(16, Point { x: 0.0, y: 0.0 }, Vec::new());
+        let mut frame = roster.get_mut(&id).expect("just spawned").tick(&snapshot);
+        frame.animation = "climb";
+        let drawn = character
+            .draw(frame.art_name(), frame.animation_ms, frame.ring_choice(), frame.facing)
+            .expect("climb falls back to walk");
+
+        let status = chat_status(&frame, drawn.animation, None, false);
+
+        assert_eq!(status.animation, "walk");
+        assert_eq!(status.asked_animation, "climb");
     }
 
     /// A session the Harness opened mid-run never heard its opening turn. It
