@@ -795,3 +795,185 @@ play = ["spin"]
     assert_eq!(complete.playing_gesture, None);
     assert_eq!(shown(&character, &complete).0, "idle");
 }
+
+#[test]
+fn longer_then_chain_crosses_strips_and_finishes_on_primitives() {
+    let character = then_character(
+        r#"
+[animations.bow]
+frames = ["idle-0.png", "idle-0.png"]
+fps = 2
+variant_of = "idle-gesture"
+[behaviors.a]
+play = ["react", "talk"]
+then = "b"
+[behaviors.b]
+play = ["sit", "react"]
+then = "c"
+[behaviors.c]
+play = ["talk"]
+then = "d"
+[behaviors.d]
+play = ["react"]
+then = "e"
+[behaviors.e]
+play = ["sit"]
+then = "spin"
+[behaviors.spin]
+play = ["spin"]
+then = "bow"
+[behaviors.bow]
+play = ["bow"]
+then = "finish"
+[behaviors.finish]
+play = ["react", "sit"]
+"#,
+    );
+    let mut engine = engine_for(&character, 1);
+    first_idle(&mut engine);
+    assert_eq!(shown(&character, &engine.tick(&propose("a"))).0, "react");
+    for expected in ["talk", "sit", "react", "talk", "react", "sit"] {
+        let frame = engine.tick(&world(600));
+        assert_eq!(shown(&character, &frame).0, expected);
+    }
+    for gesture in ["spin", "bow"] {
+        let frame = engine.tick(&world(if gesture == "spin" { 600 } else { 500 }));
+        assert_eq!(frame.playing_behavior.as_deref(), Some(gesture));
+        assert_eq!(frame.playing_gesture.as_deref(), Some(gesture));
+        assert_eq!(shown(&character, &frame), (gesture.into(), 0));
+        assert_eq!(
+            shown(&character, &engine.tick(&world(500))),
+            (gesture.into(), 1)
+        );
+    }
+    let finish = engine.tick(&world(500));
+    assert_eq!(finish.playing_behavior.as_deref(), Some("finish"));
+    assert_eq!(shown(&character, &finish).0, "react");
+    assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
+    let complete = engine.tick(&world(600));
+    assert_eq!(complete.playing_behavior, None);
+    assert_eq!(complete.playing_gesture, None);
+    assert_eq!(shown(&character, &complete).0, "idle");
+}
+
+#[test]
+fn gesture_reached_through_then_honors_latest_proposal_and_poke_cancellation() {
+    let character = then_character(
+        r#"
+[behaviors.a]
+play = ["react"]
+then = "b"
+[behaviors.b]
+play = ["talk"]
+then = "c"
+[behaviors.c]
+play = ["spin"]
+then = "after"
+[behaviors.after]
+play = ["talk"]
+[behaviors.earlier]
+play = ["react"]
+[behaviors.latest]
+play = ["sit"]
+"#,
+    );
+    for poke in [false, true] {
+        let mut engine = engine_for(&character, 1);
+        first_idle(&mut engine);
+        engine.tick(&propose("a"));
+        engine.tick(&world(600));
+        let c = engine.tick(&world(600));
+        assert_eq!(c.playing_behavior.as_deref(), Some("c"));
+        assert_eq!(shown(&character, &c), ("spin".into(), 0));
+        for proposal in ["earlier", "latest"] {
+            let held = engine.tick(&propose(proposal));
+            assert_eq!(held.playing_behavior.as_deref(), Some("c"));
+            assert_eq!(shown(&character, &held).0, "spin");
+        }
+        if poke {
+            let poked = engine.tick(&WorldSnapshot {
+                verbs: vec![Verb::Poke],
+                ..world(100)
+            });
+            assert_eq!(shown(&character, &poked).0, "react");
+            for _ in 0..20 {
+                let frame = engine.tick(&world(100));
+                assert_eq!(
+                    frame.playing_behavior, None,
+                    "poke cancels the chain and slot"
+                );
+                assert_eq!(frame.playing_gesture, None);
+                assert_ne!(shown(&character, &frame).0, "sit");
+            }
+        } else {
+            let latest = engine.tick(&world(800));
+            assert_eq!(latest.playing_behavior.as_deref(), Some("latest"));
+            assert_eq!(latest.playing_gesture, None);
+            assert_eq!(shown(&character, &latest).0, "sit");
+            for _ in 0..20 {
+                let frame = engine.tick(&world(100));
+                assert_ne!(frame.playing_behavior.as_deref(), Some("earlier"));
+                assert_ne!(frame.playing_behavior.as_deref(), Some("after"));
+                assert_eq!(frame.playing_gesture, None);
+            }
+        }
+    }
+}
+
+#[test]
+fn primitive_only_then_chain_finishes_without_replaying() {
+    let character = then_character(
+        r#"
+[behaviors.a]
+play = ["react"]
+then = "b"
+[behaviors.b]
+play = ["talk"]
+then = "c"
+[behaviors.c]
+play = ["sit"]
+"#,
+    );
+    let mut engine = engine_for(&character, 1);
+    first_idle(&mut engine);
+    assert_eq!(shown(&character, &engine.tick(&propose("a"))).0, "react");
+    assert_eq!(shown(&character, &engine.tick(&world(600))).0, "talk");
+    assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
+    for _ in 0..3 {
+        let complete = engine.tick(&world(600));
+        assert_eq!(complete.playing_behavior, None);
+        assert_eq!(complete.playing_gesture, None);
+        assert_eq!(shown(&character, &complete).0, "idle");
+    }
+}
+
+#[test]
+fn poke_during_flattened_primitives_cancels_the_gesture_continuation() {
+    let character = then_character(
+        r#"
+[behaviors.a]
+play = ["talk"]
+then = "b"
+[behaviors.b]
+play = ["sit"]
+then = "c"
+[behaviors.c]
+play = ["spin"]
+"#,
+    );
+    let mut engine = engine_for(&character, 1);
+    first_idle(&mut engine);
+    assert_eq!(shown(&character, &engine.tick(&propose("a"))).0, "talk");
+    assert_eq!(shown(&character, &engine.tick(&world(600))).0, "sit");
+    let poked = engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..world(100)
+    });
+    assert_eq!(shown(&character, &poked).0, "react");
+    for _ in 0..20 {
+        let frame = engine.tick(&world(100));
+        assert_eq!(frame.playing_behavior, None);
+        assert_eq!(frame.playing_gesture, None);
+        assert_ne!(shown(&character, &frame).0, "spin");
+    }
+}

@@ -1108,18 +1108,21 @@ impl Engine {
         }
     }
 
-    /// The Behavior that should follow `finished` at the pass boundary.
-    /// Primitive `then` targets are already flattened into the pass by
-    /// `chain`; strip targets and anything after a strip are not.
+    /// The continuation not flattened into the completed pass by `chain`.
+    /// Skip already-played Primitive Behaviors, but never skip a strip's `then`.
     fn then_after_pass(&self, finished: &str) -> Option<String> {
-        let behavior = self.behaviors.get(finished)?;
-        let next = behavior.then.as_ref()?;
-        let next_behavior = self.behaviors.get(next)?;
-        if behavior.strip.is_some() || next_behavior.strip.is_some() {
-            Some(next.clone())
-        } else {
-            None
+        let mut walked = BTreeSet::new();
+        let mut current = finished;
+        while walked.insert(current) {
+            let behavior = self.behaviors.get(current)?;
+            let next = behavior.then.as_deref()?;
+            let next_behavior = self.behaviors.get(next)?;
+            if behavior.strip.is_some() || next_behavior.strip.is_some() {
+                return Some(next.to_string());
+            }
+            current = next;
         }
+        None
     }
 
     /// Shared completed-pass boundary: deferred Director proposal first, else
