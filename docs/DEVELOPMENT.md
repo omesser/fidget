@@ -307,15 +307,15 @@ The loader rejects any other value, and a `[frame_facing]` entry naming a frame 
 
 #### Behaviors
 
-A Behavior is a named sequence of steps that the Static Director picks by weight, or that a model proposes. A step is a Primitive, or the name of an idle-gesture, which plays one pass. A Character composes Behaviors from those steps and cannot define new Primitives. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
+A Behavior is a named play list that the Static Director picks by weight, or that a model proposes. `play` is either an ordinary sequence of Primitives, or one named idle-gesture strip that plays one pass — not a mixed list and not more than one strip. A Character composes Behaviors from those and cannot define new Primitives. Every Character gets a weight-0 Behavior named after each askable Primitive (`jump`, `sit`, `sleep`, `react`, `chase`, `walk`) unless the package already declares that name or already plays that Primitive. `land` and `hold` stay Engine-owned; `talk` and `idle` are not injected (Engine plays talk while Dialogue shows; idle is ambient).
 
 | Key | Required | Value | Default |
 |---|---|---|---|
-| `play` | No | A list of steps, in order. Each step is a Primitive, or the name of an idle-gesture, which plays one pass. A Behavior with none plays nothing. | `[]` |
-| `then` | No | The name of the Behavior that follows this one. | |
+| `play` | No | Either a list of Primitives in order, or one idle-gesture strip name that plays one pass. Mixed lists and multi-strip lists are refused. A Behavior with none plays nothing. | `[]` |
+| `then` | No | The name of the Behavior that follows this one. A strip Behavior's `then`, and a Primitive Behavior's `then` that names a strip, both start at the end of the pass. | |
 | `weight` | No | Whole number: how likely the Static Director is to pick this Behavior against its siblings. 0 leaves it reachable only through `then` or a model proposal. | 10 |
 | `when` | No | The condition that must hold before the Behavior is picked. | Any time |
-| `type` | No | `"idle"` makes this Behavior's `idle` steps use the Engine's idle loops and idle-gestures. | |
+| `type` | No | `"idle"` makes this Behavior's `idle` Primitives use the Engine's idle loops and idle-gestures. | |
 
 The Primitives, and the Animation each plays:
 

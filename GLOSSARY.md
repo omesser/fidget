@@ -146,9 +146,10 @@ Characters may compose Primitives but never define new ones.
 _Avoid_: Action, command, step
 
 **Behavior**:
-A named sequence of steps with weights and trigger conditions, declared as
-data in a Character Package. A step is a Primitive, or the name of an
-idle-gesture, which plays one pass. The unit the Director proposes and the engine plays.
+A named play list with weights and trigger conditions, declared as data in a
+Character Package. `play` is either an ordinary sequence of Primitives, or one
+named idle-gesture strip that plays one pass — not mixed. The unit the Director
+proposes and the engine plays.
 _Avoid_: Routine, script, macro
 
 **Director**:

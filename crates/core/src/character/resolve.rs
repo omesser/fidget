@@ -332,7 +332,10 @@ pub(super) fn resolve_behaviors(
         .collect()
 }
 
-/// A Behavior `strip` must name an idle-gesture animation.
+/// A Behavior `strip` must name an idle-gesture animation. A play list that
+/// kept both Primitives and a strip candidate is classified here: a real
+/// gesture mixed with Primitives is refused as mixed; an unknown token is
+/// named as invalid.
 pub(super) fn check_play_strips(
     behaviors: &BTreeMap<String, Behavior>,
     animations: &BTreeMap<String, Animation>,
@@ -347,12 +350,20 @@ pub(super) fn check_play_strips(
         let Some(strip) = behavior.strip.as_deref() else {
             continue;
         };
-        if gestures.contains(&strip) {
+        let mixed = !behavior.primitives.is_empty();
+        let known = gestures.contains(&strip);
+        if mixed && known {
+            errors.push(format!(
+                "play for behavior {name:?} mixes Primitives and idle-gestures; use one or the other"
+            ));
             continue;
         }
-        errors.push(format!(
-            "play for behavior {name:?} names {strip:?}, which is not a Primitive              or an idle-gesture"
-        ));
+        if !known {
+            errors.push(format!(
+                "behavior {name:?} declares {strip:?}, which is not a Primitive or an idle-gesture"
+            ));
+            continue;
+        }
     }
 }
 
