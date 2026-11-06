@@ -293,11 +293,12 @@ function Save-Crop($Element, [string]$Path) {
 $proc = $null
 $systemDpi = 0
 $code = 0
+$startMs = Get-NowMs
 try {
     $proc = Start-FidgetPiped $Bin @() $log $err
     $script:proc = $proc
     if (-not (Wait-ForUp $err)) { Fail "Fidget never wrote its overlay line; see $err" }
-    if (-not (Wait-ForLine 10 $err '^anchor: 1x1 at ')) { Fail "Fidget never placed its anchor window; see $err" }
+    if (-not (Wait-ForLine 3 $err '^anchor: 1x1 at ')) { Fail "Fidget never placed its anchor window; see $err" }
     $anchor = [TrayIconsProbe]::FindAnchor([uint32]$proc.Id)
     if ($anchor -eq [IntPtr]::Zero) { Fail "no FidgetAnchor window belongs to pid $($proc.Id)" }
 
@@ -331,5 +332,5 @@ try {
 }
 
 if ($code -eq 0) { Write-Output "PASS: the anchor icons fit $(Scale $systemDpi); compare the crops by eye" }
-Write-Output "evidence in $out"
+Write-Output "evidence in $out ($((Get-NowMs) - $startMs)ms)"
 exit $code
