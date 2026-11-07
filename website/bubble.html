@@ -226,10 +226,10 @@
   /* A piece of the chat panel carried onto the desktop. Minimal chat is unconditionally dark, so
      this bubble is that dark ramp, not the ramp inverted. */
   .b-new {
-    --bub-panel: #14171e;         /* chat-ui.css --chat-panel */
-    --bub-ink: #e8ebf2;           /* chat-ui.css --chat-ink */
-    --bub-accent: #5cc9b5;        /* chat-ui.css --chat-accent */
-    --bub-radius: 12px;           /* chat-ui.css --chat-radius */
+    --bub-panel: #14171e;         /* bubble-tokens.css --bubble-panel */
+    --bub-ink: #e8ebf2;           /* bubble-tokens.css --bubble-ink */
+    --bub-accent: #5cc9b5;        /* bubble-tokens.css --bubble-accent */
+    --bub-radius: 12px;           /* bubble-tokens.css --bubble-radius */
 
     /* In chat the line is bare ink, because a panel sits under it. The overlay has no panel, so
        the box has to carry the fill, the radius, and the padding the log can skip. */
@@ -245,7 +245,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
     font-family: system-ui, -apple-system, sans-serif;  /* --chat-sans */
-    font-size: 13.5px;                                   /* chat-ui.css body */
+    font-size: 13.5px;                                   /* bubble-tokens.css --bubble-type-size */
     line-height: 1.55;                                   /* .row.them .said */
   }
   /* The tail is a ring triangle with a fill triangle over it. A single panel-colored spike would
