@@ -405,16 +405,16 @@ _Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
 design, not the window)
 
 **Chat UI**:
-A named, swappable visual design for the Chat surface — palette, type scale and
-shape — its tokens set in `src/ui-tokens.css`, and applied by a class on the
-root element of the Chat surface's own document. Not the surface itself: the
-surface is the window, and a Chat UI is one of the designs it can be drawn in.
-Dresses app chrome, the Possession card on the overlay included, and never a
-Character's expression — a Character's art never, and the Speech bubble only
-the opaque panel tokens in `src/bubble-tokens.css` that the default Chat UI and
-the overlay both import (#441, #456, #545). Not the light or dark theme the
-operating system supplies. The user picks one for the whole app in Settings.
-#355, #348, #1068, #2152, ADR-0041.
+A named visual design the user can swap for the Chat surface. It sets the
+palette, type scale and shape through tokens in `src/ui-tokens.css`, and a class
+on the root element of the surface's document applies it. It is not the surface
+itself. The surface is the window, and a Chat UI is one design the window can
+use. It applies to app chrome, which includes the Possession card on the
+overlay. It never applies to a Character's expression. A Character's art takes
+none of it, and the Speech bubble shares only the opaque tokens in
+`src/bubble-tokens.css` with the default Chat UI (#441, #456, #545). It is not
+the light or dark theme the operating system supplies. The user picks one for
+the whole app in Settings. #355, #348, #1068, #2152, ADR-0041.
 _Avoid_: Look, theme, skin, style, variant, design
 
 **Caffeinate**:
