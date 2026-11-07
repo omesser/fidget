@@ -10429,11 +10429,8 @@ mod tests {
         session.shutdown();
     }
 
-    /// Switching the AI source commits on the UI thread, so `retarget` must
-    /// not wait on the child it is dropping. That is cheap only because
-    /// `Msg::Shutdown` ends the turn in flight instead of being swallowed by it.
-    /// `Empty` means `complete` has not returned. A queued signal is the caller
-    /// already finished, which is too late to prove shutdown came first.
+    /// `Empty` means `complete` has not returned. A queued signal means the
+    /// caller has already finished.
     fn assert_caller_still_pending(returned: &mpsc::Receiver<()>) {
         assert!(
             matches!(returned.try_recv(), Err(mpsc::TryRecvError::Empty)),
@@ -10441,6 +10438,9 @@ mod tests {
         );
     }
 
+    /// Switching the AI source commits on the UI thread, so `retarget` must
+    /// not wait on the child it is dropping. That is cheap only because
+    /// `Msg::Shutdown` ends the turn in flight instead of being swallowed by it.
     #[test]
     fn retarget_does_not_wait_out_a_turn_in_flight() {
         let _hold = attachment_test_hold();
