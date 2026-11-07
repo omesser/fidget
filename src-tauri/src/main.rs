@@ -3768,8 +3768,8 @@ struct ChatStatus {
     primitive: Option<Primitive>,
     /// The Animation whose art is on screen, as `Character::draw` resolved it.
     animation: String,
-    /// The name the Engine asked with. A variant or a fallback makes it differ
-    /// from `animation`, and the bar shows both.
+    /// The name the Engine asked with. A variant, a fallback or a Left Strip
+    /// makes it differ from `animation`, and the bar shows both.
     asked_animation: &'static str,
     state: State,
     /// What drove the last wake, in `happened_cell`'s word for it.
@@ -3787,14 +3787,14 @@ struct ChatStatus {
 /// `Character::draw` resolved it to.
 fn chat_status(
     frame: &fidget_core::engine::Frame,
-    drawn: &str,
+    drawn_animation: &str,
     happened: Option<&'static str>,
     thinking: bool,
 ) -> ChatStatus {
     ChatStatus {
         behavior: frame.playing_behavior.clone(),
         primitive: frame.playing_primitive,
-        animation: drawn.to_string(),
+        animation: drawn_animation.to_string(),
         asked_animation: frame.animation,
         state: frame.state,
         happened,

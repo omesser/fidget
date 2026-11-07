@@ -41,8 +41,8 @@ export function statusCells(status, msLeft) {
   };
 }
 
-// The art on screen, then the name the Engine asked with when a variant or
-// a fallback drew something else: `walk (climb)`.
+// The art on screen, then the name the Engine asked with when a variant, a
+// fallback or a Left Strip drew something else: `walk (climb)`.
 function animationCell(status) {
   const drawn = status?.animation;
   if (!drawn) return NONE;
@@ -88,8 +88,11 @@ function humanizeActivity(status) {
     }
   }
 
-  if (status.animation) {
-    const readable = humanizeAnimation(status.animation);
+  // The name asked for, not the strip drawn: the plain line says what the
+  // Character is doing, and a variant or a Left Strip is how it looks doing it.
+  const asked = status.asked_animation ?? status.animation;
+  if (asked) {
+    const readable = humanizeAnimation(asked);
     if (readable) {
       return readable;
     }

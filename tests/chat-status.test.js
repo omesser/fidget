@@ -18,6 +18,19 @@ const push = {
   thinking: false,
 };
 
+test("the animation cell names the art drawn, then in parentheses the one asked for", () => {
+  const cells = statusCells({ ...push, animation: "walk", asked_animation: "climb" }, 12_000);
+  assert.equal(cells.animation, "walk (climb)");
+});
+
+test("the plain line says what was asked, not which strip drew it", () => {
+  const plain = plainStatus(
+    { ...push, behavior: null, animation: "walk", asked_animation: "climb", happened: null },
+    null,
+  );
+  assert.equal(plain, "Climb");
+});
+
 test("a push fills every cell", () => {
   const cells = statusCells(push, 12_000);
 

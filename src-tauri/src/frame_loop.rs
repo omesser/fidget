@@ -2456,8 +2456,9 @@ pub(crate) fn run_frame_loop(
                     frame.facing,
                 ) else {
                     // No drawable Animation, which a validated package cannot
-                    // be. Left out of `placed`; the webview reads absence as
-                    // dismissal. Why nothing else in this loop may skip an Instance silently.
+                    // be. Left out of `placed` and the bar's push; the webview
+                    // reads absence as dismissal. Why nothing else in this loop
+                    // may skip an Instance silently.
                     continue;
                 };
                 // Pushed on change, like the trace. `proactive_coming` is
@@ -3718,7 +3719,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// The bar names the art on screen and the name the Engine asked with.
     /// A Character with no climb art climbs in its walk art.
     #[test]
     fn the_status_names_the_drawn_animation_and_the_one_asked_for() {
