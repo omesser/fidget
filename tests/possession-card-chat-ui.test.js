@@ -62,6 +62,25 @@ function run() {
     const style = getComputedStyle(el);
     return Object.fromEntries(props.map((p) => [p, style[p]]));
   };
+  // Both buttons whole and inside the card's padding, in the page's font and
+  // in Verdana, which sets type as wide as the Linux runner's DejaVu Sans.
+  const wide = document.createElement("style");
+  wide.textContent = ".possession, .possession * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }";
+  const fitsNow = (card) => {
+    const right = card.getBoundingClientRect().right - parseFloat(getComputedStyle(card).paddingRight);
+    return [...card.querySelectorAll(".possession-release, .possession-focus")].every(
+      (b) => b.scrollWidth <= b.clientWidth && b.getBoundingClientRect().right <= right + 0.5,
+    );
+  };
+  const fits = async (card) => {
+    const plain = fitsNow(card);
+    document.head.append(wide);
+    await settle();
+    const wideFont = fitsNow(card);
+    wide.remove();
+    await settle();
+    return { plain, wideFont };
+  };
   async function drive() {
     console.log("__PROBE_READY__");
     await ready("frame");
@@ -82,7 +101,7 @@ function run() {
       const card = document.querySelector(".possession");
       const releaseEl = card.querySelector(".possession-release");
       const live = {
-        releaseClipped: releaseEl.scrollWidth > releaseEl.clientWidth,
+        fits: await fits(card),
         card: read(card, ["backgroundColor", "color"]),
         release: read(releaseEl, [
           "backgroundColor", "color", "borderTopColor", "borderTopLeftRadius",
@@ -126,9 +145,9 @@ for (const [chatUi, [panel, ink, accent, accentInk, line, radius]] of Object.ent
     });
   });
 
-  test(`Release shows its whole label beside Focus in ${chatUi}`, { skip: chromeSkip, timeout: 60000 }, async () => {
-    const { releaseClipped } = (await probe())[chatUi];
-    assert.equal(releaseClipped, false);
+  test(`Release and Focus show their whole labels inside the ${chatUi} card, in a wide font too`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { fits } = (await probe())[chatUi];
+    assert.deepEqual(fits, { plain: true, wideFont: true });
   });
 
   test(`a raised Focus is ${chatUi}'s flat accent button`, { skip: chromeSkip, timeout: 60000 }, async () => {

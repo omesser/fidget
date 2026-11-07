@@ -582,10 +582,12 @@ body {
   color: var(--ui-accent);
 }
 
-/* Release on the left, Focus on the right, in both states. */
+/* Release on the left, Focus on the right, in both states. A font wider
+   than the cap allows, as Linux's DejaVu Sans is, drops Focus to its own
+   line, rather than clip a label. */
 .possession-footer {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
@@ -598,9 +600,7 @@ body {
   display: block;
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   margin: 0;
   padding: 4px 10px;
   border: 1px solid var(--ui-line);
