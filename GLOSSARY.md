@@ -406,7 +406,7 @@ design, not the window)
 
 **Chat UI**:
 A named visual design the user can swap for the Chat surface. It sets the
-palette, type scale and shape through tokens in `src/ui-tokens.css`, and a class
+palette, fonts and shape through tokens in `src/ui-tokens.css`, and a class
 on the root element of the surface's document applies it. It is not the surface
 itself. The surface is the window, and a Chat UI is one design the window can
 use. It applies to app chrome, which includes the Possession card on the
