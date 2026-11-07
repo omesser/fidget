@@ -1919,8 +1919,8 @@ impl Session {
     }
 
     /// The wire died. Drop it, charge the loss, and let a later wake respawn.
-    /// Empty the slot here. `alive()` flips only once the wire's thread has
-    /// dropped its receiver, and a wake arriving before then would reuse it.
+    /// Empty the slot here. `Wire::alive` stays true until the receiver drops.
+    /// Shutdown may already have cleared `inspect.alive` when it took the wire.
     fn lost(&self, wire: &Wire, state: &mut State) {
         self.retire(wire);
         self.charge_loss(state);
@@ -3615,6 +3615,41 @@ fn attachment() -> MutexGuard<'static, Attachment> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// One permit for every test that installs or retargets the process slot.
+/// The slot is one per process. Holding this from install through restore
+/// keeps one test from shutting down another's session.
+#[cfg(test)]
+struct AttachmentTestHold {
+    _guard: MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+static ATTACHMENT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+thread_local! {
+    static ATTACHMENT_TEST_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn attachment_test_hold() -> AttachmentTestHold {
+    let guard = ATTACHMENT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ATTACHMENT_TEST_HELD.with(|held| held.set(true));
+    AttachmentTestHold { _guard: guard }
+}
+
+#[cfg(test)]
+impl Drop for AttachmentTestHold {
+    fn drop(&mut self) {
+        ATTACHMENT_TEST_HELD.with(|held| held.set(false));
+        let mut slot = attachment();
+        slot.session = None;
+        slot.forward = None;
+    }
+}
+
 /// Read the source, the variable, else `saved` from Settings, and hold the
 /// Session until the row moves it or the process exits. Process-global because
 /// the session is one per app and a Retarget rebuilds `DirectorSettings`.
@@ -3666,6 +3701,13 @@ fn reattach(attached: Option<&Target>, wanted: Option<Target>) -> Reattach {
 /// A wire that dies is the Session's own business. `spawning` is the
 /// Director's switch, so a session no wake will reach is not opened.
 pub(crate) fn retarget(wanted: Option<Target>, spawning: bool) {
+    #[cfg(test)]
+    ATTACHMENT_TEST_HELD.with(|held| {
+        assert!(
+            held.get(),
+            "a test must hold the attachment slot for the whole install and restore"
+        );
+    });
     let mut slot = attachment();
     // The probe and the tests never call `attach`, so there is no forward to
     // rebuild a Session with and nothing of theirs to move.
@@ -10401,6 +10443,7 @@ mod tests {
         // The prompt is on the wire and unanswered. `shutdown` posts into a
         // `turn`, not into `serve`.
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
+        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
@@ -10425,11 +10468,16 @@ mod tests {
             "retarget waited {waited:?} on the dropped session"
         );
         assert!(attached().is_none(), "the Off pick did not take");
-        // `alive` drops when shutdown takes the wire, before this caller
-        // returns. The process itself is killed after the wire accepts it.
+        // Only a shutdown loss clears `inspect.alive` before the caller
+        // returns. A budget timeout is a different error, and the return
+        // does not mean the child has been reaped.
+        let err = worker
+            .join()
+            .unwrap()
+            .expect_err("the turn outlived the kill");
         assert!(
-            worker.join().unwrap().is_err(),
-            "the turn outlived the kill"
+            err == LOST,
+            "the turn did not end as a shutdown loss: {err}"
         );
         assert!(
             !session.inspect().alive,
@@ -10439,14 +10487,6 @@ mod tests {
 
     #[test]
     fn shutdown_drops_alive_before_the_in_flight_caller_returns() {
-        struct RestoreAttachment;
-        impl Drop for RestoreAttachment {
-            fn drop(&mut self) {
-                let mut slot = attachment();
-                slot.session = None;
-                slot.forward = None;
-            }
-        }
         for iteration in 0..10 {
             let (entered_tx, entered_rx) = mpsc::channel();
             let (fx, session) = Fixture::new("slow");
@@ -10462,12 +10502,12 @@ mod tests {
                 fx.wait_for("prompt", 1),
                 "iteration {iteration}: the turn never went out"
             );
+            let _hold = attachment_test_hold();
             {
                 let mut slot = attachment();
                 slot.forward = Some(silent());
                 slot.session = Some(Arc::clone(&session));
             }
-            let _restore = RestoreAttachment;
             let start = Instant::now();
             retarget(None, false);
             assert!(
@@ -10509,20 +10549,12 @@ mod tests {
             })
         };
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
+        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
             slot.session = Some(Arc::clone(&session));
         }
-        struct RestoreAttachment;
-        impl Drop for RestoreAttachment {
-            fn drop(&mut self) {
-                let mut slot = attachment();
-                slot.session = None;
-                slot.forward = None;
-            }
-        }
-        let _restore = RestoreAttachment;
         let start = Instant::now();
         retarget(None, false);
         assert!(
@@ -10543,6 +10575,62 @@ mod tests {
             "the dropped session still reads live"
         );
         let _ = release.send(());
+    }
+
+    #[test]
+    #[should_panic(expected = "hold the attachment slot")]
+    fn a_test_retarget_without_the_slot_hold_is_refused() {
+        retarget(None, false);
+    }
+
+    #[test]
+    fn two_retargets_each_shut_down_their_own_session() {
+        for iteration in 0..4 {
+            let run = |name: &'static str| {
+                thread::spawn(move || {
+                    let (entered_tx, entered_rx) = mpsc::channel();
+                    let (fx, session) = Fixture::new("slow");
+                    let session = Arc::new(session);
+                    let worker = {
+                        let session = Arc::clone(&session);
+                        thread::spawn(move || {
+                            crate::acp_wire::arm_shutdown_park(entered_tx);
+                            session.complete(&asking("hi"), &|_| {})
+                        })
+                    };
+                    assert!(
+                        fx.wait_for("prompt", 1),
+                        "{name} {iteration}: the turn never went out"
+                    );
+                    let _hold = attachment_test_hold();
+                    {
+                        let mut slot = attachment();
+                        slot.forward = Some(silent());
+                        slot.session = Some(Arc::clone(&session));
+                    }
+                    retarget(None, false);
+                    let release = entered_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .unwrap_or_else(|_| {
+                            panic!("{name} {iteration}: shutdown missed this session")
+                        });
+                    let _ = release.send(());
+                    let err = worker
+                        .join()
+                        .unwrap()
+                        .expect_err("the turn outlived the kill");
+                    assert_eq!(err, LOST, "{name} {iteration}: {err}");
+                    assert!(
+                        !session.inspect().alive,
+                        "{name} {iteration}: the dropped session still reads live"
+                    );
+                })
+            };
+            let left = run("left");
+            let right = run("right");
+            left.join().unwrap();
+            right.join().unwrap();
+        }
     }
 
     /// The stalled open has to stay unanswered until the session is dropped.
@@ -10848,6 +10936,7 @@ mod tests {
             thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
+        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
@@ -10881,6 +10970,7 @@ mod tests {
             thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
+        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());

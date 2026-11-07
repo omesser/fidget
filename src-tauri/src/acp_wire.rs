@@ -50,6 +50,7 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
+/// Hold the next wire this thread spawns at shutdown so a test can read `alive` before `Done`.
 #[cfg(test)]
 pub(crate) fn arm_shutdown_park(park: sync_mpsc::Sender<sync_mpsc::Sender<()>>) {
     SHUTDOWN_PARK.with(|slot| *slot.borrow_mut() = Some(park));
