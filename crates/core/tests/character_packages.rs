@@ -697,6 +697,39 @@ fn timber_wolf_rack_offset(bytes: &[u8]) -> f32 {
     (x_min + x_max) as f32 / 2.0 - racks / n
 }
 
+#[test]
+fn jotaro_idle_draws_at_the_same_standing_scale_as_his_walk() {
+    let character = load_package("jotaro-kujo").expect("Jotaro package is valid");
+    let idle = &character.animations["idle"];
+    for index in 0..idle.frames.len() {
+        let at = (index as u32 * 1000).div_ceil(idle.fps);
+        let drawn = character.draw("idle", at, 0, 1.0).expect("idle draws");
+        assert_eq!(drawn.index, index);
+        let (width, height, pixels) = drawn.mask.raw();
+        let mut rows = pixels.chunks_exact(width as usize);
+        let top = rows
+            .clone()
+            .position(|row| row.contains(&true))
+            .expect("idle is visible");
+        let bottom = rows
+            .clone()
+            .rposition(|row| row.contains(&true))
+            .expect("idle is visible");
+        let feet = rows
+            .rposition(|row| row.iter().filter(|&&solid| solid).count() >= FOOT_PIXELS)
+            .expect("idle has solid feet") as i32;
+        let shown_height = (bottom - top + 1) as i32 * character.scale as i32;
+        assert!(
+            (107..=111).contains(&shown_height),
+            "idle frame {index} stands {shown_height}px tall; Jotaro's upright walk is 108-109px"
+        );
+        assert!(
+            height - 1 - feet <= 2,
+            "idle frame {index} must keep its feet within 2px of the canvas floor"
+        );
+    }
+}
+
 /// Jump draws `fall`, and Jotaro's fall frames face left while his walk faces
 /// right. The manifest says so, and the renderer mirrors each to the travel.
 #[test]
