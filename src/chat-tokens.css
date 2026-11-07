@@ -1,6 +1,5 @@
-/* Each Chat UI design's tokens: one block per design, one per Light, and
-   Glass's unblurred tint. Chat, Settings and the overlay's chrome import
-   this, so all three wear the design the user picked. Only custom
+/* Each Chat UI design's tokens, its Light and Glass's unblurred tint.
+   Chat, Settings and the overlay's chrome all import it. Only custom
    properties live here; a rule that draws belongs to its surface. */
 
 /* Named, not set. System keywords carry no literal, so this block passes
