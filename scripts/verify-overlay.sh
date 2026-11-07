@@ -201,7 +201,11 @@ if not frames or not steps:
           else "  FAIL  the prop window reported nothing")
     sys.exit(1)
 
-descent = [f for f in frames if f[1] == "Falling"][:10]
+# The first Falling frames can sit still while the art loads. Gravity
+# starts at the first frame that moves.
+falling = [f for f in frames if f[1] == "Falling"]
+moved = next((i for i in range(1, len(falling)) if falling[i][3] != falling[0][3]), None)
+descent = falling[moved:moved + 10] if moved is not None else falling[:10]
 check(len(descent) >= 5 and descent[-1][3] > descent[0][3] + 10,
       "the sprite falls under gravity",
       f"{descent[0][3]:.0f} -> {descent[-1][3]:.0f} over {len(descent)} frames")
