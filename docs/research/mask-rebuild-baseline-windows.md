@@ -2,6 +2,8 @@
 
 Benchmark for issue [#428](https://github.com/omesser/fidget/issues/428): how often the Windows click-through region (`SetWindowRgn`) is rebuilt, and what each rebuild costs, per scenario. The X11 side is [`mask-rebuild-baseline-x11.md`](./mask-rebuild-baseline-x11.md).
 
+Shipped since: [#1526](https://github.com/omesser/fidget/issues/1526) keeps each Character's recent region shapes and moves a kept one into place instead of rebuilding it, so the walk and idle rows below no longer rebuild at these rates. The numbers after that change are in [`mask-shape-reuse-windows.md`](./mask-shape-reuse-windows.md).
+
 ## Environment
 
 - **Host:** Oded's workstation DESKTOP-UQIE144 (machineId `9723dbe7-21c6-40c0-afcd-2172f499de66`), Windows 11 Pro for Workstations 10.0.26200.

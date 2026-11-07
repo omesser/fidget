@@ -28,7 +28,7 @@ const PWSH_HOST_ABORT =
   /FileLoadException|Microsoft\.Management\.Infrastructure|Abort trap|not properly handled/;
 
 const PAINTED = "overlay overlay-0: region rebuild 4 rects (art 2 + hotspots 1 + painted 1)";
-const CLEARED = "overlay overlay-0: region rebuild 2 rects (art 1 + hotspots 1 + painted 0)";
+const CLEARED = "overlay overlay-0: region shift 2 rects (art 1 + hotspots 1 + painted 0)";
 const FOLLOW = "overlay overlay-1: pill follows instance=inst-1 chars=4 focused=True";
 
 const REAL = [
