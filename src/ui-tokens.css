@@ -2,10 +2,9 @@
    Chat, Settings and the overlay's chrome all import it. Only custom
    properties live here; a rule that draws belongs to its surface. */
 
-/* Named, not set. System keywords carry no literal, so this block passes
-   the hook on the blocks below, and a typo in the root class leaves a
-   plain window rather than an invisible one. First, so a design block of
-   equal weight overrides it. */
+/* Named, not set, and first so a design block overrides it. System keywords
+   pass the hook on the blocks below, and a typo in the root class leaves a
+   plain window rather than an invisible one. */
 :root {
   --ui-panel: Canvas;
   --ui-ink: CanvasText;

@@ -1,6 +1,6 @@
 /* Opaque type, shape, and hue the Speech bubble shares with the default Chat
-   panel. Chrome, layout, and alpha stay in chat-ui.css so a Chat UI cannot
-   repaint Character expression. */
+   panel. Chrome, layout, and alpha stay in ui-tokens.css and chat-ui.css, so
+   a Chat UI cannot repaint Character expression. */
 :root {
   --bubble-panel: #14171e;
   --bubble-ink: #e8ebf2;
@@ -8,6 +8,6 @@
   --bubble-radius: 12px;
   --bubble-type-size: 13.5px;
   --bubble-type-leading: 1.55;
-  /* The overlay loads no chat-ui.css, so this is that file's --ui-sans. */
+  /* Not --ui-sans: the bubble is expression, and a Chat UI may change that. */
   --bubble-sans: system-ui, -apple-system, sans-serif;
 }

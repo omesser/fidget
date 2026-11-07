@@ -14,7 +14,7 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const FIXTURES = new URL("./fixtures/", import.meta.url);
 const read = (name) => JSON.parse(readFileSync(new URL(name, FIXTURES), "utf8"));
 
-// The page's ink, `--ui-ink` per design block in chat-ui.css.
+// The page's ink, `--ui-ink` per design block in ui-tokens.css.
 const INK = {
   "Minimal/Dark": "rgb(232, 235, 242)",
   "Minimal/Light": "rgb(26, 29, 36)",

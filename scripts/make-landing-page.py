@@ -707,10 +707,10 @@ def cue_css(css):
     return "\n".join(kept) + "\n"
 
 
-def lift(css, shared, scope, wanted, prefix=""):
-    """`shared`'s :root tokens scoped to `scope`, the `wanted` selectors of each
-    rule in `css` behind `prefix`, and the wanted selectors no rule has."""
-    tokens = [f"{scope} {{{body}}}" for prelude, body in top_level_rules(shared) if prelude == ":root"]
+def lift(css, bubble_tokens, scope, wanted, prefix=""):
+    """`bubble_tokens`' :root tokens scoped to `scope`, the `wanted` selectors
+    of each rule in `css` behind `prefix`, and the wanted selectors no rule has."""
+    tokens = [f"{scope} {{{body}}}" for prelude, body in top_level_rules(bubble_tokens) if prelude == ":root"]
     kept, found = [], set()
     for prelude, body in top_level_rules(css):
         selectors = [part.strip() for part in prelude.split(",") if part.strip() in wanted]
@@ -720,7 +720,7 @@ def lift(css, shared, scope, wanted, prefix=""):
     return tokens, kept, [rule for rule in wanted if rule not in found]
 
 
-def chat_css(css, shared, wanted=CHAT_RULES):
+def chat_css(css, bubble_tokens, wanted=CHAT_RULES):
     """The minimal Chat UI's own tokens and the `wanted` rules from
     src/chat-ui.css, scoped to `.play-chat-ui`, so the chat mock is the app's
     Chat as the pill is its quick message. Scoped because chat-ui.css styles a
@@ -729,17 +729,17 @@ def chat_css(css, shared, wanted=CHAT_RULES):
     if not theme:
         # Without it every --ui-* token is unset and the mock draws transparent.
         raise Malformed(f"{CHAT_UI.name} holds no .chat-ui-minimal block for the chat mock's colours")
-    tokens, kept, missing = lift(css, shared, ".play-chat-ui", wanted, ".play-chat-ui ")
+    tokens, kept, missing = lift(css, bubble_tokens, ".play-chat-ui", wanted, ".play-chat-ui ")
     if missing:
         raise Malformed(f"{CHAT_UI.name} holds no {', '.join(missing)} rule for the chat mock")
     return "\n".join(tokens + theme + kept) + "\n"
 
 
-def bubble_css(css, shared, wanted=BUBBLE_RULES):
+def bubble_css(css, bubble_tokens, wanted=BUBBLE_RULES):
     """The overlay's speech bubble from src/main.css, so the page character
     speaks in the app's own bubble. The bubble tokens it reads are scoped to
     `.bubble`, as the chat mock's are to `.play-chat-ui`."""
-    tokens, kept, missing = lift(css, shared, ".bubble", wanted)
+    tokens, kept, missing = lift(css, bubble_tokens, ".bubble", wanted)
     if missing:
         raise Malformed(f"{CUES.name} holds no {', '.join(missing)} rule for the page character's bubble")
     return "\n".join(tokens + kept) + "\n"
