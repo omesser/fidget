@@ -109,7 +109,7 @@ function paint(open, width = 420) {
       lede: style(lede),
       code: style(code),
       link: style(link),
-      accent: getComputedStyle(document.documentElement).getPropertyValue("--chat-accent").trim(),
+      accent: getComputedStyle(document.documentElement).getPropertyValue("--ui-accent").trim(),
       kicker: document.getElementById("landing-kicker").hidden ? null : document.getElementById("landing-kicker").textContent,
       boxes: { output: box("output"), command: box("command"), check: box("check") },
       next: document.getElementById("landing-next").hidden ? null : document.getElementById("landing-next").textContent,

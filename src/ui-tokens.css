@@ -1,0 +1,219 @@
+/* Each Chat UI design's tokens, its Light and Glass's unblurred tint.
+   Chat, Settings and the overlay's chrome all import it. Only custom
+   properties live here; a rule that draws belongs to its surface. */
+
+/* Named, not set. System keywords carry no literal, so this block passes
+   the hook on the blocks below, and a typo in the root class leaves a
+   plain window rather than an invisible one. First, so a design block of
+   equal weight overrides it. */
+:root {
+  --ui-panel: Canvas;
+  --ui-ink: CanvasText;
+  --ui-ink-2: GrayText;
+  --ui-ink-3: GrayText;
+  --ui-ink-4: GrayText;
+  --ui-accent: AccentColor;
+  --ui-accent-ink: AccentColorText;
+  --ui-accent-soft: ButtonFace;
+
+  --ui-fill: Field;
+  --ui-fill-dim: ButtonFace;
+  --ui-fill-soft: ButtonFace;
+  --ui-rule: ButtonBorder;
+  --ui-line: ButtonBorder;
+  --ui-error: ButtonBorder;
+
+  --ui-radius: 0;
+  --ui-radius-tail: 0;
+  --ui-radius-control: 0;
+  --ui-radius-badge: 0;
+  --ui-radius-tab: 0;
+
+  --ui-sans: system-ui, sans-serif;
+  --ui-mono: ui-monospace, monospace;
+}
+
+/* The ink ramp is four steps because four things are dimmed apart.
+   No web fonts. The app's CSP blocks Google Fonts without saying so. */
+.chat-ui-minimal {
+  --ui-panel: var(--bubble-panel);
+  --ui-ink: var(--bubble-ink);
+  --ui-ink-2: #9aa2b4;
+  --ui-ink-3: #7c8496;
+  --ui-ink-4: #6c7488;
+  --ui-accent: var(--bubble-accent);
+  --ui-accent-ink: #0b231f;
+  --ui-accent-soft: rgba(92, 201, 181, 0.13);
+
+  --ui-fill: rgba(255, 255, 255, 0.04);
+  --ui-fill-dim: rgba(255, 255, 255, 0.02);
+  --ui-fill-soft: rgba(255, 255, 255, 0.06);
+  --ui-rule: rgba(255, 255, 255, 0.07);
+  --ui-line: rgba(255, 255, 255, 0.13);
+  --ui-error: #e5484d;
+
+  --ui-radius: var(--bubble-radius);
+  --ui-radius-tail: 3px;
+  --ui-radius-control: 10px;
+  --ui-radius-badge: 5px;
+  --ui-radius-tab: 10px 10px 0 0;
+
+  --ui-sans: system-ui, -apple-system, sans-serif;
+  --ui-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --claude-accent: #E8A78A;
+  --codex-accent: #26C399;
+  /* Simple Icons gives GitHub Copilot #000000, the ground Cursor's accent
+     is lifted off. Primer's dark foreground stays cool next to the warm
+     Cursor accent and the slate Grok accent. */
+  --copilot-accent: #C9D1D9;
+  /* Simple Icons gives Cursor #000000, which is the ground here. Lifted
+     to a warm light grey so it stays off the Grok accent, the other neutral. */
+  --cursor-agent-accent: #C2BCB2;
+  /* Goose docs set the caret and the card glow to #FF4F00. */
+  --goose-accent: #FF4F00;
+  --grok-accent: #7A8FA3;
+  --opencode-accent: #7A9EF0;
+  /* Nous ships #0000F2 on the Hermes surfaces. Lifted so it reads on the
+     dark Chat ground the way the other accents do. */
+  --hermes-accent: #8C8CF2;
+  /* pi.dev's sunkissed. Their accent blue lands between OpenCode and
+     Hermes, and the three read as one blue. Sunkissed stays apart. */
+  --pi-accent: #E1B06E;
+  /* Google red. The blue, green, and yellow already sit on OpenCode,
+     Codex, and Pi. */
+  --antigravity-accent: #EA4335;
+}
+
+[data-chat-palette="light"].chat-ui-minimal {
+  --ui-panel: #f8f9fb;
+  --ui-ink: #1a1d24;
+  --ui-ink-2: #525a6b;
+  --ui-ink-3: #6c7488;
+  --ui-ink-4: #8a92a3;
+  --ui-accent: #169b85;
+  --ui-accent-ink: #ffffff;
+  --ui-accent-soft: rgba(22, 155, 133, 0.12);
+
+  --ui-fill: rgba(0, 0, 0, 0.03);
+  --ui-fill-dim: rgba(0, 0, 0, 0.015);
+  --ui-fill-soft: rgba(0, 0, 0, 0.05);
+  --ui-rule: rgba(0, 0, 0, 0.08);
+  --ui-line: rgba(0, 0, 0, 0.15);
+  --ui-error: #c62828;
+
+  --claude-accent: #C86D4F;
+  --codex-accent: #169b85;
+  /* Primer's light-theme muted foreground. #C9D1D9 vanishes on white. */
+  --copilot-accent: #57606A;
+  --cursor-agent-accent: #7A7469;
+  --grok-accent: #4A6B82;
+  --opencode-accent: #4A72D0;
+  --hermes-accent: #5A5ACF;
+  --pi-accent: #B8854E;
+  --antigravity-accent: #C5221F;
+}
+
+/* A dense monospace log. The clock is a narrow left gutter, the speaker
+   sits beside it, and the words unfold under the speaker. */
+.chat-ui-terminal {
+  --ui-panel: #0A0D12;
+  --ui-ink: #C6D0DC;
+  --ui-ink-2: #8A97A8;
+  --ui-ink-3: #6D7A8A;
+  --ui-ink-4: #46525F;
+  --ui-accent: #7FE0B0;
+  --ui-accent-ink: #0b231f;
+  --ui-accent-soft: #131C1A;
+
+  --ui-fill: #0F141B;
+  --ui-fill-dim: #0A0D12;
+  --ui-fill-soft: #0F141B;
+  --ui-rule: #2A3340;
+  --ui-line: #2A3340;
+  --ui-error: #FF7B72;
+
+  --ui-radius: 3px;
+  --ui-radius-tail: 3px;
+  --ui-radius-control: 3px;
+  --ui-radius-badge: 3px;
+  --ui-radius-tab: 0;
+
+  --ui-sans: system-ui, -apple-system, sans-serif;
+  --ui-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+[data-chat-palette="light"].chat-ui-terminal {
+  --ui-panel: #FAFBFC;
+  --ui-ink: #1A2330;
+  --ui-ink-2: #4A5768;
+  --ui-ink-3: #6A778A;
+  --ui-ink-4: #9AA5B5;
+  --ui-accent: #169B85;
+  --ui-accent-ink: #ffffff;
+  --ui-accent-soft: #E8F5F3;
+
+  --ui-fill: #F0F3F6;
+  --ui-fill-dim: #FAFBFC;
+  --ui-fill-soft: #F0F3F6;
+  --ui-rule: #D5DBDF;
+  --ui-line: #D5DBDF;
+  --ui-error: #CF222E;
+}
+
+/* A frosted panel. Backdrop blur and thin light borders, over a
+   transparent window. */
+.chat-ui-glass {
+  --ui-panel: rgba(14,17,24,.62);
+  --ui-ink: #F1F4F9;
+  --ui-ink-2: rgba(241,244,249,.78);
+  --ui-ink-3: rgba(241,244,249,.66);
+  --ui-ink-4: rgba(241,244,249,.55);
+  --ui-accent: rgba(255,255,255,.92);
+  --ui-accent-ink: #16202C;
+  --ui-accent-soft: rgba(255,255,255,.9);
+
+  --ui-fill: rgba(255,255,255,.10);
+  --ui-fill-dim: rgba(255,255,255,.07);
+  --ui-fill-soft: rgba(255,255,255,.16);
+  --ui-rule: rgba(255,255,255,.12);
+  --ui-line: rgba(255,255,255,.22);
+
+  --ui-radius: 14px;
+  --ui-radius-tail: 4px;
+  --ui-radius-control: 999px;
+  --ui-radius-badge: 999px;
+  --ui-radius-tab: 999px;
+
+  --ui-sans: system-ui, -apple-system, sans-serif;
+  --ui-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+[data-chat-palette="light"].chat-ui-glass {
+  --ui-panel: rgba(248,249,252,.85);
+  --ui-ink: #1A1F2B;
+  --ui-ink-2: rgba(26,31,43,.85);
+  --ui-ink-3: rgba(26,31,43,.68);
+  --ui-ink-4: rgba(26,31,43,.52);
+  --ui-accent: rgba(22,155,133,.95);
+  --ui-accent-ink: #FFFFFF;
+  --ui-accent-soft: rgba(22,155,133,.88);
+
+  --ui-fill: rgba(0,0,0,.06);
+  --ui-fill-dim: rgba(0,0,0,.03);
+  --ui-fill-soft: rgba(0,0,0,.10);
+  --ui-rule: rgba(0,0,0,.10);
+  --ui-line: rgba(0,0,0,.18);
+}
+
+/* WebView2 can't blur the desktop, so Windows always gets this tint. Nor
+   can the overlay on any platform: its chrome asks for the tint too. */
+[data-platform="windows"].chat-ui-glass,
+[data-desktop-blur="none"].chat-ui-glass {
+  --ui-panel: rgba(14,17,24,.84);
+}
+
+[data-platform="windows"][data-chat-palette="light"].chat-ui-glass,
+[data-desktop-blur="none"][data-chat-palette="light"].chat-ui-glass {
+  --ui-panel: rgba(242,244,248,.98);
+}

@@ -106,7 +106,7 @@ test("Prompt tab Save and Discard stay disabled until the field is dirty", () =>
 
   const discard = ruleBlock(css, "#prompt-discard");
   assert.match(discard, /background:\s*transparent/, "Discard is the outline twin of Cancel, not accent");
-  assert.match(ruleBlock(css, "#prompt-save:disabled"), /cursor:\s*default|background:\s*var\(--chat-fill-soft\)/);
+  assert.match(ruleBlock(css, "#prompt-save:disabled"), /cursor:\s*default|background:\s*var\(--ui-fill-soft\)/);
 
   assert.match(js, /function promptDirty\(/);
   assert.match(js, /promptText\.value !== savedPrompt/);

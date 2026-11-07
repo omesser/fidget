@@ -35,8 +35,8 @@ The line is drawn by what a surface is, not by which window draws it:
   overlay's Possession card. A switch in Settings repaints it while it is
   open.
 - **Character expression does not:** the Speech bubble, the quick-message
-  pill, and the gesture cues. They share only the opaque panel snippet with
-  the default design. Changing the Chat UI never changes a Character's
+  pill, and the gesture cues. They share only the opaque `--bubble-*` tokens
+  with the default design. Changing the Chat UI never changes a Character's
   expression.
 
 ## Considered Options
@@ -54,7 +54,8 @@ The line is drawn by what a surface is, not by which window draws it:
 ## Consequences
 
 Adding a design still means adding one token block. Chat, Settings and the
-card pick it up together.
+card pick it up together. The tokens are `--ui-*` in `src/ui-tokens.css`,
+named for the app they dress rather than for Chat.
 
 Glass is the one design whose panel depends on the window. Chat on macOS
 sits on a native blur of the desktop and wears Glass's frosted panel. The
@@ -64,7 +65,7 @@ panel over a sharp desktop would leave the card's text on whatever is
 behind it.
 
 A new piece of overlay chrome takes the Chat UI by default. Overlay
-expression stays on the shared snippet, and a reviewer has to decide which
+expression stays on the bubble tokens, and a reviewer has to decide which
 of the two a new surface is.
 
 Reversing this means hand-copying a design into the card again.

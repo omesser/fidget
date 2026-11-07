@@ -96,18 +96,18 @@ test("a paused card dims and asks for a click", () => {
 });
 
 test("the bindings card takes the Chat UI's sans, the Speech bubble the shared one", () => {
-  const shared = readFileSync(new URL("../src/chat-shared.css", import.meta.url), "utf8");
+  const shared = readFileSync(new URL("../src/bubble-tokens.css", import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/main.css", import.meta.url), "utf8");
-  const sans = shared.match(/--shared-sans:\s*([^;]+);/);
-  assert.ok(sans, "chat-shared.css names the sans stack once");
+  const sans = shared.match(/--bubble-sans:\s*([^;]+);/);
+  assert.ok(sans, "bubble-tokens.css names the sans stack once");
   assert.equal(sans[1].trim(), "system-ui, -apple-system, sans-serif");
   const block = (selector) => {
     const found = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`));
     assert.ok(found, `${selector} has a block`);
     return found[1];
   };
-  assert.match(block("\\.possession"), /font-family:\s*var\(--chat-sans\)/);
-  assert.match(block("\\.bubble"), /font-family:\s*var\(--shared-sans\)/);
+  assert.match(block("\\.possession"), /font-family:\s*var\(--ui-sans\)/);
+  assert.match(block("\\.bubble"), /font-family:\s*var\(--bubble-sans\)/);
 });
 
 test("the card is absent until the sprite is possessed", () => {

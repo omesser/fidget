@@ -1,12 +1,12 @@
-@import url("./chat-shared.css");
-@import url("./chat-tokens.css");
+@import url("./bubble-tokens.css");
+@import url("./ui-tokens.css");
 
 
-/* One Chat UI, and this file draws it. chat-tokens.css names the tokens
+/* One Chat UI, and this file draws it. ui-tokens.css names the tokens
    and sets them per design, and the rules here consume them. No colour,
    font, or radius literal lives outside a token block. */
 
-/* On the window, not in chat-tokens.css: the overlay imports the tokens
+/* On the window, not in ui-tokens.css: the overlay imports the tokens
    and must not take a scheme, whose canvas would paint over the desktop. */
 :root {
   color-scheme: light dark;
@@ -49,7 +49,7 @@
 .chat-ui-terminal .tb {
   padding: 6px 8px 6px 10px;
   background: #141A22;
-  border-bottom: 1px solid var(--chat-rule);
+  border-bottom: 1px solid var(--ui-rule);
 }
 
 .chat-ui-terminal .tb .name {
@@ -67,8 +67,8 @@
 }
 
 .chat-ui-terminal .tabs {
-  border-bottom: 1px solid var(--chat-rule);
-  background: var(--chat-fill);
+  border-bottom: 1px solid var(--ui-rule);
+  background: var(--ui-fill);
 }
 
 .chat-ui-terminal .tab {
@@ -76,11 +76,11 @@
   letter-spacing: .04em;
   text-transform: lowercase;
   padding: 5px 11px;
-  border-right: 1px solid var(--chat-rule);
+  border-right: 1px solid var(--ui-rule);
 }
 
 .chat-ui-terminal .tab[aria-selected="true"] {
-  background: var(--chat-accent-soft);
+  background: var(--ui-accent-soft);
 }
 
 .chat-ui-terminal .log {
@@ -175,7 +175,7 @@
 }
 
 .chat-ui-terminal .row.them .said {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
 }
 
 .chat-ui-terminal .ask {
@@ -183,7 +183,7 @@
   padding: 7px 10px 8px;
   background: #16130C;
   border: 1px solid #4A3D1E;
-  border-radius: var(--chat-radius);
+  border-radius: var(--ui-radius);
 }
 
 .chat-ui-terminal .ask::before {
@@ -196,11 +196,11 @@
 
 .chat-ui-terminal .ask .head::before {
   content: "ask  ";
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .chat-ui-terminal .ask .what {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   margin: 3px 0 8px;
   word-break: break-all;
 }
@@ -212,27 +212,27 @@
 .chat-ui-terminal .row.ask .options button {
   font-size: 11.5px;
   padding: 4px 9px;
-  border-radius: var(--chat-radius);
-  background: var(--chat-fill);
+  border-radius: var(--ui-radius);
+  background: var(--ui-fill);
 }
 
 .chat-ui-terminal .ask .kind {
   font-size: 10.5px;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   margin-top: 7px;
 }
 
 .chat-ui-terminal .ask.answered {
-  background: var(--chat-fill);
-  border-color: var(--chat-rule);
+  background: var(--ui-fill);
+  border-color: var(--ui-rule);
 }
 
 .chat-ui-terminal .ask.answered .head {
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 .chat-ui-terminal .ask .answer {
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
   margin-top: 5px;
 }
 
@@ -249,30 +249,30 @@
 
 .chat-ui-terminal .empty h2::before {
   content: "── ";
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .chat-ui-terminal .empty p {
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
   font-size: 11.5px;
   line-height: 1.5;
 }
 
 .chat-ui-terminal .empty p b {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   font-weight: 500;
 }
 
 .chat-ui-terminal .composer {
   gap: 0;
   padding: 0;
-  border-top: 1px solid var(--chat-rule);
-  background: var(--chat-fill);
+  border-top: 1px solid var(--ui-rule);
+  background: var(--ui-fill);
 }
 
 .chat-ui-terminal .composer::before {
   content: "›";
-  color: var(--chat-accent);
+  color: var(--ui-accent);
   padding: 8px 0 8px 10px;
   flex: 0 0 auto;
 }
@@ -285,11 +285,11 @@
 }
 
 .chat-ui-terminal .composer textarea::placeholder {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .chat-ui-terminal .composer textarea:disabled {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .chat-ui-terminal .composer button {
@@ -298,12 +298,12 @@
   text-transform: uppercase;
   padding: 0 12px;
   border: 0;
-  border-left: 1px solid var(--chat-rule);
+  border-left: 1px solid var(--ui-rule);
   background: none;
 }
 
 .chat-ui-terminal .composer button:disabled {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   cursor: default;
 }
 
@@ -351,7 +351,7 @@
   height: 25px;
   border-radius: 999px;
   background: rgba(255,255,255,.10);
-  font: 700 11px/1 var(--chat-sans);
+  font: 700 11px/1 var(--ui-sans);
 }
 
 .chat-ui-glass .tb button:hover {
@@ -549,11 +549,11 @@
 }
 
 [data-platform="windows"].chat-ui-glass body {
-  background: linear-gradient(rgba(14,17,24,.72), var(--chat-panel));
+  background: linear-gradient(rgba(14,17,24,.72), var(--ui-panel));
 }
 
 [data-platform="windows"][data-chat-palette="light"].chat-ui-glass body {
-  background: linear-gradient(rgba(248,249,252,.95), var(--chat-panel));
+  background: linear-gradient(rgba(248,249,252,.95), var(--ui-panel));
 }
 
 /* WebKitGTK blurs only its own page, so the desktop shows through the
@@ -705,10 +705,10 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--chat-panel);
-  color: var(--chat-ink);
-  font-family: var(--chat-sans);
-  font-size: var(--shared-type-size);
+  background: var(--ui-panel);
+  color: var(--ui-ink);
+  font-family: var(--ui-sans);
+  font-size: var(--bubble-type-size);
 }
 
 /* The window's own furniture. No close button. The window is decorated,
@@ -754,11 +754,11 @@ body {
 
 .of {
   padding: 1px 6px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-badge);
-  font-family: var(--chat-mono);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-badge);
+  font-family: var(--ui-mono);
   font-size: 11px;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 /* Unboxed, unlike the Character beside it. The Character names this
@@ -768,9 +768,9 @@ body {
   align-items: baseline;
   gap: 5px;
   min-width: 12ch;
-  font-family: var(--chat-mono);
+  font-family: var(--ui-mono);
   font-size: 11px;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 /* Its own flex item, so the text wraps beside the mark and never under
@@ -799,15 +799,15 @@ body {
   flex: 0 0 auto;
   gap: 4px;
   padding: 0 14px;
-  border-bottom: 1px solid var(--chat-rule);
+  border-bottom: 1px solid var(--ui-rule);
 }
 
 .tab {
   padding: 7px 12px 9px;
   border: 0;
-  border-radius: var(--chat-radius-tab);
+  border-radius: var(--ui-radius-tab);
   background: transparent;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
   font: inherit;
   font-size: 12.5px;
   font-weight: 700;
@@ -815,12 +815,12 @@ body {
 }
 
 .tab[aria-selected="true"] {
-  color: var(--chat-accent);
-  background: var(--chat-accent-soft);
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
 }
 
 .tab:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
@@ -855,7 +855,7 @@ body {
   margin: 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 /* Read-only and drawn as read-only. The Character's, shown for reference
@@ -865,10 +865,10 @@ body {
   box-sizing: border-box;
   min-height: calc(1.5em * 3 + 20px);
   padding: 9px 12px;
-  border: 1px solid var(--chat-rule);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill-dim);
-  color: var(--chat-ink-2);
+  border: 1px solid var(--ui-rule);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill-dim);
+  color: var(--ui-ink-2);
   font-size: 12.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -876,7 +876,7 @@ body {
 }
 
 .frozen.is-empty {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 /* The grid item is this box, not the textarea. A replaced textarea as a
@@ -893,10 +893,10 @@ body {
   box-sizing: border-box;
   min-height: calc(1.5em * 3 + 20px);
   padding: 10px 12px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill);
-  color: var(--chat-ink);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill);
+  color: var(--ui-ink);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
@@ -904,11 +904,11 @@ body {
 }
 
 .prompt textarea::placeholder {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .prompt textarea:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
@@ -918,11 +918,11 @@ body {
   margin: 2px 0 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 .prompt .warn b {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
 }
 
 /* Form commit, not toolbar chrome. Under the layers, padded like .composer. */
@@ -932,16 +932,16 @@ body {
   align-items: center;
   gap: 8px;
   padding: 12px 16px 16px;
-  border-top: 1px solid var(--chat-rule);
-  background: var(--chat-panel);
+  border-top: 1px solid var(--ui-rule);
+  background: var(--ui-panel);
 }
 
 .prompt-actions button {
   padding: 6px 14px;
   border: 0;
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-accent);
-  color: var(--chat-accent-ink);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
   font: inherit;
   font-size: 12.5px;
   font-weight: 800;
@@ -950,9 +950,9 @@ body {
 
 #prompt-cancel,
 #prompt-discard {
-  border: 1px solid var(--chat-line);
+  border: 1px solid var(--ui-line);
   background: transparent;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
   font-weight: 400;
 }
 
@@ -961,23 +961,23 @@ body {
 }
 
 #prompt-save:disabled {
-  background: var(--chat-fill-soft);
-  color: var(--chat-ink-4);
+  background: var(--ui-fill-soft);
+  color: var(--ui-ink-4);
 }
 
 #prompt-discard:disabled {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .prompt-actions button:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
 /* What the Shell said about the save. "Saved.", or the refusal with the limit in it. */
 .prompt-said {
   font-size: 12px;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 /* The log and each row are one column as wide as the window. An implicit
@@ -1004,7 +1004,7 @@ body {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 /* Sibling of .who-label, not inside it. That node uppercases and
@@ -1012,7 +1012,7 @@ body {
 .when {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .note .when {
@@ -1033,13 +1033,13 @@ body {
 .row.you .said {
   max-width: 86%;
   padding: 9px 13px;
-  background: var(--chat-accent-soft);
-  border-radius: var(--chat-radius) var(--chat-radius) var(--chat-radius-tail) var(--chat-radius);
+  background: var(--ui-accent-soft);
+  border-radius: var(--ui-radius) var(--ui-radius) var(--ui-radius-tail) var(--ui-radius);
 }
 
 .row.them .said {
   max-width: 94%;
-  line-height: var(--shared-type-leading);
+  line-height: var(--bubble-type-leading);
 }
 
 /* A Thinking row is the turn's working, not its answer. The title is
@@ -1059,7 +1059,7 @@ body {
 .thinking-toggle::before {
   content: "▸";
   font-size: 10px;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .thinking-toggle[aria-expanded="true"]::before {
@@ -1068,7 +1068,7 @@ body {
 
 .thinking-toggle:hover .who-label,
 .thinking-toggle:hover::before {
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 /* A tool call's handle keeps the Harness title on one line. The label's
@@ -1096,17 +1096,17 @@ body {
 }
 
 .thinking-toggle:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
 .row.thinking .said {
   max-width: 94%;
   padding: 1px 0 1px 11px;
-  border-inline-start: 2px solid var(--chat-line);
-  color: var(--chat-ink-3);
+  border-inline-start: 2px solid var(--ui-line);
+  color: var(--ui-ink-3);
   font-size: 12.5px;
-  line-height: var(--shared-type-leading);
+  line-height: var(--bubble-type-leading);
 }
 
 .row.thinking .said[hidden],
@@ -1126,14 +1126,14 @@ body {
 .caret {
   display: inline-block;
   width: 7px;
-  color: var(--chat-accent);
+  color: var(--ui-accent);
   animation: blink 1s steps(1) infinite;
 }
 
 .phase {
   margin: 2px 0 0;
   font-size: 12.5px;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 @keyframes blink {
@@ -1198,19 +1198,19 @@ body {
 
 .said.md li input {
   margin-inline-end: 0.35em;
-  accent-color: var(--chat-accent);
+  accent-color: var(--ui-accent);
 }
 
 .said.md blockquote {
   margin-inline: 0;
   padding-inline-start: 0.8em;
-  border-inline-start: 2px solid var(--chat-line);
-  color: var(--chat-ink-2);
+  border-inline-start: 2px solid var(--ui-line);
+  color: var(--ui-ink-2);
 }
 
 .said.md hr {
   border: 0;
-  border-block-start: 1px solid var(--chat-rule);
+  border-block-start: 1px solid var(--ui-rule);
 }
 
 .said.md code,
@@ -1218,10 +1218,10 @@ body {
 .landing code,
 .mind-text code {
   padding: 0.12em 0.4em;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-badge);
-  background: color-mix(in srgb, var(--chat-ink) 18%, var(--chat-panel));
-  font-family: var(--chat-mono);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-badge);
+  background: color-mix(in srgb, var(--ui-ink) 18%, var(--ui-panel));
+  font-family: var(--ui-mono);
   font-size: 0.9em;
 }
 
@@ -1236,9 +1236,9 @@ body {
 .said.md pre {
   margin: 0;
   padding: 0.65em 0.8em;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: color-mix(in srgb, var(--chat-ink) 14%, var(--chat-panel));
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-ink) 14%, var(--ui-panel));
 }
 
 .said.md pre code {
@@ -1256,12 +1256,12 @@ body {
 .said.md th,
 .said.md td {
   padding: 0.25em 0.55em;
-  border: 1px solid var(--chat-rule);
+  border: 1px solid var(--ui-rule);
   text-align: start;
 }
 
 .said.md th {
-  background: var(--chat-fill-dim);
+  background: var(--ui-fill-dim);
   font-weight: 650;
 }
 
@@ -1279,7 +1279,7 @@ body {
 .said.md .md-link,
 .row.thinking .md-link,
 .landing .md-link {
-  color: var(--chat-accent);
+  color: var(--ui-accent);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1289,7 +1289,7 @@ body {
    line, where a log that simply stops reads as one still waiting. */
 .note {
   font-size: 12.5px;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   overflow-wrap: anywhere;
 }
 
@@ -1313,7 +1313,7 @@ body {
 }
 
 .row.ask .ask-metadata {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   font-size: 0.85em;
 }
 
@@ -1329,10 +1329,10 @@ body {
 
 .row.ask .options button {
   padding: 2px 10px;
-  border: 1px solid var(--chat-accent);
-  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius-control);
   background: transparent;
-  color: var(--chat-accent);
+  color: var(--ui-accent);
   font: inherit;
   font-size: 12.5px;
   cursor: pointer;
@@ -1343,14 +1343,14 @@ body {
 }
 
 .row.ask .options button:disabled {
-  border-color: var(--chat-fill-soft);
-  color: var(--chat-ink-4);
+  border-color: var(--ui-fill-soft);
+  color: var(--ui-ink-4);
   cursor: default;
 }
 
 .row.ask .options button.chosen {
-  background: var(--chat-accent);
-  color: var(--chat-accent-ink);
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
 }
 
 /* A settled ask's handle. What was asked gives way. What won stays whole
@@ -1404,15 +1404,15 @@ body {
   margin: 0;
   font-size: 12.8px;
   line-height: 1.5;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 .empty p b {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
 }
 
 .empty .where {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 /* A Harness named by its command line is one unbroken path, and the
@@ -1438,8 +1438,8 @@ body {
   width: 6px;
   height: 6px;
   margin-left: 8px;
-  border-radius: var(--chat-radius-badge);
-  background: var(--chat-accent);
+  border-radius: var(--ui-radius-badge);
+  background: var(--ui-accent);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -1461,12 +1461,12 @@ body {
 /* Text to copy, not a control. No border or accent, so it cannot pass
    for a third sign-in button. */
 .empty .command {
-  font-family: var(--chat-mono);
+  font-family: var(--ui-mono);
   font-size: 12.5px;
-  background: var(--chat-fill);
-  color: var(--chat-ink);
+  background: var(--ui-fill);
+  color: var(--ui-ink);
   padding: 6px 10px;
-  border-radius: var(--chat-radius-control);
+  border-radius: var(--ui-radius-control);
   margin: 4px 0 8px;
   user-select: all;
   cursor: text;
@@ -1492,13 +1492,13 @@ body {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .harness-error h2 {
   margin: 0 0 4px;
   font-size: 14px;
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   overflow-wrap: anywhere;
 }
 
@@ -1514,7 +1514,7 @@ body {
   margin: 0 0 4px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .failure-box {
@@ -1524,11 +1524,11 @@ body {
   margin: 0;
   padding: 7px 10px;
   overflow-y: auto;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: color-mix(in srgb, var(--chat-ink) 10%, var(--chat-panel));
-  color: var(--chat-ink);
-  font-family: var(--chat-mono);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-ink) 10%, var(--ui-panel));
+  color: var(--ui-ink);
+  font-family: var(--ui-mono);
   font-size: 12.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1537,7 +1537,7 @@ body {
 }
 
 .failure-box.error {
-  border-color: color-mix(in srgb, var(--chat-error) 55%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--ui-error) 55%, var(--ui-line));
 }
 
 .empty .landing.failed #landing-next {
@@ -1556,10 +1556,10 @@ body {
 .sign-in-btn {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--chat-accent);
-  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius-control);
   background: transparent;
-  color: var(--chat-accent);
+  color: var(--ui-accent);
   font: inherit;
   font-size: 12.5px;
   cursor: pointer;
@@ -1568,7 +1568,7 @@ body {
 
 .empty .hint {
   font-size: 12px;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
   margin-top: 12px;
 }
 
@@ -1587,10 +1587,10 @@ body {
   justify-content: center;
   gap: 10px;
   padding: 18px 12px;
-  background: var(--chat-fill);
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  color: var(--chat-ink);
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-ink);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -1600,13 +1600,13 @@ body {
 }
 
 .empty .connect-btn:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
 .empty .connect-icon {
   flex-shrink: 0;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .empty .connect-label {
@@ -1614,10 +1614,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="claude"] {
-  border-color: color-mix(in srgb, var(--claude-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--claude-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="claude"]:hover {
-  background: color-mix(in srgb, var(--claude-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--claude-accent) 10%, var(--ui-fill));
   border-color: var(--claude-accent);
 }
 .empty .connect-btn[data-harness="claude"] .connect-icon {
@@ -1625,10 +1625,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="codex"] {
-  border-color: color-mix(in srgb, var(--codex-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--codex-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="codex"]:hover {
-  background: color-mix(in srgb, var(--codex-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--codex-accent) 10%, var(--ui-fill));
   border-color: var(--codex-accent);
 }
 .empty .connect-btn[data-harness="codex"] .connect-icon {
@@ -1636,10 +1636,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="copilot"] {
-  border-color: color-mix(in srgb, var(--copilot-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--copilot-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="copilot"]:hover {
-  background: color-mix(in srgb, var(--copilot-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--copilot-accent) 10%, var(--ui-fill));
   border-color: var(--copilot-accent);
 }
 .empty .connect-btn[data-harness="copilot"] .connect-icon {
@@ -1647,10 +1647,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="cursor-agent"] {
-  border-color: color-mix(in srgb, var(--cursor-agent-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--cursor-agent-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="cursor-agent"]:hover {
-  background: color-mix(in srgb, var(--cursor-agent-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--cursor-agent-accent) 10%, var(--ui-fill));
   border-color: var(--cursor-agent-accent);
 }
 .empty .connect-btn[data-harness="cursor-agent"] .connect-icon {
@@ -1658,10 +1658,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="goose"] {
-  border-color: color-mix(in srgb, var(--goose-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--goose-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="goose"]:hover {
-  background: color-mix(in srgb, var(--goose-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--goose-accent) 10%, var(--ui-fill));
   border-color: var(--goose-accent);
 }
 .empty .connect-btn[data-harness="goose"] .connect-icon {
@@ -1669,10 +1669,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="grok"] {
-  border-color: color-mix(in srgb, var(--grok-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--grok-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="grok"]:hover {
-  background: color-mix(in srgb, var(--grok-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--grok-accent) 10%, var(--ui-fill));
   border-color: var(--grok-accent);
 }
 .empty .connect-btn[data-harness="grok"] .connect-icon {
@@ -1680,10 +1680,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="opencode"] {
-  border-color: color-mix(in srgb, var(--opencode-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--opencode-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="opencode"]:hover {
-  background: color-mix(in srgb, var(--opencode-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--opencode-accent) 10%, var(--ui-fill));
   border-color: var(--opencode-accent);
 }
 .empty .connect-btn[data-harness="opencode"] .connect-icon {
@@ -1691,10 +1691,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="hermes"] {
-  border-color: color-mix(in srgb, var(--hermes-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--hermes-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="hermes"]:hover {
-  background: color-mix(in srgb, var(--hermes-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--hermes-accent) 10%, var(--ui-fill));
   border-color: var(--hermes-accent);
 }
 .empty .connect-btn[data-harness="hermes"] .connect-icon {
@@ -1702,10 +1702,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="pi"] {
-  border-color: color-mix(in srgb, var(--pi-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--pi-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="pi"]:hover {
-  background: color-mix(in srgb, var(--pi-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--pi-accent) 10%, var(--ui-fill));
   border-color: var(--pi-accent);
 }
 .empty .connect-btn[data-harness="pi"] .connect-icon {
@@ -1713,10 +1713,10 @@ body {
 }
 
 .empty .connect-btn[data-harness="antigravity"] {
-  border-color: color-mix(in srgb, var(--antigravity-accent) 25%, var(--chat-line));
+  border-color: color-mix(in srgb, var(--antigravity-accent) 25%, var(--ui-line));
 }
 .empty .connect-btn[data-harness="antigravity"]:hover {
-  background: color-mix(in srgb, var(--antigravity-accent) 10%, var(--chat-fill));
+  background: color-mix(in srgb, var(--antigravity-accent) 10%, var(--ui-fill));
   border-color: var(--antigravity-accent);
 }
 .empty .connect-btn[data-harness="antigravity"] .connect-icon {
@@ -1731,24 +1731,24 @@ body {
   gap: 8px;
   padding: 12px 16px;
   background: transparent;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
   transition: all 0.15s ease;
   margin-top: 12px;
 }
 
 .empty .settings-btn:hover {
-  background: var(--chat-fill);
-  color: var(--chat-ink);
+  background: var(--ui-fill);
+  color: var(--ui-ink);
 }
 
 .empty .settings-btn:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
@@ -1785,10 +1785,10 @@ body {
   font: inherit;
   font-size: 12.5px;
   padding: 4px 10px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill-soft);
-  color: var(--chat-ink);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill-soft);
+  color: var(--ui-ink);
   cursor: pointer;
 }
 
@@ -1812,16 +1812,16 @@ body {
    steps. The current one is the one a reader is looking for, so it is
    the only one at full strength. */
 .plan > [data-status="in_progress"] {
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   font-weight: 600;
 }
 
 .plan > [data-status="pending"] {
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .plan > [data-status="completed"] {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 /* A replayed plan sits in the log with the rows around it. */
@@ -1849,30 +1849,30 @@ body {
   overflow-y: auto;
   resize: none;
   padding: 10px 13px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill);
-  color: var(--chat-ink);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill);
+  color: var(--ui-ink);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
 }
 
 .composer textarea::placeholder {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .composer textarea:disabled {
-  background: var(--chat-fill-dim);
-  color: var(--chat-ink-4);
+  background: var(--ui-fill-dim);
+  color: var(--ui-ink-4);
 }
 
 .composer button {
   padding: 0 16px;
   border: 0;
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-accent);
-  color: var(--chat-accent-ink);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
   font: inherit;
   font-size: 13px;
   font-weight: 800;
@@ -1880,14 +1880,14 @@ body {
 }
 
 .composer button:disabled {
-  background: var(--chat-fill-soft);
-  color: var(--chat-ink-4);
+  background: var(--ui-fill-soft);
+  color: var(--ui-ink-4);
   cursor: default;
 }
 
 .composer textarea:focus-visible,
 .composer button:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
@@ -1901,11 +1901,11 @@ body {
   align-items: baseline;
   gap: 8px;
   padding: 7px 16px 9px;
-  border-top: 1px solid var(--chat-rule);
-  background: var(--chat-fill-dim);
-  font-family: var(--chat-mono);
+  border-top: 1px solid var(--ui-rule);
+  background: var(--ui-fill-dim);
+  font-family: var(--ui-mono);
   font-size: 10.5px;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -1926,7 +1926,7 @@ body {
 .bar .advanced summary {
   display: inline;
   cursor: pointer;
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   list-style: none;
   user-select: none;
 }
@@ -1947,7 +1947,7 @@ body {
 }
 
 .bar .advanced summary:hover {
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 /* Two lines at most. Opening Advanced takes that height from the log. */
@@ -1990,7 +1990,7 @@ body {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   flex: 0 0 auto;
   cursor: pointer;
 }

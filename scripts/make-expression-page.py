@@ -24,7 +24,7 @@ the page is judged from `--out`, never from `website/`.
 Pure standard library. The CSS slice is text, not a parser, so it cannot
 quietly pick up the overlay's transparent fullscreen rules sitting above
 `.bubble`. Overlay `@import`s are inlined into that slice: the published
-page is one file, and leaving `var(--shared-*)` unset would paint a
+page is one file, and leaving `var(--bubble-*)` unset would paint a
 transparent hole.
 """
 
@@ -405,7 +405,7 @@ def self_check():
         css = (out / "good" / "bubble.css").read_text(encoding="utf-8")
         assert ".bubble.visible" in css
         assert ".thinking-dots" in css
-        assert "--shared-panel:" in css
+        assert "--bubble-panel:" in css
         copied = (out / "good" / "bubble.js").read_text(encoding="utf-8")
         assert copied == good_js
         sprite = extract_sprite(html)

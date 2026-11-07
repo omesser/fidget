@@ -18,16 +18,16 @@
   flex-wrap: wrap;
   gap: 2px;
   padding: 0 18px;
-  border-bottom: 1px solid var(--chat-rule);
+  border-bottom: 1px solid var(--ui-rule);
 }
 
 .set-tab {
   padding: 6px 12px;
   border: 1px solid transparent;
   border-bottom: 0;
-  border-radius: var(--chat-radius-tab);
+  border-radius: var(--ui-radius-tab);
   background: transparent;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
   font: inherit;
   font-size: 12.5px;
   font-weight: 700;
@@ -35,9 +35,9 @@
 }
 
 .set-tab[aria-selected="true"] {
-  border-color: var(--chat-line);
-  background: var(--chat-fill-soft);
-  color: var(--chat-ink);
+  border-color: var(--ui-line);
+  background: var(--ui-fill-soft);
+  color: var(--ui-ink);
 }
 
 /* The form scrolls in the log's place. Content-sized, never clipped. */
@@ -50,18 +50,18 @@
 .set-footer {
   flex: 0 0 auto;
   padding: 12px 18px;
-  border-top: 1px solid var(--chat-rule);
+  border-top: 1px solid var(--ui-rule);
 }
 
 .set-feedback {
   margin: 8px 0 0;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
   font-size: 12px;
 }
 
 .set-section {
   padding: 12px 0 6px;
-  border-bottom: 1px solid var(--chat-rule);
+  border-bottom: 1px solid var(--ui-rule);
 }
 
 .set-section:last-child {
@@ -79,7 +79,7 @@
   margin: 0 0 6px;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 .set-help {
@@ -90,10 +90,10 @@
 .set-status {
   margin: 4px 0 0;
   padding: 4px 8px;
-  border-left: 2px solid var(--chat-line);
+  border-left: 2px solid var(--ui-line);
   font-size: 11.5px;
   line-height: 1.4;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 /* A live region waiting for its first message draws no strip. */
@@ -107,15 +107,15 @@
 .set-notice {
   margin: 4px 0 0;
   padding: 4px 8px;
-  border-left: 2px solid var(--chat-error);
+  border-left: 2px solid var(--ui-error);
   font-size: 12px;
   line-height: 1.4;
-  color: var(--chat-ink);
+  color: var(--ui-ink);
 }
 
 /* Advice, not a failure: the notice strip in a neutral ink instead of red. */
 .set-notice.set-caution {
-  border-left-color: var(--chat-ink-3);
+  border-left-color: var(--ui-ink-3);
 }
 
 .set-row {
@@ -148,7 +148,7 @@
   width: 15px;
   height: 15px;
   margin: 0;
-  accent-color: var(--chat-accent);
+  accent-color: var(--ui-accent);
 }
 
 .set-row input[type="text"],
@@ -158,16 +158,16 @@
   box-sizing: border-box;
   width: 100%;
   padding: 7px 10px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill);
-  color: var(--chat-ink);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill);
+  color: var(--ui-ink);
   font: inherit;
   font-size: 13px;
 }
 
 .set-row textarea {
-  font-family: var(--chat-mono);
+  font-family: var(--ui-mono);
   font-size: 12px;
   line-height: 1.5;
   resize: vertical;
@@ -178,21 +178,21 @@
   appearance: none;
   -webkit-appearance: none;
   padding-right: 28px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--chat-ink-3) 50%),
-    linear-gradient(135deg, var(--chat-ink-3) 50%, transparent 50%);
+  background-image: linear-gradient(45deg, transparent 50%, var(--ui-ink-3) 50%),
+    linear-gradient(135deg, var(--ui-ink-3) 50%, transparent 50%);
   background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
   background-size: 5px 5px;
   background-repeat: no-repeat;
 }
 
 .set-row select option {
-  background: var(--chat-panel);
-  color: var(--chat-ink);
+  background: var(--ui-panel);
+  color: var(--ui-ink);
 }
 
 .set-row input::placeholder,
 .set-row textarea::placeholder {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
 }
 
 .set-tab:focus-visible,
@@ -202,21 +202,21 @@
 .set-row button:focus-visible,
 .set-inspect:focus-visible,
 .set-disclosure summary:focus-visible {
-  outline: 2px solid var(--chat-accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
 
 /* Frozen reads as frozen. Dimmer field, dimmer label, still legible. */
 .set-is-frozen > label,
 .set-is-frozen .set-label {
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .set-row input[readonly],
 .set-row textarea[readonly],
 .set-row select:disabled {
-  background: var(--chat-fill-dim);
-  color: var(--chat-ink-3);
+  background: var(--ui-fill-dim);
+  color: var(--ui-ink-3);
   border-style: dashed;
 }
 
@@ -251,10 +251,10 @@
 .set-controls button,
 .set-list button {
   padding: 6px 14px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
   background: transparent;
-  color: var(--chat-ink);
+  color: var(--ui-ink);
   font: inherit;
   font-size: 12.5px;
   font-weight: 800;
@@ -263,13 +263,13 @@
 
 .set-controls button[data-id="director_apply"] {
   border-color: transparent;
-  background: var(--chat-accent);
-  color: var(--chat-accent-ink);
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
 }
 
 .set-controls button:disabled,
 .set-list button:disabled {
-  color: var(--chat-ink-4);
+  color: var(--ui-ink-4);
   cursor: default;
 }
 
@@ -278,8 +278,8 @@
   padding: 0;
   max-height: 160px;
   overflow-y: auto;
-  border: 1px solid var(--chat-rule);
-  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--ui-rule);
+  border-radius: var(--ui-radius-control);
   list-style: none;
 }
 
@@ -288,7 +288,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--chat-rule);
+  border-bottom: 1px solid var(--ui-rule);
   font-size: 12.5px;
 }
 
@@ -303,18 +303,18 @@
 
 .set-list button {
   padding: 2px 10px;
-  border-radius: var(--chat-radius-badge);
+  border-radius: var(--ui-radius-badge);
   font-size: 11.5px;
 }
 
 .set-inspect {
   margin: 0;
   padding: 9px 12px;
-  border: 1px solid var(--chat-rule);
-  border-radius: var(--chat-radius-control);
-  background: var(--chat-fill-dim);
-  color: var(--chat-ink-2);
-  font-family: var(--chat-mono);
+  border: 1px solid var(--ui-rule);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-fill-dim);
+  color: var(--ui-ink-2);
+  font-family: var(--ui-mono);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -326,8 +326,8 @@
    that matters. */
 .set-path {
   margin: 0;
-  color: var(--chat-ink-2);
-  font-family: var(--chat-mono);
+  color: var(--ui-ink-2);
+  font-family: var(--ui-mono);
   font-size: 11.5px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -337,7 +337,7 @@
 .set-disclosure {
   margin: 2px 0 0;
   font-size: 12px;
-  color: var(--chat-ink-3);
+  color: var(--ui-ink-3);
 }
 
 .set-disclosure summary {
@@ -361,14 +361,14 @@
 .set-disclosure p {
   margin: 4px 0 0 14px;
   line-height: 1.45;
-  color: var(--chat-ink-2);
+  color: var(--ui-ink-2);
 }
 
 /* Character Imports lists imported ZIPs beside the existing Character picker. */
 .set-character-imports {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--chat-rule);
+  border-top: 1px solid var(--ui-rule);
 }
 
 .set-character-imports h3 {
