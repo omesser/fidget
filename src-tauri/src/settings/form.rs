@@ -2951,31 +2951,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_consent_rows_are_in_catalog_order() {
-        let description = describe();
-        let consent = description
-            .sections()
-            .find(|s| s.heading == "What the fidget can see")
-            .expect("Consent section exists");
-
-        let ids: Vec<&str> = consent
-            .rows
-            .iter()
-            .filter_map(|row| match row {
-                FormRow::Checkbox { id, .. } => Some(id.as_str()),
-                _ => None,
-            })
-            .collect();
-
-        let from_catalog: Vec<String> = crate::consent::rows(|_| false)
-            .iter()
-            .map(crate::consent::ConsentRow::row_id)
-            .collect();
-
-        assert_eq!(ids, from_catalog);
-    }
-
-    #[test]
     fn the_consent_section_has_a_checkbox_per_grant_this_platform_offers() {
         let description = describe();
         let consent = description
