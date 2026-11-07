@@ -377,7 +377,8 @@ check(not astray,
       ", ".join(f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})" for w in astray))
 
 ls = open(f"{out}/lsappinfo.txt").read()
-check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")
+# The Dock tile is the findable anchor, so this is a foreground app.
+check('type="Foreground"' in ls, "Dock tile: foreground app")
 
 log = open(f"{out}/app.log").read()
 check(re.search(r"^character: ", log, re.M) is not None, "app loaded a Character Package")

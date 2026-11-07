@@ -41,6 +41,18 @@ for (const [entrypoint, helpers] of contracts) {
   });
 }
 
+test("verify-overlay.sh expects the Dock tile of a regular app", () => {
+  const source = readFileSync(path.join(scripts, "verify-overlay.sh"), "utf8");
+  const executableSource = source.replace(/^\s*#.*$/gm, "");
+
+  assert.match(executableSource, /type="Foreground"/, "a regular app shows a Dock tile");
+  assert.doesNotMatch(
+    executableSource,
+    /type="UIElement"/,
+    "an accessory app has no Dock tile, and this app is not one",
+  );
+});
+
 test("bench-wakeups-macos.sh follows a release binary's process log", () => {
   const source = readFileSync(path.join(scripts, "bench-wakeups-macos.sh"), "utf8");
   const executableSource = source.replace(/^\s*#.*$/gm, "");
