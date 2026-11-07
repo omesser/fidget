@@ -3616,8 +3616,8 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 }
 
 /// One permit for every test that installs or retargets the process slot.
-/// The slot is one per process. Holding this from install through restore
-/// keeps one test from shutting down another's session.
+/// Take it before starting a timed worker. The slot is one per process, and
+/// a caller's budget must not run while another test holds it.
 #[cfg(test)]
 struct AttachmentTestHold {
     _guard: MutexGuard<'static, ()>,
@@ -10434,6 +10434,7 @@ mod tests {
     /// `Msg::Shutdown` ends the turn in flight instead of being swallowed by it.
     #[test]
     fn retarget_does_not_wait_out_a_turn_in_flight() {
+        let _hold = attachment_test_hold();
         let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session);
         let worker = {
@@ -10443,7 +10444,6 @@ mod tests {
         // The prompt is on the wire and unanswered. `shutdown` posts into a
         // `turn`, not into `serve`.
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
-        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
@@ -10488,21 +10488,24 @@ mod tests {
     #[test]
     fn shutdown_drops_alive_before_the_in_flight_caller_returns() {
         for iteration in 0..10 {
+            let _hold = attachment_test_hold();
             let (entered_tx, entered_rx) = mpsc::channel();
+            let (returned_tx, returned_rx) = mpsc::channel();
             let (fx, session) = Fixture::new("slow");
             let session = Arc::new(session);
             let worker = {
                 let session = Arc::clone(&session);
                 thread::spawn(move || {
                     crate::acp_wire::arm_shutdown_park(entered_tx);
-                    session.complete(&asking("hi"), &|_| {})
+                    let result = session.complete(&asking("hi"), &|_| {});
+                    let _ = returned_tx.send(());
+                    result
                 })
             };
             assert!(
                 fx.wait_for("prompt", 1),
                 "iteration {iteration}: the turn never went out"
             );
-            let _hold = attachment_test_hold();
             {
                 let mut slot = attachment();
                 slot.forward = Some(silent());
@@ -10521,13 +10524,21 @@ mod tests {
                     panic!("iteration {iteration}: shutdown never reached the wire")
                 });
             assert!(
+                matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                "iteration {iteration}: the caller returned before shutdown was accepted"
+            );
+            assert!(
                 !session.inspect().alive,
                 "iteration {iteration}: the dropped session still reads live"
             );
             let _ = release.send(());
-            assert!(
-                worker.join().unwrap().is_err(),
-                "iteration {iteration}: the turn outlived the kill"
+            assert_eq!(
+                worker
+                    .join()
+                    .unwrap()
+                    .expect_err("the turn outlived the kill"),
+                LOST,
+                "iteration {iteration}: the turn did not end as a shutdown loss"
             );
             assert!(
                 !session.inspect().alive,
@@ -10538,18 +10549,21 @@ mod tests {
 
     #[test]
     fn a_budget_return_after_shutdown_does_not_read_live() {
+        let _hold = attachment_test_hold();
         let (entered_tx, entered_rx) = mpsc::channel();
+        let (returned_tx, returned_rx) = mpsc::channel();
         let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session.with_timeout(Duration::from_secs(1)));
         let worker = {
             let session = Arc::clone(&session);
             thread::spawn(move || {
                 crate::acp_wire::arm_shutdown_park(entered_tx);
-                session.complete(&asking("hi"), &|_| {})
+                let result = session.complete(&asking("hi"), &|_| {});
+                let _ = returned_tx.send(());
+                result
             })
         };
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
-        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
@@ -10565,6 +10579,10 @@ mod tests {
         let release = entered_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("shutdown never reached the wire");
+        assert!(
+            matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "the caller returned before shutdown was accepted"
+        );
         let err = worker.join().unwrap().unwrap_err();
         assert!(
             err.contains("exceeded"),
@@ -10575,6 +10593,46 @@ mod tests {
             "the dropped session still reads live"
         );
         let _ = release.send(());
+    }
+
+    /// Starting the budget before the slot is ours lets the caller finish
+    /// while another holder still has it. Shutdown afterwards still parks,
+    /// and `join` is then too late to prove the order.
+    #[test]
+    #[should_panic(expected = "the caller returned before shutdown was accepted")]
+    fn a_budget_caller_that_starts_before_the_hold_is_already_done() {
+        let blocker = attachment_test_hold();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (returned_tx, returned_rx) = mpsc::channel();
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(1)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || {
+                crate::acp_wire::arm_shutdown_park(entered_tx);
+                let result = session.complete(&asking("hi"), &|_| {});
+                let _ = returned_tx.send(());
+                result
+            })
+        };
+        assert!(fx.wait_for("prompt", 1), "the turn never went out");
+        returned_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the budget caller never returned");
+        drop(blocker);
+        let _hold = attachment_test_hold();
+        {
+            let mut slot = attachment();
+            slot.forward = Some(silent());
+            slot.session = Some(Arc::clone(&session));
+        }
+        retarget(None, false);
+        let release = entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("shutdown never reached the wire");
+        let _ = release.send(());
+        let _ = worker.join();
+        panic!("the caller returned before shutdown was accepted");
     }
 
     #[test]
@@ -10588,21 +10646,24 @@ mod tests {
         for iteration in 0..4 {
             let run = |name: &'static str| {
                 thread::spawn(move || {
+                    let _hold = attachment_test_hold();
                     let (entered_tx, entered_rx) = mpsc::channel();
+                    let (returned_tx, returned_rx) = mpsc::channel();
                     let (fx, session) = Fixture::new("slow");
                     let session = Arc::new(session);
                     let worker = {
                         let session = Arc::clone(&session);
                         thread::spawn(move || {
                             crate::acp_wire::arm_shutdown_park(entered_tx);
-                            session.complete(&asking("hi"), &|_| {})
+                            let result = session.complete(&asking("hi"), &|_| {});
+                            let _ = returned_tx.send(());
+                            result
                         })
                     };
                     assert!(
                         fx.wait_for("prompt", 1),
                         "{name} {iteration}: the turn never went out"
                     );
-                    let _hold = attachment_test_hold();
                     {
                         let mut slot = attachment();
                         slot.forward = Some(silent());
@@ -10614,6 +10675,10 @@ mod tests {
                         .unwrap_or_else(|_| {
                             panic!("{name} {iteration}: shutdown missed this session")
                         });
+                    assert!(
+                        matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                        "{name} {iteration}: the caller returned before shutdown was accepted"
+                    );
                     let _ = release.send(());
                     let err = worker
                         .join()
@@ -10929,6 +10994,7 @@ mod tests {
     /// and the wake does not come back succeeded.
     #[test]
     fn retarget_does_not_wait_out_a_session_open() {
+        let _hold = attachment_test_hold();
         let (fx, session) = Fixture::new("stall-open");
         let session = Arc::new(session);
         let worker = {
@@ -10936,7 +11002,6 @@ mod tests {
             thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
-        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
@@ -10963,6 +11028,7 @@ mod tests {
 
     #[test]
     fn a_failed_switch_thread_still_reaps_the_old_child() {
+        let _hold = attachment_test_hold();
         let (fx, session) = Fixture::new("stall-open");
         let session = Arc::new(session);
         let worker = {
@@ -10970,7 +11036,6 @@ mod tests {
             thread::spawn(move || session.complete(&asking("hi"), &|_| {}))
         };
         assert!(fx.wait_for("open-stall", 1), "the open never stalled");
-        let _hold = attachment_test_hold();
         {
             let mut slot = attachment();
             slot.forward = Some(silent());
