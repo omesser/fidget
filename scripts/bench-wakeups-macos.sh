@@ -53,12 +53,18 @@ fi
 
 mkdir -p "$OUT"
 LOG="$OUT/app.log"
+DATA_DIR="$OUT/data"
 PM="$OUT/powermetrics.txt"
 META="$OUT/meta.txt"
 
 APP_PID=""
 PROP_PID=""
-trap 'kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" 2> /dev/null' EXIT INT TERM
+PUMP_PID=""
+stop_pump() {
+  # The pump is its own process group, so one signal takes tail and awk.
+  [ -z "$PUMP_PID" ] || kill -- -"$PUMP_PID" 2> /dev/null || kill "$PUMP_PID" 2> /dev/null
+}
+trap 'stop_pump; kill "$APP_PID" "$PROP_PID" 2> /dev/null; wait "$APP_PID" "$PROP_PID" "$PUMP_PID" 2> /dev/null' EXIT INT TERM
 
 # Other agents build and run fidget on this machine. A baseline with one of
 # theirs alive is not a baseline, and powermetrics cannot tell whose it is.
@@ -69,16 +75,32 @@ if [ "$SCENARIO" = "baseline" ] && [ -n "$STRAY_BEFORE" ]; then
 fi
 
 if [ "$SCENARIO" != "baseline" ]; then
+  mkdir -p "$DATA_DIR"
+  # A settings file skips the first-run tour, which would open a window
+  # during the sample. A private data dir keeps this process.log alone.
+  echo '{"first_run_tour_shown": true}' > "$DATA_DIR/settings.json"
+  # Release traces exist only in process.log, each stamped with epoch seconds,
+  # so a wait for ^overlay: on the terminal redirect never fires. A default
+  # ten-line tail can miss that line once frames are already landing.
+  : > "$DATA_DIR/process.log"
+  set -m
+  (
+    tail -n +1 -F "$DATA_DIR/process.log" 2> /dev/null |
+      awk '{ sub(/^[0-9]+ /, ""); print; fflush() }' > "$LOG"
+  ) &
+  PUMP_PID=$!
+  set +m
   FIDGET_DIRECTOR_API_KEY=bench-placeholder \
     FIDGET_DIRECTOR=0 \
     FIDGET_TRACE_FRAMES=1 \
     FIDGET_TRACE_ENGINE=1 \
     FIDGET_CAPTURABLE=1 \
-    "$BINARY" > "$LOG" 2>&1 &
+    FIDGET_DATA_DIR="$DATA_DIR" \
+    "$BINARY" > "$OUT/app.out" 2>&1 &
   APP_PID=$!
   # shellcheck disable=SC2034 # read by the sourced wait helpers
   pid=$APP_PID
-  echo "launched pid=$APP_PID binary=$BINARY log=$LOG" >&2
+  echo "launched pid=$APP_PID binary=$BINARY data=$DATA_DIR log=$LOG" >&2
 fi
 
 if [ "$SCENARIO" != "baseline" ] && ! wait_for_up "$LOG"; then

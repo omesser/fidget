@@ -40,3 +40,25 @@ for (const [entrypoint, helpers] of contracts) {
     );
   });
 }
+
+test("bench-wakeups-macos.sh follows a release binary's process log", () => {
+  const source = readFileSync(path.join(scripts, "bench-wakeups-macos.sh"), "utf8");
+  const executableSource = source.replace(/^\s*#.*$/gm, "");
+
+  assert.match(executableSource, /FIDGET_DATA_DIR=/, "isolates the run's data dir");
+  assert.match(
+    executableSource,
+    /tail -n \+1 -F/,
+    "follows process.log from the first line, not the last ten",
+  );
+  assert.match(
+    executableSource,
+    /process\.log[\s\S]{0,500}sub\(\/\^\[0-9\]\+ /,
+    "strips the epoch prefix process.log puts on every line before the waits read it",
+  );
+  assert.doesNotMatch(
+    executableSource,
+    /"\$BINARY"[^\n]*>>?\s*"\$LOG"/,
+    "does not wait on the terminal redirect a release binary leaves empty",
+  );
+});
