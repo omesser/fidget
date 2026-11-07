@@ -447,19 +447,17 @@ fn window_region(
     Ok((window, work))
 }
 
-/// Union `kept`, moved to `(x, y)`, into `window`. `kept` is moved back after,
-/// so it stays at the origin.
+/// Union `kept`, as if moved to `(x, y)`, into `window`. `window` moves to
+/// meet it and back, so a failure part way spoils only `window`, which the
+/// caller frees, and never the kept region.
 fn add_at(window: HRGN, kept: HRGN, (x, y): (i32, i32)) -> Result<(), String> {
-    // SAFETY: both are live regions; the caller holds REGION_SHAPES' lock,
-    // so nothing else touches kept while it is away from the origin.
+    // SAFETY: both are live regions, and window is held only by the caller.
     unsafe {
-        if OffsetRgn(kept, x, y) == RGN_ERROR {
-            return Err("Failed to move kept region".to_string());
-        }
-        let combined = CombineRgn(window, window, kept, RGN_OR);
-        OffsetRgn(kept, -x, -y);
-        if combined == RGN_ERROR {
-            return Err("Failed to combine regions".to_string());
+        if OffsetRgn(window, -x, -y) == RGN_ERROR
+            || CombineRgn(window, window, kept, RGN_OR) == RGN_ERROR
+            || OffsetRgn(window, x, y) == RGN_ERROR
+        {
+            return Err("Failed to place kept region".to_string());
         }
     }
     Ok(())
