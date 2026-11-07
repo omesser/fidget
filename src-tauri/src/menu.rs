@@ -182,15 +182,6 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
 
-    // The same Caffeinate the Chat button toggles.
-    entries.push(MenuEntry::Check {
-        id: CAFFEINATE_ID.to_string(),
-        label: "Caffeinate".to_string(),
-        enabled: snapshot.caffeinate.enabled,
-        checked: snapshot.caffeinate.on,
-    });
-    actions.insert(CAFFEINATE_ID.to_string(), MenuAction::ToggleCaffeinate);
-
     // Omitted when nothing is installed rather than shown empty: an empty
     // submenu looks like a bug; no submenu says there is nothing to choose.
     if !snapshot.installed.is_empty() {
@@ -239,6 +230,15 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
             items,
         });
     }
+
+    // The same Caffeinate the Chat button toggles.
+    entries.push(MenuEntry::Check {
+        id: CAFFEINATE_ID.to_string(),
+        label: "Caffeinate".to_string(),
+        enabled: snapshot.caffeinate.enabled,
+        checked: snapshot.caffeinate.on,
+    });
+    actions.insert(CAFFEINATE_ID.to_string(), MenuAction::ToggleCaffeinate);
 
     entries.push(MenuEntry::Check {
         id: DND_ID.to_string(),
@@ -510,9 +510,9 @@ mod tests {
         let sprite = describe(snapshot(&installed, "bmo", false));
         let expected = vec![
             ("Chat…".to_string(), Some(true)),
-            ("Caffeinate".to_string(), Some(true)),
             ("Character".to_string(), None),
             ("Instances".to_string(), None),
+            ("Caffeinate".to_string(), Some(true)),
             ("Do Not Disturb".to_string(), Some(true)),
             ("Possess".to_string(), Some(true)),
             ("Go away".to_string(), Some(true)),
