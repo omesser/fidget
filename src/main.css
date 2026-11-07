@@ -600,7 +600,6 @@ body {
   display: block;
   flex: 0 1 auto;
   min-width: 0;
-  overflow-wrap: anywhere;
   margin: 0;
   padding: 4px 10px;
   border: 1px solid var(--ui-line);

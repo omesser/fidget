@@ -62,13 +62,19 @@ function run() {
     const style = getComputedStyle(el);
     return Object.fromEntries(props.map((p) => [p, style[p]]));
   };
-  // Both buttons whole and inside the card's padding, in the page's font and
-  // in Verdana, which sets type as wide as the Linux runner's DejaVu Sans.
+  // Both buttons whole and inside the card's padding, and Release on one line,
+  // in the page's font and in Verdana, as wide as the Linux runner's DejaVu Sans.
   const wide = document.createElement("style");
   wide.textContent = ".possession, .possession * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }";
+  const lines = (el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+  };
   const fitsNow = (card) => {
     const right = card.getBoundingClientRect().right - parseFloat(getComputedStyle(card).paddingRight);
-    return [...card.querySelectorAll(".possession-release, .possession-focus")].every(
+    const buttons = [...card.querySelectorAll(".possession-release, .possession-focus")];
+    return lines(card.querySelector(".possession-release")) === 1 && buttons.every(
       (b) => b.scrollWidth <= b.clientWidth && b.getBoundingClientRect().right <= right + 0.5,
     );
   };
