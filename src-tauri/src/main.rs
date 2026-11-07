@@ -2704,6 +2704,16 @@ fn build_overlay(
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     platform::set_overlay_click_through(&window, true)?;
 
+    #[cfg(not(unix))]
+    {
+        let watched = window.clone();
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                platform::cleanup_overlay_window(&watched);
+            }
+        });
+    }
+
     // X11: the window manager may put the overlay somewhere other than asked
     // (xfwm4 pushes it out of a desktop panel's reserved strip). Heard before
     // the first show, so the move that maps it is not missed.

@@ -1015,6 +1015,12 @@ pub fn cleanup_overlay_window(window: &tauri::WebviewWindow) {
     x11::cleanup_overlay_window(window)
 }
 
+/// Free the regions kept for a destroyed overlay window.
+#[cfg(not(unix))]
+pub fn cleanup_overlay_window(window: &tauri::WebviewWindow) {
+    windows::cleanup_overlay_window(window)
+}
+
 /// Whether a compositor blends the overlays' transparent pixels. Without one
 /// X11 fills them with black, so the overlays are clipped to what they draw.
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -1090,7 +1096,7 @@ pub use x11::SpriteMask;
 #[cfg(not(unix))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
-    art: Option<&[[i32; 4]]>,
+    art: Option<&[fidget_core::overlay_region::SpriteArt]>,
     rects: &[OverlayRect],
     click_through: bool,
 ) -> Result<bool, String> {
