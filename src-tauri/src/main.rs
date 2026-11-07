@@ -1309,7 +1309,6 @@ mod settings_event_tests {
         assert_eq!(session.ran(), ["open_memory", "wipe_memory"]);
     }
 
-    /// The log opens in Rust, the same way Memory does, so the page never sees a path.
     #[test]
     fn opening_the_action_log_runs_here_and_does_not_cross_to_the_page() {
         use settings::form::RowOperation;
@@ -4142,9 +4141,6 @@ fn stand_roster(
     }
 }
 
-// One over the clippy cap. The roster, the settings file, and the hide rules
-// hear one click, and splitting the match would pass that same set through
-// several functions.
 #[allow(clippy::too_many_arguments)]
 fn apply_menu_action(
     action: menu::MenuAction,

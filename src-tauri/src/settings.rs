@@ -1503,8 +1503,7 @@ impl SettingsSession {
         crate::platform::open_path(&self.memory_path)
     }
 
-    /// Read at the click, so a data-folder move after launch is the file
-    /// the editor sees.
+    /// Hand the current Action Log to the desktop's opener.
     pub fn open_action_log(&self) -> Result<(), String> {
         crate::platform::open_path(&crate::action_log::current_path())
     }

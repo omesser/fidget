@@ -79,7 +79,7 @@ pub enum Verb {
     Throw { velocity: Point },
     /// A click on the sprite.
     Poke,
-    /// A right-click on the sprite. Opens the context menu. The tray adds Bring to this display.
+    /// A right-click on the sprite. Opens the context menu.
     Menu,
 
     /// A double-click on the sprite. Opens the Chat surface the Shell draws.

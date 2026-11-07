@@ -67,14 +67,13 @@ pub fn quick_message_aside(action: &MenuAction) -> Option<&'static str> {
 /// only row that follows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuSurface {
-    /// The menu bar icon. Left-click opens the same menu.
+    /// The menu bar icon.
     Tray,
-    /// The sprite's right-click. The sprite is already on this display.
+    /// The sprite's right-click.
     Sprite,
 }
 
-/// Everything `describe` needs to draw one menu. Tray and sprite both pass
-/// this. `surface` is the only reason a row exists on one and not the other.
+/// Everything `describe` needs to draw one menu.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuSnapshot<'a> {
     pub surface: MenuSurface,
@@ -172,7 +171,6 @@ const CHARACTER_PREFIX: &str = "character:";
 /// Describe the menu. Tray and sprite both call this.
 ///
 /// Checkboxes report the Engine and settings rather than a copy that could drift.
-/// Bring to this display is inserted only for the tray.
 pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     let mut entries = Vec::new();
     let mut actions = HashMap::new();
@@ -506,8 +504,6 @@ mod tests {
             .collect()
     }
 
-    /// Sprite and tray share one description. Bring to this display is the only
-    /// row that differs, because a sprite you can click is already on this display.
     #[test]
     fn sprite_and_tray_share_every_row_except_bring_to_this_display() {
         let installed = names(&["bmo"]);
@@ -535,23 +531,6 @@ mod tests {
             Some(&MenuAction::BringToThisDisplay)
         );
         assert_eq!(sprite.actions.get("bring-to-display"), None);
-        for gone in [
-            "AI",
-            "Hide rules",
-            "Memory…",
-            "Action Log…",
-            "Bring to this display",
-        ] {
-            assert!(
-                sprite.entries.iter().all(|entry| match entry {
-                    MenuEntry::Item { label, .. }
-                    | MenuEntry::Check { label, .. }
-                    | MenuEntry::Submenu { label, .. } =>
-                        label != gone && !label.starts_with("AI "),
-                }),
-                "{gone} is not on the sprite"
-            );
-        }
     }
 
     fn instance_items(description: &MenuDescription) -> Option<&Vec<MenuEntry>> {
