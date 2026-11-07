@@ -4141,6 +4141,8 @@ fn stand_roster(
     }
 }
 
+// Clippy's cap is 7. These are the live objects one click writes.
+// A struct with no other caller would only rename them.
 #[allow(clippy::too_many_arguments)]
 fn apply_menu_action(
     action: menu::MenuAction,
