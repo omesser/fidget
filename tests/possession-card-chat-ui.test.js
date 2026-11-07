@@ -80,9 +80,11 @@ function run() {
       await until(() => document.querySelector(".possession.visible .possession-release"));
       for (let i = 0; i < 2; i += 1) await settle();
       const card = document.querySelector(".possession");
+      const releaseEl = card.querySelector(".possession-release");
       const live = {
+        releaseClipped: releaseEl.scrollWidth > releaseEl.clientWidth,
         card: read(card, ["backgroundColor", "color"]),
-        release: read(card.querySelector(".possession-release"), [
+        release: read(releaseEl, [
           "backgroundColor", "color", "borderTopColor", "borderTopLeftRadius",
         ]),
         pressed: read(card.querySelector('.possession-focus[aria-pressed="true"]'), [
@@ -122,6 +124,11 @@ for (const [chatUi, [panel, ink, accent, accentInk, line, radius]] of Object.ent
       borderTopColor: line,
       borderTopLeftRadius: radius,
     });
+  });
+
+  test(`Release shows its whole label beside Focus in ${chatUi}`, { skip: chromeSkip, timeout: 60000 }, async () => {
+    const { releaseClipped } = (await probe())[chatUi];
+    assert.equal(releaseClipped, false);
   });
 
   test(`a raised Focus is ${chatUi}'s flat accent button`, { skip: chromeSkip, timeout: 60000 }, async () => {

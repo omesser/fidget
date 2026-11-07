@@ -534,7 +534,7 @@ body {
   left: 0;
   box-sizing: border-box;
   width: max-content;
-  max-width: 280px;
+  max-width: 320px;
   margin: 0;
   padding: 10px 14px;
   background: var(--ui-panel);
