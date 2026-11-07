@@ -3616,8 +3616,8 @@ fn attachment() -> MutexGuard<'static, Attachment> {
 }
 
 /// One permit for every test that installs or retargets the process slot.
-/// Take it before starting a timed worker. The slot is one per process, and
-/// a caller's budget must not run while another test holds it.
+/// Installing tests take it before a timed worker. The bad-order case
+/// starts its budget while another holder still has the slot.
 #[cfg(test)]
 struct AttachmentTestHold {
     _guard: MutexGuard<'static, ()>,
@@ -10432,6 +10432,15 @@ mod tests {
     /// Switching the AI source commits on the UI thread, so `retarget` must
     /// not wait on the child it is dropping. That is cheap only because
     /// `Msg::Shutdown` ends the turn in flight instead of being swallowed by it.
+    /// `Empty` means `complete` has not returned. A queued signal is the caller
+    /// already finished, which is too late to prove shutdown came first.
+    fn assert_caller_still_pending(returned: &mpsc::Receiver<()>) {
+        assert!(
+            matches!(returned.try_recv(), Err(mpsc::TryRecvError::Empty)),
+            "the caller returned before shutdown was accepted"
+        );
+    }
+
     #[test]
     fn retarget_does_not_wait_out_a_turn_in_flight() {
         let _hold = attachment_test_hold();
@@ -10523,10 +10532,7 @@ mod tests {
                 .unwrap_or_else(|_| {
                     panic!("iteration {iteration}: shutdown never reached the wire")
                 });
-            assert!(
-                matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
-                "iteration {iteration}: the caller returned before shutdown was accepted"
-            );
+            assert_caller_still_pending(&returned_rx);
             assert!(
                 !session.inspect().alive,
                 "iteration {iteration}: the dropped session still reads live"
@@ -10579,10 +10585,7 @@ mod tests {
         let release = entered_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("shutdown never reached the wire");
-        assert!(
-            matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
-            "the caller returned before shutdown was accepted"
-        );
+        assert_caller_still_pending(&returned_rx);
         let err = worker.join().unwrap().unwrap_err();
         assert!(
             err.contains("exceeded"),
@@ -10596,14 +10599,15 @@ mod tests {
     }
 
     /// Starting the budget before the slot is ours lets the caller finish
-    /// while another holder still has it. Shutdown afterwards still parks,
-    /// and `join` is then too late to prove the order.
+    /// while another holder still has it. The same pending check the other
+    /// tests use then rejects that caller. Release and join still run.
     #[test]
     #[should_panic(expected = "the caller returned before shutdown was accepted")]
     fn a_budget_caller_that_starts_before_the_hold_is_already_done() {
         let blocker = attachment_test_hold();
         let (entered_tx, entered_rx) = mpsc::channel();
         let (returned_tx, returned_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
         let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session.with_timeout(Duration::from_secs(1)));
         let worker = {
@@ -10612,11 +10616,12 @@ mod tests {
                 crate::acp_wire::arm_shutdown_park(entered_tx);
                 let result = session.complete(&asking("hi"), &|_| {});
                 let _ = returned_tx.send(());
+                let _ = finished_tx.send(());
                 result
             })
         };
         assert!(fx.wait_for("prompt", 1), "the turn never went out");
-        returned_rx
+        finished_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("the budget caller never returned");
         drop(blocker);
@@ -10630,9 +10635,9 @@ mod tests {
         let release = entered_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("shutdown never reached the wire");
-        let _ = release.send(());
         let _ = worker.join();
-        panic!("the caller returned before shutdown was accepted");
+        let _ = release.send(());
+        assert_caller_still_pending(&returned_rx);
     }
 
     #[test]
@@ -10675,10 +10680,7 @@ mod tests {
                         .unwrap_or_else(|_| {
                             panic!("{name} {iteration}: shutdown missed this session")
                         });
-                    assert!(
-                        matches!(returned_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
-                        "{name} {iteration}: the caller returned before shutdown was accepted"
-                    );
+                    assert_caller_still_pending(&returned_rx);
                     let _ = release.send(());
                     let err = worker
                         .join()
