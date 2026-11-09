@@ -330,7 +330,9 @@ makes it jump, the digits 1 to 9 play one pass of its Animations in name
 order, and Escape releases it. A digit plays the Animation alone, never a
 Behavior or its `then`. The digits skip every Animation the controls already
 draw: idle, walk, jump, fall, land, climb, sit and hold on a Perch, grab under
-the mouse, and possessed, plus their variants and left strips. The fidget is
+the mouse, and possessed, plus their variants and left strips. Animations on
+the exact same frames are one clip and share a digit, labelled with their names
+joined by `/` (`React/Wave`); the digit plays the first. The fidget is
 possessed, the way a ghost possesses a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite

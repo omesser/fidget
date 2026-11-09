@@ -29,10 +29,14 @@ const KEYS = [
   ["Space", "Jump"],
 ];
 
-// Walk and Jump are written as labels. An Animation name is a key (`nod-off`).
+// Walk and Jump are written as labels. An Animation name is a key (`nod-off`),
+// and names sharing one clip come joined (`react/wave`): each is capitalized.
 function animationLabel(name) {
   if (!name) return name;
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  return name
+    .split("/")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("/");
 }
 
 function bindingRows(digits) {

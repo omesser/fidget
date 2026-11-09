@@ -62,14 +62,25 @@ fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Ani
 }
 
 /// What digits 1 to 9 play: the Character's own Animations in name order,
-/// minus the ones the controls already draw. The card shows these names.
-pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
-    animations
-        .iter()
-        .filter(|(name, animation)| bindable(name, animation, animations))
-        .map(|(name, _)| name.as_str())
-        .take(9)
-        .collect()
+/// minus the ones the controls already draw. Names on the exact same frames
+/// are one clip and share a digit: the card shows them joined by `/`, and the
+/// digit plays the first.
+pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<Vec<&str>> {
+    let mut clips: Vec<(&[String], Vec<&str>)> = Vec::new();
+    for (name, animation) in animations {
+        if !bindable(name, animation, animations) {
+            continue;
+        }
+        match clips
+            .iter_mut()
+            .find(|(frames, _)| *frames == animation.frames)
+        {
+            Some((_, names)) => names.push(name),
+            None => clips.push((&animation.frames, vec![name])),
+        }
+    }
+    clips.truncate(9);
+    clips.into_iter().map(|(_, names)| names).collect()
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -404,7 +415,7 @@ mod tests {
         );
         assert_eq!(
             digit_animations(&character.animations),
-            ["react", "sleep", "talk", "wave"]
+            [["react"], ["sleep"], ["talk"], ["wave"]]
         );
     }
 
@@ -422,11 +433,34 @@ mod tests {
              [animations.stroll]\nframes = [\"walk-0.png\"]\nvariant_of = \"walk\"\n\
              [animations.walk-left]\nframes = [\"walk-0.png\"]\nleft_of = \"walk\"\n\
              [animations.perk-up]\nframes = [\"sit-0.png\"]\nvariant_of = \"sit\"\n\
-             [animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"sleep\"\n",
+             [animations.doze]\nframes = [\"sleep-0.png\", \"react-0.png\"]\nvariant_of = \"sleep\"\n",
         );
         assert_eq!(
             digit_animations(&character.animations),
-            ["doze", "react", "sleep", "talk"]
+            [["doze"], ["react"], ["sleep"], ["talk"]]
+        );
+    }
+
+    /// Two names on one frame sequence are one clip, so they share a digit,
+    /// named by both. Same frames in another order, or a run inside a longer
+    /// one, is a clip of its own.
+    #[test]
+    fn animations_on_the_same_frames_share_one_digit() {
+        let character = character_with(
+            "[animations.wave]\nframes = [\"react-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [animations.fidget]\nframes = [\"react-0.png\", \"talk-0.png\"]\n\
+             [animations.mutter]\nframes = [\"talk-0.png\", \"react-0.png\"]\n\
+             [animations.chatter]\nframes = [\"talk-0.png\"]\n",
+        );
+        assert_eq!(
+            digit_animations(&character.animations),
+            [
+                &["chatter", "talk"][..],
+                &["fidget"],
+                &["mutter"],
+                &["react", "wave"],
+                &["sleep"],
+            ]
         );
     }
 
@@ -434,9 +468,12 @@ mod tests {
     fn only_the_first_nine_animations_get_digits() {
         let gestures: String = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"]
             .iter()
-            .map(|name| {
+            .enumerate()
+            .map(|(length, name)| {
+                // A frame sequence of its own, so no two share a digit.
+                let frames = vec!["\"react-0.png\""; length + 2].join(", ");
                 format!(
-                    "[animations.{name}]\nframes = [\"wave-0.png\"]\n\
+                    "[animations.{name}]\nframes = [{frames}]\n\
                      variant_of = \"idle-gesture\"\n"
                 )
             })
@@ -444,7 +481,52 @@ mod tests {
         let character = character_with(&gestures);
         assert_eq!(
             digit_animations(&character.animations),
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+            [
+                ["a"],
+                ["b"],
+                ["c"],
+                ["d"],
+                ["e"],
+                ["f"],
+                ["g"],
+                ["h"],
+                ["i"]
+            ]
+        );
+    }
+
+    /// The nine digits count clips, so a joined pair takes one digit.
+    #[test]
+    fn the_nine_digits_count_shared_clips_once() {
+        let frames = |length| vec!["\"react-0.png\""; length + 2].join(", ");
+        let mut gestures: String = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+            .iter()
+            .enumerate()
+            .map(|(length, name)| {
+                format!(
+                    "[animations.{name}]\nframes = [{}]\nvariant_of = \"idle-gesture\"\n",
+                    frames(length)
+                )
+            })
+            .collect();
+        gestures.push_str(&format!(
+            "[animations.aa]\nframes = [{}]\nvariant_of = \"idle-gesture\"\n",
+            frames(0)
+        ));
+        let character = character_with(&gestures);
+        assert_eq!(
+            digit_animations(&character.animations),
+            [
+                &["a", "aa"][..],
+                &["b"],
+                &["c"],
+                &["d"],
+                &["e"],
+                &["f"],
+                &["g"],
+                &["h"],
+                &["i"],
+            ]
         );
     }
 

@@ -666,8 +666,9 @@ struct SpritePlacement<'a> {
     paused: bool,
     /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
     charge: Option<f64>,
-    /// Animation names for the digit rows. Only the bubble owner, and only
-    /// while possessed: the card is not drawn anywhere else.
+    /// Labels for the digit rows: an Animation name, or names on one clip
+    /// joined by `/`. Only the bubble owner, and only while possessed: the
+    /// card is not drawn anywhere else.
     digits: &'a [String],
 }
 
