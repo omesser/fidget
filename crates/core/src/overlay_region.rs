@@ -289,10 +289,9 @@ impl<H: Copy> RegionShapes<H> {
     /// The handle kept for `shape`, if any, now the most recently used.
     pub fn get(&mut self, shape: &[RegionRect]) -> Option<H> {
         let found = self.kept.iter().position(|(kept, _)| kept == shape)?;
-        let entry = self.kept.remove(found);
-        let handle = entry.1;
-        self.kept.push(entry);
-        Some(handle)
+        // `keep` evicts from the front, so the back is the most recently used.
+        self.kept[found..].rotate_left(1);
+        self.kept.last().map(|(_, handle)| *handle)
     }
 
     /// Keep `handle` as `shape`'s region. Returns the least recently used
