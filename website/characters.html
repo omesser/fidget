@@ -132,6 +132,11 @@
           border-radius: 9px; padding: .55rem; display: flex;
           flex-direction: column; gap: .45rem; }
   .ring .tile { background: var(--paper); }
+  /* Idle-gestures: one pass of one member now and then, picked by weight. */
+  .gestures { margin-top: .8rem; flex-direction: column; align-items: stretch; }
+  .gestures > .caption { font-size: .8rem; color: var(--ink-3); }
+  .gestures > .members { display: flex; flex-wrap: wrap; gap: .8rem;
+                         align-items: flex-end; }
   .stage { position: relative; align-self: center; }
   /* Only a once Animation visibly replays on a click. */
   .stage.once { cursor: pointer; }
@@ -166,8 +171,9 @@
     Required Animation Set, playing at the frame rate its own Character
     Manifest declares. Variants of idle and walk play beside their base —
     every member, not a seeded pick. Optional climb and grab follow when a
-    package declares them. Preview at an integer multiple of the Character's
-    declared scale; nearest-neighbour is the point a README still cannot show.</p>
+    package declares them, and its idle-gestures sit in a group of their own.
+    Preview at an integer multiple of the Character's declared scale;
+    nearest-neighbour is the point a README still cannot show.</p>
 
   <div class="controls">
     <a class="back" href="./#characters">← Packaged Fidgets</a>
@@ -279,6 +285,18 @@
         }
       }
       section.append(strip);
+
+      if (character.gestures && character.gestures.length) {
+        const group = el("div", "ring gestures");
+        group.append(el("div", "caption",
+          "idle-gestures — one pass now and then from idle, picked by weight"));
+        const members = el("div", "members");
+        for (const gesture of character.gestures) {
+          members.append(playingTile(character, gesture, true));
+        }
+        group.append(members);
+        section.append(group);
+      }
       root.append(section);
     }
   }
@@ -297,7 +315,7 @@
     return tile;
   }
 
-  function playingTile(character, animation) {
+  function playingTile(character, animation, gesture) {
     const tile = el("div", "tile");
     const stage = el("div", "stage");
     const scale = character.scale * previewTimes;
@@ -337,7 +355,10 @@
     const label = el("div", "label");
     label.append(el("b", null, animation.name));
     const bits = [];
-    if (animation.variant_of) {
+    if (gesture) {
+      bits.push("idle-gesture");
+      bits.push("weight " + animation.weight);
+    } else if (animation.variant_of) {
       bits.push("variant of " + animation.variant_of);
       bits.push("weight " + animation.weight);
     } else if (!requiredNames.has(animation.name)) {
