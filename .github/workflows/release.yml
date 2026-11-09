@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version-override:
-        description: 'Stamp this version on the bundles. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
+        description: 'Stamp this version on the bundles and binaries. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
         type: string
         required: false
         default: ''
@@ -150,8 +150,7 @@ jobs:
 
       - name: Stamp the crates
         # CARGO_PKG_VERSION compiles into the ACP client info and MCP
-        # serverInfo, and --config below reaches only the bundle. After the
-        # cache step, whose key hashes Cargo.lock.
+        # serverInfo, and --config below reaches only the bundle.
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
