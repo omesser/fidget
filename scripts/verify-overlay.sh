@@ -145,10 +145,6 @@ wait_for_up "$OUT/app.log" || {
 wait_for_trace 15 "$OUT/app.log" '^frame: [0-9]+ Perched' ||
   diagnose_no_frames "$OUT/app.log"
 
-# It has done its job by now: the sprite has fallen past it, and it is drawn
-# above the overlay, so leaving it up would put it over the screenshot below.
-kill "$OVER_PID" 2> /dev/null
-
 swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
   {
     echo "FAIL: inspector"
@@ -163,6 +159,10 @@ echo "Closing the prop window..."
 CLOSED_MS=$(now_ms)
 kill "$PERCH_PID" 2> /dev/null
 perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
+
+# Not sooner: its exit raises the terminal over the Perch, and the sprite falls
+# through. It is drawn above the overlay, so it has to go before the screenshot.
+kill "$OVER_PID" 2> /dev/null
 
 echo ""
 echo "Frame loop:"

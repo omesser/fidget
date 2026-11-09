@@ -53,6 +53,15 @@ test("verify-overlay.sh expects the Dock tile of a regular app", () => {
   );
 });
 
+test("verify-overlay.sh keeps the elevated prop up until the Perch has closed", () => {
+  const source = readFileSync(path.join(scripts, "verify-overlay.sh"), "utf8");
+  const executableSource = source.replace(/^\s*#.*$/gm, "");
+
+  const overGone = executableSource.indexOf('kill "$OVER_PID"');
+  const perchGone = executableSource.indexOf('kill "$PERCH_PID"');
+  assert.ok(overGone > perchGone && perchGone >= 0, "its exit raises the terminal over a Perch still in use");
+});
+
 test("bench-wakeups-macos.sh follows a release binary's process log", () => {
   const source = readFileSync(path.join(scripts, "bench-wakeups-macos.sh"), "utf8");
   const executableSource = source.replace(/^\s*#.*$/gm, "");
