@@ -193,9 +193,9 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
 
   # Own job: no node test depends on the OS, and only Ubuntu ships the Chrome the
-  # headless renderer tests drive. Without Rust or apt it finishes beside `checks`.
+  # headless renderer tests drive. No Rust or apt, so it finishes beside `checks`.
   # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
-  renderer:
+  node-tests:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -252,17 +252,36 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: time google-chrome --headless=new --disable-gpu --no-sandbox --dump-dom about:blank > /dev/null
 
-      - name: Importer self-test
+      - name: Install Pillow
         if: steps.changes.outputs.code == 'true'
-        # Pillow also supports the renderer's GIF and app-icon checks below.
-        run: |
-          pip install -r scripts/requirements-import.txt
-          python scripts/import-pet.py --self-test
+        # The GIF and app-icon checks in the node tests read images with it.
+        run: pip install -r scripts/requirements-import.txt
 
-      - name: Renderer tests
+      - name: Node tests
         if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
+
+  # Own job, so a failure names the importer. A label changes no code, so adding
+  # one doesn't rerun it.
+  character-importer:
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Importer self-test
+        run: |
+          pip install -r scripts/requirements-import.txt
+          python scripts/import-pet.py --self-test
 
   # Own job: Windows cannot run the shellcheck/apt path `checks` uses.
   # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
