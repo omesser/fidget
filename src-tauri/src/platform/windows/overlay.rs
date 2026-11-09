@@ -533,7 +533,7 @@ mod tests {
     }
 
     /// Two Characters on one display: BMO walks while Tux stands. BMO's steps
-    /// shift its kept region, and BMO changing frame never evicts Tux's.
+    /// reuse its kept region, and BMO changing frame never evicts Tux's.
     #[test]
     fn characters_sharing_an_overlay_keep_their_own_regions() {
         let label = "test-shared-overlay";

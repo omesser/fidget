@@ -268,8 +268,8 @@ pub fn placed_shape(rects: &[RegionRect]) -> PlacedShape {
 }
 
 /// One Character's recently built regions on one overlay, keyed by shape. `H` is the region
-/// handle, built at the origin, so a region that only moved is shifted from
-/// a copy instead of rebuilt rect by rect.
+/// handle, built at the origin, so art that only moved reuses it at the new
+/// spot instead of rebuilding it rect by rect.
 #[derive(Debug)]
 pub struct RegionShapes<H> {
     kept: Vec<(Vec<RegionRect>, H)>,
