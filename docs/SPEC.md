@@ -72,8 +72,8 @@ that adding a character is drawing, not programming.
    not vanish when I switch context.
 5. As a user, I want the character never to steal keyboard focus, so that it cannot interrupt
    what I am typing.
-6. As a user, I want Fidget not to appear in my application switcher, so that it does
-   not clutter the list of things I am actually working in.
+6. As a user, I want Fidget in my Dock and application switcher, so that I can find it
+   when the menu bar is crowded.
 7. As a user, I want Fidget to launch at login if I choose, so that the character is simply
    always there.
 8. As a user, I want a tray or menu bar icon, so that I can reach settings and quit
@@ -339,8 +339,8 @@ it works in the space all displays share and knows nothing about windows.
 ### Overlay and input
 
 One always-on-top overlay window per display per Character Instance. On macOS: a
-non-activating panel at floating level, joining all Spaces, stationary, excluded from the
-application switcher, never accepting first responder status. Identical on every overlay,
+non-activating panel at floating level, joining all Spaces, stationary, excluded from
+window cycling, never accepting first responder status. Identical on every overlay,
 which is why one code path builds and configures them all.
 
 Click-through is decided once per tick, in the shared point space, and applied to the
