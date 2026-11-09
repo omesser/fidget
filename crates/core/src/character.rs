@@ -228,23 +228,6 @@ pub enum Primitive {
     Possessed,
 }
 
-impl Primitive {
-    /// Movement the arrows and Space own, so a Behavior of only these gets no
-    /// digit: walk, chase, jump, and land, hold, possessed as their side effects.
-    /// No `_` arm, so a new Primitive has to pick a side.
-    pub fn owned_by_arrows_and_space(&self) -> bool {
-        match self {
-            Primitive::Walk | Primitive::Chase | Primitive::Jump => true,
-            Primitive::Land | Primitive::Hold | Primitive::Possessed => true,
-            Primitive::Idle
-            | Primitive::Sit
-            | Primitive::Sleep
-            | Primitive::React
-            | Primitive::Talk => false,
-        }
-    }
-}
-
 /// Which of the Required Animation Set a Primitive plays.
 pub(crate) fn animation_of(primitive: Primitive) -> &'static str {
     match primitive {
@@ -518,7 +501,7 @@ pub enum IdleBeat {
     IdleGesture(String),
 }
 
-/// One idle loop or idle-gesture the Engine can pick.
+/// One idle loop, idle-gesture, or digit Animation the Engine can play.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdleMember {
     pub(crate) name: String,
@@ -527,12 +510,13 @@ pub struct IdleMember {
     pub(crate) fps: u32,
 }
 
-/// Loops, idle-gestures, and the timing ranges. The Engine picks; `draw`
-/// does not weigh this a second time.
+/// Loops, idle-gestures, the timing ranges, and what digits play while
+/// possessed. The Engine picks; `draw` does not weigh this a second time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdlePlan {
     pub(crate) loops: Vec<IdleMember>,
     pub(crate) gestures: Vec<IdleMember>,
+    pub(crate) digits: Vec<IdleMember>,
     pub(crate) idle_gesture_every_s: (u32, u32),
     pub(crate) sleep_after_s: (u32, u32),
     pub(crate) sleep_for_s: (u32, u32),
@@ -545,8 +529,8 @@ pub enum RingChoice<'a> {
     Weighed(u64),
     /// The Engine's own idle, already decided.
     Beat(&'a IdleBeat),
-    /// This animation's own frames. A Behavior named an Animation. Weighing the
-    /// family would play a sibling of the base.
+    /// This animation's own frames. A Behavior or a digit named an Animation.
+    /// Weighing the family would play a sibling of the base.
     Named(&'a str),
 }
 
@@ -577,13 +561,19 @@ impl Character {
             * f64::from(self.scale)
     }
 
-    /// Idle loops (base, then `variant_of` by name), idle-gestures, and the
-    /// timing ranges. Missing art is an empty plan at the defaults.
+    /// Idle loops (base, then `variant_of` by name), idle-gestures, the
+    /// timing ranges, and the digit Animations with their pass lengths.
+    /// Missing art is an empty plan at the defaults.
     pub fn idle_plan(&self) -> IdlePlan {
+        let digits: Vec<IdleMember> = crate::possession::digit_animations(&self.animations)
+            .into_iter()
+            .map(|name| idle_member(name, &self.animations[name]))
+            .collect();
         let Some(base) = self.animations.get("idle") else {
             return IdlePlan {
                 loops: Vec::new(),
                 gestures: Vec::new(),
+                digits,
                 idle_gesture_every_s: self.idle_gesture_every_s,
                 sleep_after_s: self.sleep_after_s,
                 sleep_for_s: self.sleep_for_s,
@@ -605,6 +595,7 @@ impl Character {
         IdlePlan {
             loops,
             gestures,
+            digits,
             idle_gesture_every_s: self.idle_gesture_every_s,
             sleep_after_s: self.sleep_after_s,
             sleep_for_s: self.sleep_for_s,

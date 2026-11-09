@@ -17,7 +17,7 @@ use fidget_core::overlay::DrawTrail;
 use fidget_core::overlay::{
     bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
 };
-use fidget_core::possession::{digit_behaviors, Intent};
+use fidget_core::possession::{digit_animations, Intent};
 use fidget_core::quick_message::walk_held;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
@@ -2617,10 +2617,10 @@ pub(crate) fn run_frame_loop(
                     possessed,
                     paused,
                     charge: frame.charge,
-                    behaviors: if possessed {
-                        digit_behaviors(&live.character.behaviors)
+                    digits: if possessed {
+                        digit_animations(&live.character.animations)
                             .into_iter()
-                            .map(|names| names.join("/"))
+                            .map(str::to_string)
                             .collect()
                     } else {
                         Vec::new()

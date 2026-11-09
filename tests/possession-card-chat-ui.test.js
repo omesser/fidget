@@ -39,7 +39,7 @@ const sprite = {
   bubble: true,
   cue: null,
   possessed: true,
-  behaviors: [],
+  digits: [],
 };
 
 function run() {

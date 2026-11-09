@@ -65,7 +65,7 @@ test("the card numbers the shell's list and writes each name as a label", () => 
   const card = possessionCard({
     possessed: true,
     paused: false,
-    behaviors: ["wave", "nod"],
+    digits: ["wave", "nod-off"],
   });
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
@@ -73,13 +73,13 @@ test("the card numbers the shell's list and writes each name as a label", () => 
     ["↓", "Drop"],
     ["Space", "Jump"],
     ["1", "Wave"],
-    ["2", "Nod"],
+    ["2", "Nod-off"],
   ]);
 });
 
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
-  const card = possessionCard({ possessed: true, paused: false, behaviors: names });
+  const card = possessionCard({ possessed: true, paused: false, digits: names });
   assert.deepEqual(card.keys.slice(4), [
     ["1", "K"],
     ["2", "J"],

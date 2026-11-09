@@ -29,26 +29,26 @@ const KEYS = [
   ["Space", "Jump"],
 ];
 
-// Walk and Jump are written as labels. A Behavior name is a key (`nod`).
-function behaviorLabel(name) {
+// Walk and Jump are written as labels. An Animation name is a key (`nod-off`).
+function animationLabel(name) {
   if (!name) return name;
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function bindingRows(behaviors) {
-  const digits = [...(behaviors ?? [])].map((name, index) => [
+function bindingRows(digits) {
+  const rows = [...(digits ?? [])].map((name, index) => [
     String(index + 1),
-    behaviorLabel(name),
+    animationLabel(name),
   ]);
-  return [...KEYS, ...digits];
+  return [...KEYS, ...rows];
 }
 
 // Null while the sprite is not possessed. Paused keeps the card and replaces
 // the explanation with the paused line. The whole paused card is the resume
 // click, so it has no release button. The focus button shows which it is.
-export function possessionCard({ possessed, paused, behaviors }) {
+export function possessionCard({ possessed, paused, digits }) {
   if (!possessed) return null;
-  const keys = bindingRows(behaviors);
+  const keys = bindingRows(digits);
   if (paused) {
     return {
       paused: true,

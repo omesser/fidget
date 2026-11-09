@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::{animation_of, Behavior, Primitive};
+use crate::character::Animation;
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,46 +24,52 @@ pub enum Key {
     Digit(u8),
 }
 
-/// What digits 1 to 9 play: declared Behaviors by their own Primitives, not
-/// `then`, minus movement-only ones, one digit per Animation loop, name order.
-pub fn digit_behaviors(behaviors: &BTreeMap<String, Behavior>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<(Vec<&str>, Vec<&str>)> = Vec::new();
-    for (name, behavior) in behaviors {
-        // Idle between moves is the pause in a stroll, which the arrows
-        // already give. Idle alone is not movement, nor is a Behavior playing
-        // an Animation.
-        if behavior.animation.is_some() {
-            let drawn = vec![behavior.animation.as_deref().unwrap()];
-            match groups.iter_mut().find(|(played, _)| *played == drawn) {
-                Some((_, names)) => names.push(name),
-                None => groups.push((drawn, vec![name])),
-            }
-            continue;
-        }
-        let own = behavior.primitives.as_slice();
-        let moves = own
-            .iter()
-            .any(|primitive| primitive.owned_by_arrows_and_space());
-        let only_moves = moves
-            && own.iter().all(|primitive| {
-                *primitive == Primitive::Idle || primitive.owned_by_arrows_and_space()
-            });
-        if behavior.not_in_manifest || only_moves {
-            continue;
-        }
-        // Composable Primitives only fall back to art no other one draws, so
-        // `animation_of` alone says what is drawn.
-        let drawn: Vec<&str> = own
-            .iter()
-            .map(|primitive| animation_of(*primitive))
-            .collect();
-        match groups.iter_mut().find(|(played, _)| *played == drawn) {
-            Some((_, names)) => names.push(name),
-            None => groups.push((drawn, vec![name])),
-        }
-    }
-    groups.truncate(9);
-    groups.into_iter().map(|(_, names)| names).collect()
+/// The Animations possession's controls already draw, each by the path that
+/// draws it. A digit for one would replay what a key or the mouse is for.
+/// `engine` checks every driven State and Primitive lands in this list.
+pub(crate) const DRIVEN_ANIMATIONS: [&str; 10] = [
+    // The rest between keys: Grounded.
+    "idle",
+    // Left and Right: Walk, and Chase's art.
+    "walk",
+    // Space: Jump.
+    "jump",
+    // In the air: Falling.
+    "fall",
+    // The end of every fall: Land.
+    "land",
+    // Up at a wall: Climbing.
+    "climb",
+    // On a Perch: Perched.
+    "sit",
+    // Riding a moving Perch: Hold.
+    "hold",
+    // Held by the mouse: Dragged.
+    "grab",
+    // Taking control: Possessed.
+    "possessed",
+];
+
+/// Whether a digit may play `name`: not an Animation the controls draw, nor a
+/// ring member drawn in one's place, nor a left strip, which is its base
+/// facing the other way rather than a clip of its own.
+fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Animation>) -> bool {
+    let driven = |name: &str| DRIVEN_ANIMATIONS.contains(&name);
+    let left_strip = animations
+        .values()
+        .any(|base| base.left_strip.as_deref() == Some(name));
+    !driven(name) && !animation.variant_of.as_deref().is_some_and(driven) && !left_strip
+}
+
+/// What digits 1 to 9 play: the Character's own Animations in name order,
+/// minus the ones the controls already draw. The card shows these names.
+pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
+    animations
+        .iter()
+        .filter(|(name, animation)| bindable(name, animation, animations))
+        .map(|(name, _)| name.as_str())
+        .take(9)
+        .collect()
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -109,8 +115,8 @@ pub struct Intent {
     pub launch: Option<Charge>,
     /// Escape was pressed: end the possession.
     pub end_possession: bool,
-    /// A digit pressed since the last tick, 1 to 9. The Engine plays the
-    /// first Behavior at that place in [`digit_behaviors`], without its `then`.
+    /// A digit pressed since the last tick, 1 to 9. The Engine plays one pass
+    /// of the Animation at that place in [`digit_animations`].
     pub play: Option<u8>,
 }
 
@@ -376,130 +382,69 @@ mod tests {
         assert!(keys.tick(FRAME_MS).end_possession);
     }
 
-    fn behaviors(table: &[(&str, &[Primitive], Option<&str>)]) -> BTreeMap<String, Behavior> {
-        table
+    /// A Character Package declaring the required nine plus `extra`, every
+    /// optional Animation drawn on the frames the required ones already ship.
+    fn character_with(extra: &str) -> crate::character::Character {
+        use crate::character::tests::{declaring, load_manifest};
+        use crate::character::REQUIRED_ANIMATIONS;
+
+        load_manifest(&format!("{}{extra}", declaring(&REQUIRED_ANIMATIONS)))
+            .expect("package is valid")
+    }
+
+    /// A digit is "play this clip now", so the card names Animations, never
+    /// the Behaviors that compose them, and a Behavior's `then` adds nothing.
+    #[test]
+    fn digits_name_animations_not_behaviors() {
+        let character = character_with(
+            "[animations.wave]\nframes = [\"wave-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [behaviors.hand-wave]\nplay = [\"wave\"]\n\
+             [behaviors.greet]\nplay = [\"react\", \"talk\"]\nthen = \"nap\"\n\
+             [behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
+        );
+        assert_eq!(
+            digit_animations(&character.animations),
+            ["react", "sleep", "talk", "wave"]
+        );
+    }
+
+    /// The arrows, Space, falling, climbing, perching and the mouse already
+    /// draw these, so a digit for one would replay a key. The idle is the
+    /// rest between keys. A ring member stands in for its base, and a left
+    /// strip is its base facing the other way.
+    #[test]
+    fn animations_the_controls_already_draw_get_no_digit() {
+        let character = character_with(
+            "[animations.climb]\nframes = [\"walk-0.png\"]\n\
+             [animations.grab]\nframes = [\"fall-0.png\"]\n\
+             [animations.jump]\nframes = [\"fall-0.png\"]\n\
+             [animations.possessed]\nframes = [\"react-0.png\"]\n\
+             [animations.stroll]\nframes = [\"walk-0.png\"]\nvariant_of = \"walk\"\n\
+             [animations.walk-left]\nframes = [\"walk-0.png\"]\nleft_of = \"walk\"\n\
+             [animations.perk-up]\nframes = [\"sit-0.png\"]\nvariant_of = \"sit\"\n\
+             [animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"sleep\"\n",
+        );
+        assert_eq!(
+            digit_animations(&character.animations),
+            ["doze", "react", "sleep", "talk"]
+        );
+    }
+
+    #[test]
+    fn only_the_first_nine_animations_get_digits() {
+        let gestures: String = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"]
             .iter()
-            .map(|(name, primitives, then)| {
-                let behavior = Behavior {
-                    primitives: primitives.to_vec(),
-                    animation: None,
-                    then: then.map(str::to_string),
-                    weight: 1,
-                    trigger: None,
-                    not_in_manifest: false,
-                    idle_type: false,
-                };
-                (name.to_string(), behavior)
+            .map(|name| {
+                format!(
+                    "[animations.{name}]\nframes = [\"wave-0.png\"]\n\
+                     variant_of = \"idle-gesture\"\n"
+                )
             })
-            .collect()
-    }
-
-    /// A Behavior not in the manifest (weight 0, added by the loader) repeats
-    /// art the Character already shows, so it gets no digit. Only what the
-    /// package declares does.
-    #[test]
-    fn only_behaviors_the_package_declares_get_digits() {
-        use crate::character::tests::{declaring, load_manifest};
-        use crate::character::REQUIRED_ANIMATIONS;
-
-        let manifest = format!(
-            "{}[behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let character = load_manifest(&manifest).expect("package is valid");
-        assert!(
-            character.behaviors.contains_key("react"),
-            "loading adds react"
-        );
-        assert_eq!(digit_behaviors(&character.behaviors), [["nap"]]);
-    }
-
-    /// A package that declares the very shape loading would add still declared
-    /// it, so it keeps its digit.
-    #[test]
-    fn a_declared_weightless_react_keeps_its_digit() {
-        use crate::character::tests::{declaring, load_manifest};
-        use crate::character::REQUIRED_ANIMATIONS;
-
-        let manifest = format!(
-            "{}[behaviors.react]\nplay = [\"react\"]\nweight = 0\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let character = load_manifest(&manifest).expect("package is valid");
-        assert_eq!(digit_behaviors(&character.behaviors), [["react"]]);
-    }
-
-    /// The arrows and Space already move the sprite, so a Behavior made only
-    /// of movement, and the idle between moves, gets no digit. Its own Primitives
-    /// decide, not its `then`.
-    #[test]
-    fn behaviors_made_only_of_movement_get_no_digit() {
-        let table = behaviors(&[
-            ("greet", &[Primitive::Talk], Some("stroll")),
-            ("stroll", &[Primitive::Walk], None),
-            ("hop", &[Primitive::Jump], None),
-            ("play-with-cursor", &[Primitive::Chase], None),
-            ("touch-down", &[Primitive::Land], None),
-            ("ride", &[Primitive::Hold, Primitive::Walk], None),
-            ("wander", &[Primitive::Walk, Primitive::Idle], None),
-            ("pace", &[Primitive::Walk, Primitive::Talk], None),
-            ("stare", &[Primitive::Idle], None),
-        ]);
-        assert_eq!(digit_behaviors(&table), [["greet"], ["pace"], ["stare"]]);
-    }
-
-    /// Behaviors whose own Primitives play the same Animations in the same
-    /// order share one digit, named together.
-    #[test]
-    fn behaviors_playing_the_same_loop_share_a_digit() {
-        let table = behaviors(&[
-            ("wave", &[Primitive::React], None),
-            ("startle", &[Primitive::React], None),
-            ("greet", &[Primitive::React], Some("nap")),
-            ("nap", &[Primitive::Sit, Primitive::Sleep], None),
-            ("doze", &[Primitive::Sleep, Primitive::Sit], None),
-        ]);
-        assert_eq!(
-            digit_behaviors(&table),
-            [vec!["doze"], vec!["greet", "startle", "wave"], vec!["nap"]]
-        );
-    }
-
-    /// Chase draws the walk Animation, so chasing while talking looks the same
-    /// as walking while talking and gets the same digit.
-    #[test]
-    fn behaviors_drawing_the_same_animations_share_a_digit() {
-        let table = behaviors(&[
-            ("pace", &[Primitive::Walk, Primitive::Talk], None),
-            ("pester", &[Primitive::Chase, Primitive::Talk], None),
-        ]);
-        assert_eq!(digit_behaviors(&table), [["pace", "pester"]]);
-    }
-
-    #[test]
-    fn only_the_first_nine_behaviors_get_digits() {
-        let names = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"];
-        let loops: Vec<Vec<Primitive>> = (1..=names.len())
-            .map(|sits| vec![Primitive::Sit; sits])
             .collect();
-        let table: Vec<_> = names
-            .iter()
-            .zip(&loops)
-            .map(|(name, sits)| (*name, &sits[..], None))
-            .collect();
+        let character = character_with(&gestures);
         assert_eq!(
-            digit_behaviors(&behaviors(&table)),
-            [
-                ["a"],
-                ["b"],
-                ["c"],
-                ["d"],
-                ["e"],
-                ["f"],
-                ["g"],
-                ["h"],
-                ["i"]
-            ]
+            digit_animations(&character.animations),
+            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
         );
     }
 

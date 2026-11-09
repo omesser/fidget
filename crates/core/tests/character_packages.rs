@@ -16,6 +16,7 @@ use fidget_core::character::{
     self, CursorReaction, IdleBeat, Primitive, RingChoice, REQUIRED_ANIMATIONS,
 };
 use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
+use fidget_core::possession::Intent;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;
@@ -1934,4 +1935,126 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
         .skip_while(|file| *file == first)
         .any(|file| file == first);
     assert!(back, "the idle returns to its first pose and repeats");
+}
+
+/// What each shipped card offers on 1 to 9: the clips a key can play, none
+/// of the art the arrows, a jump, a fall, a climb, a Perch or a drag draws.
+#[test]
+fn every_shipped_character_binds_its_own_clips_to_digits() {
+    let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
+        ("black-mage", &["react", "sleep", "talk"][..]),
+        ("bmo", &["react", "sing", "skate", "sleep", "talk"]),
+        (
+            "buddy-bot",
+            &[
+                "idle-blink",
+                "idle-breathe",
+                "idle-listen",
+                "react",
+                "sleep",
+                "talk",
+            ],
+        ),
+        ("cat", &["grooming", "react", "sleep", "talk", "waiting"]),
+        ("jotaro-kujo", &["react", "sleep", "talk"]),
+        ("nim", &["react", "sleep", "talk"]),
+        (
+            "rubber-duck",
+            &[
+                "look-left",
+                "look-right",
+                "pondering",
+                "react",
+                "sleep",
+                "talk",
+                "thinking",
+                "wave",
+            ],
+        ),
+        ("timber-wolf", &["react", "scan", "sleep", "talk"]),
+        ("trump", &["react", "sleep", "talk", "waiting", "wave"]),
+        (
+            "tux",
+            &[
+                "checking-work",
+                "look-around",
+                "react",
+                "recover-card",
+                "restless-sitting",
+                "sleep",
+                "talk",
+                "waddle-in-place",
+            ],
+        ),
+        (
+            "tuxedo-bean",
+            &[
+                "look-around",
+                "nod-off",
+                "react",
+                "review",
+                "sleep",
+                "talk",
+                "wave",
+            ],
+        ),
+    ]);
+    let shipped = shipped_packages();
+    assert_eq!(
+        shipped.iter().map(String::as_str).collect::<Vec<_>>(),
+        cards.keys().copied().collect::<Vec<_>>(),
+        "a card for every shipped Character"
+    );
+    for name in shipped {
+        let character = load_package(&name).expect("shipped packages load");
+        assert_eq!(
+            fidget_core::possession::digit_animations(&character.animations),
+            cards[name.as_str()],
+            "{name}"
+        );
+    }
+}
+
+/// Through the Engine a shipped Character is built with: digit 1 on Tuxedo
+/// Bean plays one pass of `look-around`, six frames at 3 fps, then idles.
+#[test]
+fn tuxedo_bean_plays_one_look_around_on_digit_one() {
+    let character = load_package("tuxedo-bean").expect("tuxedo-bean loads");
+    let ground = WorldSnapshot {
+        displays: vec![DISPLAY],
+        elapsed_ms: 100,
+        ..WorldSnapshot::default()
+    };
+    let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_idle_plan(character.idle_plan());
+    for _ in 0..40 {
+        engine.tick(&ground);
+    }
+    engine.set_possessed(true);
+    for _ in 0..40 {
+        engine.tick(&ground);
+    }
+
+    let pressed = engine.tick(&WorldSnapshot {
+        possession: Intent {
+            play: Some(1),
+            ..Intent::default()
+        },
+        elapsed_ms: 16,
+        ..ground.clone()
+    });
+    assert_eq!(pressed.art_name(), "look-around", "{pressed:?}");
+    assert_eq!(pressed.playing_behavior, None, "no Behavior chain follows");
+
+    let mid = engine.tick(&WorldSnapshot {
+        elapsed_ms: 1_900,
+        ..ground.clone()
+    });
+    assert_eq!(mid.art_name(), "look-around", "a pass is 2s: {mid:?}");
+    let after = engine.tick(&WorldSnapshot {
+        elapsed_ms: 200,
+        ..ground.clone()
+    });
+    assert_eq!(after.art_name(), "idle", "{after:?}");
 }

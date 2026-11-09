@@ -326,11 +326,11 @@ _Avoid_: Invoke, activate, wake
 **Possession**:
 The switch that hands a fidget to the user's keyboard. Left and Right walk it,
 Up climbs the wall it stands against, Down drops it through its Perch, Space
-makes it jump, the digits 1 to 9 play its Behaviors in name order, and Escape
-releases it. The digits play only Behaviors the package declares, each without
-its `then`. They skip one made only of walking, chasing, jumping, landing or
-holding, idling between moves included, and Behaviors that draw the same
-Animations in the same order share one digit, named `a/b`. The fidget is
+makes it jump, the digits 1 to 9 play one pass of its Animations in name
+order, and Escape releases it. A digit plays the Animation alone, never a
+Behavior or its `then`. The digits skip every Animation the controls already
+draw: idle, walk, jump, fall, land, climb, sit and hold on a Perch, grab under
+the mouse, and possessed, plus their variants and left strips. The fidget is
 possessed, the way a ghost possesses a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
