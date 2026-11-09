@@ -827,7 +827,7 @@ mod tests {
     /// A walk cycle's frames, each kept as its own shape: one used again stays,
     /// and the least recently used one is handed back to be freed.
     #[test]
-    fn a_window_keeps_its_recent_shapes_and_frees_the_oldest() {
+    fn a_character_keeps_its_recent_shapes_and_frees_the_oldest() {
         let frame = |n: i32| vec![[0, 0, 10 + n, 10]];
         let mut shapes = RegionShapes::default();
         for n in 0..RegionShapes::<i32>::KEPT as i32 {
@@ -841,7 +841,6 @@ mod tests {
         assert_eq!(shapes.get(&frame(100)), Some(100));
     }
 
-    /// A cleared region or a destroyed window frees every region it kept.
     #[test]
     fn clearing_hands_back_every_kept_region() {
         let mut shapes = RegionShapes::default();

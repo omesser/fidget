@@ -129,9 +129,10 @@ struct KeptRgn(HRGN);
 // region is used only under REGION_SHAPES' lock, and freed once removed.
 unsafe impl Send for KeptRgn {}
 
-/// Each Character's recently built regions at the origin, by overlay label.
+/// One overlay's Characters, each with its recently built regions at the origin.
 type OverlayShapes = HashMap<InstanceId, RegionShapes<KeptRgn>>;
 
+/// Keyed by overlay label.
 static REGION_SHAPES: LazyLock<Mutex<HashMap<String, OverlayShapes>>> =
     LazyLock::new(Default::default);
 
@@ -451,6 +452,7 @@ fn add_art(
         };
         add_at(window, kept, placed.at)?;
     }
+    // With no art the whole region came from build_region; nothing was reused.
     if art.iter().all(|sprite| sprite.rects.is_empty()) {
         work = RegionWork::Rebuilt;
     }

@@ -1,6 +1,6 @@
 # Windows Region Shape Reuse
 
-Before and after numbers for [#1526](https://github.com/omesser/fidget/issues/1526). Each Character on an overlay keeps its recent region shapes. When a Character's art this frame has the same shape as one it built before, that region is added to the window region at the art's new spot instead of being built rect by rect. Anchored to `e2a1c745` (main, before) and the #1526 branch on top of it (after, measured at `7c9c608e` and `0d17c6fc`). The method and the pre-change baseline are in [`mask-rebuild-baseline-windows.md`](./mask-rebuild-baseline-windows.md).
+Before and after numbers for [#1526](https://github.com/omesser/fidget/issues/1526). Each Character on an overlay keeps its recent region shapes. When a Character's art this frame has the same shape as one it built before, that region is added to the window region at the art's new spot instead of being built rect by rect. Anchored to `e2a1c745` (main, before) and the branch of [#2161](https://github.com/omesser/fidget/pull/2161) on top of it (after, measured at `7c9c608e` and `0d17c6fc`, which the squash merge leaves off `main`). The method and the pre-change baseline are in [`mask-rebuild-baseline-windows.md`](./mask-rebuild-baseline-windows.md).
 
 ## Environment
 
