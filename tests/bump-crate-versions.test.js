@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { tempDir } from "./temp-path.js";
 
 const script = join(import.meta.dirname, "..", "scripts", "bump-crate-versions.sh");
-const skip = spawnSync("cargo", ["--version"]).status === 0 ? false : "cargo is not installed";
+// Probed outside the repository, where the fixtures run: inside it,
+// rust-toolchain.toml finds a toolchain the fixtures wouldn't have.
+const skip = spawnSync("cargo", ["--version"], { cwd: tmpdir() }).status === 0 ? false : "cargo is not usable";
 
 // No dependencies, so cargo never reaches for the registry. The metadata table
 // is a `version` key the bump has to leave alone.
