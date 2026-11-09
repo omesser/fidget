@@ -72,8 +72,8 @@ that adding a character is drawing, not programming.
    not vanish when I switch context.
 5. As a user, I want the character never to steal keyboard focus, so that it cannot interrupt
    what I am typing.
-6. As a user, I want Fidget in my Dock and application switcher, so that I can find it
-   when the menu bar is crowded.
+6. As a user, I want Fidget in my Dock or taskbar and application switcher, so that I can
+   find it when the menu bar is crowded.
 7. As a user, I want Fidget to launch at login if I choose, so that the character is simply
    always there.
 8. As a user, I want a tray or menu bar icon, so that I can reach settings and quit
