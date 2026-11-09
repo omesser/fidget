@@ -206,49 +206,11 @@ frames = [
 ]
 fps = 3
 
-# Row 6 falls asleep and wakes up. Hold the closed-eye poses for 8 of 9.5 seconds.
+# Sleep loops while the duck is asleep, so it holds the two closed-eye poses
+# from row 6, a second each. The row's doze-in and wake-up poses open its eyes.
 [animations.sleep]
-frames = [
-  "frames/doze-0.png",
-  "frames/doze-1.png",
-  "frames/doze-2.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-5.png",
-  "frames/doze-6.png",
-  "frames/doze-7.png",
-]
-fps = 4
+frames = ["frames/doze-3.png", "frames/doze-4.png"]
+fps = 1
 
 # Listening outweighs interruptions; a walk waits for a pause in typing.
 [behaviors.listen]

@@ -470,8 +470,8 @@ fn rubber_duck_plays_thinking_and_looking_as_idle_gestures() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");
     assert_eq!(
         character.art.len(),
-        74,
-        "all drawn source cells are available"
+        68,
+        "all drawn source cells are available, less the doze-in and wake-up"
     );
     assert_eq!(character.animations["idle"].frames.len(), 7);
 
@@ -793,21 +793,20 @@ fn rubber_duck_uses_its_drawn_left_walk() {
     assert_eq!(character.animations["walk-left"].frames.len(), 8);
 }
 
+/// Sleep loops for as long as the duck is asleep, so every pass stays on the
+/// closed-eye poses and comes around in a couple of seconds, like the other
+/// two-pose sleeps. The doze-in and wake-up rows would open its eyes each pass.
 #[test]
-fn rubber_duck_dozes_most_of_the_way_through_its_sleep_cycle() {
+fn rubber_duck_sleeps_on_a_short_closed_eye_loop() {
     let character = load_package("rubber-duck").expect("Rubber Duck package is valid");
     let sleep = &character.animations["sleep"];
     assert!(sleep.looping);
-    assert_eq!(sleep.frames.iter().collect::<BTreeSet<_>>().len(), 8);
-    let closed = sleep
-        .frames
-        .iter()
-        .filter(|frame| matches!(frame.as_str(), "frames/doze-3.png" | "frames/doze-4.png"))
-        .count();
-    assert!(
-        closed * 5 >= sleep.frames.len() * 4,
-        "at least 80% of sleep stays on the closed-eye poses"
+    assert_eq!(
+        sleep.frames,
+        ["frames/doze-3.png", "frames/doze-4.png"],
+        "only the closed-eye poses"
     );
+    assert_eq!(sleep.fps, 1, "one second on each pose, a two-second loop");
 }
 
 /// One canvas for the package, silhouette heavy beside Jotaro's 110px
