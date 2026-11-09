@@ -656,9 +656,9 @@ The push needs the `BUTLER_API_KEY` repo secret, an API key from [itch.io's API 
 
 To push a tag that is already published, dispatch the itch.io workflow with that tag, for example `v0.6.3`. A failure there shows red.
 
-## Crate versions
+## Crate Versions
 
-After a stable Release builds, the Release workflow runs `scripts/bump-crate-versions.sh` with its tag and opens or updates the `crate-version-bump` pull request, which moves `[workspace.package] version` and `Cargo.lock` up to that tag. A tag that doesn't move the crates forward opens nothing. A prerelease doesn't run the job. The bump lands after the Release is built, so that Release's own binaries were compiled with the previous version.
+After a stable Release builds, the Release workflow runs `scripts/bump-crate-versions.sh` with its tag and opens or updates a `crate-version-bump/<branch>` pull request against the branch the Release targets, which sets `[workspace.package] version` and `Cargo.lock` to that tag. A tag the crates already carry opens nothing. The job fails if the tag isn't on the branch the Release targets, so set the target when you publish from another branch. A prerelease doesn't run the job. The bump lands after the Release is built, so that Release's own binaries were compiled with the previous version.
 
 ## Release Notes
 
