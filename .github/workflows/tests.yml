@@ -266,7 +266,7 @@ jobs:
   # plays its output. It skips a pull request that misses the list below, which
   # holds the modules `character` and `engine` import directly. A push runs it.
   character-importer:
-    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    if: github.event.action != 'labeled'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
