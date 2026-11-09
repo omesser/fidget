@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version-override:
-        description: 'Stamp this version on the bundles. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
+        description: 'Stamp this version on the bundles and binaries. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
         type: string
         required: false
         default: ''
@@ -147,6 +147,14 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 'lts/*'
+
+      - name: Stamp the crates
+        # CARGO_PKG_VERSION compiles into the ACP client info and MCP
+        # serverInfo, and --config below reaches only the bundle.
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: scripts/bump-crate-versions.sh "v$VERSION"
 
       - name: Build the packages
         # Empty release inputs tell the action there is no Release to attach

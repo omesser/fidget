@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Set the workspace's crate version to a stable Release tag's, and the lockfile
-# with it. Run from the repository root.
+# Set the workspace's crate version to a tag's, and the lockfile with it. Run
+# from the repository root.
 
 set -euo pipefail
 
 tag="${1:-}"
-[[ $tag =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
-  echo "usage: scripts/bump-crate-versions.sh <stable tag, such as v1.2.3>" >&2
+[[ $tag =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] || {
+  echo "usage: scripts/bump-crate-versions.sh <tag, such as v1.2.3 or v1.2.3-dev.gabc1234>" >&2
   exit 2
 }
 version="${tag#v}"
+
+# A Windows checkout can be CRLF, which the line matches below would miss.
+tr -d '\r' < Cargo.toml > Cargo.toml.lf
+mv Cargo.toml.lf Cargo.toml
 
 current="$(awk -F'"' '
   /^\[/ { in_package = ($0 == "[workspace.package]") }

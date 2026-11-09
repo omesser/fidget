@@ -58,6 +58,22 @@ test("an older tag sets the crates to that tag", { skip }, (t) => {
   assert.match(lock(dir), /name = "member"\nversion = "0\.6\.4"\n/);
 });
 
+test("a dev build's version reaches the workspace and its lockfile", { skip }, (t) => {
+  const dir = workspace(t, "0.8.0");
+  const run = bump(dir, "v0.8.0-dev.gabc1234");
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(manifest(dir), /\[workspace\.package\]\nversion = "0\.8\.0-dev\.gabc1234"\n/);
+  assert.match(lock(dir), /name = "member"\nversion = "0\.8\.0-dev\.gabc1234"\n/);
+});
+
+test("a CRLF manifest, as a Windows checkout can have, still moves", { skip }, (t) => {
+  const dir = workspace(t, "0.7.0");
+  writeFileSync(join(dir, "Cargo.toml"), manifest(dir).replaceAll("\n", "\r\n"));
+  const run = bump(dir, "v0.8.0");
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(lock(dir), /name = "member"\nversion = "0\.8\.0"\n/);
+});
+
 test("the tag the crates already carry changes nothing", { skip }, (t) => {
   const dir = workspace(t, "0.7.0");
   const before = [manifest(dir), lock(dir)];
@@ -66,8 +82,8 @@ test("the tag the crates already carry changes nothing", { skip }, (t) => {
   assert.deepEqual([manifest(dir), lock(dir)], before);
 });
 
-for (const tag of ["", "0.8.0", "v0.8.0-rc.1", "0.8", "nightly"]) {
-  test(`'${tag}' is refused as a stable Release tag`, { skip }, (t) => {
+for (const tag of ["", "0.8.0", "0.8", "nightly"]) {
+  test(`'${tag}' is refused as a Release tag`, { skip }, (t) => {
     const dir = workspace(t, "0.7.0");
     const before = manifest(dir);
     assert.equal(bump(dir, tag).status, 2);
