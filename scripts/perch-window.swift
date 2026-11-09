@@ -18,7 +18,8 @@ let flingPoints = stepPoints * Double(steps)
 
 /// How often the prop re-asserts its place at the front of its level: anything
 /// that takes focus buries it, and the sprite falls through a buried prop.
-/// Faster than the app's ~10Hz window poll, so a burial never survives a tick.
+/// Faster than the app's ~10Hz window poll, which shortens a burial, but a
+/// poll that lands inside one still drops the sprite.
 let reassertInterval = 0.05
 
 let glidePoints = 200.0
