@@ -195,7 +195,7 @@ jobs:
   # Own job: no node test depends on the OS, and only Ubuntu ships the Chrome the
   # headless renderer tests drive. Without Rust or apt it finishes beside `checks`.
   # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
-  renderer:
+  node-tests:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -252,17 +252,77 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: time google-chrome --headless=new --disable-gpu --no-sandbox --dump-dom about:blank > /dev/null
 
-      - name: Importer self-test
+      - name: Install Pillow
         if: steps.changes.outputs.code == 'true'
-        # Pillow also supports the renderer's GIF and app-icon checks below.
-        run: |
-          pip install -r scripts/requirements-import.txt
-          python scripts/import-pet.py --self-test
+        # The GIF and app-icon checks in the node tests read images with it.
+        run: pip install -r scripts/requirements-import.txt
 
-      - name: Renderer tests
+      - name: Node tests
         if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
+
+  # Own job: the self-test only reads the importer and what loads and plays its
+  # output. The rest of fidget-core can't change its result short of not
+  # compiling, which `checks` catches.
+  character-importer:
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Find what this run changed
+        id: changed
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files: |
+            scripts/import-pet.py
+            scripts/requirements-import.txt
+            crates/core/examples/validate.rs
+            crates/core/src/character.rs
+            crates/core/src/character/**
+            crates/core/src/engine.rs
+            crates/core/src/engine/**
+            crates/core/Cargo.toml
+            Cargo.toml
+            Cargo.lock
+            rust-toolchain.toml
+            .github/workflows/tests.yml
+
+      - name: Decide whether this run should test
+        id: gate
+        # Fails open: only a pull request that matched no listed file skips. A
+        # broken changed-files step, a dispatch or a push runs in full.
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          run_tests=true
+          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
+            [ "$EVENT" = pull_request ]; then
+            run_tests=false
+          fi
+          echo "run tests: $run_tests"
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.gate.outputs.run_tests == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Importer self-test
+        if: steps.gate.outputs.run_tests == 'true'
+        run: |
+          pip install -r scripts/requirements-import.txt
+          python scripts/import-pet.py --self-test
 
   # Own job: Windows cannot run the shellcheck/apt path `checks` uses.
   # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
