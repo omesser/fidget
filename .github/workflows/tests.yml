@@ -262,9 +262,9 @@ jobs:
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
 
-  # Own job: the self-test reads only the importer and the Rust that loads and
-  # plays its output. It skips a pull request that misses the list below, which
-  # holds the modules `character` and `engine` import directly. A push runs it.
+  # Own job: the self-test reads only the importer and the fidget-core that loads
+  # and plays its output. It skips a pull request that misses the list below.
+  # A push runs it.
   character-importer:
     if: github.event.action != 'labeled'
     runs-on: ubuntu-latest
@@ -284,20 +284,7 @@ jobs:
           files: |
             scripts/import-pet.py
             scripts/requirements-import.txt
-            crates/core/examples/validate.rs
-            crates/core/src/lib.rs
-            crates/core/src/character.rs
-            crates/core/src/character/**
-            crates/core/src/engine.rs
-            crates/core/src/engine/**
-            crates/core/src/director.rs
-            crates/core/src/director/**
-            crates/core/src/overlay.rs
-            crates/core/src/possession.rs
-            crates/core/src/turn_motion.rs
-            crates/core/src/visibility.rs
-            crates/core/src/window_source.rs
-            crates/core/Cargo.toml
+            crates/core/**
             Cargo.toml
             Cargo.lock
             rust-toolchain.toml
