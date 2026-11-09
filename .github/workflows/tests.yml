@@ -193,7 +193,7 @@ jobs:
           RUNNER_OS: ${{ runner.os }}
 
   # Own job: no node test depends on the OS, and only Ubuntu ships the Chrome the
-  # headless renderer tests drive. Without Rust or apt it finishes beside `checks`.
+  # headless renderer tests drive. No Rust or apt, so it finishes beside `checks`.
   # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
   node-tests:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
@@ -285,6 +285,7 @@ jobs:
             scripts/import-pet.py
             scripts/requirements-import.txt
             crates/core/examples/validate.rs
+            crates/core/src/lib.rs
             crates/core/src/character.rs
             crates/core/src/character/**
             crates/core/src/engine.rs
