@@ -262,9 +262,9 @@ jobs:
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
 
-  # Own job: the self-test only reads the importer and what loads and plays its
-  # output. The rest of fidget-core can't change its result short of not
-  # compiling, which `checks` catches.
+  # Own job: the self-test reads only the importer and the Rust that loads and
+  # plays its output. It skips a pull request that misses the list below, which
+  # holds the modules `character` and `engine` import directly. A push runs it.
   character-importer:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     runs-on: ubuntu-latest
@@ -289,6 +289,13 @@ jobs:
             crates/core/src/character/**
             crates/core/src/engine.rs
             crates/core/src/engine/**
+            crates/core/src/director.rs
+            crates/core/src/director/**
+            crates/core/src/overlay.rs
+            crates/core/src/possession.rs
+            crates/core/src/turn_motion.rs
+            crates/core/src/visibility.rs
+            crates/core/src/window_source.rs
             crates/core/Cargo.toml
             Cargo.toml
             Cargo.lock
