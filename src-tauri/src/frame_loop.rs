@@ -78,7 +78,7 @@ type MaskParams = (Vec<SpriteMaskParams>, Vec<[i32; 4]>);
 
 /// One Windows overlay's last applied region: each sprite's swept ink and the
 /// rects the renderer draws outside it. The region is what gets compared, so a
-/// trail that settles after a walk still rebuilds it.
+/// trail that settles after a walk still updates it.
 #[cfg(not(unix))]
 type RegionParams = (
     Vec<fidget_core::overlay_region::SpriteArt>,

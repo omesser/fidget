@@ -328,9 +328,9 @@ fn extend_dwm_frame(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// `art` is `[left, top, right, bottom]` from `AlphaMask::swept_rects`, swept
-/// over every draw position with drawn-only rects in it, since the region also
-/// clips drawing. bRedraw=1: with 0 it races an earlier SetWindowPos.
+/// `art` is each Character's rects, swept over every draw position with
+/// drawn-only rects in them, since the region also clips drawing. bRedraw=1:
+/// with 0 it races an earlier SetWindowPos.
 fn apply_input_mask(
     window: &tauri::WebviewWindow,
     hwnd: HWND,
@@ -399,8 +399,7 @@ enum RegionWork {
 }
 
 /// A region for SetWindowRgn holding every Character's art and `bounds`.
-/// A Character whose shape is kept has that region moved into place instead
-/// of rebuilt. Characters no longer on this overlay have theirs freed.
+/// Characters no longer on this overlay have their kept regions freed.
 fn window_region(
     label: &str,
     art: &[SpriteArt],
@@ -417,6 +416,23 @@ fn window_region(
     });
 
     let window = build_region(bounds)?;
+    match add_art(window, overlay, art) {
+        Ok(work) => Ok((window, work)),
+        Err(e) => {
+            // SAFETY: window was built above and is held only here.
+            unsafe { DeleteObject(window) };
+            Err(e)
+        }
+    }
+}
+
+/// Union every Character's art into `window`. A Character whose shape is kept
+/// reuses that region instead of building it from rects.
+fn add_art(
+    window: HRGN,
+    overlay: &mut OverlayShapes,
+    art: &[SpriteArt],
+) -> Result<RegionWork, String> {
     let mut work = RegionWork::Shifted;
     for sprite in art.iter().filter(|sprite| !sprite.rects.is_empty()) {
         let placed = placed_shape(&sprite.rects);
@@ -424,10 +440,7 @@ fn window_region(
         let kept = match shapes.get(&placed.shape) {
             Some(KeptRgn(kept)) => kept,
             None => {
-                let built = build_region(&placed.shape).inspect_err(|_| {
-                    // SAFETY: window was built above and is held only here.
-                    unsafe { DeleteObject(window) };
-                })?;
+                let built = build_region(&placed.shape)?;
                 if let Some(KeptRgn(oldest)) = shapes.keep(placed.shape, KeptRgn(built)) {
                     // SAFETY: an evicted region is no longer kept or held anywhere.
                     unsafe { DeleteObject(oldest) };
@@ -436,15 +449,12 @@ fn window_region(
                 built
             }
         };
-        add_at(window, kept, placed.at).inspect_err(|_| {
-            // SAFETY: window was built above and is held only here.
-            unsafe { DeleteObject(window) };
-        })?;
+        add_at(window, kept, placed.at)?;
     }
     if art.iter().all(|sprite| sprite.rects.is_empty()) {
         work = RegionWork::Rebuilt;
     }
-    Ok((window, work))
+    Ok(work)
 }
 
 /// Union `kept`, as if moved to `(x, y)`, into `window`. `window` moves to
