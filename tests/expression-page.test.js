@@ -69,8 +69,8 @@ test("the published page loads bubble.js and calls its machine", (t) => {
   const css = readFileSync(join(outDir, "bubble.css"), "utf8");
   assert.match(
     css,
-    /--shared-panel:\s*#14171e/,
-    "the published page must resolve the shared snippet, not leave --shared-* unset",
+    /--bubble-panel:\s*#14171e/,
+    "the published page must resolve the bubble tokens, not leave --bubble-* unset",
   );
   assert.match(css, /\.bubble\.visible/);
   assert.match(css, /\[data-mode="speech"\]/);

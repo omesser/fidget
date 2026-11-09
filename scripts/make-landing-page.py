@@ -121,7 +121,9 @@ ENGINE = {"engine.rs": ROOT / "crates" / "core" / "src" / "engine.rs",
           "main.rs": ROOT / "src-tauri" / "src" / "main.rs"}
 CUES = ROOT / "src" / "main.css"
 CHAT_UI = ROOT / "src" / "chat-ui.css"
-CHAT_SHARED = ROOT / "src" / "chat-shared.css"
+# The design token blocks chat-ui.css imports, read ahead of it as the browser does.
+UI_TOKENS = ROOT / "src" / "ui-tokens.css"
+BUBBLE_TOKENS = ROOT / "src" / "bubble-tokens.css"
 # The Chat UI rules the playground's chat mock wears.
 CHAT_RULES = (".log", ".empty", ".empty > div", ".empty p", ".empty p b", ".composer", ".composer textarea",
               ".composer textarea::placeholder", ".composer textarea:disabled", ".composer button",
@@ -705,10 +707,10 @@ def cue_css(css):
     return "\n".join(kept) + "\n"
 
 
-def lift(css, shared, scope, wanted, prefix=""):
-    """`shared`'s :root tokens scoped to `scope`, the `wanted` selectors of each
-    rule in `css` behind `prefix`, and the wanted selectors no rule has."""
-    tokens = [f"{scope} {{{body}}}" for prelude, body in top_level_rules(shared) if prelude == ":root"]
+def lift(css, bubble_tokens, scope, wanted, prefix=""):
+    """`bubble_tokens`' :root tokens scoped to `scope`, the `wanted` selectors
+    of each rule in `css` behind `prefix`, and the wanted selectors no rule has."""
+    tokens = [f"{scope} {{{body}}}" for prelude, body in top_level_rules(bubble_tokens) if prelude == ":root"]
     kept, found = [], set()
     for prelude, body in top_level_rules(css):
         selectors = [part.strip() for part in prelude.split(",") if part.strip() in wanted]
@@ -718,26 +720,26 @@ def lift(css, shared, scope, wanted, prefix=""):
     return tokens, kept, [rule for rule in wanted if rule not in found]
 
 
-def chat_css(css, shared, wanted=CHAT_RULES):
+def chat_css(css, bubble_tokens, wanted=CHAT_RULES):
     """The minimal Chat UI's own tokens and the `wanted` rules from
     src/chat-ui.css, scoped to `.play-chat-ui`, so the chat mock is the app's
     Chat as the pill is its quick message. Scoped because chat-ui.css styles a
     whole window: its `.bar` alone would restyle every title bar on the desk."""
     theme = [f".play-chat-ui {{{body}}}" for prelude, body in top_level_rules(css) if prelude == ".chat-ui-minimal"]
     if not theme:
-        # Without it every --chat-* token is unset and the mock draws transparent.
+        # Without it every --ui-* token is unset and the mock draws transparent.
         raise Malformed(f"{CHAT_UI.name} holds no .chat-ui-minimal block for the chat mock's colours")
-    tokens, kept, missing = lift(css, shared, ".play-chat-ui", wanted, ".play-chat-ui ")
+    tokens, kept, missing = lift(css, bubble_tokens, ".play-chat-ui", wanted, ".play-chat-ui ")
     if missing:
         raise Malformed(f"{CHAT_UI.name} holds no {', '.join(missing)} rule for the chat mock")
     return "\n".join(tokens + theme + kept) + "\n"
 
 
-def bubble_css(css, shared, wanted=BUBBLE_RULES):
+def bubble_css(css, bubble_tokens, wanted=BUBBLE_RULES):
     """The overlay's speech bubble from src/main.css, so the page character
-    speaks in the app's own bubble. The shared tokens it reads are scoped to
+    speaks in the app's own bubble. The bubble tokens it reads are scoped to
     `.bubble`, as the chat mock's are to `.play-chat-ui`."""
-    tokens, kept, missing = lift(css, shared, ".bubble", wanted)
+    tokens, kept, missing = lift(css, bubble_tokens, ".bubble", wanted)
     if missing:
         raise Malformed(f"{CUES.name} holds no {', '.join(missing)} rule for the page character's bubble")
     return "\n".join(tokens + kept) + "\n"
@@ -980,8 +982,9 @@ def render(readme_text, characters_root, rust_source, shell, release=None, engin
                        ' id="hero-sprite" aria-describedby="hero-say"'),
         **how_slots(words["how"], shell),
         "cue_css": cue_css(CUES.read_text(encoding="utf-8")),
-        "bubble_css": bubble_css(CUES.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
-        "chat_css": chat_css(CHAT_UI.read_text(encoding="utf-8"), CHAT_SHARED.read_text(encoding="utf-8")),
+        "bubble_css": bubble_css(CUES.read_text(encoding="utf-8"), BUBBLE_TOKENS.read_text(encoding="utf-8")),
+        "chat_css": chat_css(UI_TOKENS.read_text(encoding="utf-8") + CHAT_UI.read_text(encoding="utf-8"),
+                             BUBBLE_TOKENS.read_text(encoding="utf-8")),
         "play_tiles": play_tiles(characters_root, defaults["fps"]),
         # The scenes name shipped Characters, so they check against characters/
         # even when a fixture cast fills the rest of the page.
@@ -1257,9 +1260,9 @@ def self_check():
         assert "cat: declares no fall" in (fails(readme, scratch) or ""), "a tile with no art built a page"
 
     assert bubble_css(".bubble { color: red; }\n.bubble.visible, .cue { opacity: 1; }\n.bubble-content { a: b; }\n",
-                      ":root { --shared-ink: #fff; }\n", wanted=(".bubble", ".bubble-content")) == (
-        ".bubble { --shared-ink: #fff; }\n.bubble { color: red; }\n.bubble-content { a: b; }\n"), \
-        "the bubble lifted a selector it does not want, or lost its shared tokens"
+                      ":root { --bubble-ink: #fff; }\n", wanted=(".bubble", ".bubble-content")) == (
+        ".bubble { --bubble-ink: #fff; }\n.bubble { color: red; }\n.bubble-content { a: b; }\n"), \
+        "the bubble lifted a selector it does not want, or lost its bubble tokens"
     try:
         bubble_css(".bubble { color: red; }", "")
     except Malformed:
@@ -1277,20 +1280,20 @@ def self_check():
     else:
         raise AssertionError("a stylesheet with no cue rules gave the desk no cues and passed")
 
-    sample = (".chat-ui-minimal { --chat-panel: var(--shared-panel); }\n.bar { height: 9px; }\n"
+    sample = (".chat-ui-minimal { --ui-panel: var(--bubble-panel); }\n.bar { height: 9px; }\n"
               ".composer textarea,\n.composer button { flex: 1; }\n.composer textarea:focus-visible { outline: 0; }\n")
-    assert chat_css(sample, ":root { --shared-panel: #14171e; }\n", wanted=(".composer textarea",)) == (
-        ".play-chat-ui { --shared-panel: #14171e; }\n.play-chat-ui { --chat-panel: var(--shared-panel); }\n"
+    assert chat_css(sample, ":root { --bubble-panel: #14171e; }\n", wanted=(".composer textarea",)) == (
+        ".play-chat-ui { --bubble-panel: #14171e; }\n.play-chat-ui { --ui-panel: var(--bubble-panel); }\n"
         ".play-chat-ui .composer textarea { flex: 1; }\n"), \
         "the chat mock lifted a rule it does not use, or did not scope one it does"
     try:
-        chat_css(sample, ":root { --shared-panel: #14171e; }\n", wanted=(".composer textarea", ".said"))
+        chat_css(sample, ":root { --bubble-panel: #14171e; }\n", wanted=(".composer textarea", ".said"))
     except Malformed as err:
         assert ".said" in str(err)
     else:
         raise AssertionError("a Chat UI with no .said rule gave the chat mock no bubble and passed")
     try:
-        chat_css(sample.replace(".chat-ui-minimal", ".chat-ui-modern"), ":root { --shared-panel: #14171e; }\n",
+        chat_css(sample.replace(".chat-ui-minimal", ".chat-ui-modern"), ":root { --bubble-panel: #14171e; }\n",
                  wanted=(".composer textarea",))
     except Malformed as err:
         assert ".chat-ui-minimal" in str(err)

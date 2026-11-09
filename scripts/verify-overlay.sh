@@ -145,10 +145,6 @@ wait_for_up "$OUT/app.log" || {
 wait_for_trace 15 "$OUT/app.log" '^frame: [0-9]+ Perched' ||
   diagnose_no_frames "$OUT/app.log"
 
-# It has done its job by now: the sprite has fallen past it, and it is drawn
-# above the overlay, so leaving it up would put it over the screenshot below.
-kill "$OVER_PID" 2> /dev/null
-
 swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
   {
     echo "FAIL: inspector"
@@ -164,10 +160,15 @@ CLOSED_MS=$(now_ms)
 kill "$PERCH_PID" 2> /dev/null
 perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
 
+# The elevated prop goes now, not sooner: its exit raises the terminal over the
+# Perch, and the sprite falls through. It must go before the screenshot.
+kill "$OVER_PID" 2> /dev/null
+
 echo ""
 echo "Frame loop:"
 python3 - "$OUT" "$CLOSED_MS" << 'PY'
 import json, re, sys
+from itertools import dropwhile, takewhile
 
 out, closed_ms = sys.argv[1], int(sys.argv[2])
 
@@ -201,7 +202,13 @@ if not frames or not steps:
           else "  FAIL  the prop window reported nothing")
     sys.exit(1)
 
-descent = [f for f in frames if f[1] == "Falling"][:10]
+# The first Falling frames can sit still while the art loads. Gravity
+# starts at the first frame that moves. Only the first fall: the drop after the
+# Perch closes is another fall.
+falling = list(takewhile(lambda f: f[1] == "Falling",
+                         dropwhile(lambda f: f[1] != "Falling", frames)))
+first_move = next((i for i in range(1, len(falling)) if falling[i][3] != falling[0][3]), None)
+descent = falling[first_move:first_move + 10] if first_move is not None else falling[:10]
 check(len(descent) >= 5 and descent[-1][3] > descent[0][3] + 10,
       "the sprite falls under gravity",
       f"{descent[0][3]:.0f} -> {descent[-1][3]:.0f} over {len(descent)} frames")
@@ -377,7 +384,8 @@ check(not astray,
       ", ".join(f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})" for w in astray))
 
 ls = open(f"{out}/lsappinfo.txt").read()
-check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")
+# The Dock tile is the findable anchor, so this is a foreground app.
+check('type="Foreground"' in ls, "Dock tile: foreground app")
 
 log = open(f"{out}/app.log").read()
 check(re.search(r"^character: ", log, re.M) is not None, "app loaded a Character Package")

@@ -24,7 +24,7 @@ async function glassStyles() {
           const body = getComputedStyle(document.body);
           out[(platform || "other") + " " + palette] = {
             bodyTints: alphaValues(body.backgroundImage),
-            panel: alpha(getComputedStyle(root).getPropertyValue("--chat-panel")),
+            panel: alpha(getComputedStyle(root).getPropertyValue("--ui-panel")),
             footer: getComputedStyle(actions).backgroundColor,
             promptRadius: getComputedStyle(textarea).borderRadius,
             frozenRadius: getComputedStyle(frozen).borderRadius,

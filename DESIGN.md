@@ -345,7 +345,7 @@ additions wait for v2.
 ### 8. Always-on-top, single z-level, aggressive hiding
 
 One window level. On macOS: a non-activating panel at floating level, joining
-all Spaces, stationary, never taking focus, never in the app switcher.
+all Spaces, stationary, never taking focus, never in window cycling.
 
 "Sits on your window" needs always-on-top. "Hides behind your window" needs
 desktop level. One window cannot be both, and restacking dynamically by sprite
