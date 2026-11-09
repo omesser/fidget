@@ -279,6 +279,77 @@ jobs:
               --title "$title" --body-file /tmp/homebrew-pr.md
           fi
 
+  # A leaf after package, like itch: a failure here leaves the Release as
+  # published. Only a stable Release moves the crates.
+  crate-versions:
+    needs: package
+    if: |
+      github.event_name == 'release' &&
+      github.event.release.prerelease == false &&
+      needs.package.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      BASE: ${{ github.event.repository.default_branch }}
+      PR_BRANCH: crate-version-bump
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Bump the crates
+        id: bump
+        run: |
+          scripts/bump-crate-versions.sh "$TAG"
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the pull request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="chore: Bump the Rust crates to ${TAG}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C "$PR_BRANCH"
+          git commit -am "$title"
+          # The branch belongs to this job, so a rerun replaces it.
+          git push --force origin "HEAD:$PR_BRANCH"
+          {
+            echo '## Why'
+            echo
+            echo "The ${TAG} Release shipped, and the workspace crates still carry the previous version."
+            echo
+            echo '## How to verify'
+            echo
+            echo 'Cargo.toml and the fidget entries in Cargo.lock change, and PR Tests runs on this branch.'
+          } > /tmp/crate-versions-pr.md
+          # A merged bump keeps its branch name, so only an open one is reused.
+          open_pr="$(gh pr list --head "$PR_BRANCH" --state open --json number --jq '.[0].number // ""')"
+          if [ -n "$open_pr" ]; then
+            gh pr edit "$open_pr" --title "$title" --body-file /tmp/crate-versions-pr.md
+          else
+            gh pr create --base "$BASE" --head "$PR_BRANCH" --label maintenance \
+              --title "$title" --body-file /tmp/crate-versions-pr.md
+          fi
+          # A pull request opened with this token starts no workflow. A dispatch
+          # does, and tests.yml runs in full for one.
+          gh workflow run tests.yml --ref "$PR_BRANCH"
+
   # A leaf after package: no job needs it, and it never touches the Release, so
   # an itch failure leaves the Release as published. A `uses:` job cannot take
   # continue-on-error; itch.yml's job carries it for Release runs.
