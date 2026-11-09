@@ -262,9 +262,9 @@ jobs:
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
 
-  # Own job: the self-test reads only the importer and the fidget-core that loads
-  # and plays its output. It skips a pull request that misses the list below.
-  # A push runs it.
+  # Own job: the importer must keep writing what Fidget loads and plays. The list
+  # holds everything that defines that format, code or not, so a manifest or
+  # Animation change runs this. Other pull requests skip it. A push runs it.
   character-importer:
     if: github.event.action != 'labeled'
     runs-on: ubuntu-latest
@@ -285,6 +285,9 @@ jobs:
             scripts/import-pet.py
             scripts/requirements-import.txt
             crates/core/**
+            characters/**/character.manifest
+            scripts/make-*-characters.py
+            src-tauri/src/package.rs
             Cargo.toml
             Cargo.lock
             rust-toolchain.toml
