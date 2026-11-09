@@ -58,7 +58,7 @@ function Fail([string]$Message) {
 }
 
 # Patterns for FIDGET_TRACE_BUBBLE=1 stderr output
-$regionPattern = '^(?:\d+ )?overlay (\S+): region rebuild (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
+$regionPattern = '^(?:\d+ )?overlay (\S+): region (?:rebuild|shift) (\d+) rects \(art \d+ \+ hotspots \d+ \+ painted (\d+)\)'
 $followPattern = '^(?:\d+ )?overlay (\S+): pill follows instance=(\S+) chars=(\d+) focused=(\S+)'
 $bubbleShowPattern = '^(?:\d+ )?overlay (\S+): (?:showSpeech|showThinking)'
 $bubbleHidePattern = '^(?:\d+ )?overlay (\S+): (?:hideSpeech|hideThinking)'
@@ -96,7 +96,7 @@ function Check-Trace([string]$File) {
     }
 
     if (-not $sawRegionWithPainted) {
-        Fail "no region rebuild with painted rects (bubble body not in Windows region)"
+        Fail "no region with painted rects (bubble body not in Windows region)"
     }
     if (-not $paintedWhileVisible) {
         Fail "painted rects not included while bubble visible"
@@ -300,7 +300,7 @@ try {
     if (-not (Wait-Until 3 { Get-SpriteAtRest $log })) { Fail "the sprite never came to rest within 3 s of landing; see $log" }
 
     Drive-PillAcrossSeam
-    # The region rebuild that clears the painted rects follows the hide.
+    # The region that clears the painted rects follows the hide.
     $null = Wait-ForTrace 3 $traceFile $bubbleHidePattern
 } finally {
     Stop-FidgetTree $script:proc $null

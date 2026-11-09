@@ -76,11 +76,14 @@ type SpriteMaskParams = (Vec<bool>, i32, i32, bool, i32);
 #[cfg(any(test, all(unix, not(target_os = "macos"))))]
 type MaskParams = (Vec<SpriteMaskParams>, Vec<[i32; 4]>);
 
-/// One Windows overlay's last applied region: the sprite's swept ink and the
+/// One Windows overlay's last applied region: each sprite's swept ink and the
 /// rects the renderer draws outside it. The region is what gets compared, so a
-/// trail that settles after a walk still rebuilds it.
+/// trail that settles after a walk still updates it.
 #[cfg(not(unix))]
-type RegionParams = (Vec<[i32; 4]>, Vec<fidget_core::overlay_region::OverlayRect>);
+type RegionParams = (
+    Vec<fidget_core::overlay_region::SpriteArt>,
+    Vec<fidget_core::overlay_region::OverlayRect>,
+);
 
 /// Every Character whose sprite reaches into `display`'s overlay, in placement
 /// order: the X11 input mask and the Windows region hold them all.
@@ -116,13 +119,13 @@ enum RegionAction {
 /// passes clicks, and one already doing so needs no call.
 #[cfg(any(test, not(unix)))]
 fn decide_region_action(
-    sprite: &[[i32; 4]],
+    art: &[fidget_core::overlay_region::SpriteArt],
     rects: &[fidget_core::overlay_region::OverlayRect],
     ignore: bool,
 ) -> RegionAction {
     use fidget_core::overlay_region::{region_plan, RegionPlan};
 
-    if region_plan(sprite, rects) != RegionPlan::Clear {
+    if region_plan(art.iter().flat_map(|sprite| &sprite.rects), rects) != RegionPlan::Clear {
         RegionAction::ApplyMask
     } else if ignore {
         RegionAction::Nothing
@@ -3004,18 +3007,22 @@ pub(crate) fn run_frame_loop(
                 {
                     if presence.visible {
                         // No sprite here can still leave a bubble straddling the seam.
-                        let art: Vec<[i32; 4]> = characters_on_display(&placed, *display)
-                            .into_iter()
-                            .flat_map(|instance| {
-                                let local = instance.sprite.in_overlay(*display);
-                                let offset =
-                                    (local.x - instance.sprite.x, local.y - instance.sprite.y);
-                                trails
-                                    .get(&instance.id)
-                                    .map(|trail| trail.clip_rects(offset))
-                                    .unwrap_or_default()
-                            })
-                            .collect();
+                        let art: Vec<fidget_core::overlay_region::SpriteArt> =
+                            characters_on_display(&placed, *display)
+                                .into_iter()
+                                .map(|instance| {
+                                    let local = instance.sprite.in_overlay(*display);
+                                    let offset =
+                                        (local.x - instance.sprite.x, local.y - instance.sprite.y);
+                                    fidget_core::overlay_region::SpriteArt {
+                                        instance: instance.id.clone(),
+                                        rects: trails
+                                            .get(&instance.id)
+                                            .map(|trail| trail.clip_rects(offset))
+                                            .unwrap_or_default(),
+                                    }
+                                })
+                                .collect();
                         // A bubble rides with its sprite, so it is kept over the
                         // same trail the sprite's ink is swept over.
                         let rects = fidget_core::overlay_region::follow_placements(

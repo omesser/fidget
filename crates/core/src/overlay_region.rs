@@ -5,6 +5,7 @@
 use serde::Deserialize;
 
 use crate::overlay::DrawTrail;
+use crate::roster::InstanceId;
 
 /// Rectangle in overlay coordinates: `[left, top, right, bottom]`.
 pub type RegionRect = [i32; 4];
@@ -83,14 +84,33 @@ pub enum RegionPlan {
     Apply(Vec<RegionRect>),
 }
 
-/// Clears only when there is nothing at all to keep: no sprite and no rect.
-/// `trail` is already `[left, top, right, bottom]`.
-pub fn region_plan(trail: &[[i32; 4]], rects: &[OverlayRect]) -> RegionPlan {
-    let bounds = rects.iter().map(|OverlayRect { rect, .. }| {
+/// One Character's swept art on an overlay, kept apart from the others' so
+/// each Character's region shape is its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpriteArt {
+    pub instance: InstanceId,
+    pub rects: Vec<RegionRect>,
+}
+
+/// Each rect's `[left, top, right, bottom]`.
+pub fn rect_bounds(rects: &[OverlayRect]) -> impl Iterator<Item = RegionRect> + '_ {
+    rects.iter().map(|OverlayRect { rect, .. }| {
         let [x, y, width, height] = *rect;
         [x, y, x + width, y + height]
-    });
-    let region: Vec<RegionRect> = trail.iter().copied().chain(bounds).collect();
+    })
+}
+
+/// Clears only when there is nothing at all to keep: no sprite and no rect.
+/// `trail` is already `[left, top, right, bottom]`.
+pub fn region_plan<'a>(
+    trail: impl IntoIterator<Item = &'a RegionRect>,
+    rects: &[OverlayRect],
+) -> RegionPlan {
+    let region: Vec<RegionRect> = trail
+        .into_iter()
+        .copied()
+        .chain(rect_bounds(rects))
+        .collect();
     if region.is_empty() {
         RegionPlan::Clear
     } else {
@@ -224,6 +244,68 @@ pub fn characters_on_overlay<Character>(
             x + width > 0 && x < overlay_width && y + height > 0 && y < overlay_height
         })
         .collect()
+}
+
+/// A region's rects moved so their bounds start at the origin, and where
+/// they started. Two regions with the same shape differ only in position.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PlacedShape {
+    pub shape: Vec<RegionRect>,
+    pub at: (i32, i32),
+}
+
+/// `rects` as a shape at the origin, and where its bounds' top-left was.
+pub fn placed_shape(rects: &[RegionRect]) -> PlacedShape {
+    let left = rects.iter().map(|rect| rect[0]).min().unwrap_or(0);
+    let top = rects.iter().map(|rect| rect[1]).min().unwrap_or(0);
+    PlacedShape {
+        shape: rects
+            .iter()
+            .map(|[l, t, r, b]| [l - left, t - top, r - left, b - top])
+            .collect(),
+        at: (left, top),
+    }
+}
+
+/// One Character's recently built regions on one overlay, keyed by shape. `H` is the region
+/// handle, built at the origin, so art that only moved reuses it at the new
+/// spot instead of rebuilding it rect by rect.
+#[derive(Debug)]
+pub struct RegionShapes<H> {
+    kept: Vec<(Vec<RegionRect>, H)>,
+}
+
+impl<H> Default for RegionShapes<H> {
+    fn default() -> Self {
+        Self { kept: Vec::new() }
+    }
+}
+
+impl<H: Copy> RegionShapes<H> {
+    /// Enough for a walk cycle: each frame and each frame change, at each of
+    /// the steps a sprite moving a fraction of a pixel a tick alternates between.
+    pub const KEPT: usize = 32;
+
+    /// The handle kept for `shape`, if any, now the most recently used.
+    pub fn get(&mut self, shape: &[RegionRect]) -> Option<H> {
+        let found = self.kept.iter().position(|(kept, _)| kept == shape)?;
+        // `keep` evicts from the front, so the back is the most recently used.
+        self.kept[found..].rotate_left(1);
+        self.kept.last().map(|(_, handle)| *handle)
+    }
+
+    /// Keep `handle` as `shape`'s region. Returns the least recently used
+    /// handle when that makes one too many, for the caller to free.
+    pub fn keep(&mut self, shape: Vec<RegionRect>, handle: H) -> Option<H> {
+        let evicted = (self.kept.len() == Self::KEPT).then(|| self.kept.remove(0).1);
+        self.kept.push((shape, handle));
+        evicted
+    }
+
+    /// Every kept handle, for the caller to free, leaving none kept.
+    pub fn take_all(&mut self) -> Vec<H> {
+        self.kept.drain(..).map(|(_, handle)| handle).collect()
+    }
 }
 
 #[cfg(test)]
@@ -442,7 +524,7 @@ mod tests {
         ];
 
         for (name, trail, rects, expect) in rows {
-            let plan = region_plan(trail, rects);
+            let plan = region_plan(trail.iter(), rects);
             if expect.is_empty() {
                 assert_eq!(plan, RegionPlan::Clear, "{name}");
                 continue;
@@ -720,5 +802,51 @@ mod tests {
         shapes.fit(1);
         shapes.fit(2);
         assert_eq!(shapes[1].change_for(false, || drawn.clone()), None);
+    }
+
+    /// BMO walking: the same frame one step later is the same shape, found
+    /// again with the step as its new top-left.
+    #[test]
+    fn a_region_that_only_moved_is_found_again_where_it_now_is() {
+        let walking = [[100, 200, 180, 328], [120, 80, 320, 170]];
+        let stepped = [[103, 199, 183, 327], [123, 79, 323, 169]];
+        let mut shapes = RegionShapes::default();
+        let first = placed_shape(&walking);
+        assert_eq!(shapes.get(&first.shape), None);
+        assert_eq!(shapes.keep(first.shape, 7), None);
+
+        let next = placed_shape(&stepped);
+        assert_eq!(shapes.get(&next.shape), Some(7));
+        assert_eq!((first.at, next.at), ((100, 80), (103, 79)));
+
+        let next_frame = placed_shape(&[[103, 199, 190, 327], [123, 79, 323, 169]]);
+        assert_eq!(shapes.get(&next_frame.shape), None);
+    }
+
+    /// A walk cycle's frames, each kept as its own shape: one used again stays,
+    /// and the least recently used one is handed back to be freed.
+    #[test]
+    fn a_character_keeps_its_recent_shapes_and_frees_the_oldest() {
+        let frame = |n: i32| vec![[0, 0, 10 + n, 10]];
+        let mut shapes = RegionShapes::default();
+        for n in 0..RegionShapes::<i32>::KEPT as i32 {
+            assert_eq!(shapes.keep(frame(n), n), None);
+        }
+        assert_eq!(shapes.get(&frame(0)), Some(0));
+
+        assert_eq!(shapes.keep(frame(100), 100), Some(1));
+        assert_eq!(shapes.get(&frame(1)), None);
+        assert_eq!(shapes.get(&frame(0)), Some(0));
+        assert_eq!(shapes.get(&frame(100)), Some(100));
+    }
+
+    #[test]
+    fn clearing_hands_back_every_kept_region() {
+        let mut shapes = RegionShapes::default();
+        shapes.keep(vec![[0, 0, 4, 4]], 1);
+        shapes.keep(vec![[0, 0, 8, 4]], 2);
+        assert_eq!(shapes.take_all(), vec![1, 2]);
+        assert_eq!(shapes.get(&[[0, 0, 4, 4]]), None);
+        assert_eq!(shapes.take_all(), Vec::<i32>::new());
     }
 }
