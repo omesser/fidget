@@ -262,9 +262,8 @@ jobs:
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
         run: node --test tests/*.test.js
 
-  # Own job: the importer must keep writing what Fidget loads and plays. The list
-  # holds everything that defines that format, code or not, so a manifest or
-  # Animation change runs this. Other pull requests skip it. A push runs it.
+  # Own job, so a failure names the importer. A label changes no code, so adding
+  # one doesn't rerun it.
   character-importer:
     if: github.event.action != 'labeled'
     runs-on: ubuntu-latest
@@ -273,51 +272,13 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Find what this run changed
-        id: changed
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
-        continue-on-error: true
-        with:
-          files: |
-            scripts/import-pet.py
-            scripts/requirements-import.txt
-            crates/core/**
-            characters/**/character.manifest
-            scripts/make-*-characters.py
-            src-tauri/src/package.rs
-            Cargo.toml
-            Cargo.lock
-            rust-toolchain.toml
-            .github/workflows/tests.yml
-
-      - name: Decide whether this run should test
-        id: gate
-        # Fails open: only a pull request that matched no listed file skips. A
-        # broken changed-files step, a dispatch or a push runs in full.
-        env:
-          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
-          OUTCOME: ${{ steps.changed.outcome }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          run_tests=true
-          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
-            [ "$EVENT" = pull_request ]; then
-            run_tests=false
-          fi
-          echo "run tests: $run_tests"
-          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        if: steps.gate.outputs.run_tests == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
       - name: Importer self-test
-        if: steps.gate.outputs.run_tests == 'true'
         run: |
           pip install -r scripts/requirements-import.txt
           python scripts/import-pet.py --self-test
