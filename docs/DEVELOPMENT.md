@@ -658,7 +658,7 @@ To push a tag that is already published, dispatch the itch.io workflow with that
 
 ## Crate Versions
 
-After a stable Release builds, the Release workflow runs `scripts/bump-crate-versions.sh` with its tag and opens or updates a `crate-version-bump/<branch>` pull request against the branch the Release targets, which sets `[workspace.package] version` and `Cargo.lock` to that tag. A tag the crates already carry opens nothing. The job fails if the tag isn't on the branch the Release targets, so set the target when you publish from another branch. A prerelease doesn't run the job. The bump lands after the Release is built, so that Release's own binaries were compiled with the previous version.
+After a stable Release builds, the Release workflow runs `scripts/bump-crate-versions.sh` with its tag and opens or updates a `crate-version-bump/<branch>` pull request against the branch the Release targets, which sets `[workspace.package] version` and `Cargo.lock` to that tag. A tag the crates already carry opens nothing. The job fails if the tag isn't on the branch the Release targets, so set the target when you publish from another branch. A prerelease doesn't run the job. The package job stamps the shipping version into the workspace before it builds, so the binaries report that version over ACP and MCP. The pull request only keeps the checked-in version current.
 
 ## Release Notes
 
