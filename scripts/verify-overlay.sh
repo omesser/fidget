@@ -160,14 +160,15 @@ CLOSED_MS=$(now_ms)
 kill "$PERCH_PID" 2> /dev/null
 perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
 
-# Not sooner: its exit raises the terminal over the Perch, and the sprite falls
-# through. It is drawn above the overlay, so it has to go before the screenshot.
+# The elevated prop goes now, not sooner: its exit raises the terminal over the
+# Perch, and the sprite falls through. It must go before the screenshot.
 kill "$OVER_PID" 2> /dev/null
 
 echo ""
 echo "Frame loop:"
 python3 - "$OUT" "$CLOSED_MS" << 'PY'
 import json, re, sys
+from itertools import dropwhile, takewhile
 
 out, closed_ms = sys.argv[1], int(sys.argv[2])
 
@@ -202,10 +203,12 @@ if not frames or not steps:
     sys.exit(1)
 
 # The first Falling frames can sit still while the art loads. Gravity
-# starts at the first frame that moves.
-falling = [f for f in frames if f[1] == "Falling"]
-moved = next((i for i in range(1, len(falling)) if falling[i][3] != falling[0][3]), None)
-descent = falling[moved:moved + 10] if moved is not None else falling[:10]
+# starts at the first frame that moves. Only the first fall: the drop after the
+# Perch closes is another fall.
+falling = list(takewhile(lambda f: f[1] == "Falling",
+                         dropwhile(lambda f: f[1] != "Falling", frames)))
+first_move = next((i for i in range(1, len(falling)) if falling[i][3] != falling[0][3]), None)
+descent = falling[first_move:first_move + 10] if first_move is not None else falling[:10]
 check(len(descent) >= 5 and descent[-1][3] > descent[0][3] + 10,
       "the sprite falls under gravity",
       f"{descent[0][3]:.0f} -> {descent[-1][3]:.0f} over {len(descent)} frames")
