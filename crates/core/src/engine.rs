@@ -214,6 +214,15 @@ pub struct WorldSnapshot {
     pub possession: Intent,
 }
 
+/// What a possession digit did this tick, by the Animation it names.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DigitAnimation {
+    /// One pass started.
+    Played(String),
+    /// The State forbids it, as it would a proposal.
+    Refused(String),
+}
+
 /// Everything the renderer is told after one tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
@@ -239,10 +248,15 @@ pub struct Frame {
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 
-    /// The Behavior a proposal started on this frame, or the Animation a digit
-    /// did. For the Shell: what was asked and what the user saw are different
-    /// lists, and repetition is suppressed on the second.
+    /// The Behavior a proposal started on this frame. For the Shell: what was
+    /// asked and what the user saw are different lists, and repetition is
+    /// suppressed on the second. Never a digit's Animation: see `digit`.
     pub behavior: Option<String>,
+
+    /// The Animation a possession digit played or was refused this frame.
+    /// Its own field, because `behavior` feeds the Director's memory of
+    /// Behaviors and a digit names an Animation the Director cannot propose.
+    pub digit: Option<DigitAnimation>,
 
     /// The Behavior whose Primitives are still playing, on every tick of the
     /// span. `None` for Engine-played moments no Director named.
@@ -1683,19 +1697,19 @@ impl Engine {
 
         // Director proposals stay out while possessed. A digit is the user
         // asking, so it takes the same `permitted` gate.
-        let mut digit_started = false;
+        let mut digit = None;
         if self.possessed {
             if let Some(name) = self.animation_for_digit(snapshot.possession.play) {
                 // One pass, nameless, so no Behavior's `then` follows it.
-                if self.play_animation(&name) {
+                digit = Some(if self.play_animation(&name) {
                     started = true;
-                    digit_started = true;
-                    behavior = Some(name);
+                    DigitAnimation::Played(name)
                 } else {
-                    refused = Some(name);
-                }
+                    DigitAnimation::Refused(name)
+                });
             }
         }
+        let digit_started = matches!(digit, Some(DigitAnimation::Played(_)));
 
         // After a proposal and before a Poke. A one-shot finishes before the
         // next beat. One that cannot play is dropped, so it cannot return
@@ -1744,7 +1758,7 @@ impl Engine {
                 .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
         // One cue a tick: a hand transition, else a click verb, else a started
-        // digit Behavior, else a possession edge, which waits for a free tick.
+        // digit Animation, else a possession edge, which waits for a free tick.
         // Menu repeats every held tick like Grab, so it cues on the press edge.
         let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
         let cue = cue
@@ -1859,6 +1873,7 @@ impl Engine {
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
+            digit,
             playing_behavior: self.playing_behavior.clone(),
             playing_primitive: self.on_screen(),
             playing_gesture,
@@ -10834,7 +10849,7 @@ mod tests {
                 Some("wave"),
                 "{played:?}"
             );
-            assert_eq!(played.behavior.as_deref(), Some("wave"));
+            assert_eq!(played.digit, Some(DigitAnimation::Played("wave".into())));
             assert_eq!(played.refused, None);
 
             let mid = engine.tick(&WorldSnapshot {
@@ -10860,7 +10875,7 @@ mod tests {
 
             let played = engine.tick(&with_possession(playing(1), &world));
             assert_eq!(played.art_name(), "react", "{played:?}");
-            assert_eq!(played.behavior.as_deref(), Some("react"));
+            assert_eq!(played.digit, Some(DigitAnimation::Played("react".into())));
             assert_eq!(played.playing_behavior, None, "no Behavior to continue");
             assert_eq!(played.playing_primitive, None, "react alone, no talk");
 
@@ -10876,12 +10891,42 @@ mod tests {
             }
         }
 
+        /// The Shell remembers `Frame::behavior` in `recent:`, a list of
+        /// Behaviors the Director may propose. A digit names an Animation,
+        /// so `wave` from a key leaves a Behavior called `wave` free, and
+        /// three presses push no real Behavior out of the memory.
+        #[test]
+        fn a_digit_hands_the_director_no_behavior_to_remember() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
+            let mut remembered = Vec::new();
+            let mut played = Vec::new();
+            for digit in [3, 1, 3] {
+                let frame = engine.tick(&with_possession(playing(digit), &world));
+                remembered.extend(frame.behavior);
+                played.extend(frame.digit);
+                for _ in 0..20 {
+                    let frame = engine.tick(&WorldSnapshot {
+                        elapsed_ms: 100,
+                        ..world.clone()
+                    });
+                    remembered.extend(frame.behavior);
+                }
+            }
+            assert_eq!(remembered, Vec::<String>::new());
+            assert_eq!(
+                played,
+                ["wave", "react", "wave"].map(|name| DigitAnimation::Played(name.into()))
+            );
+        }
+
         #[test]
         fn a_digit_past_the_list_does_nothing() {
             let world = on(one_display());
             let mut engine = possessed_with_digits(500.0, &world);
             let unbound = engine.tick(&with_possession(playing(4), &world));
             assert_eq!(unbound.behavior, None, "{unbound:?}");
+            assert_eq!(unbound.digit, None, "{unbound:?}");
             assert_eq!(
                 unbound.refused, None,
                 "a digit past the list is not a proposal that missed: {unbound:?}"
@@ -10911,7 +10956,8 @@ mod tests {
 
             let refused = engine.tick(&with_possession(playing(2), &world));
             assert_eq!(refused.behavior, None, "{refused:?}");
-            assert_eq!(refused.refused.as_deref(), Some("sleep"));
+            assert_eq!(refused.digit, Some(DigitAnimation::Refused("sleep".into())));
+            assert_eq!(refused.refused, None, "no Behavior was proposed");
             assert_eq!(refused.cue, None, "a refusal plays no Poke");
             assert_eq!(
                 refused.animation, "jump",
@@ -10919,42 +10965,68 @@ mod tests {
             );
         }
 
+        /// Every State, whether possession's controls drive it, and the next
+        /// State to check. No `_` arm: a new State fails to compile here until
+        /// it picks a side and joins the walk.
+        fn state_driven(state: State) -> (bool, Option<State>) {
+            match state {
+                // The rest between keys.
+                State::Grounded => (true, Some(State::Falling)),
+                State::Falling => (true, Some(State::Dragged)),
+                // Held by the mouse.
+                State::Dragged => (true, Some(State::Perched)),
+                State::Perched => (true, Some(State::Climbing)),
+                // Up at a wall.
+                State::Climbing => (true, Some(State::Asleep)),
+                // The sprite's own, and possession wakes it.
+                State::Asleep => (false, None),
+            }
+        }
+
+        /// Every Primitive, whether a control plays it, and the next to
+        /// check. No `_` arm, as in `state_driven`.
+        fn primitive_driven(primitive: Primitive) -> (bool, Option<Primitive>) {
+            match primitive {
+                Primitive::Idle => (true, Some(Primitive::Walk)),
+                // Left and Right, and Chase draws walk.
+                Primitive::Walk => (true, Some(Primitive::Chase)),
+                Primitive::Chase => (true, Some(Primitive::Jump)),
+                // Space, and the landing every jump ends in.
+                Primitive::Jump => (true, Some(Primitive::Land)),
+                Primitive::Land => (true, Some(Primitive::Hold)),
+                // Riding a Perch the keys walked onto.
+                Primitive::Hold => (true, Some(Primitive::Possessed)),
+                Primitive::Possessed => (true, Some(Primitive::Sit)),
+                // A Behavior composes these; no key plays them.
+                Primitive::Sit => (false, Some(Primitive::Sleep)),
+                Primitive::Sleep => (false, Some(Primitive::React)),
+                // React and talk answer a poke and a line, not a key.
+                Primitive::React => (false, Some(Primitive::Talk)),
+                Primitive::Talk => (false, None),
+            }
+        }
+
         /// Every Animation a driven State or a control's Primitive draws is
-        /// one digits drop. Sleep is the sprite's own; react and talk answer
-        /// a poke and a line, not a key.
+        /// one digits drop, and nothing else is.
         #[test]
         fn digits_drop_every_animation_the_controls_draw() {
             use crate::possession::DRIVEN_ANIMATIONS;
 
-            let driven_states = [
-                State::Grounded,
-                State::Falling,
-                State::Dragged,
-                State::Perched,
-                State::Climbing,
-            ];
-            let driven_primitives = [
-                Primitive::Idle,
-                Primitive::Walk,
-                Primitive::Chase,
-                Primitive::Jump,
-                Primitive::Land,
-                Primitive::Hold,
-                Primitive::Possessed,
-            ];
-            let drawn: BTreeSet<&str> = driven_states
-                .into_iter()
+            let states =
+                std::iter::successors(Some(State::Grounded), |state| state_driven(*state).1);
+            let primitives = std::iter::successors(Some(Primitive::Idle), |primitive| {
+                primitive_driven(*primitive).1
+            });
+            let drawn: BTreeSet<&str> = states
+                .filter(|state| state_driven(*state).0)
                 .map(animation_for)
-                .chain(driven_primitives.into_iter().map(animation_of))
+                .chain(
+                    primitives
+                        .filter(|primitive| primitive_driven(*primitive).0)
+                        .map(animation_of),
+                )
                 .collect();
             assert_eq!(drawn, BTreeSet::from(DRIVEN_ANIMATIONS));
-
-            let own = [animation_for(State::Asleep)]
-                .into_iter()
-                .chain([Primitive::React, Primitive::Talk, Primitive::Sleep].map(animation_of));
-            for animation in own {
-                assert!(!DRIVEN_ANIMATIONS.contains(&animation), "{animation}");
-            }
         }
 
         #[test]

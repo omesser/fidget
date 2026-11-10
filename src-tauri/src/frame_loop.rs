@@ -10,7 +10,7 @@ use fidget_core::director::{self, Context, Happened, Lately, Wake};
 use fidget_core::dispatch::{
     dispatch, DenyList, DispatchContext, FeetAt, InstanceInfo, PlacementQuery,
 };
-use fidget_core::engine::{BehaviorProposal, State, Verb};
+use fidget_core::engine::{BehaviorProposal, DigitAnimation, State, Verb};
 use fidget_core::input::press_target;
 #[cfg(not(target_os = "macos"))]
 use fidget_core::overlay::DrawTrail;
@@ -2397,27 +2397,32 @@ pub(crate) fn run_frame_loop(
                 if let Some(played) = &frame.behavior {
                     director::remember(&mut live.recent, played.clone());
                     if tracing_frames {
-                        // A digit and a proposal both start a Behavior. The
-                        // word says which, so a log can tell a key from the Director.
-                        if world.possession.play.is_some() {
-                            eprintln!("possession: {} {played}", live.id);
-                        } else {
-                            eprintln!("director: {} {played}", live.id);
-                        }
+                        eprintln!("director: {} {played}", live.id);
+                    }
+                }
+                // A digit plays an Animation, not a Behavior, so the
+                // Director's memory never hears it: it could not propose it.
+                if tracing_frames {
+                    if let Some(DigitAnimation::Played(played)) = &frame.digit {
+                        eprintln!("possession: {} {played}", live.id);
                     }
                 }
 
-                // A Behavior the State gate refused. Under the Director flag,
-                // beside the near-miss line. Names the State, not the reason:
-                // the Poke cooldown also refuses, on the sprite's feet.
-                if let Some(refused) = &frame.refused {
-                    if model::tracing() {
-                        let via = if world.possession.play.is_some() {
-                            "possession"
-                        } else {
-                            "director"
-                        };
-                        eprintln!("{via}: {} {refused} refused in {:?}", live.id, frame.state);
+                // What the State gate refused. Under the Director flag, beside
+                // the near-miss line. Names the State, not the reason: the
+                // Poke cooldown also refuses, on the sprite's feet.
+                if model::tracing() {
+                    if let Some(refused) = &frame.refused {
+                        eprintln!(
+                            "director: {} {refused} refused in {:?}",
+                            live.id, frame.state
+                        );
+                    }
+                    if let Some(DigitAnimation::Refused(refused)) = &frame.digit {
+                        eprintln!(
+                            "possession: {} {refused} refused in {:?}",
+                            live.id, frame.state
+                        );
                     }
                 }
 

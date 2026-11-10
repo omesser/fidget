@@ -1,4 +1,4 @@
-// The keys possession listens to. Digits name Behaviors. Letters stay free,
+// The keys possession listens to. Digits name Animations. Letters stay free,
 // so A and D do not collide with WASD. A repeat is the platform holding the
 // key down.
 
