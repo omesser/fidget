@@ -2620,7 +2620,7 @@ pub(crate) fn run_frame_loop(
                     digits: if possessed {
                         digit_animations(&live.character.animations)
                             .into_iter()
-                            .map(|names| names.join("/"))
+                            .map(str::to_string)
                             .collect()
                     } else {
                         Vec::new()

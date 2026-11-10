@@ -77,18 +77,6 @@ test("the card numbers the shell's list and writes each name as a label", () => 
   ]);
 });
 
-test("a digit shared by names on the same frames writes each as a label", () => {
-  const card = possessionCard({
-    possessed: true,
-    paused: false,
-    digits: ["look-around", "react/wave"],
-  });
-  assert.deepEqual(card.keys.slice(4), [
-    ["1", "Look-around"],
-    ["2", "React/Wave"],
-  ]);
-});
-
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
   const card = possessionCard({ possessed: true, paused: false, digits: names });

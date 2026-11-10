@@ -1939,7 +1939,6 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
 
 /// What each shipped card offers on 1 to 9: the clips a key can play, none
 /// of the art the arrows, a jump, a fall, a climb, a Perch or a drag draws.
-/// Names on the same frames share one digit, written `react/wave`.
 #[test]
 fn every_shipped_character_binds_its_own_clips_to_digits() {
     let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
@@ -1965,10 +1964,11 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
                 "look-left",
                 "look-right",
                 "pondering",
-                "react/wave",
+                "react",
                 "sleep",
                 "talk",
                 "thinking",
+                "wave",
             ],
         ),
         ("timber-wolf", &["react", "scan", "sleep", "talk"]),
@@ -1991,10 +1991,11 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
             &[
                 "look-around",
                 "nod-off",
-                "react/wave",
+                "react",
                 "review",
                 "sleep",
                 "talk",
+                "wave",
             ],
         ),
     ]);
@@ -2006,17 +2007,18 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
     );
     for name in shipped {
         let character = load_package(&name).expect("shipped packages load");
-        let labels: Vec<String> = fidget_core::possession::digit_animations(&character.animations)
-            .iter()
-            .map(|names| names.join("/"))
-            .collect();
-        assert_eq!(labels, cards[name.as_str()], "{name}");
+        assert_eq!(
+            fidget_core::possession::digit_animations(&character.animations),
+            cards[name.as_str()],
+            "{name}"
+        );
     }
 }
 
-/// Tuxedo Bean built the way the Shell builds it, settled on the ground and
-/// possessed.
-fn possessed_tuxedo_bean() -> (Engine, WorldSnapshot) {
+/// Through the Engine a shipped Character is built with: digit 1 on Tuxedo
+/// Bean plays one pass of `look-around`, six frames at 3 fps, then idles.
+#[test]
+fn tuxedo_bean_plays_one_look_around_on_digit_one() {
     let character = load_package("tuxedo-bean").expect("tuxedo-bean loads");
     let ground = WorldSnapshot {
         displays: vec![DISPLAY],
@@ -2033,32 +2035,6 @@ fn possessed_tuxedo_bean() -> (Engine, WorldSnapshot) {
     for _ in 0..40 {
         engine.tick(&ground);
     }
-    (engine, ground)
-}
-
-/// Tuxedo Bean's `react` and `wave` are one clip on digit 3, `react/wave`.
-/// The digit plays `react`, a real Animation, not a joined name.
-#[test]
-fn tuxedo_bean_plays_react_for_its_joined_react_wave_digit() {
-    let (mut engine, ground) = possessed_tuxedo_bean();
-
-    let pressed = engine.tick(&WorldSnapshot {
-        possession: Intent {
-            play: Some(3),
-            ..Intent::default()
-        },
-        elapsed_ms: 16,
-        ..ground.clone()
-    });
-    assert_eq!(pressed.art_name(), "react", "{pressed:?}");
-    assert_eq!(pressed.refused, None, "{pressed:?}");
-}
-
-/// Through the Engine a shipped Character is built with: digit 1 on Tuxedo
-/// Bean plays one pass of `look-around`, six frames at 3 fps, then idles.
-#[test]
-fn tuxedo_bean_plays_one_look_around_on_digit_one() {
-    let (mut engine, ground) = possessed_tuxedo_bean();
 
     let pressed = engine.tick(&WorldSnapshot {
         possession: Intent {
