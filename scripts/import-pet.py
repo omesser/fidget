@@ -17,6 +17,8 @@ output passes
 """
 
 import argparse
+import hashlib
+import io
 import json
 import pathlib
 import re
@@ -271,6 +273,31 @@ IDLE_GESTURE_NAMES = {
 }
 
 
+# The Required Animation Set, most fundamental first. When two required slots
+# play one clip, the earlier owns the frames and the later is `same_as` it.
+REQUIRED_ORDER = ("idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold")
+
+
+def shared_clips(clips):
+    """Which Animations replay another's clip, from {name: (frame digests in
+    play order, fps, loop)}. Returns {name: (owner, same)}: `same` when fps
+    and loop match too, so the manifest writes `same_as`; otherwise the name
+    keeps its own table on the owner's files. An elective owns the frames over
+    a required slot, and an earlier required slot over a later one."""
+    def rank(name):
+        required = name in REQUIRED_ORDER
+        return (required, REQUIRED_ORDER.index(name) if required else 0, name)
+
+    groups = {}
+    for name in sorted(clips, key=rank):
+        groups.setdefault(clips[name][0], []).append(name)
+    shared = {}
+    for owner, *others in groups.values():
+        for name in others:
+            shared[name] = (owner, clips[name][1:] == clips[owner][1:])
+    return shared
+
+
 def suitable_idle_gesture(name):
     """True when this Animation name is a calm fidget the importer should mark
     as an idle-gesture. look-* matches common fidgets. An idle-* name with
@@ -313,7 +340,7 @@ def gesture_behaviors(animations):
     taken = set(tomllib.loads(STARTER_BEHAVIORS)["behaviors"])
     lines = []
     for name, spec in animations.items():
-        if spec.get("variant_of") != "idle-gesture" or name in taken:
+        if spec.get("variant_of") != "idle-gesture" or name in taken or spec.get("same_as"):
             continue
         lines += [
             "",
@@ -660,10 +687,14 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     ]
     for animation, spec in animations.items():
         lines += ["", f"[animations.{animation}]"]
+        if spec.get("same_as"):
+            lines.append(f'same_as = "{spec["same_as"]}"')
+            continue
         # "order" repeats written frames the way the source sequenced them
         # (a shimeji walk is 1,2,1,3); a repeated path costs no pixel budget.
-        order = spec.get("order") or range(len(spec["frames"]))
-        frames = ", ".join(f'"frames/{animation}-{i}.png"' for i in order)
+        drawn = spec.get("drawn_by", animation)
+        order = animations[drawn].get("order") or range(len(animations[drawn]["frames"]))
+        frames = ", ".join(f'"frames/{drawn}-{i}.png"' for i in order)
         lines.append(f"frames = [{frames}]")
         lines.append(f"fps = {spec['fps']}")
         if spec["loop"] == "once":
@@ -673,7 +704,7 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     turned = [
         f'"frames/{animation}-{i}.png" = "{spec["facing"]}"'
         for animation, spec in animations.items()
-        if spec.get("facing", facing) != facing
+        if spec.get("facing", facing) != facing and not owned_elsewhere(spec)
         for i in range(len(spec["frames"]))
     ]
     if turned:
@@ -683,6 +714,11 @@ def manifest_text(name, mode, scale, notes, source, animations, facing="right"):
     if extra:
         lines.append(extra)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def owned_elsewhere(spec):
+    """Whether another Animation's files hold this one's frames."""
+    return bool(spec.get("same_as") or spec.get("drawn_by"))
 
 
 def mapping_notes(mappings, animations, rows, synthesized):
@@ -1011,12 +1047,18 @@ def emit(pet, out, validate=True, stand=None, frames_only=False):
     if frames_only:
         authored = tomllib.loads((out / "character.manifest").read_text())
         referenced = {frame for animation in authored["animations"].values()
-                      for frame in animation["frames"]}
+                      for frame in animation.get("frames", [])}
         for animation, spec in animations.items():
             expected = {frame for frame in referenced
                         if re.fullmatch(rf"frames/{re.escape(animation)}-\d+\.png", frame)}
+            if not expected and animation in authored["animations"]:
+                # Authored onto another Animation's files, or `same_as` it:
+                # that owner's recut is this one's.
+                spec["drawn_by"] = authored["animations"][animation].get("same_as", "authored")
+                print(f"{animation}: plays another animation's frames; not recut")
+                continue
             selected = {f"frames/{animation}-{i}.png" for i in range(len(spec["frames"]))}
-            if (expected and selected != expected) or (not expected and animation in authored["animations"]):
+            if expected and selected != expected:
                 sys.exit(f"{animation}: recut frame files differ from the authored manifest "
                          f"({len(selected)} selected, {len(expected)} referenced); "
                          "edit the manifest first or import a new baseline package")
@@ -1032,15 +1074,38 @@ def emit(pet, out, validate=True, stand=None, frames_only=False):
         canvas = existing_canvas
     frames_dir = out / "frames"
     frames_dir.mkdir(parents=True, exist_ok=frames_only)
+    written = {}
     for animation, spec in animations.items():
         boxes, offsets, lifts, width, left, _ = metrics[animation]
         centering = (canvas[0] - width) // 2 - left
+        written[animation] = []
         for i, frame in enumerate(spec["frames"]):
             page = Image.new("RGBA", canvas, (0, 0, 0, 0))
             dx = centering + offsets[i][0]
             dy = canvas[1] - boxes[i][3] - lifts[i]
             page.paste(frame, (dx, dy))
-            page.save(frames_dir / f"{animation}-{i}.png")
+            encoded = io.BytesIO()
+            page.save(encoded, format="PNG")
+            written[animation].append(encoded.getvalue())
+    # A recut keeps the authored manifest, so only a fresh import may fold
+    # one clip under two names onto one set of files.
+    if not frames_only:
+        clips = {
+            animation: (
+                tuple(hashlib.sha256(written[animation][i]).hexdigest()
+                      for i in spec.get("order") or range(len(spec["frames"]))),
+                spec["fps"],
+                spec["loop"],
+            )
+            for animation, spec in animations.items()
+        }
+        for animation, (owner, same) in shared_clips(clips).items():
+            animations[animation]["same_as" if same else "drawn_by"] = owner
+    for animation, spec in animations.items():
+        if owned_elsewhere(spec):
+            continue
+        for i, png in enumerate(written[animation]):
+            (frames_dir / f"{animation}-{i}.png").write_bytes(png)
 
     if not frames_only:
         source = dict(pet["source"], license=license_prose(pet["license"]))
@@ -1050,7 +1115,7 @@ def emit(pet, out, validate=True, stand=None, frames_only=False):
         )
         (out / "character.manifest").write_text(manifest)
 
-    print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values())} "
+    print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values() if not owned_elsewhere(s))} "
           f"frames on a {canvas[0]}x{canvas[1]} canvas, {mode} at scale {scale}")
     if validate:
         done = subprocess.run(
@@ -1162,6 +1227,8 @@ def main():
             shutil.copytree(args.out, staged)
             emit(pet, staged, stand=args.stand, frames_only=True)
             for animation, spec in pet["animations"].items():
+                if owned_elsewhere(spec):
+                    continue
                 for index in range(len(spec["frames"])):
                     name = f"{animation}-{index}.png"
                     shutil.copy2(staged / "frames" / name, args.out / "frames" / name)
@@ -1230,6 +1297,19 @@ def self_test():
     factor, scale = import_scale(174, 100)
     assert scale == 1 and abs(factor - 100 / 174) < 1e-9
     assert import_scale(32, 100) == (1.0, 3)
+
+    # One clip under two names is written once. A required slot is the same
+    # as the elective, or the more fundamental required slot, that owns it;
+    # a different fps or loop keeps its own table on the owner's files.
+    assert shared_clips({
+        "wave": (("a", "b"), 4, "forever"),
+        "talk": (("a", "b"), 4, "forever"),
+        "react": (("a", "b"), 6, "once"),
+        "hold": (("c",), 3, "forever"),
+        "idle": (("c",), 3, "forever"),
+        "sit": (("a",), 4, "forever"),
+        "jump": (("b", "a"), 4, "forever"),
+    }) == {"talk": ("wave", True), "react": ("wave", False), "hold": ("idle", True)}
 
     assert render_mode(4097, 0.3) == "smooth"
     assert render_mode(16, 0.0) == "pixelated"
@@ -1409,13 +1489,13 @@ def self_test():
         # Grounding and registration: every frame of every animation lands
         # its dot on the canvas bottom at one x — the jitter baked into the
         # sheet is gone, so nothing drifts inside a cycle.
+        played = tomllib.loads(manifest)["animations"]
         for animation in set(pet["animations"]) - {"sleep"}:
-            placed = {
-                Image.open(path).getchannel("A").getbbox()
-                for path in sorted(out.glob(f"frames/{animation}-*.png"))
-            }
+            spec = played[animation]
+            paths = played[spec["same_as"]]["frames"] if "same_as" in spec else spec["frames"]
+            placed = {Image.open(out / path).getchannel("A").getbbox() for path in paths}
             assert len(placed) == 1, f"{animation} drifts: {placed}"
-            frame = Image.open(out / "frames" / f"{animation}-0.png")
+            frame = Image.open(out / paths[0])
             assert frame.getchannel("A").getbbox()[3] == frame.height, animation
         # The sleep breath survives the grounding pass: frame 1 keeps its
         # deliberate one-pixel lift over a planted frame 0.
@@ -1429,6 +1509,27 @@ def self_test():
         hold = remapped["animations"]["hold"]["frames"][0]
         assert (200, 15, 10, 255) in {color for _, color in hold.getcolors()}
         assert len(remapped["animations"]["hold"]["frames"]) == 2
+
+        # Two names on one row: talk plays the wave at its fps and loop, so it
+        # is the same_as the wave; react plays it once, so it keeps its own
+        # table on the wave's files. Neither writes a copy of the art.
+        doubled = read_petscodex(source, overrides={"wave": (3, None), "react": (3, None)})
+        doubled_out = tmp / "doubled"
+        emit(doubled, doubled_out, validate=False)
+        declared = tomllib.loads((doubled_out / "character.manifest").read_text())
+        wave = declared["animations"]["wave"]
+        assert declared["animations"]["talk"] == {"same_as": "wave"}, declared["animations"]["talk"]
+        assert declared["animations"]["react"]["frames"] == wave["frames"]
+        assert declared["animations"]["react"]["loop"] == "once"
+        assert not list(doubled_out.glob("frames/talk-*.png"))
+        assert not list(doubled_out.glob("frames/react-*.png"))
+        assert "[behaviors.wave]" in (doubled_out / "character.manifest").read_text()
+        checked = subprocess.run(
+            ["cargo", "run", "-q", "-p", "fidget-core", "--example", "validate",
+             "--", str(doubled_out), "wave"],
+            cwd=REPO, capture_output=True, text=True,
+        )
+        assert checked.returncode == 0, checked.stderr
 
         # An agent can recut reviewed strips without resetting authored behavior.
         manifest_before = (out / "character.manifest").read_bytes()
@@ -1620,6 +1721,9 @@ def self_test():
         assert "[frame_facing]" not in manifest
         assert (out / "frames" / "walk-2.png").exists()
         assert not (out / "frames" / "walk-3.png").exists()
+        # talk falls back to Stand, idle's own action: one clip, written once.
+        assert tomllib.loads(manifest)["animations"]["talk"] == {"same_as": "idle"}
+        assert not list((out / "frames").glob("talk-*.png"))
 
         # Untrusted pack XML: an entity declaration is refused, not expanded,
         # in UTF-16 too, where a scan for the ASCII bytes would miss it.
