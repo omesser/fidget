@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::character::Animation;
+use crate::character::{Animation, REQUIRED_ANIMATIONS};
 
 /// Which way a possessed walk goes, from the Left or Right key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,19 +50,23 @@ pub(crate) const DRIVEN_ANIMATIONS: [&str; 10] = [
     "possessed",
 ];
 
-/// Whether a digit may play `name`: not an Animation the controls draw, nor a
-/// ring member drawn in one's place, nor a left strip, which is its base
-/// facing the other way rather than a clip of its own.
+/// Whether a digit may play `name`, by what the manifest declares rather than
+/// by comparing clips. Not an Animation the controls draw, nor a required
+/// slot the Engine plays, nor a drawn variant standing in for its base, nor a
+/// left strip, nor a `same_as`, which is another name for a clip with its own.
+/// An idle-gesture keeps its digit when a required slot is the same as it.
 fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Animation>) -> bool {
-    let driven = |name: &str| DRIVEN_ANIMATIONS.contains(&name);
+    let engine_owned = DRIVEN_ANIMATIONS.contains(&name) || REQUIRED_ANIMATIONS.contains(&name);
+    let drawn_variant = animation.variant_of.is_some() && !animation.is_idle_gesture();
     let left_strip = animations
         .values()
         .any(|base| base.left_strip.as_deref() == Some(name));
-    !driven(name) && !animation.variant_of.as_deref().is_some_and(driven) && !left_strip
+    !engine_owned && !drawn_variant && !left_strip && animation.same_as.is_none()
 }
 
 /// What digits 1 to 9 play: the Character's own Animations in name order,
-/// minus the ones the controls already draw. The card shows these names.
+/// minus the ones the Engine or the controls already draw. The card shows
+/// these names.
 pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
     animations
         .iter()
@@ -385,11 +389,19 @@ mod tests {
     /// A Character Package declaring the required nine plus `extra`, every
     /// optional Animation drawn on the frames the required ones already ship.
     fn character_with(extra: &str) -> crate::character::Character {
+        character_without(&[], extra)
+    }
+
+    /// The same, leaving `framed_elsewhere` for `extra` to declare.
+    fn character_without(framed_elsewhere: &[&str], extra: &str) -> crate::character::Character {
         use crate::character::tests::{declaring, load_manifest};
         use crate::character::REQUIRED_ANIMATIONS;
 
-        load_manifest(&format!("{}{extra}", declaring(&REQUIRED_ANIMATIONS)))
-            .expect("package is valid")
+        let required: Vec<&str> = REQUIRED_ANIMATIONS
+            .into_iter()
+            .filter(|name| !framed_elsewhere.contains(name))
+            .collect();
+        load_manifest(&format!("{}{extra}", declaring(&required))).expect("package is valid")
     }
 
     /// A digit is "play this clip now", so the card names Animations, never
@@ -402,9 +414,26 @@ mod tests {
              [behaviors.greet]\nplay = [\"react\", \"talk\"]\nthen = \"nap\"\n\
              [behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
         );
+        assert_eq!(digit_animations(&character.animations), ["wave"]);
+    }
+
+    /// Hidden by what the manifest declares, never by comparing clips. A
+    /// required slot is the Engine's to play, a `same_as` is a second name
+    /// for its owner, and the idle-gesture that owns the frames keeps its key.
+    #[test]
+    fn a_required_slot_or_same_as_gets_no_digit_and_its_owner_keeps_one() {
+        let character = character_without(
+            &["react", "sit"],
+            "[animations.wave]\nframes = [\"wave-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [animations.react]\nsame_as = \"wave\"\n\
+             [animations.pondering]\nframes = [\"sit-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [animations.sit]\nsame_as = \"pondering\"\n\
+             [animations.hello]\nsame_as = \"wave\"\n\
+             [animations.flourish]\nframes = [\"talk-0.png\"]\nvariant_of = \"talk\"\n",
+        );
         assert_eq!(
             digit_animations(&character.animations),
-            ["react", "sleep", "talk", "wave"]
+            ["pondering", "wave"]
         );
     }
 
@@ -424,9 +453,10 @@ mod tests {
              [animations.perk-up]\nframes = [\"sit-0.png\"]\nvariant_of = \"sit\"\n\
              [animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"sleep\"\n",
         );
-        assert_eq!(
-            digit_animations(&character.animations),
-            ["doze", "react", "sleep", "talk"]
+        assert!(
+            digit_animations(&character.animations).is_empty(),
+            "{:?}",
+            digit_animations(&character.animations)
         );
     }
 

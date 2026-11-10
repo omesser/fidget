@@ -164,7 +164,7 @@ Only the window server can answer these. Run the app, then confirm:
 6. **The art is crisp:** On a Retina display the pixels are hard squares, all the same size. Blur means the integer scale or nearest-neighbour filtering was lost.
 7. **It rests on the Dock, not behind it:** Its feet stand on the Dock's top edge. Turn on Dock auto-hiding: within a poll it falls to the bottom of the screen. Turn it off and it is lifted again.
 8. **Declared cadence is honoured:** Give a copy of Black Mage a faster idle `fps`. The idle is visibly faster than at the declared 2.
-9. **A click makes it react:** Click once without moving. It plays `react` for about half a second, then resumes.
+9. **A click makes it react:** Click once without moving. It plays `react` through once, at least half a second, then resumes.
 10. **Press and drag picks it up:** The pressed point stays under the pointer. Release over a window and it lands on that window's top edge.
 11. **A flick throws it:** Release while moving and it leaves on an arc. Hold still before releasing and it drops straight down.
 12. **It can be put down over the Dock, and does not stay there:** Drop it over the Dock. It settles back onto the Dock's top edge, fully visible.
@@ -268,12 +268,13 @@ Any other name draws only as a Variant, an idle-gesture, or a Left Strip of one 
 
 | Key | Required | Value | Default |
 |---|---|---|---|
-| `frames` | Yes | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
+| `frames` | Yes, unless `same_as` | Frame file paths relative to the package root, in play order. 1 to 256 entries. | |
 | `fps` | No | Whole number from 1 to 60. | 8 |
 | `loop` | No | `"forever"` repeats; `"once"` holds the last frame. | `"forever"` |
 | `variant_of` | No | Another Animation's name, or the category `"idle-gesture"`. `variant_of = "idle"` is a calm loop of the declared `idle` Animation. `variant_of = "idle-gesture"` marks this Animation as an idle-gesture. That is a category, not a Behavior type, and the Animation keeps its own name. Every other ring draws one member until the Animation changes. | |
 | `weight` | No | Whole number: this Animation's share of its ring, loop or gesture. Read only there. | 10 |
 | `left_of` | No | Another Animation's name. This strip draws in place of the base when the sprite travels left. | |
+| `same_as` | No | Another Animation's name. This one plays that Animation's frames, fps and loop, and declares no other key. It joins no ring and is not an idle-gesture. Use it when a required slot's clip is another Animation's, played the same way. | |
 
 The loader checks each frame against the art:
 
@@ -282,6 +283,7 @@ The loader checks each frame against the art:
 - A `variant_of` base is declared, is not itself a Variant, and both it and the variant loop `"forever"`.
 - Idle loops and idle-gestures share the base `idle` frame size. They swap in the middle of a stretch. A walk or talk ring is drawn once and may differ.
 - The Engine's own idle starts on a weighted idle loop at frame 0, waits a seeded gap inside `idle_gesture_every_s`, plays one weighted idle-gesture for a single pass (`frames / fps`), then picks a loop again. Every idle stretch starts on a loop, including after a landing, a talk, a poke, or a perched idle. A Behavior's `idle` Primitive still draws one loop-ring member and loops it, unless the Behavior sets `type = "idle"`.
+- A `same_as` names a declared Animation with frames of its own, never another `same_as`. No `variant_of` or `left_of` names a `same_as`. The same frame files under two Animations at different fps or loop stay allowed.
 - A `left_of` base is declared and is not itself a Left Strip. The strip has as many frames as its base, at the same size, and only one strip faces each base.
 
 Pixels with alpha below 128 do not catch clicks.
@@ -322,6 +324,8 @@ The Primitives, and the Animation each plays:
 | Primitive | Animation |
 |---|---|
 | `idle`, `walk`, `land`, `sit`, `sleep`, `react`, `talk`, `hold` | The Animation of the same name |
+
+`react` and `possessed` play their art through once, even art that loops forever, and never for less than the 600 ms turn every other Primitive gets. A second Poke plays `react` again from its first frame.
 | `chase` | `walk`, steered toward the cursor's x along the ground |
 | `jump` | `jump`, or `fall` without it |
 
@@ -583,8 +587,8 @@ uv run scripts/import-pet.py ~/.codex/pets/tuxedo-bean --format petscodex -o cha
 
 The `jump` Behavior lets the Static Director pick the pounce after 30 seconds
 idle, so row 4 plays without a model. The `fall` and `land` animations reuse
-pounce poses. `hold` plays the idle loop, so a perched or held Bean just sits.
-`react` reuses the wave. `sit` reuses the first seated pose. The source has no
+pounce poses. `hold` is `same_as` the idle loop, so a perched or held Bean just
+sits. `react` is `same_as` the wave. `sit` reuses the first seated pose. The source has no
 dedicated sleep loop, so `sleep` holds the lowest nod-off pose.
 
 ### Shimeji Shop

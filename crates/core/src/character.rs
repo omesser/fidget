@@ -77,7 +77,7 @@ mod manifest;
 mod resolve;
 use manifest::parse;
 use resolve::{
-    check_frame_facing, check_left_strips, check_play_animations, check_variants,
+    check_frame_facing, check_left_strips, check_play_animations, check_same_as, check_variants,
     resolve_animations, resolve_behaviors,
 };
 
@@ -300,6 +300,9 @@ pub struct Animation {
     /// `variant_of`. `"idle-gesture"` is a category of Animation, not a
     /// Behavior type. The Animation keeps its own name. Other values name a base.
     pub variant_of: Option<String>,
+    /// `same_as`: the Animation whose frames, fps and loop this one plays.
+    /// A name for the same clip, never a ring member or an idle-gesture.
+    pub same_as: Option<String>,
 }
 
 impl Animation {
@@ -510,13 +513,24 @@ pub struct IdleMember {
     pub(crate) fps: u32,
 }
 
-/// Loops, idle-gestures, the timing ranges, and what digits play while
-/// possessed. The Engine picks; `draw` does not weigh this a second time.
+/// How long one pass of an Animation is, for a Primitive that plays its art
+/// through once rather than for a fixed turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnePass {
+    pub(crate) frames: u32,
+    pub(crate) fps: u32,
+}
+
+/// Loops, idle-gestures, the timing ranges, what digits play while possessed,
+/// and the art `react` and `possessed` play through once. The Engine picks;
+/// `draw` does not weigh this a second time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdlePlan {
     pub(crate) loops: Vec<IdleMember>,
     pub(crate) gestures: Vec<IdleMember>,
     pub(crate) digits: Vec<IdleMember>,
+    pub(crate) react: Option<OnePass>,
+    pub(crate) possessed: Option<OnePass>,
     pub(crate) idle_gesture_every_s: (u32, u32),
     pub(crate) sleep_after_s: (u32, u32),
     pub(crate) sleep_for_s: (u32, u32),
@@ -569,11 +583,20 @@ impl Character {
             .into_iter()
             .map(|name| idle_member(name, &self.animations[name]))
             .collect();
+        let one_pass = |name| {
+            self.named(name).map(|(_, animation)| OnePass {
+                frames: animation.frames.len() as u32,
+                fps: animation.fps,
+            })
+        };
+        let (react, possessed) = (one_pass("react"), one_pass("possessed"));
         let Some(base) = self.animations.get("idle") else {
             return IdlePlan {
                 loops: Vec::new(),
                 gestures: Vec::new(),
                 digits,
+                react,
+                possessed,
                 idle_gesture_every_s: self.idle_gesture_every_s,
                 sleep_after_s: self.sleep_after_s,
                 sleep_for_s: self.sleep_for_s,
@@ -596,6 +619,8 @@ impl Character {
             loops,
             gestures,
             digits,
+            react,
+            possessed,
             idle_gesture_every_s: self.idle_gesture_every_s,
             sleep_after_s: self.sleep_after_s,
             sleep_for_s: self.sleep_for_s,
@@ -805,7 +830,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         errors.push("the package declares no name".to_string());
     }
     for required in REQUIRED_ANIMATIONS {
-        if !declared.animations.contains_key(required) {
+        if !declared.animations.contains_key(required) && !declared.same_as.contains_key(required) {
             errors.push(format!(
                 "the package declares no {required:?} animation, \
                  which every Character must supply"
@@ -814,8 +839,9 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     }
 
     let personality = personality(package, &mut errors);
-    let variant_pairs = check_variants(&declared.animations, &mut errors);
-    let left_pairs = check_left_strips(&declared.animations, &mut errors);
+    let alias_pairs = check_same_as(&declared.animations, &declared.same_as, &mut errors);
+    let variant_pairs = check_variants(&declared.animations, &declared.same_as, &mut errors);
+    let left_pairs = check_left_strips(&declared.animations, &declared.same_as, &mut errors);
     check_frame_facing(&declared, &mut errors);
     let (mut animations, art) = resolve_animations(
         package,
@@ -876,6 +902,22 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
                     size.0, size.1, faced.frame_size.0, faced.frame_size.1
                 ));
             }
+        }
+    }
+    for (alias, owner) in alias_pairs {
+        if let Some(owner_animation) = animations.get(&owner) {
+            let same = Animation {
+                frames: owner_animation.frames.clone(),
+                frame_size: owner_animation.frame_size,
+                fps: owner_animation.fps,
+                looping: owner_animation.looping,
+                variants: Vec::new(),
+                left_strip: None,
+                weight: DEFAULT_WEIGHT,
+                variant_of: None,
+                same_as: Some(owner),
+            };
+            animations.insert(alias, same);
         }
     }
     let behaviors = resolve_behaviors(declared.behaviors, &mut errors);
@@ -993,6 +1035,7 @@ pub(crate) mod tests {
             looping,
             variants: Vec::new(),
             variant_of: None,
+            same_as: None,
             left_strip: None,
             weight: DEFAULT_WEIGHT,
         }
@@ -1337,6 +1380,117 @@ pub(crate) mod tests {
         assert!(character.animations["walk"].looping, "walk did not say");
         assert_eq!(character.animations["land"].fps, 8, "land did not say");
         assert!(!character.animations["land"].looping, "land plays once");
+    }
+
+    /// Every required Animation but `react`, a four-frame-per-second `wave`
+    /// idle-gesture, and `react` declared with `extra` below it.
+    fn reacting_with(extra: &str) -> String {
+        let others: Vec<&str> = REQUIRED_ANIMATIONS
+            .into_iter()
+            .filter(|name| *name != "react")
+            .collect();
+        format!(
+            "{}[animations.wave]\nframes = [\"wave-0.png\", \"idle-0.png\"]\nfps = 4\n\
+             variant_of = \"idle-gesture\"\n[animations.react]\n{extra}",
+            declaring(&others)
+        )
+    }
+
+    /// A required slot whose clip is another Animation's names it instead of
+    /// listing the same frames again, and plays exactly what that one plays.
+    #[test]
+    fn a_same_as_slot_plays_its_owners_frames_fps_and_loop() {
+        let character =
+            load_manifest(&reacting_with("same_as = \"wave\"\n")).expect("same_as fills react");
+        let (react, wave) = (
+            &character.animations["react"],
+            &character.animations["wave"],
+        );
+
+        assert_eq!(react.frames, wave.frames);
+        assert_eq!((react.fps, react.looping), (4, true));
+        assert_eq!(react.frame_size, wave.frame_size);
+        assert_eq!(react.same_as.as_deref(), Some("wave"));
+        assert_eq!(react.variant_of, None, "an alias joins no category");
+        assert!(wave.variants.is_empty(), "and no ring");
+        let gestures: Vec<String> = character
+            .idle_plan()
+            .gestures
+            .into_iter()
+            .map(|member| member.name)
+            .collect();
+        assert_eq!(gestures, ["wave"], "the slot is not a second idle-gesture");
+    }
+
+    /// A slot that names its owner and also says how to play would be two
+    /// playbacks of one clip under one name. The owner says it once.
+    #[test]
+    fn same_as_stands_alone_in_its_table() {
+        for extra in [
+            "frames = [\"react-0.png\"]",
+            "fps = 6",
+            "loop = \"once\"",
+            "variant_of = \"idle-gesture\"",
+            "left_of = \"walk\"",
+            "weight = 3",
+        ] {
+            let errors = errors(load_manifest(&reacting_with(&format!(
+                "same_as = \"wave\"\n{extra}\n"
+            ))));
+            assert_eq!(
+                errors,
+                vec![
+                    "animation \"react\" is the same_as \"wave\", and declares nothing \
+                      else; it plays that animation's frames, fps and loop"
+                        .to_string()
+                ],
+                "{extra}"
+            );
+        }
+    }
+
+    #[test]
+    fn same_as_names_an_animation_that_has_frames_of_its_own() {
+        let errors_for = |extra: &str| errors(load_manifest(&reacting_with(extra)));
+        assert_eq!(
+            errors_for("same_as = \"shrug\"\n"),
+            vec!["animation \"react\" is the same_as \"shrug\", which is not declared".to_string()]
+        );
+        assert_eq!(
+            errors_for("same_as = \"react\"\n"),
+            vec!["animation \"react\" is the same_as itself".to_string()]
+        );
+        assert_eq!(
+            errors_for("same_as = \"wave\"\n[animations.hi]\nsame_as = \"react\"\n"),
+            vec![
+                "animation \"hi\" is the same_as \"react\", itself a same_as; \
+                  name the animation that owns the frames"
+                    .to_string()
+            ]
+        );
+        assert_names(
+            &errors_for(
+                "same_as = \"wave\"\n[animations.wiggle]\nframes = [\"wave-0.png\"]\n\
+                 variant_of = \"react\"\n",
+            ),
+            "a same_as",
+        );
+    }
+
+    /// One clip at two speeds is two Animations on the same files, and the
+    /// loader keeps allowing it: `same_as` is only for a clip played the same.
+    #[test]
+    fn two_animations_may_share_frame_files_at_their_own_fps() {
+        let character = load_manifest(&reacting_with(
+            "frames = [\"wave-0.png\", \"idle-0.png\"]\nfps = 8\nloop = \"once\"\n",
+        ))
+        .expect("shared paths load");
+        assert_eq!(
+            character.animations["react"].frames,
+            character.animations["wave"].frames
+        );
+        assert_eq!(character.animations["react"].fps, 8);
+        assert_eq!(character.animations["react"].same_as, None);
     }
 
     #[test]

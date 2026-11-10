@@ -146,27 +146,12 @@ frames = [
 fps = 5
 loop = "once"
 
-# Perched on a window or held, Bean just sits there, so hold reuses idle.
+# Perched on a window or held, Bean just sits there, so hold is the idle.
 [animations.hold]
-frames = [
-  "frames/idle-0.png",
-  "frames/idle-1.png",
-  "frames/idle-2.png",
-  "frames/idle-3.png",
-  "frames/idle-4.png",
-  "frames/idle-5.png",
-]
-fps = 3
+same_as = "idle"
 
 [animations.react]
-frames = [
-  "frames/wave-0.png",
-  "frames/wave-1.png",
-  "frames/wave-2.png",
-  "frames/wave-3.png",
-]
-fps = 4
-loop = "once"
+same_as = "wave"
 
 [animations.sit]
 frames = [

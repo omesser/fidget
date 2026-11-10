@@ -6,7 +6,7 @@
 //! asserting frames, with no windowing system, no model and no waiting.
 
 use crate::character::{
-    animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan,
+    animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan, OnePass,
     Primitive, RingChoice, DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
     DEFAULT_SLEEP_FOR_S,
 };
@@ -306,16 +306,15 @@ impl Frame {
 
 /// How long one Primitive holds the screen.
 ///
-/// ponytail: one duration for every Primitive of every Character. A Primitive
-/// is not timed to its art — fps and loop stay the manifest's — so it cannot
-/// play until the art runs out. The Engine's own idle is the exception: it
-/// plays one pass of the member it picked, then rests. Art shorter than the
-/// turn holds its last frame. Longer art is the ceiling; give a Primitive its
-/// own duration when a Character's art needs to outlast this one.
+/// ponytail: one duration for every Primitive but `react` and `possessed`,
+/// which play one pass of their art (`Engine::turn_ms`) as the Engine's own
+/// idle does. The rest are not timed to their art, so cannot play until it
+/// runs out. Art shorter than the turn holds its last frame. Give another
+/// Primitive a pass when a Character's art needs one.
 const PRIMITIVE_MS: u32 = 600;
 
-/// How long a poked sprite stands still after reacting. `PRIMITIVE_MS` is the
-/// `react` art, not a pause that reads as noticing you. 2.5 s registers without
+/// How long a poked sprite stands still after reacting. One pass of `react`
+/// is the art, not a pause that reads as noticing you. 2.5 s registers without
 /// a click ever feeling like a freeze.
 const POKE_COOLDOWN_MS: u32 = 2_500;
 
@@ -427,6 +426,9 @@ pub struct Engine {
     idle_gestures: Vec<IdleMember>,
     /// What digits 1 to 9 play while possessed, in digit order.
     digits: Vec<IdleMember>,
+    /// The art `react` and `possessed` play through once. `None` plays a turn.
+    react_art: Option<OnePass>,
+    possessed_art: Option<OnePass>,
     /// Inclusive seconds. Rolled into milliseconds when a loop starts.
     idle_gesture_every_s: (u32, u32),
     /// Inclusive seconds before sleep, and asleep. Rolled per stretch.
@@ -792,6 +794,8 @@ impl Engine {
             idle_loops: Vec::new(),
             idle_gestures: Vec::new(),
             digits: Vec::new(),
+            react_art: None,
+            possessed_art: None,
             idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -906,6 +910,8 @@ impl Engine {
         self.idle_loops = plan.loops;
         self.idle_gestures = plan.gestures;
         self.digits = plan.digits;
+        self.react_art = plan.react;
+        self.possessed_art = plan.possessed;
         self.own_idle = OwnIdle::Off;
         self.deferred = None;
     }
@@ -2264,6 +2270,20 @@ impl Engine {
             .unwrap_or(PRIMITIVE_MS)
     }
 
+    /// How long `primitive` holds the screen. `react` and `possessed` play
+    /// their art through once, even art that loops forever, and never for
+    /// less than the turn every other Primitive gets.
+    fn turn_ms(&self, primitive: Primitive) -> u32 {
+        let art = match primitive {
+            Primitive::React => self.react_art,
+            Primitive::Possessed => self.possessed_art,
+            _ => None,
+        };
+        art.map_or(PRIMITIVE_MS, |pass| {
+            one_pass_ms(pass.frames, pass.fps).max(PRIMITIVE_MS)
+        })
+    }
+
     /// Under way on foot, rather than in the air with the same speed on it.
     fn is_walking(&self) -> bool {
         matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
@@ -2296,10 +2316,9 @@ impl Engine {
         while !self.playing.is_empty() && left >= self.primitive_ms {
             left -= self.primitive_ms;
             self.playing.pop();
-            self.primitive_ms = if self.playing.is_empty() {
-                0
-            } else {
-                PRIMITIVE_MS
+            self.primitive_ms = match self.playing.last() {
+                Some(next) => self.turn_ms(*next),
+                None => 0,
             };
             moved_on = true;
             if self.playing.is_empty() {
@@ -2483,7 +2502,7 @@ impl Engine {
         if primitives.contains(&Primitive::Chase) {
             self.chase_ms = 0;
         }
-        self.primitive_ms = PRIMITIVE_MS;
+        self.primitive_ms = self.turn_ms(primitives[0]);
         // A chain is a Behavior. Holding that would make the next turn beat
         // wait out every step in it, not the one-shot it replaced.
         self.moment_holding = primitives.len() == 1;
@@ -3572,6 +3591,65 @@ mod tests {
             again.animation_ms, 0,
             "and the second Poke plays it from its first frame"
         );
+    }
+
+    /// An Engine whose `react` art is `pass`, and nothing else in its plan.
+    fn reacting_in(pass: OnePass) -> Engine {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        engine.set_idle_plan(IdlePlan {
+            loops: Vec::new(),
+            gestures: Vec::new(),
+            digits: Vec::new(),
+            react: Some(pass),
+            possessed: None,
+            idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+        });
+        settle(&mut engine, &snapshot(100));
+        engine
+    }
+
+    /// How long `react` holds the screen after a Poke, in 100ms ticks.
+    fn reaction_ms(engine: &mut Engine) -> u32 {
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        let ticks = (0..100)
+            .take_while(|_| engine.tick(&snapshot(100)).animation == "react")
+            .count() as u32;
+        (ticks + 1) * 100
+    }
+
+    /// `react` plays its art through once, like an idle-gesture, rather than
+    /// for a fixed turn that cuts a long wave short. Art that loops forever
+    /// ends at its wrap, and a second Poke plays it again from frame 0.
+    #[test]
+    fn a_poke_plays_one_pass_of_the_react_art_then_idles() {
+        let mut engine = reacting_in(OnePass { frames: 6, fps: 4 });
+        assert_eq!(reaction_ms(&mut engine), 1_500, "six frames at 4 fps");
+        assert_eq!(engine.tick(&snapshot(100)).animation, "idle");
+
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        let again = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!((again.animation, again.animation_ms), ("react", 0));
+    }
+
+    /// Art longer than a Primitive's turn plays to its end. Shorter art still
+    /// gets the turn, as every Primitive's art does.
+    #[test]
+    fn react_art_plays_to_its_end_and_never_for_less_than_a_turn() {
+        let long = OnePass { frames: 6, fps: 6 };
+        assert_eq!(reaction_ms(&mut reacting_in(long)), 1_000);
+        let short = OnePass { frames: 2, fps: 8 };
+        assert_eq!(reaction_ms(&mut reacting_in(short)), PRIMITIVE_MS);
     }
 
     /// `PRIMITIVE_MS` is the Primitive's turn, not the art's length, so the
@@ -6582,6 +6660,8 @@ mod tests {
                 fps: 6,
             }],
             digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -6738,6 +6818,8 @@ mod tests {
                 fps: 6,
             }],
             digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -6809,6 +6891,8 @@ mod tests {
                 fps: 6,
             }],
             digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -10729,6 +10813,8 @@ mod tests {
                 loops: Vec::new(),
                 gestures: Vec::new(),
                 digits: vec![clip("react", 1), clip("sleep", 1), clip("wave", 4)],
+                react: None,
+                possessed: None,
                 idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
                 sleep_after_s: DEFAULT_SLEEP_AFTER_S,
                 sleep_for_s: DEFAULT_SLEEP_FOR_S,

@@ -928,6 +928,7 @@ mod tests {
                     looping: true,
                     variants: Vec::new(),
                     variant_of: None,
+                    same_as: None,
                     left_strip: None,
                     weight: DEFAULT_WEIGHT,
                 },

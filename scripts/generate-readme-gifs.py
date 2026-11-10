@@ -5,6 +5,7 @@ Creates more interesting animations (not boring idles) for the Characters table.
 import argparse
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 from PIL import Image
@@ -78,9 +79,14 @@ def save_gif(images, output_path, fps):
 
 
 def frame_paths(chars_dir, character, animation, count):
-    return [
-        chars_dir / character / "frames" / f"{animation}-{i}.png" for i in range(count)
-    ]
+    """The first `count` distinct frames `animation` plays, read from the
+    manifest: a file's name need not match the Animation (`same_as`, a talk
+    drawn on the react's frames)."""
+    manifest = (chars_dir / character / "character.manifest").read_text(encoding="utf-8")
+    animations = tomllib.loads(manifest)["animations"]
+    spec = animations[animation]
+    spec = animations.get(spec.get("same_as"), spec)
+    return [chars_dir / character / path for path in list(dict.fromkeys(spec["frames"]))[:count]]
 
 
 def gif_rgba_frames(path):

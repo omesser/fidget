@@ -15,7 +15,7 @@
 use fidget_core::character::{
     self, CursorReaction, IdleBeat, Primitive, RingChoice, REQUIRED_ANIMATIONS,
 };
-use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
+use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Verb, Window, WorldSnapshot};
 use fidget_core::possession::Intent;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -1938,66 +1938,34 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
 }
 
 /// What each shipped card offers on 1 to 9: the clips a key can play, none
-/// of the art the arrows, a jump, a fall, a climb, a Perch or a drag draws.
+/// of the required slots or the art the arrows, a jump, a fall, a climb, a
+/// Perch or a drag draws. A Character with only those has an empty card.
 #[test]
 fn every_shipped_character_binds_its_own_clips_to_digits() {
     let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
-        ("black-mage", &["react", "sleep", "talk"][..]),
-        ("bmo", &["react", "sing", "skate", "sleep", "talk"]),
-        (
-            "buddy-bot",
-            &[
-                "idle-blink",
-                "idle-breathe",
-                "idle-listen",
-                "react",
-                "sleep",
-                "talk",
-            ],
-        ),
-        ("cat", &["grooming", "react", "sleep", "talk", "waiting"]),
-        ("jotaro-kujo", &["react", "sleep", "talk"]),
-        ("nim", &["react", "sleep", "talk"]),
+        ("black-mage", &[][..]),
+        ("bmo", &["sing", "skate"]),
+        ("buddy-bot", &["idle-blink", "idle-breathe", "idle-listen"]),
+        ("cat", &["grooming", "waiting"]),
+        ("jotaro-kujo", &[]),
+        ("nim", &[]),
         (
             "rubber-duck",
-            &[
-                "look-left",
-                "look-right",
-                "pondering",
-                "react",
-                "sleep",
-                "talk",
-                "thinking",
-                "wave",
-            ],
+            &["look-left", "look-right", "pondering", "thinking", "wave"],
         ),
-        ("timber-wolf", &["react", "scan", "sleep", "talk"]),
-        ("trump", &["react", "sleep", "talk", "waiting", "wave"]),
+        ("timber-wolf", &["scan"]),
+        ("trump", &["waiting"]),
         (
             "tux",
             &[
                 "checking-work",
                 "look-around",
-                "react",
                 "recover-card",
                 "restless-sitting",
-                "sleep",
-                "talk",
                 "waddle-in-place",
             ],
         ),
-        (
-            "tuxedo-bean",
-            &[
-                "look-around",
-                "nod-off",
-                "react",
-                "review",
-                "sleep",
-                "talk",
-                "wave",
-            ],
-        ),
+        ("tuxedo-bean", &["look-around", "nod-off", "review", "wave"]),
     ]);
     let shipped = shipped_packages();
     assert_eq!(
@@ -2057,4 +2025,59 @@ fn tuxedo_bean_plays_one_look_around_on_digit_one() {
         ..ground.clone()
     });
     assert_eq!(after.art_name(), "idle", "{after:?}");
+}
+
+/// Rubber Duck's `react` is its `wave` by `same_as`, and Tuxedo Bean's too, so
+/// a Poke plays that wave through once at the wave's 4 fps and then idles.
+#[test]
+fn a_same_as_react_plays_its_wave_once_then_idles() {
+    for (package, wave_ms) in [("rubber-duck", 1_500), ("tuxedo-bean", 1_000)] {
+        let character = load_package(package).expect("loads");
+        assert_eq!(
+            character.animations["react"].frames,
+            character.animations["wave"].frames
+        );
+        let ground = WorldSnapshot {
+            displays: vec![DISPLAY],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+            .with_behaviors(character.behaviors.clone())
+            .with_idle_plan(character.idle_plan());
+        for _ in 0..40 {
+            engine.tick(&ground);
+        }
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..ground.clone()
+        });
+        let reacting = (0..100)
+            .take_while(|_| engine.tick(&ground).animation == "react")
+            .count() as u32;
+        assert_eq!((reacting + 1) * 100, wave_ms, "{package}");
+        assert_eq!(engine.tick(&ground).animation, "idle", "{package}");
+    }
+}
+
+/// A required slot that is the same as another Animation draws that one's
+/// frames at its fps, and stays out of the idle-gestures the owner is in.
+#[test]
+fn same_as_slots_draw_their_owners_clip() {
+    for (package, slot, owner) in [
+        ("rubber-duck", "sit", "pondering"),
+        ("rubber-duck", "react", "wave"),
+        ("tuxedo-bean", "hold", "idle"),
+        ("tuxedo-bean", "react", "wave"),
+    ] {
+        let character = load_package(package).expect("loads");
+        let (same, own) = (&character.animations[slot], &character.animations[owner]);
+        assert_eq!(
+            (&same.frames, same.fps, same.looping),
+            (&own.frames, own.fps, own.looping),
+            "{package} {slot}"
+        );
+        assert_eq!(same.same_as.as_deref(), Some(owner));
+        assert!(!same.is_idle_gesture(), "{package} {slot}");
+    }
 }

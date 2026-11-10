@@ -170,7 +170,7 @@ def frame(package, declared, art_root):
     return {"src": f"characters/{package.name}/{declared}", "w": width, "h": height}
 
 
-def emit(package, name, animation, defaults, art_root, extra=None):
+def emit(package, name, animation, extra, defaults, art_root):
     """One Animation as the page plays it: frames on disk, fps/loop/weight as
     the loader would fill them. `extra` is for a Variant's `variant_of` — the
     field that says this tile is a ring member, not a Required Animation slot.
@@ -192,6 +192,18 @@ def emit(package, name, animation, defaults, art_root, extra=None):
     return tile
 
 
+def owned(package, name, animation, animations):
+    """The table that holds `name`'s frames, and the `same_as` the tile carries.
+    A `same_as` slot plays its owner's frames, fps and loop, as the loader does."""
+    owner = animation.get("same_as")
+    if owner is None:
+        return animation, None
+    target = animations.get(owner)
+    if not isinstance(target, dict) or "same_as" in target:
+        raise Malformed(f"{package.name}: {name!r} is the same_as {owner!r}, which owns no frames")
+    return target, {"same_as": owner}
+
+
 def character(package, required, gesture_category, defaults, art_root):
     manifest = package / "character.manifest"
     try:
@@ -210,7 +222,8 @@ def character(package, required, gesture_category, defaults, art_root):
         if animation is None:
             strip.append({"name": name, "missing": True})
             continue
-        strip.append(emit(package, name, animation, defaults, art_root))
+        strip.append(emit(package, name, *owned(package, name, animation, animations),
+                          defaults, art_root))
 
     # Nested on the base, never spliced into the required strip: a Variant is
     # not a tenth Required Animation, and sing is not a climb. An idle-gesture's
@@ -224,10 +237,10 @@ def character(package, required, gesture_category, defaults, art_root):
         if not base:
             continue
         if base == gesture_category:
-            gestures.append(emit(package, name, animation, defaults, art_root))
+            gestures.append(emit(package, name, animation, None, defaults, art_root))
             continue
         by_base.setdefault(base, []).append(
-            emit(package, name, animation, defaults, art_root, {"variant_of": base})
+            emit(package, name, animation, {"variant_of": base}, defaults, art_root)
         )
 
     for slot in strip:
@@ -241,7 +254,8 @@ def character(package, required, gesture_category, defaults, art_root):
         animation = animations.get(name)
         if animation is None or animation.get("variant_of"):
             continue
-        extra = emit(package, name, animation, defaults, art_root)
+        extra = emit(package, name, *owned(package, name, animation, animations),
+                     defaults, art_root)
         members = by_base.get(name)
         if members:
             extra["variants"] = members
@@ -464,6 +478,32 @@ def self_check():
         assert gesture.get("weight") == 3, "an idle-gesture dropped its declared weight"
         assert gesture.get("frames") and "fps" in gesture and "loop" in gesture
         assert '"wave"' in page.read_text(encoding="utf-8"), "an idle-gesture never reached the page"
+
+        # A required slot `same_as` an idle-gesture plays the gesture's
+        # frames in its own tile, and the gesture keeps its one tile.
+        aliased = scratch / "aliased"
+        others = "\n".join(
+            f'[animations.{n}]\nframes = ["frames/{n}-0.png"]' for n in required if n != "react"
+        )
+        package(
+            aliased / "aliased",
+            f'name = "Aliased"\n{others}\n'
+            "[animations.wave]\n"
+            'frames = ["frames/idle-0.png"]\n'
+            "fps = 4\n"
+            'variant_of = "idle-gesture"\n'
+            "[animations.react]\n"
+            'same_as = "wave"\n',
+            frames=complete,
+        )
+        data, _ = gallery(aliased, rust_text, out)
+        ch = data["characters"][0]
+        react = next(a for a in ch["animations"] if a["name"] == "react")
+        assert react.get("same_as") == "wave", "a same_as slot lost its owner"
+        assert react["frames"][0]["src"].endswith("frames/idle-0.png") and react["fps"] == 4, (
+            "a same_as slot does not play its owner's frames and fps")
+        assert [g["name"] for g in ch["gestures"]] == ["wave"], (
+            "a same_as slot stole or doubled the idle-gesture tile")
 
         looks = scratch / "looks"
         package(

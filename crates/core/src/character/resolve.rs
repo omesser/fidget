@@ -83,6 +83,7 @@ pub(super) fn resolve_animations(
                     looping: declaration.looping,
                     variants: Vec::new(),
                     variant_of: declaration.variant_of.clone(),
+                    same_as: None,
                     left_strip: None,
                     weight: declaration.weight,
                 },
@@ -137,11 +138,54 @@ pub(super) fn check_frame_facing(declared: &Declared, errors: &mut Vec<String>) 
     }
 }
 
+/// Validate every `same_as` and hand back the (alias, owner) pairs. One hop:
+/// the owner draws its own frames, so an alias never resolves through another.
+pub(super) fn check_same_as(
+    declared: &BTreeMap<String, DeclaredAnimation>,
+    same_as: &BTreeMap<String, String>,
+    errors: &mut Vec<String>,
+) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for (name, owner) in same_as {
+        if owner == name {
+            errors.push(format!("animation {name:?} is the same_as itself"));
+        } else if same_as.contains_key(owner) {
+            errors.push(format!(
+                "animation {name:?} is the same_as {owner:?}, itself a same_as; \
+                 name the animation that owns the frames"
+            ));
+        } else if !declared.contains_key(owner) {
+            errors.push(format!(
+                "animation {name:?} is the same_as {owner:?}, which is not declared"
+            ));
+        } else {
+            pairs.push((name.clone(), owner.clone()));
+        }
+    }
+    pairs
+}
+
+/// A `variant_of` or `left_of` naming a `same_as` table, which owns no frames
+/// to ring or face. `None` when `base` is not one.
+fn names_an_alias(
+    name: &str,
+    key: &str,
+    base: &str,
+    same_as: &BTreeMap<String, String>,
+) -> Option<String> {
+    let owner = same_as.get(base)?;
+    Some(format!(
+        "animation {name:?} is a {key} {base:?}, a same_as {owner:?}; \
+         name the animation that owns the frames"
+    ))
+}
+
 /// Validate every `variant_of` and hand back the (variant, base) pairs.
 /// A variant is more art for an Animation the engine already plays, never a new
 /// Behavior. A held last frame would stall; a variant of a variant nests a ring.
 pub(super) fn check_variants(
     declared: &BTreeMap<String, DeclaredAnimation>,
+    same_as: &BTreeMap<String, String>,
     errors: &mut Vec<String>,
 ) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
@@ -158,6 +202,10 @@ pub(super) fn check_variants(
                      pass per idle gesture"
                 ));
             }
+            continue;
+        }
+        if let Some(error) = names_an_alias(name, "variant_of", base, same_as) {
+            errors.push(error);
             continue;
         }
         match declared.get(base) {
@@ -184,6 +232,7 @@ pub(super) fn check_variants(
 /// strips instead of mirroring a cheek mark. A different length would play two animations.
 pub(super) fn check_left_strips(
     declared: &BTreeMap<String, DeclaredAnimation>,
+    same_as: &BTreeMap<String, String>,
     errors: &mut Vec<String>,
 ) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
@@ -192,6 +241,10 @@ pub(super) fn check_left_strips(
         let Some(base) = &animation.left_of else {
             continue;
         };
+        if let Some(error) = names_an_alias(name, "left_of", base, same_as) {
+            errors.push(error);
+            continue;
+        }
         match declared.get(base) {
             _ if base == name => errors.push(format!("animation {name:?} is a left_of itself")),
             None => errors.push(format!(

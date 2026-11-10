@@ -98,6 +98,15 @@ mirror would move it to the other. Optional. A strip's frames mirror by their
 Facing like any other frame, so a strip drawn facing left declares it. #345.
 _Avoid_: Flipped animation, left walk, direction variant
 
+**Same As**:
+An Animation declared `same_as` another, with no frames of its own: a second
+name for one clip, played with the owner's frames, fps and loop. It joins no
+ring and no idle-gesture category. A required slot uses it when its clip is
+another Animation's, so the frames are listed once: Rubber Duck's `sit` is the
+same as its `pondering`. One clip at two speeds stays two Animations on the
+same frame files.
+_Avoid_: Alias, copy, duplicate animation
+
 **Facing**:
 Which way a frame's art faces as drawn, left or right: the Character
 Manifest's `facing` default, or the frame's own `[frame_facing]` entry. The
@@ -328,9 +337,12 @@ The switch that hands a fidget to the user's keyboard. Left and Right walk it,
 Up climbs the wall it stands against, Down drops it through its Perch, Space
 makes it jump, the digits 1 to 9 play one pass of its Animations in name
 order, and Escape releases it. A digit plays the Animation alone, never a
-Behavior or its `then`. The digits skip every Animation the controls already
-draw: idle, walk, jump, fall, land, climb, sit and hold on a Perch, grab under
-the mouse, and possessed, plus their variants and left strips. The fidget is
+Behavior or its `then`. The digits skip the nine required Animations, which
+the Engine plays, and every Animation the controls already draw: walk, jump,
+fall, land, climb, sit and hold on a Perch, grab under the mouse, and
+possessed. They skip drawn variants, left strips and `same_as` names too, all
+by declaration, never by comparing frames. An idle-gesture keeps its digit when
+a required slot is the same as it. The fidget is
 possessed, the way a ghost possesses a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
