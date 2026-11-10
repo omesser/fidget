@@ -50,13 +50,19 @@ pub(crate) const DRIVEN_ANIMATIONS: [&str; 10] = [
     "possessed",
 ];
 
+/// The one required slot a digit may play. No control draws `sleep`, so a
+/// key for it plays one pass of the clip; it is not the nap Behavior.
+const DIGIT_PLAYABLE_REQUIRED: &str = "sleep";
+
 /// Whether a digit may play `name`, by what the manifest declares rather than
 /// by comparing clips. Not an Animation the controls draw, nor a required
-/// slot the Engine plays, nor a drawn variant standing in for its base, nor a
-/// left strip, nor a `same_as`, which is another name for a clip with its own.
-/// An idle-gesture keeps its digit when a required slot is the same as it.
+/// slot the Engine plays (but `sleep`), nor a drawn variant standing in for
+/// its base, nor a left strip, nor a `same_as`, which is another name for a
+/// clip with its own. An idle-gesture keeps its digit when a required slot is
+/// the same as it.
 fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Animation>) -> bool {
-    let engine_owned = DRIVEN_ANIMATIONS.contains(&name) || REQUIRED_ANIMATIONS.contains(&name);
+    let engine_owned = DRIVEN_ANIMATIONS.contains(&name)
+        || (REQUIRED_ANIMATIONS.contains(&name) && name != DIGIT_PLAYABLE_REQUIRED);
     let drawn_variant = animation.variant_of.is_some() && !animation.is_idle_gesture();
     let left_strip = animations
         .values()
@@ -65,8 +71,8 @@ fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Ani
 }
 
 /// What digits 1 to 9 play: the Character's own Animations in name order,
-/// minus the ones the Engine or the controls already draw. The card shows
-/// these names.
+/// minus the ones the Engine or the controls already draw, save `sleep`.
+/// The card shows these names.
 pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
     animations
         .iter()
@@ -406,6 +412,7 @@ mod tests {
 
     /// A digit is "play this clip now", so the card names Animations, never
     /// the Behaviors that compose them, and a Behavior's `then` adds nothing.
+    /// `sleep` is there as one pass of its clip, not as the `nap` that plays it.
     #[test]
     fn digits_name_animations_not_behaviors() {
         let character = character_with(
@@ -414,12 +421,13 @@ mod tests {
              [behaviors.greet]\nplay = [\"react\", \"talk\"]\nthen = \"nap\"\n\
              [behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
         );
-        assert_eq!(digit_animations(&character.animations), ["wave"]);
+        assert_eq!(digit_animations(&character.animations), ["sleep", "wave"]);
     }
 
     /// Hidden by what the manifest declares, never by comparing clips. A
-    /// required slot is the Engine's to play, a `same_as` is a second name
-    /// for its owner, and the idle-gesture that owns the frames keeps its key.
+    /// required slot is the Engine's to play, except `sleep`, which no
+    /// control draws. A `same_as` is a second name for its owner, and the
+    /// idle-gesture that owns the frames keeps its key.
     #[test]
     fn a_required_slot_or_same_as_gets_no_digit_and_its_owner_keeps_one() {
         let character = character_without(
@@ -433,16 +441,42 @@ mod tests {
         );
         assert_eq!(
             digit_animations(&character.animations),
-            ["pondering", "wave"]
+            ["pondering", "sleep", "wave"]
         );
+    }
+
+    /// `sleep` is a required slot no control draws, so it keeps a digit.
+    /// `talk` and `react` are required too, and stay off the card.
+    #[test]
+    fn a_required_sleep_gets_a_digit_and_talk_and_react_do_not() {
+        let character = character_with("");
+        let animations = &character.animations;
+        assert!(bindable("sleep", &animations["sleep"], animations));
+        for name in ["talk", "react"] {
+            assert!(!bindable(name, &animations[name], animations), "{name}");
+        }
+        assert_eq!(digit_animations(animations), ["sleep"]);
+    }
+
+    /// A `sleep` that is a second name for another clip is hidden by the
+    /// `same_as` rule, like any other.
+    #[test]
+    fn a_sleep_that_is_same_as_another_clip_gets_no_digit() {
+        let character = character_without(
+            &["sleep"],
+            "[animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"idle-gesture\"\n\
+             [animations.sleep]\nsame_as = \"doze\"\n",
+        );
+        assert_eq!(digit_animations(&character.animations), ["doze"]);
     }
 
     /// The arrows, Space, falling, climbing, perching and the mouse already
     /// draw these, so a digit for one would replay a key. The idle is the
     /// rest between keys. A ring member stands in for its base, and a left
-    /// strip is its base facing the other way.
+    /// strip is its base facing the other way. Only `sleep`, which no control
+    /// draws, is left; its ring member `doze` still stands in for it.
     #[test]
-    fn animations_the_controls_already_draw_get_no_digit() {
+    fn animations_the_controls_already_draw_get_no_digit_and_sleep_keeps_one() {
         let character = character_with(
             "[animations.climb]\nframes = [\"walk-0.png\"]\n\
              [animations.grab]\nframes = [\"fall-0.png\"]\n\
@@ -453,11 +487,7 @@ mod tests {
              [animations.perk-up]\nframes = [\"sit-0.png\"]\nvariant_of = \"sit\"\n\
              [animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"sleep\"\n",
         );
-        assert!(
-            digit_animations(&character.animations).is_empty(),
-            "{:?}",
-            digit_animations(&character.animations)
-        );
+        assert_eq!(digit_animations(&character.animations), ["sleep"]);
     }
 
     #[test]

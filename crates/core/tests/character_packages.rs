@@ -1938,23 +1938,34 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
 }
 
 /// What each shipped card offers on 1 to 9: the clips a key can play, none
-/// of the required slots or the art the arrows, a jump, a fall, a climb, a
-/// Perch or a drag draws. A Character with only those has an empty card.
+/// of the required slots but `sleep`, and none of the art the arrows, a jump,
+/// a fall, a climb, a Perch or a drag draws. A Character with only those
+/// offers `sleep` alone.
 #[test]
 fn every_shipped_character_binds_its_own_clips_to_digits() {
     let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
-        ("black-mage", &[][..]),
-        ("bmo", &["sing", "skate"]),
-        ("buddy-bot", &["idle-blink", "idle-breathe", "idle-listen"]),
-        ("cat", &["grooming", "waiting"]),
-        ("jotaro-kujo", &[]),
-        ("nim", &[]),
+        ("black-mage", &["sleep"][..]),
+        ("bmo", &["sing", "skate", "sleep"]),
+        (
+            "buddy-bot",
+            &["idle-blink", "idle-breathe", "idle-listen", "sleep"],
+        ),
+        ("cat", &["grooming", "sleep", "waiting"]),
+        ("jotaro-kujo", &["sleep"]),
+        ("nim", &["sleep"]),
         (
             "rubber-duck",
-            &["look-left", "look-right", "pondering", "thinking", "wave"],
+            &[
+                "look-left",
+                "look-right",
+                "pondering",
+                "sleep",
+                "thinking",
+                "wave",
+            ],
         ),
-        ("timber-wolf", &["scan"]),
-        ("trump", &["waiting"]),
+        ("timber-wolf", &["scan", "sleep"]),
+        ("trump", &["sleep", "waiting"]),
         (
             "tux",
             &[
@@ -1962,10 +1973,14 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
                 "look-around",
                 "recover-card",
                 "restless-sitting",
+                "sleep",
                 "waddle-in-place",
             ],
         ),
-        ("tuxedo-bean", &["look-around", "nod-off", "review", "wave"]),
+        (
+            "tuxedo-bean",
+            &["look-around", "nod-off", "review", "sleep", "wave"],
+        ),
     ]);
     let shipped = shipped_packages();
     assert_eq!(

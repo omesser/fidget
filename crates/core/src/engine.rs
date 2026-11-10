@@ -10891,6 +10891,32 @@ mod tests {
             }
         }
 
+        /// A `sleep` digit is one pass of the clip, not a nap: the sprite
+        /// never falls Asleep and is back to idle once the pass is done.
+        #[test]
+        fn a_sleep_digit_plays_one_pass_and_never_falls_asleep() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(2), &world));
+            assert_eq!(played.art_name(), "sleep", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("sleep".into())));
+            assert_eq!(played.playing_behavior, None, "not the nap Behavior");
+            assert_ne!(played.state, State::Asleep);
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_ne!(last.state, State::Asleep, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
         /// The Shell remembers `Frame::behavior` in `recent:`, a list of
         /// Behaviors the Director may propose. A digit names an Animation,
         /// so `wave` from a key leaves a Behavior called `wave` free, and
