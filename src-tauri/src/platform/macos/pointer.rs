@@ -138,9 +138,8 @@ struct Edges {
 }
 
 /// One button as the frame loop is told it, one edge per tick. The level
-/// misses a press that fits between two ticks, and since macOS 27.2 the
-/// counters move only every 500 ms, so each edge is taken from whichever
-/// source shows it first.
+/// misses a press between two ticks and the macOS 27.2 counters move only
+/// every 500 ms, so each edge is taken from whichever source shows it first.
 #[derive(Clone, Copy, Debug)]
 struct Button {
     last: ButtonSample,
@@ -228,11 +227,11 @@ impl Button {
 /// Adds one tick's edges of one kind. A count lands with its level edge or
 /// after it, never before, so it repeats an edge the level showed only while
 /// one is `uncounted`. Any other count is an edge the level missed.
-fn merge(seen: &mut u64, uncounted: &mut u64, level: bool, counted: u64) {
-    *uncounted += u64::from(level);
+fn merge(seen: &mut u64, uncounted: &mut u64, level_edge: bool, counted: u64) {
+    *uncounted += u64::from(level_edge);
     let repeats = counted.min(*uncounted);
     *uncounted -= repeats;
-    *seen += u64::from(level) + counted - repeats;
+    *seen += u64::from(level_edge) + counted - repeats;
 }
 
 struct Session {
@@ -623,7 +622,7 @@ mod tests {
 
     /// The counters missed the press, the level went down: a press.
     #[test]
-    fn a_level_with_no_count_is_a_press() {
+    fn a_level_edge_with_no_count_is_a_press() {
         assert_eq!(
             levels(&[sample(false, 4, 4), sample(true, 4, 4), sample(true, 4, 4)]),
             vec![true, true]
@@ -704,7 +703,7 @@ mod tests {
         for &now in &before[1..] {
             verbs.extend(pointer.update(false, button.step(now), false, at, 16));
         }
-        let (downs, ups) = (before[before.len() - 1].downs, before[before.len() - 1].ups);
+        let ButtonSample { downs, ups, .. } = before[before.len() - 1];
         let held = [(sample(true, downs, ups), 20.0); 10];
         let let_go = [(sample(false, downs, ups), 20.0)];
         let still = [(sample(false, downs, ups), 0.0); 10];
