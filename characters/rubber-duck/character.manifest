@@ -189,49 +189,25 @@ same_as = "wave"
 [animations.sit]
 same_as = "pondering"
 
-# Row 6 falls asleep and wakes up. Hold the closed-eye poses for 8 of 9.5 seconds.
-[animations.sleep]
+# Row 6 as a looping Animation: each of the eight poses once, at the
+# original fps.
+[animations.doze]
 frames = [
   "frames/doze-0.png",
   "frames/doze-1.png",
   "frames/doze-2.png",
   "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-3.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
-  "frames/doze-4.png",
   "frames/doze-4.png",
   "frames/doze-5.png",
   "frames/doze-6.png",
   "frames/doze-7.png",
 ]
 fps = 4
+
+# Sleep holds the two closed-eye poses from that row, a second each.
+[animations.sleep]
+frames = ["frames/doze-3.png", "frames/doze-4.png"]
+fps = 1
 
 # Listening outweighs interruptions; a walk waits for a pause in typing.
 [behaviors.listen]
