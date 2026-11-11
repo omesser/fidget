@@ -6723,7 +6723,7 @@ mod tests {
     /// button list, not a value recomputed while asserting.
     #[test]
     fn a_login_opening_carries_agent_sign_in_and_omits_it_otherwise() {
-        use agent_client_protocol::schema::v1::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
+        use agent_client_protocol::v1::schema::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
         use std::collections::HashMap;
 
         let mut roster = Roster::new();

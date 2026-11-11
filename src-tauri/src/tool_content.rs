@@ -3,7 +3,7 @@
 //! Every field the wire sends reaches the reader in some form. A diff is a path
 //! and line counts, never a viewer. A terminal is a label naming its id.
 
-use agent_client_protocol::schema::v1::{ContentBlock, Diff, ToolCallContent, ToolCallLocation};
+use agent_client_protocol::v1::schema::{ContentBlock, Diff, ToolCallContent, ToolCallLocation};
 use serde::Serialize;
 use similar::{ChangeTag, TextDiff};
 

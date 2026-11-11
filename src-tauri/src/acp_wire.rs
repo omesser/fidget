@@ -17,22 +17,23 @@ use std::time::{Duration, Instant};
 use crate::content_mark::{self, chunk_text};
 use crate::mcp_http::SecretString;
 use crate::tool_content::{piece, pieces, places, Piece, Place, ToolPiece};
-use agent_client_protocol::schema::v1::{
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::v1::schema::{
     AuthMethod, AuthenticateRequest, CancelNotification, ClientCapabilities, CloseSessionRequest,
     CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationContentValue, ElicitationFormCapabilities, ElicitationId, ElicitationMode,
     ElicitationPropertySchema, ElicitationScope, ElicitationSessionScope,
-    ElicitationUrlCapabilities, EnvVariable, Error, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio, MessageId,
-    Meta, NewSessionRequest, Plan, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    ElicitationUrlCapabilities, EnvVariable, HttpHeader, Implementation, InitializeRequest,
+    LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio, MessageId, Meta,
+    NewSessionRequest, Plan, PromptRequest, PromptResponse, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
     SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, StopReason, TextContent, ToolCallContent, ToolCallLocation,
 };
-use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
+use agent_client_protocol::v1::{ConnectionTo, Responder};
+use agent_client_protocol::{Agent, ByteStreams, Client, Error, ErrorCode};
 use fidget_core::director::Reply;
 #[cfg(test)]
 use fidget_core::turn_motion::Beat;
@@ -561,7 +562,7 @@ pub enum TurnError {
 /// mid-session as `-32603` with `errorKind: "authentication_failed"` in
 /// `data`, the field it tells clients to dispatch on instead of the text.
 fn auth_refused(error: &Error) -> bool {
-    error.code == ErrorCode::AuthRequired
+    error.code == ErrorCode::AUTH_REQUIRED
         || error
             .data
             .as_ref()
@@ -1009,7 +1010,7 @@ fn run(
         let mut ready = Some(ready);
         let mut refused = None;
         let outcome = Client
-            .builder()
+            .v1()
             .name("fidget")
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
@@ -3014,7 +3015,7 @@ fn name_of<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{
+    use agent_client_protocol::v1::schema::{
         AuthMethodAgent, ContentChunk, ImageContent, ResourceLink, ToolKind,
     };
     use std::sync::Arc;
