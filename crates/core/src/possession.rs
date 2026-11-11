@@ -56,12 +56,13 @@ pub(crate) const DRIVEN_ANIMATIONS: [&str; 10] = [
 /// Perch, or Dialogue already uses.
 pub(crate) const DIGIT_PLAYABLE_ENGINE_ANIMATIONS: [&str; 4] = ["react", "sit", "sleep", "talk"];
 
-/// Whether a digit may play `name`, by what the manifest declares rather than
-/// by comparing clips. Not an Animation the controls draw, nor a required
-/// slot the Engine plays, except [`DIGIT_PLAYABLE_ENGINE_ANIMATIONS`], nor a
-/// drawn variant standing in for its base, nor a left strip, nor a `same_as`,
-/// which is another name for a clip with its own. An idle-gesture keeps its
-/// digit when a required slot is the same as it.
+/// Whether a digit may play `name`, by what the manifest declares. Not an
+/// Animation the controls draw, nor a required slot the Engine plays, except
+/// [`DIGIT_PLAYABLE_ENGINE_ANIMATIONS`], nor a drawn variant standing in for
+/// its base, nor a left strip, nor a `same_as`, which is another name for a
+/// clip with its own. An idle-gesture keeps its digit when a required slot
+/// is the same as it. [`digit_animations`] then drops later names that share
+/// a frame-path list with one already kept.
 fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Animation>) -> bool {
     let engine_owned = (DRIVEN_ANIMATIONS.contains(&name) || REQUIRED_ANIMATIONS.contains(&name))
         && !DIGIT_PLAYABLE_ENGINE_ANIMATIONS.contains(&name);
@@ -74,14 +75,27 @@ fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Ani
 
 /// What digits 1 to 9 play: the Character's own Animations in name order,
 /// minus the ones the Engine or the controls already draw, save `react`,
-/// `sit`, `sleep` and `talk`. The card shows these names.
+/// `sit`, `sleep` and `talk`, then minus any later name whose ordered
+/// frame-path list matches one already kept, ignoring fps and loop. The
+/// card shows these names, at most nine.
 pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
-    animations
-        .iter()
-        .filter(|(name, animation)| bindable(name, animation, animations))
-        .map(|(name, _)| name.as_str())
-        .take(9)
-        .collect()
+    let mut names = Vec::new();
+    let mut kept_frames: Vec<&[String]> = Vec::new();
+    for (name, animation) in animations {
+        if !bindable(name, animation, animations) {
+            continue;
+        }
+        let frames = animation.frames.as_slice();
+        if kept_frames.contains(&frames) {
+            continue;
+        }
+        kept_frames.push(frames);
+        names.push(name.as_str());
+        if names.len() == 9 {
+            break;
+        }
+    }
+    names
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -510,13 +524,35 @@ mod tests {
         );
     }
 
+    /// Eleven idle-gestures, each on its own frame-path list, plus the
+    /// playable required slots. Digits keep the first nine in name order.
+    /// The lists have to be unique: a shared path would drop the later
+    /// names before the cap applies.
     #[test]
     fn only_the_first_nine_animations_get_digits() {
+        let singles = [
+            "wave-0.png",
+            "talk-0.png",
+            "sleep-0.png",
+            "sit-0.png",
+            "react-0.png",
+            "land-0.png",
+            "idle-0.png",
+            "hold-0.png",
+            "fall-0.png",
+            "walk-0.png",
+        ];
         let gestures: String = ["k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"]
             .iter()
             .map(|name| {
+                let index = usize::from(name.as_bytes()[0] - b'a');
+                let frames = if let Some(file) = singles.get(index) {
+                    format!("[\"{file}\"]")
+                } else {
+                    "[\"wave-0.png\", \"react-0.png\"]".to_string()
+                };
                 format!(
-                    "[animations.{name}]\nframes = [\"wave-0.png\"]\n\
+                    "[animations.{name}]\nframes = {frames}\n\
                      variant_of = \"idle-gesture\"\n"
                 )
             })
@@ -526,6 +562,22 @@ mod tests {
             digit_animations(&character.animations),
             ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
         );
+    }
+
+    /// Two Animations may share a frame-path list at different fps, and
+    /// both stay bindable, but the later name is not offered a digit.
+    #[test]
+    fn a_later_name_on_the_same_frames_gets_no_digit() {
+        let character = character_without(
+            &["talk"],
+            "[animations.talk]\nframes = [\"react-0.png\"]\nfps = 3\n",
+        );
+        let animations = &character.animations;
+        assert!(bindable("react", &animations["react"], animations));
+        assert!(bindable("talk", &animations["talk"], animations));
+        assert_ne!(animations["react"].fps, animations["talk"].fps);
+        assert_eq!(animations["react"].frames, animations["talk"].frames);
+        assert_eq!(digit_animations(animations), ["react", "sit", "sleep"]);
     }
 
     #[test]

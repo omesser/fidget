@@ -343,10 +343,11 @@ fall, land, climb, hold on a Perch, grab under the mouse, and possessed.
 They keep `react`, `sit`, `sleep` and `talk`: a digit plays one pass of
 the clip, never a Behavior that plays it. A Perch still draws `sit`, a
 poke still plays `react`, and Dialogue still draws `talk`. They skip
-drawn variants, left strips and `same_as` names too, all by declaration,
-never by comparing frames. An idle-gesture keeps its digit when a required
-slot is the same as it. The fidget is possessed, the way a ghost possesses
-a body, and the Director's prompt says so.
+drawn variants, left strips and `same_as` names too, all by declaration.
+A later name whose ordered frame-path list matches one already kept also
+loses its digit, ignoring fps and loop. An idle-gesture keeps its digit
+when a required slot is the same as it. The fidget is possessed, the way
+a ghost possesses a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
 still falls, perches and can be grabbed, and it stays possessed when another
