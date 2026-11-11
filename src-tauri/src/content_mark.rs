@@ -5,7 +5,7 @@
 //! Markdown, drawn by `src/markdown.js`, so every variable field is escaped
 //! until it cannot close a label, open a link or forge a tag.
 
-use agent_client_protocol::schema::v1::{ContentBlock, EmbeddedResourceResource, ResourceLink};
+use agent_client_protocol::v1::schema::{ContentBlock, EmbeddedResourceResource, ResourceLink};
 
 use crate::platform;
 
@@ -121,7 +121,7 @@ pub(crate) fn escaped(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{
+    use agent_client_protocol::v1::schema::{
         AudioContent, BlobResourceContents, EmbeddedResource, EmbeddedResourceResource,
         ImageContent, ResourceLink, TextContent, TextResourceContents,
     };
