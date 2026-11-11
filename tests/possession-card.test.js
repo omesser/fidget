@@ -54,7 +54,7 @@ test("the card lists the bound keys under the explanation", () => {
   assert.equal(card.heading, "Manually drive the fidget on your screen");
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
-    ["↑", "Climb"],
+    ["↑ ↓", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
   ]);
@@ -69,7 +69,7 @@ test("the card numbers the shell's list and writes each name as a label", () => 
   });
   assert.deepEqual(card.keys, [
     ["← →", "Walk"],
-    ["↑", "Climb"],
+    ["↑ ↓", "Climb"],
     ["↓", "Drop"],
     ["Space", "Jump"],
     ["1", "Wave"],

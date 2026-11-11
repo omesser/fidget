@@ -24,7 +24,7 @@ const POSSESSION_INSET = 16;
 // only numbers them.
 const KEYS = [
   ["← →", "Walk"],
-  ["↑", "Climb"],
+  ["↑ ↓", "Climb"],
   ["↓", "Drop"],
   ["Space", "Jump"],
 ];
