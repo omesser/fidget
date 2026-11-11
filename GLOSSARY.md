@@ -334,9 +334,12 @@ _Avoid_: Invoke, activate, wake
 
 **Possession**:
 The switch that hands a fidget to the user's keyboard. Left and Right walk it,
-Up climbs the wall it stands against, Down drops it through its Perch, Space
+Up takes the wall it stands against, Down drops it through its Perch, Space
 makes it jump, the digits 1 to 9 play one pass of its Animations in name
-order, and Escape releases it. A digit plays the Animation alone, never a
+order, and Escape releases it. On a wall it climbs while Up is held, climbs
+down while Down is held, and holds still under neither. It stops at the top
+of the display and steps onto what is under the wall when it reaches it.
+A digit plays the Animation alone, never a
 Behavior or its `then`. The digits skip the required Animations, which the
 Engine plays, and every Animation the controls already draw: walk, jump,
 fall, land, climb, hold on a Perch, grab under the mouse, and possessed.
