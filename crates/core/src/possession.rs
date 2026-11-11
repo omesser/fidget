@@ -51,7 +51,7 @@ pub(crate) const DRIVEN_ANIMATIONS: [&str; 10] = [
 ];
 
 /// The one required slot a digit may play. No control draws `sleep`, so a
-/// key for it plays one pass of the clip; it is not the nap Behavior.
+/// key for it plays one pass of the clip, not a Behavior that plays it.
 const DIGIT_PLAYABLE_REQUIRED: &str = "sleep";
 
 /// Whether a digit may play `name`, by what the manifest declares rather than

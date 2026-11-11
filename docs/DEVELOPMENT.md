@@ -324,10 +324,10 @@ The Primitives, and the Animation each plays:
 | Primitive | Animation |
 |---|---|
 | `idle`, `walk`, `land`, `sit`, `sleep`, `react`, `talk`, `hold` | The Animation of the same name |
-
-`react` and `possessed` play their art through once, even art that loops forever, and never for less than the 600 ms turn every other Primitive gets. A second Poke plays `react` again from its first frame.
 | `chase` | `walk`, steered toward the cursor's x along the ground |
 | `jump` | `jump`, or `fall` without it |
+
+`react` and `possessed` play their art through once, even art that loops forever, and never for less than the 600 ms turn every other Primitive gets. A second Poke plays `react` again from its first frame.
 
 `when` takes one of three forms. A duration is a whole number followed by `s` or `m`.
 

@@ -10902,7 +10902,7 @@ mod tests {
             let played = engine.tick(&with_possession(playing(2), &world));
             assert_eq!(played.art_name(), "sleep", "{played:?}");
             assert_eq!(played.digit, Some(DigitAnimation::Played("sleep".into())));
-            assert_eq!(played.playing_behavior, None, "not the nap Behavior");
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
             assert_ne!(played.state, State::Asleep);
 
             let mut last = played;
@@ -10991,44 +10991,59 @@ mod tests {
             );
         }
 
-        /// Every State, whether possession's controls drive it, and the next
-        /// State to check. No `_` arm: a new State fails to compile here until
-        /// it picks a side and joins the walk.
-        fn state_driven(state: State) -> (bool, Option<State>) {
+        /// Every variant of `$enum`. The match has no wildcard, so a new
+        /// variant fails to compile until it is added to this same list,
+        /// which is also the array the test walks.
+        macro_rules! every_variant {
+            ($enum:ident, $($variant:ident),+ $(,)?) => {{
+                let _: fn($enum) = |value| match value {
+                    $($enum::$variant => {})+
+                };
+                [$($enum::$variant),+]
+            }};
+        }
+
+        fn every_state() -> [State; 6] {
+            every_variant!(State, Grounded, Falling, Dragged, Perched, Climbing, Asleep)
+        }
+
+        fn every_primitive() -> [Primitive; 11] {
+            every_variant!(
+                Primitive, Idle, Walk, Land, Sit, Sleep, React, Talk, Hold, Chase, Jump, Possessed
+            )
+        }
+
+        /// Whether possession's controls drive this State. No `_` arm: a new
+        /// State fails to compile here until it picks a side.
+        fn state_driven(state: State) -> bool {
             match state {
-                // The rest between keys.
-                State::Grounded => (true, Some(State::Falling)),
-                State::Falling => (true, Some(State::Dragged)),
-                // Held by the mouse.
-                State::Dragged => (true, Some(State::Perched)),
-                State::Perched => (true, Some(State::Climbing)),
-                // Up at a wall.
-                State::Climbing => (true, Some(State::Asleep)),
+                // The rest between keys, a fall, a drag, a Perch, Up at a wall.
+                State::Grounded
+                | State::Falling
+                | State::Dragged
+                | State::Perched
+                | State::Climbing => true,
                 // The sprite's own, and possession wakes it.
-                State::Asleep => (false, None),
+                State::Asleep => false,
             }
         }
 
-        /// Every Primitive, whether a control plays it, and the next to
-        /// check. No `_` arm, as in `state_driven`.
-        fn primitive_driven(primitive: Primitive) -> (bool, Option<Primitive>) {
+        /// Whether a control plays this Primitive. No `_` arm, as in
+        /// `state_driven`.
+        fn primitive_driven(primitive: Primitive) -> bool {
             match primitive {
-                Primitive::Idle => (true, Some(Primitive::Walk)),
-                // Left and Right, and Chase draws walk.
-                Primitive::Walk => (true, Some(Primitive::Chase)),
-                Primitive::Chase => (true, Some(Primitive::Jump)),
-                // Space, and the landing every jump ends in.
-                Primitive::Jump => (true, Some(Primitive::Land)),
-                Primitive::Land => (true, Some(Primitive::Hold)),
-                // Riding a Perch the keys walked onto.
-                Primitive::Hold => (true, Some(Primitive::Possessed)),
-                Primitive::Possessed => (true, Some(Primitive::Sit)),
-                // A Behavior composes these; no key plays them.
-                Primitive::Sit => (false, Some(Primitive::Sleep)),
-                Primitive::Sleep => (false, Some(Primitive::React)),
-                // React and talk answer a poke and a line, not a key.
-                Primitive::React => (false, Some(Primitive::Talk)),
-                Primitive::Talk => (false, None),
+                // Idle between keys; Left, Right and Chase; Space and Land;
+                // a moving Perch; taking control.
+                Primitive::Idle
+                | Primitive::Walk
+                | Primitive::Chase
+                | Primitive::Jump
+                | Primitive::Land
+                | Primitive::Hold
+                | Primitive::Possessed => true,
+                // A Behavior composes Sit and Sleep; React and Talk answer a
+                // poke and a line, not a key.
+                Primitive::Sit | Primitive::Sleep | Primitive::React | Primitive::Talk => false,
             }
         }
 
@@ -11038,17 +11053,14 @@ mod tests {
         fn digits_drop_every_animation_the_controls_draw() {
             use crate::possession::DRIVEN_ANIMATIONS;
 
-            let states =
-                std::iter::successors(Some(State::Grounded), |state| state_driven(*state).1);
-            let primitives = std::iter::successors(Some(Primitive::Idle), |primitive| {
-                primitive_driven(*primitive).1
-            });
-            let drawn: BTreeSet<&str> = states
-                .filter(|state| state_driven(*state).0)
+            let drawn: BTreeSet<&str> = every_state()
+                .into_iter()
+                .filter(|state| state_driven(*state))
                 .map(animation_for)
                 .chain(
-                    primitives
-                        .filter(|primitive| primitive_driven(*primitive).0)
+                    every_primitive()
+                        .into_iter()
+                        .filter(|primitive| primitive_driven(*primitive))
                         .map(animation_of),
                 )
                 .collect();
