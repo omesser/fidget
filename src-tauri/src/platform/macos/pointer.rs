@@ -121,31 +121,32 @@ struct ButtonSample {
 impl ButtonSample {
     fn read(button: CGMouseButton, down: CGEventType, up: CGEventType) -> Self {
         let state = CGEventSourceStateID::CombinedSessionState;
-        Self {
-            level: CGEventSource::button_state(state, button),
-            downs: CGEventSource::counter_for_event_type(state, down),
-            ups: CGEventSource::counter_for_event_type(state, up),
-        }
+        // Counters first: `Button` takes a count that lands a tick ahead of
+        // its level edge for a second press.
+        let downs = CGEventSource::counter_for_event_type(state, down);
+        let ups = CGEventSource::counter_for_event_type(state, up);
+        let level = CGEventSource::button_state(state, button);
+        Self { level, downs, ups }
     }
 }
 
-/// Presses and releases one source has seen since the baseline.
+/// Presses and releases since the baseline.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Edges {
     downs: u64,
     ups: u64,
 }
 
-/// One button as the frame loop is told it, one edge per tick. The level and
-/// the counters each see a subset of the real presses: the level misses a
-/// press that fits between two ticks, and since macOS 27.2 the counters move
-/// only every 500 ms. Neither overcounts, so the larger count of each edge is
-/// the truth so far, and the level's is the prompt one.
+/// One button as the frame loop is told it, one edge per tick. The level
+/// misses a press that fits between two ticks, and since macOS 27.2 the
+/// counters move only every 500 ms, so each edge is taken from whichever
+/// source shows it first.
 #[derive(Clone, Copy, Debug)]
 struct Button {
     last: ButtonSample,
-    level: Edges,
-    counted: Edges,
+    seen: Edges,
+    /// Edges the level showed whose counts are still to land.
+    uncounted: Edges,
     told: Edges,
     /// A press held at the baseline has no down. Both sources count its
     /// release, so this absorbs exactly that one release from each.
@@ -159,8 +160,8 @@ impl Button {
     fn new(first: ButtonSample) -> Self {
         Self {
             last: first,
-            level: Edges::default(),
-            counted: Edges::default(),
+            seen: Edges::default(),
+            uncounted: Edges::default(),
             told: Edges::default(),
             held_at_start: first.level,
             down: false,
@@ -168,23 +169,25 @@ impl Button {
     }
 
     fn observe(&mut self, now: ButtonSample) {
-        self.counted.downs += u64::from(now.downs.wrapping_sub(self.last.downs));
-        self.counted.ups += u64::from(now.ups.wrapping_sub(self.last.ups));
-        match (self.last.level, now.level) {
-            (false, true) => self.level.downs += 1,
-            (true, false) => self.level.ups += 1,
-            _ => {}
-        }
+        let (pressed, released) = (!self.last.level && now.level, self.last.level && !now.level);
+        let downs = now.downs.wrapping_sub(self.last.downs);
+        let ups = now.ups.wrapping_sub(self.last.ups);
+        merge(
+            &mut self.seen.downs,
+            &mut self.uncounted.downs,
+            pressed,
+            downs,
+        );
+        merge(&mut self.seen.ups, &mut self.uncounted.ups, released, ups);
         self.last = now;
     }
 
     fn presses(&self) -> u64 {
-        self.level.downs.max(self.counted.downs)
+        self.seen.downs
     }
 
     fn releases(&self) -> u64 {
-        let ups = self.level.ups.max(self.counted.ups);
-        ups.saturating_sub(u64::from(self.held_at_start))
+        self.seen.ups.saturating_sub(u64::from(self.held_at_start))
     }
 
     /// Whether a press is under way at `now`: held, or seen and not yet told.
@@ -208,6 +211,17 @@ impl Button {
         }
         self.down
     }
+}
+
+/// Adds one tick's edges of one kind. A count lands with its level edge or
+/// after it, never before, so it repeats an edge the level showed only while
+/// one is `uncounted`. Any other count is an edge the level missed.
+fn merge(seen: &mut u64, uncounted: &mut u64, level: bool, counted: u32) {
+    let counted = u64::from(counted);
+    *uncounted += u64::from(level);
+    let repeats = counted.min(*uncounted);
+    *uncounted -= repeats;
+    *seen += u64::from(level) + counted - repeats;
 }
 
 struct Session {
