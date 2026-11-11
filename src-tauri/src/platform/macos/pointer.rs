@@ -733,6 +733,58 @@ mod tests {
         ]));
     }
 
+    /// A flick on the sprite that starts within the counters' lag of a tap
+    /// the level missed. `landed` is what the counters added by mid-hold,
+    /// and they reach both clicks once the hand has stopped.
+    fn flick_with_counts_landing_mid_hold(landed: (u32, u32)) -> Vec<Verb> {
+        let mut button = Button::new(sample(false, 4, 4));
+        let mut pointer = Pointer::default();
+        let mut at = Point { x: 100.0, y: 100.0 };
+        let mid_hold = sample(true, 4 + landed.0, 4 + landed.1);
+        let held = [(sample(true, 4, 4), 20.0); 5];
+        let held_on = [(mid_hold, 20.0); 5];
+        let let_go = [(sample(false, mid_hold.downs, mid_hold.ups), 20.0)];
+        let still = [(sample(false, mid_hold.downs, mid_hold.ups), 0.0); 10];
+        let counted = [(sample(false, 6, 6), 0.0); 3];
+        let ticks = held.into_iter().chain(held_on).chain(let_go);
+        let mut verbs = Vec::new();
+        for (now, step) in ticks.chain(still).chain(counted) {
+            at.x += step;
+            verbs.extend(pointer.update(true, button.step(now), false, at, 16));
+        }
+        verbs.retain(|verb| !matches!(verb, Verb::Grab));
+        verbs
+    }
+
+    /// The tap's counts land while the flick's press is held. They are not
+    /// that press's release: the grab holds, and no click follows the throw.
+    #[test]
+    fn a_missed_taps_counts_landing_mid_hold_do_not_end_the_grab() {
+        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((1, 1)));
+    }
+
+    /// The same, when the counters catch up with the held press's down too.
+    #[test]
+    fn a_missed_taps_counts_landing_with_the_held_presss_down_do_not_end_the_grab() {
+        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((2, 1)));
+    }
+
+    /// The tap's counts land on the tick the level shows the next press. The
+    /// press is not the tap: it is told after it, at once, and stays held.
+    #[test]
+    fn a_missed_tap_counted_as_the_next_press_shows_is_a_click_then_a_hold() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+            ]),
+            vec![true, false, true, true]
+        );
+    }
+
     /// The 27.2 Control-click: Control is let go before the counters move,
     /// but the level saw the press while it was held.
     #[test]
