@@ -98,6 +98,15 @@ mirror would move it to the other. Optional. A strip's frames mirror by their
 Facing like any other frame, so a strip drawn facing left declares it. #345.
 _Avoid_: Flipped animation, left walk, direction variant
 
+**Same As**:
+An Animation declared `same_as` another, with no frames of its own: a second
+name for one clip, played with the owner's frames, fps and loop. It joins no
+ring and no idle-gesture category. A required slot uses it when its clip is
+another Animation's, so the frames are listed once: Rubber Duck's `sit` is the
+same as its `pondering`. One clip at two speeds stays two Animations on the
+same frame files.
+_Avoid_: Alias, copy, duplicate animation
+
 **Facing**:
 Which way a frame's art faces as drawn, left or right: the Character
 Manifest's `facing` default, or the frame's own `[frame_facing]` entry. The
@@ -326,15 +335,24 @@ _Avoid_: Invoke, activate, wake
 **Possession**:
 The switch that hands a fidget to the user's keyboard. Left and Right walk it,
 Up takes the wall it stands against, Down drops it through its Perch, Space
-makes it jump, the digits 1 to 9 play its Behaviors in name order, and Escape
-releases it. On a wall it climbs while Up is held, climbs down while Down is
-held, and holds still under neither. It stops at the top of the display and
-steps onto what is under the wall when it reaches it. The digits play only
-Behaviors the package declares, each without its `then`. They skip one made only
-of walking, chasing, jumping, landing or holding, idling between moves included,
-and Behaviors that draw the same Animations in the same order share one digit,
-named `a/b`. The fidget is possessed, the way a ghost possesses a body, and the
-Director's prompt says so. Possession applies to one Character Instance.
+makes it jump, the digits 1 to 9 play one pass of its Animations in name
+order, and Escape releases it. On a wall it climbs while Up is held, climbs
+down while Down is held, and holds still under neither. It stops at the top
+of the display and steps onto what is under the wall when it reaches it.
+A digit plays the Animation alone, never a
+Behavior or its `then`. The digits skip the required Animations, which the
+Engine plays, and every Animation the controls already draw: walk, jump,
+fall, land, climb, hold on a Perch, grab under the mouse, and possessed.
+They keep `react`, `sit`, `sleep` and `talk`: a digit plays one pass of
+the clip, never a Behavior that plays it. A Perch still draws `sit`, a
+poke still plays `react`, and Dialogue still draws `talk`. They skip
+drawn variants, left strips and `same_as` names too, all by declaration.
+A later name whose ordered frame-path list matches one already kept,
+ignoring fps and loop, shares that digit, and the card joins their
+display names with `/`. An idle-gesture keeps its digit
+when a required slot is the same as it. The fidget is possessed, the way
+a ghost possesses a body, and the Director's prompt says so.
+Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
 still falls, perches and can be grabbed, and it stays possessed when another
 window takes the keyboard. The Director hears only that the fidget was possessed

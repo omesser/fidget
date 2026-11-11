@@ -457,7 +457,11 @@ def how_slots(how, shell):
 
 
 def loop(package, declared, name, default_fps):
-    animation = declared.get("animations", {}).get(name)
+    animations = declared.get("animations", {})
+    animation = animations.get(name)
+    # A `same_as` slot plays its owner's frames, fps and loop.
+    if isinstance(animation, dict) and isinstance(animation.get("same_as"), str):
+        animation = animations.get(animation["same_as"])
     if not isinstance(animation, dict) or not animation.get("frames"):
         raise Malformed(f"{package.name}: declares no {name} frames")
     frames = []
@@ -1127,6 +1131,9 @@ def self_check():
     assert gesture_names(greets) == ["react", "talk"], "the hover gesture is not the greet's Animations"
     greets["animations"]["wave"] = {}
     assert gesture_names(greets) == ["wave"], "a wave Animation is not the hover gesture"
+    duck = CHARACTERS / "rubber-duck"
+    assert loop(duck, manifest(duck), "react", 8) == loop(duck, manifest(duck), "wave", 8), \
+        "a same_as slot does not play its owner's frames"
     assert inline("[a](./docs/x.md#y) `b` **c**") == (
         f'<a href="{REPO}/blob/main/docs/x.md#y">a</a> <code>b</code> <b>c</b>')
     assert inline("[a](#harness-support) <i>") == f'<a href="{REPO}#harness-support">a</a> &lt;i&gt;'

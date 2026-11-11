@@ -297,7 +297,7 @@ function positionPossession(view, latest) {
   const model = possessionCard({
     possessed: Boolean(latest.possessed),
     paused: Boolean(latest.paused),
-    behaviors: latest.behaviors,
+    digits: latest.digits,
   });
   const fill = chargeFill(latest.charge);
   const rebuilt = paintPossession(view.card, view.bar, model, fill);

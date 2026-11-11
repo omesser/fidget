@@ -78,8 +78,9 @@ frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 8
 loop = "once"
 
+# The talk is the react's two poses, slower and looping.
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png"]
+frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 3
 
 # Greets by announcing himself, idles by seething, only powers down when

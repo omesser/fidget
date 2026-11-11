@@ -6,13 +6,13 @@
 //! asserting frames, with no windowing system, no model and no waiting.
 
 use crate::character::{
-    animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan,
+    animation_of, Behavior, CursorReaction, GravityScale, IdleBeat, IdleMember, IdlePlan, OnePass,
     Primitive, RingChoice, DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_SLEEP_AFTER_S,
     DEFAULT_SLEEP_FOR_S,
 };
 use crate::director::Seeded;
 use crate::overlay::{display_index_for, stands_on};
-use crate::possession::{digit_behaviors, Charge, Intent, Walk};
+use crate::possession::{Charge, Intent, Walk};
 use crate::turn_motion::Moment;
 use crate::visibility::Desktop;
 pub use crate::window_source::{Rect, WindowId};
@@ -214,6 +214,15 @@ pub struct WorldSnapshot {
     pub possession: Intent,
 }
 
+/// What a possession digit did this tick, by the Animation it names.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DigitAnimation {
+    /// One pass started.
+    Played(String),
+    /// The State forbids it, as it would a proposal.
+    Refused(String),
+}
+
 /// Everything the renderer is told after one tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
@@ -239,10 +248,15 @@ pub struct Frame {
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 
-    /// The Behavior that started on this frame, from a proposal or a digit.
-    /// For the Shell: what was asked and what the user saw are different
-    /// lists, and repetition is suppressed on the second.
+    /// The Behavior a proposal started on this frame. For the Shell: what was
+    /// asked and what the user saw are different lists, and repetition is
+    /// suppressed on the second. Never a digit's Animation: see `digit`.
     pub behavior: Option<String>,
+
+    /// The Animation a possession digit played or was refused this frame.
+    /// Its own field, because `behavior` feeds the Director's memory of
+    /// Behaviors and a digit names an Animation the Director cannot propose.
+    pub digit: Option<DigitAnimation>,
 
     /// The Behavior whose Primitives are still playing, on every tick of the
     /// span. `None` for Engine-played moments no Director named.
@@ -306,16 +320,15 @@ impl Frame {
 
 /// How long one Primitive holds the screen.
 ///
-/// ponytail: one duration for every Primitive of every Character. A Primitive
-/// is not timed to its art — fps and loop stay the manifest's — so it cannot
-/// play until the art runs out. The Engine's own idle is the exception: it
-/// plays one pass of the member it picked, then rests. Art shorter than the
-/// turn holds its last frame. Longer art is the ceiling; give a Primitive its
-/// own duration when a Character's art needs to outlast this one.
+/// ponytail: one duration for every Primitive but `react` and `possessed`,
+/// which play one pass of their art (`Engine::turn_ms`) as the Engine's own
+/// idle does. The rest are not timed to their art, so cannot play until it
+/// runs out. Art shorter than the turn holds its last frame. Give another
+/// Primitive a pass when a Character's art needs one.
 const PRIMITIVE_MS: u32 = 600;
 
-/// How long a poked sprite stands still after reacting. `PRIMITIVE_MS` is the
-/// `react` art, not a pause that reads as noticing you. 2.5 s registers without
+/// How long a poked sprite stands still after reacting. One pass of `react`
+/// is the art, not a pause that reads as noticing you. 2.5 s registers without
 /// a click ever feeling like a freeze.
 const POKE_COOLDOWN_MS: u32 = 2_500;
 
@@ -425,6 +438,11 @@ pub struct Engine {
     idle_loops: Vec<IdleMember>,
     /// Idle-gestures in name order. Empty stays on the loop and rolls no gap.
     idle_gestures: Vec<IdleMember>,
+    /// What digits 1 to 9 play while possessed, in digit order.
+    digits: Vec<IdleMember>,
+    /// The art `react` and `possessed` play through once. `None` plays a turn.
+    react_art: Option<OnePass>,
+    possessed_art: Option<OnePass>,
     /// Inclusive seconds. Rolled into milliseconds when a loop starts.
     idle_gesture_every_s: (u32, u32),
     /// Inclusive seconds before sleep, and asleep. Rolled per stretch.
@@ -461,7 +479,7 @@ pub struct Engine {
     /// State would mean deciding what it resumes as.
     playing: Vec<Primitive>,
 
-    /// One pass of a named idle-gesture animation from a starring Behavior.
+    /// One pass of a named Animation, from a starring Behavior or a digit.
     /// Mutually exclusive with a non-empty `playing` list.
     playing_animation: Option<String>,
 
@@ -789,6 +807,9 @@ impl Engine {
             variants: Seeded::new(0),
             idle_loops: Vec::new(),
             idle_gestures: Vec::new(),
+            digits: Vec::new(),
+            react_art: None,
+            possessed_art: None,
             idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -918,6 +939,9 @@ impl Engine {
         self.sleep_after_ms = None;
         self.idle_loops = plan.loops;
         self.idle_gestures = plan.gestures;
+        self.digits = plan.digits;
+        self.react_art = plan.react;
+        self.possessed_art = plan.possessed;
         self.own_idle = OwnIdle::Off;
         self.deferred = None;
     }
@@ -1689,26 +1713,19 @@ impl Engine {
 
         // Director proposals stay out while possessed. A digit is the user
         // asking, so it takes the same `permitted` gate.
-        let mut digit_started = false;
+        let mut digit = None;
         if self.possessed {
-            if let Some(name) = self.behavior_for_digit(snapshot.possession.play) {
-                // The Behavior alone: a digit leaves its `then` off.
-                let behavior_ref = &self.behaviors[&name];
-                let started_digit = if let Some(animation) = behavior_ref.animation.clone() {
-                    self.play_animation(&animation)
-                } else {
-                    self.play(&behavior_ref.primitives.clone())
-                };
-                if started_digit {
-                    self.playing_behavior = Some(name.clone());
+            if let Some(name) = self.animation_for_digit(snapshot.possession.play) {
+                // One pass, nameless, so no Behavior's `then` follows it.
+                digit = Some(if self.play_animation(&name) {
                     started = true;
-                    digit_started = true;
-                    behavior = Some(name);
+                    DigitAnimation::Played(name)
                 } else {
-                    refused = Some(name);
-                }
+                    DigitAnimation::Refused(name)
+                });
             }
         }
+        let digit_started = matches!(digit, Some(DigitAnimation::Played(_)));
 
         // After a proposal and before a Poke. A one-shot finishes before the
         // next beat. One that cannot play is dropped, so it cannot return
@@ -1757,7 +1774,7 @@ impl Engine {
                 .any(|verb| matches!(verb, Verb::Summon | Verb::Menu));
 
         // One cue a tick: a hand transition, else a click verb, else a started
-        // digit Behavior, else a possession edge, which waits for a free tick.
+        // digit Animation, else a possession edge, which waits for a free tick.
         // Menu repeats every held tick like Grab, so it cues on the press edge.
         let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
         let cue = cue
@@ -1872,6 +1889,7 @@ impl Engine {
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
+            digit,
             playing_behavior: self.playing_behavior.clone(),
             playing_primitive: self.on_screen(),
             playing_gesture,
@@ -2283,9 +2301,24 @@ impl Engine {
     fn animation_duration_ms(&self, animation: &str) -> u32 {
         self.idle_gestures
             .iter()
+            .chain(&self.digits)
             .find(|member| member.name == animation)
             .map(|member| one_pass_ms(member.frames, member.fps))
             .unwrap_or(PRIMITIVE_MS)
+    }
+
+    /// How long `primitive` holds the screen. `react` and `possessed` play
+    /// their art through once, even art that loops forever, and never for
+    /// less than the turn every other Primitive gets.
+    fn turn_ms(&self, primitive: Primitive) -> u32 {
+        let art = match primitive {
+            Primitive::React => self.react_art,
+            Primitive::Possessed => self.possessed_art,
+            _ => None,
+        };
+        art.map_or(PRIMITIVE_MS, |pass| {
+            one_pass_ms(pass.frames, pass.fps).max(PRIMITIVE_MS)
+        })
     }
 
     /// Under way on foot, rather than in the air with the same speed on it.
@@ -2320,10 +2353,9 @@ impl Engine {
         while !self.playing.is_empty() && left >= self.primitive_ms {
             left -= self.primitive_ms;
             self.playing.pop();
-            self.primitive_ms = if self.playing.is_empty() {
-                0
-            } else {
-                PRIMITIVE_MS
+            self.primitive_ms = match self.playing.last() {
+                Some(next) => self.turn_ms(*next),
+                None => 0,
             };
             moved_on = true;
             if self.playing.is_empty() {
@@ -2482,13 +2514,10 @@ impl Engine {
         Some(started)
     }
 
-    /// The Behavior digit `play` names, or nothing past the list.
-    fn behavior_for_digit(&self, play: Option<u8>) -> Option<String> {
+    /// The Animation digit `play` names, or nothing past the list.
+    fn animation_for_digit(&self, play: Option<u8>) -> Option<String> {
         let index = usize::from(play?).checked_sub(1)?;
-        digit_behaviors(&self.behaviors)
-            .get(index)?
-            .first()
-            .map(|name| (*name).to_string())
+        self.digits.get(index).map(|clip| clip.name.clone())
     }
 
     /// Start `primitives` unless the State forbids any of them. True when it
@@ -2510,14 +2539,15 @@ impl Engine {
         if primitives.contains(&Primitive::Chase) {
             self.chase_ms = 0;
         }
-        self.primitive_ms = PRIMITIVE_MS;
+        self.primitive_ms = self.turn_ms(primitives[0]);
         // A chain is a Behavior. Holding that would make the next turn beat
         // wait out every step in it, not the one-shot it replaced.
         self.moment_holding = primitives.len() == 1;
         true
     }
 
-    /// One pass of a named idle-gesture animation. True when it started.
+    /// One pass of a named Animation: a Behavior's idle-gesture, or a digit's
+    /// pick. True when it started.
     fn play_animation(&mut self, animation: &str) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         if !(on_feet && !self.feet_owned()) {
@@ -3598,6 +3628,65 @@ mod tests {
             again.animation_ms, 0,
             "and the second Poke plays it from its first frame"
         );
+    }
+
+    /// An Engine whose `react` art is `pass`, and nothing else in its plan.
+    fn reacting_in(pass: OnePass) -> Engine {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        engine.set_idle_plan(IdlePlan {
+            loops: Vec::new(),
+            gestures: Vec::new(),
+            digits: Vec::new(),
+            react: Some(pass),
+            possessed: None,
+            idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+            sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+            sleep_for_s: DEFAULT_SLEEP_FOR_S,
+        });
+        settle(&mut engine, &snapshot(100));
+        engine
+    }
+
+    /// How long `react` holds the screen after a Poke, in 100ms ticks.
+    fn reaction_ms(engine: &mut Engine) -> u32 {
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        let ticks = (0..100)
+            .take_while(|_| engine.tick(&snapshot(100)).animation == "react")
+            .count() as u32;
+        (ticks + 1) * 100
+    }
+
+    /// `react` plays its art through once, like an idle-gesture, rather than
+    /// for a fixed turn that cuts a long wave short. Art that loops forever
+    /// ends at its wrap, and a second Poke plays it again from frame 0.
+    #[test]
+    fn a_poke_plays_one_pass_of_the_react_art_then_idles() {
+        let mut engine = reacting_in(OnePass { frames: 6, fps: 4 });
+        assert_eq!(reaction_ms(&mut engine), 1_500, "six frames at 4 fps");
+        assert_eq!(engine.tick(&snapshot(100)).animation, "idle");
+
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        let again = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!((again.animation, again.animation_ms), ("react", 0));
+    }
+
+    /// Art longer than a Primitive's turn plays to its end. Shorter art still
+    /// gets the turn, as every Primitive's art does.
+    #[test]
+    fn react_art_plays_to_its_end_and_never_for_less_than_a_turn() {
+        let long = OnePass { frames: 6, fps: 6 };
+        assert_eq!(reaction_ms(&mut reacting_in(long)), 1_000);
+        let short = OnePass { frames: 2, fps: 8 };
+        assert_eq!(reaction_ms(&mut reacting_in(short)), PRIMITIVE_MS);
     }
 
     /// `PRIMITIVE_MS` is the Primitive's turn, not the art's length, so the
@@ -6607,6 +6696,9 @@ mod tests {
                 frames: 6,
                 fps: 6,
             }],
+            digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -6762,6 +6854,9 @@ mod tests {
                 frames: 6,
                 fps: 6,
             }],
+            digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -6832,6 +6927,9 @@ mod tests {
                 frames: 6,
                 fps: 6,
             }],
+            digits: Vec::new(),
+            react: None,
+            possessed: None,
             idle_gesture_every_s: (10, 30),
             sleep_after_s: DEFAULT_SLEEP_AFTER_S,
             sleep_for_s: DEFAULT_SLEEP_FOR_S,
@@ -10737,37 +10835,246 @@ mod tests {
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
         }
 
+        /// Possessed, with digits for `react`, `sleep`, and a four-frame
+        /// `wave` at 8 fps: half a second a pass. `greet` still plays
+        /// react and then talk, and follows with `settle`.
+        fn possessed_with_digits(x: f64, world: &WorldSnapshot) -> Engine {
+            let clip = |name: &str, frames| IdleMember {
+                name: name.to_string(),
+                weight: DEFAULT_WEIGHT,
+                frames,
+                fps: 8,
+            };
+            let mut engine = possessed_at(x, world);
+            engine.set_idle_plan(IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                digits: vec![clip("react", 1), clip("sleep", 1), clip("wave", 4)],
+                react: None,
+                possessed: None,
+                idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+                sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+                sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            });
+            engine
+        }
+
         #[test]
-        fn a_digit_plays_that_behavior_and_one_past_the_list_does_nothing() {
+        fn a_digit_plays_one_pass_of_its_animation_then_idles() {
             let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
+            let mut engine = possessed_with_digits(500.0, &world);
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(3), &world));
+            assert_eq!(
+                played.playing_gesture.as_deref(),
+                Some("wave"),
+                "{played:?}"
+            );
+            assert_eq!(played.digit, Some(DigitAnimation::Played("wave".into())));
+            assert_eq!(played.refused, None);
+
+            let mid = engine.tick(&WorldSnapshot {
+                elapsed_ms: 400,
+                ..world.clone()
+            });
+            assert_eq!(mid.playing_gesture.as_deref(), Some("wave"), "{mid:?}");
+            let over = engine.tick(&WorldSnapshot {
+                elapsed_ms: 200,
+                ..world.clone()
+            });
+            assert_eq!(over.playing_gesture, None, "{over:?}");
+            assert_eq!(over.animation, "idle");
+        }
+
+        /// The engine plays the Animation alone: `react` is not `greet`,
+        /// so no talk joins it and no `settle` follows.
+        #[test]
+        fn a_digit_plays_its_animation_and_no_behavior_chain() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
             engine.set_do_not_disturb(true);
 
             let played = engine.tick(&with_possession(playing(1), &world));
-            assert_eq!(played.behavior.as_deref(), Some("greet"), "{played:?}");
-            assert_eq!(played.playing_behavior.as_deref(), Some("greet"));
-            assert_eq!(played.animation, "react");
-            assert_eq!(played.refused, None);
-            assert!(
-                !engine.playing.contains(&Primitive::Sit),
-                "greet's then is left off: {:?}",
-                engine.playing
-            );
+            assert_eq!(played.art_name(), "react", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("react".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior to continue");
+            assert_eq!(played.playing_primitive, None, "react alone, no talk");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
 
-            let unbound = engine.tick(&with_possession(playing(3), &world));
+            for _ in 0..20 {
+                let after = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert!(
+                    !["talk", "sit", "sleep"].contains(&after.art_name()),
+                    "nothing chains after the digit: {after:?}"
+                );
+            }
+        }
+
+        /// A `sleep` digit is one pass of the clip, not a nap: the sprite
+        /// never falls Asleep and is back to idle once the pass is done.
+        #[test]
+        fn a_sleep_digit_plays_one_pass_and_never_falls_asleep() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(2), &world));
+            assert_eq!(played.art_name(), "sleep", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("sleep".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
+            assert_ne!(played.state, State::Asleep);
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_ne!(last.state, State::Asleep, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
+        /// A `sit` digit is one pass of the clip, not a perch: the sprite
+        /// stays Grounded and is back to idle once the pass is done.
+        #[test]
+        fn a_sit_digit_plays_one_pass_while_grounded_and_never_perches() {
+            let world = on(one_display());
+            let clip = |name: &str, frames| IdleMember {
+                name: name.to_string(),
+                weight: DEFAULT_WEIGHT,
+                frames,
+                fps: 8,
+            };
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_idle_plan(IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                digits: vec![clip("sit", 1)],
+                react: None,
+                possessed: None,
+                idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+                sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+                sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            });
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(played.art_name(), "sit", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("sit".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_eq!(last.state, State::Grounded, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
+        /// A `talk` digit is one pass of the clip, not a line: no Dialogue
+        /// is spoken, the sprite stays Grounded, and it idles once the pass
+        /// is done.
+        #[test]
+        fn a_talk_digit_plays_one_pass_and_never_opens_dialogue() {
+            let world = on(one_display());
+            let clip = |name: &str, frames| IdleMember {
+                name: name.to_string(),
+                weight: DEFAULT_WEIGHT,
+                frames,
+                fps: 8,
+            };
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_idle_plan(IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                digits: vec![clip("talk", 1)],
+                react: None,
+                possessed: None,
+                idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+                sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+                sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            });
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(played.art_name(), "talk", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("talk".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
+            assert_eq!(played.dialogue, None, "a digit speaks no line");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_eq!(last.state, State::Grounded, "{last:?}");
+                assert_eq!(last.dialogue, None, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
+        /// The Shell remembers `Frame::behavior` in `recent:`, a list of
+        /// Behaviors the Director may propose. A digit names an Animation,
+        /// so `wave` from a key leaves a Behavior called `wave` free, and
+        /// three presses push no real Behavior out of the memory.
+        #[test]
+        fn a_digit_hands_the_director_no_behavior_to_remember() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
+            let mut remembered = Vec::new();
+            let mut played = Vec::new();
+            for digit in [3, 1, 3] {
+                let frame = engine.tick(&with_possession(playing(digit), &world));
+                remembered.extend(frame.behavior);
+                played.extend(frame.digit);
+                for _ in 0..20 {
+                    let frame = engine.tick(&WorldSnapshot {
+                        elapsed_ms: 100,
+                        ..world.clone()
+                    });
+                    remembered.extend(frame.behavior);
+                }
+            }
+            assert_eq!(remembered, Vec::<String>::new());
+            assert_eq!(
+                played,
+                ["wave", "react", "wave"].map(|name| DigitAnimation::Played(name.into()))
+            );
+        }
+
+        #[test]
+        fn a_digit_past_the_list_does_nothing() {
+            let world = on(one_display());
+            let mut engine = possessed_with_digits(500.0, &world);
+            let unbound = engine.tick(&with_possession(playing(4), &world));
             assert_eq!(unbound.behavior, None, "{unbound:?}");
+            assert_eq!(unbound.digit, None, "{unbound:?}");
             assert_eq!(
                 unbound.refused, None,
                 "a digit past the list is not a proposal that missed: {unbound:?}"
             );
-            assert_eq!(unbound.playing_behavior.as_deref(), Some("greet"));
+            assert_eq!(unbound.playing_primitive, Some(Primitive::Possessed));
         }
 
         /// The Poke takes the tick, so the pending possession edge slips one.
         #[test]
-        fn a_digit_that_starts_its_behavior_cues_a_poke() {
+        fn a_digit_that_starts_its_animation_cues_a_poke() {
             let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
+            let mut engine = possessed_with_digits(500.0, &world);
 
             let cues: Vec<Option<Cue>> = [playing(1), Intent::default()]
                 .into_iter()
@@ -10779,13 +11086,14 @@ mod tests {
         #[test]
         fn a_digit_the_state_forbids_is_refused_like_a_proposal() {
             let world = on(one_display());
-            let mut engine = possessed_at(500.0, &world);
+            let mut engine = possessed_with_digits(500.0, &world);
             let launched = engine.tick(&with_possession(launching(released_after(0)), &world));
             assert_eq!(launched.state, State::Falling, "{launched:?}");
 
             let refused = engine.tick(&with_possession(playing(2), &world));
             assert_eq!(refused.behavior, None, "{refused:?}");
-            assert_eq!(refused.refused.as_deref(), Some("settle"));
+            assert_eq!(refused.digit, Some(DigitAnimation::Refused("sleep".into())));
+            assert_eq!(refused.refused, None, "no Behavior was proposed");
             assert_eq!(refused.cue, None, "a refusal plays no Poke");
             assert_eq!(
                 refused.animation, "jump",
@@ -10793,50 +11101,89 @@ mod tests {
             );
         }
 
+        /// Every variant of `$enum`. The match has no wildcard, so a new
+        /// variant fails to compile until it is added to this same list,
+        /// which is also the array the test walks.
+        macro_rules! every_variant {
+            ($enum:ident, $($variant:ident),+ $(,)?) => {{
+                let _: fn($enum) = |value| match value {
+                    $($enum::$variant => {})+
+                };
+                [$($enum::$variant),+]
+            }};
+        }
+
+        fn every_state() -> [State; 6] {
+            every_variant!(State, Grounded, Falling, Dragged, Perched, Climbing, Asleep)
+        }
+
+        fn every_primitive() -> [Primitive; 11] {
+            every_variant!(
+                Primitive, Idle, Walk, Land, Sit, Sleep, React, Talk, Hold, Chase, Jump, Possessed
+            )
+        }
+
+        /// Whether possession's controls drive this State. No `_` arm: a new
+        /// State fails to compile here until it picks a side.
+        fn state_driven(state: State) -> bool {
+            match state {
+                // The rest between keys, a fall, a drag, a Perch, Up at a wall.
+                State::Grounded
+                | State::Falling
+                | State::Dragged
+                | State::Perched
+                | State::Climbing => true,
+                // The sprite's own, and possession wakes it.
+                State::Asleep => false,
+            }
+        }
+
+        /// Whether a control plays this Primitive. No `_` arm, as in
+        /// `state_driven`.
+        fn primitive_driven(primitive: Primitive) -> bool {
+            match primitive {
+                // Idle between keys; Left, Right and Chase; Space and Land;
+                // a moving Perch; taking control.
+                Primitive::Idle
+                | Primitive::Walk
+                | Primitive::Chase
+                | Primitive::Jump
+                | Primitive::Land
+                | Primitive::Hold
+                | Primitive::Possessed => true,
+                // A Behavior composes Sit and Sleep; React and Talk answer a
+                // poke and a line, not a key.
+                Primitive::Sit | Primitive::Sleep | Primitive::React | Primitive::Talk => false,
+            }
+        }
+
+        /// Every Animation a driven State or a control's Primitive draws is
+        /// in `DRIVEN_ANIMATIONS`, and digits drop each of those except the
+        /// ones also in `DIGIT_PLAYABLE_ENGINE_ANIMATIONS`. Today that
+        /// overlap is only `sit`: a Perch draws it, and a digit still plays
+        /// one pass. `react`, `sleep` and `talk` are playable too, but no
+        /// control draws them.
         #[test]
-        fn a_character_with_more_than_nine_behaviors_binds_only_the_first_nine() {
-            let names = [
-                "walk", "jump", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a",
-            ];
-            let behaviors = names
-                .iter()
-                .zip(1..)
-                .map(|(name, sits)| {
-                    (
-                        (*name).to_string(),
-                        Behavior {
-                            primitives: std::iter::repeat_with(|| Primitive::Sit)
-                                .take(sits)
-                                .collect(),
-                            animation: None,
-                            then: None,
-                            weight: DEFAULT_WEIGHT,
-                            trigger: None,
-                            not_in_manifest: false,
-                            idle_type: false,
-                        },
-                    )
-                })
+        fn digits_drop_every_animation_the_controls_draw() {
+            use crate::possession::{DIGIT_PLAYABLE_ENGINE_ANIMATIONS, DRIVEN_ANIMATIONS};
+
+            let drawn: BTreeSet<&str> = every_state()
+                .into_iter()
+                .filter(|state| state_driven(*state))
+                .map(animation_for)
+                .chain(
+                    every_primitive()
+                        .into_iter()
+                        .filter(|primitive| primitive_driven(*primitive))
+                        .map(animation_of),
+                )
                 .collect();
-            let world = on(one_display());
-            let mut engine = Engine::new(Point { x: 500.0, y: 0.0 }).with_behaviors(behaviors);
-            settle(
-                &mut engine,
-                &WorldSnapshot {
-                    elapsed_ms: 100,
-                    ..world.clone()
-                },
-            );
-            engine.set_possessed(true);
-
-            let first = engine.tick(&with_possession(playing(1), &world));
-            assert_eq!(first.behavior.as_deref(), Some("a"), "{first:?}");
-            assert_eq!(first.animation, "sit");
-
-            let ninth = engine.tick(&with_possession(playing(9), &world));
-            assert_eq!(ninth.behavior.as_deref(), Some("i"), "{ninth:?}");
-            assert_ne!(ninth.playing_behavior.as_deref(), Some("j"));
-            assert_ne!(ninth.playing_behavior.as_deref(), Some("walk"));
+            assert_eq!(drawn, BTreeSet::from(DRIVEN_ANIMATIONS));
+            let playable_driven: BTreeSet<&str> = drawn
+                .intersection(&BTreeSet::from(DIGIT_PLAYABLE_ENGINE_ANIMATIONS))
+                .copied()
+                .collect();
+            assert_eq!(playable_driven, BTreeSet::from(["sit"]));
         }
 
         #[test]

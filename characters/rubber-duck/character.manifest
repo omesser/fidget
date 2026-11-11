@@ -184,27 +184,10 @@ frames = [
 fps = 6
 
 [animations.react]
-frames = [
-  "frames/wave-0.png",
-  "frames/wave-1.png",
-  "frames/wave-2.png",
-  "frames/wave-3.png",
-  "frames/wave-4.png",
-  "frames/wave-5.png",
-]
-fps = 6
-loop = "once"
+same_as = "wave"
 
 [animations.sit]
-frames = [
-  "frames/pondering-0.png",
-  "frames/pondering-1.png",
-  "frames/pondering-2.png",
-  "frames/pondering-3.png",
-  "frames/pondering-4.png",
-  "frames/pondering-5.png",
-]
-fps = 3
+same_as = "pondering"
 
 # Row 6 as a looping Animation: each of the eight poses once, at the
 # original fps.
