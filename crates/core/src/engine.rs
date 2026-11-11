@@ -864,14 +864,26 @@ impl Engine {
         self
     }
 
-    /// A climber stands still on the wall through the post-Poke cooldown and
-    /// while its feet are held, as a walker does on the floor. A possessed one
-    /// climbs only under Up or Down alone, as its walk needs an arrow.
-    fn climb_paused(&self, keys: Intent) -> bool {
-        self.state == State::Climbing
-            && (self.poke_cooldown_ms > 0
-                || self.feet_held
-                || (self.possessed && keys.up == keys.down))
+    /// Points per second up the wall, 0 while the climber stands still: through
+    /// the post-Poke cooldown and held feet, as a walker does on the floor, and
+    /// when possessed, under no key, both, or Up at the top of the display.
+    fn climb_speed(&self, snapshot: &WorldSnapshot) -> f64 {
+        let keys = snapshot.possession;
+        let at_top = || {
+            ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
+                .is_some_and(|ceiling| self.position.y <= ceiling)
+        };
+        if self.poke_cooldown_ms > 0 || self.feet_held {
+            0.0
+        } else if !self.possessed {
+            CLIMB_SPEED
+        } else if keys.up == keys.down || (keys.up && at_top()) {
+            0.0
+        } else if keys.down {
+            -CLIMB_SPEED
+        } else {
+            CLIMB_SPEED
+        }
     }
 
     /// How far below a display's usable top the feet may be put down.
@@ -1824,7 +1836,7 @@ impl Engine {
         } else if new_family || (started && startled) {
             self.leave_own_idle();
             self.animation_ms = 0;
-        } else if !(self.climb_paused(snapshot.possession) && animation == "climb") {
+        } else if animation != "climb" || self.climb_speed(snapshot) != 0.0 {
             self.leave_own_idle();
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         } else {
@@ -2005,14 +2017,7 @@ impl Engine {
                 if self.velocity.x != 0.0 {
                     return Some(Contact::Airborne);
                 }
-                let keys = snapshot.possession;
-                let speed = if self.climb_paused(keys) {
-                    0.0
-                } else if self.possessed && keys.down {
-                    -CLIMB_SPEED
-                } else {
-                    CLIMB_SPEED
-                };
+                let speed = self.climb_speed(snapshot);
                 let next_y = self.position.y - speed * dt;
 
                 // Down the wall ends on the floor or Perch under it, where the
@@ -2029,14 +2034,15 @@ impl Engine {
                 // Off the top of the display there is nothing left to hold, so
                 // it lets go. A sprite over no display at all is already
                 // holding nothing, hence its own y as the fallback ceiling.
-                let ceiling = ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
-                    .unwrap_or(self.position.y);
-                if self.position.y <= ceiling {
-                    self.position.y = ceiling;
-                    Some(Contact::Ceiling)
-                } else {
-                    None
+                let over = ceiling_over(self.position.x, snapshot, self.ceiling_clearance());
+                let ceiling = over.unwrap_or(self.position.y);
+                if self.position.y > ceiling {
+                    return None;
                 }
+                self.position.y = ceiling;
+                // A possessed climber stops at the top instead: letting go
+                // would drop it to the floor under the user's own held Up.
+                (!self.possessed || over.is_none()).then_some(Contact::Ceiling)
             }
 
             // Resting is only ever on something. When it moves slowly the
@@ -10955,12 +10961,12 @@ mod tests {
             assert_ne!(released.animation, "possessed", "{released:?}");
         }
 
-        /// The tick Up goes down, and the ticks it stays down after.
-        const UP: Intent = Intent {
-            climb: true,
-            up: true,
-            down: false,
+        /// Nothing held, spelled out because `Intent::default()` is not `const`.
+        const NO_KEYS: Intent = Intent {
             walk: None,
+            climb: false,
+            up: false,
+            down: false,
             drop: false,
             charging: None,
             launch: None,
@@ -10968,17 +10974,28 @@ mod tests {
             play: None,
         };
 
-        const HELD_UP: Intent = Intent { climb: false, ..UP };
+        /// The tick Up goes down.
+        const UP: Intent = Intent {
+            climb: true,
+            ..HELD_UP
+        };
 
+        /// The ticks Up stays down after its press.
+        const HELD_UP: Intent = Intent {
+            up: true,
+            ..NO_KEYS
+        };
+
+        /// The tick Down goes down.
         const DOWN: Intent = Intent {
             drop: true,
             ..HELD_DOWN
         };
 
+        /// The ticks Down stays down after its press.
         const HELD_DOWN: Intent = Intent {
             down: true,
-            up: false,
-            ..HELD_UP
+            ..NO_KEYS
         };
 
         /// Up climbs where a possessed walk stops: the screen edge, from the
@@ -11186,6 +11203,65 @@ mod tests {
             assert_eq!(stiller.animation_ms, moving.animation_ms, "{stiller:?}");
             let resumed = engine.tick(&with_possession(HELD_UP, &world));
             assert!(resumed.animation_ms > moving.animation_ms, "{resumed:?}");
+        }
+
+        /// Up held to the top of the display stops there, still on the wall:
+        /// letting go would drop the sprite to the floor under the user's key.
+        #[test]
+        fn a_possessed_climber_holds_at_the_top_of_the_display() {
+            let world = on(one_display());
+            let mut engine = possessed_at(1000.0 - EDGE_CLEARANCE, &world);
+            engine.tick(&world);
+            let start = engine.tick(&with_possession(UP, &world));
+            let mut top = start.clone();
+            for _ in 0..400 {
+                top = engine.tick(&with_possession(HELD_UP, &world));
+                assert_eq!(top.state, State::Climbing, "{top:?}");
+            }
+            assert!(top.position.y < start.position.y - 500.0, "{top:?}");
+            let held = engine.tick(&with_possession(HELD_UP, &world));
+            assert_eq!(held.position, top.position, "{held:?}");
+            assert_eq!(held.animation_ms, top.animation_ms, "{held:?}");
+
+            let mut above = held;
+            for _ in 0..10 {
+                let lower = engine.tick(&with_possession(HELD_DOWN, &world));
+                assert_eq!(lower.state, State::Climbing, "{lower:?}");
+                assert!(lower.position.y > above.position.y, "{lower:?}");
+                above = lower;
+            }
+        }
+
+        /// Possession that finds the sprite already climbing takes the climb
+        /// over: still under no key, and up under a held Up with no press.
+        #[test]
+        fn possessing_a_climber_holds_it_until_up_is_held() {
+            let world = on(one_display());
+            let mut engine = a_character_at(Point { x: 900.0, y: 400.0 });
+            engine.tick(&WorldSnapshot {
+                cursor: Point { x: 900.0, y: 400.0 },
+                verbs: vec![Verb::Grab],
+                ..world.clone()
+            });
+            engine.tick(&WorldSnapshot {
+                verbs: vec![Verb::Throw {
+                    velocity: Point { x: 2000.0, y: 0.0 },
+                }],
+                ..world.clone()
+            });
+            let mut climbing = engine.tick(&world);
+            while climbing.state == State::Falling {
+                climbing = engine.tick(&world);
+            }
+            assert_eq!(climbing.state, State::Climbing, "{climbing:?}");
+
+            engine.set_possessed(true);
+            let held = engine.tick(&world);
+            assert_eq!(held.state, State::Climbing, "{held:?}");
+            assert_eq!(engine.tick(&world).position, held.position);
+            let higher = engine.tick(&with_possession(HELD_UP, &world));
+            assert_eq!(higher.state, State::Climbing, "{higher:?}");
+            assert!(higher.position.y < held.position.y, "{higher:?}");
         }
 
         /// Down the wall ends on what is under it, the floor or a Perch, and a

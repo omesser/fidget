@@ -100,9 +100,10 @@ pub struct Intent {
     /// Up was pressed since the last tick: take hold of the wall the sprite
     /// stands against.
     pub climb: bool,
-    /// Up and Down are down: a climber moves along its wall only while one is,
-    /// as a walk moves only under a held arrow.
+    /// Up is down: a climber goes up its wall only while it is, as a walk
+    /// moves only under a held arrow.
     pub up: bool,
+    /// Down is down: a climber goes down its wall only while it is.
     pub down: bool,
     /// Down was pressed since the last tick: drop through the Perch the
     /// sprite stands on.
@@ -125,8 +126,8 @@ pub struct Possession {
     /// the walk back to the other.
     walks: Vec<Walk>,
     /// Up and Down are down. Taking the wall and dropping ask once a press,
-    /// through `climb` and `drop`, so a held key neither takes the wall again
-    /// after a fall off its top nor drops through every Perch below.
+    /// through `climb` and `drop`, so a held key neither takes a wall again
+    /// after leaving one nor drops through every Perch below.
     up: bool,
     down: bool,
     climb: bool,
