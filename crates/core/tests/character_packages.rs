@@ -1965,15 +1965,15 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
 /// required slots or the art the arrows, a jump, a fall, a climb, a Perch
 /// ride or a drag draws. A Character with only the required nine, each
 /// on its own frame-path list, offers those four. A later name that
-/// shares a frame-path list with one already kept is dropped, so Black
-/// Mage's `talk` (react's frames at 3 fps) stays off. A `same_as` still
-/// hides its alias, so Rubber Duck's `react` and `sit` stay off the card,
-/// and Tuxedo Bean's `react` does too. Tux fills the 9-clip cap; frame
-/// dedup frees no slot.
+/// shares a frame-path list with one already kept joins that label, so
+/// Black Mage's card is `react/talk`, `sit` and `sleep`. A `same_as`
+/// still hides its alias, so Rubber Duck's `react` and `sit` stay off
+/// the card, and Tuxedo Bean's `react` does too. Tux fills the 9-clip
+/// cap; frame dedup frees no slot.
 #[test]
 fn every_shipped_character_binds_its_own_clips_to_digits() {
     let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
-        ("black-mage", &["react", "sit", "sleep"][..]),
+        ("black-mage", &["react/talk", "sit", "sleep"][..]),
         ("bmo", &["react", "sing", "sit", "skate", "sleep", "talk"]),
         (
             "buddy-bot",
@@ -2043,27 +2043,29 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
     );
     for name in shipped {
         let character = load_package(&name).expect("shipped packages load");
-        assert_eq!(
-            fidget_core::possession::digit_animations(&character.animations),
-            cards[name.as_str()],
-            "{name}"
-        );
+        let labels: Vec<String> = fidget_core::possession::digit_animations(&character.animations)
+            .iter()
+            .map(fidget_core::possession::DigitAnimation::card_label)
+            .collect();
+        assert_eq!(labels, cards[name.as_str()], "{name}");
     }
 }
 
 /// A later name whose ordered frame-path list matches one already kept
-/// gets no digit, even at a different fps or loop.
+/// shares that digit, even at a different fps or loop, so the card never
+/// lists the same frames twice.
 #[test]
 fn no_shipped_digit_card_repeats_a_frame_list() {
     for name in shipped_packages() {
         let character = load_package(&name).expect("shipped packages load");
         let digits = fidget_core::possession::digit_animations(&character.animations);
         let mut seen = BTreeSet::new();
-        for animation in &digits {
-            let frames = character.animations[*animation].frames.as_slice();
+        for digit in &digits {
+            let frames = character.animations[digit.play_name].frames.as_slice();
             assert!(
                 seen.insert(frames),
-                "{name} binds {animation} to frames already on the card: {frames:?}"
+                "{name} binds {} to frames already on the card: {frames:?}",
+                digit.card_label()
             );
         }
     }

@@ -61,7 +61,7 @@ pub(crate) const DIGIT_PLAYABLE_ENGINE_ANIMATIONS: [&str; 4] = ["react", "sit", 
 /// [`DIGIT_PLAYABLE_ENGINE_ANIMATIONS`], nor a drawn variant standing in for
 /// its base, nor a left strip, nor a `same_as`, which is another name for a
 /// clip with its own. An idle-gesture keeps its digit when a required slot
-/// is the same as it. [`digit_animations`] then drops later names that share
+/// is the same as it. [`digit_animations`] then merges later names that share
 /// a frame-path list with one already kept.
 fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Animation>) -> bool {
     let engine_owned = (DRIVEN_ANIMATIONS.contains(&name) || REQUIRED_ANIMATIONS.contains(&name))
@@ -73,29 +73,53 @@ fn bindable(name: &str, animation: &Animation, animations: &BTreeMap<String, Ani
     !engine_owned && !drawn_variant && !left_strip && animation.same_as.is_none()
 }
 
+/// One digit on the possession card: the clip a press plays, and every
+/// manifest name that shares those frames.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DigitAnimation<'a> {
+    /// The Animation a press of this digit plays: the first name kept for
+    /// these frames.
+    pub play_name: &'a str,
+    /// Manifest names merged onto this digit, in first-seen card order.
+    /// Always includes [`Self::play_name`].
+    pub merged_names: Vec<&'a str>,
+}
+
+impl DigitAnimation<'_> {
+    /// The card row for this digit: the merged names joined with `/`.
+    /// Display capitalization happens in the page, one name at a time.
+    pub fn card_label(&self) -> String {
+        self.merged_names.join("/")
+    }
+}
+
 /// What digits 1 to 9 play: the Character's own Animations in name order,
 /// minus the ones the Engine or the controls already draw, save `react`,
-/// `sit`, `sleep` and `talk`, then minus any later name whose ordered
-/// frame-path list matches one already kept, ignoring fps and loop. The
-/// card shows these names, at most nine.
-pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<&str> {
-    let mut names = Vec::new();
+/// `sit`, `sleep` and `talk`. A later name on a kept frame-path list,
+/// ignoring fps and loop, shares that digit: the label joins the names,
+/// a press plays the first, and a later name still joins once nine are full.
+pub fn digit_animations(animations: &BTreeMap<String, Animation>) -> Vec<DigitAnimation<'_>> {
+    let mut digits: Vec<DigitAnimation<'_>> = Vec::new();
     let mut kept_frames: Vec<&[String]> = Vec::new();
     for (name, animation) in animations {
         if !bindable(name, animation, animations) {
             continue;
         }
         let frames = animation.frames.as_slice();
-        if kept_frames.contains(&frames) {
+        if let Some(index) = kept_frames.iter().position(|kept| *kept == frames) {
+            digits[index].merged_names.push(name.as_str());
+            continue;
+        }
+        if digits.len() == 9 {
             continue;
         }
         kept_frames.push(frames);
-        names.push(name.as_str());
-        if names.len() == 9 {
-            break;
-        }
+        digits.push(DigitAnimation {
+            play_name: name.as_str(),
+            merged_names: vec![name.as_str()],
+        });
     }
-    names
+    digits
 }
 
 /// How long Space takes to fill the bar, in milliseconds. Long enough to aim a
@@ -142,7 +166,7 @@ pub struct Intent {
     /// Escape was pressed: end the possession.
     pub end_possession: bool,
     /// A digit pressed since the last tick, 1 to 9. The Engine plays one pass
-    /// of the Animation at that place in [`digit_animations`].
+    /// of the Animation at that place in [`digit_animations`], by `play_name`.
     pub play: Option<u8>,
 }
 
@@ -426,6 +450,13 @@ mod tests {
         load_manifest(&format!("{}{extra}", declaring(&required))).expect("package is valid")
     }
 
+    fn card_labels(animations: &BTreeMap<String, crate::character::Animation>) -> Vec<String> {
+        digit_animations(animations)
+            .iter()
+            .map(DigitAnimation::card_label)
+            .collect()
+    }
+
     /// A digit is "play this clip now", so the card names Animations, never
     /// the Behaviors that compose them, and a Behavior's `then` adds nothing.
     /// `react`, `sit`, `sleep` and `talk` are there as one pass of the clip,
@@ -439,7 +470,7 @@ mod tests {
              [behaviors.nap]\nplay = [\"sit\", \"sleep\"]\n",
         );
         assert_eq!(
-            digit_animations(&character.animations),
+            card_labels(&character.animations),
             ["react", "sit", "sleep", "talk", "wave"]
         );
     }
@@ -462,7 +493,7 @@ mod tests {
              [animations.flourish]\nframes = [\"talk-0.png\"]\nvariant_of = \"talk\"\n",
         );
         assert_eq!(
-            digit_animations(&character.animations),
+            card_labels(&character.animations),
             ["pondering", "sleep", "talk", "wave"]
         );
     }
@@ -477,10 +508,7 @@ mod tests {
             assert!(bindable(name, &animations[name], animations), "{name}");
         }
         assert!(!bindable("hold", &animations["hold"], animations));
-        assert_eq!(
-            digit_animations(animations),
-            ["react", "sit", "sleep", "talk"]
-        );
+        assert_eq!(card_labels(animations), ["react", "sit", "sleep", "talk"]);
     }
 
     /// A `sleep` that is a second name for another clip is hidden by the
@@ -494,7 +522,7 @@ mod tests {
              [animations.sleep]\nsame_as = \"doze\"\n",
         );
         assert_eq!(
-            digit_animations(&character.animations),
+            card_labels(&character.animations),
             ["doze", "react", "sit", "talk"]
         );
     }
@@ -519,15 +547,16 @@ mod tests {
              [animations.doze]\nframes = [\"sleep-0.png\"]\nvariant_of = \"sleep\"\n",
         );
         assert_eq!(
-            digit_animations(&character.animations),
+            card_labels(&character.animations),
             ["react", "sit", "sleep", "talk"]
         );
     }
 
-    /// Eleven idle-gestures, each on its own frame-path list, plus the
-    /// playable required slots. Digits keep the first nine in name order.
-    /// The lists have to be unique: a shared path would drop the later
-    /// names before the cap applies.
+    /// Eleven idle-gestures plus the playable required slots. Digits keep
+    /// the first nine unique frame-path lists in name order. A later name
+    /// on a kept list still joins that label after the cap is full: `b`,
+    /// `c`, `d` and `e` reuse the playable required slots' files, so those
+    /// four join. `j` and `k` have their own lists and stay off the card.
     #[test]
     fn only_the_first_nine_animations_get_digits() {
         let singles = [
@@ -559,15 +588,16 @@ mod tests {
             .collect();
         let character = character_with(&gestures);
         assert_eq!(
-            digit_animations(&character.animations),
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+            card_labels(&character.animations),
+            ["a", "b/talk", "c/sleep", "d/sit", "e/react", "f", "g", "h", "i"]
         );
     }
 
     /// Two Animations may share a frame-path list at different fps, and
-    /// both stay bindable, but the later name is not offered a digit.
+    /// both stay bindable. They share one digit. The card joins their
+    /// names, first-seen first, and a press plays the first name's clip.
     #[test]
-    fn a_later_name_on_the_same_frames_gets_no_digit() {
+    fn a_later_name_on_the_same_frames_joins_the_kept_digit_label() {
         let character = character_without(
             &["talk"],
             "[animations.talk]\nframes = [\"react-0.png\"]\nfps = 3\n",
@@ -577,7 +607,9 @@ mod tests {
         assert!(bindable("talk", &animations["talk"], animations));
         assert_ne!(animations["react"].fps, animations["talk"].fps);
         assert_eq!(animations["react"].frames, animations["talk"].frames);
-        assert_eq!(digit_animations(animations), ["react", "sit", "sleep"]);
+        let digits = digit_animations(animations);
+        assert_eq!(card_labels(animations), ["react/talk", "sit", "sleep"]);
+        assert_eq!(digits[0].play_name, "react");
     }
 
     #[test]

@@ -30,9 +30,13 @@ const KEYS = [
 ];
 
 // Walk and Jump are written as labels. An Animation name is a key (`nod-off`).
+// A merged digit already joins names with `/`; each name is capitalized.
 function animationLabel(name) {
   if (!name) return name;
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  return name
+    .split("/")
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join("/");
 }
 
 function bindingRows(digits) {

@@ -77,6 +77,15 @@ test("the card numbers the shell's list and writes each name as a label", () => 
   ]);
 });
 
+test("a merged digit label capitalizes each name", () => {
+  const card = possessionCard({
+    possessed: true,
+    paused: false,
+    digits: ["react/talk"],
+  });
+  assert.deepEqual(card.keys.slice(4), [["1", "React/Talk"]]);
+});
+
 test("the card does not reorder or drop a name the shell sent", () => {
   const names = ["k", "j", "walk"];
   const card = possessionCard({ possessed: true, paused: false, digits: names });

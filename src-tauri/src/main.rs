@@ -666,8 +666,8 @@ struct SpritePlacement<'a> {
     paused: bool,
     /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
     charge: Option<f64>,
-    /// Animation names for the digit rows. Only the bubble owner, and only
-    /// while possessed: the card is not drawn anywhere else.
+    /// Digit-row labels, one joined name string per key. Only the bubble
+    /// owner, and only while possessed: the card is not drawn anywhere else.
     digits: &'a [String],
 }
 
@@ -885,7 +885,8 @@ struct Placed {
     possessed: bool,
     paused: bool,
     charge: Option<f64>,
-    /// What digits 1 to 9 play, so the card can label them.
+    /// What digits 1 to 9 play, so the card can label them. A merge
+    /// joins the names with `/`.
     digits: Vec<String>,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,

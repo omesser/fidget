@@ -2625,7 +2625,7 @@ pub(crate) fn run_frame_loop(
                     digits: if possessed {
                         digit_animations(&live.character.animations)
                             .into_iter()
-                            .map(str::to_string)
+                            .map(|digit| digit.card_label())
                             .collect()
                     } else {
                         Vec::new()

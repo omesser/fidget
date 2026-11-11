@@ -581,7 +581,7 @@ impl Character {
     pub fn idle_plan(&self) -> IdlePlan {
         let digits: Vec<IdleMember> = crate::possession::digit_animations(&self.animations)
             .into_iter()
-            .map(|name| idle_member(name, &self.animations[name]))
+            .map(|digit| idle_member(digit.play_name, &self.animations[digit.play_name]))
             .collect();
         let one_pass = |name| {
             self.named(name).map(|(_, animation)| OnePass {

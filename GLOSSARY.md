@@ -344,8 +344,9 @@ They keep `react`, `sit`, `sleep` and `talk`: a digit plays one pass of
 the clip, never a Behavior that plays it. A Perch still draws `sit`, a
 poke still plays `react`, and Dialogue still draws `talk`. They skip
 drawn variants, left strips and `same_as` names too, all by declaration.
-A later name whose ordered frame-path list matches one already kept also
-loses its digit, ignoring fps and loop. An idle-gesture keeps its digit
+A later name whose ordered frame-path list matches one already kept,
+ignoring fps and loop, shares that digit, and the card joins their
+display names with `/`. An idle-gesture keeps its digit
 when a required slot is the same as it. The fidget is possessed, the way
 a ghost possesses a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
