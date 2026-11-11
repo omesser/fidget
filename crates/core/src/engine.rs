@@ -2969,11 +2969,13 @@ mod tests {
         }
     }
 
-    /// The Dock is a Perch to stand on, and nothing more: a walk into its side
-    /// goes on behind it to the display edge, as it would past any window.
+    /// The Dock is drawn in front of the sprite, so its side is a wall to a
+    /// floor walk: the walk turns half a sprite out from it, and never climbs
+    /// it onto the top.
     #[test]
-    fn a_walk_into_the_dock_goes_on_past_it() {
+    fn a_walk_into_the_dock_turns_at_its_side() {
         let dock = dock();
+        let wall = dock.x - EDGE_CLEARANCE;
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
         settle(&mut engine, &dock_snapshot(100));
         engine.tick(&WorldSnapshot {
@@ -2983,13 +2985,15 @@ mod tests {
 
         for _ in 0..400 {
             let frame = engine.tick(&dock_snapshot(16));
-            if frame.state == State::Climbing {
-                assert_eq!(frame.position.x, 1000.0, "the display edge: {frame:?}");
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            assert!(frame.position.x <= wall, "behind the Dock: {frame:?}");
+            if frame.velocity.x < 0.0 {
+                assert_eq!(frame.position.x, wall, "turned at the side: {frame:?}");
+                assert_eq!(frame.facing, -1.0, "{frame:?}");
                 return;
             }
-            assert_ne!(frame.position.y, dock.y, "on the Dock's top: {frame:?}");
         }
-        panic!("the walk never reached the display edge");
+        panic!("the walk never turned at the Dock");
     }
 
     /// Standing on the Dock's top is standing above its side, not behind it.
@@ -3013,10 +3017,11 @@ mod tests {
         }
     }
 
-    /// Let go over the Dock below its top, the sprite lands where it was let
-    /// go. The Dock's side pulls nothing out from behind it.
+    /// Let go over the Dock below its top, the sprite falls behind it. Once it
+    /// comes to rest there it stands on the Dock's top at the same x, where it
+    /// can be seen and grabbed, rather than being pulled out sideways.
     #[test]
-    fn a_sprite_dropped_behind_the_dock_lands_where_it_was_let_go() {
+    fn a_sprite_let_go_behind_the_dock_comes_to_rest_on_its_top() {
         let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
         settle(&mut engine, &dock_snapshot(100));
         carry(
@@ -3026,8 +3031,172 @@ mod tests {
         );
 
         let frame = settle(&mut engine, &dock_snapshot(16));
+        assert_eq!(frame.state, State::Perched, "{frame:?}");
+        assert_eq!(
+            frame.position,
+            Point {
+                x: 480.0,
+                y: dock().y
+            }
+        );
+    }
+
+    /// An autohidden Dock slides out around whatever stands there, asleep
+    /// included. The sprite now behind it ends up on its top, awake or not.
+    #[test]
+    fn a_dock_that_slides_out_around_a_sleeping_sprite_puts_it_on_the_top() {
+        let mut engine = Engine::new(Point { x: 450.0, y: 0.0 })
+            .with_behaviors(declared_behaviors())
+            .with_sleep_after_s((1, 1))
+            .with_sleep_for_s((30, 30));
+        settle(&mut engine, &snapshot(100));
+        let asleep = engine.tick(&snapshot(1_000));
+        assert_eq!(asleep.state, State::Asleep, "{asleep:?}");
+
+        let frame = settle(&mut engine, &dock_snapshot(16));
+        assert!(
+            matches!(frame.state, State::Perched | State::Asleep),
+            "{frame:?}"
+        );
+        assert_eq!(
+            frame.position,
+            Point {
+                x: 450.0,
+                y: dock().y
+            }
+        );
+    }
+
+    /// Behind the Dock means on the Dock's own display. A display stacked below
+    /// shares its x-range, and a sprite on that floor is behind none of it.
+    #[test]
+    fn a_sprite_on_a_display_below_the_docks_is_not_behind_the_dock() {
+        let below = Rect {
+            x: 0.0,
+            y: 800.0,
+            width: 1000.0,
+            height: 800.0,
+        };
+        let stacked = WorldSnapshot {
+            displays: vec![one_display(), below],
+            ..dock_snapshot(16)
+        };
+        let standing = Point {
+            x: 500.0,
+            y: below.bottom(),
+        };
+
+        let mut engine = a_character_at(standing);
+        for _ in 0..80 {
+            let frame = engine.tick(&stacked);
+            assert_eq!(frame.state, State::Grounded, "{frame:?}");
+            assert_eq!(frame.position, standing, "{frame:?}");
+        }
+    }
+
+    /// A Dock whose side is less than a sprite from a display edge, either
+    /// side, and a sprite in the gap. The Dock was a magnet here once.
+    fn docks_near_an_edge() -> [(WorldSnapshot, f64, Direction, f64); 2] {
+        let near = |x: f64| WorldSnapshot {
+            windows: vec![window(
+                DOCK_PERCH_ID,
+                Rect {
+                    x,
+                    y: 740.0,
+                    width: 220.0,
+                    height: 60.0,
+                },
+            )],
+            ..snapshot(16)
+        };
+        [
+            (near(700.0), 960.0, Direction::Right, 1000.0),
+            (near(80.0), 40.0, Direction::Left, 0.0),
+        ]
+    }
+
+    /// Walking away from the Dock is not walking into it. From the gap beside
+    /// it the walk reaches the display edge and climbs it past the Dock's top,
+    /// with nothing pulling it back or stepping it onto the Dock.
+    #[test]
+    fn a_walk_from_beside_the_dock_reaches_the_display_edge() {
+        for (world, start, heading, edge) in docks_near_an_edge() {
+            let dock = dock_in(&world).unwrap();
+            let mut engine = a_character_at(Point { x: start, y: 0.0 });
+            let landed = settle(
+                &mut engine,
+                &WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                },
+            );
+            assert_eq!(landed.state, State::Grounded, "{landed:?}");
+            engine.tick(&WorldSnapshot {
+                proposal: Some(BehaviorProposal {
+                    behavior: "walk".to_string(),
+                    dialogue: None,
+                    direction: Some(heading),
+                }),
+                ..world.clone()
+            });
+
+            let mut climbed_past_the_top = false;
+            for _ in 0..400 {
+                let frame = engine.tick(&world);
+                assert_ne!(frame.state, State::Perched, "on the Dock: {frame:?}");
+                if frame.state == State::Climbing {
+                    assert_eq!(frame.position.x, edge, "{frame:?}");
+                    climbed_past_the_top |= frame.position.y < dock.y;
+                }
+                if climbed_past_the_top {
+                    break;
+                }
+            }
+            assert!(climbed_past_the_top, "never climbed the edge past the Dock");
+        }
+    }
+
+    /// Let go beside the Dock, in the gap or in the half sprite just out from
+    /// its side, the sprite lands where it was let go and stays there.
+    #[test]
+    fn a_sprite_let_go_beside_the_dock_stays_where_it_lands() {
+        for (world, start, ..) in docks_near_an_edge() {
+            let dock = dock_in(&world).unwrap();
+            let margin = if start > dock.x {
+                dock.x + dock.width + 10.0
+            } else {
+                dock.x - 10.0
+            };
+            for x in [start, margin] {
+                let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
+                settle(&mut engine, &world);
+                carry(&mut engine, Point { x, y: 770.0 }, &world);
+
+                let frame = settle(&mut engine, &world);
+                assert_eq!(frame.state, State::Grounded, "{frame:?}");
+                assert_eq!(frame.position, Point { x, y: 800.0 }, "{frame:?}");
+            }
+        }
+    }
+
+    /// A move sent behind the Dock arrives where a walk would turn, half a
+    /// sprite out from its side, as it would at a display edge.
+    #[test]
+    fn a_move_to_behind_the_dock_stops_at_its_side() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &dock_snapshot(100));
+        engine
+            .start_move(MoveRequest::To(GlobalX::new(500.0).unwrap()))
+            .expect("a grounded sprite takes a move");
+
+        let frame = settle(&mut engine, &dock_snapshot(100));
         assert_eq!(frame.state, State::Grounded, "{frame:?}");
-        assert_eq!(frame.position.x, 480.0, "{frame:?}");
+        let wall = dock().x - EDGE_CLEARANCE;
+        assert!(
+            (wall - ARRIVAL_THRESHOLD..=wall).contains(&frame.position.x),
+            "arrived short of the side: {frame:?}"
+        );
+        assert_eq!(frame.velocity.x, 0.0, "{frame:?}");
     }
 
     fn a_resting_sprite() -> Engine {
@@ -11217,25 +11386,29 @@ mod tests {
         }
 
         /// The screen edge and the Dock's side stop a possessed walk; neither is
-        /// climbed while the user steers.
+        /// climbed while the user steers. The Dock's side stops it half a
+        /// sprite out, before any of the sprite is behind the Dock.
         #[test]
         fn a_possessed_walk_into_a_wall_stops_rather_than_climbs() {
             let worlds = [
-                on(one_display()),
-                WorldSnapshot {
-                    windows: vec![window(
-                        DOCK_PERCH_ID,
-                        Rect {
-                            x: 700.0,
-                            y: 740.0,
-                            width: 200.0,
-                            height: 60.0,
-                        },
-                    )],
-                    ..on(one_display())
-                },
+                (on(one_display()), None),
+                (
+                    WorldSnapshot {
+                        windows: vec![window(
+                            DOCK_PERCH_ID,
+                            Rect {
+                                x: 700.0,
+                                y: 740.0,
+                                width: 200.0,
+                                height: 60.0,
+                            },
+                        )],
+                        ..on(one_display())
+                    },
+                    Some(700.0 - EDGE_CLEARANCE),
+                ),
             ];
-            for world in worlds {
+            for (world, dock_wall) in worlds {
                 let mut engine = possessed_at(500.0, &world);
                 let mut last = None;
                 for _ in 0..400 {
@@ -11247,6 +11420,9 @@ mod tests {
                 let last = last.unwrap();
                 assert_eq!(last.velocity.x, 0.0, "stopped at the wall: {last:?}");
                 assert_eq!(last.animation, "idle", "standing, not striding: {last:?}");
+                if let Some(x) = dock_wall {
+                    assert_eq!(last.position.x, x, "{last:?}");
+                }
             }
         }
 
@@ -11347,8 +11523,8 @@ mod tests {
 
         /// Up climbs where a possessed walk stops: the screen edge, from the
         /// floor or a Perch, and the outermost edge when a display above juts
-        /// out past it. A Dock near the edge neither stops the walk nor takes
-        /// the climb onto its top.
+        /// out past it. From the gap beside a Dock near the edge, the climb is
+        /// the screen edge's and never steps onto the Dock's top.
         #[test]
         fn up_against_a_wall_climbs_it() {
             let dock = window(
@@ -11356,7 +11532,7 @@ mod tests {
                 Rect {
                     x: 700.0,
                     y: 740.0,
-                    width: 260.0,
+                    width: 220.0,
                     height: 60.0,
                 },
             );
@@ -11376,12 +11552,13 @@ mod tests {
                 height: 600.0,
             };
             let worlds = [
-                (on(one_display()), 1000.0),
+                (on(one_display()), 500.0, 1000.0),
                 (
                     WorldSnapshot {
                         windows: vec![ledge],
                         ..on(one_display())
                     },
+                    500.0,
                     1000.0,
                 ),
                 (
@@ -11389,6 +11566,7 @@ mod tests {
                         displays: vec![one_display(), jutting],
                         ..on(one_display())
                     },
+                    500.0,
                     1020.0,
                 ),
                 (
@@ -11396,11 +11574,12 @@ mod tests {
                         windows: vec![dock],
                         ..on(one_display())
                     },
+                    960.0,
                     1000.0,
                 ),
             ];
-            for (world, wall) in worlds {
-                let mut engine = possessed_at(500.0, &world);
+            for (world, start, wall) in worlds {
+                let mut engine = possessed_at(start, &world);
                 for _ in 0..400 {
                     engine.tick(&with_possession(holding(Walk::Right), &world));
                 }
