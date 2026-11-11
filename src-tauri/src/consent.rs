@@ -264,7 +264,7 @@ mod linux {
         proxy
             .select_sources(
                 &session,
-                opts.set_sources(SourceType::Monitor | SourceType::Window)
+                opts.set_sources(SourceType::MONITOR | SourceType::WINDOW)
                     .set_multiple(false),
             )
             .await?;

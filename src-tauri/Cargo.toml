@@ -59,7 +59,7 @@ url = "2"
 # `acp_wire.rs`: a current-thread tokio runtime, `rt` + `sync` + `macros` and
 # nothing more. tokio was already in the tree through Tauri. The frame loop
 # never sees a future (ADR-0004).
-agent-client-protocol = "3.1"
+agent-client-protocol = "5.0"
 # Log rotation for the Action Log and the process log: K=10 retention
 # (10 rotated + 1 current), 2 MB per file, ~22 MB ceiling. BytesSurpassed
 # keeps a line whole.
@@ -117,7 +117,7 @@ x11rb = { version = "0.14", features = ["xtest"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 # xdg-desktop-portal consent: ScreenCast for Wayland titles (#886).
 # tokio feature reuses the tokio already here under async-process / ACP SDK.
-ashpd = { version = "0.13", features = ["tokio", "screencast"] }
+ashpd = { version = "0.14", features = ["tokio", "screencast"] }
 # Caffeinate's logind and screen saver inhibitors. The zbus ashpd already
 # pulls in; `blocking-api` adds no crate.
 zbus = { version = "5", default-features = false, features = ["tokio", "blocking-api"] }

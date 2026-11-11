@@ -3830,7 +3830,7 @@ thread_local! {
 #[cfg(test)]
 pub(crate) fn with_sign_in_gate(
     login: Option<&str>,
-    methods: Vec<agent_client_protocol::schema::v1::AuthMethod>,
+    methods: Vec<agent_client_protocol::v1::schema::AuthMethod>,
     body: impl FnOnce(),
 ) {
     let dir = std::env::temp_dir().join(format!("fidget-sign-in-{}", uuid::Uuid::new_v4()));
@@ -11971,7 +11971,7 @@ mod tests {
     /// and env are a credential path and never ride along on the offer.
     #[test]
     fn sign_in_buttons_keep_agent_ids_and_drop_terminal_secrets() {
-        use agent_client_protocol::schema::v1::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
+        use agent_client_protocol::v1::schema::{AuthMethod, AuthMethodAgent, AuthMethodTerminal};
         use std::collections::HashMap;
 
         let mut env = HashMap::new();
