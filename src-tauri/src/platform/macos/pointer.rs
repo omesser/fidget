@@ -170,8 +170,20 @@ impl Button {
 
     fn observe(&mut self, now: ButtonSample) {
         let (pressed, released) = (!self.last.level && now.level, self.last.level && !now.level);
-        let downs = now.downs.wrapping_sub(self.last.downs);
-        let ups = now.ups.wrapping_sub(self.last.ups);
+        let mut downs = u64::from(now.downs.wrapping_sub(self.last.downs));
+        let mut ups = u64::from(now.ups.wrapping_sub(self.last.ups));
+        // Counts land in event order, so with the held press's down still
+        // uncounted, an up count past the uncounted releases ended an earlier
+        // click. It is told ahead of the hold or not at all, never inside it.
+        if now.level && self.uncounted.downs + u64::from(pressed) > self.uncounted.ups {
+            let earlier = downs.min(ups.saturating_sub(self.uncounted.ups));
+            downs -= earlier;
+            ups -= earlier;
+            if pressed {
+                self.seen.downs += earlier;
+                self.seen.ups += earlier;
+            }
+        }
         merge(
             &mut self.seen.downs,
             &mut self.uncounted.downs,
@@ -216,8 +228,7 @@ impl Button {
 /// Adds one tick's edges of one kind. A count lands with its level edge or
 /// after it, never before, so it repeats an edge the level showed only while
 /// one is `uncounted`. Any other count is an edge the level missed.
-fn merge(seen: &mut u64, uncounted: &mut u64, level: bool, counted: u32) {
-    let counted = u64::from(counted);
+fn merge(seen: &mut u64, uncounted: &mut u64, level: bool, counted: u64) {
     *uncounted += u64::from(level);
     let repeats = counted.min(*uncounted);
     *uncounted -= repeats;
@@ -612,7 +623,7 @@ mod tests {
 
     /// The counters missed the press, the level went down: a press.
     #[test]
-    fn a_level_edge_with_no_count_is_a_press() {
+    fn a_level_with_no_count_is_a_press() {
         assert_eq!(
             levels(&[sample(false, 4, 4), sample(true, 4, 4), sample(true, 4, 4)]),
             vec![true, true]
