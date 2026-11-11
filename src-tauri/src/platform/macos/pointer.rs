@@ -668,6 +668,57 @@ mod tests {
         assert_eq!(verbs, vec![Verb::Poke, Verb::Summon]);
     }
 
+    /// A flick on the sprite at 16 ms ticks, 20 points a tick: 1250 points a
+    /// second. The 27.2 counters land once the hand has stopped. `before` is
+    /// what the button did first, off the sprite, from the baseline on.
+    fn flick_after(before: &[ButtonSample]) -> Vec<Verb> {
+        let mut button = Button::new(before[0]);
+        let mut pointer = Pointer::default();
+        let mut at = Point { x: 100.0, y: 100.0 };
+        let mut verbs = Vec::new();
+        for &now in &before[1..] {
+            verbs.extend(pointer.update(false, button.step(now), false, at, 16));
+        }
+        let (downs, ups) = (before[before.len() - 1].downs, before[before.len() - 1].ups);
+        let held = [(sample(true, downs, ups), 20.0); 10];
+        let let_go = [(sample(false, downs, ups), 20.0)];
+        let still = [(sample(false, downs, ups), 0.0); 10];
+        let counted = [(sample(false, downs + 1, ups + 1), 0.0); 3];
+        for (now, step) in held.into_iter().chain(let_go).chain(still).chain(counted) {
+            at.x += step;
+            verbs.extend(pointer.update(true, button.step(now), false, at, 16));
+        }
+        verbs.retain(|verb| !matches!(verb, Verb::Grab));
+        verbs
+    }
+
+    fn assert_thrown_at_the_hands_speed(verbs: &[Verb]) {
+        match verbs {
+            [Verb::Throw { velocity }] => {
+                assert!((velocity.x - 1250.0).abs() < 1.0, "{velocity:?}");
+                assert_eq!(velocity.y, 0.0);
+            }
+            other => panic!("expected one Throw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_flick_with_late_counters_is_a_throw() {
+        assert_thrown_at_the_hands_speed(&flick_after(&[sample(false, 4, 4)]));
+    }
+
+    /// An idle frame loop polls up to a second apart, so a click on a menu
+    /// item is a tap only the counters see. The next release must still be
+    /// told when the level drops, not when its count lands.
+    #[test]
+    fn a_flick_after_a_tap_the_level_missed_is_still_a_throw() {
+        assert_thrown_at_the_hands_speed(&flick_after(&[
+            sample(false, 4, 4),
+            sample(false, 5, 5),
+            sample(false, 5, 5),
+        ]));
+    }
+
     /// The 27.2 Control-click: Control is let go before the counters move,
     /// but the level saw the press while it was held.
     #[test]
