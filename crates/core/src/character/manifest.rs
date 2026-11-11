@@ -29,6 +29,9 @@ pub(super) struct Declared {
     /// share cannot be said to face two ways.
     pub(super) frame_facing: BTreeMap<String, Facing>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
+    /// Animation name to the Animation it is `same_as`. Apart from
+    /// `animations` because such a table declares no frames of its own.
+    pub(super) same_as: BTreeMap<String, String>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
     pub(super) idle_gesture_every_s: Option<(u32, u32)>,
     pub(super) sleep_after_s: Option<(u32, u32)>,
@@ -46,6 +49,12 @@ pub(super) struct DeclaredAnimation {
     /// This Animation's share of its variant ring, against its fellow
     /// members'. `DEFAULT_WEIGHT` when undeclared, exactly as on a Behavior.
     pub(super) weight: u32,
+}
+
+/// One `[animations.*]` table: its own frames, or the Animation it is the same as.
+enum Parsed {
+    Framed(DeclaredAnimation),
+    SameAs(String),
 }
 
 pub(super) struct DeclaredBehavior {
@@ -98,8 +107,14 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
             "animations" => match item.as_table_like() {
                 Some(table) => {
                     for (name, item) in table.iter() {
-                        if let Some(animation) = parse_animation(name, item, manifest, errors) {
-                            declared.animations.insert(name.to_string(), animation);
+                        match parse_animation(name, item, manifest, errors) {
+                            Some(Parsed::Framed(animation)) => {
+                                declared.animations.insert(name.to_string(), animation);
+                            }
+                            Some(Parsed::SameAs(owner)) => {
+                                declared.same_as.insert(name.to_string(), owner);
+                            }
+                            None => {}
                         }
                     }
                 }
@@ -418,7 +433,7 @@ fn parse_animation(
     item: &Item,
     manifest: &str,
     errors: &mut Vec<String>,
-) -> Option<DeclaredAnimation> {
+) -> Option<Parsed> {
     let Some(table) = item.as_table_like() else {
         errors.push(format!(
             "animation {name:?} is not a table; an Animation reads \
@@ -426,6 +441,10 @@ fn parse_animation(
         ));
         return None;
     };
+
+    if let Some(owner) = table.get("same_as") {
+        return same_as(name, owner, table.len(), manifest, errors);
+    }
 
     let mut frames = None;
     let mut fps = DEFAULT_FPS;
@@ -484,7 +503,7 @@ fn parse_animation(
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
                  an Animation declares frames, fps, loop, variant_of, \
-                 left_of and weight"
+                 left_of, same_as and weight"
             )),
         }
     }
@@ -498,14 +517,40 @@ fn parse_animation(
     // No usable frame list — rejected above or by `frame_list` — means no
     // Animation, however sound its fps and loop mode were.
     let frames = frames?;
-    Some(DeclaredAnimation {
+    Some(Parsed::Framed(DeclaredAnimation {
         frames,
         fps,
         looping,
         variant_of,
         left_of,
         weight,
-    })
+    }))
+}
+
+/// A table holding `same_as` and nothing else. Any other key would play the
+/// owner's clip a second way under this name, which is what `same_as` ends.
+fn same_as(
+    name: &str,
+    owner: &Item,
+    keys: usize,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<Parsed> {
+    let Some(owner) = owner.as_str().filter(|owner| !owner.is_empty()) else {
+        errors.push(format!(
+            "same_as for animation {name:?} is {}, and must name \
+             an animation, as same_as = \"wave\"",
+            wrote(manifest, owner.span()).unwrap_or("?")
+        ));
+        return None;
+    };
+    if keys > 1 {
+        errors.push(format!(
+            "animation {name:?} is the same_as {owner:?}, and declares nothing \
+             else; it plays that animation's frames, fps and loop"
+        ));
+    }
+    Some(Parsed::SameAs(owner.to_string()))
 }
 
 /// An idle-gesture gap is 5 to 60 seconds. Shorter reads as twitching.
@@ -1062,7 +1107,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop, variant_of, left_of and weight"
+                 frames, fps, loop, variant_of, left_of, same_as and weight"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives or one idle-gesture, as play = [\"react\", \"talk\"]"
                     .to_string(),

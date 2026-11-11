@@ -15,7 +15,8 @@
 use fidget_core::character::{
     self, CursorReaction, IdleBeat, Primitive, RingChoice, REQUIRED_ANIMATIONS,
 };
-use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
+use fidget_core::engine::{BehaviorProposal, Engine, Point, Rect, Verb, Window, WorldSnapshot};
+use fidget_core::possession::Intent;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;
@@ -1957,4 +1958,214 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
         .skip_while(|file| *file == first)
         .any(|file| file == first);
     assert!(back, "the idle returns to its first pose and repeats");
+}
+
+/// What each shipped card offers on 1 to 9: the clips a key can play,
+/// including `react`, `sit`, `sleep` and `talk`, and none of the other
+/// required slots or the art the arrows, a jump, a fall, a climb, a Perch
+/// ride or a drag draws. A Character with only the required nine, each
+/// on its own frame-path list, offers those four. A later name that
+/// shares a frame-path list with one already kept joins that label, so
+/// Black Mage's card is `react/talk`, `sit` and `sleep`. A `same_as`
+/// still hides its alias, so Rubber Duck's `react` and `sit` stay off
+/// the card, and Tuxedo Bean's `react` does too. Tux fills the 9-clip
+/// cap; frame dedup frees no slot.
+#[test]
+fn every_shipped_character_binds_its_own_clips_to_digits() {
+    let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
+        ("black-mage", &["react/talk", "sit", "sleep"][..]),
+        ("bmo", &["react", "sing", "sit", "skate", "sleep", "talk"]),
+        (
+            "buddy-bot",
+            &[
+                "idle-blink",
+                "idle-breathe",
+                "idle-listen",
+                "react",
+                "sit",
+                "sleep",
+                "talk",
+            ],
+        ),
+        (
+            "cat",
+            &["grooming", "react", "sit", "sleep", "talk", "waiting"],
+        ),
+        ("jotaro-kujo", &["react", "sit", "sleep", "talk"]),
+        ("nim", &["react", "sit", "sleep", "talk"]),
+        (
+            "rubber-duck",
+            &[
+                "doze",
+                "look-left",
+                "look-right",
+                "pondering",
+                "sleep",
+                "talk",
+                "thinking",
+                "wave",
+            ],
+        ),
+        ("timber-wolf", &["react", "scan", "sit", "sleep", "talk"]),
+        ("trump", &["react", "sit", "sleep", "talk", "waiting"]),
+        (
+            "tux",
+            &[
+                "checking-work",
+                "look-around",
+                "react",
+                "recover-card",
+                "restless-sitting",
+                "sit",
+                "sleep",
+                "talk",
+                "waddle-in-place",
+            ],
+        ),
+        (
+            "tuxedo-bean",
+            &[
+                "look-around",
+                "nod-off",
+                "review",
+                "sit",
+                "sleep",
+                "talk",
+                "wave",
+            ],
+        ),
+    ]);
+    let shipped = shipped_packages();
+    assert_eq!(
+        shipped.iter().map(String::as_str).collect::<Vec<_>>(),
+        cards.keys().copied().collect::<Vec<_>>(),
+        "a card for every shipped Character"
+    );
+    for name in shipped {
+        let character = load_package(&name).expect("shipped packages load");
+        let labels: Vec<String> = fidget_core::possession::digit_animations(&character.animations)
+            .iter()
+            .map(fidget_core::possession::DigitAnimation::card_label)
+            .collect();
+        assert_eq!(labels, cards[name.as_str()], "{name}");
+    }
+}
+
+/// A later name whose ordered frame-path list matches one already kept
+/// shares that digit, even at a different fps or loop, so the card never
+/// lists the same frames twice.
+#[test]
+fn no_shipped_digit_card_repeats_a_frame_list() {
+    for name in shipped_packages() {
+        let character = load_package(&name).expect("shipped packages load");
+        let digits = fidget_core::possession::digit_animations(&character.animations);
+        let mut seen = BTreeSet::new();
+        for digit in &digits {
+            let frames = character.animations[digit.play_name].frames.as_slice();
+            assert!(
+                seen.insert(frames),
+                "{name} binds {} to frames already on the card: {frames:?}",
+                digit.card_label()
+            );
+        }
+    }
+}
+
+/// Through the Engine a shipped Character is built with: digit 1 on Tuxedo
+/// Bean plays one pass of `look-around`, six frames at 3 fps, then idles.
+#[test]
+fn tuxedo_bean_plays_one_look_around_on_digit_one() {
+    let character = load_package("tuxedo-bean").expect("tuxedo-bean loads");
+    let ground = WorldSnapshot {
+        displays: vec![DISPLAY],
+        elapsed_ms: 100,
+        ..WorldSnapshot::default()
+    };
+    let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_idle_plan(character.idle_plan());
+    for _ in 0..40 {
+        engine.tick(&ground);
+    }
+    engine.set_possessed(true);
+    for _ in 0..40 {
+        engine.tick(&ground);
+    }
+
+    let pressed = engine.tick(&WorldSnapshot {
+        possession: Intent {
+            play: Some(1),
+            ..Intent::default()
+        },
+        elapsed_ms: 16,
+        ..ground.clone()
+    });
+    assert_eq!(pressed.art_name(), "look-around", "{pressed:?}");
+    assert_eq!(pressed.playing_behavior, None, "no Behavior chain follows");
+
+    let mid = engine.tick(&WorldSnapshot {
+        elapsed_ms: 1_900,
+        ..ground.clone()
+    });
+    assert_eq!(mid.art_name(), "look-around", "a pass is 2s: {mid:?}");
+    let after = engine.tick(&WorldSnapshot {
+        elapsed_ms: 200,
+        ..ground.clone()
+    });
+    assert_eq!(after.art_name(), "idle", "{after:?}");
+}
+
+/// Rubber Duck's `react` is its `wave` by `same_as`, and Tuxedo Bean's too, so
+/// a Poke plays that wave through once at the wave's 4 fps and then idles.
+#[test]
+fn a_same_as_react_plays_its_wave_once_then_idles() {
+    for (package, wave_ms) in [("rubber-duck", 1_500), ("tuxedo-bean", 1_000)] {
+        let character = load_package(package).expect("loads");
+        assert_eq!(
+            character.animations["react"].frames,
+            character.animations["wave"].frames
+        );
+        let ground = WorldSnapshot {
+            displays: vec![DISPLAY],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+            .with_behaviors(character.behaviors.clone())
+            .with_idle_plan(character.idle_plan());
+        for _ in 0..40 {
+            engine.tick(&ground);
+        }
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..ground.clone()
+        });
+        let reacting = (0..100)
+            .take_while(|_| engine.tick(&ground).animation == "react")
+            .count() as u32;
+        assert_eq!((reacting + 1) * 100, wave_ms, "{package}");
+        assert_eq!(engine.tick(&ground).animation, "idle", "{package}");
+    }
+}
+
+/// A required slot that is the same as another Animation draws that one's
+/// frames at its fps, and stays out of the idle-gestures the owner is in.
+#[test]
+fn same_as_slots_draw_their_owners_clip() {
+    for (package, slot, owner) in [
+        ("rubber-duck", "sit", "pondering"),
+        ("rubber-duck", "react", "wave"),
+        ("tuxedo-bean", "hold", "idle"),
+        ("tuxedo-bean", "react", "wave"),
+    ] {
+        let character = load_package(package).expect("loads");
+        let (same, own) = (&character.animations[slot], &character.animations[owner]);
+        assert_eq!(
+            (&same.frames, same.fps, same.looping),
+            (&own.frames, own.fps, own.looping),
+            "{package} {slot}"
+        );
+        assert_eq!(same.same_as.as_deref(), Some(owner));
+        assert!(!same.is_idle_gesture(), "{package} {slot}");
+    }
 }

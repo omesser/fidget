@@ -80,6 +80,7 @@ mod tests {
             idle_beat: None,
             dialogue: None,
             behavior: None,
+            digit: None,
             playing_behavior: None,
             playing_primitive: None,
             riding: false,

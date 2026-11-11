@@ -666,9 +666,9 @@ struct SpritePlacement<'a> {
     paused: bool,
     /// Jump bar fill, from 0 to 1, while Space is held. `None` hides the bar.
     charge: Option<f64>,
-    /// Behavior names for the digit rows. Only the bubble owner, and only
-    /// while possessed: the card is not drawn anywhere else.
-    behaviors: &'a [String],
+    /// Digit-row labels, one joined name string per key. Only the bubble
+    /// owner, and only while possessed: the card is not drawn anywhere else.
+    digits: &'a [String],
 }
 
 /// What the Chat button and the menu row show.
@@ -726,8 +726,8 @@ impl<'a> SpritePlacement<'a> {
             possessed: bubble && instance.possessed,
             paused: bubble && instance.paused,
             charge: instance.charge.filter(|_| bubble),
-            behaviors: if bubble && instance.possessed {
-                instance.behaviors.as_slice()
+            digits: if bubble && instance.possessed {
+                instance.digits.as_slice()
             } else {
                 &[]
             },
@@ -885,8 +885,9 @@ struct Placed {
     possessed: bool,
     paused: bool,
     charge: Option<f64>,
-    /// The Character's Behavior names, so the card can label digits 1 to 9.
-    behaviors: Vec<String>,
+    /// What digits 1 to 9 play, so the card can label them. A merge
+    /// joins the names with `/`.
+    digits: Vec<String>,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     mask: fidget_core::overlay::AlphaMask,
 }
@@ -7797,15 +7798,15 @@ mod tests {
             possessed: true,
             paused: false,
             charge: None,
-            behaviors: vec!["nod".to_string(), "sit".to_string()],
+            digits: vec!["nod-off".to_string(), "wave".to_string()],
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };
 
         let owner = SpritePlacement::new(&placed, right, 1);
         assert_eq!(
-            owner.behaviors,
-            ["nod".to_string(), "sit".to_string()],
+            owner.digits,
+            ["nod-off".to_string(), "wave".to_string()],
             "the card numbers the list the shell mapped"
         );
         assert_eq!(owner.dialogue.as_deref(), Some("Yare yare daze."));
@@ -7825,7 +7826,7 @@ mod tests {
 
         let elsewhere = SpritePlacement::new(&placed, left, 0);
         assert!(
-            elsewhere.behaviors.is_empty(),
+            elsewhere.digits.is_empty(),
             "one card, on the display that owns the bubble"
         );
         assert_eq!(elsewhere.dialogue, None, "no line to latch off the owner");
@@ -7905,7 +7906,7 @@ mod tests {
             possessed: false,
             paused: false,
             charge: None,
-            behaviors: Vec::new(),
+            digits: Vec::new(),
             mask: fidget_core::overlay::AlphaMask::from_png(PATCHY, 128)
                 .expect("the 2x2 fixture decodes"),
         };

@@ -6,7 +6,7 @@ A single click on the sprite body makes the fidget react (react animation) and r
 
 - `poke-hit` click on drawn pixels produces `verbs:.*Poke` in the trace log.
 - `poke-miss` (macOS verify) cursor over transparent corner logs `HIT` or click-through status without hitting the sprite.
-- `poke-resume` after the react animation (~600ms), the fidget returns to idle (Grounded) or sit (Perched); any interrupted walk does not resume (Director's fresh call determines the next motion).
+- `poke-resume` after one pass of the react animation (never under ~600ms), the fidget returns to idle (Grounded) or sit (Perched); any interrupted walk does not resume (Director's fresh call determines the next motion).
 - `poke-climb-pause` a Poke on a climbing fidget plays react, then holds it on the wall in one climb pose for the 2.5 s cooldown, then it climbs on (#1346). Unlike a walk, the climb resumes.
 
 ## How to get to it (user POV)
