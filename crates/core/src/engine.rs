@@ -3010,6 +3010,38 @@ mod tests {
         panic!("the walk never turned at the Dock");
     }
 
+    /// The wall is the floor's. A walk along a window whose top is lower than
+    /// the Dock's goes on past the line a floor walk turns at.
+    #[test]
+    fn a_perched_walk_below_the_dock_top_goes_past_its_side() {
+        let low = Rect {
+            x: 100.0,
+            y: 750.0,
+            width: 600.0,
+            height: 50.0,
+        };
+        let world = |elapsed_ms| WorldSnapshot {
+            windows: vec![window(DOCK_PERCH_ID, dock()), window(1, low)],
+            ..snapshot(elapsed_ms)
+        };
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        let landed = settle(&mut engine, &world(100));
+        assert_eq!((landed.state, landed.position.y), (State::Perched, low.y));
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..world(16)
+        });
+
+        for _ in 0..400 {
+            let frame = engine.tick(&world(16));
+            assert!(frame.velocity.x >= 0.0, "turned on the window: {frame:?}");
+            if frame.state == State::Perched && frame.position.x > dock().x - EDGE_CLEARANCE {
+                return;
+            }
+        }
+        panic!("the walk never went past the Dock's side");
+    }
+
     /// Standing on the Dock's top is standing above its side, not behind it.
     #[test]
     fn a_walk_along_the_dock_top_meets_no_wall() {
@@ -3170,18 +3202,20 @@ mod tests {
         }
     }
 
-    /// Let go beside the Dock, in the gap or in the half sprite just out from
-    /// its side, the sprite lands where it was let go and stays there.
+    /// Let go beside the Dock, in the gap, in the half sprite just out from
+    /// its side, or level with the side itself, the sprite lands where it was
+    /// let go and stays there.
     #[test]
     fn a_sprite_let_go_beside_the_dock_stays_where_it_lands() {
         for (world, start, ..) in docks_near_an_edge() {
             let dock = dock_in(&world).unwrap();
-            let margin = if start > dock.x {
-                dock.x + dock.width + 10.0
+            let side = if start > dock.x {
+                dock.x + dock.width
             } else {
-                dock.x - 10.0
+                dock.x
             };
-            for x in [start, margin] {
+            let margin = side + (start - side).signum() * 10.0;
+            for x in [start, margin, side] {
                 let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
                 settle(&mut engine, &world);
                 carry(&mut engine, Point { x, y: 770.0 }, &world);
