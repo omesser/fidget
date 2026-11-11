@@ -85,12 +85,9 @@ pub(super) fn footing(
     // front of them all (DESIGN.md decision 7). Not the Dock, drawn in front of
     // the sprite: at rest behind it, the sprite stands on its top instead.
     if floor_under(position.x, snapshot) == Some(position.y) {
-        let dock = dock_index(snapshot).filter(|&index| {
-            behind_dock(position, snapshot) && is_perch(index, position.x, snapshot, clearance)
-        });
-        if let Some(index) = dock {
+        if let Some(dock) = dock_in(snapshot).filter(|_| behind_dock(position, snapshot)) {
             return Some(Support {
-                y: snapshot.windows[index].rect.y,
+                y: dock.y,
                 surface: Surface::Perch,
             });
         }
@@ -199,7 +196,7 @@ pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot
             left_x = left_x.max(perch.rect.x);
             right_x = right_x.min(perch.rect.x + perch.rect.width);
         }
-    } else if let Some(dock) = dock_reach(feet, snapshot).filter(|_| state == State::Grounded) {
+    } else if let Some(dock) = dock_reach(feet, snapshot) {
         left_x = left_x.max(dock.left_x);
         right_x = right_x.min(dock.right_x);
     }
@@ -303,14 +300,11 @@ pub(super) fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) ->
 
 /// The Dock, when the snapshot carries one: the Perch wearing the reserved id.
 pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
-    dock_index(snapshot).map(|index| snapshot.windows[index].rect)
-}
-
-fn dock_index(snapshot: &WorldSnapshot) -> Option<usize> {
     snapshot
         .windows
         .iter()
-        .position(|window| window.id == DOCK_PERCH_ID)
+        .find(|window| window.id == DOCK_PERCH_ID)
+        .map(|window| window.rect)
 }
 
 /// The Dock, when `feet` are on its own display's floor below its top: the
