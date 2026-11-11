@@ -82,9 +82,8 @@ pub(super) fn footing(
     swallowing: impl Fn(&Window) -> bool,
 ) -> Option<Support> {
     // The floor is exempt: it is under every window and the sprite is drawn in
-    // front of them all, so the floor is never the trapped-inside case
-    // (DESIGN.md decision 7). The Dock is the exception: it is drawn in front
-    // of the sprite, so a sprite at rest behind it stands on its top instead.
+    // front of them all (DESIGN.md decision 7). Not the Dock, drawn in front of
+    // the sprite: at rest behind it, the sprite stands on its top instead.
     if floor_under(position.x, snapshot) == Some(position.y) {
         let dock = dock_index(snapshot).filter(|&index| {
             behind_dock(position, snapshot) && is_perch(index, position.x, snapshot, clearance)

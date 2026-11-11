@@ -2105,8 +2105,8 @@ impl Engine {
                 }
                 // The Dock's side stops a floor walk. A sprite's own walk turns
                 // there; a possessed one stands, as at a display edge.
-                let dock = dock_reach(before, snapshot).filter(|_| state == State::Grounded);
-                if let Some(x) = dock.map(|reach| reach.clamp(self.position.x)) {
+                let reach = dock_reach(before, snapshot).filter(|_| state == State::Grounded);
+                if let Some(x) = reach.map(|reach| reach.clamp(self.position.x)) {
                     if x != self.position.x {
                         self.position.x = x;
                         self.velocity.x = if self.possessed {
@@ -3109,7 +3109,7 @@ mod tests {
     }
 
     /// A Dock whose side is less than a sprite from a display edge, either
-    /// side, and a sprite in the gap. The Dock was a magnet here once.
+    /// side, and a sprite in the gap between them.
     fn docks_near_an_edge() -> [(WorldSnapshot, f64, Direction, f64); 2] {
         let near = |x: f64| WorldSnapshot {
             windows: vec![window(
