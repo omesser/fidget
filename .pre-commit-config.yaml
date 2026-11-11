@@ -57,7 +57,7 @@ repos:
   # Comment block ceiling, from `scripts/ast-grep/rules/`. Snapshot tests are
   # skipped: the valid/invalid verdict is the whole assertion.
   - repo: https://github.com/boidolr/ast-grep-pre-commit
-    rev: 0.51.0
+    rev: 0.51.1
     hooks:
       - id: ast-grep
         exclude: *vendored
@@ -114,7 +114,7 @@ repos:
     # pinned oxlint into its own cache, so no node_modules; `.oxlintrc.json`
     # holds the browser env and the two rules.
   - repo: https://github.com/oxc-project/mirrors-oxlint
-    rev: v1.89.0
+    rev: v1.92.0
     hooks:
       - id: oxlint
         name: oxlint (no-undef, no-global-assign)
