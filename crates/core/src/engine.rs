@@ -10878,6 +10878,7 @@ mod tests {
             assert_eq!(played.digit, Some(DigitAnimation::Played("react".into())));
             assert_eq!(played.playing_behavior, None, "no Behavior to continue");
             assert_eq!(played.playing_primitive, None, "react alone, no talk");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
 
             for _ in 0..20 {
                 let after = engine.tick(&WorldSnapshot {
@@ -10912,6 +10913,93 @@ mod tests {
                     ..world.clone()
                 });
                 assert_ne!(last.state, State::Asleep, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
+        /// A `sit` digit is one pass of the clip, not a perch: the sprite
+        /// stays Grounded and is back to idle once the pass is done.
+        #[test]
+        fn a_sit_digit_plays_one_pass_while_grounded_and_never_perches() {
+            let world = on(one_display());
+            let clip = |name: &str, frames| IdleMember {
+                name: name.to_string(),
+                weight: DEFAULT_WEIGHT,
+                frames,
+                fps: 8,
+            };
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_idle_plan(IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                digits: vec![clip("sit", 1)],
+                react: None,
+                possessed: None,
+                idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+                sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+                sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            });
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(played.art_name(), "sit", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("sit".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_eq!(last.state, State::Grounded, "{last:?}");
+            }
+            assert_eq!(last.playing_gesture, None, "{last:?}");
+            assert_eq!(last.animation, "idle");
+        }
+
+        /// A `talk` digit is one pass of the clip, not a line: no Dialogue
+        /// is spoken, the sprite stays Grounded, and it idles once the pass
+        /// is done.
+        #[test]
+        fn a_talk_digit_plays_one_pass_and_never_opens_dialogue() {
+            let world = on(one_display());
+            let clip = |name: &str, frames| IdleMember {
+                name: name.to_string(),
+                weight: DEFAULT_WEIGHT,
+                frames,
+                fps: 8,
+            };
+            let mut engine = possessed_at(500.0, &world);
+            engine.set_idle_plan(IdlePlan {
+                loops: Vec::new(),
+                gestures: Vec::new(),
+                digits: vec![clip("talk", 1)],
+                react: None,
+                possessed: None,
+                idle_gesture_every_s: DEFAULT_IDLE_GESTURE_EVERY_S,
+                sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+                sleep_for_s: DEFAULT_SLEEP_FOR_S,
+            });
+            engine.set_do_not_disturb(true);
+
+            let played = engine.tick(&with_possession(playing(1), &world));
+            assert_eq!(played.art_name(), "talk", "{played:?}");
+            assert_eq!(played.digit, Some(DigitAnimation::Played("talk".into())));
+            assert_eq!(played.playing_behavior, None, "no Behavior plays it");
+            assert_eq!(played.dialogue, None, "a digit speaks no line");
+            assert_eq!(played.state, State::Grounded, "{played:?}");
+
+            let mut last = played;
+            for _ in 0..20 {
+                last = engine.tick(&WorldSnapshot {
+                    elapsed_ms: 100,
+                    ..world.clone()
+                });
+                assert_eq!(last.state, State::Grounded, "{last:?}");
+                assert_eq!(last.dialogue, None, "{last:?}");
             }
             assert_eq!(last.playing_gesture, None, "{last:?}");
             assert_eq!(last.animation, "idle");
@@ -11048,10 +11136,14 @@ mod tests {
         }
 
         /// Every Animation a driven State or a control's Primitive draws is
-        /// one digits drop, and nothing else is.
+        /// in `DRIVEN_ANIMATIONS`, and digits drop each of those except the
+        /// ones also in `DIGIT_PLAYABLE_ENGINE_ANIMATIONS`. Today that
+        /// overlap is only `sit`: a Perch draws it, and a digit still plays
+        /// one pass. `react`, `sleep` and `talk` are playable too, but no
+        /// control draws them.
         #[test]
         fn digits_drop_every_animation_the_controls_draw() {
-            use crate::possession::DRIVEN_ANIMATIONS;
+            use crate::possession::{DIGIT_PLAYABLE_ENGINE_ANIMATIONS, DRIVEN_ANIMATIONS};
 
             let drawn: BTreeSet<&str> = every_state()
                 .into_iter()
@@ -11065,6 +11157,11 @@ mod tests {
                 )
                 .collect();
             assert_eq!(drawn, BTreeSet::from(DRIVEN_ANIMATIONS));
+            let playable_driven: BTreeSet<&str> = drawn
+                .intersection(&BTreeSet::from(DIGIT_PLAYABLE_ENGINE_ANIMATIONS))
+                .copied()
+                .collect();
+            assert_eq!(playable_driven, BTreeSet::from(["sit"]));
         }
 
         #[test]

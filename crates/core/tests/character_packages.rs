@@ -1960,22 +1960,36 @@ fn black_mage_idle_breathes_rather_than_holding_one_image() {
     assert!(back, "the idle returns to its first pose and repeats");
 }
 
-/// What each shipped card offers on 1 to 9: the clips a key can play, none
-/// of the required slots but `sleep`, and none of the art the arrows, a jump,
-/// a fall, a climb, a Perch or a drag draws. A Character with only those
-/// offers `sleep` alone.
+/// What each shipped card offers on 1 to 9: the clips a key can play,
+/// including `react`, `sit`, `sleep` and `talk`, and none of the other
+/// required slots or the art the arrows, a jump, a fall, a climb, a Perch
+/// ride or a drag draws. A Character with only the required nine offers
+/// those four. A `same_as` still hides its alias, so Rubber Duck's `react`
+/// and `sit` stay off the card, and Tuxedo Bean's `react` does too. Tux
+/// fills the 9-clip cap; nothing is dropped.
 #[test]
 fn every_shipped_character_binds_its_own_clips_to_digits() {
     let cards: BTreeMap<&str, &[&str]> = BTreeMap::from([
-        ("black-mage", &["sleep"][..]),
-        ("bmo", &["sing", "skate", "sleep"]),
+        ("black-mage", &["react", "sit", "sleep", "talk"][..]),
+        ("bmo", &["react", "sing", "sit", "skate", "sleep", "talk"]),
         (
             "buddy-bot",
-            &["idle-blink", "idle-breathe", "idle-listen", "sleep"],
+            &[
+                "idle-blink",
+                "idle-breathe",
+                "idle-listen",
+                "react",
+                "sit",
+                "sleep",
+                "talk",
+            ],
         ),
-        ("cat", &["grooming", "sleep", "waiting"]),
-        ("jotaro-kujo", &["sleep"]),
-        ("nim", &["sleep"]),
+        (
+            "cat",
+            &["grooming", "react", "sit", "sleep", "talk", "waiting"],
+        ),
+        ("jotaro-kujo", &["react", "sit", "sleep", "talk"]),
+        ("nim", &["react", "sit", "sleep", "talk"]),
         (
             "rubber-duck",
             &[
@@ -1984,26 +1998,38 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
                 "look-right",
                 "pondering",
                 "sleep",
+                "talk",
                 "thinking",
                 "wave",
             ],
         ),
-        ("timber-wolf", &["scan", "sleep"]),
-        ("trump", &["sleep", "waiting"]),
+        ("timber-wolf", &["react", "scan", "sit", "sleep", "talk"]),
+        ("trump", &["react", "sit", "sleep", "talk", "waiting"]),
         (
             "tux",
             &[
                 "checking-work",
                 "look-around",
+                "react",
                 "recover-card",
                 "restless-sitting",
+                "sit",
                 "sleep",
+                "talk",
                 "waddle-in-place",
             ],
         ),
         (
             "tuxedo-bean",
-            &["look-around", "nod-off", "review", "sleep", "wave"],
+            &[
+                "look-around",
+                "nod-off",
+                "review",
+                "sit",
+                "sleep",
+                "talk",
+                "wave",
+            ],
         ),
     ]);
     let shipped = shipped_packages();

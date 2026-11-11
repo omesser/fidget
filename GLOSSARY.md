@@ -338,14 +338,15 @@ Up climbs the wall it stands against, Down drops it through its Perch, Space
 makes it jump, the digits 1 to 9 play one pass of its Animations in name
 order, and Escape releases it. A digit plays the Animation alone, never a
 Behavior or its `then`. The digits skip the required Animations, which the
-Engine plays, save `sleep`: no control draws it, so its digit plays one pass
-of the clip, never a Behavior that plays it. They skip every Animation the
-controls already draw: walk, jump, fall, land, climb, sit and hold on a
-Perch, grab under the mouse, and possessed. They skip drawn variants, left
-strips and `same_as` names too, all by declaration, never by comparing
-frames. An idle-gesture keeps its digit when a required slot is the same as
-it. The fidget is possessed, the way a ghost possesses a body, and the
-Director's prompt says so.
+Engine plays, and every Animation the controls already draw: walk, jump,
+fall, land, climb, hold on a Perch, grab under the mouse, and possessed.
+They keep `react`, `sit`, `sleep` and `talk`: a digit plays one pass of
+the clip, never a Behavior that plays it. A Perch still draws `sit`, a
+poke still plays `react`, and Dialogue still draws `talk`. They skip
+drawn variants, left strips and `same_as` names too, all by declaration,
+never by comparing frames. An idle-gesture keeps its digit when a required
+slot is the same as it. The fidget is possessed, the way a ghost possesses
+a body, and the Director's prompt says so.
 Possession applies to one Character Instance.
 Possessing another releases the first. It is not a State, so a possessed sprite
 still falls, perches and can be grabbed, and it stays possessed when another
