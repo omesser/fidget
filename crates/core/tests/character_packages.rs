@@ -1979,6 +1979,7 @@ fn every_shipped_character_binds_its_own_clips_to_digits() {
         (
             "rubber-duck",
             &[
+                "doze",
                 "look-left",
                 "look-right",
                 "pondering",
