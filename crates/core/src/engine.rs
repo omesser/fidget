@@ -2098,9 +2098,23 @@ impl Engine {
                     }
                 }
                 let dx = self.velocity.x * dt;
+                let before = self.position;
                 self.position.x += dx;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += dx;
+                }
+                // The Dock's side stops a floor walk. A sprite's own walk turns
+                // there; a possessed one stands, as at a display edge.
+                let dock = dock_reach(before, snapshot).filter(|_| state == State::Grounded);
+                if let Some(x) = dock.map(|reach| reach.clamp(self.position.x)) {
+                    if x != self.position.x {
+                        self.position.x = x;
+                        self.velocity.x = if self.possessed {
+                            0.0
+                        } else {
+                            -self.velocity.x
+                        };
+                    }
                 }
 
                 let fresh = snapshot.poll_generation == 0
