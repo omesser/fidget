@@ -216,9 +216,9 @@ impl Button {
 /// after it, never before, so it repeats an edge the level showed only while
 /// one is `uncounted`. Any other count is an edge the level missed.
 ///
-/// A count says nothing of which press it belongs to, so a missed tap's up
-/// landing mid-hold ends a grab begun inside the counters' lag. Guessing the
-/// owner can leave the reader inverted for good; this errs, then heals.
+/// A count names no press, so a missed tap's up landing while a press is
+/// held ends a grab begun inside the counters' lag. Guessing the owner can
+/// invert the reader for good; this error lasts until that press is counted.
 fn merge(seen: &mut u64, uncounted: &mut u64, level_edge: bool, counted: u32) {
     let counted = u64::from(counted);
     *uncounted += u64::from(level_edge);
@@ -581,53 +581,58 @@ mod tests {
     /// each rate: once quiet and counted, told is the hand's level again.
     #[test]
     fn the_reader_heals_after_any_click_sequence() {
+        /// How often the system publishes its event counters, in ms.
+        const COUNTER_PERIOD: u64 = 500;
+        const POLLS: [u64; 3] = [16, 100, 1000];
+        const SLOWEST_POLL: u64 = POLLS[2];
         fn roll(rng: &mut u64, below: u64) -> u64 {
             *rng ^= *rng << 13;
             *rng ^= *rng >> 7;
             *rng ^= *rng << 17;
             *rng % below
         }
-        for interval in [Some(16), Some(100), Some(1000), None] {
+        for interval in POLLS.map(Some).into_iter().chain([None]) {
             for seed in 1..=1000_u64 {
                 let mut rng = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
                 // The counters' tick is not in step with the polls.
-                let phase = roll(&mut rng, 500);
+                let phase = roll(&mut rng, COUNTER_PERIOD);
                 // Times in ms, press and release by turns from a press.
                 let mut events = Vec::new();
                 let mut at = 0;
                 for _ in 0..=roll(&mut rng, 8) {
+                    // A tap, a gap inside the counters' lag, or one beyond it.
                     at += match roll(&mut rng, 3) {
                         0 => 1 + roll(&mut rng, 60),
-                        1 => 60 + roll(&mut rng, 440),
-                        _ => 500 + roll(&mut rng, 1000),
+                        1 => 60 + roll(&mut rng, COUNTER_PERIOD - 60),
+                        _ => COUNTER_PERIOD + roll(&mut rng, 1000),
                     };
                     events.push(at);
                 }
                 let held = events.len() % 2 == 1;
                 // Every count has landed and every edge has had its tick.
-                let settled = at + 500 + 1000 * (events.len() as u64 + 1);
+                let settled = at + COUNTER_PERIOD + SLOWEST_POLL * (events.len() as u64 + 1);
                 // Then a clean click, each edge held past the slowest poll.
-                let click = settled + 3000;
+                let click = settled + 3 * SLOWEST_POLL;
                 if held {
                     events.push(click + 1);
                 }
-                events.extend([click + 2000, click + 3200]);
+                let press = click + 2 * SLOWEST_POLL;
+                events.extend([press, press + SLOWEST_POLL + 200]);
+                let passed = |first: usize, t: u64| {
+                    let turns = events.iter().skip(first).step_by(2);
+                    turns.filter(|&&event| event <= t).count() as u32
+                };
+                let (downs, ups) = (|t| passed(0, t), |t| passed(1, t));
                 let read = |t: u64| {
-                    let edges = |first: usize, until: u64| {
-                        let edges = events.iter().skip(first).step_by(2);
-                        edges.filter(|&&at| at <= until).count() as u32
-                    };
-                    let landed = ((t + phase) / 500 * 500).saturating_sub(phase);
-                    sample(
-                        edges(0, t) > edges(1, t),
-                        4 + edges(0, landed),
-                        4 + edges(1, landed),
-                    )
+                    let landed =
+                        ((t + phase) / COUNTER_PERIOD * COUNTER_PERIOD).saturating_sub(phase);
+                    sample(downs(t) > ups(t), 4 + downs(landed), 4 + ups(landed))
                 };
                 let mut button = Button::new(read(0));
+                // Starts at the level before the click: `dedup` then leaves its edges.
                 let (mut t, mut quiet, mut clicked) = (0, Vec::new(), vec![held]);
-                while t < click + 7000 {
-                    t += interval.unwrap_or_else(|| [16, 100, 1000][roll(&mut rng, 3) as usize]);
+                while t < click + 7 * SLOWEST_POLL {
+                    t += interval.unwrap_or_else(|| POLLS[roll(&mut rng, 3) as usize]);
                     let told = button.step(read(t));
                     if t > click {
                         clicked.push(told);
