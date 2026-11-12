@@ -54,6 +54,11 @@ const seated = {
 
 const released = seated;
 
+const unpossessed = {
+  ...charging,
+  sprites: [possessed(640, { possessed: false, paused: false, charge: null })],
+};
+
 const walked = {
   ...charging,
   sprites: [possessed(640)],
@@ -167,8 +172,68 @@ async function launch() {
       const pausedCard = box(cardEl());
       const pausedReported = last();
       const pausedRelease = Boolean(cardEl().querySelector(".possession-release"));
-      const pausedStyle = getComputedStyle(cardEl());
+      const { color, backgroundColor, opacity } = getComputedStyle(cardEl());
+      const pausedStyle = { color, backgroundColor, opacity };
+
+      const press = (type, x, y) =>
+        (type === "pointerdown" ? document.elementFromPoint(x, y) : cardEl()).dispatchEvent(
+          new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: y }),
+        );
+      const focusAsks = (from) => window.__invoked.slice(from).filter((c) => c.name === "overlay_request_focus").length;
+      const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const dragBy = async (dx, dy) => {
+        const [x, y] = box(cardEl());
+        press("pointerdown", x + 8, y + 8);
+        press("pointermove", x + 8 + dx / 2, y + 8 + dy / 2);
+        press("pointermove", x + 8 + dx, y + 8 + dy);
+        await settle();
+        const during = last();
+        press("pointerup", x + 8 + dx, y + 8 + dy);
+        await settle();
+        return during;
+      };
+
+      let asked = window.__invoked.length;
+      const pausedDragReported = await dragBy(300, 200);
+      const pausedDragFocus = focusAsks(asked);
+      const pausedDropped = box(cardEl());
+      const pausedDroppedReported = last();
+      handlers.frame({ payload: ${JSON.stringify(walked)} });
+      await until(() => !cardEl()?.classList.contains("paused"));
+      await settle();
+      const resumedCard = box(cardEl());
+      const resumedReported = last();
+      await dragBy(-100, 50);
+      const liveDropped = box(cardEl());
+      handlers.frame({ payload: ${JSON.stringify(paused)} });
+      await until(() => cardEl()?.classList.contains("paused"));
+      await settle();
+      const repausedCard = box(cardEl());
+      asked = window.__invoked.length;
+      const [px, py] = box(cardEl());
+      press("pointerdown", px + 8, py + 8);
+      press("pointerup", px + 9, py + 8);
+      const clickFocus = focusAsks(asked);
+      await dragBy(5000, 5000);
+      const clampedCard = box(cardEl());
+      handlers.frame({ payload: ${JSON.stringify(unpossessed)} });
+      await until(() => !cardEl());
+      handlers.frame({ payload: ${JSON.stringify(seated)} });
+      await until(() => cardEl());
+      await settle();
+      const nextSessionCard = box(cardEl());
       console.log("__PROBE_RESULT__" + JSON.stringify({
+        pausedDragReported,
+        pausedDragFocus,
+        pausedDropped,
+        pausedDroppedReported,
+        resumedCard,
+        resumedReported,
+        liveDropped,
+        repausedCard,
+        clickFocus,
+        clampedCard,
+        nextSessionCard,
         seatedReported,
         releaseBox,
         releaseText,
@@ -184,11 +249,7 @@ async function launch() {
         walkedReported,
         pausedCard,
         pausedReported,
-        pausedStyle: {
-          color: pausedStyle.color,
-          backgroundColor: pausedStyle.backgroundColor,
-          opacity: pausedStyle.opacity,
-        },
+        pausedStyle,
       }));
     } catch (err) {
       console.log("__PROBE_RESULT__" + JSON.stringify({ error: String(err && err.stack || err) }));
@@ -276,7 +337,7 @@ function reportedFor(rects, measured) {
 }
 
 test(
-  "the bindings card sits below a top menu bar and takes a click only while paused",
+  "the bindings card sits below a top menu bar and takes a click, live or paused",
   { skip: chromeSkip, timeout: 60000 },
   async () => {
     const result = await drive();
@@ -286,7 +347,7 @@ test(
 
     const charging = reportedFor(result.chargingReported, result.chargingCard);
     assert.ok(charging, `charging card reported in ${JSON.stringify(result.chargingReported)}`);
-    assert.equal(charging.clickable, false, "an active card lets a sprite under it be grabbed");
+    assert.equal(charging.clickable, true, "a live card takes the press that drags it");
     assert.equal(charging.follows, undefined, "the card does not ride the sprite");
 
     const walked = reportedFor(result.walkedReported, result.walkedCard);
@@ -325,10 +386,12 @@ test(
     const result = await drive();
     assert.ok(result.releaseBox, "an active card has a release button");
     assert.equal(result.releaseText, "Release Possession (Esc)");
-    assert.equal(result.releaseHits, true, "the button takes the pointer although the card does not");
-    const row = reportedFor(result.seatedReported, result.releaseBox);
-    assert.ok(row, `release button missing from ${JSON.stringify(result.seatedReported)}`);
-    assert.equal(row.clickable, true, "only the button's own rect takes the click");
+    assert.equal(result.releaseHits, true, "the button takes the pointer");
+    const [bx, by, bw, bh] = result.releaseBox;
+    const row = result.seatedReported.find(
+      ({ rect: [x, y, w, h], clickable }) => clickable && x <= bx && y <= by && bx + bw <= x + w && by + bh <= y + h,
+    );
+    assert.ok(row, `no clickable rect holds the release button in ${JSON.stringify(result.seatedReported)}`);
     assert.equal(row.follows, undefined, "the button stays in the corner with the card");
     assert.deepEqual(result.releaseCalls, [
       { name: "overlay_possession_key", args: { key: "escape", down: true } },
@@ -365,5 +428,31 @@ test(
     const panel = parseCssColor(result.pausedStyle.backgroundColor);
     const opacity = Number(result.pausedStyle.opacity);
     assert.ok(panel.a < 1 || opacity < 1, "a paused card stays dimmer than the live one");
+  },
+);
+
+test(
+  "a press on the card's background drags it, and it stays there until the next possession",
+  { skip: chromeSkip, timeout: 60000 },
+  async () => {
+    const result = await drive();
+    const at = (rect) => rect.slice(0, 2);
+    assert.equal(result.pausedDragFocus, 0, "dragging the paused card does not take the keyboard");
+    assert.deepEqual(at(result.pausedDropped), [INSET + 300, MENU_BAR + INSET + 200], "the paused card follows the drag");
+    assert.equal(reportedFor(result.pausedDroppedReported, result.pausedDropped)?.clickable, true);
+    assert.ok(
+      result.pausedDragReported.some(
+        ({ rect, clickable }) => clickable && rect.join() === [0, MENU_BAR, 1400, 900 - MENU_BAR].join(),
+      ),
+      `mid-drag the overlay takes the pointer over its whole usable area: ${JSON.stringify(result.pausedDragReported)}`,
+    );
+    assert.deepEqual(at(result.resumedCard), at(result.pausedDropped), "focus coming back does not move it");
+    assert.equal(reportedFor(result.resumedReported, result.resumedCard)?.clickable, true);
+    assert.deepEqual(at(result.liveDropped), [INSET + 200, MENU_BAR + INSET + 250], "the live card follows the drag");
+    assert.deepEqual(at(result.repausedCard), at(result.liveDropped), "focus leaving does not move it");
+    assert.equal(result.clickFocus, 1, "a press that does not drag is still the resume click");
+    const [x, y, w, h] = result.clampedCard;
+    assert.deepEqual([x + w, y + h], [1400, 900], "a drag past the corner keeps the card on the display");
+    assert.deepEqual(at(result.nextSessionCard), [INSET, MENU_BAR + INSET], "a new possession seats it again");
   },
 );

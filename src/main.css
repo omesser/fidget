@@ -526,8 +526,8 @@ body {
 }
 
 /* The Possession card is app chrome, so it wears the Chat UI, unlike the
-   Speech bubble. Clicks pass through so a sprite under the card can still
-   be grabbed; paused is the resume click; the bar never takes one. */
+   Speech bubble. Its background is the drag handle, and paused it is also
+   the resume click; the bar never takes one. */
 .possession {
   position: absolute;
   top: 0;
@@ -549,10 +549,8 @@ body {
 
 .possession.visible {
   opacity: 1;
-}
-
-.possession.visible.paused {
   pointer-events: auto;
+  cursor: grab;
 }
 
 .possession.paused {
@@ -594,8 +592,7 @@ body {
   margin: 10px 0 0;
 }
 
-/* Settings' plain button. The card lets pointers through to a sprite
-   under it; the buttons do not. */
+/* Settings' plain button. */
 .possession-release {
   display: block;
   flex: 0 1 auto;
@@ -610,11 +607,6 @@ body {
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
-}
-
-.possession.visible .possession-release,
-.possession.visible .possession-focus {
-  pointer-events: auto;
 }
 
 /* Raised is Chat's primary button and asks for a click; pressed is a sunken

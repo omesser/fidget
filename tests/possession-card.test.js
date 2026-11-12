@@ -266,23 +266,14 @@ test("a charge-only change keeps the same card nodes", () => {
   }
 });
 
-test("the card takes a click only while paused, its buttons always, the bar never", () => {
+test("the card takes a press, live or paused, and the bar never does", () => {
   const card = [10, 20, 220, 88];
   const bar = [10, 112, 220, 8];
-  const release = [24, 80, 150, 22];
-  const focus = [180, 80, 40, 22];
-  assert.deepEqual(possessionRects(card, bar, null, focus, true), [
+  assert.deepEqual(possessionRects(card, bar), [
     { rect: card, clickable: true },
-    { rect: focus, clickable: true },
     { rect: bar, clickable: false },
   ]);
-  assert.deepEqual(possessionRects(card, bar, release, focus, false), [
-    { rect: card, clickable: false },
-    { rect: release, clickable: true },
-    { rect: focus, clickable: true },
-    { rect: bar, clickable: false },
-  ]);
-  assert.deepEqual(possessionRects(null, null, null, null, false), []);
+  assert.deepEqual(possessionRects(null, null), []);
 });
 
 function withDocument(run) {
@@ -365,5 +356,72 @@ test("the paused card body still resumes, a live one does not, and release press
       ["overlay_possession_key", { key: "escape", down: true }],
       ["overlay_possession_key", { key: "escape", down: false }],
     ]);
+  });
+});
+
+test("a press on a button never drags the card, a press on its background does once it moves", () => {
+  withDocument(() => {
+    const card = paintedCard(false);
+    const drags = [];
+    wirePossessionCard(card, () => Promise.resolve(), {
+      move: (dx, dy) => drags.push([dx, dy]),
+      drop: () => drags.push("drop"),
+    });
+    const at = (selector, type, x) => {
+      const target = selector && card.querySelector(selector);
+      card.listeners[type]({
+        target: { closest: (wanted) => (wanted === selector || wanted === "button" ? target : null) },
+        pointerId: 1,
+        button: 0,
+        clientX: x,
+        clientY: 10,
+        stopPropagation() {},
+      });
+    };
+    for (const type of ["pointerdown", "pointermove", "pointerup"]) at(".possession-release", type, type === "pointerdown" ? 0 : 50);
+    assert.deepEqual(drags, [], "the release button is not a handle");
+    at(null, "pointerdown", 0);
+    at(null, "pointermove", 2);
+    assert.deepEqual(drags, [], "a jitter under the drag threshold is still a click");
+    at(null, "pointermove", 50);
+    at(null, "pointerup", 50);
+    assert.deepEqual(drags, [[50, 0], "drop"]);
+  });
+});
+
+test("a press the system cancels drops a drag once and never resumes a paused card", () => {
+  withDocument(() => {
+    for (const ending of ["pointercancel", "lostpointercapture"]) {
+      const card = paintedCard(true);
+      const calls = [];
+      wirePossessionCard(
+        card,
+        (command) => {
+          calls.push(command);
+          return Promise.resolve();
+        },
+        { move: () => calls.push("move"), drop: () => calls.push("drop") },
+      );
+      const fire = (type, x) =>
+        card.listeners[type]({
+          target: { closest: () => null },
+          pointerId: 1,
+          button: 0,
+          clientX: x,
+          clientY: 10,
+          stopPropagation() {},
+        });
+      fire("pointerdown", 0);
+      fire("pointermove", 50);
+      fire(ending, 50);
+      fire("lostpointercapture", 50);
+      fire("pointerup", 50);
+      assert.deepEqual(calls, ["move", "drop"], ending);
+      calls.length = 0;
+      fire("pointerdown", 0);
+      fire(ending, 0);
+      fire("pointerup", 0);
+      assert.deepEqual(calls, [], `a ${ending} press is not the resume click`);
+    }
   });
 });
