@@ -186,8 +186,20 @@ Character packages are in [DEVELOPMENT.md](./docs/DEVELOPMENT.md#character-packa
 - **Pick up** - click and drag; the pressed point stays under the pointer.
 - **Throw** - release while moving; it flies on an arc and lands.
 - **Perch** - let it settle on a window's top edge; drag slowly to ride, fling to drop.
+- **Possess** - take the keyboard and drive it ([Possess It](#possess-it)).
 - **Hide** - Control-Option-Command-B (the default; change it in Settings) toggles the fidget instantly.
 - **Fullscreen** - fades out for fullscreen apps, fades back when you exit.
+
+### Possess It
+
+Take the keyboard and drive your fidget manually, like a platformer on your live desktop. Choose **Possess** from the menu. Space charges a jump. Click elsewhere and it pauses until you Focus; Escape releases it. The Director only hears that it was possessed and released, then comes to dazed.
+
+<table>
+<tr>
+<td align="center" valign="bottom" width="50%"><img src="./docs/readme/buddy-bot-possess.gif" width="400" alt="A ghost swoops into Buddy Bot; he walks along a window, charges a jump, and lands on the next; the ghost leaves" /><br><b>Drive it</b><br><sub>A ghost swoops in; Buddy Bot walks a window edge, charges a jump, and lands on the next.</sub></td>
+<td align="center" valign="bottom" width="50%"><a href="./docs/readme/possession-bindings.png"><img src="./docs/readme/possession-bindings.png" width="240" alt="The Possession bindings card, headed Manually drive the fidget on your screen, listing walk, climb, drop, jump, and Buddy Bot's animation digits, with Release and Focused buttons" /></a><br><b>The bindings</b><br><sub>The keys, plus Focus for when another window has the keyboard. Click to enlarge.</sub></td>
+</tr>
+</table>
 
 ### Talk to It
 
