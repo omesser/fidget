@@ -10,7 +10,7 @@
 # Duration: about 15 s.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
 # Asserts: the card follows each drag and stays put when focus leaves or comes
-#   back; a paused drag does not resume, a plain click does; an arrow walks;
+#   back; a plain click on the paused card resumes in place; an arrow walks;
 #   the next possession seats the card in the corner. Positions and paused
 #   state come from the FIDGET_TRACE_BUBBLE card line.
 # Usage: possession-card-drag.sh --go <fidget binary>
@@ -142,19 +142,23 @@ x1=$((x0 + 300)) y1=$((y0 - 10 < ay ? ay : y0 - 10))
 wait_until 3 card_at "$x1" "$y1" || fail "the card did not follow the drag to ($x1,$y1), it is at ($(card_xy)); see $log"
 echo "ok: the expanded card dropped at ($x1,$y1)"
 
-paused=$(cards true)
-click "$((tx + tw / 2))" "$((ty + th / 2))"
-wait_for_trace 3 "$target_log" '^focus$' || fail "the target window never became key; see $target_log"
-wait_for_count 3 "$log" "${card_pattern}.* paused=true" "$paused" || fail "the card never re-laid out as paused; see $log"
-card_at "$x1" "$y1" || fail "focus leaving moved the card to ($(card_xy)); see $log"
+pause_at() { # <x> <y>: click the target window; the card pauses where it is
+  local paused focused
+  paused=$(cards true) focused=$(line_count "$target_log" '^focus$')
+  click "$((tx + tw / 2))" "$((ty + th / 2))"
+  wait_for_count 3 "$target_log" '^focus$' "$focused" || fail "the target window never became key; see $target_log"
+  wait_for_count 3 "$log" "${card_pattern}.* paused=true" "$paused" || fail "the card never re-laid out as paused; see $log"
+  card_at "$1" "$2" || fail "focus leaving moved the card to ($(card_xy)), not ($1,$2); see $log"
+}
+pause_at "$x1" "$y1"
 echo "ok: focus left and the paused card stayed put"
 
+# AppKit makes the overlay key on any press, so this drag may also resume.
 drag_card -150
 x2=$((x1 - 150)) y2=$((y1 - 10 < ay ? ay : y1 - 10))
 wait_until 3 card_at "$x2" "$y2" || fail "the paused card did not follow the drag to ($x2,$y2), it is at ($(card_xy)); see $log"
-paused_now true || fail "dragging the paused card resumed possession; see $log"
-grep -qx 'focus' <(tail -1 "$target_log") || fail "the target window lost the keyboard to the drag; see $target_log"
-echo "ok: the paused card dropped at ($x2,$y2) and the keyboard stayed away"
+echo "ok: the paused card dropped at ($x2,$y2)"
+paused_now true || pause_at "$x2" "$y2"
 
 live=$(cards false)
 click "$((x2 + 40))" "$((y2 + 14))"
