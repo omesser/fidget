@@ -988,6 +988,7 @@ async function start() {
         // The pill goes where the bubble goes, carrying the Shell's draft.
         const owned = view.quickMachine.owner;
         view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
+        view.quickMachine.setMenu(Boolean(sprite.menu_open));
         noteQuickMessageMode(view, sprite, payload);
         noteChatUi(view, payload);
         if (!owned && view.quickMachine.owner && view.quickMachine.visible) {

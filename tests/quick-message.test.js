@@ -168,6 +168,34 @@ test("a Summon keeps the composer down until the pointer leaves", () => {
   assert.equal(qm.visible, true, "a fresh hover opens it again");
 });
 
+test("the Character's menu suspends the dwell and its close does not open the pill", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(500);
+  qm.setMenu(true);
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "a dwell begun before the right-click does not finish under the menu");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "hovering the Character while the menu is open does not arm it");
+
+  qm.setMenu(false);
+  for (let tick = 0; tick < 10; tick += 1) {
+    qm.enterSprite();
+    advance(HOVER_DELAY_MS);
+  }
+  assert.equal(qm.visible, false, "the pointer the menu leaves on the Character does not open it");
+  assert.equal(qm.takeFocus(), false, "the field never claims the caret");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "a fresh hover after the menu opens it again");
+});
+
 test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 

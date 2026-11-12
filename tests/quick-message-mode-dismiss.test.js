@@ -194,3 +194,22 @@ for (const mode of modes) {
     await withOverlay((evalJs) => picks(evalJs, mode));
   });
 }
+
+test("the Character's menu keeps the pill down while it is open and after it closes", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    const typing = () => evalJs(`document.activeElement?.classList.contains("quick-message-field") ?? false`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: true } }))), 0, "the right-click opens the menu");
+    const under = await evalJs("window.__dwell()");
+    assert.equal(Number(under.settled), 0, "the dwell does not finish under the menu");
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: false } }))), 0, "the menu closes on the Character");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.settled), 0, "the close does not open the pill");
+    assert.equal(await typing(), false, "or move the caret to it");
+    assert.equal(Number(await shown(frame({ sprite: { hovered: false } }))), 0);
+    assert.equal(Number(await shown(frame())), 0, "a fresh hover still waits out the dwell");
+    const fresh = await evalJs("window.__dwell()");
+    assert.equal(Number(fresh.settled), 1, "and then opens the pill");
+  });
+});

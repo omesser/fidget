@@ -2615,6 +2615,7 @@ pub(crate) fn run_frame_loop(
                     // overlay that never saw the press, so the Shell holds
                     // the pill.
                     hovered: live.hovering && !live.pointer.gesturing(),
+                    menu_open: live.menu_hold.is_some(),
                     cue: frame.cue,
                     contact: frame.contact,
                     owner,
