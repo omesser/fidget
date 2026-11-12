@@ -378,8 +378,9 @@
   }
   /* possession-bindings.png keeps the window's grey frame (6px, 7px right and bottom); show only the 303×318 card.
      The card has its own ~10px corners, so the crop only clips (11px at native size, scaling with it), with no border or fill. */
-  .possess-watch .possess-keys { width: 100%; max-width: 303px; aspect-ratio: 303 / 318; overflow: hidden;
-    border-radius: 3.6% / 3.5%; }
+  /* A link to the full PNG, as in the README: at 230px the card's type is small. */
+  .possess-watch .possess-keys { display: block; width: 100%; max-width: 303px; aspect-ratio: 303 / 318; overflow: hidden;
+    border-radius: 3.6% / 3.5%; cursor: zoom-in; }
   .possess-keys img { display: block; width: calc(100% * 316 / 303); max-width: none; height: auto;
     margin: calc(-100% * 6 / 303) 0 0 calc(-100% * 6 / 303); }
   .possess-kicker {
@@ -581,14 +582,14 @@
     </div>
     </div>
     <aside class="possess-watch" aria-labelledby="possess-watch-title">
-      <div class="possess-keys"><img src="possession-bindings.png" width="316" height="331" alt="The Possession bindings card: arrows walk, climb, and drop, Space jumps, digits 1 to 7 play Buddy Bot's animations, with Release Possession (Esc) and Focused buttons"></div>
+      <a class="possess-keys" href="possession-bindings.png"><img src="possession-bindings.png" width="316" height="331" loading="lazy" alt="The Possession bindings card: arrows walk, climb, and drop, Space jumps, digits 1 to 7 play Buddy Bot's animations, with Release Possession (Esc) and Focused buttons"></a>
       <picture>
         <source srcset="buddy-bot-possess-poster.png" media="(prefers-reduced-motion: reduce)">
-        <img class="possess-clip" src="buddy-bot-possess.gif" width="400" height="250" alt="A ghost swoops into Buddy Bot; he walks along a window, charges a jump, and lands on the next; the ghost leaves">
+        <img class="possess-clip" src="buddy-bot-possess.gif" width="400" height="250" loading="lazy" alt="A ghost swoops into Buddy Bot; he walks along a window, charges a jump, and lands on the next; the ghost leaves">
       </picture>
       <div class="possess-copy">
         <p class="possess-kicker">Watch</p>
-        <h3 id="possess-watch-title">Possession — drive Fidget manually inside your desktop</h3>
+        <h3 id="possess-watch-title">Possession — drive the fidget manually inside your desktop</h3>
         <p>Pick Possess from its menu, then walk, climb, and jump across your windows. Esc lets go.</p>
         <p class="possess-note">It takes your keyboard and the real windows, so it isn’t in this desk.</p>
       </div>
