@@ -472,6 +472,35 @@ const perches = `
   });
 </script>`;
 
+// The Possession strip as it lands in a window: the bindings card's own corners
+// show, with no second frame; its width at each layout; the crop that hides the
+// PNG's window frame; the link to the full card; and which file the clip plays.
+// Both images load lazily, so the strip is scrolled into view and they load first.
+const strip = `
+<script>
+  window.addEventListener("load", async () => {
+    const keys = document.querySelector(".possess-keys");
+    const card = keys.querySelector("img");
+    const clip = document.querySelector(".possess-clip");
+    document.querySelector(".possess-watch").scrollIntoView({ block: "center" });
+    const end = performance.now() + 10000;
+    while (!(card.complete && card.naturalWidth && clip.complete && clip.currentSrc) && performance.now() < end)
+      await new Promise(requestAnimationFrame);
+    const look = (el) => { const s = getComputedStyle(el);
+      return { border: s.borderTopWidth, fill: s.backgroundColor }; };
+    const box = keys.getBoundingClientRect();
+    const img = card.getBoundingClientRect();
+    console.log("__PROBE_RESULT__" + JSON.stringify({
+      card: { ...look(keys), clips: getComputedStyle(keys).overflow, width: Math.round(box.width) },
+      crop: { width: box.width, height: box.height, left: img.left - box.left, top: img.top - box.top,
+        imgWidth: img.width, imgHeight: img.height },
+      link: keys.closest("a") && new URL(keys.closest("a").href).pathname.split("/").pop(),
+      clip: { ...look(clip), plays: clip.currentSrc.split("/").pop() },
+      row: clip.getBoundingClientRect().left > box.right && clip.getBoundingClientRect().top < box.bottom,
+    }));
+  });
+</script>`;
+
 async function play(flags = [], script = probe, size = "1280,900") {
   const page = join(site, "probe.html");
   writeFileSync(page, readFileSync(join(site, "index.html"), "utf8").replace("<head>", `<head>${script}`));
@@ -613,16 +642,73 @@ for (const size of ["1512,945", "1280,800"]) {
   });
 }
 
+test("the Possession strip's bindings card has no frame of its own, and grows to its native 303px beside the clip under 1040px", { skip: chromeSkip }, async () => {
+  const desktop = await play([], strip, "1280,900");
+  const mid = await play([], strip, "900,900");
+  for (const { card, clip } of [desktop, mid]) {
+    assert.deepEqual([card.border, card.fill, card.clips], ["0px", "rgba(0, 0, 0, 0)", "hidden"],
+      "the card is only cropped: no border or fill to halo its own corners");
+    assert.equal(clip.border, "1px", "the clip keeps its frame");
+  }
+  assert.equal(desktop.card.width, 230, "the desktop row keeps the card at 230px");
+  assert.ok(mid.row && mid.card.width === 303, `at 900 the card sits beside the clip at 303px: ${JSON.stringify(mid)}`);
+});
+
+// possession-bindings.png is 316×331: the 303×318 card sits 6px in from the top
+// left of the app window's grey frame. The crop shows only the card, at any width.
+test("the Possession strip shows only the card from the bindings PNG, links to the full PNG, and plays the poster under reduced motion", { skip: chromeSkip }, async () => {
+  for (const [size, flags] of [["1280,900", []], ["900,900", []], ["414,900", []], ["1280,900", ["--force-prefers-reduced-motion"]]]) {
+    const { crop, link, clip } = await play(flags, strip, size);
+    const scale = crop.width / 303;
+    const near = (got, want, what) => assert.ok(Math.abs(got - want) < 1, `${size}: ${what} is ${got}, not ${want}: ${JSON.stringify(crop)}`);
+    near(crop.height, 318 * scale, "the card's height, at the card's own 303:318");
+    near(crop.left, -6 * scale, "the PNG's left frame, pushed out of the crop");
+    near(crop.top, -6 * scale, "the PNG's top frame, pushed out of the crop");
+    near(crop.imgWidth, 316 * scale, "the whole PNG's width");
+    near(crop.imgHeight, 331 * scale, "the whole PNG's height");
+    assert.equal(link, "possession-bindings.png", `${size}: clicking the card opens the full PNG, as in the README`);
+    assert.equal(clip.plays, flags.length ? "buddy-bot-possess-poster.png" : "buddy-bot-possess.gif",
+      `${size}${flags.length ? " with reduced motion" : ""}: the clip plays the right file`);
+  }
+});
+
+test("the bindings PNG is still 316×331, the size the strip's crop and the img's width and height assume", () => {
+  const png = readFileSync(join(ROOT, "docs/readme/possession-bindings.png"));
+  assert.equal(png.toString("latin1", 12, 16), "IHDR", "a PNG starts with its IHDR chunk");
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [316, 331],
+    "a recapture at another size needs the crop in website/landing.html redone");
+  const page = readFileSync(join(site, "index.html"), "utf8");
+  assert.match(page, /<img src="possession-bindings\.png" width="316" height="331"/);
+});
+
+test("the Possession strip says what it is, and both its images load lazily", () => {
+  const page = readFileSync(join(site, "index.html"), "utf8");
+  const strip = page.match(/<aside class="possess-watch"[^>]*>([\s\S]*?)<\/aside>/)[1];
+  const text = (html) => html.replace(/<[^>]+>/g, "").trim();
+  assert.deepEqual([...strip.matchAll(/<(h3|p)\b[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => text(m[2])), [
+    "Watch",
+    "Possession: drive the fidget manually inside your desktop",
+    "Pick Possess from its menu, then walk, climb, and jump across your windows. Esc lets go.",
+    "It takes your keyboard and the real windows, so it isn’t in this desk.",
+  ]);
+  const imgs = [...strip.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  assert.equal(imgs.length, 2, "the bindings card and the clip");
+  for (const img of imgs) assert.match(img, /\sloading="lazy"/, `lazy, since the strip is below the fold: ${img}`);
+  assert.match(strip, /<source srcset="buddy-bot-possess-poster\.png" media="\(prefers-reduced-motion: reduce\)">/);
+});
+
 test("the playground reads as Oded asked: its title and gestures, two windows that say drag me, Download below the desk, then the sections in order", () => {
   const page = readFileSync(join(site, "index.html"), "utf8");
   const play = page.match(/<section id="play">([\s\S]*?)<\/section>/)[1];
   assert.match(play, /<div class="play-panel" id="play-panel">\s*<p class="play-title">Try it here<\/p>\s*<div class="play-picker" id="play-picker"[^>]*><\/div>\s*<div class="play-desk" id="play-desk"/,
     "the desk sits in a panel whose title bar is the invite, with no period, then the picker, both outside the desk the physics bounds");
   const order = ['id="play-desk"', '<h3 class="play-sub">Fidget gestures</h3>\n    <ul class="play-how">',
-    '<aside class="possess-watch"', 'class="play-get"']
+    '<aside class="possess-watch"', 'class="possess-keys"', 'class="possess-clip"',
+    '<h3 id="possess-watch-title">Possession: drive the fidget manually inside your desktop</h3>', 'class="play-get"']
     .map((mark) => play.indexOf(mark));
   assert.ok(order.every((at, i) => at > (order[i - 1] ?? play.indexOf('class="play-title"'))),
-    `the titled panel, desk, Fidget gestures over the bullets, the Possess It strip, then the Download line: ${order}`);
+    `the titled panel, desk, Fidget gestures over the bullets, the Possession strip (bindings card, clip, title), then the Download line: ${order}`);
+  assert.ok(existsSync(join(site, "possession-bindings.png")), "the README's bindings card is copied into the site");
   assert.ok(!play.includes("cues.html"), "the playground no longer links Fidget Cues");
   const gestures = [...play.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1].replace(/<\/?b>/g, ""));
   assert.deepEqual(gestures, ["Left-click to poke", "Click and hold to drag it around and drop it",
