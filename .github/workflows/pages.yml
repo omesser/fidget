@@ -55,7 +55,7 @@ jobs:
         # check catches a generator that walks too far.
         run: |
           stray=$(find _site -type f ! \( -name '*.html' -o -name '*.css' \
-            -o -name '*.js' -o -name '*.png' -o -name '*.svg' -o -name '*.jpg' -o -name '*.webp' \))
+            -o -name '*.js' -o -name '*.png' -o -name '*.svg' -o -name '*.jpg' -o -name '*.webp' -o -name '*.gif' \))
           if [ -n "$stray" ]; then
             echo "not publishable, and _site holds it:"
             echo "$stray"
