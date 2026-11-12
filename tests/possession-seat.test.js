@@ -148,7 +148,7 @@ async function launch() {
       releaseEl?.click();
       const releaseCalls = window.__invoked
         .slice(before)
-        .filter((c) => c.name !== "overlay_rects");
+        .filter((c) => c.name !== "overlay_rects" && c.name !== "overlay_trace_bubble");
       const fonts = {
         card: fontOf(".possession"),
         heading: fontOf(".possession-heading"),

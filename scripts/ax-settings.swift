@@ -337,7 +337,8 @@ case "open":
     }
     guard let row = found else { die("the tray menu has no \(rowPrefix) row") }
     guard press(row) else { die("could not press \(rowPrefix)…") }
-    guard waitFor(10, { window(titled: windowTitle) }) != nil else {
+    // An empty title is a row that opens no window, such as Possess.
+    guard windowTitle.isEmpty || waitFor(10, { window(titled: windowTitle) }) != nil else {
         die("\(windowTitle) did not open within 10s")
     }
 

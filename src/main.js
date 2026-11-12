@@ -1105,6 +1105,14 @@ async function start() {
     windowBlurred(machines, gesture, front);
   });
   window.addEventListener("focus", () => traceBubble("window focus"));
+  // Where a press landed, for scenarios that drag the overlay's own chrome.
+  for (const type of ["pointerdown", "pointerup", "pointercancel"]) {
+    document.addEventListener(
+      type,
+      (event) => traceBubble(`pointer ${type} on ${event.target.className || event.target.nodeName} (${event.clientX},${event.clientY})`),
+      true,
+    );
+  }
   document.addEventListener("pointerdown", (event) => {
     const composer = event.target.closest?.(".quick-message");
     const sprite = event.target.closest?.(".sprite");

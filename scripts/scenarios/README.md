@@ -116,7 +116,8 @@ overlay focus back, and checks that the sprite still stands. It has no X11 or
 Windows leaf yet.
 
 `possession-card-drag.sh` takes only the app binary and runs no Harness. It
-possesses the sprite, drags the bindings card by its heading with
+possesses the sprite from the menu bar icon's Possess row (`ax open <pid>
+Possess ""`, where an empty title waits for no window), drags the bindings card by its heading with
 `throw-sprite.swift`'s slow drag, clicks a `type-target.swift` window, drags
 the paused card, and clicks it. From the `FIDGET_TRACE_BUBBLE` card line, it
 checks that the card follows each drag and does not move when focus leaves or
