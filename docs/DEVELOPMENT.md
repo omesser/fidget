@@ -71,6 +71,10 @@ The Security workflow (`.github/workflows/security.yml`) runs `cargo audit` and 
 
 The Secret Scanning workflow (`.github/workflows/secret-scanning.yml`) runs two scanners on every pull request and on `main`. detect-secrets 1.5.0 scans every tracked file, Markdown included. A false positive goes on its line as a `pragma: allowlist secret` comment. Where a comment can't go, as in JSON, the hit is recorded in [`.secrets.baseline`](../.secrets.baseline) instead. A line filter there skips any line of the form `"commit": "<40 lowercase hex>",` in any file. Today only `.agents/*/UPSTREAM.json` has one, where the weekly skill syncs write the upstream commit hash, so a sync needs no baseline edit. A hit inside a YAML block such as a workflow's `run: |` covers the whole block, whether a pragma or the baseline allows it, so move the value into the step's `env:` until the block has none. Quoting it doesn't help: the scanner keeps only a block's first match and then drops the quoted value, which hides every hit below it. A baselined hit that moves lines only warns, since the baseline matches by hash; `detect-secrets scan --baseline .secrets.baseline` refreshes it. TruffleHog scans the new commits and fails only on secrets it verifies against their issuer.
 
+## Scanner Surfaces
+
+The `agent-security-scanner surfaces` workflow (`.github/workflows/scanner-surfaces.yml`) is dispatch-only. It builds a chosen ref of private `glance-labs/agent-security-scanner` and runs `surfaces` against a fidget checkout, leaving the report in the job log. It needs the `SCANNER_TOKEN` repository secret: a fine-grained PAT from a glance-labs owner, limited to that repository, with Contents read-only.
+
 ## Trace Variables
 
 All off by default. Switches take `1`/`on`/`true`/`yes` or `0`/`off`/`false`/`no`, in any case.
