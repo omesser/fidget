@@ -107,8 +107,14 @@ if (-not $Bin) {
     if (-not (Test-Path -LiteralPath $Bin)) {
         Note "cargo build -p fidget"
         Push-Location $root
-        try { & cargo build -p fidget --manifest-path (Join-Path $root "Cargo.toml") }
-        finally { Pop-Location }
+        $eap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            & cargo build -p fidget --manifest-path (Join-Path $root "Cargo.toml")
+        } finally {
+            $ErrorActionPreference = $eap
+            Pop-Location
+        }
         if ($LASTEXITCODE -ne 0) { Fail "cargo build failed with exit $LASTEXITCODE" }
     }
 }
