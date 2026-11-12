@@ -2905,6 +2905,29 @@ mod tests {
         assert_eq!(woken.peeled_thought.as_deref(), Some("Looking around"));
     }
 
+    /// Any sentence end opens a glued marker, and a marked name is read at any
+    /// length: the three-letter floor guards only period glue.
+    #[test]
+    fn a_marker_after_any_sentence_end_names_even_a_short_behavior() {
+        for (reply, behavior) in [
+            ("Done!behavior: walk Then I go.", "walk"),
+            ("Ready? behavior: walk Then I go.", "walk"),
+            ("Planning.behavior: hi Then I go.", "hi"),
+        ] {
+            match directing(Scripted::says(reply), ["walk", "hi"]).wake(&typed("go")) {
+                Wake::Proposed(proposal) => {
+                    assert_eq!(proposal.behavior, behavior, "{reply:?}");
+                    assert_eq!(
+                        proposal.dialogue.as_deref(),
+                        Some("Then I go."),
+                        "{reply:?}"
+                    );
+                }
+                other => panic!("{reply:?} should propose {behavior}, not {other:?}"),
+            }
+        }
+    }
+
     /// A `behavior:` mid-sentence is prose about the contract, not the
     /// contract. Only one at the start of the text or a line, or right after
     /// a sentence end, is read as glued.
