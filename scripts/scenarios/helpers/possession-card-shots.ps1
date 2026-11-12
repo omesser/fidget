@@ -1,6 +1,7 @@
 # Pure helpers for the Windows possession-card screenshots leaf.
 # Parse a card trace line, size the crop from the card plus the charge bar,
-# and judge whether every margin pixel is the backdrop grey.
+# scale that crop from logical pixels into physical pixels, and judge whether
+# every margin pixel is the backdrop grey.
 
 # Same values as CHARGE_BAR_PX and POSSESSION_GAP_PX in src/main.js.
 $script:PossessionBarPx = 8
@@ -45,16 +46,30 @@ function Get-OverlayOrigin([string[]]$Lines, [string]$Label) {
     return $found
 }
 
-# Screen-space crop: the card, the charge bar under it, and a margin around both.
-# Card is overlay-local; origin is that overlay's covers point.
-function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginPx) {
-    $cardX = $Origin.X + $Card.X
-    $cardY = $Origin.Y + $Card.Y
-    $barY = $cardY + $Card.Height + $GapPx
-    $left = $cardX - $MarginPx
-    $top = $cardY - $MarginPx
-    $right = $cardX + $Card.Width + $MarginPx
-    $bottom = $barY + $BarPx + $MarginPx
+# Effective scale for one monitor: Windows effective DPI divided by 96.
+# 96 dpi is 100%; 144 dpi is 150%.
+function Get-DpiScale([int]$Dpi) {
+    if ($Dpi -le 0) { return 1.0 }
+    return [double]$Dpi / 96.0
+}
+
+# Screen-space crop in physical pixels: the card, the charge bar under it,
+# and a margin around both. Card and origin are logical (overlay-local and
+# the overlay's covers point). $Scale is that display's effective DPI / 96.
+function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginPx, [double]$Scale = 1) {
+    if ($Scale -le 0) { $Scale = 1 }
+    $cardX = [int][Math]::Round(($Origin.X + $Card.X) * $Scale)
+    $cardY = [int][Math]::Round(($Origin.Y + $Card.Y) * $Scale)
+    $cardW = [int][Math]::Round($Card.Width * $Scale)
+    $cardH = [int][Math]::Round($Card.Height * $Scale)
+    $barH = [int][Math]::Round($BarPx * $Scale)
+    $gap = [int][Math]::Round($GapPx * $Scale)
+    $margin = [int][Math]::Round($MarginPx * $Scale)
+    $barY = $cardY + $cardH + $gap
+    $left = $cardX - $margin
+    $top = $cardY - $margin
+    $right = $cardX + $cardW + $margin
+    $bottom = $barY + $barH + $margin
     return @{
         X          = $left
         Y          = $top
@@ -62,12 +77,12 @@ function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginP
         Height     = $bottom - $top
         CardX      = $cardX - $left
         CardY      = $cardY - $top
-        CardWidth  = $Card.Width
-        CardHeight = $Card.Height
+        CardWidth  = $cardW
+        CardHeight = $cardH
         BarX       = $cardX - $left
         BarY       = $barY - $top
-        BarWidth   = $Card.Width
-        BarHeight  = $BarPx
+        BarWidth   = $cardW
+        BarHeight  = $barH
     }
 }
 

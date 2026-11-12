@@ -265,7 +265,6 @@ builds `target/debug/fidget.exe` when `--go` does not name a binary. There is
 no prompt. The helper checks in `helpers/test-possession-card-shots.ps1` parse
 the card line, size the crop, and refuse a leaking margin.
 
-
 The macOS leaf asserts each step live instead of reading the trace afterwards.
 It right-drags from the sprite onto the Possess row, which it finds through
 Accessibility: on macOS 27 the pop-up menu is not in the window list as a

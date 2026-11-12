@@ -10,7 +10,8 @@
 # Grants: a desktop session. UI Automation for the Possess menu.
 # Asserts: both card shots are saved only when every margin pixel is the grey
 #   backdrop. The charging shot has a part-full bar; the paused shot is the
-#   paused card. The crop comes from the card's trace line plus the charge bar.
+#   paused card. The crop comes from the card's trace line plus the charge bar,
+#   scaled by the display's effective DPI so physical pixels match the capture.
 # Skips (exit 2) when a fullscreen window would take the right-click.
 #
 # Usage: possession-card-shots.win.ps1 [-OutDir <dir>] [--go <fidget binary>]
@@ -151,10 +152,14 @@ public static class PossessionCardShotsWin {
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder t, int n);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+    [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr m, int type, out uint x, out uint y);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
     [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] i, int size);
     public delegate bool Callback(IntPtr h, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk, scan; public uint flags, time; public IntPtr extra; }
     [StructLayout(LayoutKind.Explicit)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT k; }
     static bool Shown(IntPtr h) {
@@ -173,9 +178,26 @@ public static class PossessionCardShotsWin {
         if (pid != wantPid || Title(h) != "Fidget" || !Shown(h)) return true;
         RECT r;
         if (!GetWindowRect(h, out r)) return true;
-        if (wantExact && (r.Left != wantLeft || r.Top != wantTop)) return true;
+        if (wantExact) {
+            double scale = DpiOfMonitor(MonitorFromPoint(new POINT { X = r.Left, Y = r.Top }, 2)) / 96.0;
+            int left = (int)Math.Round(wantLeft * scale);
+            int top = (int)Math.Round(wantTop * scale);
+            if (r.Left != left || r.Top != top) return true;
+        }
         found = h;
         return false;
+    }
+    static uint DpiOfMonitor(IntPtr m) {
+        uint x, y;
+        if (m == IntPtr.Zero || GetDpiForMonitor(m, 0, out x, out y) != 0 || x == 0) return 96;
+        return x;
+    }
+    public static uint DpiAt(int x, int y) {
+        return DpiOfMonitor(MonitorFromPoint(new POINT { X = x, Y = y }, 2));
+    }
+    public static uint DpiOf(IntPtr h) {
+        if (h == IntPtr.Zero) return 96;
+        return DpiOfMonitor(MonitorFromWindow(h, 2));
     }
     public static IntPtr FindOverlay(uint pid, int left, int top) {
         found = IntPtr.Zero;
@@ -253,11 +275,24 @@ function Get-ShotBoxFromTrace {
     if (-not $card) { return $null }
     $origin = Get-OverlayOrigin $lines $card.Label
     if (-not $origin) { Fail "no covers line for $($card.Label) in $traceFile" }
-    $box = Get-CardShotBox $card $origin $script:PossessionBarPx $script:PossessionGapPx $script:PossessionShotMarginPx
+    $overlay = [IntPtr]::Zero
+    if ($script:proc) {
+        $overlay = [PossessionCardShotsWin]::FindOverlay([uint32]$script:proc.Id, $origin.X, $origin.Y)
+    }
+    $dpi = 96
+    if ($overlay -ne [IntPtr]::Zero) {
+        $dpi = [PossessionCardShotsWin]::DpiOf($overlay)
+    } else {
+        $dpi = [PossessionCardShotsWin]::DpiAt($origin.X, $origin.Y)
+    }
+    $scale = Get-DpiScale $dpi
+    $box = Get-CardShotBox $card $origin $script:PossessionBarPx $script:PossessionGapPx $script:PossessionShotMarginPx $scale
     $box.Label = $card.Label
     $box.Paused = $card.Paused
     $box.OriginX = $origin.X
     $box.OriginY = $origin.Y
+    $box.Dpi = $dpi
+    $box.Scale = $scale
     return $box
 }
 
@@ -355,7 +390,7 @@ try {
     }
     $box = Get-ShotBoxFromTrace
     if (-not $box) { Fail "could not size the crop from the card trace; see $traceFile" }
-    Note ("card crop ({0},{1}) {2}x{3} card ({4},{5}) {6}x{7}" -f $box.X, $box.Y, $box.Width, $box.Height, $box.CardX, $box.CardY, $box.CardWidth, $box.CardHeight)
+    Note ("card crop ({0},{1}) {2}x{3} card ({4},{5}) {6}x{7} at {8} dpi ({9}%)" -f $box.X, $box.Y, $box.Width, $box.Height, $box.CardX, $box.CardY, $box.CardWidth, $box.CardHeight, $box.Dpi, [int][Math]::Round(100 * $box.Scale))
 
     $script:form = New-Object GreyBackdrop
     $script:form.BackColor = [System.Drawing.Color]::FromArgb($grey.R, $grey.G, $grey.B)

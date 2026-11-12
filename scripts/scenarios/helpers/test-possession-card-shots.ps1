@@ -50,6 +50,17 @@ Check ($box.BarX -eq 16 -and $box.BarY -eq 74 -and $box.BarWidth -eq 100 -and $b
 $shifted = Get-CardShotBox @{ X = 16; Y = 16; Width = 100; Height = 50 } @{ X = 1920; Y = -80 } 8 8 16
 Check ($shifted.X -eq 1920 -and $shifted.Y -eq -80) "the crop follows the overlay origin"
 
+Check ((Get-DpiScale 96) -eq 1) "96 dpi is a 1.0 scale"
+Check ((Get-DpiScale 144) -eq 1.5) "144 dpi is a 1.5 scale"
+
+# Same card at 150%: every logical length is multiplied by 1.5 (16->24, 100->150, 50->75, 8->12).
+$hi = Get-CardShotBox @{ X = 16; Y = 16; Width = 100; Height = 50 } @{ X = 0; Y = 0 } 8 8 16 1.5
+Check ($hi.X -eq 0 -and $hi.Y -eq 0 -and $hi.Width -eq 198 -and $hi.Height -eq 147) "at 150% the crop is (0,0) 198x147"
+Check ($hi.CardX -eq 24 -and $hi.CardY -eq 24 -and $hi.CardWidth -eq 150 -and $hi.CardHeight -eq 75) "at 150% the card sits at (24,24) 150x75 inside the crop"
+Check ($hi.BarX -eq 24 -and $hi.BarY -eq 111 -and $hi.BarWidth -eq 150 -and $hi.BarHeight -eq 12) "at 150% the bar sits at (24,111) 150x12"
+$hiShift = Get-CardShotBox @{ X = 16; Y = 16; Width = 100; Height = 50 } @{ X = 1920; Y = -80 } 8 8 16 1.5
+Check ($hiShift.X -eq 2880 -and $hiShift.Y -eq -120) "at 150% the crop origin scales to (2880,-120)"
+
 $grey = Get-BackdropGrey
 Check ($grey.R -eq 160 -and $grey.G -eq 160 -and $grey.B -eq 160) "the backdrop grey is rgb(160,160,160)"
 
