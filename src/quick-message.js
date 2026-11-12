@@ -322,6 +322,14 @@ export function createQuickMessage({
     aside() {
       yieldPill(overSprite || overPill);
     },
+    // The native popup blocks the shell, so this timer can finish before
+    // the menu frame arrives. Hold from the press.
+    menuPress() {
+      if (disposed) return;
+      yielded = true;
+      cancelHover();
+      if (visible && !hasText()) hide();
+    },
     // An open pill keeps its draft. An empty one is the dwell this menu suspends.
     setMenu(up) {
       if (disposed || up === menuOpen) return;
@@ -331,7 +339,8 @@ export function createQuickMessage({
         if (visible && !hasText()) hide();
         return;
       }
-      if (overSprite || overPill) yielded = true;
+      // A yield kept after the pointer has left would swallow the next hover.
+      yielded = overSprite || overPill;
     },
     submit,
     restore(value) {

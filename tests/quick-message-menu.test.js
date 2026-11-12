@@ -180,6 +180,56 @@ test("the pointer can leave the character for the menu without the pill opening 
   });
 });
 
+test("a right-press holds the dwell when the menu frame arrives only after it elapses", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    await evalJs(`document.querySelector(".sprite").dispatchEvent(new PointerEvent("pointerdown", { button: 2, bubbles: true }))`);
+    const under = await evalJs("window.__dwell()");
+    assert.equal(Number(under.flashed), 0, "the dwell's deadline passes before any menu frame");
+    assert.equal(Number(under.settled), 0, "the pill stays down with no menu frame");
+    assert.equal(Number(await shown(frame({ menu: true }))), 0, "the menu frame lands after the popup");
+    assert.equal(Number(await shown(frame())), 0, "the menu has closed and the pointer is still here");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.flashed), 0, "closing the menu does not open the pill");
+    assert.equal(Number(after.settled), 0, "a resting pointer keeps the pill down");
+    assert.equal(Number(await shown(frame({ sprite: { hovered: false } }))), 0);
+    assert.equal(Number(await shown(frame())), 0, "a fresh hover still waits out the dwell");
+    const fresh = await evalJs("window.__dwell()");
+    assert.equal(Number(fresh.flashed), 1, "the pill opens after the pointer leaves and hovers again");
+    assert.equal(Number(fresh.settled), 1, "that later hover stays up");
+  });
+});
+
+test("a menu close away from the character does not swallow the next hover", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    assert.equal(Number(await shown(frame({ menu: true }))), 0, "the menu is open on the character");
+    assert.equal(Number(await shown(frame())), 0, "the menu closes on the character and yields that hover");
+    assert.equal(Number(await shown(frame({ menu: true }))), 0, "the menu is open again");
+    assert.equal(Number(await shown(frame({ menu: true, sprite: { hovered: false } }))), 0, "the pointer has left");
+    assert.equal(Number(await shown(frame({ sprite: { hovered: false } }))), 0, "the menu closes away from the character");
+    assert.equal(Number(await shown(frame())), 0, "the next hover still waits out the dwell");
+    const fresh = await evalJs("window.__dwell()");
+    assert.equal(Number(fresh.flashed), 1, "that hover opens the pill");
+    assert.equal(Number(fresh.settled), 1, "and it stays up");
+  });
+});
+
+test("a right-press puts an empty pill away before the menu frame arrives", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    const opened = await evalJs("window.__dwell()");
+    assert.equal(Number(opened.settled), 1, "the dwell opens the pill");
+    await evalJs(`document.querySelector(".sprite").dispatchEvent(new PointerEvent("pointerdown", { button: 2, bubbles: true }))`);
+    assert.equal(Number(await evalJs("getComputedStyle(document.querySelector('.quick-message')).opacity")), 0, "the press puts an empty pill away");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.settled), 0, "no menu frame is required to keep it down");
+  });
+});
+
 test("an empty pill is put away when the sprite menu opens, and closing the menu leaves it down", { skip: chromeSkip, timeout: 20000 }, async () => {
   await withOverlay(async (evalJs) => {
     const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
