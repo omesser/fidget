@@ -106,8 +106,10 @@ if (-not $Bin) {
     $Bin = Join-Path $root "target\debug\fidget.exe"
     if (-not (Test-Path -LiteralPath $Bin)) {
         Note "cargo build -p fidget"
-        $build = Start-Process -FilePath "cargo" -ArgumentList @("build", "-p", "fidget", "--manifest-path", (Join-Path $root "Cargo.toml")) -WorkingDirectory $root -Wait -PassThru -NoNewWindow
-        if ($build.ExitCode -ne 0) { Fail "cargo build failed with exit $($build.ExitCode)" }
+        Push-Location $root
+        try { & cargo build -p fidget --manifest-path (Join-Path $root "Cargo.toml") }
+        finally { Pop-Location }
+        if ($LASTEXITCODE -ne 0) { Fail "cargo build failed with exit $LASTEXITCODE" }
     }
 }
 if (-not (Test-Path -LiteralPath $Bin)) { Fail "no build at $Bin" }
