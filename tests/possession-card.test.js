@@ -388,3 +388,40 @@ test("a press on a button never drags the card, a press on its background does o
     assert.deepEqual(drags, [[50, 0], "drop"]);
   });
 });
+
+test("a press the system cancels drops a drag once and never resumes a paused card", () => {
+  withDocument(() => {
+    for (const ending of ["pointercancel", "lostpointercapture"]) {
+      const card = paintedCard(true);
+      const calls = [];
+      wirePossessionCard(
+        card,
+        (command) => {
+          calls.push(command);
+          return Promise.resolve();
+        },
+        { move: () => calls.push("move"), drop: () => calls.push("drop") },
+      );
+      const fire = (type, x) =>
+        card.listeners[type]({
+          target: { closest: () => null },
+          pointerId: 1,
+          button: 0,
+          clientX: x,
+          clientY: 10,
+          stopPropagation() {},
+        });
+      fire("pointerdown", 0);
+      fire("pointermove", 50);
+      fire(ending, 50);
+      fire("lostpointercapture", 50);
+      fire("pointerup", 50);
+      assert.deepEqual(calls, ["move", "drop"], ending);
+      calls.length = 0;
+      fire("pointerdown", 0);
+      fire(ending, 0);
+      fire("pointerup", 0);
+      assert.deepEqual(calls, [], `a ${ending} press is not the resume click`);
+    }
+  });
+});
