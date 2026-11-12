@@ -73,7 +73,7 @@ The Secret Scanning workflow (`.github/workflows/secret-scanning.yml`) runs two 
 
 ## Scanner Surfaces
 
-The `agent-security-scanner surfaces` workflow (`.github/workflows/scanner-surfaces.yml`) is dispatch-only. It builds a chosen ref of private `glance-labs/agent-security-scanner` and runs `surfaces` against a fidget checkout, leaving the report in the job log. It needs the `SCANNER_TOKEN` repository secret: a fine-grained PAT from a glance-labs owner, limited to that repository, with Contents read-only.
+The `agent-security-scanner surfaces` workflow (`.github/workflows/scanner-surfaces.yml`) is dispatch-only. Pick the fidget branch or tag in the Run workflow dialog; `scanner_ref` chooses which ref of private `glance-labs/agent-security-scanner` to build. The report stays in the job log. It needs the `SCANNER_TOKEN` repository secret: a fine-grained PAT from a glance-labs owner, limited to that repository, with Contents read-only.
 
 ## Trace Variables
 

@@ -1,17 +1,12 @@
 name: agent-security-scanner surfaces
 
-# Manual dog-food of glance-labs/agent-security-scanner surfaces against this
-# checkout. Releases lag main, so the scanner is built from a chosen ref.
-# Logs are public: the scan never requests evidence.
+# Manual dog-food of glance-labs/agent-security-scanner surfaces against the
+# fidget ref picked in the Run workflow dialog. Releases lag main, so the
+# scanner is built from scanner_ref. Logs are public: no evidence is requested.
 
 on:
   workflow_dispatch:
     inputs:
-      fidget_ref:
-        description: fidget git ref to scan (branch, tag, or SHA)
-        type: string
-        required: false
-        default: main
       scanner_ref:
         description: glance-labs/agent-security-scanner ref to build (branch, tag, or SHA)
         type: string
@@ -22,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.fidget_ref }}-${{ inputs.scanner_ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.scanner_ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,7 +38,6 @@ jobs:
       - name: Check out fidget
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.fidget_ref }}
           path: fidget
           persist-credentials: false
 
