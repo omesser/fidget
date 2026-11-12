@@ -687,7 +687,7 @@ test("the Possession strip says what it is, and both its images load lazily", ()
   const text = (html) => html.replace(/<[^>]+>/g, "").trim();
   assert.deepEqual([...strip.matchAll(/<(h3|p)\b[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => text(m[2])), [
     "Watch",
-    "Possession — drive the fidget manually inside your desktop",
+    "Possession: drive the fidget manually inside your desktop",
     "Pick Possess from its menu, then walk, climb, and jump across your windows. Esc lets go.",
     "It takes your keyboard and the real windows, so it isn’t in this desk.",
   ]);
@@ -704,7 +704,7 @@ test("the playground reads as Oded asked: its title and gestures, two windows th
     "the desk sits in a panel whose title bar is the invite, with no period, then the picker, both outside the desk the physics bounds");
   const order = ['id="play-desk"', '<h3 class="play-sub">Fidget gestures</h3>\n    <ul class="play-how">',
     '<aside class="possess-watch"', 'class="possess-keys"', 'class="possess-clip"',
-    '<h3 id="possess-watch-title">Possession — drive the fidget manually inside your desktop</h3>', 'class="play-get"']
+    '<h3 id="possess-watch-title">Possession: drive the fidget manually inside your desktop</h3>', 'class="play-get"']
     .map((mark) => play.indexOf(mark));
   assert.ok(order.every((at, i) => at > (order[i - 1] ?? play.indexOf('class="play-title"'))),
     `the titled panel, desk, Fidget gestures over the bullets, the Possession strip (bindings card, clip, title), then the Download line: ${order}`);
