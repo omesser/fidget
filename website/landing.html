@@ -358,6 +358,42 @@
   .play-sub { margin: 1.5rem 0 .4rem; font-size: 1rem; }
   .play-how { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--ink-2); display: grid; gap: .2rem; }
   .play-get { margin: 0; }
+  .possess-watch {
+    display: grid;
+    grid-template-columns: 400px minmax(0, 1fr);
+    gap: 1.25rem 2rem;
+    align-items: center;
+    margin: 1.25rem 0 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+  }
+  .possess-watch .possess-clip {
+    display: block;
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+  }
+  .possess-kicker {
+    margin: 0 0 .35rem;
+    font-size: .72rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .possess-watch h3 {
+    margin: 0 0 .5rem;
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
+  }
+  .possess-watch p { margin: 0 0 .6rem; color: var(--ink-2); }
+  .possess-watch p:last-child { margin-bottom: 0; }
+  .possess-note { font-size: .95rem; color: var(--ink-3); }
+  @media (max-width: 760px) {
+    .possess-watch { grid-template-columns: 1fr; gap: 1rem; }
+  }
   .play-win .lines { padding: 14px 16px; display: grid; gap: 9px; }
   .play-win .lines div { height: 8px; border-radius: 4px; background: var(--paper-2); }
   .play-sprite { position: absolute; left: 0; top: 0; z-index: 10; cursor: grab; touch-action: none; }
@@ -533,6 +569,18 @@
     </ul>
     </div>
     </div>
+    <aside class="possess-watch" aria-labelledby="possess-watch-title">
+      <picture>
+        <source srcset="buddy-bot-possess-poster.png" media="(prefers-reduced-motion: reduce)">
+        <img class="possess-clip" src="buddy-bot-possess.gif" width="400" height="250" alt="A ghost swoops into Buddy Bot; he walks along a window, charges a jump, and lands on the next; the ghost leaves">
+      </picture>
+      <div class="possess-copy">
+        <p class="possess-kicker">Watch</p>
+        <h3 id="possess-watch-title">Possess It</h3>
+        <p>Take the keyboard and drive your fidget manually, like a platformer on your live desktop.</p>
+        <p class="possess-note">It uses your keyboard and the real windows, so it isn’t in this desk.</p>
+      </div>
+    </aside>
     <p class="play-get"><a href="#get">Download Fidget</a> to try it for real.</p>
     <script type="application/json" id="play-data">{{play_data}}</script>
   </div>

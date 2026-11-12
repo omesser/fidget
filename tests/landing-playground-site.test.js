@@ -618,10 +618,11 @@ test("the playground reads as Oded asked: its title and gestures, two windows th
   const play = page.match(/<section id="play">([\s\S]*?)<\/section>/)[1];
   assert.match(play, /<div class="play-panel" id="play-panel">\s*<p class="play-title">Try it here<\/p>\s*<div class="play-picker" id="play-picker"[^>]*><\/div>\s*<div class="play-desk" id="play-desk"/,
     "the desk sits in a panel whose title bar is the invite, with no period, then the picker, both outside the desk the physics bounds");
-  const order = ['id="play-desk"', '<h3 class="play-sub">Fidget gestures</h3>\n    <ul class="play-how">', 'class="play-get"']
+  const order = ['id="play-desk"', '<h3 class="play-sub">Fidget gestures</h3>\n    <ul class="play-how">',
+    '<aside class="possess-watch"', 'class="play-get"']
     .map((mark) => play.indexOf(mark));
   assert.ok(order.every((at, i) => at > (order[i - 1] ?? play.indexOf('class="play-title"'))),
-    `the titled panel, desk, Fidget gestures over the bullets, then the Download line: ${order}`);
+    `the titled panel, desk, Fidget gestures over the bullets, the Possess It strip, then the Download line: ${order}`);
   assert.ok(!play.includes("cues.html"), "the playground no longer links Fidget Cues");
   const gestures = [...play.matchAll(/<li>(.*?)<\/li>/g)].map((m) => m[1].replace(/<\/?b>/g, ""));
   assert.deepEqual(gestures, ["Left-click to poke", "Click and hold to drag it around and drop it",
