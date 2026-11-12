@@ -348,7 +348,7 @@ function positionPossession(view, latest) {
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
   view.chargeRect = chargeRectFor(fill, placed);
   reportOverlayRects();
-  traceBubble(`possession card at (${placed.card.x},${placed.card.y}) paused=${model.paused}`);
+  traceBubble(`possession card at (${placed.card.x},${placed.card.y}) ${view.cardSize.width}x${view.cardSize.height} paused=${model.paused}`);
 }
 
 function positionQuick(view, spriteRect) {

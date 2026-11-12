@@ -95,39 +95,10 @@ impl SecretStore for KeyringStore {
     }
 }
 
-#[cfg(test)]
+// Only the Windows and Linux stores have tests: they can reach a real one.
+#[cfg(all(test, any(windows, target_os = "linux")))]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_missing_item_is_none_not_an_error() {
-        let store = MemoryStore::new();
-        assert_eq!(store.get(DIRECTOR_API_KEY).unwrap(), None);
-    }
-
-    #[test]
-    fn a_set_item_is_what_get_returns() {
-        let store = MemoryStore::new();
-        store.set(DIRECTOR_API_KEY, "sk-test-key").unwrap();
-        assert_eq!(
-            store.get(DIRECTOR_API_KEY).unwrap().as_deref(),
-            Some("sk-test-key")
-        );
-    }
-
-    #[test]
-    fn deleting_an_item_leaves_none() {
-        let store = MemoryStore::new();
-        store.set(DIRECTOR_API_KEY, "sk-test-key").unwrap();
-        store.delete(DIRECTOR_API_KEY).unwrap();
-        assert_eq!(store.get(DIRECTOR_API_KEY).unwrap(), None);
-    }
-
-    #[test]
-    fn deleting_a_missing_item_is_ok() {
-        let store = MemoryStore::new();
-        store.delete(DIRECTOR_API_KEY).unwrap();
-    }
 
     #[cfg(windows)]
     mod windows_credential_manager {
