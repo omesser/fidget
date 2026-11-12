@@ -243,8 +243,11 @@ function Get-LastSpriteSpot([string]$TraceFile) {
     return @{ X = [int]$Matches[1]; Y = [int]$Matches[2] }
 }
 
-# Wait for the sprite to rest. Each move restarts the 3 s window; 10 s from
-# the start is the ceiling if it never stops. Return the rest the check saw.
+# Wait for the sprite to rest. Each move restarts the 3 s settle window; 10 s
+# from the start is the ceiling. A sprite that is still but not at rest (the
+# launch fall held at its spawn pose until first draw) keeps waiting until
+# that ceiling, rather than failing at the first 3 s window. Return the rest
+# the check saw.
 function Wait-ForRest([string]$TraceFile) {
     $dir = Split-Path -Parent $TraceFile
     if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { $dir = $script:WatchDir }
@@ -267,7 +270,7 @@ function Wait-ForRest([string]$TraceFile) {
             $false
         }
         if ($script:restDecision -ceq "done") { return $script:restAt }
-        if ($script:restDecision -cne "progress") { return $null }
+        # "progress" or a still pose that is not rest: loop until the 10 s ceiling.
     }
 }
 

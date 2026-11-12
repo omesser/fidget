@@ -76,7 +76,34 @@ if ($SelfTest) {
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
     if ($script:Evidence) { [Console]::Error.WriteLine("evidence in $($script:Evidence)") }
+    Show-ProcessLogHead
     exit 1
+}
+
+# The first 60 non-frame process.log lines, so a FAIL names what the sprite
+# was doing (held launch fall, page load, first-draw) without the frame flood.
+function Show-ProcessLogHead {
+    if (-not $script:traceFile -or -not (Test-Path -LiteralPath $script:traceFile)) { return }
+    $lines = @(Get-Content -LiteralPath $script:traceFile -ErrorAction SilentlyContinue |
+            Where-Object { $_ -notmatch '^\d+\.?\d* frame: ' } |
+            Select-Object -First 60)
+    [Console]::Error.WriteLine("process.log (first $($lines.Count) non-frame lines):")
+    foreach ($line in $lines) { [Console]::Error.WriteLine($line) }
+}
+
+# True once the Shell has released the launch-fall hold: the sprite has left
+# Falling, the fall animation has advanced past frame 0, or its feet have moved.
+function Test-SpriteClockRunning([string]$TraceFile, $Origin) {
+    if (-not (Test-Path -LiteralPath $TraceFile)) { return $false }
+    $frames = @(Get-Content -LiteralPath $TraceFile -ErrorAction SilentlyContinue |
+            Where-Object { $_ -match '^\d+\.?\d* frame: ' } |
+            Select-Object -Last 5)
+    foreach ($line in $frames) {
+        if ($line -match ' frame: ' -and $line -notmatch ' Falling ') { return $true }
+        if ($line -match 'fall#(\d+)' -and [int]$Matches[1] -gt 0) { return $true }
+    }
+    $now = Get-LastSpriteSpot $TraceFile
+    return [bool]($Origin -and $now -and ($now.X -ne $Origin.X -or $now.Y -ne $Origin.Y))
 }
 
 function Note([string]$Message) {
@@ -252,7 +279,8 @@ $script:Evidence = $out
 $data = Initialize-ScenarioData $out @{ hide_in_fullscreen = $false }
 $appLog = Join-Path $out "app.log"
 $errLog = Join-Path $out "app.err"
-$traceFile = Join-Path $data "process.log"
+$script:traceFile = Join-Path $data "process.log"
+$traceFile = $script:traceFile
 
 Remove-Item Env:\XAI_API_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:\FIDGET_HARNESS -ErrorAction SilentlyContinue
@@ -362,6 +390,14 @@ try {
     if (-not (Wait-ForUp $errLog)) { Fail "Fidget never wrote its overlay line; see $errLog" }
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $errLog" }
     if (-not (Wait-ForTrace 15 $traceFile '^\d+\.?\d* frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
+    $spawn = Get-LastSpriteSpot $traceFile
+    # The Shell holds the launch fall still until the overlay draws it, or
+    # for 3s. Wait until that clock is running, then for rest, as
+    # possession-live does once the sprite can move.
+    if (-not (Wait-OnChanges 15 $data { Test-SpriteClockRunning $traceFile $spawn })) {
+        Fail "the launch fall was still held after 15s; see $traceFile"
+    }
+    Note "sprite clock running; waiting for rest"
     $rest = Wait-ForRest $traceFile
     if (-not $rest) { Fail "the sprite never came to rest within 10s; see $traceFile" }
     $size = Select-String -LiteralPath $traceFile -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
