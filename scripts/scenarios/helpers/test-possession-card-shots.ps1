@@ -64,31 +64,63 @@ Check ($hiShift.X -eq 2880 -and $hiShift.Y -eq -120) "at 150% the crop origin sc
 $grey = Get-BackdropGrey
 Check ($grey.R -eq 160 -and $grey.G -eq 160 -and $grey.B -eq 160) "the backdrop grey is rgb(160,160,160)"
 
-# 8x6 shot. Card (2,2) 4x2, bar (2,4) 4x1. Every other pixel is grey, then one leak.
-function New-Shot([int]$W, [int]$H, $Grey) {
-    $rows = @()
-    for ($y = 0; $y -lt $H; $y++) {
-        $row = @()
-        for ($x = 0; $x -lt $W; $x++) { $row += ,(@($Grey.R, $Grey.G, $Grey.B)) }
-        $rows += ,$row
-    }
-    return $rows
-}
-$shot = New-Shot 8 6 $grey
-# Paint the card and bar with a non-grey color the verdict must ignore.
-for ($y = 2; $y -le 3; $y++) { for ($x = 2; $x -le 5; $x++) { $shot[$y][$x] = @(20, 30, 40) } }
-for ($x = 2; $x -le 5; $x++) { $shot[4][$x] = @(200, 100, 0) }
+# Paused, the bar is hidden, so the crop is the card and the margin alone:
+# (0,0)-(132,82), with no bar rect left in it.
+$pausedBox = Get-CardShotBox @{ X = 16; Y = 16; Width = 100; Height = 50; Paused = $true } @{ X = 0; Y = 0 } 8 8 16
+Check ($pausedBox.Width -eq 132 -and $pausedBox.Height -eq 82) "a paused crop is the card and a 16 px margin, 132x82"
+Check ($pausedBox.BarHeight -eq 0) "a paused crop holds no bar"
+
+$greyPx = Get-PackedRgb 160 160 160
+Check ($greyPx -eq 0xA0A0A0) "rgb(160,160,160) packs to 0xA0A0A0"
+Check ((Get-PackedRgb 255 0 0) -eq 0xFF0000) "rgb(255,0,0) packs to 0xFF0000"
+
+# 8x6 shot, packed row-major. Card (2,2) 4x2, bar (2,4) 4x1. Every other pixel
+# is grey, then one leak.
+$W = 8; $H = 6
+$shot = [int[]]::new($W * $H)
+for ($n = 0; $n -lt $shot.Length; $n++) { $shot[$n] = $greyPx }
+for ($y = 2; $y -le 3; $y++) { for ($x = 2; $x -le 5; $x++) { $shot[$y * $W + $x] = Get-PackedRgb 20 30 40 } }
+for ($x = 2; $x -le 5; $x++) { $shot[4 * $W + $x] = Get-PackedRgb 200 100 0 }
 $rects = @(
     @{ X = 2; Y = 2; Width = 4; Height = 2 },
     @{ X = 2; Y = 4; Width = 4; Height = 1 }
 )
-$ok = Get-BackdropVerdict $shot $rects $grey
+$ok = Get-BackdropVerdict $shot $W $rects $grey
 Check ($ok.Ok -eq $true -and $ok.Message -match 'every margin pixel is the grey backdrop') "a shot whose margin is all grey is accepted"
 
-$shot[0][7] = @(255, 0, 0)
-$bad = Get-BackdropVerdict $shot $rects $grey
+# The alpha byte is not color: an opaque 0xFFA0A0A0 is still the grey.
+$opaque = [int[]]$shot.Clone()
+$opaque[0] = -16777216 -bor $greyPx  # 0xFF000000 as a signed int
+Check ((Get-BackdropVerdict $opaque $W $rects $grey).Ok) "the alpha byte is ignored"
+
+$shot[0 * $W + 7] = Get-PackedRgb 255 0 0
+$bad = Get-BackdropVerdict $shot $W $rects $grey
 Check ($bad.Ok -eq $false) "a red margin pixel is refused"
 Check ($bad.Message -match 'margin pixel at \(7,0\) is rgb\(255,0,0\), not the grey backdrop') "the verdict names the first leaking pixel"
+
+# A card that was not captured (the overlay missing from the grab) is all grey.
+$blank = [int[]]::new($W * $H)
+for ($n = 0; $n -lt $blank.Length; $n++) { $blank[$n] = $greyPx }
+$missing = Get-BackdropVerdict $blank $W $rects $grey
+Check ($missing.Ok -eq $false -and $missing.Message -match 'card is all backdrop grey') "a shot with no card in it is refused"
+
+# Bar middle row: track only, fill only, part-full, hidden.
+$track = Get-PackedRgb 90 90 90
+$fill = Get-PackedRgb 0 120 255
+function New-Row([int]$Filled, [int]$Width) { $r = [int[]]::new($Width); for ($n = 0; $n -lt $Width; $n++) { $r[$n] = $(if ($n -lt $Filled) { $fill } else { $track }) }; return ,$r }
+Check (-not (Test-BarPartFull (New-Row 0 40) $grey)) "an empty bar is not part-full"
+Check (-not (Test-BarPartFull (New-Row 40 40) $grey)) "a full bar is not part-full"
+Check (Test-BarPartFull (New-Row 15 40) $grey) "a bar with fill and track is part-full"
+$hidden = [int[]]::new(40); for ($n = 0; $n -lt 40; $n++) { $hidden[$n] = $greyPx }
+Check (-not (Test-BarPartFull $hidden $grey)) "a hidden bar over the backdrop is not part-full"
+$edge = New-Row 15 40; $edge[0] = $greyPx; $edge[39] = $greyPx
+Check (Test-BarPartFull $edge $grey) "the bar's rounded ends are not read"
+
+# Settled: the crop's top row is all grey and the card's middle row is not.
+$cardRow = [int[]]@($greyPx, (Get-PackedRgb 20 30 40), $greyPx)
+Check (Test-ShotSettled $hidden $cardRow $grey) "a grey margin row and a drawn card row are settled"
+Check (-not (Test-ShotSettled $edge $cardRow $grey)) "a margin row with the bar in it is not settled"
+Check (-not (Test-ShotSettled $hidden $hidden $grey)) "a card row that is all grey is not settled"
 
 if ($failed -eq 0) { Write-Output "all checks passed"; exit 0 }
 Write-Output "$failed checks failed"

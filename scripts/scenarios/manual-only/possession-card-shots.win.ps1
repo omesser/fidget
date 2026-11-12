@@ -256,6 +256,27 @@ public static class PossessionCardShotsWin {
         finally { if (joined) AttachThreadInput(me, front, false); }
         return GetForegroundWindow() == h;
     }
+    // CaptureBlt takes layered windows into the grab as well.
+    public static Bitmap Grab(int x, int y, int w, int h) {
+        var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp)) {
+            g.CopyFromScreen(x, y, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+        }
+        return bmp;
+    }
+    public static int[] Pixels(Bitmap bmp) {
+        var d = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        try {
+            var px = new int[bmp.Width * bmp.Height];
+            for (int row = 0; row < bmp.Height; row++) {
+                Marshal.Copy(IntPtr.Add(d.Scan0, row * d.Stride), px, row * bmp.Width, bmp.Width);
+            }
+            return px;
+        } finally { bmp.UnlockBits(d); }
+    }
+    public static int[] Strip(int x, int y, int w) {
+        using (var bmp = Grab(x, y, w, 1)) return Pixels(bmp);
+    }
 }
 "@
 }
@@ -333,60 +354,69 @@ function Move-Backdrop($Box) {
     [void][PossessionCardShotsWin]::SetWindowPos($script:form.Handle, $overlay, 0, 0, 0, 0, $flags)
 }
 
-function Save-CardShot([string]$Name, $Box) {
-    Start-Sleep -Milliseconds 300
+# Grabbed now and judged later, so a held key can be let go in between.
+function Get-CardShot($Box) {
     $v = [System.Windows.Forms.SystemInformation]::VirtualScreen
     $L = [Math]::Max($Box.X, $v.Left)
     $T = [Math]::Max($Box.Y, $v.Top)
     $R = [Math]::Min($Box.X + $Box.Width, $v.Right)
     $B = [Math]::Min($Box.Y + $Box.Height, $v.Bottom)
-    $w = $R - $L
-    $h = $B - $T
-    if ($w -le 0 -or $h -le 0) { Fail "capture ${Name}: empty crop ($L,$T)-($R,$B)" }
-    $offX = $L - $Box.X
-    $offY = $T - $Box.Y
-    $bmp = New-Object System.Drawing.Bitmap $w, $h
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    try {
-        $g.CopyFromScreen($L, $T, 0, 0, (New-Object System.Drawing.Size $w, $h))
-        $rows = @()
-        for ($y = 0; $y -lt $h; $y++) {
-            $row = @()
-            for ($x = 0; $x -lt $w; $x++) {
-                $px = $bmp.GetPixel($x, $y)
-                $row += ,(@([int]$px.R, [int]$px.G, [int]$px.B))
-            }
-            $rows += ,$row
-        }
-        $rects = @(
-            @{ X = $Box.CardX - $offX; Y = $Box.CardY - $offY; Width = $Box.CardWidth; Height = $Box.CardHeight },
-            @{ X = $Box.BarX - $offX; Y = $Box.BarY - $offY; Width = $Box.BarWidth; Height = $Box.BarHeight }
-        )
-        $verdict = Get-BackdropVerdict $rows $rects $grey
-        Note ("{0}: {1}" -f $Name, $verdict.Message)
-        if (-not $verdict.Ok) { Fail "$Name refused: $($verdict.Message)" }
-        $path = Join-Path $OutDir $Name
-        $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-        Note "saved $path ${w}x${h} at ($L,$T)"
-    } finally {
-        $g.Dispose()
-        $bmp.Dispose()
+    if ($R -le $L -or $B -le $T) { Fail "empty crop ($L,$T)-($R,$B)" }
+    return @{
+        Bmp = [PossessionCardShotsWin]::Grab($L, $T, $R - $L, $B - $T)
+        L = $L; T = $T; W = $R - $L; H = $B - $T; OffX = $L - $Box.X; OffY = $T - $Box.Y; Box = $Box
     }
 }
 
+function Save-CardShot([string]$Name, $Shot) {
+    $Box = $Shot.Box
+    try {
+        $px = [PossessionCardShotsWin]::Pixels($Shot.Bmp)
+        $rects = @(
+            @{ X = $Box.CardX - $Shot.OffX; Y = $Box.CardY - $Shot.OffY; Width = $Box.CardWidth; Height = $Box.CardHeight },
+            @{ X = $Box.BarX - $Shot.OffX; Y = $Box.BarY - $Shot.OffY; Width = $Box.BarWidth; Height = $Box.BarHeight }
+        )
+        $verdict = Get-BackdropVerdict $px $Shot.W $rects $grey
+        Note ("{0}: {1}" -f $Name, $verdict.Message)
+        if (-not $verdict.Ok) { Fail "$Name refused: $($verdict.Message)" }
+        $path = Join-Path $OutDir $Name
+        $Shot.Bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+        Note "saved $path $($Shot.W)x$($Shot.H) at ($($Shot.L),$($Shot.T))"
+    } finally {
+        $Shot.Bmp.Dispose()
+    }
+}
+
+function Wait-ShotSettled($Box) {
+    return (Wait-Until 3 {
+            $top = [PossessionCardShotsWin]::Strip($Box.X, $Box.Y, $Box.Width)
+            $mid = $Box.Y + $Box.CardY + [int]($Box.CardHeight / 2)
+            $card = [PossessionCardShotsWin]::Strip($Box.X + $Box.CardX, $mid, $Box.CardWidth)
+            Test-ShotSettled $top $card $grey
+        })
+}
+
+function Wait-BarPartFull($Box) {
+    return (Wait-Until 3 {
+            $mid = $Box.Y + $Box.BarY + [int]($Box.BarHeight / 2)
+            Test-BarPartFull ([PossessionCardShotsWin]::Strip($Box.X + $Box.BarX, $mid, $Box.BarWidth)) $grey
+        })
+}
+
+$startMs = Get-NowMs
 try {
     Note "start: $(git -C $root rev-parse --short HEAD) bin=$Bin out=$OutDir"
     $script:proc = Start-FidgetPiped $Bin @() $appLog $errLog $root
     Note "launched pid $($script:proc.Id)"
     if (-not (Wait-ForUp $errLog)) { Fail "Fidget never wrote its overlay line; see $errLog" }
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $errLog" }
-    if (-not (Wait-ForTrace 15 $traceFile '^\d+\.?\d* frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
+    if (-not (Wait-ForTrace 3 $traceFile '^\d+\.?\d* frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
     $spawn = Get-LastSpriteSpot $traceFile
     # The Shell holds the launch fall still until the overlay draws it, or
-    # for 3s. Wait until that clock is running, then for rest, as
-    # possession-live does once the sprite can move.
-    if (-not (Wait-OnChanges 15 $data { Test-SpriteClockRunning $traceFile $spawn })) {
-        Fail "the launch fall was still held after 15s; see $traceFile"
+    # for 3 s. Wait out that hold first, so Wait-ForRest's 3 s window starts
+    # once the sprite can move, as it does in possession-live.
+    if (-not (Wait-OnChanges 5 $data { Test-SpriteClockRunning $traceFile $spawn })) {
+        Fail "the launch fall was still held after 5s; see $traceFile"
     }
     Note "sprite clock running; waiting for rest"
     $rest = Wait-ForRest $traceFile
@@ -434,16 +464,15 @@ try {
     $script:form.Show()
     [System.Windows.Forms.Application]::DoEvents()
     Move-Backdrop $box
+    if (-not (Wait-ShotSettled $box)) { Fail "the card never showed over a settled grey backdrop" }
 
     [SendInputWin]::Key(0x20, $false)
     $script:spaceDown = $true
-    Start-Sleep -Milliseconds 450
-    $box = Get-ShotBoxFromTrace
-    if (-not $box) { Fail "the card trace went missing during the charge; see $traceFile" }
-    Move-Backdrop $box
-    Save-CardShot "win-card-charging.png" $box
+    if (-not (Wait-BarPartFull $box)) { Fail "the charge bar never showed part-full while Space was held" }
+    $shot = Get-CardShot $box
     [SendInputWin]::Key(0x20, $true)
     $script:spaceDown = $false
+    Save-CardShot "win-card-charging.png" $shot
 
     $blurs = @(Get-TraceLines | Where-Object { $_ -match '^\d+ overlay [^:]+: window blur' }).Count
     if (-not ([PossessionCardShotsWin]::Bring($script:form.Handle))) {
@@ -462,8 +491,9 @@ try {
     $box = Get-ShotBoxFromTrace
     if (-not $box) { Fail "the paused card trace was missing; see $traceFile" }
     Move-Backdrop $box
-    Save-CardShot "win-card-paused.png" $box
-    Note "done"
+    if (-not (Wait-ShotSettled $box)) { Fail "the paused card never showed over a settled grey backdrop" }
+    Save-CardShot "win-card-paused.png" (Get-CardShot $box)
+    Note "done ($((Get-NowMs) - $startMs) ms)"
 } catch {
     Note "ERROR: $($_.Exception.Message)"
     throw

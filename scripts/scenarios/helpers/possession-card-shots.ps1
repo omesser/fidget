@@ -53,11 +53,12 @@ function Get-DpiScale([int]$Dpi) {
     return [double]$Dpi / 96.0
 }
 
-# Screen-space crop in physical pixels: the card, the charge bar under it,
-# and a margin around both. Card and origin are logical (overlay-local and
-# the overlay's covers point). $Scale is that display's effective DPI / 96.
+# Screen-space crop in physical pixels: the card, the charge bar under it
+# (hidden on a paused card, so left out), and a margin around both. Card and
+# origin are logical; $Scale is that display's effective DPI / 96.
 function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginPx, [double]$Scale = 1) {
     if ($Scale -le 0) { $Scale = 1 }
+    if ($Card.Paused) { $BarPx = 0; $GapPx = 0 }
     $cardX = [int][Math]::Round(($Origin.X + $Card.X) * $Scale)
     $cardY = [int][Math]::Round(($Origin.Y + $Card.Y) * $Scale)
     $cardW = [int][Math]::Round($Card.Width * $Scale)
@@ -86,30 +87,36 @@ function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginP
     }
 }
 
-function Test-PointInRect([int]$X, [int]$Y, $Rect) {
-    return ($X -ge $Rect.X -and $X -lt ($Rect.X + $Rect.Width) -and $Y -ge $Rect.Y -and $Y -lt ($Rect.Y + $Rect.Height))
+# A pixel as the screen grab returns it: 0xRRGGBB, alpha masked off.
+function Get-PackedRgb([int]$R, [int]$G, [int]$B) {
+    return ($R -shl 16) -bor ($G -shl 8) -bor $B
 }
 
-# $Pixels is a row-major list of rows, each a list of @(R,G,B). $Rects are
-# regions (the card and the bar) that may be any color. Everything else must
-# be the backdrop grey or the shot is refused.
-function Get-BackdropVerdict($Pixels, $Rects, $Grey) {
-    $height = $Pixels.Count
-    if ($height -lt 1) {
+function Get-GreyPx($Grey) { return Get-PackedRgb $Grey.R $Grey.G $Grey.B }
+
+# $Pixels is a packed row-major grab $Width wide. $Rects (the card first, then
+# the bar) may be any color; everything else must be the backdrop grey. A card
+# that is all grey was not captured, so that shot is refused too.
+function Get-BackdropVerdict([int[]]$Pixels, [int]$Width, $Rects, $Grey) {
+    if ($Width -lt 1 -or $Pixels.Length -lt $Width) {
         return @{ Ok = $false; Message = "the shot is empty, so the margin cannot be the grey backdrop" }
     }
-    $width = $Pixels[0].Count
+    $greyPx = Get-GreyPx $Grey
+    $height = [int][Math]::Floor($Pixels.Length / $Width)
+    $cardDrawn = $false
     for ($y = 0; $y -lt $height; $y++) {
-        $row = $Pixels[$y]
-        for ($x = 0; $x -lt $width; $x++) {
+        for ($x = 0; $x -lt $Width; $x++) {
+            $px = $Pixels[$y * $Width + $x] -band 0xFFFFFF
             $inside = $false
             foreach ($rect in $Rects) {
-                if (Test-PointInRect $x $y $rect) { $inside = $true; break }
+                if ($x -ge $rect.X -and $x -lt ($rect.X + $rect.Width) -and $y -ge $rect.Y -and $y -lt ($rect.Y + $rect.Height)) { $inside = $true; break }
             }
-            if ($inside) { continue }
-            $px = $row[$x]
-            $r = [int]$px[0]; $g = [int]$px[1]; $b = [int]$px[2]
-            if ($r -ne $Grey.R -or $g -ne $Grey.G -or $b -ne $Grey.B) {
+            if ($inside) {
+                if ($px -ne $greyPx) { $cardDrawn = $true }
+                continue
+            }
+            if ($px -ne $greyPx) {
+                $r = ($px -shr 16) -band 0xFF; $g = ($px -shr 8) -band 0xFF; $b = $px -band 0xFF
                 return @{
                     Ok      = $false
                     Message = "margin pixel at ($x,$y) is rgb($r,$g,$b), not the grey backdrop"
@@ -117,5 +124,30 @@ function Get-BackdropVerdict($Pixels, $Rects, $Grey) {
             }
         }
     }
+    if (-not $cardDrawn) {
+        return @{ Ok = $false; Message = "the card is all backdrop grey, so the overlay was not captured" }
+    }
     return @{ Ok = $true; Message = "every margin pixel is the grey backdrop" }
+}
+
+# The bar's middle row shows fill and track, neither one alone and no backdrop.
+# Its rounded ends (4 px a side) are not read.
+function Test-BarPartFull([int[]]$Row, $Grey) {
+    $greyPx = Get-GreyPx $Grey
+    $counts = @{}
+    for ($n = 4; $n -lt $Row.Length - 4; $n++) {
+        $px = $Row[$n] -band 0xFFFFFF
+        if ($px -eq $greyPx) { return $false }
+        $counts[$px] = 1 + [int]$counts[$px]
+    }
+    return @($counts.Values | Where-Object { $_ -ge 3 }).Count -ge 2
+}
+
+# The backdrop is painted and the overlay drawn over it: the crop's top margin
+# row is all grey and the card's middle row is not.
+function Test-ShotSettled([int[]]$MarginRow, [int[]]$CardRow, $Grey) {
+    $greyPx = Get-GreyPx $Grey
+    foreach ($px in $MarginRow) { if (($px -band 0xFFFFFF) -ne $greyPx) { return $false } }
+    foreach ($px in $CardRow) { if (($px -band 0xFFFFFF) -ne $greyPx) { return $true } }
+    return $false
 }

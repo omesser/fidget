@@ -263,7 +263,8 @@ window behind the bindings card, possesses BMO through the same menu path as
 `-OutDir` (default `.verify/possession-card-shots` under the checkout) and
 builds `target/debug/fidget.exe` when `--go` does not name a binary. There is
 no prompt. The helper checks in `helpers/test-possession-card-shots.ps1` parse
-the card line, size the crop, and refuse a leaking margin. It presses Space
+the card line, size the crop (no bar on the paused card), read a part-full
+charge bar, and refuse a leaking margin or a card the grab missed. It presses Space
 through `helpers/send-input.win.ps1`, whose `helpers/test-send-input.ps1`
 checks that the INPUT struct is the size SendInput expects; `--self-test`
 runs both.
