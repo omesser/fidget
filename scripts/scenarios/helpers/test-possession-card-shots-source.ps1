@@ -23,10 +23,10 @@ foreach ($file in $files) {
 }
 
 # A block $addType misses is never parsed as C# 5. Each file's count is
-# pinned, and every Add-Type opening a here-string, indented or not, must be
-# one $addType finds.
-$addType = '(?ms)^Add-Type[^\n]*@"\r?\n(.*?)\r?\n"@'
-$anyAddType = '(?m)^\s*Add-Type[^\n]*@"'
+# pinned, and every Add-Type opening a here-string, anywhere on a line,
+# must be one $addType finds.
+$addType = '(?ms)Add-Type[^\n]*@"\r?\n(.*?)\r?\n"@'
+$anyAddType = '(?m)Add-Type[^\n]*@"'
 $blocks = @{ "possession-card-shots.win.ps1" = 1; "possession-card-shots.ps1" = 0; "send-input.win.ps1" = 1 }
 foreach ($file in $files) {
     $name = Split-Path -Leaf $file
