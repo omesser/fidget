@@ -61,7 +61,7 @@ trap 'stop_fidget; pkill -f "count=$marks" || true' EXIT INT TERM
 
 wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
-wait_for_marks 3 "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
+wait_for_first_wake "$marks" '^asked$' || fail "no wake reached the Harness; see $log"
 wait_for_trace 2 "$log" '^frame: .* sprite\(-?[0-9]+,-?[0-9]+\)' || fail "no frame trace in $log"
 # The page's first draft report for the sprite comes from its frame listener.
 # Before it the sprite is undrawn, and the one-frame ask reaches nobody.
