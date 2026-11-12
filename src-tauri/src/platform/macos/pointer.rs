@@ -795,6 +795,58 @@ mod tests {
         );
     }
 
+    /// Mid-hold, with the held press's down already counted, a release and
+    /// re-press inside one poll are the press's own: up a tick, then down.
+    #[test]
+    fn a_release_and_press_inside_one_tick_of_a_counted_hold_is_up_then_down_again() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+            ]),
+            vec![true, true, true, false, true, true]
+        );
+    }
+
+    /// The level saw the first click, and the second fit inside the poll that
+    /// saw the release. Both clicks' counts land there: the second is a press.
+    #[test]
+    fn a_second_tap_counted_on_the_release_tick_is_its_own_press() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 4, 4),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, false]
+        );
+    }
+
+    /// A click the level saw end to end, counted only as the next press shows
+    /// with that press's down: the click's up count does not end the press.
+    #[test]
+    fn a_seen_click_counted_as_the_next_press_shows_does_not_end_that_press() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 4, 4),
+                sample(false, 4, 4),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+                sample(false, 6, 5),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, true, false, false]
+        );
+    }
+
     /// The 27.2 Control-click: Control is let go before the counters move,
     /// but the level saw the press while it was held.
     #[test]
