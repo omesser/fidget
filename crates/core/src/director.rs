@@ -500,7 +500,7 @@ fn resolve_reply(behaviors: &[String], reply: &str) -> ResolvedReply {
     resolve_prepared(behaviors, prepare_reply(reply, behaviors))
 }
 
-/// Period-glue rewrite when a declared Behavior is stuck after a period, else
+/// Glue rewrite when a declared Behavior is stuck to the text around it, else
 /// the original text, reusing the first contract parse when nothing changes.
 fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
     if behaviors.is_empty() {
@@ -527,14 +527,7 @@ fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
             cached: Some(first),
         };
     }
-    let glued = [
-        glued_declared_behavior(reply, behaviors),
-        glued_marked_behavior(reply, behaviors),
-    ]
-    .into_iter()
-    .flatten()
-    .min_by_key(|(at, _, _)| *at);
-    let Some((peel_end, name_end, name)) = glued else {
+    let Some((peel_end, name_end, name)) = glued_behavior(reply, behaviors) else {
         return PreparedReply {
             text: reply.to_string(),
             glued_peel: None,
@@ -639,41 +632,29 @@ fn contract_visible(answer: &str, behaviors: &[String]) -> bool {
 /// `behavior:` and bare mid-reply still accept short names.
 const MIN_PERIOD_GLUE_NAME: usize = 3;
 
-fn glued_declared_behavior<'a>(
-    reply: &'a str,
-    behaviors: &'a [String],
-) -> Option<(usize, usize, String)> {
+/// Where the first declared Behavior glued into `reply` starts and ends, and
+/// its name. Glue is a period (`answering.ponder`), or a `behavior:` that opens
+/// the text or a line or follows a sentence end: mid-sentence it is prose.
+fn glued_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
     let bytes = reply.as_bytes();
-    let mut best: Option<(usize, usize, String)> = None;
-    for behavior in behaviors {
-        if behavior.len() < MIN_PERIOD_GLUE_NAME {
-            continue;
-        }
-        let mut from = 0;
-        while let Some(rel) = find_ignore_ascii_case(&reply[from..], &format!(".{}", behavior)) {
-            let dot = from + rel;
-            let name_at = dot + 1;
-            let name_end = name_at + behavior.len();
-            if name_end > reply.len() {
-                break;
-            }
-            if !reply[name_at..name_end].eq_ignore_ascii_case(behavior) {
-                from = dot + 1;
-                continue;
-            }
-            if glued_name_ends(bytes, name_end) && best.as_ref().is_none_or(|(at, _, _)| dot < *at)
-            {
-                best = Some((
-                    dot,
-                    name_end,
-                    declared(behaviors, &reply[name_at..name_end])
-                        .unwrap_or_else(|| behavior.clone()),
-                ));
-            }
-            from = dot + 1;
-        }
-    }
-    best
+    (0..reply.len())
+        .filter(|&at| reply.is_char_boundary(at))
+        .find_map(|at| {
+            let rest = &reply[at..];
+            let (body, min_len) = match rest.strip_prefix('.') {
+                Some(body) => (body, MIN_PERIOD_GLUE_NAME),
+                None => {
+                    let body = marker_body(rest)?;
+                    let before = reply[..at].trim_end_matches([' ', '\t']);
+                    let opens = before.is_empty() || before.ends_with(['\n', '\r', '.', '!', '?']);
+                    opens.then_some((body.trim_start_matches([' ', '\t']), 0))?
+                }
+            };
+            let name = name_token(body);
+            let name_end = reply.len() - body.len() + name.len();
+            let name = declared(behaviors, name).filter(|name| name.len() >= min_len)?;
+            glued_name_ends(bytes, name_end).then_some((at, name_end, name))
+        })
 }
 
 /// Glue at EOF, `|` or a newline, or a space then `|` or uppercase dialogue.
@@ -687,37 +668,6 @@ fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
         }
         _ => false,
     }
-}
-
-/// Where the planning ends, where the name ends, and the name, for a glued
-/// `behavior:` marker no contract line reads. It starts the text or a line,
-/// or follows a sentence end: mid-sentence it is prose.
-fn glued_marked_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
-    const MARK: &str = "behavior:";
-    let bytes = reply.as_bytes();
-    let mut from = 0;
-    while let Some(rel) = find_ignore_ascii_case(&reply[from..], MARK) {
-        let at = from + rel;
-        from = at + MARK.len();
-        let before = reply[..at].trim_end_matches([' ', '\t']);
-        let starts_here = before.is_empty() || before.ends_with(['\n', '\r', '.', '!', '?']);
-        if !starts_here {
-            continue;
-        }
-        let after = &reply[from..];
-        let name_at = from + (after.len() - after.trim_start_matches([' ', '\t']).len());
-        let name_len = reply[name_at..]
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
-            .unwrap_or(reply.len() - name_at);
-        let name_end = name_at + name_len;
-        let Some(name) = declared(behaviors, &reply[name_at..name_end]) else {
-            continue;
-        };
-        if glued_name_ends(bytes, name_end) {
-            return Some((at, name_end, name));
-        }
-    }
-    None
 }
 
 fn merge_peel(a: Option<String>, b: Option<String>) -> Option<String> {
@@ -792,22 +742,6 @@ fn parse_contract(reply: &str) -> Result<ParsedContract, ParseError> {
         marked,
         peeled_thought,
     })
-}
-
-fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
-    let needle = needle.as_bytes();
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .position(|window| {
-            window
-                .iter()
-                .zip(needle)
-                .all(|(a, b)| a.eq_ignore_ascii_case(b))
-        })
 }
 
 /// The Character's own spelling of `name`, when it declared one.
@@ -1034,8 +968,8 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
 /// `line` as the contract: optional `behavior:` then a name, or `name | said`.
 /// The bool is whether the marker was there. `None` when it is not that shape.
 fn contract_line(line: &str) -> Option<(&str, Option<&str>, bool)> {
-    let (body, marked) = match behavior_marker_body(line) {
-        Some(body) => (body, true),
+    let (body, marked) = match marker_body(line.trim()) {
+        Some(body) => (body.trim_start(), true),
         None => (line, false),
     };
     let (name, inline) = match body.split_once('|') {
@@ -1046,17 +980,25 @@ fn contract_line(line: &str) -> Option<(&str, Option<&str>, bool)> {
     identifier(name).then_some((name, inline, marked))
 }
 
-/// Body after a leading `behavior:` marker, when the line opens with one.
-/// A cut that is not a character boundary cannot be this ASCII marker, and
-/// slicing there panics.
-fn behavior_marker_body(line: &str) -> Option<&str> {
-    const MARK: &str = "behavior:";
-    let line = line.trim();
-    let prefix = line.get(..MARK.len())?;
-    if !prefix.eq_ignore_ascii_case(MARK) {
-        return None;
-    }
-    Some(line[MARK.len()..].trim_start())
+/// The marker that names the act: `behavior: walk`.
+const MARK: &str = "behavior:";
+
+/// What follows `text`'s leading `behavior:` marker, in any case. A cut that
+/// is not a character boundary cannot be this ASCII marker, and slicing there
+/// panics.
+fn marker_body(text: &str) -> Option<&str> {
+    let prefix = text.get(..MARK.len())?;
+    prefix
+        .eq_ignore_ascii_case(MARK)
+        .then(|| &text[MARK.len()..])
+}
+
+/// The leading run of characters a Behavior name may hold.
+fn name_token(text: &str) -> &str {
+    let end = text
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .unwrap_or(text.len());
+    &text[..end]
 }
 
 /// Unfinished first line is a marked contract naming something this Character
@@ -1072,10 +1014,7 @@ fn unfinished_marked_contract(tail: &str, behaviors: &[String]) -> bool {
 /// One alphanumeric at least, so punctuation alone is not a name: `---` is a
 /// line of Pi's banner and is otherwise all characters a name may contain.
 fn identifier(name: &str) -> bool {
-    name.chars().any(|c| c.is_ascii_alphanumeric())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name_token(name) == name && name.chars().any(|c| c.is_ascii_alphanumeric())
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
