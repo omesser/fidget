@@ -5,5 +5,5 @@ autorun:
   - file: .claude/settings.json
     event: PreToolUse
     command: 'bash "$CLAUDE_PROJECT_DIR"/scripts/refuse-no-verify.sh'
-    sha256: 5ca9201aea1b46b59c7a53f8d5372877b8c692902afdfe522c56c3b17f8b1cf6
+    sha256: 5ca9201aea1b46b59c7a53f8d5372877b8c692902afdfe522c56c3b17f8b1cf6  # pragma: allowlist secret
     reason: Committed Claude Code hook the project intends; scripts/refuse-no-verify.sh refuses git --no-verify before a Bash tool call runs
