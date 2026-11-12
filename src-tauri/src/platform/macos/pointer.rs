@@ -121,31 +121,31 @@ struct ButtonSample {
 impl ButtonSample {
     fn read(button: CGMouseButton, down: CGEventType, up: CGEventType) -> Self {
         let state = CGEventSourceStateID::CombinedSessionState;
-        Self {
-            level: CGEventSource::button_state(state, button),
-            downs: CGEventSource::counter_for_event_type(state, down),
-            ups: CGEventSource::counter_for_event_type(state, up),
-        }
+        // Counters first: `Button` takes a count that lands a tick ahead of
+        // its level edge for a second press.
+        let downs = CGEventSource::counter_for_event_type(state, down);
+        let ups = CGEventSource::counter_for_event_type(state, up);
+        let level = CGEventSource::button_state(state, button);
+        Self { level, downs, ups }
     }
 }
 
-/// Presses and releases one source has seen since the baseline.
+/// Presses and releases since the baseline.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Edges {
     downs: u64,
     ups: u64,
 }
 
-/// One button as the frame loop is told it, one edge per tick. The level and
-/// the counters each see a subset of the real presses: the level misses a
-/// press that fits between two ticks, and since macOS 27.2 the counters move
-/// only every 500 ms. Neither overcounts, so the larger count of each edge is
-/// the truth so far, and the level's is the prompt one.
+/// One button as the frame loop is told it, one edge per tick. The level
+/// misses a press between two ticks and the macOS 27.2 counters move only
+/// every 500 ms, so each edge is taken from whichever source shows it first.
 #[derive(Clone, Copy, Debug)]
 struct Button {
     last: ButtonSample,
-    level: Edges,
-    counted: Edges,
+    seen: Edges,
+    /// Edges the level showed whose counts are still to land.
+    uncounted: Edges,
     told: Edges,
     /// A press held at the baseline has no down. Both sources count its
     /// release, so this absorbs exactly that one release from each.
@@ -159,8 +159,8 @@ impl Button {
     fn new(first: ButtonSample) -> Self {
         Self {
             last: first,
-            level: Edges::default(),
-            counted: Edges::default(),
+            seen: Edges::default(),
+            uncounted: Edges::default(),
             told: Edges::default(),
             held_at_start: first.level,
             down: false,
@@ -168,23 +168,37 @@ impl Button {
     }
 
     fn observe(&mut self, now: ButtonSample) {
-        self.counted.downs += u64::from(now.downs.wrapping_sub(self.last.downs));
-        self.counted.ups += u64::from(now.ups.wrapping_sub(self.last.ups));
-        match (self.last.level, now.level) {
-            (false, true) => self.level.downs += 1,
-            (true, false) => self.level.ups += 1,
-            _ => {}
+        let (pressed, released) = (!self.last.level && now.level, self.last.level && !now.level);
+        let mut downs = u64::from(now.downs.wrapping_sub(self.last.downs));
+        let mut ups = u64::from(now.ups.wrapping_sub(self.last.ups));
+        // Counts land in event order, so with the held press's down still
+        // uncounted, an up count past the uncounted releases ended an earlier
+        // click. It is told ahead of the hold or not at all, never inside it.
+        if now.level && self.uncounted.downs + u64::from(pressed) > self.uncounted.ups {
+            let earlier = downs.min(ups.saturating_sub(self.uncounted.ups));
+            downs -= earlier;
+            ups -= earlier;
+            if pressed {
+                self.seen.downs += earlier;
+                self.seen.ups += earlier;
+            }
         }
+        merge(
+            &mut self.seen.downs,
+            &mut self.uncounted.downs,
+            pressed,
+            downs,
+        );
+        merge(&mut self.seen.ups, &mut self.uncounted.ups, released, ups);
         self.last = now;
     }
 
     fn presses(&self) -> u64 {
-        self.level.downs.max(self.counted.downs)
+        self.seen.downs
     }
 
     fn releases(&self) -> u64 {
-        let ups = self.level.ups.max(self.counted.ups);
-        ups.saturating_sub(u64::from(self.held_at_start))
+        self.seen.ups.saturating_sub(u64::from(self.held_at_start))
     }
 
     /// Whether a press is under way at `now`: held, or seen and not yet told.
@@ -208,6 +222,16 @@ impl Button {
         }
         self.down
     }
+}
+
+/// Adds one tick's edges of one kind. A count lands with its level edge or
+/// after it, never before, so it repeats an edge the level showed only while
+/// one is `uncounted`. Any other count is an edge the level missed.
+fn merge(seen: &mut u64, uncounted: &mut u64, level_edge: bool, counted: u64) {
+    *uncounted += u64::from(level_edge);
+    let repeats = counted.min(*uncounted);
+    *uncounted -= repeats;
+    *seen += u64::from(level_edge) + counted - repeats;
 }
 
 struct Session {
@@ -666,6 +690,161 @@ mod tests {
             .flat_map(|&now| pointer.update(true, button.step(now), false, at, 16))
             .collect();
         assert_eq!(verbs, vec![Verb::Poke, Verb::Summon]);
+    }
+
+    /// A flick on the sprite at 16 ms ticks, 20 points a tick: 1250 points a
+    /// second. The 27.2 counters land once the hand has stopped. `before` is
+    /// what the button did first, off the sprite, from the baseline on.
+    fn flick_after(before: &[ButtonSample]) -> Vec<Verb> {
+        let mut button = Button::new(before[0]);
+        let mut pointer = Pointer::default();
+        let mut at = Point { x: 100.0, y: 100.0 };
+        let mut verbs = Vec::new();
+        for &now in &before[1..] {
+            verbs.extend(pointer.update(false, button.step(now), false, at, 16));
+        }
+        let ButtonSample { downs, ups, .. } = before[before.len() - 1];
+        let held = [(sample(true, downs, ups), 20.0); 10];
+        let let_go = [(sample(false, downs, ups), 20.0)];
+        let still = [(sample(false, downs, ups), 0.0); 10];
+        let counted = [(sample(false, downs + 1, ups + 1), 0.0); 3];
+        for (now, step) in held.into_iter().chain(let_go).chain(still).chain(counted) {
+            at.x += step;
+            verbs.extend(pointer.update(true, button.step(now), false, at, 16));
+        }
+        verbs.retain(|verb| !matches!(verb, Verb::Grab));
+        verbs
+    }
+
+    fn assert_thrown_at_the_hands_speed(verbs: &[Verb]) {
+        match verbs {
+            [Verb::Throw { velocity }] => {
+                assert!((velocity.x - 1250.0).abs() < 1.0, "{velocity:?}");
+                assert_eq!(velocity.y, 0.0);
+            }
+            other => panic!("expected one Throw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_flick_with_late_counters_is_a_throw() {
+        assert_thrown_at_the_hands_speed(&flick_after(&[sample(false, 4, 4)]));
+    }
+
+    /// An idle frame loop polls up to a second apart, so a click on a menu
+    /// item is a tap only the counters see. The next release must still be
+    /// told when the level drops, not when its count lands.
+    #[test]
+    fn a_flick_after_a_tap_the_level_missed_is_still_a_throw() {
+        assert_thrown_at_the_hands_speed(&flick_after(&[
+            sample(false, 4, 4),
+            sample(false, 5, 5),
+            sample(false, 5, 5),
+        ]));
+    }
+
+    /// A flick on the sprite that starts within the counters' lag of a tap
+    /// the level missed. `landed` is what the counters added by mid-hold,
+    /// and they reach both clicks once the hand has stopped.
+    fn flick_with_counts_landing_mid_hold(landed: (u32, u32)) -> Vec<Verb> {
+        let mut button = Button::new(sample(false, 4, 4));
+        let mut pointer = Pointer::default();
+        let mut at = Point { x: 100.0, y: 100.0 };
+        let mid_hold = sample(true, 4 + landed.0, 4 + landed.1);
+        let held = [(sample(true, 4, 4), 20.0); 5];
+        let held_on = [(mid_hold, 20.0); 5];
+        let let_go = [(sample(false, mid_hold.downs, mid_hold.ups), 20.0)];
+        let still = [(sample(false, mid_hold.downs, mid_hold.ups), 0.0); 10];
+        let counted = [(sample(false, 6, 6), 0.0); 3];
+        let ticks = held.into_iter().chain(held_on).chain(let_go);
+        let mut verbs = Vec::new();
+        for (now, step) in ticks.chain(still).chain(counted) {
+            at.x += step;
+            verbs.extend(pointer.update(true, button.step(now), false, at, 16));
+        }
+        verbs.retain(|verb| !matches!(verb, Verb::Grab));
+        verbs
+    }
+
+    /// The tap's counts land while the flick's press is held. They are not
+    /// that press's release: the grab holds, and no click follows the throw.
+    #[test]
+    fn a_missed_taps_counts_landing_mid_hold_do_not_end_the_grab() {
+        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((1, 1)));
+    }
+
+    /// The same, when the counters catch up with the held press's down too.
+    #[test]
+    fn a_missed_taps_counts_landing_with_the_held_presss_down_do_not_end_the_grab() {
+        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((2, 1)));
+    }
+
+    /// The tap's counts land on the tick the level shows the next press. The
+    /// press is not the tap: it is told after it, at once, and stays held.
+    #[test]
+    fn a_missed_tap_counted_as_the_next_press_shows_is_a_click_then_a_hold() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+                sample(true, 5, 5),
+            ]),
+            vec![true, false, true, true]
+        );
+    }
+
+    /// Mid-hold, with the held press's down already counted, a release and
+    /// re-press inside one poll are the press's own: up a tick, then down.
+    #[test]
+    fn a_release_and_press_inside_one_tick_of_a_counted_hold_is_up_then_down_again() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+                sample(true, 5, 4),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+            ]),
+            vec![true, true, true, false, true, true]
+        );
+    }
+
+    /// The level saw the first click, and the second fit inside the poll that
+    /// saw the release. Both clicks' counts land there: the second is a press.
+    #[test]
+    fn a_second_tap_counted_on_the_release_tick_is_its_own_press() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 4, 4),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, false]
+        );
+    }
+
+    /// A click the level saw end to end, counted only as the next press shows
+    /// with that press's down: the click's up count does not end the press.
+    #[test]
+    fn a_seen_click_counted_as_the_next_press_shows_does_not_end_that_press() {
+        assert_eq!(
+            levels(&[
+                sample(false, 4, 4),
+                sample(true, 4, 4),
+                sample(false, 4, 4),
+                sample(true, 6, 5),
+                sample(true, 6, 5),
+                sample(false, 6, 5),
+                sample(false, 6, 6),
+            ]),
+            vec![true, false, true, true, false, false]
+        );
     }
 
     /// The 27.2 Control-click: Control is let go before the counters move,
