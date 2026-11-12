@@ -2761,14 +2761,13 @@ mod tests {
     /// Director off, or Poke would go silent with idle life.
     #[test]
     fn proactive_wakes_can_be_off_while_the_director_stays_on() {
-        let settings = Settings {
-            director_enabled: true,
-            proactive_wakes: false,
-            ..Settings::default()
-        };
+        let mut settings = Settings::default();
+        let mut patch = SettingsPatch::default();
+        patch.set_bool(BoolField::ProactiveWakes, false);
+        settings.apply(patch);
 
-        assert!(settings.director_enabled);
         assert!(!settings.proactive_wakes);
+        assert!(settings.director_enabled);
     }
 
     /// A hand-edit that drops a key, or an older file, must not refuse to load.

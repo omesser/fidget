@@ -4415,14 +4415,11 @@ fn quit_harness_on_interrupt(app: tauri::AppHandle) {
 }
 
 /// What [`perform_quit_action`] asks the host to do. Tests record the calls.
-/// `close_webview` is `Webview::close`. `close_window` exists only in tests,
-/// so a recording can show Ctrl+C did not take that path.
+/// `close_webview` is `Webview::close`.
 trait QuitHost {
     fn announce(&mut self);
     fn shutdown_harness(&mut self);
     fn close_webview(&mut self);
-    #[cfg(test)]
-    fn close_window(&mut self);
     fn exit_event_loop(&mut self);
     fn exit_process(&mut self);
 }
@@ -4450,17 +4447,6 @@ impl QuitHost for AppQuit<'_> {
 
     fn close_webview(&mut self) {
         close_webviews_for_quit(self.0);
-    }
-
-    #[cfg(test)]
-    fn close_window(&mut self) {
-        // Not what Ctrl+C calls. Window close destroys the parent HWND
-        // before `Controller::Close`, which is the 1411 path.
-        for (label, window) in self.0.webview_windows() {
-            if let Err(why) = window.close() {
-                eprintln!("quit: {label} window could not be closed: {why}");
-            }
-        }
     }
 
     fn exit_event_loop(&mut self) {
@@ -8198,7 +8184,6 @@ mod tests {
         Announce,
         ShutdownHarness,
         CloseWebview,
-        CloseWindow,
         ExitEventLoop,
         ExitProcess,
     }
@@ -8216,25 +8201,12 @@ mod tests {
         fn close_webview(&mut self) {
             self.0.push(Recorded::CloseWebview);
         }
-        fn close_window(&mut self) {
-            self.0.push(Recorded::CloseWindow);
-        }
         fn exit_event_loop(&mut self) {
             self.0.push(Recorded::ExitEventLoop);
         }
         fn exit_process(&mut self) {
             self.0.push(Recorded::ExitProcess);
         }
-    }
-
-    /// The recorder has to be able to name a window close, or the quit test
-    /// could not tell that path from `Webview::close`.
-    #[test]
-    fn the_recorder_names_a_window_close_separately_from_a_webview_close() {
-        let mut host = Recording::default();
-        host.close_window();
-        host.close_webview();
-        assert_eq!(host.0, vec![Recorded::CloseWindow, Recorded::CloseWebview]);
     }
 
     fn recorded(orderly: bool, already: bool) -> Vec<Recorded> {
