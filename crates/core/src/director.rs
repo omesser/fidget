@@ -2949,6 +2949,23 @@ mod tests {
         }
     }
 
+    /// A `behavior:` that opens a line, with the dialogue on the same line,
+    /// is the contract, and the line above it is planning.
+    #[test]
+    fn a_behavior_marker_opening_a_line_with_dialogue_on_it_is_not_spoken() {
+        let reply = "Looking around\nbehavior: walk Then I go.";
+        let woken =
+            directing(Scripted::says(reply), ["walk", "ponder"]).wake_and_near_miss(&typed("go"));
+        match &woken.wake {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "walk");
+                assert_eq!(proposal.dialogue.as_deref(), Some("Then I go."));
+            }
+            other => panic!("a marker opening a line should propose walk, not {other:?}"),
+        }
+        assert_eq!(woken.peeled_thought.as_deref(), Some("Looking around"));
+    }
+
     /// A `behavior:` mid-sentence is prose about the contract, not the
     /// contract. Only one at the start of the text or a line, or right after
     /// a sentence end, is read as glued.
