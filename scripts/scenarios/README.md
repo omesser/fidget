@@ -256,6 +256,16 @@ a click on the paused card. The editor's text has to contain the letter typed
 while the card was paused. The X11 leaf is in `ci/`. The macOS and Windows
 leaves stay in `manual-only/` until they pass an automatic run.
 
+`possession-card-shots` is a Windows-only manual leaf. It seats a plain grey
+window behind the bindings card, possesses BMO through the same menu path as
+`possession-live`, holds Space, and writes `win-card-charging.png` and
+`win-card-paused.png` only when every margin pixel is that grey. It takes
+`-OutDir` (default `.verify/possession-card-shots` under the checkout) and
+builds `target/debug/fidget.exe` when `--go` does not name a binary. There is
+no prompt. The helper checks in `helpers/test-possession-card-shots.ps1` parse
+the card line, size the crop, and refuse a leaking margin.
+
+
 The macOS leaf asserts each step live instead of reading the trace afterwards.
 It right-drags from the sprite onto the Possess row, which it finds through
 Accessibility: on macOS 27 the pop-up menu is not in the window list as a
