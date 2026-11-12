@@ -119,7 +119,8 @@ trap 'stop_fidget; [ -z "$target_pid" ] || kill "$target_pid" 2> /dev/null; rele
 trap 'exit 130' INT TERM
 
 wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
-wait_for_rest "$log" || fail "the sprite never came to rest; see $log"
+# Possession comes from the menu bar, so the sprite need not rest first.
+wait_for_trace 3 "$log" '^frame: .* sprite\(' || fail "Fidget traced no frame; see $log"
 read -r w h < <(sed -nE 's/^overlay: .* sprite ([0-9]+)x([0-9]+);.*/\1 \2/p' "$log" | head -1) || fail "no sprite size in $log"
 read -r sx sy < <(sprite_xy)
 read -r ax ay aw _ < <("$tools/type-target" work-area "$((sx + w / 2))" "$((sy + h / 2))") || fail "no display holds the sprite"
