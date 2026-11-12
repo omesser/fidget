@@ -22,14 +22,19 @@ foreach ($file in $files) {
     Check (-not ($text -match 'CopyFromScreen[^;]*CaptureBlt')) "$name does not pass CaptureBlt to CopyFromScreen"
 }
 
-# A file whose Add-Type the pattern below misses would pass the C# 5 parse
-# with nothing parsed, so each file's block count is pinned.
+# A block $addType misses is never parsed as C# 5. Each file's count is
+# pinned, and every Add-Type opening a here-string, indented or not, must be
+# one $addType finds.
 $addType = '(?ms)^Add-Type[^\n]*@"\r?\n(.*?)\r?\n"@'
+$anyAddType = '(?m)^\s*Add-Type[^\n]*@"'
 $blocks = @{ "possession-card-shots.win.ps1" = 1; "possession-card-shots.ps1" = 0; "send-input.win.ps1" = 1 }
 foreach ($file in $files) {
     $name = Split-Path -Leaf $file
-    $count = [regex]::Matches([System.IO.File]::ReadAllText($file), $addType).Count
+    $text = [System.IO.File]::ReadAllText($file)
+    $count = [regex]::Matches($text, $addType).Count
+    $loose = [regex]::Matches($text, $anyAddType).Count
     Check ($count -eq $blocks[$name]) "$name holds $($blocks[$name]) Add-Type block(s) (found $count)"
+    Check ($loose -eq $count) "$name has no Add-Type here-string the C# 5 parse skips ($loose opened, $count parsed)"
 }
 
 # Each Add-Type here-string parses as C# 5. Needs Roslyn, which pwsh carries.
