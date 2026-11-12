@@ -1308,7 +1308,7 @@ struct Stream {
     /// Between turns a different id is the next fire, and ends the wake.
     message: Option<MessageId>,
     /// A tool call came after the last words, so the next words are a new
-    /// paragraph even when no `messageId` says so, as with grok (#2193).
+    /// paragraph even when no `messageId` says so, as grok sends them.
     after_tool: bool,
 }
 

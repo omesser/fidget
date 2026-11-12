@@ -534,14 +534,14 @@ fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
     .into_iter()
     .flatten()
     .min_by_key(|(at, _, _)| *at);
-    let Some((dot, name_end, name)) = glued else {
+    let Some((peel_end, name_end, name)) = glued else {
         return PreparedReply {
             text: reply.to_string(),
             glued_peel: None,
             cached: Some(first),
         };
     };
-    let peel = reply[..dot].trim();
+    let peel = reply[..peel_end].trim();
     let peel = (!peel.is_empty()).then(|| peel.to_string());
     let rest = &reply[name_end..];
     let rest = rest.strip_prefix(' ').unwrap_or(rest);
@@ -676,7 +676,7 @@ fn glued_declared_behavior<'a>(
     best
 }
 
-/// Glue at EOF, `|` or a newline, or space then `|` or uppercase dialogue.
+/// Glue at EOF, `|` or a newline, or a space then `|` or uppercase dialogue.
 /// Not `main.rs now`.
 fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
     match bytes.get(name_end) {
@@ -689,12 +689,9 @@ fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
     }
 }
 
-/// A `behavior:` marker for a declared name that is not a contract line of
-/// its own: glued to the planning before it, as a Harness that joins its text
-/// across a tool call writes it (#2193), or with the dialogue on its line.
-/// The marker starts the text, a line, or follows a space or a sentence end.
-/// Same shape as `glued_declared_behavior`: where the planning ends, where
-/// the name ends, and the name.
+/// A `behavior:` marker for a declared name glued to the planning before it
+/// or to the dialogue after it, which no contract line reads. Where the
+/// planning ends, where the name ends, and the name.
 fn glued_marked_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
     const MARK: &str = "behavior:";
     let bytes = reply.as_bytes();
@@ -2918,8 +2915,8 @@ mod tests {
     }
 
     /// A `behavior:` line glued onto the planning above it, as a Harness that
-    /// joins its text across a tool call writes it (#2193), is still the
-    /// contract: the planning is Thinking and only what follows is said.
+    /// joins its text across a tool call writes it, is still the contract:
+    /// the planning is Thinking and only what follows is said.
     #[test]
     fn a_behavior_marker_glued_after_planning_is_not_spoken() {
         let declared = declares(&["walk", "ponder"]);
@@ -3393,7 +3390,7 @@ mod tests {
     #[test]
     fn streamed_dialogue_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
         let banner = format!("{PI_BANNER}\nwave\nHello!");
-        let rows: [(&str, Option<&str>); 23] = [
+        let rows: [(&str, Option<&str>); 25] = [
             ("stroll\nhey there", Some("hey there")),
             ("wave", None),
             ("nap | sleepy", Some("sleepy")),
@@ -3422,6 +3419,14 @@ mod tests {
                 Some("Back in five."),
             ),
             ("I waved.wave\nhi", Some("hi")),
+            (
+                "Looking around.behavior: nap Back in five.",
+                Some("Back in five."),
+            ),
+            (
+                "Looking around.behavior: nap\nBack in five.",
+                Some("Back in five."),
+            ),
             (
                 "Planning first.\nbehavior: dance\nHi there.",
                 Some("Hi there."),
