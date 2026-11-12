@@ -6,7 +6,7 @@ resolver = "2"
 members = ["crates/core", "crates/mcp-server", "crates/verify", "src-tauri"]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 # 1.95 stabilizes `AtomicUsize::try_update`, the name clippy wants on stable.
 # The ACP crates (ADR-0022) need 1.88.
