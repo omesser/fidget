@@ -558,6 +558,31 @@ mod tests {
         );
     }
 
+    /// A tap the level missed whose down and up land in two counter batches,
+    /// then a press before the second. That press may be told wrong, but the
+    /// told level is up once each release is counted.
+    #[test]
+    fn a_tap_straddling_a_counter_batch_then_a_grab_ends_up() {
+        let told = levels(&[
+            sample(false, 4, 4),
+            sample(false, 5, 4), // the missed tap's down count lands
+            sample(true, 5, 4),  // a press, held
+            sample(true, 6, 5),  // the tap's up and the press's down land
+            sample(true, 6, 5),
+            sample(false, 6, 5), // released
+            sample(false, 6, 6),
+            sample(false, 6, 6),
+            sample(false, 6, 6),
+            sample(true, 6, 6), // a second, clean press
+            sample(true, 7, 6),
+            sample(false, 7, 6),
+            sample(false, 7, 7),
+            sample(false, 7, 7),
+        ]);
+        assert!(!told[7], "quiet after the first release: {told:?}");
+        assert!(!told[12], "quiet after the second release: {told:?}");
+    }
+
     /// The #1858 trace's 1546.7 ms Control-click tick: the level stayed down
     /// across a release and a new press, and only the counters moved.
     #[test]
