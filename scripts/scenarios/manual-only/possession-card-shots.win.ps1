@@ -66,7 +66,7 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 
 if ($SelfTest) {
     $failures = 0
-    foreach ($name in @("test-possession-card-shots.ps1", "test-send-input.ps1")) {
+    foreach ($name in @("test-possession-card-shots.ps1", "test-possession-card-shots-source.ps1", "test-send-input.ps1")) {
         & (Join-Path $PSScriptRoot "..\helpers\$name")
         if ($LASTEXITCODE -ne 0) { $failures++ }
     }
@@ -256,13 +256,39 @@ public static class PossessionCardShotsWin {
         finally { if (joined) AttachThreadInput(me, front, false); }
         return GetForegroundWindow() == h;
     }
-    // CaptureBlt takes layered windows into the grab as well.
+    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
+    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
+    [DllImport("gdi32.dll", SetLastError = true)] static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, uint rop);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+    const uint SRCCOPY = 0x00CC0020;
+    const uint CAPTUREBLT = 0x40000000;
+    // A raw BitBlt: Graphics' screen copy on .NET Framework refuses the
+    // CAPTUREBLT flag, which takes layered windows into the grab.
     public static Bitmap Grab(int x, int y, int w, int h) {
-        var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bmp)) {
-            g.CopyFromScreen(x, y, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+        IntPtr screen = GetDC(IntPtr.Zero);
+        if (screen == IntPtr.Zero) throw new InvalidOperationException("GetDC(screen) failed");
+        IntPtr mem = IntPtr.Zero, bits = IntPtr.Zero, old = IntPtr.Zero;
+        try {
+            mem = CreateCompatibleDC(screen);
+            bits = CreateCompatibleBitmap(screen, w, h);
+            if (mem == IntPtr.Zero || bits == IntPtr.Zero) throw new InvalidOperationException("no memory DC or bitmap for a " + w + "x" + h + " grab");
+            old = SelectObject(mem, bits);
+            if (!BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT)) {
+                throw new InvalidOperationException("BitBlt (" + x + "," + y + ") " + w + "x" + h + " failed, error " + Marshal.GetLastWin32Error());
+            }
+            SelectObject(mem, old);
+            old = IntPtr.Zero;
+            return Image.FromHbitmap(bits);
+        } finally {
+            if (old != IntPtr.Zero) SelectObject(mem, old);
+            if (bits != IntPtr.Zero) DeleteObject(bits);
+            if (mem != IntPtr.Zero) DeleteDC(mem);
+            ReleaseDC(IntPtr.Zero, screen);
         }
-        return bmp;
     }
     public static int[] Pixels(Bitmap bmp) {
         var d = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
