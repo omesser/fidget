@@ -153,9 +153,14 @@ impl Charge {
 pub struct Intent {
     /// The side to walk towards, or `None` to stand.
     pub walk: Option<Walk>,
-    /// Up was pressed since the last tick: climb the wall the sprite stands
-    /// against.
+    /// Up was pressed since the last tick: take hold of the wall the sprite
+    /// stands against.
     pub climb: bool,
+    /// Up is down: a climber goes up its wall only while it is, as a walk
+    /// moves only under a held arrow.
+    pub up: bool,
+    /// Down is down: a climber goes down its wall only while it is.
+    pub down: bool,
     /// Down was pressed since the last tick: drop through the Perch the
     /// sprite stands on.
     pub drop: bool,
@@ -176,9 +181,9 @@ pub struct Possession {
     /// Held walk keys in press order. The latest walks, and letting it go hands
     /// the walk back to the other.
     walks: Vec<Walk>,
-    /// Up and Down are down. A press asks once, through `climb` and `drop`,
-    /// so a held key neither climbs again after the let-go nor drops through
-    /// every Perch below.
+    /// Up and Down are down. Taking the wall and dropping ask once a press,
+    /// through `climb` and `drop`, so a held key neither takes a wall again
+    /// after leaving one nor drops through every Perch below.
     up: bool,
     down: bool,
     climb: bool,
@@ -251,6 +256,8 @@ impl Possession {
         Intent {
             walk: self.walks.last().copied(),
             climb: std::mem::take(&mut self.climb),
+            up: self.up,
+            down: self.down,
             drop: std::mem::take(&mut self.drop),
             charging: self.space_ms.map(Charge::held),
             launch: self.launch.take(),
@@ -304,10 +311,26 @@ mod tests {
         assert!(pressed.climb && pressed.drop, "{pressed:?}");
         keys.key(Key::Up, true);
         keys.key(Key::Down, true);
-        assert_eq!(keys.tick(FRAME_MS), Intent::default(), "held or repeated");
+        let held = keys.tick(FRAME_MS);
+        assert!(!held.climb && !held.drop, "held or repeated: {held:?}");
         keys.key(Key::Up, false);
         keys.key(Key::Up, true);
         assert!(keys.tick(FRAME_MS).climb, "pressed again");
+    }
+
+    #[test]
+    fn held_up_and_down_show_every_tick_until_released() {
+        let mut keys = Possession::default();
+        keys.key(Key::Up, true);
+        assert!(keys.tick(FRAME_MS).up);
+        let held = keys.tick(FRAME_MS);
+        assert!(held.up && !held.down && !held.climb, "{held:?}");
+        keys.key(Key::Up, false);
+        keys.key(Key::Down, true);
+        let down = keys.tick(FRAME_MS);
+        assert!(down.down && !down.up, "{down:?}");
+        keys.key(Key::Down, false);
+        assert_eq!(keys.tick(FRAME_MS), Intent::default());
     }
 
     #[test]

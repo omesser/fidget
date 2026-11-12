@@ -82,9 +82,15 @@ pub(super) fn footing(
     swallowing: impl Fn(&Window) -> bool,
 ) -> Option<Support> {
     // The floor is exempt: it is under every window and the sprite is drawn in
-    // front of them all, so the floor is never the trapped-inside case
-    // (DESIGN.md decision 7). Anything behind the Dock contains the floor.
+    // front of them all (DESIGN.md decision 7). Not the Dock, drawn in front of
+    // the sprite: at rest behind it, the sprite stands on its top instead.
     if floor_under(position.x, snapshot) == Some(position.y) {
+        if let Some(dock) = dock_in(snapshot).filter(|_| behind_dock(position, snapshot)) {
+            return Some(Support {
+                y: dock.y,
+                surface: Surface::Perch,
+            });
+        }
         return support_below(position, snapshot, clearance);
     }
 
@@ -190,6 +196,9 @@ pub(super) fn standing_reach(feet: Point, state: State, snapshot: &WorldSnapshot
             left_x = left_x.max(perch.rect.x);
             right_x = right_x.min(perch.rect.x + perch.rect.width);
         }
+    } else if let Some(dock) = dock_reach(feet, snapshot) {
+        left_x = left_x.max(dock.left_x);
+        right_x = right_x.min(dock.right_x);
     }
     Some(Reach {
         left_x: left_x.min(feet.x),
@@ -296,6 +305,52 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
         .iter()
         .find(|window| window.id == DOCK_PERCH_ID)
         .map(|window| window.rect)
+}
+
+/// The Dock, when `feet` are on its own display's floor below its top: the
+/// floor it is drawn in front of. A display stacked below shares its x-range
+/// and none of its floor, so the Dock's center picks the display.
+fn dock_over_floor(feet: Point, snapshot: &WorldSnapshot) -> Option<Rect> {
+    let dock = dock_in(snapshot).filter(|dock| feet.y > dock.y)?;
+    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
+    snapshot
+        .displays
+        .iter()
+        .any(|display| {
+            display.spans_x(center.0)
+                && (display.y..=display.bottom()).contains(&center.1)
+                && display.spans_x(feet.x)
+                && feet.y <= display.bottom()
+        })
+        .then_some(dock)
+}
+
+/// Whether the Dock hides `feet`: on its display's floor, strictly inside its
+/// sides. Level with a side counts as beside it, not behind.
+pub(super) fn behind_dock(feet: Point, snapshot: &WorldSnapshot) -> bool {
+    dock_over_floor(feet, snapshot)
+        .is_some_and(|dock| dock.x < feet.x && feet.x < dock.x + dock.width)
+}
+
+/// How far a floor walk beside the Dock may go: half a sprite short of its
+/// nearer side, and never back past the feet. Only the side the Dock is on
+/// is bounded, so walking away from it, toward a display edge, is not.
+pub(super) fn dock_reach(feet: Point, snapshot: &WorldSnapshot) -> Option<Reach> {
+    let dock = dock_over_floor(feet, snapshot)?;
+    let right = dock.x + dock.width;
+    if feet.x <= dock.x {
+        Some(Reach {
+            left_x: f64::NEG_INFINITY,
+            right_x: (dock.x - EDGE_CLEARANCE).max(feet.x),
+        })
+    } else if feet.x >= right {
+        Some(Reach {
+            left_x: (right + EDGE_CLEARANCE).min(feet.x),
+            right_x: f64::INFINITY,
+        })
+    } else {
+        None
+    }
 }
 
 /// Adjusted position and facing when at a horizontal display edge, so the full
