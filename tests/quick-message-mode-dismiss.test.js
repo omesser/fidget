@@ -264,3 +264,47 @@ test("a Control-click holds the dwell when no menu_open frame arrives while the 
     assert.equal(Number(fresh.settled), 1, "a fresh hover still opens the pill");
   });
 });
+
+test("a right-press puts an empty pill away before the menu frame arrives", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    const opened = await evalJs("window.__dwell()");
+    assert.equal(Number(opened.settled), 1, "the dwell opens the pill");
+    await evalJs(`document.querySelector(".sprite").dispatchEvent(new PointerEvent("pointerdown", { button: 2, bubbles: true }))`);
+    assert.equal(Number(await evalJs("getComputedStyle(document.querySelector('.quick-message')).opacity")), 0, "the press puts an empty pill away");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.settled), 0, "no menu frame is required to keep it down");
+  });
+});
+
+test("a Control-click puts an empty pill away before the menu frame arrives", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    const opened = await evalJs("window.__dwell()");
+    assert.equal(Number(opened.settled), 1, "the dwell opens the pill");
+    await evalJs(`(() => {
+      const sprite = document.querySelector(".sprite");
+      sprite.dispatchEvent(new PointerEvent("pointerdown", { button: 0, ctrlKey: true, bubbles: true }));
+      sprite.dispatchEvent(new MouseEvent("contextmenu", { button: 0, ctrlKey: true, bubbles: true, cancelable: true }));
+    })()`);
+    assert.equal(Number(await evalJs("getComputedStyle(document.querySelector('.quick-message')).opacity")), 0, "the Control-click puts an empty pill away");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.settled), 0, "no menu frame is required to keep it down");
+  });
+});
+
+test("an empty pill is put away when the sprite menu opens, and closing the menu leaves it down", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    const opened = await evalJs("window.__dwell()");
+    assert.equal(Number(opened.settled), 1, "the dwell opens the pill");
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: true } }))), 0, "the open menu puts an empty pill away");
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: false } }))), 0, "closing the menu leaves it down");
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.flashed), 0, "a resting pointer does not bring it back");
+    assert.equal(Number(after.settled), 0);
+  });
+});

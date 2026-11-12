@@ -158,6 +158,11 @@ export function createQuickMessage({
     if (was) changed();
   }
 
+  // An empty pill is the dwell this menu suspends. A typed draft stays.
+  function hideEmpty() {
+    if (visible && !hasText()) hide();
+  }
+
   function show() {
     if (visible || disposed) return;
     visible = true;
@@ -326,6 +331,7 @@ export function createQuickMessage({
     menuPress() {
       yielded = true;
       cancelHover();
+      hideEmpty();
     },
     // No dwell runs under the menu. Its close holds like a Summon, because
     // the pointer it leaves on the Character is not a new hover.
@@ -333,7 +339,11 @@ export function createQuickMessage({
       if (open === menuOpen) return;
       menuOpen = open;
       cancelHover();
-      if (!open) yielded = true;
+      if (open) {
+        hideEmpty();
+        return;
+      }
+      yielded = true;
     },
     submit,
     restore(value) {

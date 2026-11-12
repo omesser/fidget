@@ -235,6 +235,33 @@ test("a right-press leaves an already-open pill up", () => {
   assert.equal(qm.text, "hi");
 });
 
+test("a right-press puts an empty pill away", () => {
+  const { qm, advance } = shown();
+  qm.menuPress();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "an empty pill hides at the press");
+  assert.equal(qm.takeFocus(), false, "and does not keep the caret");
+});
+
+test("the menu frame puts an empty pill away and keeps a typed draft", () => {
+  const empty = shown();
+  empty.qm.setMenu(true);
+  assert.equal(empty.qm.visible, false, "an empty pill hides when the menu opens");
+  empty.qm.setMenu(false);
+  empty.qm.enterSprite();
+  empty.advance(HOVER_DELAY_MS);
+  assert.equal(empty.qm.visible, false, "closing the menu does not bring it back");
+
+  const typed = shown();
+  typed.qm.setText("hi");
+  typed.qm.setMenu(true);
+  assert.equal(typed.qm.visible, true, "a typed draft stays while the menu is open");
+  assert.equal(typed.qm.text, "hi");
+  typed.qm.setMenu(false);
+  assert.equal(typed.qm.visible, true, "and after the menu goes away");
+  assert.equal(typed.qm.text, "hi");
+});
+
 test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 
