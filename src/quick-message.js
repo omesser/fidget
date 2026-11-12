@@ -320,6 +320,13 @@ export function createQuickMessage({
     aside() {
       yieldPill(overSprite || overPill);
     },
+    // A right-press on the Character opens its menu. The native menu blocks
+    // the Shell, so its menu_open frame lands only after the close while this
+    // timer keeps running. Hold like a Summon from the press itself.
+    menuPress() {
+      yielded = true;
+      cancelHover();
+    },
     // No dwell runs under the menu. Its close holds like a Summon, because
     // the pointer it leaves on the Character is not a new hover.
     setMenu(open) {

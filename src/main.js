@@ -1128,6 +1128,7 @@ async function start() {
       });
       break;
     }
+    if (where === "character" && event.button === 2 && owner) owner.quickMachine.menuPress();
     if (where === "character" && event.button === 0 && owner) {
       petDrag = { x: event.clientX, y: event.clientY, id: event.pointerId };
       gestureActive = true;

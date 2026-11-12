@@ -213,3 +213,26 @@ test("the Character's menu keeps the pill down while it is open and after it clo
     assert.equal(Number(fresh.settled), 1, "and then opens the pill");
   });
 });
+
+test("a right-press holds the dwell when no menu_open frame arrives while the menu is up", { skip: chromeSkip, timeout: 20000 }, async () => {
+  await withOverlay(async (evalJs) => {
+    const shown = (payload) => evalJs(`window.__paint(${JSON.stringify(payload)})`);
+    const typing = () => evalJs(`document.activeElement?.classList.contains("quick-message-field") ?? false`);
+    assert.equal(Number(await shown(frame())), 0, "the hover starts the dwell");
+    await evalJs(`document.querySelector(".sprite").dispatchEvent(new PointerEvent("pointerdown", { button: 2, bubbles: true }))`);
+    // The right-click tick's frame, queued before the popup, still says closed.
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: false } }))), 0);
+    const under = await evalJs("window.__dwell()");
+    assert.equal(Number(under.settled), 0, "the dwell's deadline passes under the menu without opening the pill");
+    assert.equal(await typing(), false);
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: true } }))), 0, "the menu's frames land after it closes");
+    assert.equal(Number(await shown(frame({ sprite: { menu_open: false } }))), 0);
+    const after = await evalJs("window.__dwell()");
+    assert.equal(Number(after.settled), 0, "the close does not open the pill");
+    assert.equal(await typing(), false, "or move the caret to it");
+    assert.equal(Number(await shown(frame({ sprite: { hovered: false } }))), 0);
+    assert.equal(Number(await shown(frame())), 0);
+    const fresh = await evalJs("window.__dwell()");
+    assert.equal(Number(fresh.settled), 1, "a fresh hover still opens the pill");
+  });
+});

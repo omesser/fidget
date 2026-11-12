@@ -196,6 +196,45 @@ test("the Character's menu suspends the dwell and its close does not open the pi
   assert.equal(qm.visible, true, "a fresh hover after the menu opens it again");
 });
 
+test("a right-press holds the dwell even when the Shell's menu_open arrives only after the menu closes", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(500);
+  qm.menuPress();
+  // The native menu blocks the Shell, so no menu_open frame reaches the
+  // overlay. Its timer keeps running, and frames queued before the popup
+  // still report the pointer on the Character.
+  qm.setMenu(false);
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS * 2);
+  assert.equal(qm.visible, false, "the dwell's deadline passes under the menu without opening the pill");
+  assert.equal(qm.takeFocus(), false, "or claiming the caret");
+
+  // The menu closes. Its frames all land at once.
+  qm.setMenu(true);
+  qm.enterSprite();
+  qm.setMenu(false);
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "the close does not open it");
+  assert.equal(qm.takeFocus(), false);
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "a fresh hover opens it again");
+});
+
+test("a right-press leaves an already-open pill up", () => {
+  const { qm, advance } = shown();
+  qm.setText("hi");
+  qm.menuPress();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "hi");
+});
+
 test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 
