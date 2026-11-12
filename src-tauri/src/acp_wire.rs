@@ -1307,9 +1307,6 @@ struct Stream {
     thought: String,
     /// Between turns a different id is the next fire, and ends the wake.
     message: Option<MessageId>,
-    /// A tool call came after the last words, so the next words are a new
-    /// paragraph even when no `messageId` says so, as grok sends them.
-    after_tool: bool,
 }
 
 /// What a held question waits on. It is cancelled when that ends.
@@ -2615,7 +2612,6 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
         said,
         thought,
         message,
-        after_tool,
     } = stream;
     let think = |thought: &mut String, text: &str| {
         if text.is_empty() {
@@ -2634,7 +2630,7 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
             message: incoming,
             block,
         } => {
-            if std::mem::take(after_tool) || message_changed(message.as_ref(), incoming) {
+            if message_changed(message.as_ref(), incoming) {
                 said.separate();
             }
             if let Some(id) = incoming {
@@ -2645,7 +2641,7 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
         // None leaves the row's previous content or locations. An update
         // replaces only the fields it carries, as the replay does.
         Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => {
-            *after_tool = true;
+            said.pause();
             on_event(Event::ToolCall {
                 session: session.0.to_string(),
                 id: tool.id.to_string(),
@@ -2696,6 +2692,9 @@ pub(crate) struct Answer {
     /// A tail that may be the start of a tag, held until the next chunk says.
     held: String,
     thinking: bool,
+    /// A tool call came after the last words, so the next words are a new
+    /// paragraph even when no `messageId` says so, as grok sends them.
+    paused: bool,
 }
 
 const OPEN: [&str; 2] = ["<think>", "<thinking>"];
@@ -2757,9 +2756,17 @@ impl Answer {
         break_paragraph(&mut self.said);
     }
 
+    /// The turn stepped away to a tool. The next words start a paragraph.
+    fn pause(&mut self) {
+        self.paused = true;
+    }
+
     /// Adds a chunk's block to the answer, a mark as its own paragraph, and
     /// returns the part that sat inside tags.
     pub(crate) fn hear(&mut self, block: &ContentBlock) -> String {
+        if std::mem::take(&mut self.paused) {
+            self.separate();
+        }
         let text = chunk_text(block, self.so_far());
         self.push(&text)
     }
