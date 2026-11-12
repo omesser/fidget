@@ -996,6 +996,8 @@ async function start() {
           traceBubble(`pill follows instance=${sprite.id} chars=${chars} focused=${Boolean(sprite.qm?.focused)}`);
         }
         notePointerLeft(view);
+        // After the hover report, so a menu that just closed yields where the pointer is now.
+        view.quickMachine.setMenu(Boolean(payload.menu));
 
         if (areaMoved || (changed && needsFrame(view))) arm();
       });

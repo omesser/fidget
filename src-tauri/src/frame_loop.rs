@@ -44,6 +44,10 @@ use super::{
 };
 use super::{caffeinate_frame, emit_chat_notice};
 
+fn frame_menu_open(held: impl IntoIterator<Item = bool>) -> bool {
+    held.into_iter().any(|open| open)
+}
+
 /// How long an overlay may go without being told anything.
 /// A webview that begins listening mid-silence hears nothing until the sprite
 /// next moves. 250ms is under a hide-rule fade, so a launch-hidden Character still goes.
@@ -2776,6 +2780,8 @@ pub(crate) fn run_frame_loop(
                     hover_delay_ms: crate::hover_delay_ms(),
                     do_not_disturb,
                     aside,
+                    // Read after a close has dropped the hold, so this tick says the menu is gone.
+                    menu: frame_menu_open(lives.iter().map(|live| live.menu_hold.is_some())),
                     chat_ui: &chat_ui,
                     chat_appearance,
                     work_area: WorkArea {
@@ -3598,6 +3604,38 @@ mod tests {
             minute: 30,
             ..Activity::quiet()
         }
+    }
+
+    fn frame_with(menu: bool) -> serde_json::Value {
+        serde_json::to_value(Placement {
+            sprites: Vec::new(),
+            visible: true,
+            fade_ms: 0,
+            sound: false,
+            hover_delay_ms: 2500,
+            do_not_disturb: false,
+            aside: None,
+            chat_ui: "minimal",
+            chat_appearance: ChatAppearance::System,
+            work_area: WorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            },
+            menu,
+        })
+        .expect("a frame serializes")
+    }
+
+    #[test]
+    fn a_frame_names_the_sprite_menu_only_while_one_is_held() {
+        let open = frame_menu_open([false, true]);
+        let closed = frame_menu_open([false, false]);
+        assert!(open);
+        assert!(!closed);
+        assert_eq!(frame_with(open)["menu"], json!(true));
+        assert_eq!(frame_with(closed)["menu"], json!(false));
     }
 
     /// The application names are the other half of what ADR-0032 gates, and

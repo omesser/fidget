@@ -107,6 +107,9 @@ export function createQuickMessage({
   // The overlay re-reports hover every frame. Summon and Send leave the
   // pointer on the Character, and that report would open the pill again.
   let yielded = false;
+  // The dwell waits, and the pointer still here when the menu closes
+  // is the same hover, not a new one.
+  let menuOpen = false;
   let bubbleUp = false;
   let ready = available;
   // Whether this overlay owns the Instance's bubble, as the last placement said.
@@ -226,16 +229,17 @@ export function createQuickMessage({
       if (disposed) return;
       overSprite = true;
       cancelAutoHide();
-      if (yielded || visible || hoverTimer !== null) return;
+      if (yielded || visible || hoverTimer !== null || menuOpen) return;
       hoverTimer = schedule(() => {
         hoverTimer = null;
-        if (disposed || !overSprite) return;
+        if (disposed || !overSprite || menuOpen || yielded) return;
         show();
       }, hoverDelay());
     },
     leaveSprite() {
       overSprite = false;
-      yielded = false;
+      // A leave while the menu is up is the pointer moving onto the menu.
+      if (!menuOpen) yielded = false;
       cancelHover();
       startAutoHideIfNeeded();
     },
@@ -317,6 +321,17 @@ export function createQuickMessage({
     // The user picked another activity. Hold only while the pointer is still here.
     aside() {
       yieldPill(overSprite || overPill);
+    },
+    // An open pill keeps its draft. An empty one is the dwell this menu suspends.
+    setMenu(up) {
+      if (disposed || up === menuOpen) return;
+      menuOpen = up;
+      cancelHover();
+      if (up) {
+        if (visible && !hasText()) hide();
+        return;
+      }
+      if (overSprite || overPill) yielded = true;
     },
     submit,
     restore(value) {

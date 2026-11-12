@@ -757,6 +757,9 @@ struct Placement<'a> {
     do_not_disturb: bool,
     /// A menu choice that dismisses the quick-message pill, for this tick only.
     aside: Option<&'static str>,
+    /// True while a sprite context menu is open. The overlay holds the
+    /// quick-message dwell, and does not open the pill when this falls.
+    menu: bool,
     /// The Chat UI and Light/Dark the Possession card wears, on every frame,
     /// so a switch in Settings repaints an open card on the next tick.
     chat_ui: &'a str,
