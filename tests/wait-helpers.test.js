@@ -14,12 +14,12 @@ function run(t, body, file = helper) {
   const dir = tempDir(t, "wait-mac-");
   const script = `set -u\n. "${file}"\ndir="${dir}"\nlog="$dir/app.log"; : > "$log"\n${body}`;
   const started = Date.now();
-  // Above the longest wait here (the still-pose rest wait). Without this, a
-  // stuck wait_for_rest sits until node:test's 60 s.
-  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 15_000 });
+  // Above the helper ceilings used here (rest 20 s, first wake 30 s). Without
+  // this, a stuck wait sits until node:test's 60 s.
+  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 35_000 });
   const ms = Date.now() - started;
   const timedOut = r.error && r.error.code === "ETIMEDOUT";
-  return { code: r.status, out: timedOut ? `run() timed out after 15s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
+  return { code: r.status, out: timedOut ? `run() timed out after 35s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
 }
 
 test("wait_for_trace returns soon after a line lands", (t) => {
@@ -273,6 +273,12 @@ test("wait_for_rest gives up at its ceiling if the sprite never rests", (t) => {
   assert.notStrictEqual(r.code, 0, r.out);
   assert.match(r.out, /sprite never came to rest within 2s/);
   assert.ok(r.ms >= 1800 && r.ms < 5000, `took ${r.ms} ms`);
+});
+
+test("wait_for_first_wake still succeeds when the mark lands past 3 s", (t) => {
+  const r = run(t, `: > "$dir/marks"; (sleep 4.5; echo asked >> "$dir/marks") & wait_for_first_wake "$dir/marks" '^asked$'`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(r.ms >= 4000 && r.ms < 7000, `took ${r.ms} ms`);
 });
 
 const pwsh = spawnSync("pwsh", ["-NoProfile", "-Command", "1"], { encoding: "utf8" });

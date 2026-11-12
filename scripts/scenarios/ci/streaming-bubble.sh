@@ -89,7 +89,8 @@ release() { # <word the stream resumes with>
 
 wait_for_up "$log" || fail "Fidget never wrote its overlay line; see $log"
 
-# The fixture sends a word every 700 ms, so each wait below ends within 3 s.
+# The first wake uses the launch budget. The fixture sends a word every
+# 700 ms, so each wait after that ends within 3 s.
 wait_for_first_wake "$marks" '^word 2$' || fail "no streamed turn reached the Harness; see $log"
 wait_for_ax_dump 2 "$pid" Fidget 'Watch these' || fail "early: the bubble never showed the first words; see $log"
 capture early "Watch these" "arrive" talk
