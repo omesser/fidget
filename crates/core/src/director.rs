@@ -500,7 +500,7 @@ fn resolve_reply(behaviors: &[String], reply: &str) -> ResolvedReply {
     resolve_prepared(behaviors, prepare_reply(reply, behaviors))
 }
 
-/// Period-glue rewrite when a declared Behavior is stuck after a period, else
+/// Glue rewrite when a declared Behavior is stuck to the text around it, else
 /// the original text, reusing the first contract parse when nothing changes.
 fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
     if behaviors.is_empty() {
@@ -527,14 +527,14 @@ fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
             cached: Some(first),
         };
     }
-    let Some((dot, name_end, name)) = glued_declared_behavior(reply, behaviors) else {
+    let Some((peel_end, name_end, name)) = glued_behavior(reply, behaviors) else {
         return PreparedReply {
             text: reply.to_string(),
             glued_peel: None,
             cached: Some(first),
         };
     };
-    let peel = reply[..dot].trim();
+    let peel = reply[..peel_end].trim();
     let peel = (!peel.is_empty()).then(|| peel.to_string());
     let rest = &reply[name_end..];
     let rest = rest.strip_prefix(' ').unwrap_or(rest);
@@ -632,50 +632,42 @@ fn contract_visible(answer: &str, behaviors: &[String]) -> bool {
 /// `behavior:` and bare mid-reply still accept short names.
 const MIN_PERIOD_GLUE_NAME: usize = 3;
 
-fn glued_declared_behavior<'a>(
-    reply: &'a str,
-    behaviors: &'a [String],
-) -> Option<(usize, usize, String)> {
+/// Where the first declared Behavior glued into `reply` starts and ends, and
+/// its name. Glue is a period (`answering.ponder`), or a `behavior:` that opens
+/// the text or a line or follows a sentence end: mid-sentence it is prose.
+fn glued_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
     let bytes = reply.as_bytes();
-    let mut best: Option<(usize, usize, String)> = None;
-    for behavior in behaviors {
-        if behavior.len() < MIN_PERIOD_GLUE_NAME {
-            continue;
-        }
-        let mut from = 0;
-        while let Some(rel) = find_ignore_ascii_case(&reply[from..], &format!(".{}", behavior)) {
-            let dot = from + rel;
-            let name_at = dot + 1;
-            let name_end = name_at + behavior.len();
-            if name_end > reply.len() {
-                break;
-            }
-            if !reply[name_at..name_end].eq_ignore_ascii_case(behavior) {
-                from = dot + 1;
-                continue;
-            }
-            // Glue at EOF, `|` or a newline, or space then uppercase dialogue.
-            // Not `main.rs now`.
-            let name_ends_here = match bytes.get(name_end) {
-                None => true,
-                Some(b'|') | Some(b'\n') | Some(b'\r') => true,
-                Some(b) if b.is_ascii_whitespace() => {
-                    matches!(bytes.get(name_end + 1), Some(c) if c.is_ascii_uppercase())
+    (0..reply.len())
+        .filter(|&at| reply.is_char_boundary(at))
+        .find_map(|at| {
+            let rest = &reply[at..];
+            let (body, min_len) = match rest.strip_prefix('.') {
+                Some(body) => (body, MIN_PERIOD_GLUE_NAME),
+                None => {
+                    let body = marker_body(rest)?;
+                    let before = reply[..at].trim_end_matches([' ', '\t']);
+                    let opens = before.is_empty() || before.ends_with(['\n', '\r', '.', '!', '?']);
+                    opens.then_some((body.trim_start_matches([' ', '\t']), 0))?
                 }
-                _ => false,
             };
-            if name_ends_here && best.as_ref().is_none_or(|(at, _, _)| dot < *at) {
-                best = Some((
-                    dot,
-                    name_end,
-                    declared(behaviors, &reply[name_at..name_end])
-                        .unwrap_or_else(|| behavior.clone()),
-                ));
-            }
-            from = dot + 1;
+            let name = name_token(body);
+            let name_end = reply.len() - body.len() + name.len();
+            let name = declared(behaviors, name).filter(|name| name.len() >= min_len)?;
+            glued_name_ends(bytes, name_end).then_some((at, name_end, name))
+        })
+}
+
+/// Glue at EOF, `|` or a newline, or a space then `|` or uppercase dialogue.
+/// Not `main.rs now`.
+fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
+    match bytes.get(name_end) {
+        None => true,
+        Some(b'|') | Some(b'\n') | Some(b'\r') => true,
+        Some(b) if b.is_ascii_whitespace() => {
+            matches!(bytes.get(name_end + 1), Some(c) if *c == b'|' || c.is_ascii_uppercase())
         }
+        _ => false,
     }
-    best
 }
 
 fn merge_peel(a: Option<String>, b: Option<String>) -> Option<String> {
@@ -750,22 +742,6 @@ fn parse_contract(reply: &str) -> Result<ParsedContract, ParseError> {
         marked,
         peeled_thought,
     })
-}
-
-fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
-    let needle = needle.as_bytes();
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .position(|window| {
-            window
-                .iter()
-                .zip(needle)
-                .all(|(a, b)| a.eq_ignore_ascii_case(b))
-        })
 }
 
 /// The Character's own spelling of `name`, when it declared one.
@@ -992,8 +968,8 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
 /// `line` as the contract: optional `behavior:` then a name, or `name | said`.
 /// The bool is whether the marker was there. `None` when it is not that shape.
 fn contract_line(line: &str) -> Option<(&str, Option<&str>, bool)> {
-    let (body, marked) = match behavior_marker_body(line) {
-        Some(body) => (body, true),
+    let (body, marked) = match marker_body(line.trim()) {
+        Some(body) => (body.trim_start(), true),
         None => (line, false),
     };
     let (name, inline) = match body.split_once('|') {
@@ -1004,17 +980,25 @@ fn contract_line(line: &str) -> Option<(&str, Option<&str>, bool)> {
     identifier(name).then_some((name, inline, marked))
 }
 
-/// Body after a leading `behavior:` marker, when the line opens with one.
-/// A cut that is not a character boundary cannot be this ASCII marker, and
-/// slicing there panics.
-fn behavior_marker_body(line: &str) -> Option<&str> {
-    const MARK: &str = "behavior:";
-    let line = line.trim();
-    let prefix = line.get(..MARK.len())?;
-    if !prefix.eq_ignore_ascii_case(MARK) {
-        return None;
-    }
-    Some(line[MARK.len()..].trim_start())
+/// The marker that names the act: `behavior: walk`.
+const MARK: &str = "behavior:";
+
+/// What follows `text`'s leading `behavior:` marker, in any case. A cut that
+/// is not a character boundary cannot be this ASCII marker, and slicing there
+/// panics.
+fn marker_body(text: &str) -> Option<&str> {
+    let prefix = text.get(..MARK.len())?;
+    prefix
+        .eq_ignore_ascii_case(MARK)
+        .then(|| &text[MARK.len()..])
+}
+
+/// The leading run of characters a Behavior name may hold.
+fn name_token(text: &str) -> &str {
+    let end = text
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .unwrap_or(text.len());
+    &text[..end]
 }
 
 /// Unfinished first line is a marked contract naming something this Character
@@ -1030,10 +1014,7 @@ fn unfinished_marked_contract(tail: &str, behaviors: &[String]) -> bool {
 /// One alphanumeric at least, so punctuation alone is not a name: `---` is a
 /// line of Pi's banner and is otherwise all characters a name may contain.
 fn identifier(name: &str) -> bool {
-    name.chars().any(|c| c.is_ascii_alphanumeric())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name_token(name) == name && name.chars().any(|c| c.is_ascii_alphanumeric())
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
@@ -2869,6 +2850,125 @@ mod tests {
         );
     }
 
+    /// A `behavior:` line glued onto the planning above it, as a Harness that
+    /// joins its text across a tool call writes it, is still the contract:
+    /// the planning is Thinking and only what follows is said.
+    #[test]
+    fn a_behavior_marker_glued_after_planning_is_not_spoken() {
+        let declared = declares(&["walk", "ponder"]);
+        let planning =
+            "He is still planted beside the Dock. I will find the walk control and set him moving.";
+        for reply in [
+            format!("{planning}behavior: walk I am walking. The floor ends here. Complain to the dock."),
+            format!("{planning}behavior: walk\nI am walking. The floor ends here. Complain to the dock."),
+            format!("{planning} Behavior: walk | I am walking. The floor ends here. Complain to the dock."),
+        ] {
+            let woken = directing(Scripted::says(&reply), ["walk", "ponder"])
+                .wake_and_near_miss(&typed("walk"));
+            match &woken.wake {
+                Wake::Proposed(proposal) => {
+                    assert_eq!(proposal.behavior, "walk", "{reply:?}");
+                    assert_eq!(
+                        proposal.dialogue.as_deref(),
+                        Some("I am walking. The floor ends here. Complain to the dock."),
+                        "{reply:?}"
+                    );
+                }
+                other => panic!("glued marker should propose walk for {reply:?}, not {other:?}"),
+            }
+            assert_eq!(
+                woken.peeled_thought.as_deref(),
+                Some(planning),
+                "{reply:?}"
+            );
+            assert_eq!(
+                dialogue_of(&reply, &declared).as_deref(),
+                Some("I am walking. The floor ends here. Complain to the dock."),
+            );
+        }
+    }
+
+    /// A `behavior:` that opens a line, with the dialogue on the same line,
+    /// is the contract, and the line above it is planning.
+    #[test]
+    fn a_behavior_marker_opening_a_line_with_dialogue_on_it_is_not_spoken() {
+        let reply = "Looking around\nbehavior: walk Then I go.";
+        let woken =
+            directing(Scripted::says(reply), ["walk", "ponder"]).wake_and_near_miss(&typed("go"));
+        match &woken.wake {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "walk");
+                assert_eq!(proposal.dialogue.as_deref(), Some("Then I go."));
+            }
+            other => panic!("a marker opening a line should propose walk, not {other:?}"),
+        }
+        assert_eq!(woken.peeled_thought.as_deref(), Some("Looking around"));
+    }
+
+    /// Any sentence end opens a glued marker, and a marked name is read at any
+    /// length: the three-letter floor guards only period glue.
+    #[test]
+    fn a_marker_after_any_sentence_end_names_even_a_short_behavior() {
+        for (reply, behavior) in [
+            ("Done!behavior: walk Then I go.", "walk"),
+            ("Ready? behavior: walk Then I go.", "walk"),
+            ("Planning.behavior: hi Then I go.", "hi"),
+        ] {
+            match directing(Scripted::says(reply), ["walk", "hi"]).wake(&typed("go")) {
+                Wake::Proposed(proposal) => {
+                    assert_eq!(proposal.behavior, behavior, "{reply:?}");
+                    assert_eq!(
+                        proposal.dialogue.as_deref(),
+                        Some("Then I go."),
+                        "{reply:?}"
+                    );
+                }
+                other => panic!("{reply:?} should propose {behavior}, not {other:?}"),
+            }
+        }
+    }
+
+    /// A `behavior:` mid-sentence is prose about the contract, not the
+    /// contract. Only one at the start of the text or a line, or right after
+    /// a sentence end, is read as glued.
+    #[test]
+    fn a_behavior_marker_mid_sentence_is_said() {
+        let declared = declares(&["walk", "ponder"]);
+        for reply in [
+            "To make me move, type behavior: walk Then I go.",
+            "I could do behavior: ponder",
+        ] {
+            assert_eq!(
+                dialogue_of(reply, &declared).as_deref(),
+                Some(reply),
+                "{reply:?}"
+            );
+            match directing(Scripted::says(reply), ["walk", "ponder"]).wake(&typed("?")) {
+                Wake::Proposed(proposal) => {
+                    assert!(proposal.behavior.is_empty(), "{reply:?}: {proposal:?}")
+                }
+                other => panic!("{reply:?} should be said, not {other:?}"),
+            }
+        }
+    }
+
+    /// Period glue and a glued marker in one reply: the earlier one is the
+    /// contract.
+    #[test]
+    fn the_earlier_of_two_glued_behaviors_is_played() {
+        let played = |reply: &str| match directing(Scripted::says(reply), ["wave", "ponder"])
+            .wake(&typed("?"))
+        {
+            Wake::Proposed(proposal) => proposal.behavior,
+            other => panic!("{reply:?} should propose, not {other:?}"),
+        };
+        assert_eq!(
+            played("Looking.behavior: ponder Then I wave.wave"),
+            "ponder"
+        );
+        assert_eq!(played("I waved.wave\nThen.behavior: ponder Hi"), "wave");
+    }
+
     /// A short declared name must not steal a file extension as period glue.
     /// `main.rs now`, `main.rs\nPlease.` and a bare `main.rs` at EOF all stay
     /// whole-sentence dialogue.
@@ -3307,7 +3407,7 @@ mod tests {
     #[test]
     fn streamed_dialogue_holds_the_contract_line_back_and_grows_into_the_parsed_line() {
         let banner = format!("{PI_BANNER}\nwave\nHello!");
-        let rows: [(&str, Option<&str>); 23] = [
+        let rows: [(&str, Option<&str>); 25] = [
             ("stroll\nhey there", Some("hey there")),
             ("wave", None),
             ("nap | sleepy", Some("sleepy")),
@@ -3336,6 +3436,14 @@ mod tests {
                 Some("Back in five."),
             ),
             ("I waved.wave\nhi", Some("hi")),
+            (
+                "Looking around.behavior: nap Back in five.",
+                Some("Back in five."),
+            ),
+            (
+                "Looking around.behavior: nap\nBack in five.",
+                Some("Back in five."),
+            ),
             (
                 "Planning first.\nbehavior: dance\nHi there.",
                 Some("Hi there."),

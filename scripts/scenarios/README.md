@@ -89,6 +89,13 @@ dump that the bubble grows, never shows the Behavior name, and ends on the
 whole line, and from the frame trace that `talk` plays while it grows. It has
 no X11 or Windows leaf yet.
 
+`tool-narration.sh` takes the same two binaries. Its fixture replies the way
+grok does: planning, a tool call, then `behavior: walk` with the dialogue on
+its line, and no `messageId`. It checks from the overlay's and Chat's
+Accessibility dumps that both say only the dialogue, never the planning or
+the marker, and that Chat has a Thinking row. It has no X11 or Windows leaf
+yet.
+
 `poke-mid-climb.sh` takes only the app binary and runs no Harness. It throws
 the sprite at a display's side edge with a real drag
 (`scripts/scenarios/helpers/throw-sprite.swift`), then clicks it until one click lands

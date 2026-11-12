@@ -4732,6 +4732,36 @@ mod tests {
                             chunk(&session, "Hello");
                             stop(&id, "end_turn");
                         }
+                        // `scripts/scenarios/ci/tool-narration.sh`. grok's wire:
+                        // no `messageId`, planning, a tool call, then a reply
+                        // whose `behavior:` line carries its dialogue. The ask
+                        // opens Chat so the leaf can read the Thinking row.
+                        "scenario-tool-narration" => {
+                            say(
+                                json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
+                                    "sessionId": &session,
+                                    "toolCall": {"toolCallId": "t1", "title": "Open Chat for the scenario", "kind": "other"},
+                                    "options": [
+                                        {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
+                                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                                    ],
+                                }}),
+                            );
+                            record(count, "asked");
+                            thread::sleep(Duration::from_millis(300));
+                            say(json!({"jsonrpc": "2.0", "id": 99, "result": {"option": "allow"}}));
+                            chunk(
+                                &session,
+                                "He is still planted beside the Dock. I will set him moving.",
+                            );
+                            tool_call(&session, "fidget__play_behavior");
+                            chunk(
+                                &session,
+                                "behavior: walk I am walking. The floor ends here.",
+                            );
+                            stop(&id, "end_turn");
+                            record(count, "replied");
+                        }
                         // `scripts/scenarios/ci/thinking-row.sh`. The first turn
                         // asks, so Chat opens by itself, and its end cancels
                         // the ask. Later turns think slowly enough to capture.
