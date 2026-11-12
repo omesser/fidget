@@ -87,6 +87,17 @@ function Get-CardShotBox($Card, $Origin, [int]$BarPx, [int]$GapPx, [int]$MarginP
     }
 }
 
+# $Rect (X, Y, Width, Height) cut to $Bounds (Left, Top, Right, Bottom, as
+# SystemInformation.VirtualScreen gives them), or $null when nothing is left.
+function Get-ClippedRect($Rect, $Bounds) {
+    $L = [Math]::Max($Rect.X, $Bounds.Left)
+    $T = [Math]::Max($Rect.Y, $Bounds.Top)
+    $R = [Math]::Min($Rect.X + $Rect.Width, $Bounds.Right)
+    $B = [Math]::Min($Rect.Y + $Rect.Height, $Bounds.Bottom)
+    if ($R -le $L -or $B -le $T) { return $null }
+    return @{ X = $L; Y = $T; Width = $R - $L; Height = $B - $T }
+}
+
 # A pixel as the screen grab returns it: 0xRRGGBB, alpha masked off.
 function Get-PackedRgb([int]$R, [int]$G, [int]$B) {
     return ($R -shl 16) -bor ($G -shl 8) -bor $B

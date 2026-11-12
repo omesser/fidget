@@ -354,17 +354,24 @@ function Move-Backdrop($Box) {
     [void][PossessionCardShotsWin]::SetWindowPos($script:form.Handle, $overlay, 0, 0, 0, 0, $flags)
 }
 
+function Get-OnScreen($Rect) {
+    return Get-ClippedRect $Rect ([System.Windows.Forms.SystemInformation]::VirtualScreen)
+}
+
+# One screen row from ($X,$Y), $Width wide, clipped to the screen; empty when off it.
+function Get-ScreenRow([int]$X, [int]$Y, [int]$Width) {
+    $c = Get-OnScreen @{ X = $X; Y = $Y; Width = $Width; Height = 1 }
+    if (-not $c) { return ,([int[]]@()) }
+    return ,([PossessionCardShotsWin]::Strip($c.X, $c.Y, $c.Width))
+}
+
 # Grabbed now and judged later, so a held key can be let go in between.
 function Get-CardShot($Box) {
-    $v = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    $L = [Math]::Max($Box.X, $v.Left)
-    $T = [Math]::Max($Box.Y, $v.Top)
-    $R = [Math]::Min($Box.X + $Box.Width, $v.Right)
-    $B = [Math]::Min($Box.Y + $Box.Height, $v.Bottom)
-    if ($R -le $L -or $B -le $T) { Fail "empty crop ($L,$T)-($R,$B)" }
+    $c = Get-OnScreen $Box
+    if (-not $c) { Fail "the crop ($($Box.X),$($Box.Y)) $($Box.Width)x$($Box.Height) is off the screen" }
     return @{
-        Bmp = [PossessionCardShotsWin]::Grab($L, $T, $R - $L, $B - $T)
-        L = $L; T = $T; W = $R - $L; H = $B - $T; OffX = $L - $Box.X; OffY = $T - $Box.Y; Box = $Box
+        Bmp = [PossessionCardShotsWin]::Grab($c.X, $c.Y, $c.Width, $c.Height)
+        L = $c.X; T = $c.Y; W = $c.Width; H = $c.Height; OffX = $c.X - $Box.X; OffY = $c.Y - $Box.Y; Box = $Box
     }
 }
 
@@ -389,9 +396,12 @@ function Save-CardShot([string]$Name, $Shot) {
 
 function Wait-ShotSettled($Box) {
     return (Wait-Until 3 {
-            $top = [PossessionCardShotsWin]::Strip($Box.X, $Box.Y, $Box.Width)
+            # The top row of the part of the crop on screen, as Get-CardShot grabs it.
+            $c = Get-OnScreen $Box
+            if (-not $c) { return $false }
+            $top = Get-ScreenRow $c.X $c.Y $c.Width
             $mid = $Box.Y + $Box.CardY + [int]($Box.CardHeight / 2)
-            $card = [PossessionCardShotsWin]::Strip($Box.X + $Box.CardX, $mid, $Box.CardWidth)
+            $card = Get-ScreenRow ($Box.X + $Box.CardX) $mid $Box.CardWidth
             Test-ShotSettled $top $card $grey
         })
 }
@@ -399,7 +409,7 @@ function Wait-ShotSettled($Box) {
 function Wait-BarPartFull($Box) {
     return (Wait-Until 3 {
             $mid = $Box.Y + $Box.BarY + [int]($Box.BarHeight / 2)
-            Test-BarPartFull ([PossessionCardShotsWin]::Strip($Box.X + $Box.BarX, $mid, $Box.BarWidth)) $grey
+            Test-BarPartFull (Get-ScreenRow ($Box.X + $Box.BarX) $mid $Box.BarWidth) $grey
         })
 }
 

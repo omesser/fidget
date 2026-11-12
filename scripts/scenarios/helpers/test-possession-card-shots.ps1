@@ -70,6 +70,17 @@ $pausedBox = Get-CardShotBox @{ X = 16; Y = 16; Width = 100; Height = 50; Paused
 Check ($pausedBox.Width -eq 132 -and $pausedBox.Height -eq 82) "a paused crop is the card and a 16 px margin, 132x82"
 Check ($pausedBox.BarHeight -eq 0) "a paused crop holds no bar"
 
+# Screen reads clip to the virtual screen. A monitor at negative x widens it left.
+$screen = @{ Left = -1280; Top = 0; Right = 1920; Bottom = 1080 }
+$inside = Get-ClippedRect @{ X = 100; Y = 50; Width = 40; Height = 1 } $screen
+Check ($inside.X -eq 100 -and $inside.Y -eq 50 -and $inside.Width -eq 40 -and $inside.Height -eq 1) "a rect on screen is kept whole"
+$leftEdge = Get-ClippedRect @{ X = -1300; Y = -10; Width = 50; Height = 30 } $screen
+Check ($leftEdge.X -eq -1280 -and $leftEdge.Y -eq 0 -and $leftEdge.Width -eq 30 -and $leftEdge.Height -eq 20) "a rect past the left and top edges is clipped to (-1280,0) 30x20"
+$rightEdge = Get-ClippedRect @{ X = 1900; Y = 1070; Width = 50; Height = 30 } $screen
+Check ($rightEdge.Width -eq 20 -and $rightEdge.Height -eq 10) "a rect past the right and bottom edges is clipped to 20x10"
+Check ($null -eq (Get-ClippedRect @{ X = 2000; Y = 50; Width = 40; Height = 1 } $screen)) "a rect off the screen clips to nothing"
+Check ($null -eq (Get-ClippedRect @{ X = 100; Y = -1; Width = 40; Height = 1 } $screen)) "a row above the screen clips to nothing"
+
 $greyPx = Get-PackedRgb 160 160 160
 Check ($greyPx -eq 0xA0A0A0) "rgb(160,160,160) packs to 0xA0A0A0"
 Check ((Get-PackedRgb 255 0 0) -eq 0xFF0000) "rgb(255,0,0) packs to 0xFF0000"
