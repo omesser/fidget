@@ -689,9 +689,9 @@ fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
     }
 }
 
-/// A `behavior:` marker for a declared name glued to the planning before it
-/// or to the dialogue after it, which no contract line reads. Where the
-/// planning ends, where the name ends, and the name.
+/// Where the planning ends, where the name ends, and the name, for a glued
+/// `behavior:` marker no contract line reads. It starts the text or a line,
+/// or follows a sentence end: mid-sentence it is prose.
 fn glued_marked_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
     const MARK: &str = "behavior:";
     let bytes = reply.as_bytes();
@@ -699,11 +699,8 @@ fn glued_marked_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, us
     while let Some(rel) = find_ignore_ascii_case(&reply[from..], MARK) {
         let at = from + rel;
         from = at + MARK.len();
-        let starts_here = at == 0
-            || matches!(
-                bytes[at - 1],
-                b'.' | b'!' | b'?' | b'\n' | b'\r' | b' ' | b'\t'
-            );
+        let before = reply[..at].trim_end_matches([' ', '\t']);
+        let starts_here = before.is_empty() || before.ends_with(['\n', '\r', '.', '!', '?']);
         if !starts_here {
             continue;
         }
@@ -2950,6 +2947,47 @@ mod tests {
                 Some("I am walking. The floor ends here. Complain to the dock."),
             );
         }
+    }
+
+    /// A `behavior:` mid-sentence is prose about the contract, not the
+    /// contract. Only one at the start of the text or a line, or right after
+    /// a sentence end, is read as glued.
+    #[test]
+    fn a_behavior_marker_mid_sentence_is_said() {
+        let declared = declares(&["walk", "ponder"]);
+        for reply in [
+            "To make me move, type behavior: walk Then I go.",
+            "I could do behavior: ponder",
+        ] {
+            assert_eq!(
+                dialogue_of(reply, &declared).as_deref(),
+                Some(reply),
+                "{reply:?}"
+            );
+            match directing(Scripted::says(reply), ["walk", "ponder"]).wake(&typed("?")) {
+                Wake::Proposed(proposal) => {
+                    assert!(proposal.behavior.is_empty(), "{reply:?}: {proposal:?}")
+                }
+                other => panic!("{reply:?} should be said, not {other:?}"),
+            }
+        }
+    }
+
+    /// Period glue and a glued marker in one reply: the earlier one is the
+    /// contract.
+    #[test]
+    fn the_earlier_of_two_glued_behaviors_is_played() {
+        let played = |reply: &str| match directing(Scripted::says(reply), ["wave", "ponder"])
+            .wake(&typed("?"))
+        {
+            Wake::Proposed(proposal) => proposal.behavior,
+            other => panic!("{reply:?} should propose, not {other:?}"),
+        };
+        assert_eq!(
+            played("Looking.behavior: ponder Then I wave.wave"),
+            "ponder"
+        );
+        assert_eq!(played("I waved.wave\nThen.behavior: ponder Hi"), "wave");
     }
 
     /// A short declared name must not steal a file extension as period glue.

@@ -3702,44 +3702,48 @@ mod tests {
     }
 
     /// grok sends no `messageId`, so only the tool call between them marks the
-    /// words written before the tools apart from the reply after. They are
-    /// separate paragraphs live and restored, and the Behavior line reads.
+    /// words written before the tools apart from the reply after. A call or
+    /// an update alone is that mark, live and restored, and the Behavior line reads.
     #[test]
     fn a_tool_call_breaks_the_paragraph_when_no_message_id_does() {
-        let updates = vec![
-            wire_text("user_message_chunk", "walk"),
-            wire_text(
-                "agent_message_chunk",
-                "He is still planted beside the Dock. I will set him moving.",
-            ),
-            wire(
-                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
-                "title": "fidget__play_behavior", "kind": "other", "status": "pending"}),
-            ),
-            wire(
-                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
-                "status": "completed"}),
-            ),
-            wire_text("agent_message_chunk", "behavior: walk\nI am walking."),
-        ];
+        let call = wire(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
+            "title": "fidget__play_behavior", "kind": "other", "status": "pending"}),
+        );
+        let update = wire(
+            serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
+            "status": "completed"}),
+        );
         let expected =
             "He is still planted beside the Dock. I will set him moving.\n\nbehavior: walk\nI am walking.";
-        let (reply, _) = drive(updates.clone());
-        assert_eq!(reply, expected);
-        let behaviors = ["walk".to_string()];
-        assert_eq!(
-            fidget_core::director::dialogue_of(&reply, &behaviors).as_deref(),
-            Some("I am walking.")
-        );
+        for (name, tool) in [("tool_call", call), ("tool_call_update", update)] {
+            let updates = vec![
+                wire_text("user_message_chunk", "walk"),
+                wire_text(
+                    "agent_message_chunk",
+                    "He is still planted beside the Dock. I will set him moving.",
+                ),
+                tool,
+                wire_text("agent_message_chunk", "behavior: walk\nI am walking."),
+            ];
+            let (reply, _) = drive(updates.clone());
+            assert_eq!(reply, expected, "{name}: live");
+            let behaviors = ["walk".to_string()];
+            assert_eq!(
+                fidget_core::director::dialogue_of(&reply, &behaviors).as_deref(),
+                Some("I am walking."),
+                "{name}"
+            );
 
-        let restored: Vec<String> = restored_rows(&updates)
-            .into_iter()
-            .filter_map(|row| match row {
-                Replayed::Reply { text } => Some(text),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(restored, [expected]);
+            let restored: Vec<String> = restored_rows(&updates)
+                .into_iter()
+                .filter_map(|row| match row {
+                    Replayed::Reply { text } => Some(text),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(restored, [expected], "{name}: restored");
+        }
     }
 
     /// A thought chunk between two messages stays above the one reply, where
