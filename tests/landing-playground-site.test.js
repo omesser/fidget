@@ -472,6 +472,24 @@ const perches = `
   });
 </script>`;
 
+// The Possession strip's layout: the bindings card's own corners show, with no
+// second frame, and the card's width at each layout.
+const strip = `
+<script>
+  window.addEventListener("load", () => {
+    const keys = document.querySelector(".possess-keys");
+    const clip = document.querySelector(".possess-clip");
+    const look = (el) => { const s = getComputedStyle(el);
+      return { border: s.borderTopWidth, fill: s.backgroundColor }; };
+    console.log("__PROBE_RESULT__" + JSON.stringify({
+      card: { ...look(keys), clips: getComputedStyle(keys).overflow, width: Math.round(keys.getBoundingClientRect().width) },
+      clip: look(clip),
+      row: clip.getBoundingClientRect().left > keys.getBoundingClientRect().right
+        && clip.getBoundingClientRect().top < keys.getBoundingClientRect().bottom,
+    }));
+  });
+</script>`;
+
 async function play(flags = [], script = probe, size = "1280,900") {
   const page = join(site, "probe.html");
   writeFileSync(page, readFileSync(join(site, "index.html"), "utf8").replace("<head>", `<head>${script}`));
@@ -612,6 +630,18 @@ for (const size of ["1512,945", "1280,800"]) {
       `each Character's feet rest on each window's top edge, in a ${result.desk}px desk`);
   });
 }
+
+test("the Possession strip's bindings card has no frame of its own, and grows to its native 303px beside the clip under 1040px", { skip: chromeSkip }, async () => {
+  const desktop = await play([], strip, "1280,900");
+  const mid = await play([], strip, "900,900");
+  for (const { card, clip } of [desktop, mid]) {
+    assert.deepEqual([card.border, card.fill, card.clips], ["0px", "rgba(0, 0, 0, 0)", "hidden"],
+      "the card is only cropped: no border or fill to halo its own corners");
+    assert.equal(clip.border, "1px", "the clip keeps its frame");
+  }
+  assert.equal(desktop.card.width, 230, "the desktop row keeps the card at 230px");
+  assert.ok(mid.row && mid.card.width === 303, `at 900 the card sits beside the clip at 303px: ${JSON.stringify(mid)}`);
+});
 
 test("the playground reads as Oded asked: its title and gestures, two windows that say drag me, Download below the desk, then the sections in order", () => {
   const page = readFileSync(join(site, "index.html"), "utf8");

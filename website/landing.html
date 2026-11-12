@@ -367,17 +367,19 @@
     padding-top: 1.5rem;
     border-top: 1px solid var(--line);
   }
-  .possess-watch .possess-keys, .possess-watch .possess-clip {
+  .possess-watch .possess-clip {
     display: block;
     width: 100%;
+    max-width: 400px;
     height: auto;
     border-radius: 14px;
     border: 1px solid var(--line);
     background: var(--paper-2);
   }
-  .possess-watch .possess-clip { max-width: 400px; }
-  /* possession-bindings.png keeps the window's grey frame (6px, 7px right and bottom); show only the 303×318 card. */
-  .possess-watch .possess-keys { max-width: 303px; aspect-ratio: 303 / 318; overflow: hidden; }
+  /* possession-bindings.png keeps the window's grey frame (6px, 7px right and bottom); show only the 303×318 card.
+     The card has its own ~10px corners, so the crop only clips (11px at native size, scaling with it), with no border or fill. */
+  .possess-watch .possess-keys { width: 100%; max-width: 303px; aspect-ratio: 303 / 318; overflow: hidden;
+    border-radius: 3.6% / 3.5%; }
   .possess-keys img { display: block; width: calc(100% * 316 / 303); max-width: none; height: auto;
     margin: calc(-100% * 6 / 303) 0 0 calc(-100% * 6 / 303); }
   .possess-kicker {
@@ -397,7 +399,7 @@
   .possess-note { font-size: .95rem; color: var(--ink-3); }
   /* Too narrow for three columns: the card and clip share a row, the copy goes under. */
   @media (max-width: 1040px) {
-    .possess-watch { grid-template-columns: 230px 400px; }
+    .possess-watch { grid-template-columns: minmax(0, 303px) minmax(0, 400px); }
     .possess-copy { grid-column: 1 / -1; }
   }
   @media (max-width: 760px) {
