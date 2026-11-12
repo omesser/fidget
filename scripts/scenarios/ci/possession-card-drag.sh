@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
 # Scenario: possession-card-drag (macOS)
 # On screen: launches Fidget as BMO and a small fidget-type-target window at
-#   the top right. Possesses the sprite from the menu bar icon's menu, drags
-#   the bindings card by its background, clicks the target window, drags the
-#   paused card, clicks it to resume, walks the sprite, and possesses again
-#   after Escape. Both quit at the end. One screenshot of the moved card,
-#   cropped to it.
-# Input: a click on the menu bar icon and AXPress on its Possess row, twice;
-#   two left-drags on the card, a click on the target window and one on the
-#   card, a synthetic arrow and Escape. Keep hands off the mouse and keyboard.
+#   the top right. Possesses from the menu bar icon, drags the bindings card,
+#   clicks the target window, drags the paused card, clicks it, walks the
+#   sprite, and possesses again after Escape. Both quit at the end. One
+#   screenshot, cropped to the moved card.
+# Input: a menu bar icon click and AXPress on Possess, twice; two left-drags
+#   and two clicks; a synthetic arrow and Escape. Hands off for the run.
 # Duration: about 15 s.
 # Grants: Screen Recording and Accessibility for the terminal that runs it.
-# Asserts: the card follows a drag, expanded and paused. Focus leaving and
-#   coming back does not move it, dragging the paused card does not resume
-#   possession, a plain click on the paused card does, and an arrow still
-#   walks the sprite. The next possession seats the card in the corner again.
-#   Card positions and the paused state come from the FIDGET_TRACE_BUBBLE card
-#   line, which the overlay writes on each re-layout.
-#
+# Asserts: the card follows each drag and stays put when focus leaves or comes
+#   back; a paused drag does not resume, a plain click does; an arrow walks;
+#   the next possession seats the card in the corner. Positions and paused
+#   state come from the FIDGET_TRACE_BUBBLE card line.
 # Usage: possession-card-drag.sh --go <fidget binary>
 # Without --go it prints this header, which is the takeover prompt, and exits 2.
 set -euo pipefail
