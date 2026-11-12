@@ -988,6 +988,7 @@ async function start() {
         // The pill goes where the bubble goes, carrying the Shell's draft.
         const owned = view.quickMachine.owner;
         view.quickMachine.setOwner(sprite.bubble, sprite.qm ?? null);
+        view.quickMachine.setMenu(Boolean(sprite.menu_open));
         noteQuickMessageMode(view, sprite, payload);
         noteChatUi(view, payload);
         if (!owned && view.quickMachine.owner && view.quickMachine.visible) {
@@ -1078,9 +1079,12 @@ async function start() {
   const reportPrimary = reporter("overlay_primary");
   const reportSecondary = reporter("overlay_secondary");
   // The webview's own menu is a browser menu. Ours is native and opened
-  // from Verb::Menu once the latch above is seen.
+  // from Verb::Menu once the latch above is seen. A macOS Control-click is a
+  // primary press, so its contextmenu is what holds the dwell for that menu.
   document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
+    const sprite = event.target.closest?.(".sprite");
+    for (const view of views.values()) if (sprite && view.sprite === sprite) view.quickMachine.menuPress();
   });
   const onPossessionKey = (event) => {
     const inField = Boolean(event.target?.closest?.("textarea, input"));
@@ -1127,6 +1131,7 @@ async function start() {
       });
       break;
     }
+    if (where === "character" && event.button === 2 && owner) owner.quickMachine.menuPress();
     if (where === "character" && event.button === 0 && owner) {
       petDrag = { x: event.clientX, y: event.clientY, id: event.pointerId };
       gestureActive = true;

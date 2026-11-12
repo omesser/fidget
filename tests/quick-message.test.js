@@ -168,6 +168,100 @@ test("a Summon keeps the composer down until the pointer leaves", () => {
   assert.equal(qm.visible, true, "a fresh hover opens it again");
 });
 
+test("the Character's menu suspends the dwell and its close does not open the pill", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(500);
+  qm.setMenu(true);
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "a dwell begun before the right-click does not finish under the menu");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "hovering the Character while the menu is open does not arm it");
+
+  qm.setMenu(false);
+  for (let tick = 0; tick < 10; tick += 1) {
+    qm.enterSprite();
+    advance(HOVER_DELAY_MS);
+  }
+  assert.equal(qm.visible, false, "the pointer the menu leaves on the Character does not open it");
+  assert.equal(qm.takeFocus(), false, "the field never claims the caret");
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "a fresh hover after the menu opens it again");
+});
+
+test("a right-press holds the dwell even when the Shell's menu_open arrives only after the menu closes", () => {
+  const { qm, advance } = harness();
+
+  qm.enterSprite();
+  advance(500);
+  qm.menuPress();
+  // The native menu blocks the Shell, so no menu_open frame reaches the
+  // overlay. Its timer keeps running, and frames queued before the popup
+  // still report the pointer on the Character.
+  qm.setMenu(false);
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS * 2);
+  assert.equal(qm.visible, false, "the dwell's deadline passes under the menu without opening the pill");
+  assert.equal(qm.takeFocus(), false, "or claiming the caret");
+
+  // The menu closes. Its frames all land at once.
+  qm.setMenu(true);
+  qm.enterSprite();
+  qm.setMenu(false);
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "the close does not open it");
+  assert.equal(qm.takeFocus(), false);
+
+  qm.leaveSprite();
+  qm.enterSprite();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true, "a fresh hover opens it again");
+});
+
+test("a right-press leaves an already-open pill up", () => {
+  const { qm, advance } = shown();
+  qm.setText("hi");
+  qm.menuPress();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, true);
+  assert.equal(qm.text, "hi");
+});
+
+test("a right-press puts an empty pill away", () => {
+  const { qm, advance } = shown();
+  qm.menuPress();
+  advance(HOVER_DELAY_MS);
+  assert.equal(qm.visible, false, "an empty pill hides at the press");
+  assert.equal(qm.takeFocus(), false, "and does not keep the caret");
+});
+
+test("the menu frame puts an empty pill away and keeps a typed draft", () => {
+  const empty = shown();
+  empty.qm.setMenu(true);
+  assert.equal(empty.qm.visible, false, "an empty pill hides when the menu opens");
+  empty.qm.setMenu(false);
+  empty.qm.enterSprite();
+  empty.advance(HOVER_DELAY_MS);
+  assert.equal(empty.qm.visible, false, "closing the menu does not bring it back");
+
+  const typed = shown();
+  typed.qm.setText("hi");
+  typed.qm.setMenu(true);
+  assert.equal(typed.qm.visible, true, "a typed draft stays while the menu is open");
+  assert.equal(typed.qm.text, "hi");
+  typed.qm.setMenu(false);
+  assert.equal(typed.qm.visible, true, "and after the menu goes away");
+  assert.equal(typed.qm.text, "hi");
+});
+
 test("leaving after the pill is up does not dismiss it immediately", () => {
   const { qm, advance } = shown();
 

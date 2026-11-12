@@ -107,6 +107,8 @@ export function createQuickMessage({
   // The overlay re-reports hover every frame. Summon and Send leave the
   // pointer on the Character, and that report would open the pill again.
   let yielded = false;
+  // The Character's menu is open. The user is there, not here.
+  let menuOpen = false;
   let bubbleUp = false;
   let ready = available;
   // Whether this overlay owns the Instance's bubble, as the last placement said.
@@ -154,6 +156,11 @@ export function createQuickMessage({
     focused = false;
     claimFocus = false;
     if (was) changed();
+  }
+
+  // An empty pill is the dwell this menu suspends. A typed draft stays.
+  function hideEmpty() {
+    if (visible && !hasText()) hide();
   }
 
   function show() {
@@ -226,7 +233,7 @@ export function createQuickMessage({
       if (disposed) return;
       overSprite = true;
       cancelAutoHide();
-      if (yielded || visible || hoverTimer !== null) return;
+      if (yielded || menuOpen || visible || hoverTimer !== null) return;
       hoverTimer = schedule(() => {
         hoverTimer = null;
         if (disposed || !overSprite) return;
@@ -317,6 +324,26 @@ export function createQuickMessage({
     // The user picked another activity. Hold only while the pointer is still here.
     aside() {
       yieldPill(overSprite || overPill);
+    },
+    // A right-press on the Character opens its menu. The native menu blocks
+    // the Shell, so its menu_open frame lands only after the close while this
+    // timer keeps running. Hold like a Summon from the press itself.
+    menuPress() {
+      yielded = true;
+      cancelHover();
+      hideEmpty();
+    },
+    // No dwell runs under the menu. Its close holds like a Summon, because
+    // the pointer it leaves on the Character is not a new hover.
+    setMenu(open) {
+      if (open === menuOpen) return;
+      menuOpen = open;
+      cancelHover();
+      if (open) {
+        hideEmpty();
+        return;
+      }
+      yielded = true;
     },
     submit,
     restore(value) {

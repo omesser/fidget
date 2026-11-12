@@ -643,6 +643,9 @@ struct SpritePlacement<'a> {
     /// it once Chat has closed. Bubble owner only, like the pill. False during
     /// a pointer gesture.
     hovered: bool,
+    /// This Instance's menu is open, so the pill does not arm under it.
+    /// Bubble owner only, like `hovered`.
+    menu_open: bool,
     /// Whether this overlay draws this Instance's bubble (`bubble_owner`).
     /// Still sent to the overlays that lost, which drop the bubble they were
     /// showing on the tick the answer changes.
@@ -717,6 +720,7 @@ impl<'a> SpritePlacement<'a> {
             thinking: bubble && instance.thinking,
             asking: bubble && instance.asking,
             hovered: bubble && instance.hovered,
+            menu_open: bubble && instance.menu_open,
             bubble,
             cue: instance.cue.filter(|_| bubble).map(Cue::name),
             ripple_x: contact.map(|c| c.point.x.round() as i32 - display.x.round() as i32),
@@ -874,6 +878,7 @@ struct Placed {
     thinking: bool,
     asking: bool,
     hovered: bool,
+    menu_open: bool,
     cue: Option<Cue>,
     /// Where this tick's landing touched, in the space every display shares.
     contact: Option<fidget_core::engine::RippleContact>,
@@ -7771,6 +7776,7 @@ mod tests {
             thinking: true,
             asking: true,
             hovered: true,
+            menu_open: true,
             cue: Some(Cue::Drop),
             contact: Some(fidget_core::engine::RippleContact {
                 point: fidget_core::engine::Point {
@@ -7840,6 +7846,8 @@ mod tests {
             !elsewhere.hovered,
             "or a second display opens its own pill and takes the keyboard"
         );
+        assert!(owner.menu_open, "the pill's overlay knows the menu is open");
+        assert!(!elsewhere.menu_open, "like the hover it suspends");
 
         assert_eq!(
             (elsewhere.animation, elsewhere.frame_index, elsewhere.mirror),
@@ -7885,6 +7893,7 @@ mod tests {
             thinking: false,
             asking: false,
             hovered: false,
+            menu_open: false,
             cue: None,
             contact: None,
             owner: Some(1),
