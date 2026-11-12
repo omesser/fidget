@@ -1,0 +1,9 @@
+# Auto-run items fidget intends, for agent-security-scanner surfaces.
+# Format: https://github.com/glance-labs/agent-security-scanner/blob/main/src/surfaces/README.md#the-allowlist
+# Allowed items still print as `allowed:` lines. Have a code owner review every change.
+autorun:
+  - file: .claude/settings.json
+    event: PreToolUse
+    command: 'bash "$CLAUDE_PROJECT_DIR"/scripts/refuse-no-verify.sh'
+    sha256: 5ca9201aea1b46b59c7a53f8d5372877b8c692902afdfe522c56c3b17f8b1cf6
+    reason: Committed Claude Code hook the project intends; scripts/refuse-no-verify.sh refuses git --no-verify before a Bash tool call runs
