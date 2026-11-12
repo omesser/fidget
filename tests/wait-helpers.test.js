@@ -14,12 +14,12 @@ function run(t, body, file = helper) {
   const dir = tempDir(t, "wait-mac-");
   const script = `set -u\n. "${file}"\ndir="${dir}"\nlog="$dir/app.log"; : > "$log"\n${body}`;
   const started = Date.now();
-  // Above the longest wait here (10 s overall rest cap). Without this, a
-  // stuck wait_for_rest sits until node:test's 60 s.
-  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 15_000 });
+  // Above the helper ceilings used here (rest 20 s, first wake 30 s). Without
+  // this, a stuck wait sits until node:test's 60 s.
+  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 35_000 });
   const ms = Date.now() - started;
   const timedOut = r.error && r.error.code === "ETIMEDOUT";
-  return { code: r.status, out: timedOut ? `run() timed out after 15s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
+  return { code: r.status, out: timedOut ? `run() timed out after 35s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
 }
 
 test("wait_for_trace returns soon after a line lands", (t) => {
@@ -260,18 +260,25 @@ test("wait_for_rest keeps waiting while the sprite walks, past 3 s", (t) => {
   assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
 });
 
-test("wait_for_rest gives up 3 s after the last move", (t) => {
-  const r = run(t, `pid=$$; echo "frame: 1 Walking pos(1,1) sprite(10,20) walk#1" >> "$log"; (sleep 0.5; echo "frame: 1 Walking pos(1,1) sprite(10,20) walk#1" >> "$log") & wait_for_rest "$log"`);
-  assert.notStrictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 2800 && r.ms < 4500, `took ${r.ms} ms`);
+test("wait_for_rest keeps waiting through a still pose, past 3 s", (t) => {
+  const sit = 'for i in $(seq 1 16); do echo "frame: 1 Perched pos(1,1) sprite(10,20) sit#0" >> "$log"; sleep 0.25; done; for i in 1 2 3 4 5; do echo "frame: 1 Perched pos(1,1) sprite(10,20) idle#1" >> "$log"; done';
+  const r = run(t, `pid=$$; (${sit}) & wait_for_rest "$log"`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
 });
 
-test("wait_for_rest gives up at 10 s if the sprite never stops", (t) => {
+test("wait_for_rest gives up at its ceiling if the sprite never rests", (t) => {
   const walk = 'i=0; while :; do i=$((i + 1)); echo "frame: 1 Walking pos(1,1) sprite($((i * 10)),20) walk#1" >> "$log"; sleep 0.25; done';
-  const r = run(t, `pid=$$; (${walk}) & w=$!; wait_for_rest "$log"; st=$?; kill $w 2>/dev/null; exit $st`);
+  const r = run(t, `pid=$$; FIDGET_REST_WAIT_SECONDS=2; (${walk}) & w=$!; wait_for_rest "$log"; st=$?; kill $w 2>/dev/null; exit $st`);
   assert.notStrictEqual(r.code, 0, r.out);
-  assert.match(r.out, /sprite never came to rest within 10s/);
-  assert.ok(r.ms >= 9000 && r.ms < 13000, `took ${r.ms} ms`);
+  assert.match(r.out, /sprite never came to rest within 2s/);
+  assert.ok(r.ms >= 1800 && r.ms < 5000, `took ${r.ms} ms`);
+});
+
+test("wait_for_first_wake still succeeds when the mark lands past 3 s", (t) => {
+  const r = run(t, `: > "$dir/marks"; (sleep 4.5; echo asked >> "$dir/marks") & wait_for_first_wake "$dir/marks" '^asked$'`);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.ok(r.ms >= 4000 && r.ms < 7000, `took ${r.ms} ms`);
 });
 
 const pwsh = spawnSync("pwsh", ["-NoProfile", "-Command", "1"], { encoding: "utf8" });

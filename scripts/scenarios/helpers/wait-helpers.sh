@@ -108,6 +108,13 @@ wait_for_up() { # <app log>
   wait_for_line "$FIDGET_STARTUP_WAIT_SECONDS" "$1" '^overlay:'
 }
 
+# Wait for the first mark of the first wake. The Director's clock starts at the
+# overlay's first draw, seconds after the `overlay:` line on a cold WebKit, so
+# that wake is part of the launch and gets the launch's budget.
+wait_for_first_wake() { # <marks file> <pattern>
+  wait_for_marks "$FIDGET_STARTUP_WAIT_SECONDS" "$@"
+}
+
 # Wait for a file to exist. tail -F cannot see an empty file appear, so this
 # checks again on each new line of the app log ($log), Fidget's own clock.
 wait_for_file() { # <seconds> <file path>
@@ -215,39 +222,15 @@ sprite_at_rest() { # <log>
     END { exit (bad || n < 5) }'
 }
 
-# Wait for the sprite to rest. Each move restarts the 3 s window; 10 s from
-# the start is the ceiling if it never stops.
+# A sprite can stand still for seconds without resting: a launch holds the spawn
+# pose up to 3 s for its first draw, then falls, says its landing line and may
+# sit for 4 s. 20 s is twice the slowest such launch e2e-macos has shown.
+FIDGET_REST_WAIT_SECONDS=20
+
+# Wait for the sprite to rest, checking again on each new line of its log.
 wait_for_rest() { # <log>
-  local flag result start
-  start=$(now_ms)
-  flag=$(mktemp "${TMPDIR:-/tmp}/fidget-rest.XXXXXX")
-  while :; do
-    sprite_at_rest "$1" && result=0 && break
-    if [ $(($(now_ms) - start)) -ge 10000 ]; then
-      echo "sprite never came to rest within 10s" >&2
-      result=1 && break
-    fi
-    : > "$flag"
-    wait_on_lines 3 0 "$1" rest_or_moved "$1" "$flag" || { result=1 && break; }
-    [ -s "$flag" ] || { result=0 && break; }
-  done
-  rm -f "$flag"
-  return "$result"
-}
-# Reader for wait_for_rest: exits on rest, or on a move after noting it.
-rest_or_moved() { # <log> <flag file>
-  local line spot last
-  last=$(grep '^frame: ' "$1" 2> /dev/null | tail -1 | grep -oE 'sprite\(-?[0-9]+,-?[0-9]+\)')
-  while IFS= read -r line; do
-    [[ $line == frame:* ]] || continue
-    sprite_at_rest "$1" && return 0
-    spot=$(grep -oE 'sprite\(-?[0-9]+,-?[0-9]+\)' <<< "$line")
-    if [ -n "$last" ] && [ "$spot" != "$last" ]; then
-      echo moved > "$2"
-      return 0
-    fi
-    last=$spot
-  done
+  wait_log=$1 wait_until "$FIDGET_REST_WAIT_SECONDS" sprite_at_rest "$1" && return 0
+  echo "sprite never came to rest within ${FIDGET_REST_WAIT_SECONDS}s" >&2
   return 1
 }
 

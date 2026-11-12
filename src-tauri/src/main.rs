@@ -816,7 +816,7 @@ fn draw_response(
 
 /// The longest a launch Instance waits for its first draw. A page whose
 /// `character` load failed never draws, and WebView2 can listen seconds late.
-/// A calibration knob: hold plus fall must fit `wait_for_rest`'s 10 s.
+/// A calibration knob: hold plus fall must fit `wait_for_rest`'s ceiling.
 const FIRST_DRAW_CEILING: Duration = Duration::from_secs(3);
 
 /// Whether an Instance's clock runs yet. A launch Instance waits until the
