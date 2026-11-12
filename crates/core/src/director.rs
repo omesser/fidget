@@ -527,7 +527,14 @@ fn prepare_reply(reply: &str, behaviors: &[String]) -> PreparedReply {
             cached: Some(first),
         };
     }
-    let Some((dot, name_end, name)) = glued_declared_behavior(reply, behaviors) else {
+    let glued = [
+        glued_declared_behavior(reply, behaviors),
+        glued_marked_behavior(reply, behaviors),
+    ]
+    .into_iter()
+    .flatten()
+    .min_by_key(|(at, _, _)| *at);
+    let Some((dot, name_end, name)) = glued else {
         return PreparedReply {
             text: reply.to_string(),
             glued_peel: None,
@@ -654,17 +661,8 @@ fn glued_declared_behavior<'a>(
                 from = dot + 1;
                 continue;
             }
-            // Glue at EOF, `|` or a newline, or space then uppercase dialogue.
-            // Not `main.rs now`.
-            let name_ends_here = match bytes.get(name_end) {
-                None => true,
-                Some(b'|') | Some(b'\n') | Some(b'\r') => true,
-                Some(b) if b.is_ascii_whitespace() => {
-                    matches!(bytes.get(name_end + 1), Some(c) if c.is_ascii_uppercase())
-                }
-                _ => false,
-            };
-            if name_ends_here && best.as_ref().is_none_or(|(at, _, _)| dot < *at) {
+            if glued_name_ends(bytes, name_end) && best.as_ref().is_none_or(|(at, _, _)| dot < *at)
+            {
                 best = Some((
                     dot,
                     name_end,
@@ -676,6 +674,56 @@ fn glued_declared_behavior<'a>(
         }
     }
     best
+}
+
+/// Glue at EOF, `|` or a newline, or space then `|` or uppercase dialogue.
+/// Not `main.rs now`.
+fn glued_name_ends(bytes: &[u8], name_end: usize) -> bool {
+    match bytes.get(name_end) {
+        None => true,
+        Some(b'|') | Some(b'\n') | Some(b'\r') => true,
+        Some(b) if b.is_ascii_whitespace() => {
+            matches!(bytes.get(name_end + 1), Some(c) if *c == b'|' || c.is_ascii_uppercase())
+        }
+        _ => false,
+    }
+}
+
+/// A `behavior:` marker for a declared name that is not a contract line of
+/// its own: glued to the planning before it, as a Harness that joins its text
+/// across a tool call writes it (#2193), or with the dialogue on its line.
+/// The marker starts the text, a line, or follows a space or a sentence end.
+/// Same shape as `glued_declared_behavior`: where the planning ends, where
+/// the name ends, and the name.
+fn glued_marked_behavior(reply: &str, behaviors: &[String]) -> Option<(usize, usize, String)> {
+    const MARK: &str = "behavior:";
+    let bytes = reply.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = find_ignore_ascii_case(&reply[from..], MARK) {
+        let at = from + rel;
+        from = at + MARK.len();
+        let starts_here = at == 0
+            || matches!(
+                bytes[at - 1],
+                b'.' | b'!' | b'?' | b'\n' | b'\r' | b' ' | b'\t'
+            );
+        if !starts_here {
+            continue;
+        }
+        let after = &reply[from..];
+        let name_at = from + (after.len() - after.trim_start_matches([' ', '\t']).len());
+        let name_len = reply[name_at..]
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+            .unwrap_or(reply.len() - name_at);
+        let name_end = name_at + name_len;
+        let Some(name) = declared(behaviors, &reply[name_at..name_end]) else {
+            continue;
+        };
+        if glued_name_ends(bytes, name_end) {
+            return Some((at, name_end, name));
+        }
+    }
+    None
 }
 
 fn merge_peel(a: Option<String>, b: Option<String>) -> Option<String> {
@@ -2867,6 +2915,44 @@ mod tests {
             Some("I waved"),
             "heuristic peel goes to Thinking, not the bit bucket"
         );
+    }
+
+    /// A `behavior:` line glued onto the planning above it, as a Harness that
+    /// joins its text across a tool call writes it (#2193), is still the
+    /// contract: the planning is Thinking and only what follows is said.
+    #[test]
+    fn a_behavior_marker_glued_after_planning_is_not_spoken() {
+        let declared = declares(&["walk", "ponder"]);
+        let planning =
+            "He is still planted beside the Dock. I will find the walk control and set him moving.";
+        for reply in [
+            format!("{planning}behavior: walk I am walking. The floor ends here. Complain to the dock."),
+            format!("{planning}behavior: walk\nI am walking. The floor ends here. Complain to the dock."),
+            format!("{planning} Behavior: walk | I am walking. The floor ends here. Complain to the dock."),
+        ] {
+            let woken = directing(Scripted::says(&reply), ["walk", "ponder"])
+                .wake_and_near_miss(&typed("walk"));
+            match &woken.wake {
+                Wake::Proposed(proposal) => {
+                    assert_eq!(proposal.behavior, "walk", "{reply:?}");
+                    assert_eq!(
+                        proposal.dialogue.as_deref(),
+                        Some("I am walking. The floor ends here. Complain to the dock."),
+                        "{reply:?}"
+                    );
+                }
+                other => panic!("glued marker should propose walk for {reply:?}, not {other:?}"),
+            }
+            assert_eq!(
+                woken.peeled_thought.as_deref(),
+                Some(planning),
+                "{reply:?}"
+            );
+            assert_eq!(
+                dialogue_of(&reply, &declared).as_deref(),
+                Some("I am walking. The floor ends here. Complain to the dock."),
+            );
+        }
     }
 
     /// A short declared name must not steal a file extension as period glue.

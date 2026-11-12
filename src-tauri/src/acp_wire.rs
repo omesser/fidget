@@ -1307,6 +1307,9 @@ struct Stream {
     thought: String,
     /// Between turns a different id is the next fire, and ends the wake.
     message: Option<MessageId>,
+    /// A tool call came after the last words, so the next words are a new
+    /// paragraph even when no `messageId` says so, as with grok (#2193).
+    after_tool: bool,
 }
 
 /// What a held question waits on. It is cancelled when that ends.
@@ -1809,6 +1812,9 @@ struct Restore {
     joined: Option<MessageId>,
     /// The open message's id differs from `joined`, so joining it breaks the paragraph.
     break_next: bool,
+    /// A tool call came since the last words, so joining the next ones breaks
+    /// the paragraph. Unlike `break_next`, it never starts a second reply.
+    after_tool: bool,
 }
 
 impl Restore {
@@ -1848,8 +1854,12 @@ impl Restore {
                 let text = chunk_text(block, self.thought_so_far());
                 self.add_turn_thought(&text);
             }
-            Heard::ToolCall(tool) => self.entries.push(tool.row()),
+            Heard::ToolCall(tool) => {
+                self.after_tool = true;
+                self.entries.push(tool.row());
+            }
             Heard::ToolUpdate(tool) => {
+                self.after_tool = true;
                 let known =
                     self.entries.iter_mut().rev().find(
                         |entry| matches!(entry, Replayed::ToolCall { id, .. } if *id == tool.id),
@@ -1945,6 +1955,7 @@ impl Restore {
         };
         let break_before = self.break_next;
         self.break_next = false;
+        let after_tool = std::mem::take(&mut self.after_tool);
         let text = answer.finish();
         let turn = self.turn_start();
         // No prompt means the replay never marked a turn, so a new id is the
@@ -1956,7 +1967,7 @@ impl Restore {
                 .iter_mut()
                 .find(|entry| matches!(entry, Replayed::Reply { .. }))
             {
-                if break_before {
+                if break_before || after_tool {
                     break_paragraph(held);
                 }
                 held.push_str(&text);
@@ -2604,6 +2615,7 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
         said,
         thought,
         message,
+        after_tool,
     } = stream;
     let think = |thought: &mut String, text: &str| {
         if text.is_empty() {
@@ -2622,7 +2634,7 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
             message: incoming,
             block,
         } => {
-            if message_changed(message.as_ref(), incoming) {
+            if std::mem::take(after_tool) || message_changed(message.as_ref(), incoming) {
                 said.separate();
             }
             if let Some(id) = incoming {
@@ -2632,18 +2644,21 @@ fn show(heard: Heard<'_>, session: &SessionId, stream: &mut Stream, on_event: &O
         }
         // None leaves the row's previous content or locations. An update
         // replaces only the fields it carries, as the replay does.
-        Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => on_event(Event::ToolCall {
-            session: session.0.to_string(),
-            id: tool.id.to_string(),
-            title: tool.title.map(str::to_string),
-            name: tool.name.map(str::to_string),
-            kind: tool.kind,
-            status: tool.status,
-            raw_input: tool.raw_input.cloned(),
-            raw_output: tool.raw_output.cloned(),
-            locations: tool.locations.map(places),
-            content: tool.content.map(pieces),
-        }),
+        Heard::ToolCall(tool) | Heard::ToolUpdate(tool) => {
+            *after_tool = true;
+            on_event(Event::ToolCall {
+                session: session.0.to_string(),
+                id: tool.id.to_string(),
+                title: tool.title.map(str::to_string),
+                name: tool.name.map(str::to_string),
+                kind: tool.kind,
+                status: tool.status,
+                raw_input: tool.raw_input.cloned(),
+                raw_output: tool.raw_output.cloned(),
+                locations: tool.locations.map(places),
+                content: tool.content.map(pieces),
+            })
+        }
         Heard::Plan(steps) => on_event(Event::Plan {
             session: session.0.to_string(),
             steps,
@@ -3677,6 +3692,47 @@ mod tests {
             })
             .collect();
         assert_eq!(drawn_replies, ["Hello\n\n there"]);
+    }
+
+    /// grok sends no `messageId`, so only the tool call between them marks the
+    /// words written before the tools apart from the reply after. They are
+    /// separate paragraphs live and restored, and the Behavior line reads.
+    #[test]
+    fn a_tool_call_breaks_the_paragraph_when_no_message_id_does() {
+        let updates = vec![
+            wire_text("user_message_chunk", "walk"),
+            wire_text(
+                "agent_message_chunk",
+                "He is still planted beside the Dock. I will set him moving.",
+            ),
+            wire(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "t1",
+                "title": "fidget__play_behavior", "kind": "other", "status": "pending"}),
+            ),
+            wire(
+                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1",
+                "status": "completed"}),
+            ),
+            wire_text("agent_message_chunk", "behavior: walk\nI am walking."),
+        ];
+        let expected =
+            "He is still planted beside the Dock. I will set him moving.\n\nbehavior: walk\nI am walking.";
+        let (reply, _) = drive(updates.clone());
+        assert_eq!(reply, expected);
+        let behaviors = ["walk".to_string()];
+        assert_eq!(
+            fidget_core::director::dialogue_of(&reply, &behaviors).as_deref(),
+            Some("I am walking.")
+        );
+
+        let restored: Vec<String> = restored_rows(&updates)
+            .into_iter()
+            .filter_map(|row| match row {
+                Replayed::Reply { text } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(restored, [expected]);
     }
 
     /// A thought chunk between two messages stays above the one reply, where
