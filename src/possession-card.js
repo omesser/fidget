@@ -2,6 +2,8 @@
 // decides whether the sprite is possessed, whether focus has left, and how
 // full the bar is.
 
+import { crossedDrag } from "./quick-message.js";
+
 const POSSESSION_HEADING = "Manually drive the fidget on your screen";
 
 const PAUSED_HEADING = "Paused";
@@ -79,14 +81,11 @@ export function chargeFill(charge) {
   return Math.min(1, Math.max(0, charge));
 }
 
-// The card takes the resume click only while paused. Otherwise a sprite
-// perched under it cannot be grabbed, so only the buttons' own rects take a
-// click. The bar is only drawn.
-export function possessionRects(card, bar, release, focus, paused) {
+// The whole card takes a press, since its background is the drag handle. The
+// bar is only drawn.
+export function possessionRects(card, bar) {
   const rects = [];
-  if (card) rects.push({ rect: card, clickable: Boolean(paused) });
-  if (release) rects.push({ rect: release, clickable: true });
-  if (focus) rects.push({ rect: focus, clickable: true });
+  if (card) rects.push({ rect: card, clickable: true });
   if (bar) rects.push({ rect: bar, clickable: false });
   return rects;
 }
@@ -125,17 +124,46 @@ function focusButton({ label, pressed }) {
   return button;
 }
 
-// One press handler, so a press on the focus button inside a paused card asks
-// for focus once. A press here is not a press on the art, so it must not poke.
-export function wirePossessionCard(card, invoke) {
+// The background is the drag handle. Only a press that never became a drag
+// resumes a paused card, so moving it leaves the keyboard where it is. A press
+// here is not a press on the art, so it must not poke.
+export function wirePossessionCard(card, invoke, drag) {
   const report = (command) => (err) => console.error(command, err);
+  const focus = () => invoke("overlay_request_focus").catch(report("overlay_request_focus"));
+  let press = null;
   card.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
-    const onFocus = Boolean(event.target.closest(".possession-focus"));
-    if (!onFocus && !card.classList.contains("paused")) return;
-    invoke("overlay_request_focus").catch(report("overlay_request_focus"));
+    if (event.target.closest(".possession-focus")) {
+      focus();
+      return;
+    }
+    if (event.button > 0 || event.target.closest("button")) return;
+    press = { id: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
+    card.setPointerCapture?.(event.pointerId);
   });
-  card.addEventListener("pointerup", (event) => event.stopPropagation());
+  card.addEventListener("pointermove", (event) => {
+    if (!press || event.pointerId !== press.id) return;
+    const dx = event.clientX - press.x;
+    const dy = event.clientY - press.y;
+    if (!press.dragging && !crossedDrag(dx, dy)) return;
+    press.dragging = true;
+    drag.move(dx, dy);
+  });
+  const end = (event, clicked) => {
+    if (!press || event.pointerId !== press.id) return;
+    const { dragging } = press;
+    press = null;
+    if (dragging) drag.drop();
+    else if (clicked && card.classList.contains("paused")) focus();
+  };
+  card.addEventListener("pointerup", (event) => {
+    event.stopPropagation();
+    end(event, true);
+  });
+  // A drop that never arrives would leave the whole display taking clicks.
+  for (const type of ["pointercancel", "lostpointercapture"]) {
+    card.addEventListener(type, (event) => end(event, false));
+  }
   // The release button presses Esc, so Possession ends on the path the key takes.
   card.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -193,11 +221,12 @@ export function possessionBounds(work, frame) {
   return frame;
 }
 
-// Top-left of `bounds`, the usable area of the display the sprite is on.
-// Where the sprite stands on that display does not move the card.
-export function placePossession(cardSize, barHeight, gap, bounds) {
-  const x = Math.round(bounds.x + POSSESSION_INSET);
-  const y = Math.round(bounds.y + POSSESSION_INSET);
+// Top-left of `bounds`, the usable area of the display the sprite is on, or
+// `at` once the card was dragged there. Where the sprite stands on that display
+// does not move the card.
+export function placePossession(cardSize, barHeight, gap, bounds, at) {
+  const x = Math.round(at?.x ?? bounds.x + POSSESSION_INSET);
+  const y = Math.round(at?.y ?? bounds.y + POSSESSION_INSET);
   return {
     card: { x, y },
     bar: {
@@ -206,5 +235,15 @@ export function placePossession(cardSize, barHeight, gap, bounds) {
       width: cardSize.width,
       height: barHeight,
     },
+  };
+}
+
+// Where a drag of (`dx`, `dy`) from `from` drops a card of `size`, kept whole
+// inside `bounds`.
+export function draggedTo(from, dx, dy, size, bounds) {
+  const clamp = (value, low, span) => Math.min(Math.max(value, low), low + Math.max(0, span));
+  return {
+    x: clamp(from.x + dx, bounds.x, bounds.width - size.width),
+    y: clamp(from.y + dy, bounds.y, bounds.height - size.height),
   };
 }

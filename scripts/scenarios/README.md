@@ -115,6 +115,15 @@ Finder to the front so the keyup lands there, clicks the sprite to give the
 overlay focus back, and checks that the sprite still stands. It has no X11 or
 Windows leaf yet.
 
+`possession-card-drag.sh` takes only the app binary and runs no Harness. It
+possesses the sprite, drags the bindings card by its heading with
+`throw-sprite.swift`'s slow drag, clicks a `type-target.swift` window, drags
+the paused card, and clicks it. From the `FIDGET_TRACE_BUBBLE` card line, it
+checks that the card follows each drag and does not move when focus leaves or
+comes back, that the paused drag leaves the keyboard with the other window,
+that Right still walks the sprite, and that the next possession seats the
+card in the corner again. It has no X11 or Windows leaf yet.
+
 `launcher-dies-at-startup.sh` takes the same two binaries. Its fixture aborts
 on the first launch, the way `npx` does over a broken Node. It opens Chat from
 the menu bar icon's Chat… row, checks that at 420 and 320 points the Harness

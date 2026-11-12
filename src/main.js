@@ -15,6 +15,7 @@ import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 import { possessionEdge } from "./possession-keys.js";
 import {
   chargeFill,
+  draggedTo,
   paintPossession,
   placePossession,
   possessionBounds,
@@ -306,6 +307,8 @@ function positionPossession(view, latest) {
     view.possessionRect = null;
     view.chargeRect = null;
     view.possessionSeat = null;
+    view.cardAt = null;
+    view.cardFrom = null;
     reportOverlayRects();
     return;
   }
@@ -317,19 +320,20 @@ function positionPossession(view, latest) {
     seat.y === bounds.y &&
     seat.width === bounds.width &&
     seat.height === bounds.height &&
-    seat.paused === model.paused;
+    seat.paused === model.paused &&
+    seat.at === view.cardAt;
   // Skip the measure: a charge tick only widens the fill. Still publish the
   // bar. Windows clips to the reported region, so a bar that appears after
   // the card is seated stays invisible until its rect is sent.
   if (!rebuilt && sameSeat && view.cardSize?.width) {
-    const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
+    const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds, view.cardAt);
     view.chargeRect = chargeRectFor(fill, placed);
     return;
   }
   if (rebuilt || !view.cardSize?.width) {
     view.cardSize = { width: view.card.offsetWidth, height: view.card.offsetHeight };
   }
-  const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds);
+  const placed = placePossession(view.cardSize, CHARGE_BAR_PX, POSSESSION_GAP_PX, bounds, view.cardAt);
   view.card.style.transform = `translate(${placed.card.x}px, ${placed.card.y}px)`;
   view.bar.style.transform = `translate(${placed.bar.x}px, ${placed.bar.y}px)`;
   view.bar.style.width = `${placed.bar.width}px`;
@@ -339,19 +343,12 @@ function positionPossession(view, latest) {
     width: bounds.width,
     height: bounds.height,
     paused: model.paused,
+    at: view.cardAt,
   };
   view.possessionRect = [placed.card.x, placed.card.y, view.cardSize.width, view.cardSize.height];
-  const rectOf = (button) =>
-    button && [
-      placed.card.x + button.offsetLeft,
-      placed.card.y + button.offsetTop,
-      button.offsetWidth,
-      button.offsetHeight,
-    ];
-  view.releaseRect = rectOf(view.card.querySelector(".possession-release"));
-  view.focusRect = rectOf(view.card.querySelector(".possession-focus"));
   view.chargeRect = chargeRectFor(fill, placed);
   reportOverlayRects();
+  traceBubble(`possession card at (${placed.card.x},${placed.card.y}) paused=${model.paused}`);
 }
 
 function positionQuick(view, spriteRect) {
@@ -594,15 +591,28 @@ function attachQuickMessage(view, id) {
   charge.className = "possession-charge-fill";
   bar.append(charge);
   for (const el of [card, bar]) el.dataset.desktopBlur = "none";
-  wirePossessionCard(card, window.__TAURI__.core.invoke);
+  wirePossessionCard(card, window.__TAURI__.core.invoke, {
+    move(dx, dy) {
+      const seat = view.possessionSeat;
+      if (!view.possessionRect || !seat) return;
+      const [x, y] = view.possessionRect;
+      view.cardFrom ??= { x, y };
+      view.cardAt = draggedTo(view.cardFrom, dx, dy, view.cardSize, seat);
+      positionPossession(view, view.latest);
+    },
+    drop() {
+      view.cardFrom = null;
+      reportOverlayRects();
+    },
+  });
   stage.append(card, bar);
   view.card = card;
   view.bar = bar;
   view.chatUiKey = null;
   view.chatAppearance = [card, bar].map((el) => mountChatAppearance(el));
   view.possessionRect = null;
-  view.releaseRect = null;
-  view.focusRect = null;
+  view.cardAt = null;
+  view.cardFrom = null;
   view.chargeRect = null;
 
   let machine;
@@ -696,12 +706,12 @@ function reportOverlayRects() {
     if (view.hotspot) push(view.hotspot, true);
     if (view.quickHotspot) push(view.quickHotspot, true);
     if (view.bubbleRect) push(view.bubbleRect, false);
-    // The card stays in the corner. `follows` would sweep its rect along the
-    // sprite's trail, and an unpaused card must not take the grab.
-    const paused = view.card.classList.contains("paused");
-    const release = view.possessionRect && view.releaseRect;
-    const focus = view.possessionRect && view.focusRect;
-    for (const part of possessionRects(view.possessionRect, view.chargeRect, release, focus, paused)) {
+    // The card stays where it was put. `follows` would sweep its rect along
+    // the sprite's trail. Mid-drag the whole usable area takes the pointer, so
+    // a drag that outruns the card does not fall through to the desktop.
+    const seat = view.possessionSeat;
+    const card = view.cardFrom && seat ? [seat.x, seat.y, seat.width, seat.height] : view.possessionRect;
+    for (const part of possessionRects(card, view.chargeRect)) {
       rects.push({ rect: part.rect, clickable: part.clickable });
     }
     // Stays put: the ghost flies to where the sprite was when the cue drew.
