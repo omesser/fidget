@@ -169,20 +169,8 @@ impl Button {
 
     fn observe(&mut self, now: ButtonSample) {
         let (pressed, released) = (!self.last.level && now.level, self.last.level && !now.level);
-        let mut downs = u64::from(now.downs.wrapping_sub(self.last.downs));
-        let mut ups = u64::from(now.ups.wrapping_sub(self.last.ups));
-        // Counts land in event order, so with the held press's down still
-        // uncounted, an up count past the uncounted releases ended an earlier
-        // click. It is told ahead of the hold or not at all, never inside it.
-        if now.level && self.uncounted.downs + u64::from(pressed) > self.uncounted.ups {
-            let earlier = downs.min(ups.saturating_sub(self.uncounted.ups));
-            downs -= earlier;
-            ups -= earlier;
-            if pressed {
-                self.seen.downs += earlier;
-                self.seen.ups += earlier;
-            }
-        }
+        let downs = now.downs.wrapping_sub(self.last.downs);
+        let ups = now.ups.wrapping_sub(self.last.ups);
         merge(
             &mut self.seen.downs,
             &mut self.uncounted.downs,
@@ -227,7 +215,12 @@ impl Button {
 /// Adds one tick's edges of one kind. A count lands with its level edge or
 /// after it, never before, so it repeats an edge the level showed only while
 /// one is `uncounted`. Any other count is an edge the level missed.
-fn merge(seen: &mut u64, uncounted: &mut u64, level_edge: bool, counted: u64) {
+///
+/// A count says nothing of which press it belongs to, so a missed tap's up
+/// landing mid-hold ends a grab begun inside the counters' lag. Guessing the
+/// owner can leave the reader inverted for good; this errs, then heals.
+fn merge(seen: &mut u64, uncounted: &mut u64, level_edge: bool, counted: u32) {
+    let counted = u64::from(counted);
     *uncounted += u64::from(level_edge);
     let repeats = counted.min(*uncounted);
     *uncounted -= repeats;
@@ -583,6 +576,78 @@ mod tests {
         assert!(!told[12], "quiet after the second release: {told:?}");
     }
 
+    /// Late counts and idle polls may cost a gesture, but the reader must not
+    /// stay wrong. Random clicks, counters published every 500 ms, polls at
+    /// each rate: once quiet and counted, told is the hand's level again.
+    #[test]
+    fn the_reader_heals_after_any_click_sequence() {
+        fn roll(rng: &mut u64, below: u64) -> u64 {
+            *rng ^= *rng << 13;
+            *rng ^= *rng >> 7;
+            *rng ^= *rng << 17;
+            *rng % below
+        }
+        for interval in [Some(16), Some(100), Some(1000), None] {
+            for seed in 1..=1000_u64 {
+                let mut rng = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                // The counters' tick is not in step with the polls.
+                let phase = roll(&mut rng, 500);
+                // Times in ms, press and release by turns from a press.
+                let mut events = Vec::new();
+                let mut at = 0;
+                for _ in 0..=roll(&mut rng, 8) {
+                    at += match roll(&mut rng, 3) {
+                        0 => 1 + roll(&mut rng, 60),
+                        1 => 60 + roll(&mut rng, 440),
+                        _ => 500 + roll(&mut rng, 1000),
+                    };
+                    events.push(at);
+                }
+                let held = events.len() % 2 == 1;
+                // Every count has landed and every edge has had its tick.
+                let settled = at + 500 + 1000 * (events.len() as u64 + 1);
+                // Then a clean click, each edge held past the slowest poll.
+                let click = settled + 3000;
+                if held {
+                    events.push(click + 1);
+                }
+                events.extend([click + 2000, click + 3200]);
+                let read = |t: u64| {
+                    let edges = |first: usize, until: u64| {
+                        let edges = events.iter().skip(first).step_by(2);
+                        edges.filter(|&&at| at <= until).count() as u32
+                    };
+                    let landed = ((t + phase) / 500 * 500).saturating_sub(phase);
+                    sample(
+                        edges(0, t) > edges(1, t),
+                        4 + edges(0, landed),
+                        4 + edges(1, landed),
+                    )
+                };
+                let mut button = Button::new(read(0));
+                let (mut t, mut quiet, mut clicked) = (0, Vec::new(), vec![held]);
+                while t < click + 7000 {
+                    t += interval.unwrap_or_else(|| [16, 100, 1000][roll(&mut rng, 3) as usize]);
+                    let told = button.step(read(t));
+                    if t > click {
+                        clicked.push(told);
+                    } else if t > settled {
+                        quiet.push(told);
+                    }
+                }
+                clicked.dedup();
+                let case = format!("interval {interval:?}, seed {seed}, events {events:?}");
+                assert!(quiet.iter().all(|&told| told == held), "quiet: {case}");
+                let one_click: &[bool] = if held {
+                    &[true, false, true, false]
+                } else {
+                    &[false, true, false]
+                };
+                assert_eq!(clicked, one_click, "clean click: {case}");
+            }
+        }
+    }
+
     /// The #1858 trace's 1546.7 ms Control-click tick: the level stayed down
     /// across a release and a new press, and only the counters moved.
     #[test]
@@ -766,58 +831,6 @@ mod tests {
             sample(false, 5, 5),
             sample(false, 5, 5),
         ]));
-    }
-
-    /// A flick on the sprite that starts within the counters' lag of a tap
-    /// the level missed. `landed` is what the counters added by mid-hold,
-    /// and they reach both clicks once the hand has stopped.
-    fn flick_with_counts_landing_mid_hold(landed: (u32, u32)) -> Vec<Verb> {
-        let mut button = Button::new(sample(false, 4, 4));
-        let mut pointer = Pointer::default();
-        let mut at = Point { x: 100.0, y: 100.0 };
-        let mid_hold = sample(true, 4 + landed.0, 4 + landed.1);
-        let held = [(sample(true, 4, 4), 20.0); 5];
-        let held_on = [(mid_hold, 20.0); 5];
-        let let_go = [(sample(false, mid_hold.downs, mid_hold.ups), 20.0)];
-        let still = [(sample(false, mid_hold.downs, mid_hold.ups), 0.0); 10];
-        let counted = [(sample(false, 6, 6), 0.0); 3];
-        let ticks = held.into_iter().chain(held_on).chain(let_go);
-        let mut verbs = Vec::new();
-        for (now, step) in ticks.chain(still).chain(counted) {
-            at.x += step;
-            verbs.extend(pointer.update(true, button.step(now), false, at, 16));
-        }
-        verbs.retain(|verb| !matches!(verb, Verb::Grab));
-        verbs
-    }
-
-    /// The tap's counts land while the flick's press is held. They are not
-    /// that press's release: the grab holds, and no click follows the throw.
-    #[test]
-    fn a_missed_taps_counts_landing_mid_hold_do_not_end_the_grab() {
-        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((1, 1)));
-    }
-
-    /// The same, when the counters catch up with the held press's down too.
-    #[test]
-    fn a_missed_taps_counts_landing_with_the_held_presss_down_do_not_end_the_grab() {
-        assert_thrown_at_the_hands_speed(&flick_with_counts_landing_mid_hold((2, 1)));
-    }
-
-    /// The tap's counts land on the tick the level shows the next press. The
-    /// press is not the tap: it is told after it, at once, and stays held.
-    #[test]
-    fn a_missed_tap_counted_as_the_next_press_shows_is_a_click_then_a_hold() {
-        assert_eq!(
-            levels(&[
-                sample(false, 4, 4),
-                sample(true, 5, 5),
-                sample(true, 5, 5),
-                sample(true, 5, 5),
-                sample(true, 5, 5),
-            ]),
-            vec![true, false, true, true]
-        );
     }
 
     /// Mid-hold, with the held press's down already counted, a release and
