@@ -65,13 +65,17 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 . (Join-Path $PSScriptRoot "..\helpers\possession-card-shots.ps1")
 
 if ($SelfTest) {
-    $test = Join-Path $PSScriptRoot "..\helpers\test-possession-card-shots.ps1"
-    & $test
-    exit $LASTEXITCODE
+    $failures = 0
+    foreach ($name in @("test-possession-card-shots.ps1", "test-send-input.ps1")) {
+        & (Join-Path $PSScriptRoot "..\helpers\$name")
+        if ($LASTEXITCODE -ne 0) { $failures++ }
+    }
+    exit [int]($failures -ne 0)
 }
 
 . (Join-Path $PSScriptRoot "..\helpers\wait-helpers.win.ps1")
 . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
+. (Join-Path $PSScriptRoot "..\helpers\send-input.win.ps1")
 
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("FAIL: $Message")
@@ -191,12 +195,9 @@ public static class PossessionCardShotsWin {
     [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
     [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr m, int type, out uint x, out uint y);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
-    [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] i, int size);
     public delegate bool Callback(IntPtr h, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
-    [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk, scan; public uint flags, time; public IntPtr extra; }
-    [StructLayout(LayoutKind.Explicit)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT k; }
     static bool Shown(IntPtr h) {
         int cloaked;
         return IsWindowVisible(h) && !(DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0);
@@ -255,17 +256,6 @@ public static class PossessionCardShotsWin {
         finally { if (joined) AttachThreadInput(me, front, false); }
         return GetForegroundWindow() == h;
     }
-    static void Send(INPUT[] all) {
-        uint sent = SendInput((uint)all.Length, all, Marshal.SizeOf(typeof(INPUT)));
-        if (sent != all.Length) throw new InvalidOperationException("SendInput sent " + sent + " of " + all.Length);
-    }
-    public static void Key(ushort vk, bool up) {
-        var i = new INPUT();
-        i.type = 1;
-        i.k.vk = vk;
-        i.k.flags = up ? 2u : 0u;
-        Send(new INPUT[] { i });
-    }
 }
 "@
 }
@@ -302,6 +292,7 @@ $env:FIDGET_CHARACTERS = $chars
 $grey = Get-BackdropGrey
 $script:form = $null
 $script:proc = $null
+$script:spaceDown = $false
 
 function Get-TraceLines { return @(Get-Content -LiteralPath $traceFile -ErrorAction SilentlyContinue) }
 
@@ -444,13 +435,15 @@ try {
     [System.Windows.Forms.Application]::DoEvents()
     Move-Backdrop $box
 
-    [PossessionCardShotsWin]::Key(0x20, $false)
+    [SendInputWin]::Key(0x20, $false)
+    $script:spaceDown = $true
     Start-Sleep -Milliseconds 450
     $box = Get-ShotBoxFromTrace
     if (-not $box) { Fail "the card trace went missing during the charge; see $traceFile" }
     Move-Backdrop $box
     Save-CardShot "win-card-charging.png" $box
-    [PossessionCardShotsWin]::Key(0x20, $true)
+    [SendInputWin]::Key(0x20, $true)
+    $script:spaceDown = $false
 
     $blurs = @(Get-TraceLines | Where-Object { $_ -match '^\d+ overlay [^:]+: window blur' }).Count
     if (-not ([PossessionCardShotsWin]::Bring($script:form.Handle))) {
@@ -475,6 +468,8 @@ try {
     Note "ERROR: $($_.Exception.Message)"
     throw
 } finally {
+    # A FAIL mid-charge must not leave Space held on the desktop.
+    if ($script:spaceDown) { try { [SendInputWin]::Key(0x20, $true) } catch { } }
     if ($script:form) {
         try { $script:form.Close(); $script:form.Dispose() } catch { }
         $script:form = $null
