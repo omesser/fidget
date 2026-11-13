@@ -67,9 +67,9 @@ jobs:
         id: scan
         # Exit 1 is findings at or above --fail-on (default high). This run
         # is observational, so 0 and 1 succeed; 2 (incomplete or tool error)
-        # and any other code (a crash) still fail the job. The first run is
-        # the readable log; the second writes SARIF, with paths relative to
-        # the fidget checkout (the working directory), and its code decides.
+        # and any other code (a crash) still fail the job. One run writes
+        # SARIF, with paths relative to the fidget checkout (the working
+        # directory); warnings and baselined lines still go to the log.
         working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
@@ -77,7 +77,6 @@ jobs:
           SARIF_FILE: ${{ runner.temp }}/glance-surfaces.sarif
         run: |
           set +e
-          node "$SCANNER_BIN" surfaces --dir "$FIDGET_DIR"
           node "$SCANNER_BIN" surfaces --dir "$FIDGET_DIR" --sarif > "$SARIF_FILE"
           status=$?
           set -e
