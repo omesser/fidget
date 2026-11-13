@@ -1,0 +1,7 @@
+# Reviewed findings fidget accepts, for agent-security-scanner surfaces.
+# Format: https://github.com/glance-labs/agent-security-scanner/blob/main/src/surfaces/README.md#the-baseline-configuration
+# Baselined findings still print as `baselined:` lines. Have a code owner review every change.
+findings:
+  - id: "678da8ef"
+    category: autorun_agent_rule
+    reason: Committed Cursor alwaysApply rule that sets pstack per-role models; it runs no script. Reviewed as intended project configuration.

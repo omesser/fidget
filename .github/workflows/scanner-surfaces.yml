@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write # upload-sarif to GitHub code scanning
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.scanner_ref }}
@@ -63,20 +64,36 @@ jobs:
           npm run build
 
       - name: Run surfaces
+        id: scan
         # Exit 1 is findings at or above --fail-on (default high). This run
         # is observational, so 0 and 1 succeed; 2 (incomplete or tool error)
-        # and any other code (a crash) still fail the job.
+        # and any other code (a crash) still fail the job. One run writes
+        # SARIF, with paths relative to the fidget checkout (the working
+        # directory); warnings and baselined lines still go to the log.
+        working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
           FIDGET_DIR: ${{ github.workspace }}/fidget
+          SARIF_FILE: ${{ runner.temp }}/glance-surfaces.sarif
         run: |
           set +e
-          node "$SCANNER_BIN" surfaces --dir "$FIDGET_DIR"
+          node "$SCANNER_BIN" surfaces --dir "$FIDGET_DIR" --sarif > "$SARIF_FILE"
           status=$?
           set -e
+          echo "code=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then
             echo "surfaces exited $status (0 = clean, 1 = findings). The job does not fail on findings."
             exit 0
           fi
           echo "::error::surfaces exited $status (2 = incomplete or tool error; anything else is a crash)."
           exit "$status"
+
+      - name: Upload SARIF to code scanning
+        # Only after a complete scan. The scanner's README says not to upload
+        # after exit 2: a partial scan closes the alerts for every file it
+        # skipped. A failed scan step skips this step.
+        if: steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1'
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ runner.temp }}/glance-surfaces.sarif
+          checkout_path: ${{ github.workspace }}/fidget
