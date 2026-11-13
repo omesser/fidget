@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::consent;
 use crate::dev_flags;
+use crate::i18n::Lang;
 use crate::model;
 use crate::settings::{BoolField, TextField};
 
@@ -473,6 +474,7 @@ pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 pub const HARNESS_CWD_ID: &str = "harness_cwd";
 pub const HOVER_DELAY_MS_ID: &str = "hover_delay_ms";
+pub const LANGUAGE_ID: &str = "language";
 
 /// A place in Settings the Shell can send the user to. A capability, not a
 /// tab index: the per-OS row id stays in the consent catalog.
@@ -681,6 +683,56 @@ pub fn harness_choice(title: &str) -> String {
             .unwrap_or(title)
             .to_string(),
         preset => preset.to_string(),
+    }
+}
+
+pub const LANGUAGE_SYSTEM: &str = "System";
+
+pub fn language_options() -> Vec<String> {
+    let mut choices = vec![LANGUAGE_SYSTEM.to_string()];
+    choices.extend(Lang::ALL.iter().map(|lang| lang.endonym().to_string()));
+    choices
+}
+
+pub fn language_choice(title: &str) -> String {
+    Lang::ALL
+        .into_iter()
+        .find(|lang| lang.endonym() == title)
+        .map(|lang| lang.code().to_string())
+        .unwrap_or_default()
+}
+
+pub fn language_title(value: &str) -> String {
+    Lang::parse(value)
+        .map(|lang| lang.endonym().to_string())
+        .unwrap_or_else(|| LANGUAGE_SYSTEM.to_string())
+}
+
+fn language_section() -> FormSection {
+    let overridden = crate::i18n::flag().is_some();
+    FormSection {
+        heading: "Language".to_string(),
+        serves: None,
+        comment: None,
+        disclosure: None,
+        status: None,
+        rows: vec![FormRow::Popup {
+            id: LANGUAGE_ID.to_string(),
+            label: None,
+            writes: TextField::Language,
+            help: Some(
+                "Preferred language for the character's replies. The interface stays in English."
+                    .to_string(),
+            ),
+            options: language_options(),
+            frozen: overridden,
+            batched: false,
+            disclosure: Some(
+                "The character may follow the user's language when they write in another language. Behavior names are never translated."
+                    .to_string(),
+            ),
+            status: overridden.then(|| "Overridden by --lang".to_string()),
+        }],
     }
 }
 
@@ -1167,6 +1219,7 @@ fn character_sections(live: &Live) -> Vec<FormSection> {
 
 fn presence_sections(bundled: bool) -> Vec<FormSection> {
     vec![
+        language_section(),
         FormSection {
             heading: "Do Not Disturb".to_string(),
             serves: None,
@@ -2284,6 +2337,7 @@ pub(crate) mod tests {
             "Hide",
             "Instances",
             "Last user turn",
+            "Language",
             "Launch",
             "Action Log",
             "Memory File",
@@ -2294,6 +2348,18 @@ pub(crate) mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(headings, expected);
+    }
+
+    #[test]
+    fn language_choices_round_trip() {
+        assert_eq!(language_options()[0], LANGUAGE_SYSTEM);
+        for title in language_options() {
+            assert_eq!(language_title(&language_choice(&title)), title);
+        }
+        assert_eq!(language_choice("Français"), "fr");
+        assert_eq!(language_choice("Español"), "es");
+        assert_eq!(language_choice(LANGUAGE_SYSTEM), "");
+        assert_eq!(language_title("de"), LANGUAGE_SYSTEM);
     }
 
     #[test]

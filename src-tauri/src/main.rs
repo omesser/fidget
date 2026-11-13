@@ -39,6 +39,7 @@ mod dev_flags;
 mod frame_loop;
 mod glass;
 mod harness;
+mod i18n;
 mod login_item;
 #[cfg(unix)]
 mod login_path;
@@ -3375,7 +3376,12 @@ fn chat_opening_layers(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        instructions: app_instructions(behaviors, blank, inspect.harness.is_some()),
+        instructions: app_instructions(
+            behaviors,
+            blank,
+            inspect.harness.is_some(),
+            i18n::reply_language(),
+        ),
         personality: if blank {
             String::new()
         } else {
@@ -3442,6 +3448,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
                 .unwrap_or_default(),
             blank,
             inspect.as_ref().is_some_and(|read| read.harness.is_some()),
+            i18n::reply_language(),
         ),
         personality: if blank {
             String::new()
@@ -5484,6 +5491,7 @@ fn main() {
             // Before anything reads a development switch: the frame loop and
             // the overlay panel load them from `dev_flags`, not the env.
             dev_flags::seed(&settings);
+            i18n::apply(&settings.language);
             // The WebKitGTK this process loaded, which an AppImage bundles.
             #[cfg(target_os = "linux")]
             if let Ok(version) = tauri::webview_version() {

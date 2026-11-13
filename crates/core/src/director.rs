@@ -27,11 +27,13 @@ use crate::sensing::Activity;
 mod prompt;
 mod recency;
 #[cfg(test)]
+pub(crate) use prompt::character_layers;
+#[cfg(test)]
 pub(crate) use prompt::character_prompt;
 #[cfg(test)]
 use prompt::follow_up;
 pub use prompt::{app_instructions, happened_word, typed_line};
-pub(crate) use prompt::{character_layers, named_moment, with_layers};
+pub(crate) use prompt::{character_layers_in_language, named_moment, with_layers};
 pub use recency::{Doing, Lately, Recency, Step};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
@@ -389,18 +391,34 @@ impl<C: Completer> ModelDirector<C> {
 
     /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
-        self.request(context).text(false)
+        self.prompt_in_language(context, None)
     }
 
-    /// This wake as the Completer receives it.
+    /// Show the same language preference used by an outgoing request.
+    pub fn prompt_in_language(&self, context: &Context, reply_language: Option<&str>) -> String {
+        self.request_in_language(context, reply_language)
+            .text(false)
+    }
+
+    /// This wake as the Completer receives it (English by default).
     pub fn request(&self, context: &Context) -> WakeRequest {
+        self.request_in_language(context, None)
+    }
+
+    /// Build a wake with an explicit preference, without mutable core globals.
+    pub fn request_in_language(
+        &self,
+        context: &Context,
+        reply_language: Option<&str>,
+    ) -> WakeRequest {
         WakeRequest {
             prompt: named_moment(context, &self.instance),
-            layers: character_layers(
+            layers: character_layers_in_language(
                 context,
                 self.behaviors.iter(),
                 self.blank,
                 self.completer.has_tools(),
+                reply_language,
             ),
             opening: !self.opened.load(Ordering::SeqCst),
             instance: self.instance.clone(),
@@ -2433,12 +2451,29 @@ mod tests {
 
     #[test]
     fn the_app_layer_stays_under_its_budget() {
-        let app = app_instructions(["wave", "nap", "sit"], false, true);
+        let app = app_instructions(["wave", "nap", "sit"], false, true, None);
         assert!(
             app.len() < APP_LAYER_BUDGET,
             "app_instructions is {} bytes, over the {APP_LAYER_BUDGET} budget: {app}",
             app.len()
         );
+    }
+
+    #[test]
+    fn spoken_language_is_a_preference_per_request() {
+        let french = app_instructions(["wave"], false, true, Some("French"));
+        let spanish = app_instructions(["wave"], false, true, Some("Spanish"));
+        let english = app_instructions(["wave"], false, true, None);
+        assert!(french.contains("Prefer to speak in French"));
+        assert!(french.contains("follow their language instead"));
+        assert!(!french.contains("Spanish"));
+        assert!(spanish.contains("Prefer to speak in Spanish"));
+        assert!(!english.contains("Prefer to speak in"));
+        assert_eq!(
+            english,
+            app_instructions(["wave"], false, true, Some("English"))
+        );
+        assert_eq!(app_instructions(["wave"], true, true, Some("French")), "");
     }
 
     #[test]

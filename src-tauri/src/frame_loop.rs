@@ -2255,112 +2255,118 @@ pub(crate) fn run_frame_loop(
                 // the trace at the end of this Instance's turn reads it.
                 let happened = live.happened.clone();
                 let mut asking = false;
-                let reactive_wake = if let (Some(model), Some(activity)) =
-                    (&live.model, last_activity.as_ref())
-                {
-                    if director::session_due(
-                        live.addressed,
-                        live.since_proactive,
-                        &live.pace,
-                        activity.displays_asleep,
-                        instance.do_not_disturb(),
-                        config.proactive_allowed,
-                        instance.possessed(),
-                    ) && config.enabled
-                    {
-                        let context = Context {
-                            activity: activity.clone(),
-                            recent: live.recent.clone(),
-                            // The two authored layers, the package's and
-                            // this Instance's own (ADR-0012). Read off the
-                            // roster, which is where a save lands.
-                            personality: live.character.personality.clone(),
-                            instance_prompt: instance.prompt().to_string(),
-                            state: frame.state,
-                            happened: live.happened.clone(),
-                            lately: live.recency.take(&live.happened),
-                            standing: assembler.standing_on(frame.position),
-                            front_title: activity
-                                .frontmost_application
-                                .as_deref()
-                                .and_then(|name| assembler.front_title(name)),
-                            caffeinate: caffeinate_fact,
-                            possessed: instance.possessed(),
-                        };
-                        let was_addressed = live.addressed;
-                        if live.addressed {
-                            live.pace.after_reactive();
+                let reactive_wake =
+                    if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
+                        if director::session_due(
+                            live.addressed,
+                            live.since_proactive,
+                            &live.pace,
+                            activity.displays_asleep,
+                            instance.do_not_disturb(),
+                            config.proactive_allowed,
+                            instance.possessed(),
+                        ) && config.enabled
+                        {
+                            let context = Context {
+                                activity: activity.clone(),
+                                recent: live.recent.clone(),
+                                // The two authored layers, the package's and
+                                // this Instance's own (ADR-0012). Read off the
+                                // roster, which is where a save lands.
+                                personality: live.character.personality.clone(),
+                                instance_prompt: instance.prompt().to_string(),
+                                state: frame.state,
+                                happened: live.happened.clone(),
+                                lately: live.recency.take(&live.happened),
+                                standing: assembler.standing_on(frame.position),
+                                front_title: activity
+                                    .frontmost_application
+                                    .as_deref()
+                                    .and_then(|name| assembler.front_title(name)),
+                                caffeinate: caffeinate_fact,
+                                possessed: instance.possessed(),
+                            };
+                            let was_addressed = live.addressed;
+                            if live.addressed {
+                                live.pace.after_reactive();
+                            } else {
+                                live.pace.after_ambient();
+                            }
+                            live.addressed = false;
+                            live.happened = Happened::Proactive;
+                            live.since_proactive = Duration::ZERO;
+                            let line = instance
+                                .whereabouts(&displays.frames, &displays.usable_frames)
+                                .prompt_line();
+                            // The panel shows this copy. The worker appends `line`
+                            // after `request`, so an in-flight reply can still open
+                            // the session before this wake is sent.
+                            let reply_language = crate::i18n::reply_language();
+                            let mut payload = model.prompt_in_language(&context, reply_language);
+                            if !payload.ends_with('\n') {
+                                payload.push('\n');
+                            }
+                            payload.push_str(&line);
+                            // Read before the `Context` is handed to the slot,
+                            // and applied only if the slot took the call.
+                            let caret = cancelled_caret(live.chat_turn, &context.happened);
+                            let chat_turn = matches!(context.happened, Happened::Chat(_));
+                            let touched =
+                                director::claim(&context.happened) == director::Claim::Interaction;
+                            let cell = director::happened_cell(&context.happened);
+                            match slots.wake_with_prompt(
+                                &live.id,
+                                Arc::clone(model),
+                                context,
+                                line,
+                                reply_language,
+                            ) {
+                                // The call on the wire is the truer one
+                                // (ADR-0016). This wake is dropped, not queued:
+                                // the bookkeeping above has already spent it.
+                                completer::Woke::Dropped => false,
+                                // A touch the character cannot answer yet points at
+                                // the question. A Summon already opens Chat, a
+                                // typed line is already in it, and a tick is nobody's.
+                                completer::Woke::AwaitingUser => {
+                                    asking = touched;
+                                    false
+                                }
+                                completer::Woke::Started => {
+                                    // One panel for however many Instances are running, so it shows
+                                    // the newest call, and the last payload sent is the honest answer.
+                                    if let Ok(mut inspect) = inspect.lock() {
+                                        inspect.last_payload = Some(payload);
+                                        inspect.wake_secs = live.pace.wait().as_secs();
+                                    }
+                                    // A new call cancels the one before it (ADR-0016). Tell a
+                                    // typed line on the wire its caret was cancelled, and by which wake.
+                                    if let Some(note) = caret {
+                                        let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
+                                    }
+                                    session_log::begin_turn(&app, &live.id);
+                                    live.chat_turn = chat_turn;
+                                    live.happened_last = Some(cell);
+                                    // The first successful wake after first connection proves
+                                    // the completer works. Emit the deferred "something can
+                                    // answer now" message now that we know it's true.
+                                    if pending_first_connection_message {
+                                        session_log::new_session(
+                                            &app,
+                                            &live.id,
+                                            "something can answer now",
+                                        );
+                                        pending_first_connection_message = false;
+                                    }
+                                    was_addressed
+                                }
+                            }
                         } else {
-                            live.pace.after_ambient();
-                        }
-                        live.addressed = false;
-                        live.happened = Happened::Proactive;
-                        live.since_proactive = Duration::ZERO;
-                        let line = instance
-                            .whereabouts(&displays.frames, &displays.usable_frames)
-                            .prompt_line();
-                        // The panel shows this copy. The worker appends `line`
-                        // after `request`, so an in-flight reply can still open
-                        // the session before this wake is sent.
-                        let mut payload = model.prompt(&context);
-                        if !payload.ends_with('\n') {
-                            payload.push('\n');
-                        }
-                        payload.push_str(&line);
-                        // Read before the `Context` is handed to the slot,
-                        // and applied only if the slot took the call.
-                        let caret = cancelled_caret(live.chat_turn, &context.happened);
-                        let chat_turn = matches!(context.happened, Happened::Chat(_));
-                        let touched =
-                            director::claim(&context.happened) == director::Claim::Interaction;
-                        let cell = director::happened_cell(&context.happened);
-                        match slots.wake_with_prompt(&live.id, Arc::clone(model), context, line) {
-                            // The call on the wire is the truer one
-                            // (ADR-0016). This wake is dropped, not queued:
-                            // the bookkeeping above has already spent it.
-                            completer::Woke::Dropped => false,
-                            // A touch the character cannot answer yet points at
-                            // the question. A Summon already opens Chat, a
-                            // typed line is already in it, and a tick is nobody's.
-                            completer::Woke::AwaitingUser => {
-                                asking = touched;
-                                false
-                            }
-                            completer::Woke::Started => {
-                                // One panel for however many Instances are running, so it shows
-                                // the newest call, and the last payload sent is the honest answer.
-                                if let Ok(mut inspect) = inspect.lock() {
-                                    inspect.last_payload = Some(payload);
-                                    inspect.wake_secs = live.pace.wait().as_secs();
-                                }
-                                // A new call cancels the one before it (ADR-0016). Tell a
-                                // typed line on the wire its caret was cancelled, and by which wake.
-                                if let Some(note) = caret {
-                                    let _ = app.emit_to(chat_label(&live.id), CHAT_EVENT, note);
-                                }
-                                session_log::begin_turn(&app, &live.id);
-                                live.chat_turn = chat_turn;
-                                live.happened_last = Some(cell);
-                                // The first successful wake after first connection proves
-                                // the completer works. Emit the deferred "something can
-                                // answer now" message now that we know it's true.
-                                if pending_first_connection_message {
-                                    session_log::new_session(
-                                        &app,
-                                        &live.id,
-                                        "something can answer now",
-                                    );
-                                    pending_first_connection_message = false;
-                                }
-                                was_addressed
-                            }
+                            false
                         }
                     } else {
                         false
-                    }
-                } else {
-                    false
-                };
+                    };
 
                 if tracing_clicks && (frame.addressed || reactive_wake || !world.verbs.is_empty()) {
                     let skip = if reactive_wake {
@@ -3477,6 +3483,7 @@ fn answer_tool_call(
                     blank,
                     // Only a Harness can call this tool, and it has tools.
                     true,
+                    crate::i18n::reply_language(),
                 ),
                 personality_prompt: match blank {
                     true => String::new(),
@@ -3817,7 +3824,7 @@ mod tests {
         assert_eq!(pip["id"], json!(id));
         assert_eq!(
             pip["app_instructions"],
-            json!(director::app_instructions(["wave"], false, true))
+            json!(director::app_instructions(["wave"], false, true, None))
         );
         assert_eq!(pip["personality_prompt"], json!("a shy robot."));
         assert_eq!(pip["instance_prompt"], json!("Answer in haiku."));

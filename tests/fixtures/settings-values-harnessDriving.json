@@ -64,5 +64,6 @@
   "trace_director": true,
   "trace_engine": false,
   "trace_frames": false,
-  "trace_hittest": false
+  "trace_hittest": false,
+  "language": "System"
 }

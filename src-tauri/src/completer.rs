@@ -190,7 +190,7 @@ impl Slots {
         director: Arc<ModelDirector<C>>,
         context: Context,
     ) -> Woke {
-        self.wake_sending(id, director, context, None)
+        self.wake_sending(id, director, context, None, None)
     }
 
     /// Append `line` to the Director's prompt and send it. Newest-wins, except
@@ -202,8 +202,9 @@ impl Slots {
         director: Arc<ModelDirector<C>>,
         context: Context,
         line: String,
+        reply_language: Option<&'static str>,
     ) -> Woke {
-        self.wake_sending(id, director, context, Some(line))
+        self.wake_sending(id, director, context, Some(line), reply_language)
     }
 
     fn wake_sending<C: Completer + Send + Sync + 'static>(
@@ -212,6 +213,7 @@ impl Slots {
         director: Arc<ModelDirector<C>>,
         context: Context,
         line: Option<String>,
+        reply_language: Option<&'static str>,
     ) -> Woke {
         let claim = director::claim(&context.happened);
         let reactive = claim != Claim::Ambient;
@@ -251,7 +253,7 @@ impl Slots {
                 });
             };
             let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut request = director.request(&context);
+                let mut request = director.request_in_language(&context, reply_language);
                 if let Some(line) = line {
                     if !request.prompt.ends_with('\n') {
                         request.prompt.push('\n');
@@ -616,7 +618,7 @@ pub(crate) mod tests {
         let mut slots = Slots::new();
         let line = "displays: 1; on display: 0; placement: (100, 200); frame: 1920x1080";
 
-        slots.wake_with_prompt(&id, director, wake_context(), line.to_string());
+        slots.wake_with_prompt(&id, director, wake_context(), line.to_string(), None);
 
         assert!(polled(&mut slots, &id).is_some(), "the wake answers");
         let got = prompt.lock().expect("prompt lock").clone();

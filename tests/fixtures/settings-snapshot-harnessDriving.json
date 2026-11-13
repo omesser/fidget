@@ -4,6 +4,32 @@
       "title": "Presence",
       "sections": [
         {
+          "heading": "Language",
+          "serves": null,
+          "rows": [
+            {
+              "type": "Popup",
+              "id": "language",
+              "label": null,
+              "writes": "Language",
+              "help": "Preferred language for the character's replies. The interface stays in English.",
+              "options": [
+                "System",
+                "English",
+                "Français",
+                "Español"
+              ],
+              "frozen": false,
+              "batched": false,
+              "disclosure": "The character may follow the user's language when they write in another language. Behavior names are never translated.",
+              "status": null
+            }
+          ],
+          "comment": null,
+          "disclosure": null,
+          "status": null
+        },
+        {
           "heading": "Do Not Disturb",
           "serves": null,
           "rows": [
