@@ -2,8 +2,7 @@
 // Drives src/chat.html.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -102,7 +101,7 @@ async function withChat(run, { rejectHarness = false } = {}) {
     };
   };
 </script>`;
-  const html = injectBase(spawnSync("cat", [join(SRC, "chat.html")], { encoding: "utf8" }).stdout.replace(
+  const html = injectBase(readFileSync(join(SRC, "chat.html"), "utf8").replace(
     "<head>",
     `<head>${stub}`,
   ));
