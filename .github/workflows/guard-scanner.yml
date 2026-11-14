@@ -1,11 +1,9 @@
 name: guard-scanner
 
-# Manual dog-food of glance-labs/agent-security-scanner against the fidget ref
-# picked in the Run workflow dialog: `surfaces` and `analyze`, one job each.
-# Releases lag main, so the scanner is built from scanner_ref. Logs are
-# public: no evidence is requested. The analyze job repeats the surfaces job's
-# steps through YAML aliases (*name points at &name); the job env picks the
-# command.
+# Manual dog-food of glance-labs/agent-security-scanner surfaces and analyze
+# against the fidget ref picked in the Run workflow dialog. Releases lag main,
+# so the scanner is built from scanner_ref. Logs are public: no evidence is
+# requested.
 
 on:
   workflow_dispatch:
@@ -30,7 +28,7 @@ jobs:
     timeout-minutes: 20
     env:
       SCAN_COMMAND: surfaces
-      SCAN_TARGET: --dir
+      SCAN_DIR_FLAG: --dir
 
     steps:
       - &require-token
@@ -79,12 +77,11 @@ jobs:
       - &scan
         name: Run the scan
         id: scan
-        # Exit 1 is findings at or above --fail-on (default high). This run
-        # is observational, so 0 and 1 succeed; 2 (incomplete or tool error)
-        # and any other code (a crash) still fail the job. One run writes
-        # SARIF, with paths relative to the fidget checkout (the working
-        # directory); warnings, baselined and scan incomplete lines still go
-        # to the log.
+        # Exit 1 is findings at or above --fail-on (default high). This run is
+        # observational, so 0 and 1 succeed; 2 (incomplete or tool error) and
+        # any other code (a crash) fail the job. SARIF paths are relative to the
+        # fidget checkout (the working directory); warnings, baselined and scan
+        # incomplete lines go to the log.
         working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
@@ -92,7 +89,7 @@ jobs:
           SARIF_FILE: ${{ runner.temp }}/glance.sarif
         run: |
           set +e
-          node "$SCANNER_BIN" "$SCAN_COMMAND" "$SCAN_TARGET" "$FIDGET_DIR" --sarif > "$SARIF_FILE"
+          node "$SCANNER_BIN" "$SCAN_COMMAND" "$SCAN_DIR_FLAG" "$FIDGET_DIR" --sarif > "$SARIF_FILE"
           status=$?
           set -e
           echo "code=$status" >> "$GITHUB_OUTPUT"
@@ -105,12 +102,9 @@ jobs:
 
       - &upload-sarif
         name: Upload SARIF to code scanning
-        # Only after a complete scan. The scanner's README says not to upload
-        # after exit 2: a partial scan closes the alerts for every file it
-        # skipped. A failed scan step skips this step. The scanner stamps
-        # automationDetails.id (glance-scanner/surfaces/ or
-        # glance-scanner/analyze/), which upload-sarif keeps over any
-        # category input, so the two jobs' alerts never replace each other.
+        # Only after a complete scan: the scanner's README says uploading a
+        # partial scan closes the alerts for every file it skipped. The SARIF
+        # sets its own category, glance-scanner/<command>/, over any category input.
         if: steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1'
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
@@ -122,8 +116,9 @@ jobs:
     timeout-minutes: 20
     env:
       SCAN_COMMAND: analyze
-      SCAN_TARGET: --path
+      SCAN_DIR_FLAG: --path
 
+    # Each *name step is the surfaces job's &name step; the job env picks the command.
     steps:
       - *require-token
       - *checkout-fidget
