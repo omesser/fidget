@@ -1,0 +1,31 @@
+# Baseline findings on existing workflows. New hits of these rules in
+# other workflow files still fail CI. See the workflow-lint PR for why
+# each family was left in place rather than rewritten here.
+# zizmor ignore entries are the workflow's base filename, not its path.
+rules:
+  artipacked:
+    ignore:
+      - e2e-linux.yml
+      - e2e-macos.yml
+      - e2e-windows.yml
+      - homebrew-cask.yml
+      - mattpocock-skills-sync.yml
+      - pages.yml
+      - pstack-sync.yml
+      - release.yml
+      - secret-scanning.yml
+      - security.yml
+      - tests.yml
+  cache-poisoning:
+    ignore:
+      - release.yml
+  dangerous-triggers:
+    ignore:
+      - pages.yml
+  excessive-permissions:
+    ignore:
+      - guard-scanner.yml
+      - release.yml
+  self-repository:
+    ignore:
+      - release.yml

@@ -1,0 +1,8 @@
+# Baseline: existing workflow `run:` blocks trip these shellcheck notes.
+# New SC codes, and any non-shellcheck actionlint error, still fail the job.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - 'shellcheck reported issue in this script: SC2015:.+'
+      - 'shellcheck reported issue in this script: SC2016:.+'
+      - 'shellcheck reported issue in this script: SC2024:.+'
