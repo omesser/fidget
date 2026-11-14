@@ -1,31 +1,41 @@
-# Baseline findings on existing workflows. New hits of these rules in
-# other workflow files still fail CI. See the workflow-lint PR for why
-# each family was left in place rather than rewritten here.
-# zizmor ignore entries are the workflow's base filename, not its path.
+# Each ignore is pinned to one finding's file, line, and column.
+# A new finding at another line, including in these same files, still fails CI.
+# Real-risk baselines: rust-cache in release (#2220), workflow-level
+# contents: write in release (#2221), and persisting checkouts (#2222).
+
 rules:
   artipacked:
     ignore:
-      - e2e-linux.yml
-      - e2e-macos.yml
-      - e2e-windows.yml
-      - homebrew-cask.yml
-      - mattpocock-skills-sync.yml
-      - pages.yml
-      - pstack-sync.yml
-      - release.yml
-      - secret-scanning.yml
-      - security.yml
-      - tests.yml
+      - e2e-linux.yml:32:9
+      - e2e-macos.yml:32:9
+      - e2e-windows.yml:32:9
+      - homebrew-cask.yml:32:9
+      - mattpocock-skills-sync.yml:25:9
+      - pages.yml:31:9
+      - pstack-sync.yml:23:9
+      - release.yml:208:9
+      - release.yml:230:9
+      - release.yml:310:9
+      - release.yml:84:9
+      - secret-scanning.yml:28:9
+      - secret-scanning.yml:62:9
+      - security.yml:29:9
+      - security.yml:66:9
+      - tests.yml:204:9
+      - tests.yml:273:9
+      - tests.yml:295:9
+      - tests.yml:39:9
   cache-poisoning:
     ignore:
-      - release.yml
+      - release.yml:128:9
+      - release.yml:147:9
   dangerous-triggers:
     ignore:
-      - pages.yml
+      - pages.yml:15:3
   excessive-permissions:
     ignore:
-      - guard-scanner.yml
-      - release.yml
+      - guard-scanner.yml:23:3
+      - release.yml:36:3
   self-repository:
     ignore:
-      - release.yml
+      - release.yml:386:11
