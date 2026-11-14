@@ -29,27 +29,31 @@ jobs:
         # actionlint's shellcheck integration needs the binary on PATH.
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Install actionlint
+      - name: Install actionlint and zizmor
+        # Both are release tarballs with checksums. A third-party action is
+        # not used: the repo's Actions allowlist would reject it.
         env:
-          VERSION: '1.7.12'
-          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 # pragma: allowlist secret
+          ZIZMOR_VERSION: '1.32.0'
+          ZIZMOR_SHA256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b # pragma: allowlist secret
         run: |
           curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
-            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
-          echo "$SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
-          sudo mv "$RUNNER_TEMP/actionlint" /usr/local/bin/actionlint
+
+          curl -fsSL -o "$RUNNER_TEMP/zizmor.tgz" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$ZIZMOR_SHA256  $RUNNER_TEMP/zizmor.tgz" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/zizmor.tgz" -C "$RUNNER_TEMP" zizmor
+
+          sudo mv "$RUNNER_TEMP/actionlint" "$RUNNER_TEMP/zizmor" /usr/local/bin/
           actionlint -version
+          zizmor --version
 
       - name: Run actionlint
         run: actionlint -color
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
-        with:
-          version: v1.32.0
-          advanced-security: false
-          annotations: true
-          online-audits: false
-          config: .github/zizmor.yml
-          inputs: .github/workflows
+        run: zizmor --offline --config .github/zizmor.yml .github/workflows
