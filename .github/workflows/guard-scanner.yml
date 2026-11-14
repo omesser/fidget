@@ -1,8 +1,11 @@
-name: agent-security-scanner surfaces
+name: guard-scanner
 
-# Manual dog-food of glance-labs/agent-security-scanner surfaces against the
-# fidget ref picked in the Run workflow dialog. Releases lag main, so the
-# scanner is built from scanner_ref. Logs are public: no evidence is requested.
+# Manual dog-food of glance-labs/agent-security-scanner against the fidget ref
+# picked in the Run workflow dialog: `surfaces` and `analyze`, one job each.
+# Releases lag main, so the scanner is built from scanner_ref. Logs are
+# public: no evidence is requested. The analyze job repeats the surfaces job's
+# steps through YAML aliases (*name points at &name); the job env picks the
+# command.
 
 on:
   workflow_dispatch:
@@ -25,9 +28,13 @@ jobs:
   surfaces:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      SCAN_COMMAND: surfaces
+      SCAN_TARGET: --dir
 
     steps:
-      - name: Require SCANNER_TOKEN
+      - &require-token
+        name: Require SCANNER_TOKEN
         env:
           SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
         run: |
@@ -36,13 +43,15 @@ jobs:
             exit 1
           fi
 
-      - name: Check out fidget
+      - &checkout-fidget
+        name: Check out fidget
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: fidget
           persist-credentials: false
 
-      - name: Check out the scanner
+      - &checkout-scanner
+        name: Check out the scanner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: glance-labs/agent-security-scanner
@@ -51,49 +60,89 @@ jobs:
           path: agent-security-scanner
           persist-credentials: false
 
-      - name: Set up Node
+      - &setup-node
+        name: Set up Node
         # The scanner's CI pins 22; it has no engines field or .nvmrc.
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
-      - name: Build the scanner
+      - &build-scanner
+        name: Build the scanner
+        # Each job builds its own copy: npm ci and tsc take seconds, and the
+        # two jobs run in parallel.
         working-directory: agent-security-scanner
         run: |
           npm ci
           npm run build
 
-      - name: Run surfaces
+      - &scan
+        name: Run the scan
         id: scan
         # Exit 1 is findings at or above --fail-on (default high). This run
         # is observational, so 0 and 1 succeed; 2 (incomplete or tool error)
         # and any other code (a crash) still fail the job. One run writes
         # SARIF, with paths relative to the fidget checkout (the working
-        # directory); warnings and baselined lines still go to the log.
+        # directory); warnings, baselined and scan incomplete lines still go
+        # to the log.
         working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
           FIDGET_DIR: ${{ github.workspace }}/fidget
-          SARIF_FILE: ${{ runner.temp }}/glance-surfaces.sarif
+          SARIF_FILE: ${{ runner.temp }}/glance.sarif
         run: |
           set +e
-          node "$SCANNER_BIN" surfaces --dir "$FIDGET_DIR" --sarif > "$SARIF_FILE"
+          node "$SCANNER_BIN" "$SCAN_COMMAND" "$SCAN_TARGET" "$FIDGET_DIR" --sarif > "$SARIF_FILE"
           status=$?
           set -e
           echo "code=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then
-            echo "surfaces exited $status (0 = clean, 1 = findings). The job does not fail on findings."
+            echo "$SCAN_COMMAND exited $status (0 = clean, 1 = findings). The job does not fail on findings."
             exit 0
           fi
-          echo "::error::surfaces exited $status (2 = incomplete or tool error; anything else is a crash)."
+          echo "::error::$SCAN_COMMAND exited $status (2 = incomplete or tool error; anything else is a crash)."
           exit "$status"
 
-      - name: Upload SARIF to code scanning
+      - &upload-sarif
+        name: Upload SARIF to code scanning
         # Only after a complete scan. The scanner's README says not to upload
         # after exit 2: a partial scan closes the alerts for every file it
-        # skipped. A failed scan step skips this step.
+        # skipped. A failed scan step skips this step. The scanner stamps
+        # automationDetails.id (glance-scanner/surfaces/ or
+        # glance-scanner/analyze/), which upload-sarif keeps over any
+        # category input, so the two jobs' alerts never replace each other.
         if: steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1'
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
-          sarif_file: ${{ runner.temp }}/glance-surfaces.sarif
+          sarif_file: ${{ runner.temp }}/glance.sarif
           checkout_path: ${{ github.workspace }}/fidget
+
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCAN_COMMAND: analyze
+      SCAN_TARGET: --path
+
+    steps:
+      - *require-token
+      - *checkout-fidget
+      - *checkout-scanner
+      - *setup-node
+      - *build-scanner
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep
+        # analyze runs semgrep (p/default); without it the scan is incomplete
+        # and exits 2. The first run downloads the p/default rules, which are
+        # not pinned.
+        env:
+          SEMGREP: semgrep==1.185.0
+        run: pip install "$SEMGREP"
+
+      - *scan
+      - *upload-sarif
