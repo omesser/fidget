@@ -110,7 +110,8 @@ jobs:
             | sudo xargs -r rm -vf
           sudo apt-get update
           read -r -a packages <<< "$APT_PACKAGES"
-          sudo apt-get install --print-uris -y "${packages[@]}" | tee "$RUNNER_TEMP/apt-uris" >/dev/null
+          # shellcheck disable=SC2024 # sudo does not apply to the redirect; the URI list should stay the runner's file
+          sudo apt-get install --print-uris -y "${packages[@]}" >"$RUNNER_TEMP/apt-uris"
           uris=$(grep "^'" "$RUNNER_TEMP/apt-uris" || true)
           if [ -z "$uris" ]; then
             echo "apt printed no package URIs"
