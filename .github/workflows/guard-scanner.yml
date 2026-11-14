@@ -13,10 +13,14 @@ on:
         type: string
         required: false
         default: main
+      upload_sarif:
+        description: Upload the results to GitHub code scanning as SARIF
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  security-events: write # upload-sarif to GitHub code scanning
+  security-events: write # upload-sarif; permissions cannot depend on upload_sarif
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.scanner_ref }}
@@ -78,17 +82,22 @@ jobs:
         id: scan
         # Exit 1 is findings at or above --fail-on (default high). This run is
         # observational, so 0 and 1 succeed; 2 (incomplete or tool error) and
-        # any other code (a crash) fail the job. SARIF paths are relative to the
-        # fidget checkout (the working directory); warnings, baselined and scan
-        # incomplete lines go to the log.
+        # any other code (a crash) fail the job. With upload_sarif the report is
+        # SARIF, paths relative to the fidget checkout (the working directory);
+        # otherwise the readable report goes to the log.
         working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
           SARIF_FILE: ${{ runner.temp }}/glance.sarif
+          UPLOAD_SARIF: ${{ inputs.upload_sarif }}
         run: |
           set +e
           # shellcheck disable=SC2086 # SCAN_ARGS is the command and its arguments
-          node "$SCANNER_BIN" $SCAN_ARGS --sarif > "$SARIF_FILE"
+          if [ "$UPLOAD_SARIF" = true ]; then
+            node "$SCANNER_BIN" $SCAN_ARGS --sarif > "$SARIF_FILE"
+          else
+            node "$SCANNER_BIN" $SCAN_ARGS
+          fi
           status=$?
           set -e
           echo "code=$status" >> "$GITHUB_OUTPUT"
@@ -104,7 +113,7 @@ jobs:
         # Only after a complete scan: the scanner's README says uploading a
         # partial scan closes the alerts for every file it skipped. The SARIF
         # sets its own category, glance-scanner/<command>/, over any category input.
-        if: steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1'
+        if: inputs.upload_sarif && (steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1')
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: ${{ runner.temp }}/glance.sarif
