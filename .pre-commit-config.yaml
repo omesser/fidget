@@ -90,6 +90,22 @@ repos:
       - id: shellcheck
         exclude: *vendored
 
+    # Workflow lint. actionlint's shellcheck integration uses shellcheck
+    # on PATH, which CI already installs (apt on Linux, brew on macOS).
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
+        # args replaces the hook default, so --no-progress stays.
+        # --offline so CI's GITHUB_TOKEN cannot enable online audits.
+        # Workflows only: the hook's default also collects Dependabot config.
+        args: [--no-progress, --offline]
+        files: ^\.github/workflows/
+
     # PowerShell linting
   - repo: local
     hooks:
