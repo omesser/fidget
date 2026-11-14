@@ -1,0 +1,141 @@
+name: guard-scanner
+
+# Manual dog-food of glance-labs/agent-security-scanner surfaces and analyze
+# against the fidget ref picked in the Run workflow dialog. Releases lag main,
+# so the scanner is built from scanner_ref. Logs are public: no evidence is
+# requested.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scanner_ref:
+        description: glance-labs/agent-security-scanner ref to build (branch, tag, or SHA)
+        type: string
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  security-events: write # upload-sarif to GitHub code scanning
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.scanner_ref }}
+  cancel-in-progress: true
+
+jobs:
+  surfaces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCAN_ARGS: surfaces
+
+    steps:
+      - &require-token
+        name: Require SCANNER_TOKEN
+        env:
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: |
+          if [ -z "$SCANNER_TOKEN" ]; then
+            echo '::error::SCANNER_TOKEN is not set. Add a fine-grained PAT with contents:read on glance-labs/agent-security-scanner as the SCANNER_TOKEN repository secret.'
+            exit 1
+          fi
+
+      - &checkout-fidget
+        name: Check out fidget
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: fidget
+          persist-credentials: false
+
+      - &checkout-scanner
+        name: Check out the scanner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: glance-labs/agent-security-scanner
+          ref: ${{ inputs.scanner_ref }}
+          token: ${{ secrets.SCANNER_TOKEN }}
+          path: agent-security-scanner
+          persist-credentials: false
+
+      - &setup-node
+        name: Set up Node
+        # The scanner's CI pins 22; it has no engines field or .nvmrc.
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - &build-scanner
+        name: Build the scanner
+        # Each job builds its own copy: npm ci and tsc take seconds, and the
+        # two jobs run in parallel.
+        working-directory: agent-security-scanner
+        run: |
+          npm ci
+          npm run build
+
+      - &scan
+        name: Run the scan
+        id: scan
+        # Exit 1 is findings at or above --fail-on (default high). This run is
+        # observational, so 0 and 1 succeed; 2 (incomplete or tool error) and
+        # any other code (a crash) fail the job. SARIF paths are relative to the
+        # fidget checkout (the working directory); warnings, baselined and scan
+        # incomplete lines go to the log.
+        working-directory: fidget
+        env:
+          SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
+          SARIF_FILE: ${{ runner.temp }}/glance.sarif
+        run: |
+          set +e
+          # shellcheck disable=SC2086 # SCAN_ARGS is the command and its arguments
+          node "$SCANNER_BIN" $SCAN_ARGS --sarif > "$SARIF_FILE"
+          status=$?
+          set -e
+          echo "code=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then
+            echo "$SCAN_ARGS exited $status (0 = clean, 1 = findings). The job does not fail on findings."
+            exit 0
+          fi
+          echo "::error::$SCAN_ARGS exited $status (2 = incomplete or tool error; anything else is a crash)."
+          exit "$status"
+
+      - &upload-sarif
+        name: Upload SARIF to code scanning
+        # Only after a complete scan: the scanner's README says uploading a
+        # partial scan closes the alerts for every file it skipped. The SARIF
+        # sets its own category, glance-scanner/<command>/, over any category input.
+        if: steps.scan.outputs.code == '0' || steps.scan.outputs.code == '1'
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ runner.temp }}/glance.sarif
+          checkout_path: ${{ github.workspace }}/fidget
+
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCAN_ARGS: analyze --path .
+
+    # Each *name step is the surfaces job's &name step; the job env picks the command.
+    steps:
+      - *require-token
+      - *checkout-fidget
+      - *checkout-scanner
+      - *setup-node
+      - *build-scanner
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep
+        # analyze runs semgrep (p/default); without it the scan is incomplete
+        # and exits 2. The first run downloads the p/default rules, which are
+        # not pinned.
+        env:
+          SEMGREP: semgrep==1.185.0
+        run: pip install "$SEMGREP"
+
+      - *scan
+      - *upload-sarif
