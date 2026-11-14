@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install the X11 session packages
         # The build's packages from tests.yml, then the display, window
@@ -144,8 +146,9 @@ jobs:
         # Each leaf's private HOME holds caches and sockets; keep only its logs.
         run: |
           rsync -rlt --exclude home/ "$RUNNER_TEMP/evidence/" "$RUNNER_TEMP/upload/" || true
-          cd "$RUNNER_TEMP/evidence" &&
+          if cd "$RUNNER_TEMP/evidence"; then
             find . -path '*/home/*' -name '*.log' -exec cp --parents {} "$RUNNER_TEMP/upload/" \; || true
+          fi
 
       - name: Upload evidence
         if: always()

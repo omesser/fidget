@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -129,7 +131,11 @@ jobs:
             summary+=$(printf '%-28s %s' "$name" "$verdict")$'\n'
           done
           printf '%s' "$summary"
-          printf '```\n%s```\n' "$summary" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '```'
+            printf '%s' "$summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           exit "$failed"
 
       - name: Gather evidence
@@ -141,7 +147,9 @@ jobs:
           rsync -a --exclude home --exclude fidget-scenario-tools "$RUNNER_TEMP/evidence/" "$RUNNER_TEMP/upload/" || true
           cd "$RUNNER_TEMP/evidence" || exit 0
           for f in */home/Library/Application\ Support/fidget/process.log; do
-            [ -e "$f" ] && cp "$f" "$RUNNER_TEMP/upload/${f%%/*}/" || true
+            if [ -e "$f" ]; then
+              cp "$f" "$RUNNER_TEMP/upload/${f%%/*}/" || true
+            fi
           done
           cp "$RUNNER_TEMP/warmup/home/Library/Application Support/fidget/process.log" "$RUNNER_TEMP/upload/warmup-process.log" || true
 

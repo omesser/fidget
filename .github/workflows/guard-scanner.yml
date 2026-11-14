@@ -20,7 +20,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write # upload-sarif; permissions cannot depend on upload_sarif
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.scanner_ref }}
@@ -30,6 +29,10 @@ jobs:
   surfaces:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      # upload-sarif; the step is optional, the permission cannot be
+      security-events: write
     env:
       SCAN_ARGS: surfaces
 
@@ -122,6 +125,10 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      # upload-sarif; the step is optional, the permission cannot be
+      security-events: write
     env:
       SCAN_ARGS: analyze --path .
 
