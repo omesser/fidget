@@ -1,0 +1,81 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.language == 'swift' && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: ${{ matrix.language == 'swift' && 120 || 60 }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: csharp
+            build-mode: none
+          - language: java-kotlin
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: ruby
+            build-mode: none
+          - language: rust
+            build-mode: none
+          - language: swift
+            build-mode: manual
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        if: matrix.language == 'rust'
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # No Package.swift or Xcode project, so autobuild cannot find a build.
+      - name: Build Swift helpers
+        if: matrix.build-mode == 'manual'
+        run: |
+          mkdir -p "$RUNNER_TEMP/swift-build"
+          n=0
+          while IFS= read -r -d '' src; do
+            n=$((n + 1))
+            swiftc "$src" -o "$RUNNER_TEMP/swift-build/out-$n"
+          done < <(find . -name '*.swift' -not -path './.git/*' -print0)
+          echo "compiled $n Swift sources"
+          test "$n" -gt 0
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: "/language:${{ matrix.language }}"
