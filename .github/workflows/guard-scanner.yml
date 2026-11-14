@@ -27,8 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SCAN_COMMAND: surfaces
-      SCAN_DIR_FLAG: --dir
+      SCAN_ARGS: surfaces
 
     steps:
       - &require-token
@@ -85,19 +84,19 @@ jobs:
         working-directory: fidget
         env:
           SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
-          FIDGET_DIR: ${{ github.workspace }}/fidget
           SARIF_FILE: ${{ runner.temp }}/glance.sarif
         run: |
           set +e
-          node "$SCANNER_BIN" "$SCAN_COMMAND" "$SCAN_DIR_FLAG" "$FIDGET_DIR" --sarif > "$SARIF_FILE"
+          # shellcheck disable=SC2086 # SCAN_ARGS is the command and its arguments
+          node "$SCANNER_BIN" $SCAN_ARGS --sarif > "$SARIF_FILE"
           status=$?
           set -e
           echo "code=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then
-            echo "$SCAN_COMMAND exited $status (0 = clean, 1 = findings). The job does not fail on findings."
+            echo "$SCAN_ARGS exited $status (0 = clean, 1 = findings). The job does not fail on findings."
             exit 0
           fi
-          echo "::error::$SCAN_COMMAND exited $status (2 = incomplete or tool error; anything else is a crash)."
+          echo "::error::$SCAN_ARGS exited $status (2 = incomplete or tool error; anything else is a crash)."
           exit "$status"
 
       - &upload-sarif
@@ -115,8 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SCAN_COMMAND: analyze
-      SCAN_DIR_FLAG: --path
+      SCAN_ARGS: analyze --path .
 
     # Each *name step is the surfaces job's &name step; the job env picks the command.
     steps:
