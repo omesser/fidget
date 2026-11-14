@@ -92,7 +92,7 @@ test("cleanup force-kills a Fidget that ignores TERM, after 3 s", (t) => {
   const r = helper("cleanup.sh", env);
   assert.equal(r.code, 0, r.out);
   assert.equal(alive(pid), false, "still running");
-  assert.match(r.out, new RegExp(`kill -9 ${pid}`));
+  assert.ok(r.out.includes(`kill -9 ${pid}`), r.out);
   assert.ok(r.ms >= 2800 && r.ms < 4500, `took ${r.ms} ms`);
 });
 
@@ -119,7 +119,7 @@ test("cleanup force-kills at once when it has no way to watch the exit", (t) => 
   const r = helper("cleanup.sh", env);
   assert.equal(r.code, 0, r.out);
   assert.equal(alive(pid), false, "still running");
-  assert.match(r.out, new RegExp(`kill -9 ${pid}`));
+  assert.ok(r.out.includes(`kill -9 ${pid}`), r.out);
   // macOS still watches the pid through caffeinate, so only Linux is immediate.
   if (process.platform === "linux") assert.ok(r.ms < 1500, `took ${r.ms} ms`);
 });
