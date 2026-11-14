@@ -247,6 +247,14 @@ export function mount(doc, data, { cue, bubble, play, still }) {
   // back to Hide once the sprite shows, or to the page when it cannot walk on.
   const hide = doc.getElementById("fidget-hide");
   let refocus = false;
+  // Bring back is the last control on the page, and Chrome 157 keeps Tab's
+  // starting point where a blurred or hidden control was, so the next Tab would
+  // leave the page. Focus on the body itself starts that Tab at the top.
+  const toPage = () => {
+    doc.body.tabIndex = -1;
+    doc.body.focus({ preventScroll: true });
+    doc.body.removeAttribute("tabindex");
+  };
   hide.addEventListener("click", () => {
     apply({ type: "hide" });
     remember(true);
@@ -257,7 +265,7 @@ export function mount(doc, data, { cue, bubble, play, still }) {
     apply({ type: "show" });
     remember(false);
     refocus = !idle(state);
-    if (!refocus) back.blur();
+    if (!refocus) toPage();
     back.hidden = true;
   });
 

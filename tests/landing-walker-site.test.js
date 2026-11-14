@@ -339,8 +339,14 @@ const keys = `
       await until("Bring back at the top", () => back.hidden, 1000);
       await frame();
       const heldOff = { focused: focused(), away: at.hidden };
+      // Past the last control, a Tab leaves the page for the browser's own UI.
+      const tabbed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("no focus after a Tab")), 1000);
+        addEventListener("focusin", () => { clearTimeout(timer); resolve(); }, { once: true });
+        addEventListener("blur", () => { clearTimeout(timer); reject(new Error("the Tab left the page")); }, { once: true });
+      });
       pressKey("Tab");
-      await until("a Tab", () => document.activeElement !== document.body, 1000);
+      await tabbed;
       done({ hid, returned, heldOff, tabbedToTop: document.activeElement === document.querySelector("a[href]") });
     } catch (err) {
       done({ errors: [...errors, String(err)] });
