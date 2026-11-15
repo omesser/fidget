@@ -373,7 +373,10 @@ fn a_digit_pass_is_user_invoked_and_nothing_continues_after_it() {
         ("wave", AnimationSource::UserInvoked)
     );
     let after = settle(&mut engine, &snapshot(100));
-    assert_eq!((after.playing_behavior, after.playing_gesture), (None, None));
+    assert_eq!(
+        (after.playing_behavior, after.playing_gesture),
+        (None, None)
+    );
 }
 
 /// Standing the sprite somewhere ends the move and the walk, so their

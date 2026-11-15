@@ -110,7 +110,14 @@ mod tests {
     fn a_thirty_character_line_lasts_until_the_unclamped_duration() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_dialogue(&mut bubble, now, Some(&said(&"a".repeat(30))), false, true, false);
+        note_dialogue(
+            &mut bubble,
+            now,
+            Some(&said(&"a".repeat(30))),
+            false,
+            true,
+            false,
+        );
         assert!(bubble.visible_at(now + Duration::from_millis(2549)));
         assert!(!bubble.visible_at(now + Duration::from_millis(2550)));
     }
@@ -119,7 +126,14 @@ mod tests {
     fn a_long_line_is_clamped_to_eight_seconds() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
-        note_dialogue(&mut bubble, now, Some(&said(&"a".repeat(200))), false, true, false);
+        note_dialogue(
+            &mut bubble,
+            now,
+            Some(&said(&"a".repeat(200))),
+            false,
+            true,
+            false,
+        );
         assert!(bubble.visible_at(now + Duration::from_millis(7999)));
         assert!(!bubble.visible_at(now + Duration::from_millis(8000)));
     }

@@ -2153,11 +2153,10 @@ pub(crate) fn run_frame_loop(
                     // The mark goes into the logged line once, here:
                     // the Chat surface draws the record. The bubble keeps
                     // the model's words; the parser has already read them.
-                    let dialogue =
-                        chat_dialogue(
-                            parsed_dialogue.as_deref(),
-                            frame.dialogue.as_ref().map(|line| line.text.as_str()),
-                        );
+                    let dialogue = chat_dialogue(
+                        parsed_dialogue.as_deref(),
+                        frame.dialogue.as_ref().map(|line| line.text.as_str()),
+                    );
                     let logged = dialogue.map(|line| director::marked(line, truncated));
                     session_log::log_reply(
                         &app,
@@ -3601,7 +3600,9 @@ mod tests {
     fn the_first_run_tour_is_onboarding_talk_with_no_behavior() {
         let tour = super::tour_proposal();
         assert_eq!(tour.behavior, "", "an empty name asks for Talk");
-        assert!(tour.dialogue.is_some_and(|line| line.contains("Double-click")));
+        assert!(tour
+            .dialogue
+            .is_some_and(|line| line.contains("Double-click")));
         assert_eq!(
             tour.source,
             fidget_core::engine::AnimationSource::Onboarding
@@ -3613,7 +3614,10 @@ mod tests {
     #[test]
     fn a_streamed_reply_line_is_ai_requested() {
         let streamed = super::streamed_line("he".to_string());
-        assert_eq!((streamed.behavior.as_str(), streamed.dialogue.as_deref()), ("", Some("he")));
+        assert_eq!(
+            (streamed.behavior.as_str(), streamed.dialogue.as_deref()),
+            ("", Some("he"))
+        );
         assert_eq!(
             streamed.source,
             fidget_core::engine::AnimationSource::AiRequested

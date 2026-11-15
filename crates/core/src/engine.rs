@@ -1779,12 +1779,14 @@ impl Engine {
         if self.possessed {
             if let Some(name) = self.animation_for_digit(snapshot.possession.play) {
                 // One pass, nameless, so no Behavior's `then` follows it.
-                digit = Some(if self.play_animation(&name, AnimationSource::UserInvoked) {
-                    started = true;
-                    DigitAnimation::Played(name)
-                } else {
-                    DigitAnimation::Refused(name)
-                });
+                digit = Some(
+                    if self.play_animation(&name, AnimationSource::UserInvoked) {
+                        started = true;
+                        DigitAnimation::Played(name)
+                    } else {
+                        DigitAnimation::Refused(name)
+                    },
+                );
             }
         }
         let digit_started = matches!(digit, Some(DigitAnimation::Played(_)));
@@ -3868,7 +3870,10 @@ mod tests {
             }),
             ..snapshot(100)
         });
-        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("morning"));
+        assert_eq!(
+            spoken.dialogue.as_ref().map(|line| line.text.as_str()),
+            Some("morning")
+        );
 
         let quiet = engine.tick(&snapshot(100));
         assert_eq!(quiet.dialogue, None, "a line is said once, not held");
@@ -9649,7 +9654,10 @@ mod tests {
             spoken.animation, "talk",
             "dialogue with no Behavior plays talk"
         );
-        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("hello there"));
+        assert_eq!(
+            spoken.dialogue.as_ref().map(|line| line.text.as_str()),
+            Some("hello there")
+        );
 
         let playing: Vec<&'static str> = (0..10)
             .map(|_| engine.tick(&snapshot(100)).animation)
@@ -9681,7 +9689,10 @@ mod tests {
             spoken.animation, "react",
             "greet plays its own animation, not talk"
         );
-        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("hi"));
+        assert_eq!(
+            spoken.dialogue.as_ref().map(|line| line.text.as_str()),
+            Some("hi")
+        );
         assert_eq!(spoken.behavior, Some("greet".to_string()));
     }
 
@@ -11191,7 +11202,10 @@ mod tests {
                 Some(Primitive::Possessed),
                 "the start's own moment, not the walk: {frame:?}"
             );
-            assert_eq!(frame.dialogue.as_ref().map(|line| line.text.as_str()), Some("hands off the wheel"));
+            assert_eq!(
+                frame.dialogue.as_ref().map(|line| line.text.as_str()),
+                Some("hands off the wheel")
+            );
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
         }
 

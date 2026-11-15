@@ -7668,7 +7668,15 @@ mod tests {
         let mut spoken = None;
 
         assert_eq!(
-            draw_response(&mut spoken, Some(&said("Yare yare daze.")), Some(0), true, t0).map(|line| line.text).as_deref(),
+            draw_response(
+                &mut spoken,
+                Some(&said("Yare yare daze.")),
+                Some(0),
+                true,
+                t0
+            )
+            .map(|line| line.text)
+            .as_deref(),
             Some("Yare yare daze."),
             "the pulse itself goes to the owner of the tick"
         );
@@ -7691,7 +7699,8 @@ mod tests {
                 true,
                 t0 + Duration::from_secs(2)
             )
-            .map(|line| line.text).as_deref(),
+            .map(|line| line.text)
+            .as_deref(),
             Some("Yare yare daze."),
             "mid-reading, the new owner is told the line"
         );
@@ -7728,7 +7737,8 @@ mod tests {
                 true,
                 t0 + Duration::from_secs(1)
             )
-            .map(|line| line.text).as_deref(),
+            .map(|line| line.text)
+            .as_deref(),
             Some("second"),
             "a new line replaces the remembered one"
         );
@@ -7740,7 +7750,8 @@ mod tests {
                 true,
                 t0 + Duration::from_secs(2)
             )
-            .map(|line| line.text).as_deref(),
+            .map(|line| line.text)
+            .as_deref(),
             Some("second"),
             "and it is the new line that crosses"
         );
@@ -7762,7 +7773,9 @@ mod tests {
             None
         );
         assert_eq!(
-            draw_response(&mut spoken, None, Some(0), true, at(2)).map(|line| line.text).as_deref(),
+            draw_response(&mut spoken, None, Some(0), true, at(2))
+                .map(|line| line.text)
+                .as_deref(),
             Some("hi")
         );
         assert_eq!(draw_response(&mut spoken, None, Some(0), true, at(3)), None);
