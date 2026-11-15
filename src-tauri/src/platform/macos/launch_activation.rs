@@ -19,11 +19,9 @@ pub fn other_app_in_front() -> Option<i32> {
     (pid != std::process::id() as i32).then_some(pid)
 }
 
-/// Activate `pid` again after Fidget's first window showed. Main thread.
-///
-/// AppKit holds a launch's activation until the app's first window shows, then
-/// takes the keyboard from a frontmost parent. No window flag, show call or
-/// activation policy stopped that on macOS 27.2, so the launch gives it back.
+/// Activate `pid` again once Fidget's first window shows. Main thread. AppKit
+/// activates a launched app at that show, and no window flag, show call or
+/// activation policy prevents it, so the launch gives the keyboard back.
 pub fn give_front_back(pid: i32) {
     let running = AnyClass::get(c"NSRunningApplication").expect("AppKit defines it");
     // SAFETY: a class getter and one action on the object it returned.

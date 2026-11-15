@@ -1198,7 +1198,8 @@ pub fn buttons_down() -> ButtonsDown {
     macos::buttons_down()
 }
 
-/// The frontmost app's pid, unless that is Fidget. Main thread.
+/// The frontmost app's pid, or `None` when that is Fidget or nothing. Main
+/// thread.
 #[cfg(target_os = "macos")]
 pub fn other_app_in_front() -> Option<i32> {
     macos::other_app_in_front()
