@@ -1738,16 +1738,7 @@ pub(crate) fn run_frame_loop(
 
                         if !already_opened {
                             if let Some(instance) = roster.get_mut(&first_live.id) {
-                                let tour_message = "Double-click me any time to open Chat.\n\n\
-                                     Click once to Poke and get a reaction.\n\n\
-                                     Right-click to open the menu.";
-
-                                instance.enqueue(BehaviorProposal {
-                                    behavior: String::new(),
-                                    dialogue: Some(tour_message.to_string()),
-                                    direction: None,
-                                    source: fidget_core::engine::AnimationSource::Engine,
-                                });
+                                instance.enqueue(tour_proposal());
                             }
 
                             if let Ok(mut settings_guard) = settings.lock() {
@@ -1946,12 +1937,7 @@ pub(crate) fn run_frame_loop(
                     // The reply's own Behavior is applied when it lands. The same
                     // dialogue updates the Chat row so both surfaces stream together.
                     Some(completer::Arrived::Dialogue(line)) => {
-                        proposal = Some(BehaviorProposal {
-                            behavior: String::new(),
-                            dialogue: Some(line.clone()),
-                            direction: None,
-                            source: fidget_core::engine::AnimationSource::Engine,
-                        });
+                        proposal = Some(streamed_line(line.clone()));
                         let _ = app.emit_to(
                             chat_label(&live.id),
                             CHAT_EVENT,
@@ -3582,8 +3568,58 @@ fn trace_schedule_switch(was: scheduler::ScheduleMode, now: scheduler::ScheduleM
     eprintln!("click-trace: {name} t={:.1}", platform::trace_ms());
 }
 
+/// The first-run gesture tips: app-authored Talk, so no AI call or named
+/// Behavior supplies it. The empty name is what asks the Engine for Talk.
+fn tour_proposal() -> BehaviorProposal {
+    BehaviorProposal {
+        behavior: String::new(),
+        dialogue: Some(
+            "Double-click me any time to open Chat.\n\n\
+             Click once to Poke and get a reaction.\n\n\
+             Right-click to open the menu."
+                .to_string(),
+        ),
+        direction: None,
+        source: fidget_core::engine::AnimationSource::Onboarding,
+    }
+}
+
+/// A reply line still growing. `slots` hands over only the current epoch's
+/// delivery, so a superseded stream never reaches this.
+fn streamed_line(line: String) -> BehaviorProposal {
+    BehaviorProposal {
+        behavior: String::new(),
+        dialogue: Some(line),
+        direction: None,
+        source: fidget_core::engine::AnimationSource::AiRequested,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_first_run_tour_is_onboarding_talk_with_no_behavior() {
+        let tour = super::tour_proposal();
+        assert_eq!(tour.behavior, "", "an empty name asks for Talk");
+        assert!(tour.dialogue.is_some_and(|line| line.contains("Double-click")));
+        assert_eq!(
+            tour.source,
+            fidget_core::engine::AnimationSource::Onboarding
+        );
+    }
+
+    /// A streamed line is the reply arriving, so it reads as the reply will
+    /// once it lands: no source change between streaming and the final.
+    #[test]
+    fn a_streamed_reply_line_is_ai_requested() {
+        let streamed = super::streamed_line("he".to_string());
+        assert_eq!((streamed.behavior.as_str(), streamed.dialogue.as_deref()), ("", Some("he")));
+        assert_eq!(
+            streamed.source,
+            fidget_core::engine::AnimationSource::AiRequested
+        );
+    }
+
     use super::*;
     use fidget_core::character::{
         Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
