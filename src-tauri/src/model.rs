@@ -2381,7 +2381,7 @@ pub(crate) mod tests {
                 behavior: "stroll".to_string(),
                 dialogue: Some("hey there".to_string()),
                 direction: None,
-                source: fidget_core::engine::AnimationSource::Engine,
+                source: fidget_core::engine::AnimationSource::AiRequested,
             })
         );
     }

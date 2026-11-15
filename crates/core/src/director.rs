@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER};
-use crate::engine::{BehaviorProposal, State};
+use crate::engine::{AnimationSource, BehaviorProposal, State};
 use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
@@ -570,7 +570,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                         behavior,
                         dialogue: parsed.proposal.dialogue,
                         direction: None,
-                        source: crate::engine::AnimationSource::Engine,
+                        source: AnimationSource::AiRequested,
                     }),
                     near_miss: None,
                     peeled_thought: peeled,
@@ -585,7 +585,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                                 behavior: String::new(),
                                 dialogue: Some(line),
                                 direction: None,
-                                source: crate::engine::AnimationSource::Engine,
+                                source: AnimationSource::AiRequested,
                             }),
                             None => Wake::Failed,
                         };
@@ -740,7 +740,7 @@ fn parse_contract(reply: &str) -> Result<ParsedContract, ParseError> {
             behavior: name.to_string(),
             dialogue,
             direction: None,
-            source: crate::engine::AnimationSource::Engine,
+            source: AnimationSource::AiRequested,
         },
         marked,
         peeled_thought,
@@ -790,7 +790,7 @@ fn as_dialogue(reply: &str) -> Option<BehaviorProposal> {
         behavior: String::new(),
         dialogue: Some(text.to_string()),
         direction: None,
-        source: crate::engine::AnimationSource::Engine,
+        source: AnimationSource::AiRequested,
     })
 }
 
@@ -1069,7 +1069,7 @@ impl StaticDirector {
             behavior,
             dialogue: None,
             direction: None,
-            source: crate::engine::AnimationSource::Engine,
+            source: AnimationSource::LocalDirector,
         })
     }
 }
@@ -1294,6 +1294,7 @@ mod tests {
 
         assert_eq!(proposal.behavior, "nap");
         assert_eq!(proposal.dialogue, None, "speaking is the model's");
+        assert_eq!(proposal.source, AnimationSource::LocalDirector);
     }
 
     /// The distribution, over a fixed seed rather than over a real source: the
@@ -1920,6 +1921,11 @@ mod tests {
 
         assert_eq!(proposal.behavior, "nap");
         assert_eq!(proposal.dialogue, None, "the fallback does not speak");
+        assert_eq!(
+            proposal.source,
+            AnimationSource::LocalDirector,
+            "a failed call that plays the weights is the Local Director's"
+        );
     }
 
     #[test]
@@ -1935,6 +1941,7 @@ mod tests {
             proposal.behavior, "wave",
             "a Behavior the Static Director does not even declare"
         );
+        assert_eq!(proposal.source, AnimationSource::AiRequested);
     }
 
     #[test]
