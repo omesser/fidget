@@ -186,3 +186,212 @@ fn a_hold_leaves_active_playback_and_a_fall_alone() {
         ("fall", AnimationSource::Engine)
     );
 }
+
+#[test]
+fn a_turn_beat_is_ai_feedback_with_no_behavior_requested() {
+    let mut engine = a_resting_sprite();
+    engine.cue_moment(Moment::Working);
+    let beat = engine.tick(&snapshot(100));
+    assert_eq!(beat.playing_behavior, None);
+    assert_eq!(beat.animation_source, AnimationSource::AiFeedback);
+}
+
+#[test]
+fn a_cursor_reaction_is_user_invoked() {
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+        .with_cursor_reactions(CursorReaction::React, CursorReaction::Indifferent);
+    let far = WorldSnapshot {
+        cursor: Point { x: 900.0, y: 0.0 },
+        ..snapshot(100)
+    };
+    let feet = settle(&mut engine, &far).position;
+    let near = engine.tick(&WorldSnapshot {
+        cursor: Point {
+            x: feet.x + 100.0,
+            y: feet.y,
+        },
+        ..snapshot(100)
+    });
+    assert_eq!(
+        (near.animation, near.animation_source),
+        ("react", AnimationSource::UserInvoked)
+    );
+}
+
+/// Sitting down on a Perch is the Engine settling the sprite; only once the
+/// quiet stretch gives way to the unrequested idle loop is it idle life.
+#[test]
+fn a_quiet_perch_is_the_engine_until_the_idle_loop_takes_over() {
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_sleep_after_s((60, 60));
+    let sitting = settle(&mut engine, &perch(50.0, 400.0));
+    assert_eq!(
+        (sitting.state, sitting.animation, sitting.animation_source),
+        (State::Perched, "sit", AnimationSource::Engine)
+    );
+    let idling = engine.tick(&WorldSnapshot {
+        elapsed_ms: PERCHED_IDLE_AFTER_MS,
+        ..perch(50.0, 400.0)
+    });
+    assert_eq!(
+        (idling.animation, idling.animation_source),
+        ("idle", AnimationSource::IdleLoop)
+    );
+}
+
+#[test]
+fn do_not_disturb_settling_a_walk_is_the_engine() {
+    let mut engine = a_resting_sprite();
+    engine.tick(&proposed_by("walk", AnimationSource::AiRequested));
+    engine.set_do_not_disturb(true);
+    let settled = engine.tick(&snapshot(100));
+    assert_eq!(
+        (settled.animation, settled.animation_source),
+        ("sit", AnimationSource::Engine)
+    );
+}
+
+/// A proposal held for a pass owns nothing until it takes the screen, and
+/// then it is its own producer's, not the pass's.
+#[test]
+fn a_deferred_proposal_takes_the_source_only_when_it_takes_the_screen() {
+    use crate::character::{IdleMember, IdlePlan};
+    let mut behaviors = declared_behaviors();
+    behaviors.insert(
+        "groom".to_string(),
+        Behavior {
+            primitives: vec![],
+            animation: Some("grooming".to_string()),
+            then: None,
+            weight: DEFAULT_WEIGHT,
+            trigger: None,
+            not_in_manifest: false,
+            idle_type: false,
+        },
+    );
+    let member = |name: &str, frames| IdleMember {
+        name: name.into(),
+        weight: 1,
+        frames,
+        fps: 6,
+    };
+    let mut engine = a_resting_sprite().with_behaviors(behaviors);
+    engine.set_idle_plan(IdlePlan {
+        loops: vec![member("idle", 1)],
+        gestures: vec![member("grooming", 6)],
+        digits: Vec::new(),
+        react: None,
+        possessed: None,
+        idle_gesture_every_s: (10, 30),
+        sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+        sleep_for_s: DEFAULT_SLEEP_FOR_S,
+    });
+    let grooming = engine.tick(&proposed_by("groom", AnimationSource::LocalDirector));
+    assert_eq!(grooming.animation_source, AnimationSource::LocalDirector);
+    let held = engine.tick(&proposed_by("greet", AnimationSource::AiRequested));
+    assert_eq!(
+        (held.playing_gesture.as_deref(), held.animation_source),
+        (Some("grooming"), AnimationSource::LocalDirector)
+    );
+    let greeted = (0..12)
+        .map(|_| engine.tick(&snapshot(100)))
+        .find(|frame| frame.playing_gesture.is_none())
+        .expect("the pass ends");
+    assert_eq!(
+        (greeted.animation, greeted.animation_source),
+        ("react", AnimationSource::AiRequested)
+    );
+}
+
+/// The swat ends a Chase, so it is that Chase's: the source is captured
+/// before the stop drops the owner. A timeout swats nothing.
+#[test]
+fn a_chase_that_arrives_swats_for_whoever_started_it_and_a_timeout_does_not() {
+    for source in [AnimationSource::AiMcp, AnimationSource::LocalDirector] {
+        let mut engine = a_resting_sprite();
+        let feet = engine.feet();
+        engine.play(&[Primitive::Chase], source);
+        let arrived = engine.tick(&WorldSnapshot {
+            cursor: feet,
+            ..snapshot(100)
+        });
+        assert_eq!(
+            (arrived.animation, arrived.animation_source),
+            ("react", source)
+        );
+    }
+
+    let mut engine = a_resting_sprite();
+    let feet = engine.feet();
+    engine.play(&[Primitive::Chase], AnimationSource::AiMcp);
+    let away = WorldSnapshot {
+        cursor: Point {
+            x: feet.x + 600.0,
+            y: feet.y,
+        },
+        elapsed_ms: CHASE_TIMEOUT_MS,
+        ..snapshot(100)
+    };
+    let gave_up = engine.tick(&away);
+    assert_ne!(gave_up.animation, "react", "{gave_up:?}");
+}
+
+#[test]
+fn a_digit_pass_is_user_invoked_and_nothing_continues_after_it() {
+    use crate::character::{IdleMember, IdlePlan};
+    let mut engine = a_resting_sprite();
+    engine.set_idle_plan(IdlePlan {
+        loops: vec![IdleMember {
+            name: "idle".into(),
+            weight: 1,
+            frames: 1,
+            fps: 1,
+        }],
+        gestures: Vec::new(),
+        digits: vec![IdleMember {
+            name: "wave".into(),
+            weight: 1,
+            frames: 3,
+            fps: 6,
+        }],
+        react: None,
+        possessed: None,
+        idle_gesture_every_s: (10, 30),
+        sleep_after_s: DEFAULT_SLEEP_AFTER_S,
+        sleep_for_s: DEFAULT_SLEEP_FOR_S,
+    });
+    engine.set_possessed(true);
+    settle(&mut engine, &snapshot(100));
+    let pressed = engine.tick(&WorldSnapshot {
+        possession: Intent {
+            play: Some(1),
+            ..Intent::default()
+        },
+        ..snapshot(100)
+    });
+    assert_eq!(
+        (pressed.art_name(), pressed.animation_source),
+        ("wave", AnimationSource::UserInvoked)
+    );
+    let after = settle(&mut engine, &snapshot(100));
+    assert_eq!((after.playing_behavior, after.playing_gesture), (None, None));
+}
+
+/// Standing the sprite somewhere ends the move and the walk, so their
+/// owners go with them.
+#[test]
+fn standing_the_sprite_elsewhere_ends_the_moves_provenance() {
+    let mut engine = a_resting_sprite();
+    engine
+        .start_move(
+            MoveRequest::To(GlobalX::new(500.0).unwrap()),
+            AnimationSource::AiMcp,
+        )
+        .expect("a grounded sprite takes a move");
+    engine.tick(&snapshot(100));
+    engine.stand_at(Point { x: 300.0, y: 800.0 });
+    let stood = engine.tick(&snapshot(100));
+    assert_eq!(
+        (stood.animation, stood.animation_source),
+        ("idle", AnimationSource::IdleLoop)
+    );
+}
