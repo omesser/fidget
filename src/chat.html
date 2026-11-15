@@ -292,21 +292,18 @@
       <details class="advanced">
         <summary>Advanced</summary>
       </details>
-      <!-- The label is the whole content; the group's name says what it is. -->
-      <div class="source" role="group" aria-label="Animation source">
-        <span id="s-source" title="Animation source"></span>
-      </div>
       <!-- Outside the disclosure. Inside it, the ladder is only as wide as
-           Advanced's column, and the footer clips the cells that follow. -->
-      <div class="ladder">
-        <span id="s-behavior"></span>
-        <span id="s-animation"></span>
-        <span id="s-primitive"></span>
-        <span id="s-state"></span>
-        <span id="s-facing"></span>
-        <span id="s-director"></span>
-        <span id="s-happened"></span>
-      </div>
+           Advanced's column. Each value under its own name: two bare words
+           side by side read as one. -->
+      <dl class="ladder">
+        <div class="field wide"><dt title="Animation source">Source</dt><dd id="s-source"></dd></div>
+        <div class="field"><dt>Behavior</dt><dd id="s-behavior"></dd></div>
+        <div class="field"><dt>Animation</dt><dd id="s-animation"></dd></div>
+        <div class="field"><dt>Primitive</dt><dd id="s-primitive"></dd></div>
+        <div class="field"><dt>State</dt><dd><span id="s-state"></span> <span id="s-facing"></span></dd></div>
+        <div class="field"><dt>Director</dt><dd id="s-director"></dd></div>
+        <div class="field"><dt>Happened</dt><dd id="s-happened"></dd></div>
+      </dl>
     </footer>
 
     <script type="module" src="chat.js"></script>

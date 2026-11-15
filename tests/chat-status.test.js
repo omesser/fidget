@@ -233,10 +233,24 @@ test("plain status says Thinking when a turn is on the wire", () => {
 test("plain status reflects behavior as human-readable activity", () => {
   assert.equal(
     plainStatus({ ...push, behavior: "prowl", happened: null }, 24_000),
-    "Prowl · next thought in 24s",
+    "Prowl (walk) · next thought in 24s",
   );
-  assert.equal(plainStatus({ ...push, behavior: "nap", happened: null }, 60_000), "Nap · next thought in 1m");
-  assert.equal(plainStatus({ ...push, behavior: "supervise", happened: null }, 0), "Supervise");
+  assert.equal(plainStatus({ ...push, behavior: "nap", happened: null }, 60_000), "Nap (walk) · next thought in 1m");
+  assert.equal(plainStatus({ ...push, behavior: "supervise", happened: null }, 0), "Supervise (walk)");
+});
+
+// Collapsed, the Behavior is the sentence and the Animation it plays sits in
+// parentheses, so the two names never read as one. Same name, said once.
+test("plain status names the animation beside the behavior", () => {
+  const quiet = { ...push, happened: null };
+  assert.equal(plainStatus({ ...quiet, behavior: "greet", animation: "wave" }, null), "Greet (wave)");
+  assert.equal(plainStatus({ ...quiet, behavior: "prowl", animation: "idle_breathe" }, null), "Prowl (idle breathe)");
+  assert.equal(
+    plainStatus({ ...quiet, behavior: "prowl", animation: "walk", asked_animation: "climb" }, null),
+    "Prowl (climb)",
+  );
+  assert.equal(plainStatus({ ...quiet, behavior: "walk", animation: "walk" }, null), "Walk");
+  assert.equal(plainStatus({ ...quiet, behavior: "sit", animation: null }, null), "Sit");
 });
 
 test("plain status falls back to animation when behavior is null", () => {
@@ -263,39 +277,39 @@ test("plain status falls back to primitive when behavior and animation are null"
 });
 
 test("plain status appends happened cue when present", () => {
-  assert.equal(plainStatus({ ...push, behavior: "sit", happened: "poked" }, 30_000), "Sit · just poked");
+  assert.equal(plainStatus({ ...push, behavior: "sit", happened: "poked" }, 30_000), "Sit (walk) · just poked");
   assert.equal(
     plainStatus({ ...push, behavior: "prowl", happened: "spoken to" }, 60_000),
-    "Prowl · just spoken to",
+    "Prowl (walk) · just spoken to",
   );
-  assert.equal(plainStatus({ ...push, behavior: "greet", happened: "summoned" }, null), "Greet · just summoned");
+  assert.equal(plainStatus({ ...push, behavior: "greet", happened: "summoned" }, null), "Greet (walk) · just summoned");
 });
 
 test("plain status omits wake countdown when happened cue is present", () => {
   assert.equal(plainStatus({ ...push, behavior: "walk", happened: "thrown" }, 24_000), "Walk · just thrown");
-  assert.equal(plainStatus({ ...push, behavior: "inspect", happened: "poked" }, 90_000), "Inspect · just poked");
+  assert.equal(plainStatus({ ...push, behavior: "inspect", happened: "poked" }, 90_000), "Inspect (walk) · just poked");
 });
 
 test("plain status humanizes unknown behaviors by cleaning the name", () => {
   assert.equal(
     plainStatus({ ...push, behavior: "custom_behavior", happened: null }, 30_000),
-    "Custom behavior · next thought in 30s",
+    "Custom behavior (walk) · next thought in 30s",
   );
-  assert.equal(plainStatus({ ...push, behavior: "test-name", happened: null }, 0), "Test name");
+  assert.equal(plainStatus({ ...push, behavior: "test-name", happened: null }, 0), "Test name (walk)");
 });
 
 test("plain status cleans behavior names generically", () => {
   assert.equal(
     plainStatus({ ...push, behavior: "fidget", happened: null }, 15_000),
-    "Fidget · next thought in 15s",
+    "Fidget (walk) · next thought in 15s",
   );
   assert.equal(
     plainStatus({ ...push, behavior: "meditate", happened: null }, 120_000),
-    "Meditate · next thought in 2m",
+    "Meditate (walk) · next thought in 2m",
   );
   assert.equal(
     plainStatus({ ...push, behavior: "power_down", happened: null }, 60_000),
-    "Power down · next thought in 1m",
+    "Power down (walk) · next thought in 1m",
   );
 });
 

@@ -81,6 +81,8 @@ function paint() {
   const drawn = statusCells(status, left);
   for (const [name, node] of Object.entries(cells)) {
     node.textContent = drawn[name];
+    // A narrow Chat ellipsizes a long value; hovering reads it whole.
+    node.title = drawn[name];
   }
   plainEl.textContent = plainStatus(status, left);
 }

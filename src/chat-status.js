@@ -96,16 +96,18 @@ export function plainStatus(status, msLeft) {
 }
 
 function humanizeActivity(status) {
-  if (status.behavior) {
-    const readable = humanizeBehavior(status.behavior);
-    if (readable) {
-      return readable;
-    }
-  }
-
   // The name asked for, not the strip drawn: the plain line says what the
   // Character is doing, and a variant or a Left Strip is how it looks doing it.
   const asked = status.asked_animation ?? status.animation;
+  if (status.behavior) {
+    const readable = humanizeBehavior(status.behavior);
+    if (readable) {
+      // In parentheses, so the Animation never reads as a second Behavior.
+      const art = asked && asked !== NONE ? asked.replace(/[_-]/g, " ") : null;
+      return art && art.toLowerCase() !== readable.toLowerCase() ? `${readable} (${art})` : readable;
+    }
+  }
+
   if (asked) {
     const readable = humanizeAnimation(asked);
     if (readable) {
