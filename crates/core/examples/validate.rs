@@ -102,6 +102,7 @@ fn played_animation(character: &character::Character, behavior: &str) -> Option<
                 behavior: behavior.to_string(),
                 dialogue: None,
                 direction: None,
+                source: fidget_core::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         });

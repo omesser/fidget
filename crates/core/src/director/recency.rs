@@ -312,6 +312,7 @@ mod tests {
                 behavior: "walk".to_string(),
                 dialogue: None,
                 direction: None,
+                source: crate::engine::AnimationSource::LocalDirector,
             }),
             ..snapshot(100, vec![])
         });

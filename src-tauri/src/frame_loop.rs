@@ -1746,6 +1746,7 @@ pub(crate) fn run_frame_loop(
                                     behavior: String::new(),
                                     dialogue: Some(tour_message.to_string()),
                                     direction: None,
+                                    source: fidget_core::engine::AnimationSource::Engine,
                                 });
                             }
 
@@ -1949,6 +1950,7 @@ pub(crate) fn run_frame_loop(
                             behavior: String::new(),
                             dialogue: Some(line.clone()),
                             direction: None,
+                            source: fidget_core::engine::AnimationSource::Engine,
                         });
                         let _ = app.emit_to(
                             chat_label(&live.id),

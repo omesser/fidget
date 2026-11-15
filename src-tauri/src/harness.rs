@@ -6985,6 +6985,7 @@ mod tests {
                 behavior: "wave".to_string(),
                 dialogue: Some("Good morning".to_string()),
                 direction: None,
+                source: fidget_core::engine::AnimationSource::Engine,
             })
         );
     }
@@ -7583,6 +7584,7 @@ mod tests {
                 behavior: String::new(),
                 dialogue: Some(line.to_string()),
                 direction: None,
+                source: fidget_core::engine::AnimationSource::Engine,
             })
         };
 
@@ -7592,6 +7594,7 @@ mod tests {
                 behavior: "prowl".to_string(),
                 dialogue: Some("mine now".to_string()),
                 direction: None,
+                source: fidget_core::engine::AnimationSource::Engine,
             }),
             true,
             None,

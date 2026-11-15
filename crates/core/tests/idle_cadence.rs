@@ -129,6 +129,7 @@ fn propose(name: &str) -> WorldSnapshot {
             behavior: name.into(),
             dialogue: None,
             direction: None,
+            source: fidget_core::engine::AnimationSource::LocalDirector,
         }),
         ..world(100)
     }

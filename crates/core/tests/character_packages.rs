@@ -407,6 +407,7 @@ fn rubber_duck_jumps_above_the_floor_with_its_grounded_frames() {
             behavior: "jump".into(),
             dialogue: None,
             direction: None,
+            source: fidget_core::engine::AnimationSource::LocalDirector,
         }),
         ..world.clone()
     });
@@ -1102,6 +1103,7 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
                 behavior: "patrol".to_string(),
                 dialogue: None,
                 direction: None,
+                source: fidget_core::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         });
@@ -1625,6 +1627,7 @@ fn groom_plays_the_full_animation_once_then_the_calm_loop_returns() {
                 behavior: "groom".to_string(),
                 dialogue: None,
                 direction: None,
+                source: fidget_core::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         });
@@ -1778,6 +1781,7 @@ fn every_idle_gesture_animation_stars_as_its_own_behavior() {
                     behavior: behavior.to_string(),
                     dialogue: None,
                     direction: None,
+                    source: fidget_core::engine::AnimationSource::LocalDirector,
                 }),
                 ..ground.clone()
             });

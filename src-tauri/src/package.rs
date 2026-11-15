@@ -976,6 +976,7 @@ mod tests {
                 behavior: "jump".to_string(),
                 dialogue: None,
                 direction: None,
+                source: fidget_core::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         };
@@ -1773,6 +1774,7 @@ mod tests {
                 behavior: behavior.to_string(),
                 dialogue: None,
                 direction: None,
+                source: fidget_core::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         };

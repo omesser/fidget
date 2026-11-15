@@ -570,6 +570,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                         behavior,
                         dialogue: parsed.proposal.dialogue,
                         direction: None,
+                        source: crate::engine::AnimationSource::Engine,
                     }),
                     near_miss: None,
                     peeled_thought: peeled,
@@ -584,6 +585,7 @@ fn resolve_prepared(behaviors: &[String], prepared: PreparedReply) -> ResolvedRe
                                 behavior: String::new(),
                                 dialogue: Some(line),
                                 direction: None,
+                                source: crate::engine::AnimationSource::Engine,
                             }),
                             None => Wake::Failed,
                         };
@@ -738,6 +740,7 @@ fn parse_contract(reply: &str) -> Result<ParsedContract, ParseError> {
             behavior: name.to_string(),
             dialogue,
             direction: None,
+            source: crate::engine::AnimationSource::Engine,
         },
         marked,
         peeled_thought,
@@ -787,6 +790,7 @@ fn as_dialogue(reply: &str) -> Option<BehaviorProposal> {
         behavior: String::new(),
         dialogue: Some(text.to_string()),
         direction: None,
+        source: crate::engine::AnimationSource::Engine,
     })
 }
 
@@ -1065,6 +1069,7 @@ impl StaticDirector {
             behavior,
             dialogue: None,
             direction: None,
+            source: crate::engine::AnimationSource::Engine,
         })
     }
 }

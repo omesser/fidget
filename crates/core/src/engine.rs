@@ -194,6 +194,9 @@ pub struct BehaviorProposal {
     pub dialogue: Option<String>,
     /// Which way a walk in `behavior` goes. `None` keeps the last heading.
     pub direction: Option<Direction>,
+    /// Who asked. The producer says so where it builds the proposal; nothing
+    /// downstream infers it from the name or the wake.
+    pub source: AnimationSource,
 }
 
 /// Everything the Engine is told about the world for one tick.
@@ -2543,7 +2546,7 @@ impl Engine {
     /// Play `proposal` the way a tick does. The heading lands now: the walk's
     /// velocity was read before the proposal arrived.
     fn take_proposal(&mut self, proposal: &BehaviorProposal) -> Taken {
-        match self.start_behavior(&proposal.behavior, AnimationSource::Engine) {
+        match self.start_behavior(&proposal.behavior, proposal.source) {
             Some(true) => {
                 if let Some(direction) = proposal.direction {
                     if self
@@ -2561,7 +2564,7 @@ impl Engine {
             Some(false) => Taken::Refused(proposal.behavior.clone()),
             None if proposal.behavior.is_empty()
                 && proposal.dialogue.is_some()
-                && self.play(&[Primitive::Talk], AnimationSource::Engine) =>
+                && self.play(&[Primitive::Talk], proposal.source) =>
             {
                 Taken::Talk
             }
@@ -3262,6 +3265,7 @@ mod tests {
                     behavior: "walk".to_string(),
                     dialogue: None,
                     direction: Some(heading),
+                    source: AnimationSource::LocalDirector,
                 }),
                 ..world.clone()
             });
@@ -3339,6 +3343,7 @@ mod tests {
                 behavior: behavior.to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         }
@@ -3822,6 +3827,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: Some("morning".to_string()),
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -5211,6 +5217,7 @@ mod tests {
                 behavior: "jump".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..a_long_perch()
         });
@@ -5370,6 +5377,7 @@ mod tests {
                 behavior: "settle".to_string(),
                 dialogue: Some("off we go".to_string()),
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..held.clone()
         });
@@ -5880,6 +5888,7 @@ mod tests {
             behavior: "walk".to_string(),
             dialogue: None,
             direction: None,
+            source: AnimationSource::LocalDirector,
         })
     }
 
@@ -5894,6 +5903,7 @@ mod tests {
                 behavior: "walk".to_string(),
                 dialogue: None,
                 direction: Some(Direction::Left),
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -5908,6 +5918,7 @@ mod tests {
                 behavior: "walk".to_string(),
                 dialogue: None,
                 direction: Some(Direction::Right),
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -5998,6 +6009,7 @@ mod tests {
                 behavior: "amble".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..a_long_perch()
         });
@@ -6042,6 +6054,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -6144,6 +6157,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..a_long_perch()
         });
@@ -9266,6 +9280,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: Some("hello there".to_string()),
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -9290,6 +9305,7 @@ mod tests {
                         behavior: "greet".to_string(),
                         dialogue: None,
                         direction: None,
+                        source: AnimationSource::LocalDirector,
                     }),
                     ..snapshot(100)
                 })
@@ -9587,6 +9603,7 @@ mod tests {
                 behavior: String::new(),
                 dialogue: Some("hello there".to_string()),
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -9618,6 +9635,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: Some("hi".to_string()),
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -9639,6 +9657,7 @@ mod tests {
                 behavior: "greet".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             ..snapshot(100)
         });
@@ -9950,6 +9969,7 @@ mod tests {
                 behavior: "chase-test".to_string(),
                 dialogue: None,
                 direction: None,
+                source: AnimationSource::LocalDirector,
             }),
             cursor: Point {
                 x: engine.position.x + 200.0,
@@ -11121,6 +11141,7 @@ mod tests {
                     behavior: "walk".to_string(),
                     dialogue: Some("hands off the wheel".to_string()),
                     direction: None,
+                    source: AnimationSource::LocalDirector,
                 }),
                 ..world.clone()
             });

@@ -1174,6 +1174,7 @@ pub(crate) mod tests {
                 behavior: "jump".to_string(),
                 dialogue: None,
                 direction: None,
+                source: crate::engine::AnimationSource::LocalDirector,
             }),
             ..ground.clone()
         };

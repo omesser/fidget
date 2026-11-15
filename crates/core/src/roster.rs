@@ -648,6 +648,7 @@ mod tests {
             behavior: "wave".to_string(),
             dialogue: None,
             direction: None,
+            source: crate::engine::AnimationSource::LocalDirector,
         });
 
         let mut snapshot_sleep = test_snapshot();
@@ -655,6 +656,7 @@ mod tests {
             behavior: "sleep".to_string(),
             dialogue: None,
             direction: None,
+            source: crate::engine::AnimationSource::LocalDirector,
         });
 
         let frame_a = roster.get_mut(&id_a).unwrap().tick(&snapshot_wave);

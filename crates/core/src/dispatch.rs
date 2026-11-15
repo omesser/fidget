@@ -1943,6 +1943,7 @@ mod tests {
                 behavior: String::new(),
                 dialogue: Some("On my way.".to_string()),
                 direction: None,
+                source: crate::engine::AnimationSource::LocalDirector,
             }),
             ..bubble.clone()
         };
@@ -2001,6 +2002,7 @@ mod tests {
                 behavior: "hop".to_string(),
                 dialogue: None,
                 direction: None,
+                source: crate::engine::AnimationSource::LocalDirector,
             }),
             ..world.clone()
         };

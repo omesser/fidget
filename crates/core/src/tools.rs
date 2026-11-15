@@ -367,6 +367,7 @@ pub(crate) fn play_behavior(
         behavior: behavior.to_string(),
         dialogue: None,
         direction,
+        source: crate::engine::AnimationSource::Engine,
     };
 
     let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();
