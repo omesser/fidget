@@ -3517,6 +3517,7 @@ fn answer_tool_call(
             instances: &spots,
         },
         caffeinate,
+        animation_source: fidget_core::engine::AnimationSource::AiMcp,
     };
     let _ = call
         .reply

@@ -64,3 +64,76 @@ fn the_same_behavior_reports_whoever_proposed_it_through_its_continuation() {
         assert_eq!(chain.last(), Some(&("idle", AnimationSource::IdleLoop)));
     }
 }
+
+#[test]
+fn an_accepted_move_walks_as_whoever_asked_for_it() {
+    let mut engine = a_resting_sprite();
+    engine
+        .start_move(
+            MoveRequest::To(GlobalX::new(500.0).unwrap()),
+            AnimationSource::AiMcp,
+        )
+        .expect("a grounded sprite takes a move");
+    let walking = engine.tick(&snapshot(100));
+    assert_eq!(
+        (walking.animation, walking.animation_source),
+        ("walk", AnimationSource::AiMcp)
+    );
+    let arrived = settle(&mut engine, &snapshot(100));
+    assert_eq!(
+        (arrived.animation, arrived.animation_source),
+        ("idle", AnimationSource::IdleLoop)
+    );
+}
+
+/// The hand is the user's. Once it lets go, physics owns the fall and the
+/// landing, though the user caused them.
+#[test]
+fn a_grab_is_the_users_and_the_fall_after_it_is_the_engines() {
+    let mut engine = a_resting_sprite();
+    let held = carry(&mut engine, Point { x: 300.0, y: 300.0 }, &snapshot(100));
+    assert_eq!(
+        (held.state, held.animation_source),
+        (State::Dragged, AnimationSource::UserInvoked)
+    );
+    let falling = engine.tick(&snapshot(16));
+    assert_eq!(
+        (falling.state, falling.animation_source),
+        (State::Falling, AnimationSource::Engine)
+    );
+    let landed = (0..80)
+        .map(|_| engine.tick(&snapshot(16)))
+        .find(|frame| frame.animation == "land")
+        .expect("the drop lands");
+    assert_eq!(landed.animation_source, AnimationSource::Engine);
+}
+
+#[test]
+fn a_possessed_stride_is_the_users() {
+    let mut engine = a_resting_sprite();
+    engine.set_possessed(true);
+    let walking = engine.tick(&WorldSnapshot {
+        possession: Intent {
+            walk: Some(Walk::Right),
+            ..Intent::default()
+        },
+        ..snapshot(100)
+    });
+    assert_eq!(
+        (walking.animation, walking.animation_source),
+        ("walk", AnimationSource::UserInvoked)
+    );
+}
+
+/// The walk outlives its Primitive under its own velocity, and keeps the
+/// owner that set it going rather than reading as idle life.
+#[test]
+fn a_walk_that_outlives_its_primitive_keeps_its_owner() {
+    let mut engine = a_resting_sprite();
+    engine.tick(&proposed_by("walk", AnimationSource::LocalDirector));
+    let residual = (0..10)
+        .map(|_| engine.tick(&snapshot(100)))
+        .find(|frame| frame.playing_primitive.is_none() && frame.animation == "walk")
+        .expect("the stride carries on past the Primitive");
+    assert_eq!(residual.animation_source, AnimationSource::LocalDirector);
+}

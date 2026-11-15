@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::io;
 
 use crate::display::Whereabouts;
-use crate::engine::{BehaviorProposal, Direction, MoveRefusal, MoveRequest, Point};
+use crate::engine::{
+    AnimationSource, BehaviorProposal, Direction, MoveRefusal, MoveRequest, Point,
+};
 use crate::memory::MemoryManifest;
 use crate::window_source::Rect;
 
@@ -45,6 +47,7 @@ pub trait ExpressionHandle {
         &mut self,
         instance_id: &str,
         request: MoveRequest,
+        source: AnimationSource,
     ) -> Option<Result<(), MoveRefusal>>;
 }
 
@@ -228,7 +231,7 @@ pub fn whereabouts(
 }
 
 mod helpers {
-    use crate::engine::{BehaviorProposal, MoveRequest};
+    use crate::engine::{AnimationSource, BehaviorProposal, MoveRequest};
     use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
     use crate::window_source::{WindowRect, WindowSource};
 
@@ -314,9 +317,10 @@ mod helpers {
         roster: &[InstanceInfo],
         expression: Option<&mut dyn ExpressionHandle>,
         request: MoveRequest,
+        source: AnimationSource,
     ) -> Result<(), String> {
         let (target_id, handle) = reach_instance(instance_id, roster, expression)?;
-        match handle.start_move(&target_id, request) {
+        match handle.start_move(&target_id, request, source) {
             Some(Ok(())) => Ok(()),
             Some(Err(refusal)) => Err(refusal.to_string()),
             None => Err(no_longer_running(&target_id)),
@@ -354,6 +358,7 @@ pub(crate) fn play_behavior(
     instance_id: Option<&str>,
     roster: &[InstanceInfo],
     expression: Option<&mut dyn ExpressionHandle>,
+    source: AnimationSource,
 ) -> PlayBehaviorResult {
     if behavior.is_empty() {
         return PlayBehaviorResult {
@@ -367,7 +372,7 @@ pub(crate) fn play_behavior(
         behavior: behavior.to_string(),
         dialogue: None,
         direction,
-        source: crate::engine::AnimationSource::Engine,
+        source,
     };
 
     let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();
@@ -386,8 +391,9 @@ pub(crate) fn move_instance(
     instance_id: Option<&str>,
     roster: &[InstanceInfo],
     expression: Option<&mut dyn ExpressionHandle>,
+    source: AnimationSource,
 ) -> MoveResult {
-    let reason = helpers::start_move(instance_id, roster, expression, request).err();
+    let reason = helpers::start_move(instance_id, roster, expression, request, source).err();
     MoveResult {
         started: reason.is_none(),
         reason,

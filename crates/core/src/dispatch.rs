@@ -8,7 +8,9 @@ use std::path::PathBuf;
 
 use crate::caffeinate::{CaffeinateHandle, Fact};
 use crate::display;
-use crate::engine::{Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED};
+use crate::engine::{
+    AnimationSource, Direction, Distance, Extent, MoveRequest, ARRIVAL_THRESHOLD, WALK_SPEED,
+};
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::{Rect, WindowSource};
@@ -60,6 +62,10 @@ pub struct DispatchContext<'a, 'c> {
     /// Its own lifetime, because Caffeinate outlives this call's window lists.
     /// `None` where this build has no Caffeinate, and the tool errors.
     pub caffeinate: Option<&'c mut dyn CaffeinateHandle>,
+    /// Who an Expression from this call is attributed to. The code that
+    /// builds the context says so, never the tool's arguments, and the label
+    /// grants nothing: it is the request's route, not an authenticated author.
+    pub animation_source: AnimationSource,
 }
 
 /// Reborrow a taken handle for one call. `as_deref_mut` on `Option<&mut dyn>`
@@ -221,6 +227,7 @@ pub fn dispatch(
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
+                context.animation_source,
             );
             context.expression = expression;
 
@@ -244,6 +251,7 @@ pub fn dispatch(
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
+                context.animation_source,
             );
             context.expression = expression;
 
@@ -551,6 +559,7 @@ mod tests {
             expression: None,
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         }
     }
 
@@ -1036,11 +1045,13 @@ mod tests {
                 &mut self,
                 instance_id: &str,
                 request: crate::engine::MoveRequest,
+                source: AnimationSource,
             ) -> Option<Result<(), crate::engine::MoveRefusal>> {
                 crate::tools::ExpressionHandle::start_move(
                     &mut *self.0.borrow_mut(),
                     instance_id,
                     request,
+                    source,
                 )
             }
         }
@@ -1070,6 +1081,7 @@ mod tests {
             expression: Some(&mut expression),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         for behavior in ["wave", "spin"] {
@@ -1097,6 +1109,7 @@ mod tests {
                 &mut self,
                 _instance_id: &str,
                 _request: crate::engine::MoveRequest,
+                _source: AnimationSource,
             ) -> Option<Result<(), crate::engine::MoveRefusal>> {
                 None
             }
@@ -1118,6 +1131,7 @@ mod tests {
             expression: Some(&mut captured),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let played = dispatch(
@@ -1131,6 +1145,77 @@ mod tests {
 
         let proposal = captured.0.expect("the proposal reached the handle");
         assert_eq!(proposal.direction, Some(Direction::Left));
+    }
+
+    /// The caller that built the context names the source. Nothing in the
+    /// tool's arguments can, so a Harness cannot claim to be the user.
+    #[test]
+    fn expression_tools_carry_the_contexts_source_and_not_the_arguments() {
+        #[derive(Default)]
+        struct Captured {
+            proposal: Option<crate::engine::BehaviorProposal>,
+            moved_for: Option<AnimationSource>,
+        }
+
+        impl crate::tools::ExpressionHandle for Captured {
+            fn enqueue(
+                &mut self,
+                _instance_id: &str,
+                proposal: crate::engine::BehaviorProposal,
+            ) -> bool {
+                self.proposal = Some(proposal);
+                true
+            }
+
+            fn start_move(
+                &mut self,
+                _instance_id: &str,
+                _request: crate::engine::MoveRequest,
+                source: AnimationSource,
+            ) -> Option<Result<(), crate::engine::MoveRefusal>> {
+                self.moved_for = Some(source);
+                Some(Ok(()))
+            }
+        }
+
+        let temp = tempfile::tempdir().expect("temp dir is creatable");
+        let windows = fake_source(vec![]);
+        let roster = [InstanceInfo {
+            id: "inst-1".to_string(),
+            name: "TestBuddy".to_string(),
+            ..Default::default()
+        }];
+        let mut captured = Captured::default();
+        let mut context = DispatchContext {
+            window_source: &windows,
+            memory_path: temp.path().join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster,
+            expression: Some(&mut captured),
+            placement: PlacementQuery::empty(),
+            caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
+        };
+
+        let played = dispatch(
+            "play_behavior",
+            json!({"behavior": "walk", "source": "user_invoked"}),
+            &mut context,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(played["success"], true);
+        let moved = dispatch(
+            "move",
+            json!({"direction": "right", "distance": 200, "source": "user_invoked"}),
+            &mut context,
+        )
+        .expect("dispatch succeeds");
+        assert_eq!(moved["started"], true, "{moved}");
+        drop(context);
+
+        let proposal = captured.proposal.expect("the proposal reached the handle");
+        assert_eq!(proposal.source, AnimationSource::AiMcp);
+        assert_eq!(captured.moved_for, Some(AnimationSource::AiMcp));
     }
 
     #[test]
@@ -1276,6 +1361,7 @@ mod tests {
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let played = dispatch(
@@ -1360,6 +1446,7 @@ mod tests {
                 instances: &[],
             },
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
         dispatch("move", arguments, &mut context)
     }
@@ -2367,6 +2454,7 @@ mod tests {
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let args = json!({"behavior": "wave"});
@@ -2439,6 +2527,7 @@ mod tests {
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let result = dispatch("play_behavior", json!({"behavior": "jump"}), &mut context)
@@ -2669,6 +2758,7 @@ mod tests {
             expression: Some(&mut live),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let result = dispatch("play_behavior", json!({"behavior": "wave"}), &mut context)
@@ -2705,6 +2795,7 @@ mod tests {
             expression: Some(&mut roster),
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let args = json!({"behavior": "undeclared_behavior"});
@@ -2766,6 +2857,7 @@ mod tests {
                 instances: &spots,
             },
             caffeinate: None,
+            animation_source: AnimationSource::AiMcp,
         };
 
         let result = dispatch("whereabouts", json!({}), &mut context).expect("dispatch succeeds");

@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod destination;
 mod geometry;
 mod transition;
-use destination::{footing_refusal, heading_to, Heading};
+use destination::{footing_refusal, heading_to, Destination, Heading};
 pub use destination::{Distance, Extent, GlobalX, MoveRefusal, MoveRequest};
 use geometry::*;
 
@@ -604,7 +604,10 @@ pub struct Engine {
     feet_held: bool,
 
     /// Where a move is walking to.
-    destination: Option<GlobalX>,
+    destination: Option<Destination>,
+    /// Who set the walk under way going. Velocity outlives the Primitive that
+    /// set it, so the walk is drawn as that owner's until the feet stop.
+    motion_source: Option<AnimationSource>,
     /// Reach at the last tick's feet, so a move can be judged between ticks.
     move_reach: Option<Reach>,
 
@@ -888,6 +891,7 @@ impl Engine {
             poke_cooldown_ms: 0,
             feet_held: false,
             destination: None,
+            motion_source: None,
             move_reach: None,
             menu_held: false,
         }
@@ -1541,7 +1545,10 @@ impl Engine {
         // arrival is a swat, not overlap, and a timeout ends an endless chase.
         if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
-                Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
+                Some(Primitive::Walk) => {
+                    self.velocity.x = self.facing * WALK_SPEED;
+                    self.motion_source = Some(self.playing_source());
+                }
                 Some(Primitive::Chase) => match heading_to(self.position.x, snapshot.cursor.x) {
                     Heading::Arrived => {
                         // The swat ends the pursuit that earned it, so it is
@@ -1556,7 +1563,10 @@ impl Engine {
                         self.stop_playing();
                         started = true;
                     }
-                    Heading::Toward(toward) => self.stride(toward, snapshot.cursor.x, dt),
+                    Heading::Toward(toward) => {
+                        self.stride(toward, snapshot.cursor.x, dt);
+                        self.motion_source = Some(self.playing_source());
+                    }
                 },
 
                 // Up and forward is an arc. `integrate` reads the rise as lost
@@ -1566,6 +1576,7 @@ impl Engine {
                         x: self.facing * WALK_SPEED,
                         y: -JUMP_SPEED,
                     };
+                    self.motion_source = Some(self.playing_source());
                 }
                 Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep | Primitive::Hold) => {
                     self.velocity.x = 0.0
@@ -1650,6 +1661,10 @@ impl Engine {
 
         if self.velocity.x != 0.0 {
             self.facing = self.velocity.x.signum();
+        } else if matches!(self.state, State::Grounded | State::Perched) {
+            // Stopped on its feet: the walk that source named is over. In the
+            // air it is kept, since a Jump's stride lands still moving.
+            self.motion_source = None;
         }
 
         // Inset a standing sprite at a display edge so it shows whole, facing
@@ -2482,14 +2497,17 @@ impl Engine {
         match self.on_screen() {
             // A possessed walk is the user's stride: it shows over a landing or a
             // startle rather than sliding under them.
-            _ if self.possessed && self.is_walking() => ("walk", AnimationSource::Engine),
+            _ if self.possessed && self.is_walking() => ("walk", AnimationSource::UserInvoked),
             // So does a move's, over a line or a startle.
-            _ if self.feet_owned() && self.is_walking() => ("walk", AnimationSource::Engine),
+            _ if self.feet_owned() && self.is_walking() => ("walk", self.destination_source()),
             Some(primitive) => (animation_of(primitive), self.playing_source()),
             // A walk outlasts the Primitive that starts it: the velocity holds
             // until the sprite runs out of Perch, so the Animation has to hold
             // with it rather than dropping back to standing mid-stride.
-            None if self.is_walking() => ("walk", AnimationSource::Engine),
+            None if self.is_walking() => (
+                "walk",
+                self.motion_source.unwrap_or(AnimationSource::Engine),
+            ),
             // The bubble is the sprite speaking, so its feet held, it says so.
             None if snapshot.locomotion_frozen
                 && matches!(self.state, State::Grounded | State::Perched) =>
@@ -2505,10 +2523,11 @@ impl Engine {
             }
             None => {
                 let family = animation_for(self.state);
-                let source = if self.state == State::Grounded {
-                    AnimationSource::IdleLoop
-                } else {
-                    AnimationSource::Engine
+                let source = match self.state {
+                    State::Grounded => AnimationSource::IdleLoop,
+                    // The hand is the user's; the fall it lets go into is not.
+                    State::Dragged => AnimationSource::UserInvoked,
+                    _ => AnimationSource::Engine,
                 };
                 (family, source)
             }
@@ -3318,7 +3337,10 @@ mod tests {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &dock_snapshot(100));
         engine
-            .start_move(MoveRequest::To(GlobalX::new(500.0).unwrap()))
+            .start_move(
+                MoveRequest::To(GlobalX::new(500.0).unwrap()),
+                AnimationSource::AiMcp,
+            )
             .expect("a grounded sprite takes a move");
 
         let frame = settle(&mut engine, &dock_snapshot(100));
@@ -9897,10 +9919,13 @@ mod tests {
 
         let heading = Extent::Distance(Distance::new(200.0).unwrap());
         engine
-            .start_move(MoveRequest::Along {
-                heading: Direction::Left,
-                extent: heading,
-            })
+            .start_move(
+                MoveRequest::Along {
+                    heading: Direction::Left,
+                    extent: heading,
+                },
+                AnimationSource::AiMcp,
+            )
             .expect("a grounded sprite takes a move");
 
         assert!(engine.playing.is_empty(), "{:?}", engine.playing);

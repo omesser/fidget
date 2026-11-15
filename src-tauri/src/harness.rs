@@ -3193,6 +3193,7 @@ fn answer_probe_calls(calls: std::sync::mpsc::Receiver<crate::mcp_http::Call>) {
             expression: None,
             placement: PlacementQuery::empty(),
             caffeinate: None,
+            animation_source: fidget_core::engine::AnimationSource::AiMcp,
         };
         let _ = call
             .reply

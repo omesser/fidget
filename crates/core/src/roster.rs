@@ -5,7 +5,8 @@
 use crate::character::Character;
 use crate::display::Whereabouts;
 use crate::engine::{
-    BehaviorProposal, Engine, Frame, MoveRefusal, MoveRequest, Point, Rect, WorldSnapshot,
+    AnimationSource, BehaviorProposal, Engine, Frame, MoveRefusal, MoveRequest, Point, Rect,
+    WorldSnapshot,
 };
 use std::collections::BTreeMap;
 
@@ -121,8 +122,12 @@ impl Instance {
     }
 
     /// The Engine stays private, so a caller starts a move here.
-    pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
-        self.engine.start_move(request)
+    pub fn start_move(
+        &mut self,
+        request: MoveRequest,
+        source: AnimationSource,
+    ) -> Result<(), MoveRefusal> {
+        self.engine.start_move(request, source)
     }
 
     /// Play a Harness turn beat on the next tick. The Engine owns it.
@@ -404,10 +409,11 @@ impl crate::tools::ExpressionHandle for Roster {
         &mut self,
         instance_id: &str,
         request: MoveRequest,
+        source: AnimationSource,
     ) -> Option<Result<(), MoveRefusal>> {
         self.instances
             .get_mut(instance_id)
-            .map(|instance| instance.start_move(request))
+            .map(|instance| instance.start_move(request, source))
     }
 }
 

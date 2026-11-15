@@ -3,7 +3,9 @@
 //! `playing` and not in it, so no Primitive's turn ends it.
 
 use super::geometry::standing_reach;
-use super::{Direction, Engine, State, WorldSnapshot, ARRIVAL_THRESHOLD, WALK_SPEED};
+use super::{
+    AnimationSource, Direction, Engine, State, WorldSnapshot, ARRIVAL_THRESHOLD, WALK_SPEED,
+};
 use std::fmt;
 use std::num::NonZeroU32;
 
@@ -147,11 +149,23 @@ pub(super) fn heading_to(from_x: f64, target_x: f64) -> Heading {
     }
 }
 
+/// An accepted move: where it walks to and who asked for it. The source
+/// outlives every Primitive the walk passes under, as the target does.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Destination {
+    target: GlobalX,
+    source: AnimationSource,
+}
+
 impl Engine {
     /// Take a move, or say why not. A move taken replaces the one under way.
     /// The answer is the Engine's own, given on the state the next tick
     /// starts from.
-    pub fn start_move(&mut self, request: MoveRequest) -> Result<(), MoveRefusal> {
+    pub fn start_move(
+        &mut self,
+        request: MoveRequest,
+        source: AnimationSource,
+    ) -> Result<(), MoveRefusal> {
         let target = request.target(self.position.x);
         if let Some(refusal) = self.stride_blocked(self.state) {
             return Err(refusal);
@@ -166,7 +180,7 @@ impl Engine {
         if let Heading::Arrived = heading_to(self.position.x, stop_x) {
             return Err(MoveRefusal::AtEdge);
         }
-        self.destination = Some(target);
+        self.destination = Some(Destination { target, source });
         // A Primitive the move's hold would refuse stops now, or a Chase
         // still swats at the cursor under the walk.
         if !self.permitted(&self.playing) {
@@ -180,7 +194,11 @@ impl Engine {
     /// Stride toward the destination, or end the move on arrival, at the end
     /// of the Surface underfoot, or once `state` stops it.
     pub(super) fn apply_destination(&mut self, state: State, dt: f64, snapshot: &WorldSnapshot) {
-        let Some(GlobalX(target_x)) = self.destination else {
+        let Some(Destination {
+            target: GlobalX(target_x),
+            ..
+        }) = self.destination
+        else {
             return;
         };
         let stop_x =
@@ -192,6 +210,12 @@ impl Engine {
             },
             _ => self.end_move(state),
         }
+    }
+
+    /// Who asked for the move under way. Only read while it owns the feet.
+    pub(super) fn destination_source(&self) -> AnimationSource {
+        self.destination
+            .map_or(AnimationSource::Engine, |destination| destination.source)
     }
 
     /// Whether a move holds the feet. Asked instead of the field, so a move
