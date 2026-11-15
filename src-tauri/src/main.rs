@@ -3805,6 +3805,24 @@ struct ChatStatus {
     /// A turn is on the wire, and the character is not waiting on the user.
     /// The thinking ellipsis draws from this.
     thinking: bool,
+    /// Who owns the art on screen, as `source_key` spells it. Part of the
+    /// equality, so a change of owner over the same art still pushes.
+    source: &'static str,
+}
+
+/// The wire spelling of an Animation source. The core type stays free of a
+/// JSON shape; `chat-status.js` maps these keys to the labels the bar shows.
+fn source_key(source: AnimationSource) -> &'static str {
+    match source {
+        AnimationSource::IdleLoop => "idle_loop",
+        AnimationSource::Engine => "engine",
+        AnimationSource::LocalDirector => "local_director",
+        AnimationSource::AiRequested => "ai_requested",
+        AnimationSource::AiMcp => "ai_mcp",
+        AnimationSource::UserInvoked => "user_invoked",
+        AnimationSource::AiFeedback => "ai_feedback",
+        AnimationSource::Onboarding => "onboarding",
+    }
 }
 
 /// One tick's status for the bar, from the Engine's frame and the Animation
@@ -3824,6 +3842,7 @@ fn chat_status(
         happened,
         facing: frame.facing as i8,
         thinking,
+        source: source_key(frame.animation_source),
     }
 }
 
@@ -7557,6 +7576,45 @@ mod tests {
         assert!(
             gaps.windows(2).any(|pair| pair[0] != pair[1]),
             "the spacing is not a fixed step: {gaps:?}"
+        );
+    }
+
+    /// The bar's push rides on status equality, so a source-only change is
+    /// one push, and its key is the stable spelling the renderer maps.
+    #[test]
+    fn the_status_names_the_animation_source_by_a_stable_key() {
+        let mut frame =
+            fidget_core::engine::Engine::new(Point { x: 0.0, y: 0.0 }).tick(&Default::default());
+        let keys = [
+            (AnimationSource::IdleLoop, "idle_loop"),
+            (AnimationSource::Engine, "engine"),
+            (AnimationSource::LocalDirector, "local_director"),
+            (AnimationSource::AiRequested, "ai_requested"),
+            (AnimationSource::AiMcp, "ai_mcp"),
+            (AnimationSource::UserInvoked, "user_invoked"),
+            (AnimationSource::AiFeedback, "ai_feedback"),
+            (AnimationSource::Onboarding, "onboarding"),
+        ];
+        let mut seen = Vec::new();
+        for (source, key) in keys {
+            frame.animation_source = source;
+            let status = chat_status(&frame, "fall", None, false);
+            let pushed = serde_json::to_value(ChatStatusPush {
+                status: &status,
+                wake_ms: None,
+            })
+            .expect("a status serializes");
+            assert_eq!(pushed["source"], key, "{source:?}");
+            assert!(
+                !seen.contains(&status),
+                "{source:?} must differ from every other source's status"
+            );
+            seen.push(status);
+        }
+        frame.animation_source = AnimationSource::Engine;
+        assert!(
+            chat_status(&frame, "fall", None, false) == chat_status(&frame, "fall", None, false),
+            "an unchanged status is no new push"
         );
     }
 
