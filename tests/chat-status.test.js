@@ -318,8 +318,8 @@ test("plain status says Starting up before the first push", () => {
   assert.equal(plainStatus(null, null), "Starting up…");
 });
 
-// The Shell's stable keys and the exact, case-sensitive labels the owner
-// approved for them (issue #2160).
+// The Shell's stable keys and the exact, case-sensitive label for each,
+// written out here rather than imported so a changed label fails.
 test("the source cell spells each Animation source with its approved label", () => {
   const labels = {
     idle_loop: "Idle Loop",
@@ -338,6 +338,7 @@ test("the source cell spells each Animation source with its approved label", () 
 
 test("before the first push the source is a dash, not a guessed Idle Loop", () => {
   assert.equal(statusCells(null, null).source, "—");
+  assert.equal(statusCells({ ...push, source: "elsewhere" }, 1000).source, "—");
 });
 
 test("the source is not part of the collapsed plain line", () => {

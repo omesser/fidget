@@ -161,6 +161,14 @@ named idle-gesture Animation that plays one pass — not mixed. The unit the Dir
 proposes and the engine plays.
 _Avoid_: Routine, script, macro
 
+**Animation source**:
+Who owns the Animation on screen, shown in the expanded Chat status: Idle Loop,
+Engine, Local Director (the Static Director's weighted pick), AI Requested (an
+AI Director reply), AI MCP (an MCP Expression tool), User Invoked, AI Feedback
+(Harness turn beats and the question-wait ask) or Onboarding (the first-run
+gesture tips). The owner of what plays, never the latest request. #2160.
+_Avoid_: Trigger (a Behavior's own field), cause, origin
+
 **Director**:
 The role that proposes a Behavior, and Dialogue when the session is on. Static
 weights fill Behaviors and never say anything; an attached Harness is that role

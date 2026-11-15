@@ -398,3 +398,147 @@ fn standing_the_sprite_elsewhere_ends_the_moves_provenance() {
         ("idle", AnimationSource::IdleLoop)
     );
 }
+
+fn walking_for(source: AnimationSource) -> Engine {
+    let mut engine = a_resting_sprite();
+    engine.tick(&proposed_by("walk", source));
+    let residual = (0..10)
+        .map(|_| engine.tick(&snapshot(100)))
+        .find(|frame| frame.playing_primitive.is_none() && frame.animation == "walk")
+        .expect("the stride carries on past the Primitive");
+    assert_eq!(residual.animation_source, source);
+    engine
+}
+
+/// A startle over a walk is the user's while it shows. It stops nothing, so
+/// the walk it covered comes back as its own owner's, not as the startle's.
+#[test]
+fn a_walk_returns_as_its_own_after_an_expression_over_it() {
+    let mut engine = walking_for(AnimationSource::LocalDirector)
+        .with_cursor_reactions(CursorReaction::React, CursorReaction::Indifferent);
+    let feet = engine.feet();
+    let startled = engine.tick(&WorldSnapshot {
+        cursor: Point {
+            x: feet.x + 100.0,
+            y: feet.y,
+        },
+        ..snapshot(100)
+    });
+    assert_eq!(
+        (startled.animation, startled.animation_source),
+        ("react", AnimationSource::UserInvoked)
+    );
+    let resumed = (0..10)
+        .map(|_| {
+            engine.tick(&WorldSnapshot {
+                cursor: Point {
+                    x: feet.x + 100.0,
+                    y: feet.y,
+                },
+                ..snapshot(100)
+            })
+        })
+        .find(|frame| frame.playing_primitive.is_none())
+        .expect("the startle ends");
+    assert_eq!(
+        (resumed.animation, resumed.animation_source),
+        ("walk", AnimationSource::LocalDirector)
+    );
+}
+
+/// A Poke stops the walk, so nothing it played revives that walk's owner.
+#[test]
+fn an_expression_that_stops_a_walk_does_not_revive_its_owner() {
+    let mut engine = walking_for(AnimationSource::AiRequested);
+    engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..snapshot(100)
+    });
+    let after = settle(&mut engine, &snapshot(100));
+    assert_eq!(
+        (after.animation, after.animation_source),
+        ("idle", AnimationSource::IdleLoop)
+    );
+}
+
+#[test]
+fn unknown_and_refused_proposals_leave_the_source_alone() {
+    let mut engine = a_resting_sprite();
+    let unknown = engine.tick(&proposed_by("nope", AnimationSource::AiRequested));
+    assert_eq!(unknown.animation_source, AnimationSource::IdleLoop);
+
+    // Mid-cooldown after a Poke, a walk is refused and the react stays the user's.
+    engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..snapshot(100)
+    });
+    let refused = engine.tick(&proposed_by("walk", AnimationSource::AiRequested));
+    assert_eq!(refused.refused.as_deref(), Some("walk"));
+    assert_eq!(
+        (refused.animation, refused.animation_source),
+        ("react", AnimationSource::UserInvoked)
+    );
+}
+
+#[test]
+fn a_refused_move_takes_no_source() {
+    let mut engine = a_resting_sprite();
+    let feet = engine.feet();
+    let refused = engine.start_move(
+        MoveRequest::To(GlobalX::new(feet.x).unwrap()),
+        AnimationSource::AiMcp,
+    );
+    assert!(refused.is_err());
+    let frame = engine.tick(&snapshot(100));
+    assert_eq!(frame.animation_source, AnimationSource::IdleLoop);
+}
+
+#[test]
+fn a_verb_that_interrupts_a_chase_swats_for_nobody() {
+    let mut engine = a_resting_sprite();
+    let feet = engine.feet();
+    engine.play(&[Primitive::Chase], AnimationSource::AiMcp);
+    let poked = engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        cursor: Point {
+            x: feet.x + 400.0,
+            y: feet.y,
+        },
+        ..snapshot(100)
+    });
+    assert_eq!(
+        (poked.animation, poked.animation_source),
+        ("react", AnimationSource::UserInvoked)
+    );
+}
+
+#[test]
+fn perched_fallback_talk_is_the_holders() {
+    let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_sleep_after_s((60, 60));
+    settle(&mut engine, &perch(50.0, 400.0));
+    let held = engine.tick(&WorldSnapshot {
+        locomotion_hold: Some(AnimationSource::Onboarding),
+        ..perch(50.0, 400.0)
+    });
+    assert_eq!(
+        (held.state, held.animation, held.animation_source),
+        (State::Perched, "talk", AnimationSource::Onboarding)
+    );
+}
+
+/// A Character switch ends what was playing, not the stride under way: the
+/// velocity survives it, and so does the owner that set it going.
+#[test]
+fn a_character_switch_keeps_the_owner_of_a_walk_it_does_not_stop() {
+    let mut engine = walking_for(AnimationSource::LocalDirector);
+    engine.retarget(
+        declared_behaviors(),
+        CursorReaction::Indifferent,
+        CursorReaction::Indifferent,
+    );
+    let after = engine.tick(&snapshot(100));
+    assert_eq!(
+        (after.animation, after.animation_source),
+        ("walk", AnimationSource::LocalDirector)
+    );
+}

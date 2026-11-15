@@ -1924,7 +1924,7 @@ mod tests {
         assert_eq!(
             proposal.source,
             AnimationSource::LocalDirector,
-            "a failed call that plays the weights is the Local Director's"
+            "a failed call that plays the weights is the Static Director's"
         );
     }
 

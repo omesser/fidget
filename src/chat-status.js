@@ -25,7 +25,7 @@ export function untilWake(ms) {
 }
 
 // The Shell's key for who owns the art on screen, as the label the bar
-// shows. Exact and case-sensitive: the owner approved these words.
+// shows. Exact and case-sensitive, since the labels are the vocabulary.
 const SOURCE_LABELS = {
   idle_loop: "Idle Loop",
   engine: "Engine",
@@ -51,9 +51,8 @@ export function statusCells(status, msLeft) {
     // the countdown, so under a turn on the wire it is always the full wait.
     director: status?.thinking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
     happened: status?.happened ?? NONE,
-    // A dash until a push names one. A key this window does not know is
-    // shown as sent rather than hidden behind a guess.
-    source: SOURCE_LABELS[status?.source] ?? status?.source ?? NONE,
+    // A dash until a push names a source this window knows. Never a guess.
+    source: SOURCE_LABELS[status?.source] ?? NONE,
   };
 }
 

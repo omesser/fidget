@@ -19,9 +19,8 @@ pub struct QmDraft {
 }
 
 /// Who holds the walk at `now`, if anything does: a line on screen or an open
-/// pill stops it, and a sprite on its feet talks for whichever owns the hold.
-/// A line still up outranks the pill, even an empty one; the pill is the
-/// user's once the line has gone.
+/// pill stops it, and a sprite on its feet talks for that holder. A line still
+/// up outranks even an empty pill.
 pub fn talk_hold(
     speech: &SpeechBubble,
     draft: Option<&QmDraft>,

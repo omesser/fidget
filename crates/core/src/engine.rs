@@ -167,13 +167,21 @@ impl Direction {
 /// causes reads differently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnimationSource {
+    /// The Engine's own unrequested idle loops and idle-gestures.
     IdleLoop,
+    /// State and physics playback: falls, landings, climbs, rides, sleep.
     Engine,
+    /// The Static Director's weighted pick, including a failed call's fallback.
     LocalDirector,
+    /// What an AI Director reply asked for, streamed or final.
     AiRequested,
+    /// What an MCP Expression tool asked for. The route, not an author.
     AiMcp,
+    /// What the user's own hand, keys or cursor set off.
     UserInvoked,
+    /// Harness turn beats and the question-wait ask, which no reply proposed.
     AiFeedback,
+    /// The first-run gesture tips.
     Onboarding,
 }
 
@@ -521,8 +529,7 @@ pub struct Engine {
     playing_animation: Option<String>,
 
     /// Who started `playing` / `playing_animation`, and the Behavior it came
-    /// from. `walk` merges linked Behaviors and two Characters may share
-    /// Primitives, so the list cannot name either. Cleared with them so the
+    /// from, which the merged list cannot name. Cleared with them so the
     /// pair is never half true.
     playing_owner: Option<PlaybackOwner>,
 
@@ -1273,7 +1280,7 @@ impl Engine {
                 || matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)))
         {
             let _ = self.play(&[Primitive::Sit], AnimationSource::Engine);
-            self.velocity.x = 0.0;
+            self.end_walk();
         }
     }
 
@@ -1301,7 +1308,7 @@ impl Engine {
         }
         // Walk velocity outlives what set it, a Primitive or a held arrow.
         if self.is_walking() || self.steering {
-            self.velocity.x = 0.0;
+            self.end_walk();
         }
         self.steering = false;
     }
@@ -1368,6 +1375,7 @@ impl Engine {
         self.previous_windows.clear();
         self.move_reach = None;
         self.velocity = Point::default();
+        self.motion_source = None;
         self.state = State::Grounded;
         self.animation = animation_for(State::Grounded);
         self.animation_ms = 0;
@@ -1477,6 +1485,7 @@ impl Engine {
                 let thrown = thrown_velocity(snapshot);
                 thrown_now = thrown.is_some();
                 self.velocity = thrown.unwrap_or_default();
+                self.motion_source = None;
             }
             None => {}
         }
@@ -1485,6 +1494,7 @@ impl Engine {
             self.position.x = snapshot.cursor.x + self.grab_offset.x;
             self.position.y = snapshot.cursor.y + self.grab_offset.y;
             self.velocity = Point::default();
+            self.motion_source = None;
         }
 
         // The cursor already arrives every tick for hit-testing, so noticing
@@ -1563,12 +1573,12 @@ impl Engine {
                         // The swat ends the pursuit that earned it, so it is
                         // that pursuit's: captured before the stop drops it.
                         let chased_for = self.playing_source();
-                        self.velocity.x = 0.0;
+                        self.end_walk();
                         self.stop_playing();
                         started |= self.play(&[Primitive::React], chased_for);
                     }
                     Heading::Toward(_) if self.chase_ms >= CHASE_TIMEOUT_MS => {
-                        self.velocity.x = 0.0;
+                        self.end_walk();
                         self.stop_playing();
                         started = true;
                     }
@@ -1588,7 +1598,7 @@ impl Engine {
                     self.motion_source = Some(self.playing_source());
                 }
                 Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep | Primitive::Hold) => {
-                    self.velocity.x = 0.0
+                    self.end_walk()
                 }
                 _ => {}
             }
@@ -1601,7 +1611,7 @@ impl Engine {
                 self.stop_playing();
             }
             if self.on_screen() != Some(Primitive::Jump) {
-                self.velocity.x = 0.0;
+                self.end_walk();
             }
         }
 
@@ -1670,10 +1680,6 @@ impl Engine {
 
         if self.velocity.x != 0.0 {
             self.facing = self.velocity.x.signum();
-        } else if matches!(self.state, State::Grounded | State::Perched) {
-            // Stopped on its feet: the walk that source named is over. In the
-            // air it is kept, since a Jump's stride lands still moving.
-            self.motion_source = None;
         }
 
         // Inset a standing sprite at a display edge so it shows whole, facing
@@ -1821,7 +1827,7 @@ impl Engine {
         {
             // Noticing you does not keep strolling past, or climbing on.
             if stopped_by_a_poke(self.state) {
-                self.velocity.x = 0.0;
+                self.end_walk();
                 self.poke_cooldown_ms = POKE_COOLDOWN_MS;
             }
             started |= self.play(&[Primitive::React], AnimationSource::UserInvoked);
@@ -2066,9 +2072,10 @@ impl Engine {
                     // goes on falling.
                     if !self.possessed {
                         self.velocity = Point::default();
+                        self.motion_source = None;
                         return Some(Contact::Wall { side });
                     }
-                    self.velocity.x = 0.0;
+                    self.end_walk();
                 }
                 let next_y = self.position.y + self.velocity.y * dt;
 
@@ -2091,6 +2098,7 @@ impl Engine {
                     Some(support) if next_y >= support.y => {
                         self.position.y = support.y;
                         self.velocity = Point::default();
+                        self.motion_source = None;
                         Some(Contact::Landed(support.surface))
                     }
                     _ => {
@@ -2152,6 +2160,7 @@ impl Engine {
                         self.position.x = x;
                         self.facing = side;
                         self.velocity = Point::default();
+                        self.motion_source = None;
                         return Some(Contact::Wall { side });
                     }
                     // A point under the edge, so the fall that follows does
@@ -2402,6 +2411,13 @@ impl Engine {
         art.map_or(PRIMITIVE_MS, |pass| {
             one_pass_ms(pass.frames, pass.fps).max(PRIMITIVE_MS)
         })
+    }
+
+    /// Stop the walk under way. Its owner ends with it, so a later stride
+    /// set going by physics or a new owner never inherits it.
+    fn end_walk(&mut self) {
+        self.velocity.x = 0.0;
+        self.motion_source = None;
     }
 
     /// Under way on foot, rather than in the air with the same speed on it.

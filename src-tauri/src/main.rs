@@ -7598,7 +7598,8 @@ mod tests {
         let mut seen = Vec::new();
         for (source, key) in keys {
             frame.animation_source = source;
-            let status = chat_status(&frame, "fall", None, false);
+            // A variant or a Left Strip draws another name than the one asked.
+            let status = chat_status(&frame, "fall-left", None, false);
             let pushed = serde_json::to_value(ChatStatusPush {
                 status: &status,
                 wake_ms: None,

@@ -198,14 +198,14 @@ function measure() {
       })
       .map((el) => el.id);
   }
-  // The open source row with each label, over the capped ladder at the
-  // narrowest width: the label reads whole, and no cell visible without it
-  // is hidden by it.
-  function sources(bar, ladder) {
+  // The open source row with each label over one payload at the current
+  // width: the label reads whole, and no cell visible without it is hidden.
+  function sources(bar, ladder, payload) {
+    handlers["chat-status"]({ payload });
     const baseline = visibleIds(ladder);
     const row = document.querySelector(".bar .source");
     return SOURCE_KEYS.map((key) => {
-      handlers["chat-status"]({ payload: { ...cap, source: key } });
+      handlers["chat-status"]({ payload: { ...payload, source: key } });
       const r = row.getBoundingClientRect();
       const l = ladder.getBoundingClientRect();
       const edge = edges(bar);
@@ -282,8 +282,15 @@ function measure() {
         clientHeight: ladder.clientHeight,
         visibleTops: visibleTops(ladder),
         distinctTops: tops(nodes()),
-        sources: sources(bar, ladder),
+        sources: [],
       };
+      for (const width of ["320px", "420px"]) {
+        document.body.style.width = width;
+        for (const payload of [short, long, over, cap]) {
+          capped.sources.push(...sources(bar, ladder, payload).map((shown) => ({ width, ...shown })));
+        }
+      }
+      document.body.style.width = "320px";
       push(details, wandering, true);
       const lineCount = new Set([...plain.getClientRects()].map((r) => Math.round(r.top))).size;
       const prose = {

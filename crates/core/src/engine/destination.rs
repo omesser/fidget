@@ -251,7 +251,7 @@ impl Engine {
     /// `start_move` and does not come through here.
     pub(super) fn end_move(&mut self, state: State) {
         if matches!(state, State::Grounded | State::Perched) {
-            self.velocity.x = 0.0;
+            self.end_walk();
         }
         self.destination = None;
     }
