@@ -162,6 +162,29 @@ impl Direction {
     }
 }
 
+/// Who owns the Animation on screen: the producer of the playback, not the
+/// latest request. The Chat status shows it so the same art from different
+/// causes reads differently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimationSource {
+    IdleLoop,
+    Engine,
+    LocalDirector,
+    AiRequested,
+    AiMcp,
+    UserInvoked,
+    AiFeedback,
+    Onboarding,
+}
+
+/// Who started the playback on screen, and the Behavior it came from. `None`
+/// for a Behavior is the Engine's own moment, a startle or a turn beat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PlaybackOwner {
+    source: AnimationSource,
+    behavior: Option<String>,
+}
+
 /// What the Director proposed since the previous tick. Advisory: the Engine
 /// plays the named Behavior only if the Character declares it and the State
 /// permits its Primitives. The line is spoken regardless: dialogue moves nothing.
@@ -233,6 +256,8 @@ pub struct Frame {
     pub state: State,
     /// The Animation to play, by the name every Character Package must supply.
     pub animation: &'static str,
+    /// Who owns the art `art_name` resolves to.
+    pub animation_source: AnimationSource,
 
     /// How long the current Animation has been playing, in milliseconds. Not a
     /// frame index: `character::Animation::frame_at` maps it via the Manifest.
@@ -483,10 +508,11 @@ pub struct Engine {
     /// Mutually exclusive with a non-empty `playing` list.
     playing_animation: Option<String>,
 
-    /// The name of the Behavior `playing` / `playing_animation` came from. `walk`
-    /// merges linked Behaviors and two Characters may share Primitives, so the
-    /// list cannot name it. Cleared with them so the pair is never half true.
-    playing_behavior: Option<String>,
+    /// Who started `playing` / `playing_animation`, and the Behavior it came
+    /// from. `walk` merges linked Behaviors and two Characters may share
+    /// Primitives, so the list cannot name either. Cleared with them so the
+    /// pair is never half true.
+    playing_owner: Option<PlaybackOwner>,
 
     primitive_ms: u32,
     /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
@@ -826,7 +852,7 @@ impl Engine {
             previous_position: position,
             playing: Vec::new(),
             playing_animation: None,
-            playing_behavior: None,
+            playing_owner: None,
             primitive_ms: 0,
             facing: 1.0,
             riding: false,
@@ -1137,13 +1163,19 @@ impl Engine {
 
     /// Shared completed-pass boundary: deferred Director proposal first, else
     /// a `then` that `walk` could not flatten. True when something new started.
-    fn complete_pass(&mut self, finished: Option<String>) -> bool {
+    /// The continuation keeps the finished owner's source: it is the same
+    /// decision playing on, not a fresh one.
+    fn complete_pass(&mut self, finished: Option<PlaybackOwner>) -> bool {
         if self.apply_deferred() {
             return true;
         }
-        if let Some(name) = finished {
+        if let Some(PlaybackOwner {
+            source,
+            behavior: Some(name),
+        }) = finished
+        {
             if let Some((_, Some(next))) = self.walk(&name) {
-                if self.start_behavior(&next) == Some(true) {
+                if self.start_behavior(&next, source) == Some(true) {
                     return true;
                 }
             }
@@ -1224,7 +1256,7 @@ impl Engine {
             && (self.is_walking()
                 || matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)))
         {
-            let _ = self.play(&[Primitive::Sit]);
+            let _ = self.play(&[Primitive::Sit], AnimationSource::Engine);
             self.velocity.x = 0.0;
         }
     }
@@ -1249,7 +1281,7 @@ impl Engine {
             self.stop_playing();
         }
         if starting {
-            self.play(&[Primitive::Possessed]);
+            self.play(&[Primitive::Possessed], AnimationSource::UserInvoked);
         }
         // Walk velocity outlives what set it, a Primitive or a held arrow.
         if self.is_walking() || self.steering {
@@ -1366,7 +1398,7 @@ impl Engine {
             self.awake_ms = 0;
             self.sleep_after_ms = None;
         } else if matches!(self.state, State::Grounded | State::Perched)
-            || (self.playing_behavior.is_some()
+            || (self.playing_behavior().is_some()
                 && !matches!(self.state, State::Asleep | State::Dragged))
         {
             self.awake_ms = self.awake_ms.saturating_add(snapshot.elapsed_ms);
@@ -1494,7 +1526,7 @@ impl Engine {
             if self.cursor_dwell_ms >= DWELL_MS && !self.cursor_dwell_addressed {
                 self.cursor_dwell_addressed = true;
                 addressed = true;
-                started |= self.play(&[Primitive::Talk]);
+                started |= self.play(&[Primitive::Talk], AnimationSource::UserInvoked);
             }
         } else {
             self.cursor_dwell_ms = 0;
@@ -1509,9 +1541,12 @@ impl Engine {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
                 Some(Primitive::Chase) => match heading_to(self.position.x, snapshot.cursor.x) {
                     Heading::Arrived => {
+                        // The swat ends the pursuit that earned it, so it is
+                        // that pursuit's: captured before the stop drops it.
+                        let chased_for = self.playing_source();
                         self.velocity.x = 0.0;
                         self.stop_playing();
-                        started |= self.play(&[Primitive::React]);
+                        started |= self.play(&[Primitive::React], chased_for);
                     }
                     Heading::Toward(_) if self.chase_ms >= CHASE_TIMEOUT_MS => {
                         self.velocity.x = 0.0;
@@ -1657,7 +1692,7 @@ impl Engine {
         // for a sprite woken onto its old footing; that fall only asks what is
         // underneath. A wake with nothing under it still falls and lands later.
         if matches!(contact, Some(transition::Contact::Landed(_))) && !woke {
-            started |= self.play(&[Primitive::Land]);
+            started |= self.play(&[Primitive::Land], AnimationSource::Engine);
         }
 
         // Riding is an event the Director cannot propose in time, the same
@@ -1668,7 +1703,7 @@ impl Engine {
             if self.state != State::Asleep {
                 self.state = State::Perched;
                 if self.on_screen() != Some(Primitive::Hold) {
-                    started |= self.play(&[Primitive::Hold]);
+                    started |= self.play(&[Primitive::Hold], AnimationSource::Engine);
                 }
             }
         } else if self.on_screen() == Some(Primitive::Hold) {
@@ -1717,7 +1752,7 @@ impl Engine {
         if self.possessed {
             if let Some(name) = self.animation_for_digit(snapshot.possession.play) {
                 // One pass, nameless, so no Behavior's `then` follows it.
-                digit = Some(if self.play_animation(&name) {
+                digit = Some(if self.play_animation(&name, AnimationSource::UserInvoked) {
                     started = true;
                     DigitAnimation::Played(name)
                 } else {
@@ -1738,7 +1773,7 @@ impl Engine {
             if let Some(index) = playable {
                 self.moment_queue.drain(0..index);
                 if let Some(moment) = self.moment_queue.pop_front() {
-                    if self.play(&[moment.primitive()]) {
+                    if self.play(&[moment.primitive()], AnimationSource::AiFeedback) {
                         started = true;
                     } else {
                         self.moment_queue.push_front(moment);
@@ -1760,7 +1795,7 @@ impl Engine {
                 self.velocity.x = 0.0;
                 self.poke_cooldown_ms = POKE_COOLDOWN_MS;
             }
-            started |= self.play(&[Primitive::React]);
+            started |= self.play(&[Primitive::React], AnimationSource::UserInvoked);
         }
         // Every way the user reaches for the sprite addresses the Director
         // here and only here. A Poke counts once settled: on its own tick it
@@ -1820,7 +1855,7 @@ impl Engine {
             refused = Some(name);
         }
 
-        let animation = self.animation_name(snapshot);
+        let (animation, animation_source) = self.select_animation(snapshot);
         // One draw per family, not per Primitive turn, or a 600ms Idle would
         // flicker animations. The Engine's own idle names its member on the beat.
         let engine_idle = animation == "idle" && self.uses_own_idle();
@@ -1881,6 +1916,7 @@ impl Engine {
             velocity: self.velocity,
             state: self.state,
             animation: self.animation,
+            animation_source,
             animation_ms: self.animation_ms,
             variant_draw: self.variant_draw,
             idle_beat: self.own_idle.beat(),
@@ -1890,7 +1926,7 @@ impl Engine {
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
             digit,
-            playing_behavior: self.playing_behavior.clone(),
+            playing_behavior: self.playing_behavior().map(str::to_string),
             playing_primitive: self.on_screen(),
             playing_gesture,
             riding: self.riding,
@@ -1946,7 +1982,7 @@ impl Engine {
         let Some(charge) = snapshot.possession.launch else {
             return false;
         };
-        if !(on_feet || climbing) || !self.play(&[Primitive::Jump]) {
+        if !(on_feet || climbing) || !self.play(&[Primitive::Jump], AnimationSource::UserInvoked) {
             return false;
         }
         let speed = self.launch_speed(charge, snapshot);
@@ -2346,7 +2382,7 @@ impl Engine {
             if elapsed_ms >= self.primitive_ms {
                 self.playing_animation = None;
                 self.primitive_ms = 0;
-                let finished = self.playing_behavior.take();
+                let finished = self.playing_owner.take();
                 self.moment_holding = false;
                 self.complete_pass(finished);
                 return true;
@@ -2378,7 +2414,7 @@ impl Engine {
         }
         if self.playing.is_empty() {
             self.primitive_ms = 0;
-            let finished = self.playing_behavior.take();
+            let finished = self.playing_owner.take();
             self.moment_holding = false;
             if self.complete_pass(finished) {
                 moved_on = true;
@@ -2395,7 +2431,7 @@ impl Engine {
     fn stop_playing(&mut self) {
         self.playing.clear();
         self.playing_animation = None;
-        self.playing_behavior = None;
+        self.playing_owner = None;
         self.primitive_ms = 0;
         self.moment_holding = false;
     }
@@ -2404,7 +2440,7 @@ impl Engine {
         let facing = |right: bool| if right { 1.0 } else { -1.0 };
         match reaction {
             CursorReaction::Indifferent => false,
-            CursorReaction::Speak => self.play(&[Primitive::Talk]),
+            CursorReaction::Speak => self.play(&[Primitive::Talk], AnimationSource::UserInvoked),
             CursorReaction::Face => {
                 self.facing = facing(cursor.x > self.position.x);
                 false
@@ -2412,43 +2448,67 @@ impl Engine {
             CursorReaction::Toward => {
                 self.facing = facing(cursor.x > self.position.x);
                 // A one-shot walk; Chase is what follows.
-                self.play(&[Primitive::Walk])
+                self.play(&[Primitive::Walk], AnimationSource::UserInvoked)
             }
             CursorReaction::Away => {
                 self.facing = facing(cursor.x < self.position.x);
-                self.play(&[Primitive::Walk])
+                self.play(&[Primitive::Walk], AnimationSource::UserInvoked)
             }
-            CursorReaction::React => self.play(&[Primitive::React]),
+            CursorReaction::React => self.play(&[Primitive::React], AnimationSource::UserInvoked),
         }
     }
 
     /// The Animation this tick shows, before the idle machine advances.
     fn animation_name(&self, snapshot: &WorldSnapshot) -> &'static str {
+        self.select_animation(snapshot).0
+    }
+
+    /// The Animation this tick shows and who owns the art drawn for it. One
+    /// match, so the owner cannot drift from the branch that chose the art.
+    fn select_animation(&self, snapshot: &WorldSnapshot) -> (&'static str, AnimationSource) {
+        let (family, source) = self.select_family(snapshot);
+        // A named pass draws over the family token, so the art on screen is
+        // its owner's even while the family still says walk.
+        if self.playing_animation.is_some() {
+            return (family, self.playing_source());
+        }
+        (family, source)
+    }
+
+    fn select_family(&self, snapshot: &WorldSnapshot) -> (&'static str, AnimationSource) {
         match self.on_screen() {
             // A possessed walk is the user's stride: it shows over a landing or a
             // startle rather than sliding under them.
-            _ if self.possessed && self.is_walking() => "walk",
+            _ if self.possessed && self.is_walking() => ("walk", AnimationSource::Engine),
             // So does a move's, over a line or a startle.
-            _ if self.feet_owned() && self.is_walking() => "walk",
-            Some(primitive) => animation_of(primitive),
+            _ if self.feet_owned() && self.is_walking() => ("walk", AnimationSource::Engine),
+            Some(primitive) => (animation_of(primitive), self.playing_source()),
             // A walk outlasts the Primitive that starts it: the velocity holds
             // until the sprite runs out of Perch, so the Animation has to hold
             // with it rather than dropping back to standing mid-stride.
-            None if self.is_walking() => "walk",
+            None if self.is_walking() => ("walk", AnimationSource::Engine),
             // The bubble is the sprite speaking, so its feet held, it says so.
             None if snapshot.locomotion_frozen
                 && matches!(self.state, State::Grounded | State::Perched) =>
             {
-                "talk"
+                ("talk", AnimationSource::Engine)
             }
             // A sprite that rests quietly on a Perch idles in place: still
             // Perched, same edge, idle art and idle life.
             None if matches!(self.state, State::Perched)
                 && self.perched_rest_ms >= PERCHED_IDLE_AFTER_MS =>
             {
-                "idle"
+                ("idle", AnimationSource::IdleLoop)
             }
-            None => animation_for(self.state),
+            None => {
+                let family = animation_for(self.state);
+                let source = if self.state == State::Grounded {
+                    AnimationSource::IdleLoop
+                } else {
+                    AnimationSource::Engine
+                };
+                (family, source)
+            }
         }
     }
 
@@ -2463,7 +2523,7 @@ impl Engine {
 
     fn idle_typed(&self) -> bool {
         self.on_screen() == Some(Primitive::Idle)
-            && self.playing_behavior.as_ref().is_some_and(|name| {
+            && self.playing_behavior().is_some_and(|name| {
                 self.behaviors
                     .get(name)
                     .is_some_and(|behavior| behavior.idle_type)
@@ -2483,7 +2543,7 @@ impl Engine {
     /// Play `proposal` the way a tick does. The heading lands now: the walk's
     /// velocity was read before the proposal arrived.
     fn take_proposal(&mut self, proposal: &BehaviorProposal) -> Taken {
-        match self.start_behavior(&proposal.behavior) {
+        match self.start_behavior(&proposal.behavior, AnimationSource::Engine) {
             Some(true) => {
                 if let Some(direction) = proposal.direction {
                     if self
@@ -2501,7 +2561,7 @@ impl Engine {
             Some(false) => Taken::Refused(proposal.behavior.clone()),
             None if proposal.behavior.is_empty()
                 && proposal.dialogue.is_some()
-                && self.play(&[Primitive::Talk]) =>
+                && self.play(&[Primitive::Talk], AnimationSource::Engine) =>
             {
                 Taken::Talk
             }
@@ -2511,21 +2571,35 @@ impl Engine {
 
     /// Start `name` through `permitted`. `None` means the Character does not
     /// declare it. `play` clears the Behavior name, so only this puts it back.
-    fn start_behavior(&mut self, name: &str) -> Option<bool> {
+    fn start_behavior(&mut self, name: &str, source: AnimationSource) -> Option<bool> {
         let behavior = self.behaviors.get(name)?;
-        if let Some(animation) = behavior.animation.clone() {
-            let started = self.play_animation(&animation);
-            if started {
-                self.playing_behavior = Some(name.to_string());
+        let started = match behavior.animation.clone() {
+            Some(animation) => self.play_animation(&animation, source),
+            None => {
+                let (primitives, _) = self.walk(name)?;
+                self.play(&primitives, source)
             }
-            return Some(started);
-        }
-        let (primitives, _) = self.walk(name)?;
-        let started = self.play(&primitives);
+        };
         if started {
-            self.playing_behavior = Some(name.to_string());
+            self.playing_owner = Some(PlaybackOwner {
+                source,
+                behavior: Some(name.to_string()),
+            });
         }
         Some(started)
+    }
+
+    /// The Behavior whose Primitives or pass are on screen, if one is.
+    fn playing_behavior(&self) -> Option<&str> {
+        self.playing_owner.as_ref()?.behavior.as_deref()
+    }
+
+    /// Who owns what `playing` / `playing_animation` holds. Every `play` names
+    /// one, so the fallback only covers a list emptied without `stop_playing`.
+    fn playing_source(&self) -> AnimationSource {
+        self.playing_owner
+            .as_ref()
+            .map_or(AnimationSource::Engine, |owner| owner.source)
     }
 
     /// The Animation digit `play` names, or nothing past the list.
@@ -2536,7 +2610,7 @@ impl Engine {
 
     /// Start `primitives` unless the State forbids any of them. True when it
     /// started. All or nothing: half a Behavior stops the sprite mid-thought.
-    fn play(&mut self, primitives: &[Primitive]) -> bool {
+    fn play(&mut self, primitives: &[Primitive], source: AnimationSource) -> bool {
         if primitives.is_empty() || !self.permitted(primitives) {
             return false;
         }
@@ -2546,7 +2620,10 @@ impl Engine {
         // Nameless until a caller says otherwise. Most callers are the Engine
         // playing a moment of its own — a Land, a Hold, a startle — and the
         // name of the Behavior they interrupted is not theirs to keep.
-        self.playing_behavior = None;
+        self.playing_owner = Some(PlaybackOwner {
+            source,
+            behavior: None,
+        });
 
         // A new Chase is a new pursuit; leftover ms from the last one would
         // time out mid-stride.
@@ -2562,14 +2639,17 @@ impl Engine {
 
     /// One pass of a named Animation: a Behavior's idle-gesture, or a digit's
     /// pick. True when it started.
-    fn play_animation(&mut self, animation: &str) -> bool {
+    fn play_animation(&mut self, animation: &str, source: AnimationSource) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         if !(on_feet && !self.feet_owned()) {
             return false;
         }
         self.playing.clear();
         self.playing_animation = Some(animation.to_string());
-        self.playing_behavior = None;
+        self.playing_owner = Some(PlaybackOwner {
+            source,
+            behavior: None,
+        });
         self.primitive_ms = self.animation_duration_ms(animation);
         self.moment_holding = true;
         true
@@ -5189,7 +5269,7 @@ mod tests {
     fn a_menu_during_a_chase_aborts_the_chase() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
-        engine.play(&[Primitive::Chase]);
+        engine.play(&[Primitive::Chase], AnimationSource::LocalDirector);
 
         let chasing = engine.tick(&WorldSnapshot {
             cursor: Point {
@@ -9750,7 +9830,7 @@ mod tests {
 
         // Start chase with cursor close by (just outside arrival threshold), so
         // the first tick is pursuit and not a swat.
-        engine.play(&[Primitive::Chase]);
+        engine.play(&[Primitive::Chase], AnimationSource::LocalDirector);
 
         let chasing = engine.tick(&WorldSnapshot {
             cursor: Point {
@@ -9787,7 +9867,7 @@ mod tests {
     fn a_move_ends_the_chase_it_interrupts() {
         let mut engine = a_resting_sprite();
         let sprite_x = engine.position.x;
-        engine.play(&[Primitive::Chase]);
+        engine.play(&[Primitive::Chase], AnimationSource::LocalDirector);
         engine.tick(&WorldSnapshot {
             cursor: Point {
                 x: sprite_x + 300.0,
@@ -9812,7 +9892,7 @@ mod tests {
         let mut engine = a_resting_sprite();
         let sprite_x = engine.position.x;
 
-        engine.play(&[Primitive::Chase]);
+        engine.play(&[Primitive::Chase], AnimationSource::LocalDirector);
 
         // Chase a cursor that keeps escaping (moving away).
         let mut cursor_x = sprite_x + 300.0;
@@ -9839,7 +9919,7 @@ mod tests {
     #[test]
     fn chase_aborts_on_any_verb() {
         let mut engine = a_resting_sprite();
-        engine.play(&[Primitive::Chase]);
+        engine.play(&[Primitive::Chase], AnimationSource::LocalDirector);
 
         let poked = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Poke],
@@ -10588,6 +10668,8 @@ mod tests {
     }
 
     /// A possessed sprite and the keys the Shell feeds it.
+    mod source;
+
     mod possession {
         use super::*;
         use crate::possession::{Charge, Intent, Key, Possession, Walk};

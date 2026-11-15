@@ -74,6 +74,7 @@ mod tests {
             velocity: crate::engine::Point { x: 0.0, y: 0.0 },
             state: State::Grounded,
             animation: "idle",
+            animation_source: crate::engine::AnimationSource::IdleLoop,
             animation_ms: 0,
             playing_gesture: None,
             variant_draw: 0,
