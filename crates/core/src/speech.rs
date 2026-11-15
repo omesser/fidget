@@ -2,23 +2,23 @@
 //!
 //! The overlay times its own bubble. The shell keeps this clock so a resting
 //! stroll can stop while that bubble is showing. The engine hears only who
-//! holds it, so a sprite on its feet talks as that line's producer.
+//! it speaks for, so a sprite on its feet talks as that line's producer.
 
 use std::time::{Duration, Instant};
 
 use crate::engine::{AnimationSource, Dialogue};
 
-/// A hold on a spoken line or an ask, owned by the shell.
+/// The spoken line or ask on screen, timed by the shell.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SpeechBubble {
-    hold: Option<SpeechHold>,
+    line: Option<Line>,
 }
 
 /// The deadline and who the bubble speaks for, set and replaced together so
-/// a new line never inherits the last one's producer. An expired hold may
+/// a new line never inherits the last one's producer. An expired line may
 /// stay stored, as the deadline always has; `now < until` is what counts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct SpeechHold {
+struct Line {
     until: Instant,
     source: AnimationSource,
 }
@@ -31,34 +31,34 @@ impl SpeechBubble {
 
     /// Who the bubble speaks for at `now`, while it is still showing.
     pub fn source_at(&self, now: Instant) -> Option<AnimationSource> {
-        self.hold
-            .filter(|hold| now < hold.until)
-            .map(|hold| hold.source)
+        self.line
+            .filter(|shown| now < shown.until)
+            .map(|shown| shown.source)
     }
 
-    /// Start a hold for `line`, replacing any hold already running.
+    /// Show `line`, replacing any line or ask already up.
     pub fn show_line(&mut self, now: Instant, line: &Dialogue) {
         let units = line.text.encode_utf16().count() as u64;
         let ms = 900u64.saturating_add(55u64.saturating_mul(units));
         let ms = ms.clamp(2000, 8000);
-        self.hold = Some(SpeechHold {
+        self.line = Some(Line {
             until: now + Duration::from_millis(ms),
             source: line.source,
         });
     }
 
-    /// Start the ask hold. The question waits on a Harness turn, so it is the
+    /// Show the ask. The question waits on a Harness turn, so it is the
     /// turn's feedback, not a reply.
     pub fn show_ask(&mut self, now: Instant) {
-        self.hold = Some(SpeechHold {
+        self.line = Some(Line {
             until: now + Duration::from_millis(8000),
             source: AnimationSource::AiFeedback,
         });
     }
 
-    /// Drop the hold.
+    /// Take the line down.
     pub fn hide(&mut self) {
-        self.hold = None;
+        self.line = None;
     }
 }
 
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn a_hidden_character_does_not_start_a_hold() {
+    fn a_hidden_character_does_not_put_a_line_up() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
         note_dialogue(&mut bubble, now, Some(&said("hi")), false, false, false);
@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn a_quiet_tick_leaves_a_hold_to_expire() {
+    fn a_quiet_tick_leaves_a_line_to_expire() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
         note_dialogue(&mut bubble, now, Some(&said("hi")), false, true, false);

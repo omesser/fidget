@@ -18,10 +18,10 @@ pub struct QmDraft {
     pub focused: bool,
 }
 
-/// Who holds the walk at `now`, if anything does: a line on screen or an open
-/// pill stops it, and a sprite on its feet talks for that holder. A line still
-/// up outranks even an empty pill.
-pub fn talk_hold(
+/// Who the sprite speaks for at `now`, if anyone: a line on screen, else an
+/// open pill. Either stops the walk, and a sprite on its feet talks as them.
+/// A line still up outranks even an empty pill.
+pub fn speaking_for(
     speech: &SpeechBubble,
     draft: Option<&QmDraft>,
     now: Instant,
@@ -45,7 +45,7 @@ mod tests {
     }
 
     #[test]
-    fn talk_hold_table() {
+    fn speaking_for_table() {
         let now = Instant::now();
         let empty_unfocused = QmDraft {
             text: String::new(),
@@ -115,21 +115,21 @@ mod tests {
             ),
             ("both end", &replying, None, deadline, None),
         ];
-        for (case, speech, draft, at, held) in cases {
-            assert_eq!(talk_hold(speech, draft, at), held, "{case}");
+        for (case, speech, draft, at, speaker) in cases {
+            assert_eq!(speaking_for(speech, draft, at), speaker, "{case}");
         }
     }
 
-    /// Reading the hold is a question, so asking it at the deadline's edge
+    /// Reading who speaks is a question, so asking it at the deadline's edge
     /// neither clears it nor moves it.
     #[test]
-    fn reading_the_hold_leaves_its_deadline_alone() {
+    fn reading_who_speaks_leaves_the_deadline_alone() {
         let now = Instant::now();
         let mut bubble = SpeechBubble::default();
         bubble.show_line(now, &line("hi", AnimationSource::AiRequested));
         let before = bubble.clone();
         let late = now + Duration::from_millis(5000);
-        assert_eq!(talk_hold(&bubble, None, late), None);
+        assert_eq!(speaking_for(&bubble, None, late), None);
         assert_eq!(bubble, before);
         assert_eq!(
             bubble.source_at(now + Duration::from_millis(1999)),

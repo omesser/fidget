@@ -18,7 +18,7 @@ use fidget_core::overlay::{
     bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
 };
 use fidget_core::possession::{digit_animations, Intent};
-use fidget_core::quick_message::talk_hold;
+use fidget_core::quick_message::speaking_for;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
@@ -2097,7 +2097,7 @@ pub(crate) fn run_frame_loop(
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);
-                world.locomotion_hold = talk_hold(&live.speech, live.qm.as_ref(), Instant::now());
+                world.speaking_for = speaking_for(&live.speech, live.qm.as_ref(), Instant::now());
                 world.chat = std::mem::take(&mut live.chat_said);
                 let ending = match session
                     .as_mut()

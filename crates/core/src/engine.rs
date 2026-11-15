@@ -245,10 +245,10 @@ pub struct WorldSnapshot {
     /// This Instance's quick message has the caret. Walk and chase stop;
     /// idle, sit and a perch in place do not.
     pub composing: bool,
-    /// Who holds the feet with a speech bubble or the quick-message pill, if
-    /// one is showing. Walk and chase stop and none starts; a sprite on its
-    /// feet draws `talk` meanwhile, as that holder's.
-    pub locomotion_hold: Option<AnimationSource>,
+    /// Who the sprite speaks for while a speech bubble or the quick-message
+    /// pill is showing. Walk and chase stop and none starts; a sprite on its
+    /// feet draws `talk` meanwhile, as theirs.
+    pub speaking_for: Option<AnimationSource>,
     /// The user sent a line to the AI this tick. Not a sixth verb: the Shell
     /// already hears that line on the chat channel and sets this for one tick.
     pub chat: bool,
@@ -1411,7 +1411,7 @@ impl Engine {
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
-        self.feet_held = snapshot.composing || snapshot.locomotion_hold.is_some();
+        self.feet_held = snapshot.composing || snapshot.speaking_for.is_some();
 
         // A Behavior counts as awake time even off its feet. Unscripted air
         // and a hand pause the clock. A user interaction or timed wake
@@ -2541,8 +2541,8 @@ impl Engine {
             ),
             // The bubble is the sprite speaking, so its feet held, it says so.
             None if matches!(self.state, State::Grounded | State::Perched) => {
-                match snapshot.locomotion_hold {
-                    Some(holder) => ("talk", holder),
+                match snapshot.speaking_for {
+                    Some(speaker) => ("talk", speaker),
                     None => self.resting_family(),
                 }
             }
@@ -5741,7 +5741,7 @@ mod tests {
         );
 
         let bubble = WorldSnapshot {
-            locomotion_hold: Some(AnimationSource::AiRequested),
+            speaking_for: Some(AnimationSource::AiRequested),
             ..snapshot(100)
         };
         let held: Vec<Frame> = (0..10).map(|_| engine.tick(&bubble)).collect();
@@ -5785,7 +5785,7 @@ mod tests {
 
         for held in [
             WorldSnapshot {
-                locomotion_hold: Some(AnimationSource::AiRequested),
+                speaking_for: Some(AnimationSource::AiRequested),
                 ..snapshot(100)
             },
             WorldSnapshot {
@@ -6487,7 +6487,7 @@ mod tests {
         let mut halted = started;
         for _ in 0..halt_ticks {
             halted = engine.tick(&WorldSnapshot {
-                locomotion_hold: Some(AnimationSource::AiRequested),
+                speaking_for: Some(AnimationSource::AiRequested),
                 ..a_long_perch()
             });
         }
@@ -6505,7 +6505,7 @@ mod tests {
         );
 
         let refused = engine.tick(&WorldSnapshot {
-            locomotion_hold: Some(AnimationSource::AiRequested),
+            speaking_for: Some(AnimationSource::AiRequested),
             proposal: walk(),
             ..a_long_perch()
         });
@@ -11184,7 +11184,7 @@ mod tests {
 
             for frozen in [
                 WorldSnapshot {
-                    locomotion_hold: Some(AnimationSource::AiRequested),
+                    speaking_for: Some(AnimationSource::AiRequested),
                     ..world.clone()
                 },
                 WorldSnapshot {
