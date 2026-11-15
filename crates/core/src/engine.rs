@@ -10754,9 +10754,9 @@ mod tests {
         assert_eq!(again.position, there, "the next tick does not hop");
     }
 
-    /// A possessed sprite and the keys the Shell feeds it.
     mod source;
 
+    /// A possessed sprite and the keys the Shell feeds it.
     mod possession {
         use super::*;
         use crate::possession::{Charge, Intent, Key, Possession, Walk};

@@ -3596,6 +3596,17 @@ fn streamed_line(line: String) -> BehaviorProposal {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use fidget_core::character::{
+        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
+        DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+        DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
+    };
+    use fidget_core::engine::Point;
+    use fidget_core::window_source::{Capabilities, WorldGeometry};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
     #[test]
     fn the_first_run_tour_is_onboarding_talk_with_no_behavior() {
         let tour = super::tour_proposal();
@@ -3624,16 +3635,87 @@ mod tests {
         );
     }
 
-    use super::*;
-    use fidget_core::character::{
-        Animation, Behavior, Character, CursorReaction, GravityScale, Primitive,
-        DEFAULT_IDLE_GESTURE_EVERY_S, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
-        DEFAULT_SLEEP_AFTER_S, DEFAULT_SLEEP_FOR_S, REQUIRED_ANIMATIONS,
-    };
-    use fidget_core::engine::Point;
-    use fidget_core::window_source::{Capabilities, WorldGeometry};
-    use serde_json::json;
-    use std::collections::BTreeMap;
+    /// A wake superseded on the wire delivers neither its words nor its
+    /// reply, so no Frame ever reports the source of a moment the fidget left.
+    #[test]
+    fn a_superseded_delivery_never_reaches_the_animation_source() {
+        use fidget_core::engine::AnimationSource;
+
+        let mut character = character();
+        for name in ["stroll", "nap"] {
+            let mut behavior = character.behaviors["wave"].clone();
+            behavior.primitives = vec![Primitive::Walk];
+            character.behaviors.insert(name.to_string(), behavior);
+        }
+        let mut roster = Roster::new();
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 100.0, y: 0.0 });
+        // A floor to stand on: a falling sprite defers every proposal.
+        let floor = || fidget_core::engine::WorldSnapshot {
+            displays: vec![fidget_core::window_source::Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            elapsed_ms: 16,
+            ..Default::default()
+        };
+        for _ in 0..200 {
+            roster.get_mut(&id).expect("spawned").tick(&floor());
+        }
+
+        let mut slots = completer::Slots::new();
+        slots.wake(
+            &id,
+            completer::tests::answering("stroll\nstale words", 60),
+            completer::tests::wake_context(),
+        );
+        slots.wake(
+            &id,
+            completer::tests::answering("nap\nfresh words", 0),
+            Context {
+                happened: Happened::Poke,
+                ..completer::tests::wake_context()
+            },
+        );
+
+        let mut seen = Vec::new();
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        while std::time::Instant::now() < until {
+            let proposal = match slots.take(&id) {
+                Some(completer::Arrived::Dialogue(line)) => Some(super::streamed_line(line)),
+                Some(completer::Arrived::Answered(answered)) => match answered.wake {
+                    Wake::Proposed(proposal) => Some(proposal),
+                    Wake::Failed => None,
+                },
+                None => None,
+            };
+            let world = fidget_core::engine::WorldSnapshot {
+                proposal,
+                ..floor()
+            };
+            let frame = roster.get_mut(&id).expect("spawned").tick(&world);
+            seen.push((
+                frame.behavior.clone(),
+                frame.dialogue.as_ref().map(|said| said.text.clone()),
+                frame.animation_source,
+            ));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        assert!(
+            seen.iter().any(|(behavior, _, source)| {
+                behavior.as_deref() == Some("nap") && *source == AnimationSource::AiRequested
+            }),
+            "the winning reply plays as AI Requested: {seen:?}"
+        );
+        assert!(
+            !seen.iter().any(|(behavior, said, _)| {
+                behavior.as_deref() == Some("stroll") || said.as_deref() == Some("stale words")
+            }),
+            "the superseded call reached a Frame: {seen:?}"
+        );
+    }
 
     fn activity(frontmost: Option<&str>) -> Activity {
         Activity {

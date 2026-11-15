@@ -563,7 +563,7 @@ pub(crate) mod tests {
 
     /// A Completer that answers with a fixed Behavior name after a delay, so
     /// a test can tell one call apart from the one that superseded it.
-    struct Answers {
+    pub(crate) struct Answers {
         behavior: &'static str,
         delay: Duration,
     }
@@ -576,7 +576,8 @@ pub(crate) mod tests {
         }
     }
 
-    fn answering(behavior: &'static str, delay_ms: u64) -> Arc<ModelDirector<Answers>> {
+    /// `pub(crate)` for the frame loop's supersede test.
+    pub(crate) fn answering(behavior: &'static str, delay_ms: u64) -> Arc<ModelDirector<Answers>> {
         Arc::new(ModelDirector::new(
             Answers {
                 behavior,
