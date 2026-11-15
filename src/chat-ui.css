@@ -1950,11 +1950,27 @@ body {
   color: var(--ui-ink-2);
 }
 
+/* Its own row above the ladder, open only. A cell in the ladder would push
+   visible cells past the two-line cap. */
+.bar .source {
+  display: none;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.45;
+}
+
+.bar .advanced[open] ~ .source {
+  display: block;
+}
+
 /* Two lines at most. Opening Advanced takes that height from the log. */
 .bar .ladder {
   display: none;
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 3;
   min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;

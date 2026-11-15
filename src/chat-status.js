@@ -24,6 +24,19 @@ export function untilWake(ms) {
   return mins < 60 ? `${mins}m` : `${Math.ceil(mins / 60)}h`;
 }
 
+// The Shell's key for who owns the art on screen, as the label the bar
+// shows. Exact and case-sensitive: the owner approved these words.
+const SOURCE_LABELS = {
+  idle_loop: "Idle Loop",
+  engine: "Engine",
+  local_director: "Local Director",
+  ai_requested: "AI Requested",
+  ai_mcp: "AI MCP",
+  user_invoked: "User Invoked",
+  ai_feedback: "AI Feedback",
+  onboarding: "Onboarding",
+};
+
 // One push, plus how much of its countdown is left, as each cell's text.
 // `status` is null until the first arrives, and every cell says so.
 export function statusCells(status, msLeft) {
@@ -38,6 +51,9 @@ export function statusCells(status, msLeft) {
     // the countdown, so under a turn on the wire it is always the full wait.
     director: status?.thinking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
     happened: status?.happened ?? NONE,
+    // A dash until a push names one. A key this window does not know is
+    // shown as sent rather than hidden behind a guess.
+    source: SOURCE_LABELS[status?.source] ?? status?.source ?? NONE,
   };
 }
 

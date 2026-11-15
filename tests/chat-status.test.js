@@ -317,3 +317,31 @@ test("plain status says Idle when behavior/animation/primitive are all null", ()
 test("plain status says Starting up before the first push", () => {
   assert.equal(plainStatus(null, null), "Starting up…");
 });
+
+// The Shell's stable keys and the exact, case-sensitive labels the owner
+// approved for them (issue #2160).
+test("the source cell spells each Animation source with its approved label", () => {
+  const labels = {
+    idle_loop: "Idle Loop",
+    engine: "Engine",
+    local_director: "Local Director",
+    ai_requested: "AI Requested",
+    ai_mcp: "AI MCP",
+    user_invoked: "User Invoked",
+    ai_feedback: "AI Feedback",
+    onboarding: "Onboarding",
+  };
+  for (const [source, label] of Object.entries(labels)) {
+    assert.equal(statusCells({ ...push, source }, 1000).source, label, source);
+  }
+});
+
+test("before the first push the source is a dash, not a guessed Idle Loop", () => {
+  assert.equal(statusCells(null, null).source, "—");
+});
+
+test("the source is not part of the collapsed plain line", () => {
+  const plain = plainStatus({ ...push, source: "ai_mcp" }, 1000);
+  assert.equal(plain, plainStatus(push, 1000));
+  assert.ok(!plain.includes("AI MCP"), plain);
+});

@@ -55,7 +55,7 @@ const promptConfirm = document.getElementById("prompt-confirm");
 const promptCancel = document.getElementById("prompt-cancel");
 
 const cells = Object.fromEntries(
-  ["behavior", "primitive", "animation", "state", "facing", "director", "happened"].map(
+  ["behavior", "primitive", "animation", "state", "facing", "director", "happened", "source"].map(
     (name) => [name, document.getElementById(`s-${name}`)],
   ),
 );

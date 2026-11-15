@@ -34,6 +34,17 @@ const LONG_CELLS = [
 const OVER_CELLS = ["x".repeat(80), "—", "—", "—", "→", "wake 12s", "—"];
 const CAP_CELLS = ["m".repeat(24), "m".repeat(24), "m".repeat(24), "m".repeat(24), "→", "wake 2h", "m".repeat(24)];
 const PLAIN_LINE = "Wander toward cursor for a very long time · next thought in 12s";
+// Every Animation source key, and the label its row must show in full.
+const SOURCE_LABELS = {
+  idle_loop: "Idle Loop",
+  engine: "Engine",
+  local_director: "Local Director",
+  ai_requested: "AI Requested",
+  ai_mcp: "AI MCP",
+  user_invoked: "User Invoked",
+  ai_feedback: "AI Feedback",
+  onboarding: "Onboarding",
+};
 
 function measure() {
   const opening = {
@@ -81,6 +92,7 @@ function measure() {
   };
   const IDS = ${JSON.stringify(CELL_IDS)};
   const THEMES = ${JSON.stringify(THEMES)};
+  const SOURCE_KEYS = ${JSON.stringify(Object.keys(SOURCE_LABELS))};
   const round = (n) => Math.round(n * 100) / 100;
   function box(el) {
     const r = el.getBoundingClientRect();
@@ -166,6 +178,7 @@ function measure() {
       plainTop: Math.round(p.top),
       summaryTop: Math.round(s.top),
       noBox: display === "none" || (l.width === 0 && l.height === 0),
+      sourceHidden: getComputedStyle(document.querySelector(".bar .source")).display === "none",
       display,
       ladderWidth: round(l.width),
       ladderHeight: round(l.height),
@@ -173,6 +186,39 @@ function measure() {
       barHeight: round(edge.rect.height),
       rowPlusPad: round(row + edge.pad + edge.border),
     };
+  }
+  function visibleIds(ladder) {
+    const box = ladder.getBoundingClientRect();
+    return nodes()
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0
+          && r.right > box.left && r.left < box.right
+          && r.bottom > box.top && r.top < box.bottom;
+      })
+      .map((el) => el.id);
+  }
+  // The open source row with each label, over the capped ladder at the
+  // narrowest width: the label reads whole, and no cell visible without it
+  // is hidden by it.
+  function sources(bar, ladder) {
+    const baseline = visibleIds(ladder);
+    const row = document.querySelector(".bar .source");
+    return SOURCE_KEYS.map((key) => {
+      handlers["chat-status"]({ payload: { ...cap, source: key } });
+      const r = row.getBoundingClientRect();
+      const l = ladder.getBoundingClientRect();
+      const edge = edges(bar);
+      return {
+        key,
+        text: document.getElementById("s-source").textContent,
+        readable: row.scrollWidth <= row.clientWidth + 0.5,
+        inside: r.height > 0 && r.left >= edge.left - 0.5 && r.right <= edge.right + 0.5,
+        above: r.bottom <= l.top + 0.5,
+        sameVisible: JSON.stringify(visibleIds(ladder)) === JSON.stringify(baseline),
+        noHScroll: bar.scrollWidth <= bar.clientWidth,
+      };
+    });
   }
   function visibleTops(ladder) {
     const box = ladder.getBoundingClientRect();
@@ -236,6 +282,7 @@ function measure() {
         clientHeight: ladder.clientHeight,
         visibleTops: visibleTops(ladder),
         distinctTops: tops(nodes()),
+        sources: sources(bar, ladder),
       };
       push(details, wandering, true);
       const lineCount = new Set([...plain.getClientRects()].map((r) => Math.round(r.top))).size;
@@ -300,6 +347,7 @@ test(
       assert.equal(scene.collapsed.sameTop, true, why(theme, "collapsed", scene.collapsed));
       assert.equal(scene.collapsed.noBox, true, why(theme, "collapsed", scene.collapsed));
       assert.equal(scene.collapsed.oneLine, true, why(theme, "collapsed", scene.collapsed));
+      assert.equal(scene.collapsed.sourceHidden, true, why(theme, "collapsed", scene.collapsed));
 
       assert.deepEqual(scene.short.cells, SHORT_CELLS, why(theme, "short", scene.short));
       assert.equal(scene.short.padLeft, 16, why(theme, "short", scene.short));
@@ -328,6 +376,15 @@ test(
       assert.deepEqual(scene.cap.cells, CAP_CELLS, why(theme, "cap", scene.cap));
       assert.equal(scene.cap.capped, true, why(theme, "cap", scene.cap));
       assert.equal(scene.cap.visibleTops, 2, why(theme, "cap", scene.cap));
+      for (const shown of scene.cap.sources) {
+        const label = `${theme} source ${JSON.stringify(shown)}`;
+        assert.equal(shown.text, SOURCE_LABELS[shown.key], label);
+        assert.equal(shown.readable, true, label);
+        assert.equal(shown.inside, true, label);
+        assert.equal(shown.above, true, label);
+        assert.equal(shown.sameVisible, true, label);
+        assert.equal(shown.noHScroll, true, label);
+      }
 
       assert.equal(scene.plain.text, PLAIN_LINE, why(theme, "plain", scene.plain));
       assert.equal(scene.plain.lines, 1, why(theme, "plain", scene.plain));
