@@ -137,3 +137,52 @@ fn a_walk_that_outlives_its_primitive_keeps_its_owner() {
         .expect("the stride carries on past the Primitive");
     assert_eq!(residual.animation_source, AnimationSource::LocalDirector);
 }
+
+fn held_by(source: AnimationSource) -> WorldSnapshot {
+    WorldSnapshot {
+        locomotion_hold: Some(source),
+        ..snapshot(100)
+    }
+}
+
+/// Fallback Talk speaks for whichever hold supplies it, on the floor and on
+/// a Perch, and keeps one clock across a change of holder.
+#[test]
+fn fallback_talk_is_the_holders_and_its_clock_runs_across_a_change_of_holder() {
+    let mut engine = a_resting_sprite();
+    let replying = engine.tick(&held_by(AnimationSource::AiRequested));
+    assert_eq!(
+        (replying.animation, replying.animation_source),
+        ("talk", AnimationSource::AiRequested)
+    );
+    let pill = engine.tick(&held_by(AnimationSource::UserInvoked));
+    assert_eq!(
+        (pill.animation, pill.animation_source),
+        ("talk", AnimationSource::UserInvoked)
+    );
+    assert_eq!(
+        pill.animation_ms,
+        replying.animation_ms + 100,
+        "a new holder is not a new Talk"
+    );
+}
+
+#[test]
+fn a_hold_leaves_active_playback_and_a_fall_alone() {
+    let mut engine = a_resting_sprite();
+    let poked = engine.tick(&WorldSnapshot {
+        verbs: vec![Verb::Poke],
+        ..held_by(AnimationSource::AiRequested)
+    });
+    assert_eq!(
+        (poked.animation, poked.animation_source),
+        ("react", AnimationSource::UserInvoked)
+    );
+
+    let mut falling = Engine::new(Point { x: 100.0, y: 0.0 });
+    let frame = falling.tick(&held_by(AnimationSource::AiRequested));
+    assert_eq!(
+        (frame.animation, frame.animation_source),
+        ("fall", AnimationSource::Engine)
+    );
+}

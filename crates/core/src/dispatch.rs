@@ -998,7 +998,7 @@ mod tests {
             poll_generation: 0,
             chat: false,
             composing: false,
-            locomotion_frozen: false,
+            locomotion_hold: None,
             possession: Default::default(),
         }
     }
@@ -2022,7 +2022,7 @@ mod tests {
         assert_eq!(said["started"], true, "{said}");
 
         let bubble = WorldSnapshot {
-            locomotion_frozen: true,
+            locomotion_hold: Some(AnimationSource::AiRequested),
             ..world.clone()
         };
         let a_line = WorldSnapshot {

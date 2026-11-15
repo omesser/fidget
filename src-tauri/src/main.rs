@@ -81,7 +81,9 @@ use fidget_core::character::{Character, Primitive};
 use fidget_core::director::{
     app_instructions, happened_cell, Happened, ModelDirector, Pace, Recency, Seeded, StaticDirector,
 };
-use fidget_core::engine::{Cue, Frame, Point, SpriteFootprint, State, Verb};
+use fidget_core::engine::{
+    AnimationSource, Cue, Dialogue, Frame, Point, SpriteFootprint, State, Verb,
+};
 use fidget_core::input::Pointer;
 use fidget_core::memory;
 use fidget_core::overlay::{display_index_for, SpriteRect};
@@ -780,7 +782,9 @@ struct WorkArea {
 }
 
 struct Spoken {
-    line: String,
+    /// The line and its producer, so a replay speaks for whoever said it and
+    /// not for whatever the current Frame or proposal holds.
+    line: Dialogue,
     at: Instant,
     owner: Option<usize>,
 }
@@ -795,20 +799,20 @@ const CARRY_WINDOW: Duration = Duration::from_secs(8);
 /// Only the bubble owner latches the one-tick pulse, so either would lose it.
 fn draw_response(
     spoken: &mut Option<Spoken>,
-    said: Option<&str>,
+    said: Option<&Dialogue>,
     owner: Option<usize>,
     listening: bool,
     now: Instant,
-) -> Option<String> {
+) -> Option<Dialogue> {
     let unheard = owner.is_some() && !listening;
     let owner = owner.filter(|_| listening);
     if let Some(line) = said {
         *spoken = Some(Spoken {
-            line: line.to_string(),
+            line: line.clone(),
             at: now,
             owner,
         });
-        return (!unheard).then(|| line.to_string());
+        return (!unheard).then(|| line.clone());
     }
     let carried = spoken.as_mut()?;
     if carried.owner == owner || now.duration_since(carried.at) > CARRY_WINDOW {
@@ -7556,6 +7560,47 @@ mod tests {
         );
     }
 
+    fn said(text: &str) -> Dialogue {
+        Dialogue {
+            text: text.to_string(),
+            source: AnimationSource::AiRequested,
+        }
+    }
+
+    /// The carried line keeps the source it was said with. The same words
+    /// from another producer are a new pulse, since nothing deduplicates text.
+    #[test]
+    fn a_carried_line_replays_with_the_source_it_was_said_with() {
+        let t0 = Instant::now();
+        let at = |secs| t0 + Duration::from_secs(secs);
+        let toured = Dialogue {
+            text: "hi".to_string(),
+            source: AnimationSource::Onboarding,
+        };
+        let mut spoken = None;
+        draw_response(&mut spoken, Some(&said("hi")), Some(0), true, t0);
+        assert_eq!(
+            draw_response(&mut spoken, Some(&toured), Some(0), true, at(1)),
+            Some(toured.clone()),
+            "the same text again is a new pulse, and replaces the source"
+        );
+        assert_eq!(
+            draw_response(&mut spoken, None, Some(1), true, at(2)),
+            Some(toured.clone()),
+            "the new owner hears the stored line with its stored source"
+        );
+
+        let mut spoken = None;
+        draw_response(&mut spoken, Some(&toured), Some(0), false, t0);
+        assert_eq!(
+            draw_response(&mut spoken, None, Some(0), true, at(1)),
+            Some(toured),
+            "an unheard line keeps its source until the page listens"
+        );
+        let late = t0 + CARRY_WINDOW + Duration::from_secs(1);
+        assert_eq!(draw_response(&mut spoken, None, Some(1), true, late), None);
+    }
+
     /// A line said on one display and carried across the seam is said
     /// again to the new owner, once, while it could still be showing — and
     /// never to the owner that already heard it.
@@ -7565,7 +7610,7 @@ mod tests {
         let mut spoken = None;
 
         assert_eq!(
-            draw_response(&mut spoken, Some("Yare yare daze."), Some(0), true, t0).as_deref(),
+            draw_response(&mut spoken, Some(&said("Yare yare daze.")), Some(0), true, t0).map(|line| line.text).as_deref(),
             Some("Yare yare daze."),
             "the pulse itself goes to the owner of the tick"
         );
@@ -7588,7 +7633,7 @@ mod tests {
                 true,
                 t0 + Duration::from_secs(2)
             )
-            .as_deref(),
+            .map(|line| line.text).as_deref(),
             Some("Yare yare daze."),
             "mid-reading, the new owner is told the line"
         );
@@ -7616,16 +7661,16 @@ mod tests {
         );
 
         let mut spoken = None;
-        draw_response(&mut spoken, Some("first"), Some(0), true, t0);
+        draw_response(&mut spoken, Some(&said("first")), Some(0), true, t0);
         assert_eq!(
             draw_response(
                 &mut spoken,
-                Some("second"),
+                Some(&said("second")),
                 Some(0),
                 true,
                 t0 + Duration::from_secs(1)
             )
-            .as_deref(),
+            .map(|line| line.text).as_deref(),
             Some("second"),
             "a new line replaces the remembered one"
         );
@@ -7637,7 +7682,7 @@ mod tests {
                 true,
                 t0 + Duration::from_secs(2)
             )
-            .as_deref(),
+            .map(|line| line.text).as_deref(),
             Some("second"),
             "and it is the new line that crosses"
         );
@@ -7651,7 +7696,7 @@ mod tests {
         let at = |secs| t0 + Duration::from_secs(secs);
         let mut spoken = None;
         assert_eq!(
-            draw_response(&mut spoken, Some("hi"), Some(0), false, t0),
+            draw_response(&mut spoken, Some(&said("hi")), Some(0), false, t0),
             None
         );
         assert_eq!(
@@ -7659,13 +7704,13 @@ mod tests {
             None
         );
         assert_eq!(
-            draw_response(&mut spoken, None, Some(0), true, at(2)).as_deref(),
+            draw_response(&mut spoken, None, Some(0), true, at(2)).map(|line| line.text).as_deref(),
             Some("hi")
         );
         assert_eq!(draw_response(&mut spoken, None, Some(0), true, at(3)), None);
 
         let mut spoken = None;
-        draw_response(&mut spoken, Some("hi"), Some(0), false, t0);
+        draw_response(&mut spoken, Some(&said("hi")), Some(0), false, t0);
         let late = t0 + CARRY_WINDOW + Duration::from_secs(1);
         assert_eq!(
             draw_response(&mut spoken, None, Some(0), true, late),
@@ -7679,10 +7724,10 @@ mod tests {
         let t0 = Instant::now();
         let mut spoken = None;
 
-        let dialogue = draw_response(&mut spoken, Some("hello there"), Some(0), true, t0);
+        let dialogue = draw_response(&mut spoken, Some(&said("hello there")), Some(0), true, t0);
 
         assert_eq!(
-            dialogue.as_deref(),
+            dialogue.map(|line| line.text).as_deref(),
             Some("hello there"),
             "under DND, dialogue still reaches draw_response and the bubble"
         );

@@ -7,6 +7,7 @@
 
 use std::time::Instant;
 
+use crate::engine::AnimationSource;
 use crate::speech::SpeechBubble;
 
 /// What the pill holds.
@@ -17,37 +18,123 @@ pub struct QmDraft {
     pub focused: bool,
 }
 
-/// Whether the walk holds at `now`: a line on screen or an open pill stops it.
-pub fn walk_held(speech: &SpeechBubble, draft: Option<&QmDraft>, now: Instant) -> bool {
-    speech.visible_at(now) || draft.is_some()
+/// Who holds the walk at `now`, if anything does: a line on screen or an open
+/// pill stops it, and a sprite on its feet talks for whichever owns the hold.
+/// A line still up outranks the pill, even an empty one; the pill is the
+/// user's once the line has gone.
+pub fn talk_hold(
+    speech: &SpeechBubble,
+    draft: Option<&QmDraft>,
+    now: Instant,
+) -> Option<AnimationSource> {
+    speech
+        .source_at(now)
+        .or(draft.map(|_| AnimationSource::UserInvoked))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::Dialogue;
     use std::time::Duration;
 
+    fn line(text: &str, source: AnimationSource) -> Dialogue {
+        Dialogue {
+            text: text.to_string(),
+            source,
+        }
+    }
+
     #[test]
-    fn walk_held_table() {
+    fn talk_hold_table() {
         let now = Instant::now();
-        let draft = QmDraft {
-            text: "wait".to_string(),
+        let empty_unfocused = QmDraft {
+            text: String::new(),
             focused: false,
         };
-        let mut speaking = SpeechBubble::default();
-        speaking.show_line(now, "hi");
+        let mut replying = SpeechBubble::default();
+        replying.show_line(now, &line("hi", AnimationSource::AiRequested));
+        let mut touring = SpeechBubble::default();
+        touring.show_line(now, &line("hi", AnimationSource::Onboarding));
+        let mut asking = SpeechBubble::default();
+        asking.show_ask(now);
         let quiet = SpeechBubble::default();
-        let expired = now + Duration::from_millis(2000);
+        // "hi" holds 2000 ms, and the deadline itself is already past.
+        let deadline = now + Duration::from_millis(2000);
+        let just_before = now + Duration::from_millis(1999);
 
         let cases = [
-            ("nothing on screen", &quiet, None, now, false),
-            ("a line showing", &speaking, None, now, true),
-            ("a pill open", &quiet, Some(&draft), now, true),
-            ("both", &speaking, Some(&draft), now, true),
-            ("a line expired, no pill", &speaking, None, expired, false),
+            ("nothing on screen", &quiet, None, now, None),
+            (
+                "a reply line",
+                &replying,
+                None,
+                now,
+                Some(AnimationSource::AiRequested),
+            ),
+            (
+                "the tour's line",
+                &touring,
+                None,
+                now,
+                Some(AnimationSource::Onboarding),
+            ),
+            (
+                "the question-wait ask",
+                &asking,
+                None,
+                now,
+                Some(AnimationSource::AiFeedback),
+            ),
+            (
+                "an empty, unfocused pill",
+                &quiet,
+                Some(&empty_unfocused),
+                now,
+                Some(AnimationSource::UserInvoked),
+            ),
+            (
+                "a line beats the pill",
+                &replying,
+                Some(&empty_unfocused),
+                just_before,
+                Some(AnimationSource::AiRequested),
+            ),
+            (
+                "the line expires first, the pill stays",
+                &replying,
+                Some(&empty_unfocused),
+                deadline,
+                Some(AnimationSource::UserInvoked),
+            ),
+            (
+                "the pill closes first, the line runs on",
+                &replying,
+                None,
+                just_before,
+                Some(AnimationSource::AiRequested),
+            ),
+            ("both end", &replying, None, deadline, None),
         ];
         for (case, speech, draft, at, held) in cases {
-            assert_eq!(walk_held(speech, draft, at), held, "{case}");
+            assert_eq!(talk_hold(speech, draft, at), held, "{case}");
         }
+    }
+
+    /// Reading the hold is a question, so asking it at the deadline's edge
+    /// neither clears it nor moves it.
+    #[test]
+    fn reading_the_hold_leaves_its_deadline_alone() {
+        let now = Instant::now();
+        let mut bubble = SpeechBubble::default();
+        bubble.show_line(now, &line("hi", AnimationSource::AiRequested));
+        let before = bubble.clone();
+        let late = now + Duration::from_millis(5000);
+        assert_eq!(talk_hold(&bubble, None, late), None);
+        assert_eq!(bubble, before);
+        assert_eq!(
+            bubble.source_at(now + Duration::from_millis(1999)),
+            Some(AnimationSource::AiRequested)
+        );
     }
 }

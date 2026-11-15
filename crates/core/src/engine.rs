@@ -177,6 +177,14 @@ pub enum AnimationSource {
     Onboarding,
 }
 
+/// A line to speak, and who produced it. The bubble's hold keeps the source
+/// for as long as the line holds the feet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dialogue {
+    pub text: String,
+    pub source: AnimationSource,
+}
+
 /// Who started the playback on screen, and the Behavior it came from. `None`
 /// for a Behavior is the Engine's own moment, a startle or a turn beat.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,9 +237,10 @@ pub struct WorldSnapshot {
     /// This Instance's quick message has the caret. Walk and chase stop;
     /// idle, sit and a perch in place do not.
     pub composing: bool,
-    /// A speech bubble or the quick-message pill is showing. Walk and chase
-    /// stop and none starts; a sprite on its feet draws `talk` meanwhile.
-    pub locomotion_frozen: bool,
+    /// Who holds the feet with a speech bubble or the quick-message pill, if
+    /// one is showing. Walk and chase stop and none starts; a sprite on its
+    /// feet draws `talk` meanwhile, as that holder's.
+    pub locomotion_hold: Option<AnimationSource>,
     /// The user sent a line to the AI this tick. Not a sixth verb: the Shell
     /// already hears that line on the chat channel and sets this for one tick.
     pub chat: bool,
@@ -274,7 +283,7 @@ pub struct Frame {
     /// and for every other Animation, which still weigh `variant_draw`.
     pub idle_beat: Option<IdleBeat>,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
-    pub dialogue: Option<String>,
+    pub dialogue: Option<Dialogue>,
 
     /// The Behavior a proposal started on this frame. For the Shell: what was
     /// asked and what the user saw are different lists, and repetition is
@@ -1394,7 +1403,7 @@ impl Engine {
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
-        self.feet_held = snapshot.composing || snapshot.locomotion_frozen;
+        self.feet_held = snapshot.composing || snapshot.locomotion_hold.is_some();
 
         // A Behavior counts as awake time even off its feet. Unscripted air
         // and a hand pause the clock. A user interaction or timed wake
@@ -1938,10 +1947,14 @@ impl Engine {
             animation_ms: self.animation_ms,
             variant_draw: self.variant_draw,
             idle_beat: self.own_idle.beat(),
-            dialogue: snapshot
-                .proposal
-                .as_ref()
-                .and_then(|proposal| proposal.dialogue.clone()),
+            // The line is its proposal's whether or not the Behavior won the
+            // screen: dialogue moves nothing, so nothing gates it.
+            dialogue: snapshot.proposal.as_ref().and_then(|proposal| {
+                proposal.dialogue.clone().map(|text| Dialogue {
+                    text,
+                    source: proposal.source,
+                })
+            }),
             behavior,
             digit,
             playing_behavior: self.playing_behavior().map(str::to_string),
@@ -2509,29 +2522,31 @@ impl Engine {
                 self.motion_source.unwrap_or(AnimationSource::Engine),
             ),
             // The bubble is the sprite speaking, so its feet held, it says so.
-            None if snapshot.locomotion_frozen
-                && matches!(self.state, State::Grounded | State::Perched) =>
-            {
-                ("talk", AnimationSource::Engine)
+            None if matches!(self.state, State::Grounded | State::Perched) => {
+                match snapshot.locomotion_hold {
+                    Some(holder) => ("talk", holder),
+                    None => self.resting_family(),
+                }
             }
-            // A sprite that rests quietly on a Perch idles in place: still
-            // Perched, same edge, idle art and idle life.
-            None if matches!(self.state, State::Perched)
-                && self.perched_rest_ms >= PERCHED_IDLE_AFTER_MS =>
-            {
-                ("idle", AnimationSource::IdleLoop)
-            }
-            None => {
-                let family = animation_for(self.state);
-                let source = match self.state {
-                    State::Grounded => AnimationSource::IdleLoop,
-                    // The hand is the user's; the fall it lets go into is not.
-                    State::Dragged => AnimationSource::UserInvoked,
-                    _ => AnimationSource::Engine,
-                };
-                (family, source)
-            }
+            None => self.resting_family(),
         }
+    }
+
+    /// Nothing playing, walking or held: what the State itself shows.
+    fn resting_family(&self) -> (&'static str, AnimationSource) {
+        // A sprite that rests quietly on a Perch idles in place: still
+        // Perched, same edge, idle art and idle life. Before that, its sit
+        // is the Engine settling it.
+        if self.state == State::Perched && self.perched_rest_ms >= PERCHED_IDLE_AFTER_MS {
+            return ("idle", AnimationSource::IdleLoop);
+        }
+        let source = match self.state {
+            State::Grounded => AnimationSource::IdleLoop,
+            // The hand is the user's; the fall it lets go into is not.
+            State::Dragged => AnimationSource::UserInvoked,
+            _ => AnimationSource::Engine,
+        };
+        (animation_for(self.state), source)
     }
 
     /// Engine idle, or a Behavior declared `type = "idle"` on an idle Primitive.
@@ -3853,7 +3868,7 @@ mod tests {
             }),
             ..snapshot(100)
         });
-        assert_eq!(spoken.dialogue.as_deref(), Some("morning"));
+        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("morning"));
 
         let quiet = engine.tick(&snapshot(100));
         assert_eq!(quiet.dialogue, None, "a line is said once, not held");
@@ -5415,7 +5430,7 @@ mod tests {
             "it hangs from the cursor rather than sitting down in mid-air"
         );
         assert_eq!(
-            proposed.dialogue.as_deref(),
+            proposed.dialogue.as_ref().map(|line| line.text.as_str()),
             Some("off we go"),
             "it may still speak, which moves nothing"
         );
@@ -5705,7 +5720,7 @@ mod tests {
         );
 
         let bubble = WorldSnapshot {
-            locomotion_frozen: true,
+            locomotion_hold: Some(AnimationSource::AiRequested),
             ..snapshot(100)
         };
         let held: Vec<Frame> = (0..10).map(|_| engine.tick(&bubble)).collect();
@@ -5749,7 +5764,7 @@ mod tests {
 
         for held in [
             WorldSnapshot {
-                locomotion_frozen: true,
+                locomotion_hold: Some(AnimationSource::AiRequested),
                 ..snapshot(100)
             },
             WorldSnapshot {
@@ -6451,7 +6466,7 @@ mod tests {
         let mut halted = started;
         for _ in 0..halt_ticks {
             halted = engine.tick(&WorldSnapshot {
-                locomotion_frozen: true,
+                locomotion_hold: Some(AnimationSource::AiRequested),
                 ..a_long_perch()
             });
         }
@@ -6469,7 +6484,7 @@ mod tests {
         );
 
         let refused = engine.tick(&WorldSnapshot {
-            locomotion_frozen: true,
+            locomotion_hold: Some(AnimationSource::AiRequested),
             proposal: walk(),
             ..a_long_perch()
         });
@@ -9308,7 +9323,7 @@ mod tests {
         });
 
         assert_eq!(
-            frame.dialogue,
+            frame.dialogue.map(|line| line.text),
             Some("hello there".to_string()),
             "Engine passes dialogue through; DND blocking happens at Director level"
         );
@@ -9634,7 +9649,7 @@ mod tests {
             spoken.animation, "talk",
             "dialogue with no Behavior plays talk"
         );
-        assert_eq!(spoken.dialogue.as_deref(), Some("hello there"));
+        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("hello there"));
 
         let playing: Vec<&'static str> = (0..10)
             .map(|_| engine.tick(&snapshot(100)).animation)
@@ -9666,7 +9681,7 @@ mod tests {
             spoken.animation, "react",
             "greet plays its own animation, not talk"
         );
-        assert_eq!(spoken.dialogue.as_deref(), Some("hi"));
+        assert_eq!(spoken.dialogue.as_ref().map(|line| line.text.as_str()), Some("hi"));
         assert_eq!(spoken.behavior, Some("greet".to_string()));
     }
 
@@ -11142,7 +11157,7 @@ mod tests {
 
             for frozen in [
                 WorldSnapshot {
-                    locomotion_frozen: true,
+                    locomotion_hold: Some(AnimationSource::AiRequested),
                     ..world.clone()
                 },
                 WorldSnapshot {
@@ -11176,7 +11191,7 @@ mod tests {
                 Some(Primitive::Possessed),
                 "the start's own moment, not the walk: {frame:?}"
             );
-            assert_eq!(frame.dialogue.as_deref(), Some("hands off the wheel"));
+            assert_eq!(frame.dialogue.as_ref().map(|line| line.text.as_str()), Some("hands off the wheel"));
             assert_eq!(engine.tick(&world).velocity.x, 0.0, "no walk follows");
         }
 

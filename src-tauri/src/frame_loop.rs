@@ -18,7 +18,7 @@ use fidget_core::overlay::{
     bubble_owner, display_index_for, drawn_frame, place_sprite, usable_in_overlay,
 };
 use fidget_core::possession::{digit_animations, Intent};
-use fidget_core::quick_message::walk_held;
+use fidget_core::quick_message::talk_hold;
 use fidget_core::roster::{InstanceId, Roster};
 use fidget_core::scheduler;
 use fidget_core::sensing::{Activity, DesktopSense, SystemClock};
@@ -2111,7 +2111,7 @@ pub(crate) fn run_frame_loop(
                 world.poke_settled = live.pointer.poke_settled();
                 world.proposal = proposal;
                 live.qm = platform::qm_draft(&live.id);
-                world.locomotion_frozen = walk_held(&live.speech, live.qm.as_ref(), Instant::now());
+                world.locomotion_hold = talk_hold(&live.speech, live.qm.as_ref(), Instant::now());
                 world.chat = std::mem::take(&mut live.chat_said);
                 let ending = match session
                     .as_mut()
@@ -2168,7 +2168,10 @@ pub(crate) fn run_frame_loop(
                     // the Chat surface draws the record. The bubble keeps
                     // the model's words; the parser has already read them.
                     let dialogue =
-                        chat_dialogue(parsed_dialogue.as_deref(), frame.dialogue.as_deref());
+                        chat_dialogue(
+                            parsed_dialogue.as_deref(),
+                            frame.dialogue.as_ref().map(|line| line.text.as_str()),
+                        );
                     let logged = dialogue.map(|line| director::marked(line, truncated));
                     session_log::log_reply(
                         &app,
@@ -2579,7 +2582,7 @@ pub(crate) fn run_frame_loop(
                     owner.is_some_and(|index| platform::overlay_listening(&overlay_label(index)));
                 let dialogue = super::draw_response(
                     &mut live.spoken,
-                    frame.dialogue.as_deref(),
+                    frame.dialogue.as_ref(),
                     owner,
                     listening,
                     Instant::now(),
@@ -2588,7 +2591,7 @@ pub(crate) fn run_frame_loop(
                 speech::note_dialogue(
                     &mut live.speech,
                     Instant::now(),
-                    dialogue.as_deref(),
+                    dialogue.as_ref(),
                     asking,
                     presence.visible,
                     overlay_drops_the_bubble,
@@ -2610,7 +2613,9 @@ pub(crate) fn run_frame_loop(
                     animation: drawn.animation.to_string(),
                     frame_index: drawn.index,
                     mirror: if drawn.mirrored { -1 } else { 1 },
-                    dialogue,
+                    // Overlay payloads stay text-only: the source is the
+                    // Chat status's, never the bubble's.
+                    dialogue: dialogue.map(|line| line.text),
                     thinking,
                     asking,
                     // A pressed or held sprite crossing a seam reaches an

@@ -515,7 +515,7 @@ mod tests {
             poll_generation: 0,
             chat: false,
             composing: false,
-            locomotion_frozen: false,
+            locomotion_hold: None,
             possession: Default::default(),
         }
     }
