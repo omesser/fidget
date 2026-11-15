@@ -102,8 +102,7 @@ repos:
       - id: zizmor
         # args replaces the hook default, so --no-progress stays.
         # --offline so CI's GITHUB_TOKEN cannot enable online audits.
-        # The hook's own files pattern stays, so dependabot.yaml is audited
-        # too: its dependabot-cooldown check keeps every ecosystem's cooldown.
+        # The default file set adds dependabot.yaml (cooldowns) and this file.
         args: [--no-progress, --offline]
 
     # PowerShell linting
