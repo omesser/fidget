@@ -8,6 +8,7 @@
 
 mod dock;
 mod input_events;
+mod launch_activation;
 mod minimize;
 mod overlay_panel;
 mod pointer;
@@ -18,6 +19,7 @@ mod window_source;
 
 pub use dock::dock_bounds;
 pub use input_events::{spawn_listener as spawn_event_tap, EventTap};
+pub use launch_activation::{give_front_back, other_app_in_front};
 pub use minimize::{observe_minimize, MinimizeObserver};
 pub use overlay_panel::{configure_overlay, hand_back_keyboard, remember_front_app};
 pub use pointer::{

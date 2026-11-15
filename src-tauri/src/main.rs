@@ -5582,7 +5582,15 @@ fn main() {
             if covered.is_empty() {
                 return Err("no displays reported".into());
             }
+            // The first show is when AppKit activates a launched app, which
+            // would take the keyboard from what the user is typing in.
+            #[cfg(target_os = "macos")]
+            let front = platform::other_app_in_front();
             place_overlays(app.handle(), &covered)?;
+            #[cfg(target_os = "macos")]
+            if let Some(pid) = front {
+                platform::give_front_back(pid);
+            }
 
             // The sprite size is the first Instance's idle Animation, blown
             // up. Here because scripts/verify-overlay.sh crops a screenshot

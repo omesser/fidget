@@ -1198,6 +1198,18 @@ pub fn buttons_down() -> ButtonsDown {
     macos::buttons_down()
 }
 
+/// The frontmost app's pid, unless that is Fidget. Main thread.
+#[cfg(target_os = "macos")]
+pub fn other_app_in_front() -> Option<i32> {
+    macos::other_app_in_front()
+}
+
+/// Activate `pid` again after the launch's first window showed. Main thread.
+#[cfg(target_os = "macos")]
+pub fn give_front_back(pid: i32) {
+    macos::give_front_back(pid);
+}
+
 /// Start noting which presses AppKit has delivered. Main thread, once.
 #[cfg(target_os = "macos")]
 pub fn watch_delivered_presses() {
