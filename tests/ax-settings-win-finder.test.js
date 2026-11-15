@@ -38,6 +38,8 @@ function parsePropertyConditions(body) {
 }
 
 function parseAndConditionArgs(body, targetVar) {
+  // targetVar is a literal from this file.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const re = new RegExp(
     `\\$${targetVar}\\s*=\\s*New-Object System\\.Windows\\.Automation\\.AndCondition\\(([^)]+)\\)`,
     "g",

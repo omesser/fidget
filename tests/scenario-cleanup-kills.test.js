@@ -78,6 +78,8 @@ function findLeaf(name) {
 
 function functionSource(script, name) {
   const text = fs.readFileSync(findLeaf(script), "utf8");
+  // name is a literal function name from this file.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const body = text.match(new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?\\n\\}`, "m"));
   assert.ok(body, `no ${name}() in ${script}`);
   return body[0];
@@ -576,6 +578,8 @@ for (const leaf of ["chat-close-pill-type.sh", "pill-two-displays.sh"]) {
 
 function pathInClose(owned) {
   const escaped = owned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // owned is escaped above.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   return new RegExp(`whose path is.*${escaped}`);
 }
 

@@ -53,6 +53,8 @@ before((t) => {
   site = join(tempDir(t, "landing-cast-aspect-"), "_site");
   const built = spawnSync("bash", ["scripts/assemble-site.sh", site, "/dev/null"], { cwd: ROOT, encoding: "utf8" });
   assert.equal(built.status, 0, `assemble-site.sh failed: ${built.stderr}`);
+  // `probe` is this file's own measuring script, injected into the built page.
+  // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
   writeFileSync(join(site, "probe.html"), readFileSync(join(site, "index.html"), "utf8").replace("<head>", `<head>${probe}`));
 });
 

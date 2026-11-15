@@ -26,6 +26,8 @@ before((t) => {
 
 const section = () => page.match(/<section id="same-moment">([\s\S]*?)<\/section>/)[1];
 const scenes = () => [...section().matchAll(/<div class="moment"( hidden)?>([\s\S]*?)<!-- \/moment -->/g)];
+// Builds the expected text the way the generator escapes it. Nothing here is sanitized.
+// nosemgrep: javascript.audit.detect-replaceall-sanitization.detect-replaceall-sanitization
 const escaped = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;").replaceAll("'", "&#x27;");
 
@@ -38,10 +40,11 @@ test("every authored scene is on the page, the first one showing", () => {
     const scene = MOMENTS.scenes[i];
     for (const line of scene.moment) assert.ok(body.includes(escaped(line)), `scene ${i + 1} sets up: ${line}`);
     assert.equal(scene.reactions.length, 3);
+    const behaviors = [...body.matchAll(/<figcaption><b>[^<]+<\/b> · ([^<]*)<\/figcaption>/g)].map((m) => m[1]);
     for (const one of scene.reactions) {
       assert.ok(body.includes(`<div class="say">${escaped(one.line)}</div>`), `scene ${i + 1} says: ${one.line}`);
       assert.ok(body.includes(escaped(one.quote)), `scene ${i + 1} quotes: ${one.quote}`);
-      assert.match(body, new RegExp(`<figcaption><b>[^<]+</b> · ${one.behavior}</figcaption>`));
+      assert.ok(behaviors.includes(escaped(one.behavior)), `scene ${i + 1} captions ${one.behavior}, got ${behaviors}`);
     }
   });
 });

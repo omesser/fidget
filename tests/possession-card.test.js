@@ -111,6 +111,8 @@ test("the bindings card takes the Chat UI's sans, the Speech bubble the shared o
   assert.ok(sans, "bubble-tokens.css names the sans stack once");
   assert.equal(sans[1].trim(), "system-ui, -apple-system, sans-serif");
   const block = (selector) => {
+    // Callers pass selectors already escaped for a regex.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     const found = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`));
     assert.ok(found, `${selector} has a block`);
     return found[1];

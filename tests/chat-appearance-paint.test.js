@@ -11,8 +11,11 @@ const DESIGNS = ["minimal", "terminal", "glass"];
 
 function declaredToken(selector, name) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // The selector is escaped above, and name is a literal custom property.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const block = CSS.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
   assert.ok(block, `no block for ${selector}`);
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const decl = block[1].match(new RegExp(`${name}\\s*:\\s*([^;]+);`));
   assert.ok(decl, `${selector} has no ${name}`);
   return resolveToken(decl[1].trim());
@@ -25,6 +28,8 @@ function resolveToken(value) {
     return compact;
   }
   const snippet = readFileSync(new URL("../src/bubble-tokens.css", import.meta.url), "utf8");
+  // ref[1] matched --[A-Za-z0-9-]+ above, so it carries no metacharacter.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const decl = snippet.match(new RegExp(`${ref[1]}\\s*:\\s*([^;]+);`));
   assert.ok(decl, `${ref[1]} is not in bubble-tokens.css`);
   return decl[1].trim().replace(/\s+/g, "");

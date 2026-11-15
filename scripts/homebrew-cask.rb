@@ -216,6 +216,8 @@ def download(url)
 end
 
 def plist_xml(dmg_path, app)
+  # seven_zip is 7z or 7zz from PATH, and Open3 takes an argument list, so no shell parses the paths.
+  # nosemgrep: ruby.lang.security.dangerous-exec.dangerous-exec
   listing, err, status = Open3.capture3(seven_zip, "l", "-ba", dmg_path)
   die("7z l failed: #{err}") unless status.success?
 
@@ -224,6 +226,7 @@ def plist_xml(dmg_path, app)
   path = paths.find { |entry| entry.end_with?(needle) }
   die("disk image has no #{needle} (found #{paths.join(', ')})") unless path
 
+  # nosemgrep: ruby.lang.security.dangerous-exec.dangerous-exec
   xml, err, status = Open3.capture3(seven_zip, "e", "-so", dmg_path, path)
   die("7z e failed: #{err}") unless status.success?
   xml

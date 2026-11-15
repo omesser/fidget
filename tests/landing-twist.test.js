@@ -33,6 +33,8 @@ before((t) => {
 
 const section = () => page.match(/<section id="twist">([\s\S]*?)<\/section>/)[1];
 const data = () => JSON.parse(section().match(/<script type="application\/json" id="twist-data">([\s\S]*?)<\/script>/)[1]);
+// Builds the expected text the way the generator escapes it. Nothing here is sanitized.
+// nosemgrep: javascript.audit.detect-replaceall-sanitization.detect-replaceall-sanitization
 const escaped = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;").replaceAll("'", "&#x27;");
 
@@ -150,6 +152,8 @@ const pickEverything = `
 
 async function pick(args) {
   return probePage(page.replace("</body>", `<script>${pickEverything}</script></body>`),
+    // Injects this file's own picker script into the built page.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     { srcHref: pathToFileURL(ROOT).href, timeout: 60000, args });
 }
 

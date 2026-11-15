@@ -133,6 +133,8 @@ test("an execute ask draws its content as text, and the kind and path as metadat
   });
 
   assert.equal(body.querySelector(".ask-title").textContent, "Open <img src=x>");
+  // The script tag is the hostile title this test proves stays text.
+  // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
   assert.equal(body.textContent.includes("open -a Calculator && <script>alert(1)</script>"), true);
   assert.equal(body.textContent.includes("not displayed twice"), false);
   assert.equal(elements(body).some((node) => node.tagName === "SCRIPT"), false);
@@ -201,6 +203,8 @@ test("markup inside a code span stays text", () => {
   const body = render({ title: "`echo <script>alert(1)</script>`", kind: "execute", content: [] });
 
   assert.equal(
+    // The script tag is the hostile title this test proves stays text.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     body.querySelector(".ask-title").querySelector("code").textContent,
     "echo <script>alert(1)</script>",
   );

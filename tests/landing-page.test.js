@@ -420,7 +420,10 @@ test("every published page carries the visit counter once, just before </head>",
   assert.ok(pages.includes(PAGE), "the landing page is published");
   for (const name of pages) {
     const page = published(name);
+    // COUNTER is the literal GoatCounter tag being looked for, not markup built here.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     assert.equal(page.split(COUNTER).length - 1, 1, `${name} lacks the one visit counter`);
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     assert.ok(page.includes(`${COUNTER}\n</head>`), `${name} has the counter outside its <head>`);
   }
 });
