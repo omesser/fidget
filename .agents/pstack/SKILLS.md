@@ -63,4 +63,4 @@ it, by reading `.agents/skills/<name>/SKILL.md` and following it.
 - `technical-writing` — Layered technical-writing standard: Diátaxis structure, Google developer style sentences, STE instruction rules, Global English syntax. Use for /technical-writing or when writing or reviewing docs, RFCs, readmes, PR descriptions, or commit messages.
 - `typescript-best-practices` — TypeScript best practices. Use when reading or editing any .ts or .tsx file.
 - `unslop` — Cut AI tells from any writing.
-- `why` — Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds. Discovers available MCPs and queries each evidence category (source control, issue tracker, long-form docs, real-time chat, infrastructure observability, error tracking, product analytics warehouse) in parallel, then returns a cited read on decisions and tradeoffs. Use how for runtime behavior.
+- `why` — Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds. Returns a cited read on decisions and tradeoffs. Use how for runtime behavior.
