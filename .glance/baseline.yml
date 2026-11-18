@@ -1,5 +1,5 @@
-# Reviewed findings fidget accepts, for agent-security-scanner surfaces.
-# Format: https://github.com/glance-labs/agent-security-scanner/blob/main/src/surfaces/README.md#the-baseline-configuration
+# Reviewed findings fidget accepts, for glance-scanner-private surfaces.
+# Format: https://github.com/glance-labs/glance-scanner-private/blob/main/src/surfaces/README.md#the-baseline-configuration
 # Baselined findings still print as `baselined:` lines. Have a code owner review every change.
 findings:
   - id: "678da8ef"

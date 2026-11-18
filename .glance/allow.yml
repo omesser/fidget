@@ -1,5 +1,5 @@
-# Auto-run items fidget intends, for agent-security-scanner surfaces.
-# Format: https://github.com/glance-labs/agent-security-scanner/blob/main/src/surfaces/README.md#the-allowlist
+# Auto-run items fidget intends, for glance-scanner-private surfaces.
+# Format: https://github.com/glance-labs/glance-scanner-private/blob/main/src/surfaces/README.md#the-allowlist
 # Allowed items still print as `allowed:` lines. Have a code owner review every change.
 autorun:
   - file: .claude/settings.json

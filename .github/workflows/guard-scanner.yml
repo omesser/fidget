@@ -1,6 +1,6 @@
 name: guard-scanner
 
-# Manual dog-food of glance-labs/agent-security-scanner surfaces and analyze
+# Manual dog-food of glance-labs/glance-scanner-private surfaces and analyze
 # against the fidget ref picked in the Run workflow dialog. Releases lag main,
 # so the scanner is built from scanner_ref. Logs are public: no evidence is
 # requested.
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       scanner_ref:
-        description: glance-labs/agent-security-scanner ref to build (branch, tag, or SHA)
+        description: glance-labs/glance-scanner-private ref to build (branch, tag, or SHA)
         type: string
         required: false
         default: main
@@ -43,7 +43,7 @@ jobs:
           SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
         run: |
           if [ -z "$SCANNER_TOKEN" ]; then
-            echo '::error::SCANNER_TOKEN is not set. Add a fine-grained PAT with contents:read on glance-labs/agent-security-scanner as the SCANNER_TOKEN repository secret.'
+            echo '::error::SCANNER_TOKEN is not set. Add a fine-grained PAT with contents:read on glance-labs/glance-scanner-private as the SCANNER_TOKEN repository secret.'
             exit 1
           fi
 
@@ -58,10 +58,10 @@ jobs:
         name: Check out the scanner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: glance-labs/agent-security-scanner
+          repository: glance-labs/glance-scanner-private
           ref: ${{ inputs.scanner_ref }}
           token: ${{ secrets.SCANNER_TOKEN }}
-          path: agent-security-scanner
+          path: glance-scanner-private
           persist-credentials: false
 
       - &setup-node
@@ -75,7 +75,7 @@ jobs:
         name: Build the scanner
         # Each job builds its own copy: npm ci and tsc take seconds, and the
         # two jobs run in parallel.
-        working-directory: agent-security-scanner
+        working-directory: glance-scanner-private
         run: |
           npm ci
           npm run build
@@ -90,7 +90,7 @@ jobs:
         # otherwise the readable report goes to the log.
         working-directory: fidget
         env:
-          SCANNER_BIN: ${{ github.workspace }}/agent-security-scanner/dist/cli.js
+          SCANNER_BIN: ${{ github.workspace }}/glance-scanner-private/dist/cli.js
           SARIF_FILE: ${{ runner.temp }}/glance.sarif
           UPLOAD_SARIF: ${{ inputs.upload_sarif }}
         run: |
