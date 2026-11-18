@@ -522,10 +522,10 @@ test("the vendored parser is the file src/vendor/README.md documents", () => {
   // registry hash in that file claiming something it cannot check.
   const marked = readFileSync(new URL("../src/vendor/marked.esm.js", import.meta.url));
 
-  const vendored = "18.1.3";
+  const vendored = "18.2.0";
   assert.equal(
     createHash("sha256").update(marked).digest("hex"),
-    "e76f3b37046a5d294159872002e5f6fcda8ed232e1be45ff76b3863f2919dae3", // pragma: allowlist secret
+    "162194ea902a9d6eca6011bb42b5732991ca650e017d0375b76f4204810c6c14", // pragma: allowlist secret
     `marked@${vendored} lib/marked.esm.js; see src/vendor/README.md to re-vendor`,
   );
 
