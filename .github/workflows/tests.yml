@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -46,8 +46,9 @@ jobs:
         id: changed
         # `files_ignore` lists what is not code, so an unanticipated file type,
         # this workflow included, counts as code and cannot switch itself off.
-        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        # actions.lock pins every action to a commit, so a repointed tag runs
+        # nothing new. This one's tags were repointed (CVE-2025-30066).
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files_ignore: |
@@ -71,7 +72,7 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
@@ -81,7 +82,7 @@ jobs:
 
       - name: Cache cargo build
         if: steps.changes.outputs.code == 'true'
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
           key: ${{ matrix.os }}
@@ -124,7 +125,7 @@ jobs:
         # root's apt cache. The key is this install's URIs, so a new deb misses
         # and the previous archives restore.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/apt/archives
           key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt.outputs.hash }}
@@ -151,7 +152,7 @@ jobs:
         # pythonLocation carries the patch version, which a virtualenv is bound
         # to; '3.12' alone would restore envs pointing at a missing interpreter.
         # No restore-keys: a near-miss would restore a stale config's envs.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -205,7 +206,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -214,8 +215,9 @@ jobs:
         id: changed
         # `files_ignore` lists what is not code, so an unanticipated file type,
         # this workflow included, counts as code and cannot switch itself off.
-        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        # actions.lock pins every action to a commit, so a repointed tag runs
+        # nothing new. This one's tags were repointed (CVE-2025-30066).
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files_ignore: |
@@ -240,13 +242,13 @@ jobs:
 
       - name: Set up Python
         if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
       - name: Set up Node
         if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 'lts/*'
 
@@ -275,12 +277,12 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
@@ -299,14 +301,14 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
 
       - name: Find what this run changed
         id: changed
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files: |
@@ -349,7 +351,7 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component clippy
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
           key: windows-latest
