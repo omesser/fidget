@@ -105,6 +105,18 @@ repos:
         # The default file set adds dependabot.yaml (cooldowns) and this file.
         args: [--no-progress, --offline]
 
+    # zizmor v1.32.0+ reads actions.lock, so a tag ref it covers passes
+    # unpinned-uses. This checks coverage offline and skips without gh or the
+    # extension, CI included; the Actions Lockfile workflow runs --verify.
+  - repo: local
+    hooks:
+      - id: actions-lock-verify-local
+        name: gh actions-lock --verify-local
+        entry: scripts/hooks/actions-lock-verify-local.sh
+        language: system
+        files: ^\.github/workflows/
+        pass_filenames: false
+
     # PowerShell linting
   - repo: local
     hooks:

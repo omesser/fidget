@@ -50,6 +50,12 @@ Ask before launching the app, focusing a window, or sending input: say what
 happens on screen and for how long, then wait for a go-ahead for that run. Only
 the agent's own private VM is exempt. See `docs/agents/gui-takeover.md`.
 
+## Workflows
+
+After adding a workflow or changing a `uses:`, run `gh actions-lock` and commit
+`.github/workflows/actions.lock`; an uncovered `uses:` stops the workflow from
+starting. Never edit the lockfile by hand. See `docs/DEVELOPMENT.md#workflow-lockfile`.
+
 ## Comments
 
 Comments say why, not what, and earn their length. See `docs/agents/comments.md`.

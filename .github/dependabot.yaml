@@ -36,6 +36,12 @@ updates:
       default-days: 7
     labels:
       - "maintenance"
+    # One pull request, and one actions.lock diff, for the week's minor and
+    # patch bumps. A major bump still arrives on its own.
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # marked is vendored as src/vendor/marked.esm.js. A marked bump must
   # re-vendor that file per src/vendor/README.md, or the test that checks
