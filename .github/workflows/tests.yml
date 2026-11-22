@@ -323,16 +323,14 @@ jobs:
         # --all-targets: also type-check test modules where many `not(unix)` arms live.
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # Only on the path list below, the `windows` label, or non-PR events. The
-  # no-console check rebuilds the fidget crate, so it gets its own runner.
-  windows:
+  # Decides once whether the `windows` legs run: the path list below, the
+  # `windows` label, or a non-PR event. Linux, so a skip starts no Windows runner.
+  windows-gate:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
-    strategy:
-      fail-fast: false
-      matrix:
-        check: [tests, no-console]
-    runs-on: windows-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_tests: ${{ steps.gate.outputs.run_tests }}
 
     steps:
       - name: Check out the repository
@@ -382,12 +380,27 @@ jobs:
           Write-Host "run tests: $run_tests"
           "run_tests=$run_tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+  # The no-console check rebuilds the fidget crate, so it gets its own runner.
+  windows:
+    needs: windows-gate
+    if: needs.windows-gate.outputs.run_tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [tests, no-console]
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install Rust
-        if: steps.gate.outputs.run_tests == 'true'
-        run: rustup toolchain install stable --profile minimal --component clippy
+        run: rustup toolchain install stable --profile minimal
 
       - name: Cache cargo build
-        if: steps.gate.outputs.run_tests == 'true'
         uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
@@ -400,7 +413,7 @@ jobs:
       - name: Rust tests
         # bash, not the default pwsh, which takes the last command's exit code
         # and let a passing --doc hide a failed --all-targets.
-        if: steps.gate.outputs.run_tests == 'true' && matrix.check == 'tests'
+        if: matrix.check == 'tests'
         shell: bash
         run: |
           cargo test --workspace --all-targets
@@ -409,5 +422,5 @@ jobs:
       - name: The exe a release build links has no console
         # Debug assertions off is the switch `windows_subsystem` reads, at the
         # cost of rebuilding the one crate rather than a full release build.
-        if: steps.gate.outputs.run_tests == 'true' && matrix.check == 'no-console'
+        if: matrix.check == 'no-console'
         run: cargo test -p fidget --test windows_subsystem --config 'profile.dev.package.fidget.debug-assertions=false'
