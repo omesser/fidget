@@ -695,6 +695,7 @@ function Summon-Chat([string]$Case) {
     Aim $Case
     if (-not (Wait-ForNext $T.hit { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: the sprite's click area did not follow the cursor; see $log" }
     Press-Sprite $script:aim.X $script:aim.Y $Case
+    Aim $Case
     Press-Sprite $script:aim.X $script:aim.Y $Case
     Move-Away $Case
     if (-not (Wait-LogCount $T.chatOpen 0)) { Fail "${Case}: Chat did not open; see $log" }
