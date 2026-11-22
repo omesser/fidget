@@ -19,8 +19,7 @@ use serde_json::{json, Value};
 use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 use crate::acp_wire::{
-    kill_harness_tree, Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError,
-    Wire,
+    Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError, Wire,
 };
 use crate::action_log;
 use crate::tool_content::{Place, ToolPiece};
@@ -687,6 +686,13 @@ fn timed_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     without_console_window(&mut command);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // In the app's group, `kill_harness_tree` refuses the group and kills
+        // nothing, and a hung launcher outlives its timeout.
+        command.process_group(0);
+    }
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -703,10 +709,31 @@ fn timed_command(
         Ok(Ok(output)) => Ok(output),
         Ok(Err(error)) => Err(TimedCommandError::Wait(error)),
         Err(_) => {
-            kill_harness_tree(pid);
+            kill_timed_out_tree(pid);
             Err(TimedCommandError::TimedOut)
         }
     }
+}
+
+/// `timed_command`'s child runs outside a Job Object, which is all
+/// `kill_harness_tree` can end on Windows, so there `taskkill /T` walks the tree.
+fn kill_timed_out_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        let taskkill = std::env::var_os("SystemRoot")
+            .map(|root| PathBuf::from(root).join("System32").join("taskkill.exe"))
+            .unwrap_or_else(|| PathBuf::from("taskkill.exe"));
+        let mut command = Command::new(taskkill);
+        command
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        without_console_window(&mut command);
+        let _ = command.status();
+    }
+    #[cfg(not(windows))]
+    crate::acp_wire::kill_harness_tree(pid);
 }
 
 /// On Windows, asks `windows_program` for an absolute stand-in.
@@ -12472,6 +12499,54 @@ mod tests {
             }
             other => panic!("expected Unhealthy from timeout, got {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_timed_out_probe_kills_the_launcher_and_what_it_started() {
+        let dir = std::env::temp_dir().join(format!("fidget-probe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("survived");
+
+        // A grandchild writes the marker after a pause. It can only write it
+        // if the timeout left it running.
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("hung-launcher.sh");
+            let body = format!(
+                "#!/bin/sh\n(sleep 2; touch '{}') &\nwait\n",
+                marker.display()
+            );
+            std::fs::write(&path, body).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+
+        #[cfg(windows)]
+        let script = {
+            let path = dir.join("hung-launcher.bat");
+            let body = format!(
+                "@echo off\r\ncmd /c \"ping -n 3 127.0.0.1 >nul & echo x > \"{}\"\"\r\n",
+                marker.display()
+            );
+            std::fs::write(&path, body).unwrap();
+            path
+        };
+
+        let launch = Launch {
+            name: "hung-fixture".into(),
+            argv: vec![script.to_string_lossy().to_string()],
+        };
+        assert!(matches!(
+            probe_launcher_within(&launch, Duration::from_millis(300)),
+            ProbeOutcome::Unhealthy(_)
+        ));
+        thread::sleep(Duration::from_secs(4));
+        assert!(
+            !marker.exists(),
+            "the launcher's child outlived the probe's timeout"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
