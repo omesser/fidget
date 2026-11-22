@@ -208,6 +208,13 @@ jobs:
   # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
   node-tests:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    # Split in two: the test step is ~95% of the workflow's longest job, and
+    # the ~15 s of setup is cheap to repeat.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    name: node-tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -273,7 +280,9 @@ jobs:
       - name: Node tests
         if: steps.changes.outputs.code == 'true'
         # A glob, not `tests/`: Node 24 reads a bare directory as a test file.
-        run: node --test tests/*.test.js
+        run: node --test --test-shard="$SHARD/2" tests/*.test.js
+        env:
+          SHARD: ${{ matrix.shard }}
 
   # Own job, so a failure names the importer. A label changes no code, so adding
   # one doesn't rerun it.
