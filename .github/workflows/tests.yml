@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 env:
-  # CI never opens a debugger, and a backtrace needs only line tables. Full
-  # debug info only adds link time and Rust cache bytes.
+  # These jobs never open a debugger, and a backtrace needs only line tables.
+  # Full debug info made the Rust caches up to twice the size.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
