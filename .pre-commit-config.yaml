@@ -116,6 +116,8 @@ repos:
         language: system
         files: ^\.github/workflows/
         pass_filenames: false
+        # Show the skip message: without this, a skipped check reads as Passed.
+        verbose: true
 
     # PowerShell linting
   - repo: local
