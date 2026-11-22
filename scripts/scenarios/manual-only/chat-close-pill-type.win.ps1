@@ -360,7 +360,7 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 $script:t0 = Get-NowMs
 
 function Get-SpriteAim([string]$LogFile) {
-    $at = Get-SpriteAtRest $LogFile
+    $at = Get-LastSpriteSpot $LogFile
     if (-not $at) { return $null }
     $size = Get-Content -LiteralPath $LogFile | Where-Object { $_ -match $T.size } | Select-Object -First 1
     if (-not $size) { return $null }
@@ -642,6 +642,14 @@ function Press-Hold([int]$X, [int]$Y, [string]$Case) {
     if (-not $seen) { Fail "${Case}: Fidget did not see the press at ($X,$Y) in 3 s; see $log" }
     if (-not (Wait-LogCount $T.up $ups)) { Fail "${Case}: Fidget did not see the release at ($X,$Y) in 3 s; see $log" }
 }
+function Press-Sprite([int]$X, [int]$Y, [string]$Case) {
+    $downs = Count $T.down
+    Press-Hold $X $Y $Case
+    $click = Get-Content -LiteralPath $log | Where-Object { $_ -match $T.down } | Select-Object -Skip $downs -First 1
+    if (-not $click -or $click -notmatch '(?:^|\s)click: down hits=\[true\]') {
+        Fail "${Case}: click missed the sprite at its current position; see $log"
+    }
+}
 function Click-Notepad([int]$X, [int]$Y, [string]$Case) {
     $under = [PillWin]::RootAt($X, $Y)
     if ((Owner-Of $under) -ne $script:notepad.Id) { Fail "${Case}: refusing to click ($X,$Y): it would land on $(Describe-Window $under)" }
@@ -649,7 +657,8 @@ function Click-Notepad([int]$X, [int]$Y, [string]$Case) {
 }
 function Press([uint16]$Vk) { [PillWin]::Key($Vk, $false); [PillWin]::Key($Vk, $true) }
 function Aim([string]$Case) {
-    if (-not (Wait-Until 3 { ($script:aim = Get-SpriteAim $log) })) { Fail "${Case}: the sprite was not at rest with a known size in 3 s; see $log" }
+    $script:aim = Get-SpriteAim $log
+    if (-not $script:aim) { Fail "${Case}: no current sprite position with a known size; see $log" }
 }
 # Off the sprite, and if Fidget last saw it there, until its hit test traces the
 # miss (3 s), so no hover dwell carries into the next case.
@@ -664,11 +673,12 @@ function Move-Away([string]$Case) {
 function Click-Sprite([string]$Case) {
     Aim $Case
     Move-Away $Case
+    Aim $Case
     if (-not (Wait-ForNext $T.hit { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: the sprite's click area did not follow the cursor; see $log" }
     if (Count $T.opened) { Fail "${Case}: the pill opened before the press; see $log" }
     $under = [PillWin]::RootAt($script:aim.X, $script:aim.Y)
     if ((Owner-Of $under) -ne $script:proc.Id) { Fail "${Case}: refusing to click the sprite at ($($script:aim.X),$($script:aim.Y)): it would land on $(Describe-Window $under)" }
-    Press-Hold $script:aim.X $script:aim.Y $Case
+    Press-Sprite $script:aim.X $script:aim.Y $Case
     Move-Away $Case
 }
 function Find-Chat {
@@ -682,9 +692,10 @@ function Find-Chat {
 function Summon-Chat([string]$Case) {
     Aim $Case
     Move-Away $Case
+    Aim $Case
     if (-not (Wait-ForNext $T.hit { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: the sprite's click area did not follow the cursor; see $log" }
-    Press-Hold $script:aim.X $script:aim.Y $Case
-    Press-Hold $script:aim.X $script:aim.Y $Case
+    Press-Sprite $script:aim.X $script:aim.Y $Case
+    Press-Sprite $script:aim.X $script:aim.Y $Case
     Move-Away $Case
     if (-not (Wait-LogCount $T.chatOpen 0)) { Fail "${Case}: Chat did not open; see $log" }
 }

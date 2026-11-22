@@ -231,33 +231,17 @@ function Find-MenuRow([uint32]$FidgetPid, [string]$Prefix) {
     return $null
 }
 
-# Where to click: the sprite's middle once two frame lines in a row put it
-# within 2 px, else -X/-Y.
+# Where to click: the sprite's middle at its latest traced position, else -X/-Y.
 function Get-ClickPoint {
     if (-not ($TraceFile -and (Test-Path -LiteralPath $TraceFile) -and $SpriteW -gt 0 -and $SpriteH -gt 0)) {
         return @($X, $Y)
     }
-    $full = [System.IO.Path]::GetFullPath($TraceFile)
-    $watcher = New-Object System.IO.FileSystemWatcher ([System.IO.Path]::GetDirectoryName($full)), ([System.IO.Path]::GetFileName($full))
-    $watcher.NotifyFilter = [System.IO.NotifyFilters]'Size, LastWrite'
-    $deadline = [DateTime]::UtcNow.AddSeconds(3)
-    try {
-        while ($true) {
-            $frames = @(Get-Content -LiteralPath $TraceFile |
-                    Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' | Select-Object -Last 2)
-            if ($frames.Count -eq 2) {
-                $a = $frames[0].Matches[0].Groups; $b = $frames[1].Matches[0].Groups
-                if ([Math]::Abs([int]$a[1].Value - [int]$b[1].Value) -le 2 -and [Math]::Abs([int]$a[2].Value - [int]$b[2].Value) -le 2) {
-                    return @(([int]$b[1].Value + [int]($SpriteW / 2)), ([int]$b[2].Value + [int]($SpriteH / 2)))
-                }
-            }
-            $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
-            if ($left -le 0) { return @($X, $Y) }
-            $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::Changed, $left) | Out-Null
-        }
-    } finally {
-        $watcher.Dispose()
-    }
+    $frame = Get-Content -LiteralPath $TraceFile |
+        Select-String -Pattern '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ' |
+        Select-Object -Last 1
+    if (-not $frame) { return @($X, $Y) }
+    $groups = $frame.Matches[0].Groups
+    return @(([int]$groups[1].Value + [int]($SpriteW / 2)), ([int]$groups[2].Value + [int]($SpriteH / 2)))
 }
 
 # Move the cursor, then press once the overlay's clickable area follows it:

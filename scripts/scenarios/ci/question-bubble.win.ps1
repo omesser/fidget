@@ -54,7 +54,7 @@ $selfTestPokeLine = "1791259420 verbs: Poke"
 $selfTestPresenceHidden = "1791260872 presence: hidden over 500ms"
 $selfTestClickHitTrue = "1791260862 click: down hits=[true] target=Some(0) cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
 $selfTestClickHitFalse = "1791260862 click: down hits=[false] target=None cursor=(2554,1328) visible=true sprite=untargeted(2563,1264)"
-$selfTestSettledFrame = "1791260861.975 frame: 1791260861975 Grounded pos(1720,1328) sprite(2491,1264) land#1"
+$selfTestLatestFrame = "1791260861.975 frame: 1791260861975 Walk pos(1720,1328) sprite(2491,1264) walk#1"
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\(')) { Write-Error "self-test: frame pattern failed"; exit 1 }
 if (-not ($selfTestFrameLine -match '^\d+ frame: .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: frame coordinate pattern failed"; exit 1 }
 if (-not ($selfTestPokeLine -match '^\d+ verbs: .*Poke')) { Write-Error "self-test: Poke pattern failed"; exit 1 }
@@ -62,8 +62,7 @@ if ($selfTestVerbsLine -match '^\d+ verbs: ') { Write-Error "self-test: should n
 if (-not ($selfTestPresenceHidden -match '^\d+ presence: hidden')) { Write-Error "self-test: presence:hidden pattern failed"; exit 1 }
 if (-not ($selfTestClickHitTrue -match '^\d+ click: down hits=\[true\]')) { Write-Error "self-test: click hits=[true] pattern failed"; exit 1 }
 if ($selfTestClickHitFalse -match '^\d+ click: down hits=\[true\]') { Write-Error "self-test: should not match hits=[false]"; exit 1 }
-if (-not ($selfTestSettledFrame -match '^\d+\.?\d* frame: .* Grounded .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: settled frame Grounded pattern failed"; exit 1 }
-if ($selfTestSettledFrame -match 'walk#|Falling') { Write-Error "self-test: settled frame should not match walk# or Falling"; exit 1 }
+if (-not ($selfTestLatestFrame -match '^\d+\.?\d* frame: .* sprite\((-?\d+),(-?\d+)\) ')) { Write-Error "self-test: latest frame coordinate pattern failed"; exit 1 }
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 . (Join-Path $PSScriptRoot "..\helpers\wait-helpers.win.ps1")
@@ -179,14 +178,6 @@ try {
             return $false
         }
     }
-    function Wait-Settled {
-        $script:rest = $null
-        if (-not (Wait-Until 3 { ($script:rest = Get-SpriteAtRest $traceFile) })) {
-            Fail "sprite did not settle within 3s; see $traceFile"
-        }
-        return $script:rest
-    }
-
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
 
@@ -207,60 +198,32 @@ try {
     if (-not (Wait-ForTrace 2 $traceFile '^\d+ frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
     Check-Before (Invoke-Dump "before-poke")
 
-    $settled = Wait-Settled
     $trace = Get-Content -LiteralPath $traceFile
     $size = $trace | Select-String -Pattern 'sprite (\d+)x(\d+);' | Select-Object -First 1
     if (-not $size) { Fail "no sprite size in $traceFile" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
+    $spot = Get-LastSpriteSpot $traceFile
+    if (-not $spot) { Fail "no current sprite position in $traceFile" }
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
-    Skip-IfFullscreenOverClick ($settled.X + [int]($w / 2)) ($settled.Y + [int]($h / 2)) $proc.Id $out "click"
+    Skip-IfFullscreenOverClick ($spot.X + [int]($w / 2)) ($spot.Y + [int]($h / 2)) $proc.Id $out "click"
 
-    $attemptsFile = Join-Path $out "poke-attempts.txt"
-    $maxAttempts = 3
-    $success = $false
-    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-        $attemptLog = "Attempt $attempt of $maxAttempts"
-        Add-Content -LiteralPath $attemptsFile -Value $attemptLog
-        $trace = Get-Content -LiteralPath $traceFile
-        $clickCountBefore = @($trace | Select-String -Pattern '^\d+ click: down ').Count
-        $verbCountBefore = @($trace | Select-String -Pattern '^\d+ verbs: ').Count
-        if (-not (Invoke-Ax "poke-$attempt" @{ Command = "click"; TraceFile = $traceFile; SpriteW = $w; SpriteH = $h })) {
-            $msg = "could not click the sprite on attempt $attempt; see $out\poke-$attempt.txt"
-            Add-Content -LiteralPath $attemptsFile -Value $msg
-            if ($attempt -eq $maxAttempts) { Fail $msg }
-            continue
-        }
-        # A Poke resolves once the double-click interval passes, so wait for its verbs line.
-        $null = Wait-ForCount 2 $traceFile '^\d+ verbs: ' $verbCountBefore
-        $trace = Get-Content -LiteralPath $traceFile
-        $clicksAfter = @($trace | Select-String -Pattern '^\d+ click: down ')
-        $thisAttemptClick = $null
-        if ($clicksAfter.Count -gt $clickCountBefore) {
-            $thisAttemptClick = $clicksAfter[$clickCountBefore]
-            Add-Content -LiteralPath $attemptsFile -Value $thisAttemptClick.Line
-        }
-        if ($thisAttemptClick -and ($thisAttemptClick.Line -match '^\d+ click: down hits=\[true\]')) {
-            $verbsAfter = @($trace | Select-String -Pattern '^\d+ verbs: ')
-            $grabFound = $false
-            $pokeFound = $false
-            for ($i = $verbsAfter.Count - 1; $i -ge 0; $i--) {
-                if ($verbsAfter[$i].Line -match '\[Grab\]') { $grabFound = $true; break }
-                if ($verbsAfter[$i].Line -match 'Poke') { $pokeFound = $true; break }
-            }
-            if ($grabFound) {
-                $msg = "click held past DRAG_DELAY_MS, became Grab instead of Poke on attempt $attempt"
-                Add-Content -LiteralPath $attemptsFile -Value $msg
-                if ($attempt -eq $maxAttempts) { Fail $msg }
-            } elseif ($pokeFound) {
-                $success = $true
-                break
-            }
-        }
+    $trace = Get-Content -LiteralPath $traceFile
+    $clickCountBefore = @($trace | Select-String -Pattern '^\d+ click: down ').Count
+    $verbCountBefore = @($trace | Select-String -Pattern '^\d+ verbs: ').Count
+    if (-not (Invoke-Ax "poke" @{ Command = "click"; TraceFile = $traceFile; SpriteW = $w; SpriteH = $h })) {
+        Fail "could not click the sprite at its current position; see $out\poke.txt"
     }
-    if (-not $success) {
-        Fail "click did not land as Poke after $maxAttempts attempts; see $attemptsFile"
+    if (-not (Wait-ForCount 2 $traceFile '^\d+ click: down ' $clickCountBefore)) {
+        Fail "the click was not traced; see $traceFile"
     }
+    $click = Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ click: down ' } | Select-Object -Last 1
+    if ($click -notmatch '^\d+ click: down hits=\[true\]') { Fail "the click missed the sprite: $click" }
+    # A Poke resolves once the double-click interval passes, so wait for its verbs line.
+    $null = Wait-ForCount 2 $traceFile '^\d+ verbs: ' $verbCountBefore
+    $verbsAfter = Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ verbs: ' } | Select-Object -Last 1
+    if ($verbsAfter -match '\[Grab\]') { Fail "click held past DRAG_DELAY_MS and became Grab instead of Poke" }
+    if ($verbsAfter -notmatch 'Poke') { Fail "click did not land as Poke; see $traceFile" }
     $null = Wait-ForUia 3 $proc.Id { Read-Dump (Invoke-Dump "after-poke") | Where-Object { $_.Contains("Question for you") } }
     Check-After (Join-Path $out "after-poke.ax.txt")
     # Answer the ask, so the fixture Harness finishes its turn instead of waiting.
