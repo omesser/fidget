@@ -1,6 +1,6 @@
 # CI runs the Rust tests with cargo-nextest, one process per test, so a
-# static Mutex no longer serializes tests that share something outside the
-# process. Those tests go in a group of one here.
+# static Mutex cannot keep two tests apart. Tests that share something outside
+# the process go in a group of one here.
 
 [test-groups]
 # One OS credential store, one `director-api-key` entry: a delete from one

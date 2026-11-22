@@ -43,7 +43,7 @@ if [ "$actual" != "$digest" ]; then
   exit 1
 fi
 
-bin="$HOME/.cargo/bin"
+bin="${CARGO_HOME:-$HOME/.cargo}/bin"
 mkdir -p "$bin"
 tar -xzf "$archive" -C "$bin"
 cargo nextest --version
