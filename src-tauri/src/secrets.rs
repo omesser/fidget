@@ -96,6 +96,7 @@ impl SecretStore for KeyringStore {
 }
 
 // Only the Windows and Linux stores have tests: they can reach a real one.
+// Linux needs gnome-keyring under dbus-run-session, as Ubuntu CI runs it.
 #[cfg(all(test, any(windows, target_os = "linux")))]
 mod tests {
     use super::*;

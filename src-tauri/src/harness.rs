@@ -685,14 +685,9 @@ fn timed_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    without_console_window(&mut command);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // In the app's group, `kill_harness_tree` refuses the group and kills
-        // nothing, and a hung launcher outlives its timeout.
-        command.process_group(0);
-    }
+    // Isolated: in the app's group, `kill_harness_tree` refuses the group, kills
+    // nothing, and a hung launcher outlives its timeout.
+    apply_isolation(&mut command, true);
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
