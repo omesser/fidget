@@ -715,10 +715,11 @@ fn timed_command(
 fn kill_timed_out_tree(pid: u32) {
     #[cfg(windows)]
     {
-        let taskkill = std::env::var_os("SystemRoot")
-            .map(|root| PathBuf::from(root).join("System32").join("taskkill.exe"))
-            .unwrap_or_else(|| PathBuf::from("taskkill.exe"));
-        let mut command = Command::new(taskkill);
+        // By absolute path only: a PATH lookup could find another `taskkill`.
+        let Some(root) = std::env::var_os("SystemRoot") else {
+            return;
+        };
+        let mut command = Command::new(PathBuf::from(root).join("System32").join("taskkill.exe"));
         command
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .stdin(Stdio::null())
