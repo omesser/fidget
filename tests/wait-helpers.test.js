@@ -472,6 +472,13 @@ Write-Output $took`);
     assert.ok(Number(r.lines[1]) >= 2800 && Number(r.lines[1]) < 4500, `took ${r.lines[1]} ms`);
   });
 
+  // The scenario leaves fail with "within 10s" and rely on this default.
+  test("Windows: Wait-ForRest's ceiling defaults to 10 s", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$FidgetRestWaitSeconds`);
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "10", r.err);
+  });
+
   test("Windows: Wait-ForRest gives up at its ceiling if the sprite never stops", { skip: noPwsh }, async (t) => {
     const r = await ps(t, `$t = "$W/p.log"
 Set-Content "$W/walk.sh" @'
