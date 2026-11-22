@@ -180,9 +180,7 @@ jobs:
 
       - name: Install cargo-nextest
         if: steps.changes.outputs.code == 'true'
-        uses: taiki-e/install-action@v2.90.3
-        with:
-          tool: cargo-nextest@0.9.151
+        run: scripts/install-nextest.sh
 
       - name: Rust tests
         # nextest runs the test binaries side by side, which `cargo test` runs one
@@ -390,6 +388,7 @@ jobs:
             Cargo.toml
             Cargo.lock
             .config/nextest.toml
+            scripts/install-nextest.sh
             .github/workflows/tests.yml
 
       - name: Decide whether this run should test
@@ -442,9 +441,8 @@ jobs:
 
       - name: Install cargo-nextest
         if: matrix.check == 'tests'
-        uses: taiki-e/install-action@v2.90.3
-        with:
-          tool: cargo-nextest@0.9.151
+        shell: bash
+        run: scripts/install-nextest.sh
 
       - name: Rust tests
         # bash, not the default pwsh, which takes the last command's exit code
