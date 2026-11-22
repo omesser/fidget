@@ -345,19 +345,22 @@ jobs:
         continue-on-error: true
         with:
           files: |
-            # Every .rs file with a cfg that holds on Windows.
+            # Every .rs file with a cfg that holds on Windows, or declared under one.
             # tests/windows-gate-paths.test.js fails when one is missing.
             src-tauri/src/main.rs
             src-tauri/src/harness.rs
             src-tauri/src/platform.rs
             src-tauri/src/platform/windows/**
             src-tauri/src/platform/windows_perch.rs
+            src-tauri/src/platform/windows_hand_back.rs
+            src-tauri/src/platform/press_origin.rs
             src-tauri/tests/windows_subsystem.rs
             src-tauri/src/secrets.rs
             src-tauri/src/consent.rs
             src-tauri/src/login_item.rs
             src-tauri/src/acp_wire.rs
             src-tauri/src/caffeinate/mod.rs
+            src-tauri/src/caffeinate/windows.rs
             src-tauri/src/cursor_mcp.rs
             src-tauri/src/dev_flags.rs
             src-tauri/src/frame_loop.rs
