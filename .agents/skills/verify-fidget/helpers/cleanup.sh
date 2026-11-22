@@ -32,6 +32,9 @@ stop_pid() { # <pid>
   echo "cleanup: kill -9 $1"
   # shellcheck disable=SC2086
   kill -9 $tree 2> /dev/null || true
+  # SIGKILL lands asynchronously, and a launch right after takes the lock with -n.
+  wait_for_exit 1 "$1" "$FIDGET_VERIFY_LOCK" ||
+    echo "cleanup: $FIDGET_VERIFY_LOCK is still held 1 s after kill -9 $1; the next launch will fail"
 }
 
 PIDLIST="$FIDGET_VERIFY_SCRATCH/pids/owned.pids"

@@ -2,149 +2,192 @@
 // the seconds it is given. It is plain bash with BSD-safe tools, so it runs
 // here on Linux too. Each platform helper has to load it.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { test } from "node:test";
+import { suite, test } from "node:test";
 import { tempDir } from "./temp-path.js";
 
 const scenarios = path.join(import.meta.dirname, "..", "scripts", "scenarios", "helpers");
 const helper = path.join(scenarios, "wait-helpers.sh");
 
-function run(t, body, file = helper) {
+// Async, so the suite's tests wait side by side rather than one after another.
+function spawnText(command, args, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args);
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
+    child.stderr.setEncoding("utf8").on("data", (d) => (stderr += d));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr, timedOut });
+    });
+  });
+}
+
+async function run(t, body, file = helper) {
   const dir = tempDir(t, "wait-mac-");
   const script = `set -u\n. "${file}"\ndir="${dir}"\nlog="$dir/app.log"; : > "$log"\n${body}`;
   const started = Date.now();
   // Above the helper ceilings used here (rest 20 s, first wake 30 s). Without
   // this, a stuck wait sits until node:test's 60 s.
-  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 35_000 });
+  const r = await spawnText("bash", ["-c", script], 35_000);
   const ms = Date.now() - started;
-  const timedOut = r.error && r.error.code === "ETIMEDOUT";
-  return { code: r.status, out: timedOut ? `run() timed out after 35s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
+  return { code: r.status, out: r.timedOut ? `run() timed out after 35s\n${r.stdout}${r.stderr}` : r.stdout + r.stderr, ms };
 }
 
-test("wait_for_trace returns soon after a line lands", (t) => {
-  const r = run(t, `: > "$dir/log"; (sleep 0.15; echo "verbs: Poke" >> "$dir/log") & wait_for_trace 2 "$dir/log" '^verbs: .*Poke'`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms < 1000, `took ${r.ms} ms`);
-});
+const pwsh = spawnSync("pwsh", ["-NoProfile", "-Command", "1"], { encoding: "utf8" });
+const noPwsh = pwsh.status !== 0;
+const winHelper = path.join(scenarios, "wait-helpers.win.ps1");
 
-test("wait_for_trace sees a line already there without waiting", (t) => {
-  const r = run(t, `echo asked > "$dir/marks"; wait_for_marks 2 "$dir/marks" '^asked$'`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms < 500, `took ${r.ms} ms`);
-});
+async function ps(t, body) {
+  const dir = tempDir(t, "wait-win-");
+  const script = `. '${winHelper}'
+function Later($c) { $p = New-Object Diagnostics.ProcessStartInfo "bash"; $p.ArgumentList.Add("-c"); $p.ArgumentList.Add("sleep 0.3; $c"); $null = [Diagnostics.Process]::Start($p) }
+$W = '${dir}'
+$data = Initialize-ScenarioData $W
+${body}`;
+  // Above the longest wait here (a 4 s walk to rest). Without this, a
+  // stuck Wait-ForRest sits until node:test's 60 s.
+  const r = await spawnText("pwsh", ["-NoProfile", "-Command", script], 15_000);
+  return {
+    code: r.status,
+    lines: r.stdout.trim().split("\n").map((l) => l.trim()),
+    err: r.timedOut ? `ps() timed out after 15s\n${r.stderr}` : r.stderr,
+  };
+}
 
-test("wait_for_marks gives up within its seconds", (t) => {
-  const r = run(t, `: > "$dir/marks"; wait_for_marks 1 "$dir/marks" '^never$'`);
-  assert.strictEqual(r.code, 1, r.out);
-  assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
-});
+// Eight at a time: most of a test is a wait, so this ends near the longest
+// test. Unbounded, the pwsh starts starve a 2-CPU box and the timing bounds trip.
+suite("wait helpers", { concurrency: 8 }, () => {
+  test("wait_for_trace returns soon after a line lands", async (t) => {
+    const r = await run(t, `: > "$dir/log"; (sleep 0.15; echo "verbs: Poke" >> "$dir/log") & wait_for_trace 2 "$dir/log" '^verbs: .*Poke'`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms < 1000, `took ${r.ms} ms`);
+  });
 
-// A fake eu-stack on PATH stands in for the real one, which needs Linux and
-// ptrace rights over the live Fidget.
-const fakeEuStack = `mkdir "$dir/bin"; printf '#!/bin/sh\\necho "stacks of $2"\\n' > "$dir/bin/eu-stack"; chmod +x "$dir/bin/eu-stack"
+  test("wait_for_trace sees a line already there without waiting", async (t) => {
+    const r = await run(t, `echo asked > "$dir/marks"; wait_for_marks 2 "$dir/marks" '^asked$'`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms < 500, `took ${r.ms} ms`);
+  });
+
+  test("wait_for_marks gives up within its seconds", async (t) => {
+    const r = await run(t, `: > "$dir/marks"; wait_for_marks 1 "$dir/marks" '^never$'`);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
+  });
+
+  // A fake eu-stack on PATH stands in for the real one, which needs Linux and
+  // ptrace rights over the live Fidget.
+  const fakeEuStack = `mkdir "$dir/bin"; printf '#!/bin/sh\\necho "stacks of $2"\\n' > "$dir/bin/eu-stack"; chmod +x "$dir/bin/eu-stack"
 PATH="$dir/bin:$PATH"; out="$dir/out"; mkdir "$out"; sleep 30 & pid=$!`;
 
-test("a wait that runs out saves the live Fidget's thread stacks in $out", (t) => {
-  const r = run(t, `${fakeEuStack}
+  test("a wait that runs out saves the live Fidget's thread stacks in $out", async (t) => {
+    const r = await run(t, `${fakeEuStack}
 wait_for_marks 1 "$log" '^never$'; rc=$?; kill "$pid"
 [ "$rc" = 1 ] || { echo "wait returned $rc"; exit 1; }
 cat "$out"/stacks-*.txt`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.match(r.out, /^stacks of \d+$/m);
-});
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(r.out, /^stacks of \d+$/m);
+  });
 
-test("a wait that ends without running out saves no stacks", (t) => {
-  const r = run(t, `${fakeEuStack}
+  test("a wait that ends without running out saves no stacks", async (t) => {
+    const r = await run(t, `${fakeEuStack}
 echo hit > "$log"; wait_for_marks 1 "$log" '^hit$' || exit 1
 wait_on_source 1 true read -r && exit 1
 kill "$pid"; ls "$out" | grep . && exit 1; exit 0`);
-  assert.strictEqual(r.code, 0, r.out);
-});
+    assert.strictEqual(r.code, 0, r.out);
+  });
 
-// A fake python3 stands in for ax-wait-linux.py, which needs AT-SPI. Only its
-// timeout, exit 3, saves stacks; a crash exits 1 like Python itself does.
-for (const [rc, dumps] of [[3, true], [1, false], [2, false]]) {
-  test(`wait_for_ax_dump ${dumps ? "saves" : "saves no"} stacks when the script exits ${rc}`, (t) => {
-    const r = run(t, `${fakeEuStack}
+  // A fake python3 stands in for ax-wait-linux.py, which needs AT-SPI. Only its
+  // timeout, exit 3, saves stacks; a crash exits 1 like Python itself does.
+  for (const [rc, dumps] of [[3, true], [1, false], [2, false]]) {
+    test(`wait_for_ax_dump ${dumps ? "saves" : "saves no"} stacks when the script exits ${rc}`, async (t) => {
+      const r = await run(t, `${fakeEuStack}
 root="$dir"; printf '#!/bin/sh\\nexit ${rc}\\n' > "$dir/bin/python3"; chmod +x "$dir/bin/python3"
 wait_for_ax_dump 1 "$pid" BMO 'x'; got=$?; kill "$pid"
 [ "$got" = 1 ] || { echo "wait returned $got"; exit 1; }
 echo "count=$(ls "$out" | grep -c stacks-)"`, path.join(scenarios, "wait-helpers.x11.sh"));
-    assert.strictEqual(r.code, 0, r.out);
-    assert.match(r.out, dumps ? /^count=1$/m : /^count=0$/m);
+      assert.strictEqual(r.code, 0, r.out);
+      assert.match(r.out, dumps ? /^count=1$/m : /^count=0$/m);
+    });
+  }
+
+  test("waits fail at once when Fidget has exited", async (t) => {
+    const r = await run(t, `: > "$dir/log"; sleep 0 & pid=$!; wait "$pid"; wait_for_trace 2 "$dir/log" x`);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.ok(r.ms < 500, `took ${r.ms} ms`);
   });
-}
 
-test("waits fail at once when Fidget has exited", (t) => {
-  const r = run(t, `: > "$dir/log"; sleep 0 & pid=$!; wait "$pid"; wait_for_trace 2 "$dir/log" x`);
-  assert.strictEqual(r.code, 1, r.out);
-  assert.ok(r.ms < 500, `took ${r.ms} ms`);
-});
+  test("wait_for_file returns soon after the file appears", async (t) => {
+    const r = await run(t, `(sleep 0.15; : > "$dir/f"; echo frame >> "$log") & wait_for_file 2 "$dir/f"`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms < 1000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_file returns soon after the file appears", (t) => {
-  const r = run(t, `(sleep 0.15; : > "$dir/f"; echo frame >> "$log") & wait_for_file 2 "$dir/f"`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms < 1000, `took ${r.ms} ms`);
-});
+  test("wait_until checks again when the app log grows", async (t) => {
+    const r = await run(t, `(sleep 0.2; : > "$dir/flag"; echo frame >> "$log") & wait_until 2 test -f "$dir/flag"`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 200 && r.ms < 1000, `took ${r.ms} ms`);
+  });
 
-test("wait_until checks again when the app log grows", (t) => {
-  const r = run(t, `(sleep 0.2; : > "$dir/flag"; echo frame >> "$log") & wait_until 2 test -f "$dir/flag"`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 200 && r.ms < 1000, `took ${r.ms} ms`);
-});
+  test("wait_until gives up within its seconds", async (t) => {
+    const r = await run(t, `wait_until 1 false`);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
+  });
 
-test("wait_until gives up within its seconds", (t) => {
-  const r = run(t, `wait_until 1 false`);
-  assert.strictEqual(r.code, 1, r.out);
-  assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
-});
-
-test("wait_for_count returns only once the new line lands", (t) => {
-  const r = run(t, `echo minimized > "$dir/t"; before=$(line_count "$dir/t" '^minimized$')
+  test("wait_for_count returns only once the new line lands", async (t) => {
+    const r = await run(t, `echo minimized > "$dir/t"; before=$(line_count "$dir/t" '^minimized$')
 (sleep 0.4; echo minimized >> "$dir/t") & wait_for_count 2 "$dir/t" '^minimized$' "$before"`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 400 && r.ms < 1200, `took ${r.ms} ms`);
-});
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 400 && r.ms < 1200, `took ${r.ms} ms`);
+  });
 
-test("wait_for_count does not count the line already there", (t) => {
-  const r = run(t, `echo minimized > "$dir/t"; wait_for_count 1 "$dir/t" '^minimized$' 1`);
-  assert.strictEqual(r.code, 1, r.out);
-  assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
-});
+  test("wait_for_count does not count the line already there", async (t) => {
+    const r = await run(t, `echo minimized > "$dir/t"; wait_for_count 1 "$dir/t" '^minimized$' 1`);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_file gives up within its seconds", (t) => {
-  const r = run(t, `wait_for_file 1 "$dir/never"`);
-  assert.strictEqual(r.code, 1, r.out);
-  assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
-});
+  test("wait_for_file gives up within its seconds", async (t) => {
+    const r = await run(t, `wait_for_file 1 "$dir/never"`);
+    assert.strictEqual(r.code, 1, r.out);
+    assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
+  });
 
-test("in_state reads the last frame line", (t) => {
-  const r = run(t, `printf 'frame: a Idle x\\nframe: b Climb x\\n' > "$dir/l"; in_state "$dir/l" Climb && ! in_state "$dir/l" Idle`);
-  assert.strictEqual(r.code, 0, r.out);
-});
+  test("in_state reads the last frame line", async (t) => {
+    const r = await run(t, `printf 'frame: a Idle x\\nframe: b Climb x\\n' > "$dir/l"; in_state "$dir/l" Climb && ! in_state "$dir/l" Idle`);
+    assert.strictEqual(r.code, 0, r.out);
+  });
 
-test("stop_fidget kills Fidget and the processes under it", (t) => {
-  const r = run(t, `bash -c 'sleep 30 & wait' & pid=$!; sleep 0.2; child=$(pgrep -P "$pid"); stop_fidget; sleep 0.1
+  test("stop_fidget kills Fidget and the processes under it", async (t) => {
+    const r = await run(t, `bash -c 'sleep 30 & wait' & pid=$!; sleep 0.2; child=$(pgrep -P "$pid"); stop_fidget; sleep 0.1
 ! kill -0 "$pid" 2> /dev/null && ! kill -0 "$child" 2> /dev/null`);
-  assert.strictEqual(r.code, 0, r.out);
-});
+    assert.strictEqual(r.code, 0, r.out);
+  });
 
-test("stop_fidget kills a tree that ignores TERM within about 3 s", (t) => {
-  const r = run(t, `bash -c 'trap "" TERM; sleep 30 & wait' & pid=$!; sleep 0.2; child=$(pgrep -P "$pid"); stop_fidget
+  test("stop_fidget kills a tree that ignores TERM within about 3 s", async (t) => {
+    const r = await run(t, `bash -c 'trap "" TERM; sleep 30 & wait' & pid=$!; sleep 0.2; child=$(pgrep -P "$pid"); stop_fidget
 ! kill -0 "$pid" 2> /dev/null && ! kill -0 "$child" 2> /dev/null`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 2900 && r.ms < 4500, `took ${r.ms} ms`);
-});
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 2900 && r.ms < 4500, `took ${r.ms} ms`);
+  });
 
-// The middle bash is not a last simple command, or bash execs it and the
-// grandchild's parent pid disappears. set -m stays inside the stand-in, so
-// the grandchild's group is not the stand-in's.
-const standInTree = `bash -c 'set -m; bash -c "sleep 60 & wait" & wait'`;
+  // The middle bash is not a last simple command, or bash execs it and the
+  // grandchild's parent pid disappears. set -m stays inside the stand-in, so
+  // the grandchild's group is not the stand-in's.
+  const standInTree = `bash -c 'set -m; bash -c "sleep 60 & wait" & wait'`;
 
-test("stop_fidget reaps a grandchild whose process group is not Fidget's", (t) => {
-  const r = run(t, `pid= child= grand=
+  test("stop_fidget reaps a grandchild whose process group is not Fidget's", async (t) => {
+    const r = await run(t, `pid= child= grand=
 trap 'for p in "$pid" "$child" "$grand"; do [ -n "$p" ] && kill -9 "$p" 2> /dev/null || true; done' EXIT
 ${standInTree} & pid=$!
 sleep 0.3
@@ -164,14 +207,14 @@ kill -0 "$pid" 2> /dev/null && alive="$alive fidget"
 kill -0 "$child" 2> /dev/null && alive="$alive child"
 kill -0 "$grand" 2> /dev/null && alive="$alive grand"
 [ -z "$alive" ] || { echo "still alive:$alive"; exit 1; }`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms < 2000, `took ${r.ms} ms`);
-});
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms < 2000, `took ${r.ms} ms`);
+  });
 
-// The bystander shares the stand-in's process group. It has to stay alive.
-// Signaling that group would kill it and this script's other jobs.
-test("stop_fidget does not signal its own process group", (t) => {
-  const r = run(t, `pid= child= grand= bystander=
+  // The bystander shares the stand-in's process group. It has to stay alive.
+  // Signaling that group would kill it and this script's other jobs.
+  test("stop_fidget does not signal its own process group", async (t) => {
+    const r = await run(t, `pid= child= grand= bystander=
 trap 'for p in "$pid" "$child" "$grand" "$bystander"; do [ -n "$p" ] && kill -9 "$p" 2> /dev/null || true; done' EXIT
 sleep 60 & bystander=$!
 ${standInTree} & pid=$!
@@ -191,173 +234,151 @@ kill -0 "$bystander" 2> /dev/null || { echo "bystander died"; exit 1; }
 kill "$bystander" 2> /dev/null || true
 wait "$bystander" 2> /dev/null || true
 bystander=`);
-  assert.strictEqual(r.code, 0, r.out);
-});
-
-for (const leaf of ["mac", "x11"]) {
-  test(`wait-helpers.${leaf}.sh loads the shared core`, (t) => {
-    const r = run(t, `for f in wait_for_trace wait_for_marks wait_for_file wait_until wait_for_count stop_fidget in_state wait_for_ax_dump answer_permission; do declare -F "$f" > /dev/null || { echo "missing $f"; exit 1; }; done`, path.join(scenarios, `wait-helpers.${leaf}.sh`));
     assert.strictEqual(r.code, 0, r.out);
   });
-}
 
-// A child that ignores TERM keeps the inherited lock after the pid it was
-// given is gone: the wait holds until its seconds run out.
-test(
-  "wait_for_exit waits on a held lock even when the pid is already gone",
-  { skip: process.platform !== "linux" && "the lock wait needs flock" },
-  (t) => {
-    const r = run(t, `exec 9> "$dir/lock"; flock -n 9
+  for (const leaf of ["mac", "x11"]) {
+    test(`wait-helpers.${leaf}.sh loads the shared core`, async (t) => {
+      const r = await run(t, `for f in wait_for_trace wait_for_marks wait_for_file wait_until wait_for_count stop_fidget in_state wait_for_ax_dump answer_permission; do declare -F "$f" > /dev/null || { echo "missing $f"; exit 1; }; done`, path.join(scenarios, `wait-helpers.${leaf}.sh`));
+      assert.strictEqual(r.code, 0, r.out);
+    });
+  }
+
+  // A child that ignores TERM keeps the inherited lock after the pid it was
+  // given is gone: the wait holds until its seconds run out.
+  test(
+    "wait_for_exit waits on a held lock even when the pid is already gone",
+    { skip: process.platform !== "linux" && "the lock wait needs flock" },
+    async (t) => {
+      const r = await run(t, `exec 9> "$dir/lock"; flock -n 9
 (trap "" TERM; exec sleep 30) & child=$!
 exec 9>&-
 sleep 0 & dead=$!; wait "$dead"
 wait_for_exit 1 "$dead" "$dir/lock"; rc=$?
 kill -9 "$child"
 exit "$rc"`);
-    assert.strictEqual(r.code, 1, r.out);
-    assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
-  },
-);
+      assert.strictEqual(r.code, 1, r.out);
+      assert.ok(r.ms >= 900 && r.ms < 2000, `took ${r.ms} ms`);
+    },
+  );
 
-test(
-  "wait_for_exit returns once the lock is free, with the pid already gone",
-  { skip: process.platform !== "linux" && "the lock wait needs flock" },
-  (t) => {
-    const r = run(t, `: > "$dir/lock"; sleep 0 & dead=$!; wait "$dead"; wait_for_exit 2 "$dead" "$dir/lock"`);
+  test(
+    "wait_for_exit returns once the lock is free, with the pid already gone",
+    { skip: process.platform !== "linux" && "the lock wait needs flock" },
+    async (t) => {
+      const r = await run(t, `: > "$dir/lock"; sleep 0 & dead=$!; wait "$dead"; wait_for_exit 2 "$dead" "$dir/lock"`);
+      assert.strictEqual(r.code, 0, r.out);
+      assert.ok(r.ms < 500, `took ${r.ms} ms`);
+    },
+  );
+
+  test("seed_tour_shown marks the first-run tour as shown", async (t) => {
+    const r = await run(t, `seed_tour_shown "$dir/home"; grep -q '"first_run_tour_shown": true' "$dir/home/Library/Application Support/fidget/settings.json"`, path.join(scenarios, "wait-helpers.mac.sh"));
     assert.strictEqual(r.code, 0, r.out);
-    assert.ok(r.ms < 500, `took ${r.ms} ms`);
-  },
-);
+  });
 
-test("seed_tour_shown marks the first-run tour as shown", (t) => {
-  const r = run(t, `seed_tour_shown "$dir/home"; grep -q '"first_run_tour_shown": true' "$dir/home/Library/Application Support/fidget/settings.json"`, path.join(scenarios, "wait-helpers.mac.sh"));
-  assert.strictEqual(r.code, 0, r.out);
-});
+  // The Windows helper blocks on FileSystemWatcher events. pwsh runs it here.
+  test("sprite_at_rest needs an idle loop standing still", async (t) => {
+    const line = (x, token) => `echo "frame: 1 Grounded pos(1,1) sprite(${x},20) ${token}" >> "$log"`;
+    const frames = (xs, token = "idle#1") => xs.map((x) => line(x, token)).join("; ");
+    const still = await run(t, `${frames([10, 10, 10, 10, 10])}; sprite_at_rest "$log"`);
+    assert.strictEqual(still.code, 0, still.out);
+    const advancing = await run(t, `${[0, 1, 2, 3, 4].map((i) => line(10, `idle#${i}`)).join("; ")}; sprite_at_rest "$log"`);
+    assert.strictEqual(advancing.code, 0, advancing.out);
+    const moved = await run(t, `${frames([10, 10, 10, 10, 11])}; sprite_at_rest "$log"`);
+    assert.notStrictEqual(moved.code, 0, "a frame in another spot counted as rest");
+    const walked = await run(t, `${frames([10, 30, 50, 70, 90])}; sprite_at_rest "$log"`);
+    assert.notStrictEqual(walked.code, 0, "five spots counted as rest");
+    const gesture = await run(t, `${frames([10, 10, 10, 10, 10], "gesture#1")}; sprite_at_rest "$log"`);
+    assert.notStrictEqual(gesture.code, 0, "a gesture counted as rest");
+    const sitting = await run(t, `${frames([10, 10, 10, 10, 10], "sit#0")}; sprite_at_rest "$log"`);
+    assert.notStrictEqual(sitting.code, 0, "a sit counted as rest");
+    const striding = await run(t, `${frames([10, 10, 10, 10, 10], "walk#1")}; sprite_at_rest "$log"`);
+    assert.notStrictEqual(striding.code, 0, "a walk counted as rest");
+  });
 
-// The Windows helper blocks on FileSystemWatcher events. pwsh runs it here.
-test("sprite_at_rest needs an idle loop standing still", (t) => {
-  const line = (x, token) => `echo "frame: 1 Grounded pos(1,1) sprite(${x},20) ${token}" >> "$log"`;
-  const frames = (xs, token = "idle#1") => xs.map((x) => line(x, token)).join("; ");
-  const still = run(t, `${frames([10, 10, 10, 10, 10])}; sprite_at_rest "$log"`);
-  assert.strictEqual(still.code, 0, still.out);
-  const advancing = run(t, `${[0, 1, 2, 3, 4].map((i) => line(10, `idle#${i}`)).join("; ")}; sprite_at_rest "$log"`);
-  assert.strictEqual(advancing.code, 0, advancing.out);
-  const moved = run(t, `${frames([10, 10, 10, 10, 11])}; sprite_at_rest "$log"`);
-  assert.notStrictEqual(moved.code, 0, "a frame in another spot counted as rest");
-  const walked = run(t, `${frames([10, 30, 50, 70, 90])}; sprite_at_rest "$log"`);
-  assert.notStrictEqual(walked.code, 0, "five spots counted as rest");
-  const gesture = run(t, `${frames([10, 10, 10, 10, 10], "gesture#1")}; sprite_at_rest "$log"`);
-  assert.notStrictEqual(gesture.code, 0, "a gesture counted as rest");
-  const sitting = run(t, `${frames([10, 10, 10, 10, 10], "sit#0")}; sprite_at_rest "$log"`);
-  assert.notStrictEqual(sitting.code, 0, "a sit counted as rest");
-  const striding = run(t, `${frames([10, 10, 10, 10, 10], "walk#1")}; sprite_at_rest "$log"`);
-  assert.notStrictEqual(striding.code, 0, "a walk counted as rest");
-});
+  test("wait_for_rest keeps waiting while the sprite walks, past 3 s", async (t) => {
+    const walk = 'for i in $(seq 1 16); do echo "frame: 1 Walking pos(1,1) sprite($((i * 10)),20) walk#1" >> "$log"; sleep 0.25; done; for i in 1 2 3 4 5; do echo "frame: 1 Grounded pos(1,1) sprite(160,20) idle#1" >> "$log"; done';
+    const r = await run(t, `pid=$$; (${walk}) & wait_for_rest "$log"`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_rest keeps waiting while the sprite walks, past 3 s", (t) => {
-  const walk = 'for i in $(seq 1 16); do echo "frame: 1 Walking pos(1,1) sprite($((i * 10)),20) walk#1" >> "$log"; sleep 0.25; done; for i in 1 2 3 4 5; do echo "frame: 1 Grounded pos(1,1) sprite(160,20) idle#1" >> "$log"; done';
-  const r = run(t, `pid=$$; (${walk}) & wait_for_rest "$log"`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
-});
+  test("wait_for_rest keeps waiting through a still pose, past 3 s", async (t) => {
+    const sit = 'for i in $(seq 1 16); do echo "frame: 1 Perched pos(1,1) sprite(10,20) sit#0" >> "$log"; sleep 0.25; done; for i in 1 2 3 4 5; do echo "frame: 1 Perched pos(1,1) sprite(10,20) idle#1" >> "$log"; done';
+    const r = await run(t, `pid=$$; (${sit}) & wait_for_rest "$log"`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_rest keeps waiting through a still pose, past 3 s", (t) => {
-  const sit = 'for i in $(seq 1 16); do echo "frame: 1 Perched pos(1,1) sprite(10,20) sit#0" >> "$log"; sleep 0.25; done; for i in 1 2 3 4 5; do echo "frame: 1 Perched pos(1,1) sprite(10,20) idle#1" >> "$log"; done';
-  const r = run(t, `pid=$$; (${sit}) & wait_for_rest "$log"`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 3500 && r.ms < 6000, `took ${r.ms} ms`);
-});
+  test("wait_for_rest gives up at its ceiling if the sprite never rests", async (t) => {
+    const walk = 'i=0; while :; do i=$((i + 1)); echo "frame: 1 Walking pos(1,1) sprite($((i * 10)),20) walk#1" >> "$log"; sleep 0.25; done';
+    const r = await run(t, `pid=$$; FIDGET_REST_WAIT_SECONDS=2; (${walk}) & w=$!; wait_for_rest "$log"; st=$?; kill $w 2>/dev/null; exit $st`);
+    assert.notStrictEqual(r.code, 0, r.out);
+    assert.match(r.out, /sprite never came to rest within 2s/);
+    assert.ok(r.ms >= 1800 && r.ms < 5000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_rest gives up at its ceiling if the sprite never rests", (t) => {
-  const walk = 'i=0; while :; do i=$((i + 1)); echo "frame: 1 Walking pos(1,1) sprite($((i * 10)),20) walk#1" >> "$log"; sleep 0.25; done';
-  const r = run(t, `pid=$$; FIDGET_REST_WAIT_SECONDS=2; (${walk}) & w=$!; wait_for_rest "$log"; st=$?; kill $w 2>/dev/null; exit $st`);
-  assert.notStrictEqual(r.code, 0, r.out);
-  assert.match(r.out, /sprite never came to rest within 2s/);
-  assert.ok(r.ms >= 1800 && r.ms < 5000, `took ${r.ms} ms`);
-});
+  test("wait_for_first_wake still succeeds when the mark lands past 3 s", async (t) => {
+    const r = await run(t, `: > "$dir/marks"; (sleep 4.5; echo asked >> "$dir/marks") & wait_for_first_wake "$dir/marks" '^asked$'`);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.ok(r.ms >= 4000 && r.ms < 7000, `took ${r.ms} ms`);
+  });
 
-test("wait_for_first_wake still succeeds when the mark lands past 3 s", (t) => {
-  const r = run(t, `: > "$dir/marks"; (sleep 4.5; echo asked >> "$dir/marks") & wait_for_first_wake "$dir/marks" '^asked$'`);
-  assert.strictEqual(r.code, 0, r.out);
-  assert.ok(r.ms >= 4000 && r.ms < 7000, `took ${r.ms} ms`);
-});
+  test("Windows: Wait-ForMarks returns soon after the line lands", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$m = "$W/marks"; Set-Content $m ""; Later "echo asked >> $m"; $t = Get-NowMs; Wait-ForMarks 2 $m '^asked$'; (Get-NowMs) - $t`);
+    assert.strictEqual(r.lines[0], "True", r.err);
+    assert.ok(Number(r.lines[1]) >= 250 && Number(r.lines[1]) < 1000, `took ${r.lines[1]} ms`);
+  });
 
-const pwsh = spawnSync("pwsh", ["-NoProfile", "-Command", "1"], { encoding: "utf8" });
-const noPwsh = pwsh.status !== 0;
-const winHelper = path.join(scenarios, "wait-helpers.win.ps1");
+  test("Windows: Wait-ForCount ignores the line already there", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$m = "$W/marks"; Set-Content $m "spawn"; Wait-ForCount 1 $m '^spawn$' 1; Later "echo spawn >> $m"; Wait-ForCount 2 $m '^spawn$' 1`);
+    assert.deepStrictEqual(r.lines.slice(0, 2), ["False", "True"], r.err);
+  });
 
-function ps(t, body) {
-  const dir = tempDir(t, "wait-win-");
-  const script = `. '${winHelper}'
-function Later($c) { $p = New-Object Diagnostics.ProcessStartInfo "bash"; $p.ArgumentList.Add("-c"); $p.ArgumentList.Add("sleep 0.3; $c"); $null = [Diagnostics.Process]::Start($p) }
-$W = '${dir}'
-$data = Initialize-ScenarioData $W
-${body}`;
-  // Above the longest wait here (10 s overall rest cap). Without this, a
-  // stuck Wait-ForRest sits until node:test's 60 s.
-  const r = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8", timeout: 15_000 });
-  const timedOut = r.error && r.error.code === "ETIMEDOUT";
-  return {
-    code: r.status,
-    lines: r.stdout.trim().split("\n").map((l) => l.trim()),
-    err: timedOut ? `ps() timed out after 15s\n${r.stderr}` : r.stderr,
-  };
-}
+  test("Windows: Wait-Until re-checks on a trace change and gives up in time", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `Later "echo x > $W/flag; echo frame >> $data/process.log"; Wait-Until 2 { Test-Path "$W/flag" }; $t = Get-NowMs; Wait-Until 1 { $false }; (Get-NowMs) - $t`);
+    assert.deepStrictEqual(r.lines.slice(0, 2), ["True", "False"], r.err);
+    assert.ok(Number(r.lines[2]) >= 900 && Number(r.lines[2]) < 2000, `took ${r.lines[2]} ms`);
+  });
 
-test("Windows: Wait-ForMarks returns soon after the line lands", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$m = "$W/marks"; Set-Content $m ""; Later "echo asked >> $m"; $t = Get-NowMs; Wait-ForMarks 2 $m '^asked$'; (Get-NowMs) - $t`);
-  assert.strictEqual(r.lines[0], "True", r.err);
-  assert.ok(Number(r.lines[1]) >= 250 && Number(r.lines[1]) < 1000, `took ${r.lines[1]} ms`);
-});
+  test("Windows: Wait-ForFile sees the file appear", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `Later "touch $data/process.log"; Wait-ForFile 2 "$data/process.log"`);
+    assert.strictEqual(r.lines[0], "True", r.err);
+  });
 
-test("Windows: Wait-ForCount ignores the line already there", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$m = "$W/marks"; Set-Content $m "spawn"; Wait-ForCount 1 $m '^spawn$' 1; Later "echo spawn >> $m"; Wait-ForCount 2 $m '^spawn$' 1`);
-  assert.deepStrictEqual(r.lines.slice(0, 2), ["False", "True"], r.err);
-});
-
-test("Windows: Wait-Until re-checks on a trace change and gives up in time", { skip: noPwsh }, (t) => {
-  const r = ps(t, `Later "echo x > $W/flag; echo frame >> $data/process.log"; Wait-Until 2 { Test-Path "$W/flag" }; $t = Get-NowMs; Wait-Until 1 { $false }; (Get-NowMs) - $t`);
-  assert.deepStrictEqual(r.lines.slice(0, 2), ["True", "False"], r.err);
-  assert.ok(Number(r.lines[2]) >= 900 && Number(r.lines[2]) < 2000, `took ${r.lines[2]} ms`);
-});
-
-test("Windows: Wait-ForFile sees the file appear", { skip: noPwsh }, (t) => {
-  const r = ps(t, `Later "touch $data/process.log"; Wait-ForFile 2 "$data/process.log"`);
-  assert.strictEqual(r.lines[0], "True", r.err);
-});
-
-test("Windows: Initialize-ScenarioData moves every data folder and seeds the tour", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$d = Initialize-ScenarioData $W @{ hide_in_fullscreen = $false }
+  test("Windows: Initialize-ScenarioData moves every data folder and seeds the tour", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$d = Initialize-ScenarioData $W @{ hide_in_fullscreen = $false }
 $env:FIDGET_DATA_DIR -eq $d
 $env:APPDATA.StartsWith($W)
 $env:WEBVIEW2_USER_DATA_FOLDER.StartsWith($W)
 Get-Content -Raw (Join-Path $d "settings.json")`);
-  assert.deepStrictEqual(r.lines.slice(0, 3), ["True", "True", "True"], r.err);
-  assert.deepStrictEqual(JSON.parse(r.lines[3]), { first_run_tour_shown: true, hide_in_fullscreen: false });
-});
+    assert.deepStrictEqual(r.lines.slice(0, 3), ["True", "True", "True"], r.err);
+    assert.deepStrictEqual(JSON.parse(r.lines[3]), { first_run_tour_shown: true, hide_in_fullscreen: false });
+  });
 
-test("Windows: Get-SpriteAtRest needs five resting frames in one spot", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$W/p.log"
+  test("Windows: Get-SpriteAtRest needs five resting frames in one spot", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$W/p.log"
 1..4 | % { Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(10,20) idle#1 x" }
 [bool](Get-SpriteAtRest $t)
 Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(10,20) idle#1 x"
 (Get-SpriteAtRest $t).X
 Add-Content $t "1 frame: 1 Falling pos(1,1) sprite(10,40) fall#1 x"
 [bool](Get-SpriteAtRest $t)`);
-  assert.deepStrictEqual(r.lines.slice(0, 3), ["False", "10", "False"], r.err);
-});
+    assert.deepStrictEqual(r.lines.slice(0, 3), ["False", "10", "False"], r.err);
+  });
 
-test("Windows: a process.log write one folder below the watched folder wakes the wait", { skip: noPwsh }, (t) => {
-  // The flag is outside the watched folder, so only the process.log write can wake it.
-  const flag = path.join(tempDir(t, "wait-flag-"), "flag");
-  const r = ps(t, `Later "touch ${flag}; echo frame >> $data/process.log"; $t = Get-NowMs; Wait-Until 3 { Test-Path '${flag}' }; (Get-NowMs) - $t`);
-  assert.strictEqual(r.lines[0], "True", r.err);
-  assert.ok(Number(r.lines[1]) < 1500, `took ${r.lines[1]} ms: the watcher missed the subfolder`);
-});
+  test("Windows: a process.log write one folder below the watched folder wakes the wait", { skip: noPwsh }, async (t) => {
+    // The flag is outside the watched folder, so only the process.log write can wake it.
+    const flag = path.join(tempDir(t, "wait-flag-"), "flag");
+    const r = await ps(t, `Later "touch ${flag}; echo frame >> $data/process.log"; $t = Get-NowMs; Wait-Until 3 { Test-Path '${flag}' }; (Get-NowMs) - $t`);
+    assert.strictEqual(r.lines[0], "True", r.err);
+    assert.ok(Number(r.lines[1]) < 1500, `took ${r.lines[1]} ms: the watcher missed the subfolder`);
+  });
 
-test("Windows: Get-SpriteAtRest allows 2 px of jitter, not drift", { skip: noPwsh }, (t) => {
-  const frame = (x) => `Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(${x},20) idle#1 x"`;
-  const r = ps(t, `$t = "$W/p.log"
+  test("Windows: Get-SpriteAtRest allows 2 px of jitter, not drift", { skip: noPwsh }, async (t) => {
+    const frame = (x) => `Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(${x},20) idle#1 x"`;
+    const r = await ps(t, `$t = "$W/p.log"
 ${[10, 11, 12, 11, 10].map(frame).join("\n")}
 (Get-SpriteAtRest $t).X
 ${[10, 12, 14, 16, 18].map(frame).join("\n")}
@@ -366,11 +387,11 @@ ${[10, 10, 10, 10, 13].map(frame).join("\n")}
 [bool](Get-SpriteAtRest $t)
 ${[10, 10, 10, 10, 210].map(frame).join("\n")}
 [bool](Get-SpriteAtRest $t)`);
-  assert.deepStrictEqual(r.lines.slice(0, 4), ["10", "False", "False", "False"], r.err);
-});
+    assert.deepStrictEqual(r.lines.slice(0, 4), ["10", "False", "False", "False"], r.err);
+  });
 
-function walkThenRest(t, call) {
-  return ps(t, `$t = "$W/p.log"
+  function walkThenRest(t, call) {
+    return ps(t, `$t = "$W/p.log"
 Set-Content "$W/walk.sh" @'
 for i in $(seq 1 16); do echo "1 frame: 1 Grounded pos(1,1) sprite($((i * 10)),20) walk#1 x" >> "$1"; sleep 0.25; done
 for i in 1 2 3 4 5; do echo "1 frame: 1 Grounded pos(1,1) sprite(160,20) idle#1 x" >> "$1"; done
@@ -381,23 +402,23 @@ $p.ArgumentList.Add($t)
 $p.UseShellExecute = $false
 $null = [Diagnostics.Process]::Start($p)
 ${call}`);
-}
+  }
 
-test("Windows: Wait-ForRest keeps waiting while the sprite walks, past 3 s", { skip: noPwsh }, (t) => {
-  const r = walkThenRest(t, `$start = Get-NowMs
+  test("Windows: Wait-ForRest keeps waiting while the sprite walks, past 3 s", { skip: noPwsh }, async (t) => {
+    const r = await walkThenRest(t, `$start = Get-NowMs
 $rest = Wait-ForRest $t
 $took = (Get-NowMs) - $start
 Write-Output $took
 Write-Output $(if ($rest) { $rest.X } else { "null" })`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.ok(Number(r.lines[0]) >= 3500 && Number(r.lines[0]) < 6000, `took ${r.lines[0]} ms`);
-  assert.strictEqual(r.lines[1], "160", r.err);
-});
+    assert.strictEqual(r.code, 0, r.err);
+    assert.ok(Number(r.lines[0]) >= 3500 && Number(r.lines[0]) < 6000, `took ${r.lines[0]} ms`);
+    assert.strictEqual(r.lines[1], "160", r.err);
+  });
 
-// A falling sprite moves ~60 px a frame, so a click aimed at it misses; the
-// wait ends at the landing frame, not at rest.
-test("Windows: Wait-ForGrounded returns the landing spot, not a falling one", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$data/process.log"
+  // A falling sprite moves ~60 px a frame, so a click aimed at it misses; the
+  // wait ends at the landing frame, not at rest.
+  test("Windows: Wait-ForGrounded returns the landing spot, not a falling one", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$data/process.log"
 Add-Content $t "1 frame: 1 Falling pos(1720,696) sprite(1657,568) fall#0 x"
 Add-Content $t "1 frame: 1 Falling pos(1720,760) sprite(1657,632) talk#0 x"
 Later "echo '1 frame: 1 Grounded pos(1720,1392) sprite(1657,1264) land#0 x' >> $t"
@@ -406,13 +427,13 @@ $at = Wait-ForGrounded $t 5
 $took = (Get-NowMs) - $start
 Write-Output $(if ($at) { "$($at.X),$($at.Y)" } else { "null" })
 Write-Output $took`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.strictEqual(r.lines[0], "1657,1264", r.err);
-  assert.ok(Number(r.lines[1]) >= 250 && Number(r.lines[1]) < 2000, `took ${r.lines[1]} ms`);
-});
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "1657,1264", r.err);
+    assert.ok(Number(r.lines[1]) >= 250 && Number(r.lines[1]) < 2000, `took ${r.lines[1]} ms`);
+  });
 
-test("Windows: Wait-ForGrounded gives up at its ceiling while the sprite falls", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$data/process.log"
+  test("Windows: Wait-ForGrounded gives up at its ceiling while the sprite falls", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$data/process.log"
 Add-Content $t "1 frame: 1 Grounded pos(1720,1392) sprite(1657,1264) land#0 x"
 Add-Content $t "1 frame: 1 Falling pos(1720,696) sprite(1657,568) fall#0 x"
 Later "echo '1 frame: 1 Falling pos(1720,760) sprite(1657,632) fall#0 x' >> $t"
@@ -421,47 +442,47 @@ $at = Wait-ForGrounded $t 1
 $took = (Get-NowMs) - $start
 Write-Output ([bool]$at)
 Write-Output $took`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.strictEqual(r.lines[0], "False", r.err);
-  assert.ok(Number(r.lines[1]) >= 900 && Number(r.lines[1]) < 2500, `took ${r.lines[1]} ms`);
-  assert.match(r.err, /the sprite did not land within 1 s/);
-});
-
-// #1850: a walking sprite is clicked where it is now, once, and a miss fails.
-// The fullscreen guard must check the point that is clicked, so both get $cx $cy.
-for (const [name, command] of [
-  ["control-click-menu.win.ps1", "menu"],
-  ["question-bubble.win.ps1", "click"],
-]) {
-  test(`${name} clicks once at the point the fullscreen guard checked`, () => {
-    const src = readFileSync(path.join(scenarios, "..", "ci", name), "utf8");
-    assert.doesNotMatch(src, /function Wait-Settled|Wait-ForRest|Get-SpriteAtRest|\$maxAttempts/);
-    assert.match(src, /Skip-IfFullscreenOverClick \$cx \$cy /);
-    const landed = src.indexOf("$spot = Wait-ForGrounded $traceFile");
-    assert.ok(landed >= 0, "the leaf aims without waiting for the landing");
-    assert.ok(landed < src.indexOf("$cx = $spot.X"), "the leaf aims before the landing wait");
-    const calls = (src.match(/Invoke-Ax "[^"]+" @\{[^}]*\}/g) ?? []).filter((c) => c.includes(`Command = "${command}"`));
-    assert.strictEqual(calls.length, 1, calls.join("\n"));
-    assert.match(calls[0], new RegExp(`Command = "${command}";.*X = \\$cx; Y = \\$cy`));
-    assert.doesNotMatch(calls[0], /SpriteW/);
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "False", r.err);
+    assert.ok(Number(r.lines[1]) >= 900 && Number(r.lines[1]) < 2500, `took ${r.lines[1]} ms`);
+    assert.match(r.err, /the sprite did not land within 1 s/);
   });
-}
 
-const pillLeaf = path.join(scenarios, "..", "manual-only", "chat-close-pill-type.win.ps1");
+  // #1850: a walking sprite is clicked where it is now, once, and a miss fails.
+  // The fullscreen guard must check the point that is clicked, so both get $cx $cy.
+  for (const [name, command] of [
+    ["control-click-menu.win.ps1", "menu"],
+    ["question-bubble.win.ps1", "click"],
+  ]) {
+    test(`${name} clicks once at the point the fullscreen guard checked`, () => {
+      const src = readFileSync(path.join(scenarios, "..", "ci", name), "utf8");
+      assert.doesNotMatch(src, /function Wait-Settled|Wait-ForRest|Get-SpriteAtRest|\$maxAttempts/);
+      assert.match(src, /Skip-IfFullscreenOverClick \$cx \$cy /);
+      const landed = src.indexOf("$spot = Wait-ForGrounded $traceFile");
+      assert.ok(landed >= 0, "the leaf aims without waiting for the landing");
+      assert.ok(landed < src.indexOf("$cx = $spot.X"), "the leaf aims before the landing wait");
+      const calls = (src.match(/Invoke-Ax "[^"]+" @\{[^}]*\}/g) ?? []).filter((c) => c.includes(`Command = "${command}"`));
+      assert.strictEqual(calls.length, 1, calls.join("\n"));
+      assert.match(calls[0], new RegExp(`Command = "${command}";.*X = \\$cx; Y = \\$cy`));
+      assert.doesNotMatch(calls[0], /SpriteW/);
+    });
+  }
 
-// The first aim comes right after launch, while BMO may still be dropping in.
-test("chat-close-pill-type aims only at a landed sprite", () => {
-  const src = readFileSync(pillLeaf, "utf8");
-  const aim = src.match(/^function Aim\(.*?^\}/ms);
-  assert.ok(aim, "missing Aim");
-  assert.match(aim[0], /Wait-ForGrounded \$log[\s\S]*Get-SpriteAim \$log/);
-  assert.doesNotMatch(src, /Get-SpriteAtRest|Wait-ForRest/);
-});
+  const pillLeaf = path.join(scenarios, "..", "manual-only", "chat-close-pill-type.win.ps1");
 
-// Both presses of the double-click go out before either is checked, so the
-// log read sits after them and the gap between them stays one traced press.
-test("Windows: chat-close-pill-type presses twice, then checks both hit the sprite", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$tokens = $null; $errors = $null
+  // The first aim comes right after launch, while BMO may still be dropping in.
+  test("chat-close-pill-type aims only at a landed sprite", () => {
+    const src = readFileSync(pillLeaf, "utf8");
+    const aim = src.match(/^function Aim\(.*?^\}/ms);
+    assert.ok(aim, "missing Aim");
+    assert.match(aim[0], /Wait-ForGrounded \$log[\s\S]*Get-SpriteAim \$log/);
+    assert.doesNotMatch(src, /Get-SpriteAtRest|Wait-ForRest/);
+  });
+
+  // Both presses of the double-click go out before either is checked, so the
+  // log read sits after them and the gap between them stays one traced press.
+  test("Windows: chat-close-pill-type presses twice, then checks both hit the sprite", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile('${pillLeaf}', [ref]$tokens, [ref]$errors)
 $fn = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq "Press-Sprite" }, $true)
 if ($fn.Count -ne 1) { throw "missing Press-Sprite" }
@@ -480,11 +501,11 @@ function Run([string[]]$hits) {
 Run @("true", "true")
 Run @("false", "true")
 Run @("true", "false")`);
-  assert.deepStrictEqual(r.lines.slice(0, 3), ["ok 2", "fail 2", "fail 2"], r.err);
-});
+    assert.deepStrictEqual(r.lines.slice(0, 3), ["ok 2", "fail 2", "fail 2"], r.err);
+  });
 
-test("Windows: Wait-ForRest keeps the rest it already saw when a walk frame lands", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$W/p.log"
+  test("Windows: Wait-ForRest keeps the rest it already saw when a walk frame lands", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$W/p.log"
 1..4 | % { Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(160,20) idle#1 x" }
 $orig = (Get-Command Get-SpriteAtRest).ScriptBlock
 function Get-SpriteAtRest([string]$TraceFile) {
@@ -501,13 +522,13 @@ $rest = Wait-ForRest $t
 $took = (Get-NowMs) - $start
 Write-Output $(if ($rest) { $rest.X } else { "null" })
 Write-Output $took`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.strictEqual(r.lines[0], "160", `re-read after rest: ${r.lines[0]} ${r.err}`);
-  assert.ok(Number(r.lines[1]) < 2000, `took ${r.lines[1]} ms`);
-});
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "160", `re-read after rest: ${r.lines[0]} ${r.err}`);
+    assert.ok(Number(r.lines[1]) < 2000, `took ${r.lines[1]} ms`);
+  });
 
-test("Windows: Wait-ForRest gives up 3 s after the last move", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$W/p.log"
+  test("Windows: Wait-ForRest gives up 3 s after the last move", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$W/p.log"
 Add-Content $t "1 frame: 1 Grounded pos(1,1) sprite(10,20) walk#1 x"
 Later "echo '1 frame: 1 Grounded pos(1,1) sprite(20,20) walk#1 x' >> $t"
 $start = Get-NowMs
@@ -515,13 +536,20 @@ $rest = Wait-ForRest $t
 $took = (Get-NowMs) - $start
 Write-Output ([bool]$rest)
 Write-Output $took`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.strictEqual(r.lines[0], "False", r.err);
-  assert.ok(Number(r.lines[1]) >= 2800 && Number(r.lines[1]) < 4500, `took ${r.lines[1]} ms`);
-});
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "False", r.err);
+    assert.ok(Number(r.lines[1]) >= 2800 && Number(r.lines[1]) < 4500, `took ${r.lines[1]} ms`);
+  });
 
-test("Windows: Wait-ForRest gives up at 10 s if the sprite never stops", { skip: noPwsh }, (t) => {
-  const r = ps(t, `$t = "$W/p.log"
+  // The scenario leaves fail with "within 10s" and rely on this default.
+  test("Windows: Wait-ForRest's ceiling defaults to 10 s", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$FidgetRestWaitSeconds`);
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.lines[0], "10", r.err);
+  });
+
+  test("Windows: Wait-ForRest gives up at its ceiling if the sprite never stops", { skip: noPwsh }, async (t) => {
+    const r = await ps(t, `$t = "$W/p.log"
 Set-Content "$W/walk.sh" @'
 i=0; while :; do i=$((i + 1)); echo "1 frame: 1 Grounded pos(1,1) sprite($((i * 10)),20) walk#1 x" >> "$1"; sleep 0.25; done
 '@
@@ -530,24 +558,26 @@ $p.ArgumentList.Add("$W/walk.sh")
 $p.ArgumentList.Add($t)
 $p.UseShellExecute = $false
 $w = [Diagnostics.Process]::Start($p)
+$FidgetRestWaitSeconds = 2
 $start = Get-NowMs
 $rest = Wait-ForRest $t
 $took = (Get-NowMs) - $start
 if (-not $w.HasExited) { $w.Kill() }
 Write-Output $(if ($rest) { $rest.X } else { "null" })
 Write-Output $took`);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.match(r.err, /sprite never came to rest within 10s/);
-  assert.strictEqual(r.lines[0], "null", r.err);
-  assert.ok(Number(r.lines[1]) >= 9000 && Number(r.lines[1]) < 13000, `took ${r.lines[1]} ms`);
-});
+    assert.strictEqual(r.code, 0, r.err);
+    assert.match(r.err, /sprite never came to rest within 2s/);
+    assert.strictEqual(r.lines[0], "null", r.err);
+    assert.ok(Number(r.lines[1]) >= 1800 && Number(r.lines[1]) < 5000, `took ${r.lines[1]} ms`);
+  });
 
-test("Windows: Invoke-AxWin splats a hashtable of ax-window-win.ps1 parameters", { skip: noPwsh }, (t) => {
-  // A stub stands in for ax-window-win.ps1, so this checks the binding only.
-  const r = ps(t, `$stub = "$W/ax.ps1"
+  test("Windows: Invoke-AxWin splats a hashtable of ax-window-win.ps1 parameters", { skip: noPwsh }, async (t) => {
+    // A stub stands in for ax-window-win.ps1, so this checks the binding only.
+    const r = await ps(t, `$stub = "$W/ax.ps1"
 Set-Content $stub 'param([Parameter(Position = 0)]$Command, [int]$ProcessId, $Title, $Arg3) "$Command $ProcessId $Title $Arg3"; exit 0'
 $script:AxScript = $stub
 Invoke-AxWin "$W/o.txt" @{ Command = "dump"; ProcessId = 42; Title = "BMO"; Arg3 = "frames" }
 (Get-Content "$W/o.txt").Trim()`);
-  assert.deepStrictEqual(r.lines.slice(0, 2), ["True", "dump 42 BMO frames"], r.err);
+    assert.deepStrictEqual(r.lines.slice(0, 2), ["True", "dump 42 BMO frames"], r.err);
+  });
 });

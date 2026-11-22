@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -46,8 +46,9 @@ jobs:
         id: changed
         # `files_ignore` lists what is not code, so an unanticipated file type,
         # this workflow included, counts as code and cannot switch itself off.
-        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        # actions.lock pins every action to a commit, so a repointed tag runs
+        # nothing new. This one's tags were repointed (CVE-2025-30066).
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files_ignore: |
@@ -71,7 +72,7 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
@@ -81,11 +82,13 @@ jobs:
 
       - name: Cache cargo build
         if: steps.changes.outputs.code == 'true'
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
           key: ${{ matrix.os }}
-          # A red run is the one about to be pushed again; keep its cache warm.
+          # Pull requests restore main's cache but never upload their own: the
+          # upload sat on the slowest path and pushed the repo past its cache cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
       - name: Install shellcheck
@@ -124,7 +127,7 @@ jobs:
         # root's apt cache. The key is this install's URIs, so a new deb misses
         # and the previous archives restore.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/apt/archives
           key: apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt.outputs.hash }}
@@ -151,7 +154,7 @@ jobs:
         # pythonLocation carries the patch version, which a virtualenv is bound
         # to; '3.12' alone would restore envs pointing at a missing interpreter.
         # No restore-keys: a near-miss would restore a stale config's envs.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -205,7 +208,7 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -214,8 +217,9 @@ jobs:
         id: changed
         # `files_ignore` lists what is not code, so an unanticipated file type,
         # this workflow included, counts as code and cannot switch itself off.
-        # Every action is SHA-pinned; this one's tags were repointed (CVE-2025-30066).
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        # actions.lock pins every action to a commit, so a repointed tag runs
+        # nothing new. This one's tags were repointed (CVE-2025-30066).
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files_ignore: |
@@ -240,13 +244,13 @@ jobs:
 
       - name: Set up Python
         if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
       - name: Set up Node
         if: steps.changes.outputs.code == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 'lts/*'
 
@@ -275,12 +279,12 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
 
@@ -290,35 +294,87 @@ jobs:
           python scripts/import-pet.py --self-test
 
   # Own job: Windows cannot run the shellcheck/apt path `checks` uses.
-  # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
-  # Tests only on the path list below, the `windows` label, or non-PR events.
-  windows:
-    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+  # Runs on every change: a path gate would miss `not(unix)` arms outside the
+  # list. A label changes no code, so adding one doesn't rerun it.
+  windows-clippy:
+    if: github.event.action != 'labeled'
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: .
+          key: windows-latest
+          # Same reasons as the `checks` job above.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+
+      - name: Clippy the workspace for Windows
+        # --all-targets: also type-check test modules where many `not(unix)` arms live.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Decides once whether the `windows` legs run: the path list below, the
+  # `windows` label, or a non-PR event. Linux, so a skip starts no Windows runner.
+  windows-gate:
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_tests: ${{ steps.gate.outputs.run_tests }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
 
       - name: Find what this run changed
         id: changed
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        uses: tj-actions/changed-files@v47.0.6
         continue-on-error: true
         with:
           files: |
+            # Every .rs file with a cfg that holds on Windows, or declared under one.
+            # tests/windows-gate-paths.test.js fails when one is missing.
             src-tauri/src/main.rs
             src-tauri/src/harness.rs
             src-tauri/src/platform.rs
             src-tauri/src/platform/windows/**
+            src-tauri/src/platform/windows_perch.rs
+            src-tauri/src/platform/windows_hand_back.rs
+            src-tauri/src/platform/press_origin.rs
             src-tauri/tests/windows_subsystem.rs
             src-tauri/src/secrets.rs
             src-tauri/src/consent.rs
             src-tauri/src/login_item.rs
+            src-tauri/src/acp_wire.rs
+            src-tauri/src/caffeinate/mod.rs
+            src-tauri/src/caffeinate/windows.rs
+            src-tauri/src/cursor_mcp.rs
+            src-tauri/src/dev_flags.rs
+            src-tauri/src/frame_loop.rs
+            src-tauri/src/glass.rs
+            src-tauri/src/names_hint.rs
+            src-tauri/src/package.rs
+            src-tauri/src/pill_focus.rs
+            src-tauri/src/process_log.rs
+            src-tauri/src/settings.rs
+            src-tauri/src/settings/form.rs
+            crates/core/src/caffeinate/mod.rs
             crates/core/src/sensing.rs
+            crates/verify/src/cleanup.rs
+            crates/verify/src/doctor.rs
             crates/verify/src/scenario.rs
             scripts/scenarios/**/*.ps1
             src-tauri/Cargo.toml
@@ -345,25 +401,40 @@ jobs:
           Write-Host "run tests: $run_tests"
           "run_tests=$run_tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+  # The no-console check rebuilds the fidget crate, so it gets its own runner.
+  windows:
+    needs: windows-gate
+    if: needs.windows-gate.outputs.run_tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [tests, no-console]
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component clippy
+        run: rustup toolchain install stable --profile minimal
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
           key: windows-latest
-          # Same reason as the `checks` job above.
+          # Both legs share the job's cache key, so the no-console leg restores
+          # the tests leg's build and only the tests leg on main saves it.
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.check == 'tests' }}
           cache-on-failure: true
-
-      - name: Clippy the workspace for Windows
-        # --all-targets: also type-check test modules where many `not(unix)` arms live.
-        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
         # bash, not the default pwsh, which takes the last command's exit code
         # and let a passing --doc hide a failed --all-targets.
-        if: steps.gate.outputs.run_tests == 'true'
+        if: matrix.check == 'tests'
         shell: bash
         run: |
           cargo test --workspace --all-targets
@@ -372,5 +443,5 @@ jobs:
       - name: The exe a release build links has no console
         # Debug assertions off is the switch `windows_subsystem` reads, at the
         # cost of rebuilding the one crate rather than a full release build.
-        if: steps.gate.outputs.run_tests == 'true'
+        if: matrix.check == 'no-console'
         run: cargo test -p fidget --test windows_subsystem --config 'profile.dev.package.fidget.debug-assertions=false'

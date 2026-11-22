@@ -124,6 +124,34 @@ test("cleanup force-kills at once when it has no way to watch the exit", (t) => 
   if (process.platform === "linux") assert.ok(r.ms < 1500, `took ${r.ms} ms`);
 });
 
+// The holder is outside Fidget's tree, so no kill reaches it.
+test(
+  "cleanup names the lock when something still holds it after the force kill",
+  { skip: process.platform !== "linux" && "the lock wait needs flock" },
+  (t) => {
+    const { root, env } = scratch(t, "");
+    const script = `
+      . "${path.join(helpers, "cleanup.sh")}" > /dev/null # no pids yet: defines stop_pid
+      set +e
+      mkdir -p "$(dirname "$FIDGET_VERIFY_LOCK")" && mkfifo "${root}/ready"
+      (exec 9> "$FIDGET_VERIFY_LOCK"; flock 9; echo held > "${root}/ready"; exec sleep 30) > /dev/null 2>&1 &
+      holder=$!
+      exec {r}<> "${root}/ready"; read -r -t 3 _ <&"$r" || { kill -9 "$holder"; exit 91; }
+      bash -c 'trap "" TERM; exec sleep 30' 9>&- > /dev/null 2>&1 &
+      fidget=$!
+      stop_pid "$fidget"; rc=$?
+      kill -9 "$holder"
+      echo "rc=$rc fidget=$fidget"
+    `;
+    const r = spawnSync("bash", ["-c", script], { encoding: "utf8", env, timeout: 10000 });
+    const out = r.stdout + r.stderr;
+    assert.equal(r.status, 0, out);
+    const fidget = out.match(/fidget=(\d+)/)?.[1];
+    assert.match(out, /^rc=0 /m, out);
+    assert.ok(out.includes(`cleanup: ${root}/scratch/pids/fidget.lock is still held 1 s after kill -9 ${fidget}; the next launch will fail`), out);
+  },
+);
+
 // Fidget exits on TERM but its child ignores TERM and keeps the lock.
 // The child reports over a fifo once TERM is ignored, and Fidget is reaped
 // right after the TERM, so its pid is gone before the lock wait starts.

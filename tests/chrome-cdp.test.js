@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { chromePath, chromeSkip, launchWithPipe, createPageTarget, cleanupChrome } from "./chrome-cdp.js";
+import { launchWithPipe, createPageTarget, cleanupChrome } from "./chrome-cdp.js";
 import { tempDir } from "./temp-path.js";
 
 // A stand-in for Chrome speaks CDP over fds 3 and 4. It ignores every call
@@ -113,15 +113,18 @@ for (const [name, fake, signal] of [
   });
 }
 
-test("a real Chrome killed hard leaves none of its temp files behind", { skip: chromeSkip, timeout: 30000 }, async () => {
-  const cdp = launchWithPipe(chromePath, ["--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]);
-  try {
-    await createPageTarget(cdp);
-    assert.ok(readdirSync(join(cdp.dir, "tmp")).length > 0, "Chrome wrote its temp files into the launch dir");
-    cdp.proc.kill("SIGKILL");
-  } finally {
-    await cleanupChrome(cdp);
-  }
+// e2e testing a hard-killed Chrome's launch-dir cleanup is not deterministic:
+// Chrome does not always write temp or cache files into the launch dir at
+// startup (seen with macOS Google Chrome headless, #2031).
+test("cleanup removes a launch dir with nested files after a hard kill", { timeout: 20000 }, async (t) => {
+  const cdp = launchWithPipe(fakeChrome(t, 0, PAGE), []);
+  const nested = join(cdp.dir, "tmp", "nested");
+  mkdirSync(nested, { recursive: true });
+  const planted = join(nested, "planted.txt");
+  writeFileSync(planted, "junk");
+  assert.equal(existsSync(planted), true);
+  cdp.proc.kill("SIGKILL");
+  await cleanupChrome(cdp);
   assert.equal(cdp.proc.signalCode, "SIGKILL");
   assert.equal(existsSync(cdp.dir), false);
 });

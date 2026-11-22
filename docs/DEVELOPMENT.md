@@ -67,6 +67,19 @@ Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo 
 
 The Security workflow (`.github/workflows/security.yml`) runs `cargo audit` and `npm audit` on every pull request, on `main`, and nightly. The nightly run catches a new advisory against a dependency nobody touched.
 
+## Workflow Lockfile
+
+`.github/workflows/actions.lock` pins every action the workflows use, direct and transitive, to a commit, so `uses:` lines carry a readable tag such as `actions/checkout@v7.0.1`. [gh-actions-lock](https://github.com/github/gh-actions-lock) writes it; never edit it by hand. Install it once:
+
+```sh
+gh extension install github/gh-actions-lock
+```
+
+- **After adding a workflow or changing a `uses:`:** run `gh actions-lock` and commit the lockfile with the workflow. A `uses:` the lockfile does not cover keeps that workflow from starting at all. The Actions Lockfile workflow (`.github/workflows/actions-lock.yml`) runs `gh actions-lock --verify` on every pull request and on `main`, and a pre-commit hook runs the offline `--verify-local` when the extension is installed. The check is its own workflow because it has to report when another workflow cannot start; the hook is skippable and checks coverage only, so it is not the gate.
+- **Review a lockfile diff like a dependency bump:** each changed `commit:` is new code that runs in CI, so read what changed upstream between the two commits. Dependabot updates the lockfile in its own github-actions pull requests.
+- **On a `ref-moved` warning, or a `tag-commit-mismatch` error:** the tag now points at a different commit than the one locked. Find out why upstream before you move. To take the new commit, run `gh actions-lock --relock` and review the diff.
+- **Never pass `--accept-moved` in a script or workflow:** it accepts a pin whose commit is gone upstream, which is the case the lockfile exists to stop. Run it only by hand, after you know why the commit moved.
+
 ## Secret Scanning
 
 The Secret Scanning workflow (`.github/workflows/secret-scanning.yml`) runs two scanners on every pull request and on `main`. detect-secrets 1.5.0 scans every tracked file, Markdown included. A false positive goes on its line as a `pragma: allowlist secret` comment. Where a comment can't go, as in JSON, the hit is recorded in [`.secrets.baseline`](../.secrets.baseline) instead. A line filter there skips any line of the form `"commit": "<40 lowercase hex>",` in any file. Today only `.agents/*/UPSTREAM.json` has one, where the weekly skill syncs write the upstream commit hash, so a sync needs no baseline edit. A hit inside a YAML block such as a workflow's `run: |` covers the whole block, whether a pragma or the baseline allows it, so move the value into the step's `env:` until the block has none. Quoting it doesn't help: the scanner keeps only a block's first match and then drops the quoted value, which hides every hit below it. A baselined hit that moves lines only warns, since the baseline matches by hash; `detect-secrets scan --baseline .secrets.baseline` refreshes it. TruffleHog scans the new commits and fails only on secrets it verifies against their issuer.

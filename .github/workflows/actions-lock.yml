@@ -1,0 +1,40 @@
+name: Actions Lockfile
+
+# A `uses:` the lockfile does not cover stops its workflow from starting, with
+# no check on the pull request saying why. This job is that check, so it runs
+# on every pull request, unfiltered: a required check that skips never reports.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install gh-actions-lock
+        # An immutable release, so the tag names one set of binaries.
+        env:
+          EXTENSION_VERSION: v0.5.1
+        run: gh extension install github/gh-actions-lock --pin "$EXTENSION_VERSION"
+
+      - name: Verify the lockfile
+        run: gh actions-lock --verify
