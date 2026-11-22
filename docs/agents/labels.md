@@ -41,7 +41,9 @@ Add `macos`, `linux`, or `windows` for each platform you must verify.
 
 On a pull request, `windows` also runs `cargo test` and the no-console check in
 the `windows` job when the diff misses that job's path list in
-`.github/workflows/tests.yml`. Clippy runs in `windows-clippy` either way. The
+`.github/workflows/tests.yml`. That list names every Rust file with
+Windows-only code, and `tests/windows-gate-paths.test.js` fails when one is
+missing. Clippy runs in `windows-clippy` either way. The
 tracker calls these the Windows compile jobs.
 
 `e2e-windows` runs `.github/workflows/e2e-windows.yml`: every

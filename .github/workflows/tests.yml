@@ -345,15 +345,32 @@ jobs:
         continue-on-error: true
         with:
           files: |
+            # Every .rs file with Windows-only code.
+            # tests/windows-gate-paths.test.js fails when one is missing.
             src-tauri/src/main.rs
             src-tauri/src/harness.rs
             src-tauri/src/platform.rs
             src-tauri/src/platform/windows/**
+            src-tauri/src/platform/windows_perch.rs
             src-tauri/tests/windows_subsystem.rs
             src-tauri/src/secrets.rs
             src-tauri/src/consent.rs
             src-tauri/src/login_item.rs
+            src-tauri/src/acp_wire.rs
+            src-tauri/src/caffeinate/mod.rs
+            src-tauri/src/cursor_mcp.rs
+            src-tauri/src/dev_flags.rs
+            src-tauri/src/frame_loop.rs
+            src-tauri/src/names_hint.rs
+            src-tauri/src/package.rs
+            src-tauri/src/pill_focus.rs
+            src-tauri/src/process_log.rs
+            src-tauri/src/settings.rs
+            src-tauri/src/settings/form.rs
+            crates/core/src/caffeinate/mod.rs
             crates/core/src/sensing.rs
+            crates/verify/src/cleanup.rs
+            crates/verify/src/doctor.rs
             crates/verify/src/scenario.rs
             scripts/scenarios/**/*.ps1
             src-tauri/Cargo.toml
