@@ -13,8 +13,8 @@
 # Duration: about 12.5 s before the Chat-open case. Every wait gives up 3 s
 #   after its trigger; at startup that is the first frame after the launch, the
 #   overlay's page load after that frame, and its first report after the page
-#   load. Waits wake on each
-#   line of Fidget's piped stderr, on file changes, or on UI Automation
+#   load. The one exception: each aim waits up to 10 s for the sprite to land.
+#   Waits wake on each line of Fidget's piped stderr, on file changes, or on UI Automation
 #   events; nothing polls.
 # WebView2's profile is one folder every run reuses,
 #   %LOCALAPPDATA%\fidget-scenarios\webview2. The first run on a PC makes it
@@ -658,7 +658,9 @@ function Click-Notepad([int]$X, [int]$Y, [string]$Case) {
     Press-Hold $X $Y $Case
 }
 function Press([uint16]$Vk) { [PillWin]::Key($Vk, $false); [PillWin]::Key($Vk, $true) }
+# BMO drops in at spawn, and a falling sprite outruns the click.
 function Aim([string]$Case) {
+    if (-not (Wait-ForGrounded $log)) { Fail "${Case}: the sprite did not land within 10 s; see $log" }
     $script:aim = Get-SpriteAim $log
     if (-not $script:aim) { Fail "${Case}: no current sprite position with a known size; see $log" }
 }

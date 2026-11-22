@@ -394,6 +394,39 @@ Write-Output $(if ($rest) { $rest.X } else { "null" })`);
   assert.strictEqual(r.lines[1], "160", r.err);
 });
 
+// A falling sprite moves ~60 px a frame, so a click aimed at it misses; the
+// wait ends at the landing frame, not at rest.
+test("Windows: Wait-ForGrounded returns the landing spot, not a falling one", { skip: noPwsh }, (t) => {
+  const r = ps(t, `$t = "$data/process.log"
+Add-Content $t "1 frame: 1 Falling pos(1720,696) sprite(1657,568) fall#0 x"
+Add-Content $t "1 frame: 1 Falling pos(1720,760) sprite(1657,632) talk#0 x"
+Later "echo '1 frame: 1 Grounded pos(1720,1392) sprite(1657,1264) land#0 x' >> $t"
+$start = Get-NowMs
+$at = Wait-ForGrounded $t 5
+$took = (Get-NowMs) - $start
+Write-Output $(if ($at) { "$($at.X),$($at.Y)" } else { "null" })
+Write-Output $took`);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.strictEqual(r.lines[0], "1657,1264", r.err);
+  assert.ok(Number(r.lines[1]) >= 250 && Number(r.lines[1]) < 2000, `took ${r.lines[1]} ms`);
+});
+
+test("Windows: Wait-ForGrounded gives up at its ceiling while the sprite falls", { skip: noPwsh }, (t) => {
+  const r = ps(t, `$t = "$data/process.log"
+Add-Content $t "1 frame: 1 Grounded pos(1720,1392) sprite(1657,1264) land#0 x"
+Add-Content $t "1 frame: 1 Falling pos(1720,696) sprite(1657,568) fall#0 x"
+Later "echo '1 frame: 1 Falling pos(1720,760) sprite(1657,632) fall#0 x' >> $t"
+$start = Get-NowMs
+$at = Wait-ForGrounded $t 1
+$took = (Get-NowMs) - $start
+Write-Output ([bool]$at)
+Write-Output $took`);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.strictEqual(r.lines[0], "False", r.err);
+  assert.ok(Number(r.lines[1]) >= 900 && Number(r.lines[1]) < 2500, `took ${r.lines[1]} ms`);
+  assert.match(r.err, /the sprite did not land within 1 s/);
+});
+
 // #1850: a walking sprite is clicked where it is now, once, and a miss fails.
 // The fullscreen guard must check the point that is clicked, so both get $cx $cy.
 for (const [name, command] of [
@@ -404,6 +437,9 @@ for (const [name, command] of [
     const src = readFileSync(path.join(scenarios, "..", "ci", name), "utf8");
     assert.doesNotMatch(src, /function Wait-Settled|Wait-ForRest|Get-SpriteAtRest|\$maxAttempts/);
     assert.match(src, /Skip-IfFullscreenOverClick \$cx \$cy /);
+    const landed = src.indexOf("$spot = Wait-ForGrounded $traceFile");
+    assert.ok(landed >= 0, "the leaf aims without waiting for the landing");
+    assert.ok(landed < src.indexOf("$cx = $spot.X"), "the leaf aims before the landing wait");
     const calls = (src.match(/Invoke-Ax "[^"]+" @\{[^}]*\}/g) ?? []).filter((c) => c.includes(`Command = "${command}"`));
     assert.strictEqual(calls.length, 1, calls.join("\n"));
     assert.match(calls[0], new RegExp(`Command = "${command}";.*X = \\$cx; Y = \\$cy`));
@@ -412,6 +448,15 @@ for (const [name, command] of [
 }
 
 const pillLeaf = path.join(scenarios, "..", "manual-only", "chat-close-pill-type.win.ps1");
+
+// The first aim comes right after launch, while BMO may still be dropping in.
+test("chat-close-pill-type aims only at a landed sprite", () => {
+  const src = readFileSync(pillLeaf, "utf8");
+  const aim = src.match(/^function Aim\(.*?^\}/ms);
+  assert.ok(aim, "missing Aim");
+  assert.match(aim[0], /Wait-ForGrounded \$log[\s\S]*Get-SpriteAim \$log/);
+  assert.doesNotMatch(src, /Get-SpriteAtRest|Wait-ForRest/);
+});
 
 // Both presses of the double-click go out before either is checked, so the
 // log read sits after them and the gap between them stays one traced press.

@@ -243,6 +243,25 @@ function Get-LastSpriteSpot([string]$TraceFile) {
     return @{ X = [int]$Matches[1]; Y = [int]$Matches[2] }
 }
 
+# The newest frame's sprite origin once that frame is Grounded or Perched, else
+# $null after $Seconds. A falling sprite moves ~60 px a frame, so a click aimed
+# at it misses; a walk moves a few px, so it is not waited out.
+function Wait-ForGrounded([string]$TraceFile, [double]$Seconds = 10) {
+    $dir = Split-Path -Parent $TraceFile
+    if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { $dir = $script:WatchDir }
+    $script:groundedAt = $null
+    $null = Wait-OnChanges $Seconds $dir {
+        if (-not (Test-Path -LiteralPath $TraceFile)) { return $false }
+        $line = Get-Content -LiteralPath $TraceFile | Where-Object { $_ -match '^\d+\.?\d* frame: ' } | Select-Object -Last 1
+        if ($line -match ' (?:Grounded|Perched) .*sprite\((-?\d+),(-?\d+)\) ') {
+            $script:groundedAt = @{ X = [int]$Matches[1]; Y = [int]$Matches[2] }
+        }
+        [bool]$script:groundedAt
+    }
+    if (-not $script:groundedAt) { [Console]::Error.WriteLine("the sprite did not land within $Seconds s") }
+    return $script:groundedAt
+}
+
 # Wait for the sprite to rest. Each move restarts the 3 s window; 10 s from
 # the start is the ceiling if it never stops. Return the rest the check saw.
 function Wait-ForRest([string]$TraceFile) {

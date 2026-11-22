@@ -203,8 +203,9 @@ try {
     if (-not $size) { Fail "no sprite size in $traceFile" }
     $w = [int]$size.Matches[0].Groups[1].Value
     $h = [int]$size.Matches[0].Groups[2].Value
-    $spot = Get-LastSpriteSpot $traceFile
-    if (-not $spot) { Fail "no current sprite position in $traceFile" }
+    # BMO drops in at spawn; aim once it has landed, wherever it walks after.
+    $spot = Wait-ForGrounded $traceFile
+    if (-not $spot) { Fail "the sprite did not land within 10 s, so there is no spot to click; see $traceFile" }
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
     # One point for the guard and the click: no SpriteW, so ax clicks -X/-Y.
     $cx = $spot.X + [int]($w / 2); $cy = $spot.Y + [int]($h / 2)
