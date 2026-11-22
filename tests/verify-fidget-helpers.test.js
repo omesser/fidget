@@ -124,9 +124,6 @@ test("cleanup force-kills at once when it has no way to watch the exit", (t) => 
   if (process.platform === "linux") assert.ok(r.ms < 1500, `took ${r.ms} ms`);
 });
 
-// Fidget exits on TERM but its child ignores TERM and keeps the lock.
-// The child reports over a fifo once TERM is ignored, and Fidget is reaped
-// right after the TERM, so its pid is gone before the lock wait starts.
 // The holder is outside Fidget's tree, so no kill reaches it.
 test(
   "cleanup names the lock when something still holds it after the force kill",
@@ -155,6 +152,9 @@ test(
   },
 );
 
+// Fidget exits on TERM but its child ignores TERM and keeps the lock.
+// The child reports over a fifo once TERM is ignored, and Fidget is reaped
+// right after the TERM, so its pid is gone before the lock wait starts.
 test(
   "cleanup waits on the lock and force-kills a child that outlives Fidget",
   { skip: process.platform !== "linux" && "the lock wait needs flock" },
