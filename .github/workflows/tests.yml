@@ -208,8 +208,8 @@ jobs:
   # Like `checks`, it skips a pull request that changes only Markdown and LICENSE.
   node-tests:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
-    # Split in two: the test step is ~95% of the workflow's longest job, and
-    # the ~15 s of setup is cheap to repeat.
+    # Split in two: the test step is nearly all of this job, and the ~15 s of
+    # setup is cheap to repeat.
     strategy:
       fail-fast: false
       matrix:
