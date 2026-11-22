@@ -206,12 +206,14 @@ try {
     $spot = Get-LastSpriteSpot $traceFile
     if (-not $spot) { Fail "no current sprite position in $traceFile" }
     . (Join-Path $PSScriptRoot "..\helpers\fullscreen-over-click.win.ps1")
-    Skip-IfFullscreenOverClick ($spot.X + [int]($w / 2)) ($spot.Y + [int]($h / 2)) $proc.Id $out "click"
+    # One point for the guard and the click: no SpriteW, so ax clicks -X/-Y.
+    $cx = $spot.X + [int]($w / 2); $cy = $spot.Y + [int]($h / 2)
+    Skip-IfFullscreenOverClick $cx $cy $proc.Id $out "click"
 
     $trace = Get-Content -LiteralPath $traceFile
     $clickCountBefore = @($trace | Select-String -Pattern '^\d+ click: down ').Count
     $verbCountBefore = @($trace | Select-String -Pattern '^\d+ verbs: ').Count
-    if (-not (Invoke-Ax "poke" @{ Command = "click"; TraceFile = $traceFile; SpriteW = $w; SpriteH = $h })) {
+    if (-not (Invoke-Ax "poke" @{ Command = "click"; TraceFile = $traceFile; X = $cx; Y = $cy })) {
         Fail "could not click the sprite at its current position; see $out\poke.txt"
     }
     if (-not (Wait-ForCount 2 $traceFile '^\d+ click: down ' $clickCountBefore)) {

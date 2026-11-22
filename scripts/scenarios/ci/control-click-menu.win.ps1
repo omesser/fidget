@@ -182,10 +182,12 @@ try {
 
     $spot = Get-LastSpriteSpot $traceFile
     if (-not $spot) { Fail "no current sprite position in $traceFile" }
-    Skip-IfFullscreenOverClick ($spot.X + [int]($w / 2)) ($spot.Y + [int]($h / 2)) $proc.Id $out "right-click"
+    # One point for the guard and the click: no SpriteW, so ax clicks -X/-Y.
+    $cx = $spot.X + [int]($w / 2); $cy = $spot.Y + [int]($h / 2)
+    Skip-IfFullscreenOverClick $cx $cy $proc.Id $out "right-click"
     $trace = Get-Content -LiteralPath $traceFile
     $menuCountBefore = @($trace | Select-String -Pattern '^\d+ verbs: .*\[Menu\]').Count
-    if (-not (Invoke-Ax "menu" @{ Command = "menu"; ProcessId = $proc.Id; TraceFile = $traceFile; SpriteW = $w; SpriteH = $h })) {
+    if (-not (Invoke-Ax "menu" @{ Command = "menu"; ProcessId = $proc.Id; TraceFile = $traceFile; X = $cx; Y = $cy })) {
         Fail "no open menu in the UI Automation tree after clicking the sprite at its current position; see $out\menu.txt"
     }
     if (-not (Wait-ForCount 2 $traceFile '^\d+ verbs: .*\[Menu\]' $menuCountBefore)) {

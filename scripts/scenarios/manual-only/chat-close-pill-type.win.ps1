@@ -642,11 +642,13 @@ function Press-Hold([int]$X, [int]$Y, [string]$Case) {
     if (-not $seen) { Fail "${Case}: Fidget did not see the press at ($X,$Y) in 3 s; see $log" }
     if (-not (Wait-LogCount $T.up $ups)) { Fail "${Case}: Fidget did not see the release at ($X,$Y) in 3 s; see $log" }
 }
-function Press-Sprite([int]$X, [int]$Y, [string]$Case) {
+# Presses the sprite $Times times at one aim, then checks every press hit it.
+# The check comes after the last press, so it adds no gap between presses.
+function Press-Sprite([int]$X, [int]$Y, [string]$Case, [int]$Times = 1) {
     $downs = Count $T.down
-    Press-Hold $X $Y $Case
-    $click = Get-Content -LiteralPath $log | Where-Object { $_ -match $T.down } | Select-Object -Skip $downs -First 1
-    if (-not $click -or $click -notmatch '(?:^|\s)click: down hits=\[true\]') {
+    for ($i = 0; $i -lt $Times; $i++) { Press-Hold $X $Y $Case }
+    $clicks = @(Get-Content -LiteralPath $log | Where-Object { $_ -match $T.down } | Select-Object -Skip $downs -First $Times)
+    if ($clicks.Count -lt $Times -or @($clicks | Where-Object { $_ -notmatch '(?:^|\s)click: down hits=\[true\]' }).Count) {
         Fail "${Case}: click missed the sprite at its current position; see $log"
     }
 }
@@ -694,9 +696,7 @@ function Summon-Chat([string]$Case) {
     Move-Away $Case
     Aim $Case
     if (-not (Wait-ForNext $T.hit { $null = [PillWin]::SetCursorPos($script:aim.X, $script:aim.Y) })) { Fail "${Case}: the sprite's click area did not follow the cursor; see $log" }
-    Press-Sprite $script:aim.X $script:aim.Y $Case
-    Aim $Case
-    Press-Sprite $script:aim.X $script:aim.Y $Case
+    Press-Sprite $script:aim.X $script:aim.Y $Case 2
     Move-Away $Case
     if (-not (Wait-LogCount $T.chatOpen 0)) { Fail "${Case}: Chat did not open; see $log" }
 }
