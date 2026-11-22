@@ -116,6 +116,8 @@ cargo test                    # Everything including the platform shell
 node --test tests/*.test.js   # Renderer and design pages
 ```
 
+CI runs `cargo nextest run --all-targets` and then `cargo test --doc`, since nextest skips doctests. nextest gives each test its own process, so a `static Mutex` no longer keeps two tests apart; a test that shares something outside the process, such as the OS keyring, needs a test group in `.config/nextest.toml`.
+
 ### Automated Scripts
 
 ```sh

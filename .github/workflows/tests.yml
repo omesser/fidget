@@ -178,8 +178,15 @@ jobs:
             echo "core reaches a platform binding:"; echo "$tree"; exit 1
           fi
 
+      - name: Install cargo-nextest
+        if: steps.changes.outputs.code == 'true'
+        uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: cargo-nextest@0.9.151
+
       - name: Rust tests
-        # --doc too: --all-targets skips doctests.
+        # nextest runs the test binaries side by side, which `cargo test` runs one
+        # at a time. It skips doctests, so `cargo test --doc` still runs them.
         if: steps.changes.outputs.code == 'true'
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -188,15 +195,16 @@ jobs:
               set -euo pipefail
               echo "" | gnome-keyring-daemon --unlock || true
               eval "$(gnome-keyring-daemon --start --components=secrets)"
-              cargo test --all-targets
+              cargo nextest run --all-targets
               cargo test --doc
             '
           else
-            cargo test --all-targets
+            cargo nextest run --all-targets
             cargo test --doc
           fi
         env:
           RUNNER_OS: ${{ runner.os }}
+          NEXTEST_PROFILE: ci
 
   # Own job: no node test depends on the OS, and only Ubuntu ships the Chrome the
   # headless renderer tests drive. No Rust or apt, so it finishes beside `checks`.
@@ -381,6 +389,7 @@ jobs:
             crates/core/Cargo.toml
             Cargo.toml
             Cargo.lock
+            .config/nextest.toml
             .github/workflows/tests.yml
 
       - name: Decide whether this run should test
@@ -431,13 +440,21 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' && matrix.check == 'tests' }}
           cache-on-failure: true
 
+      - name: Install cargo-nextest
+        if: matrix.check == 'tests'
+        uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: cargo-nextest@0.9.151
+
       - name: Rust tests
         # bash, not the default pwsh, which takes the last command's exit code
         # and let a passing --doc hide a failed --all-targets.
         if: matrix.check == 'tests'
         shell: bash
+        env:
+          NEXTEST_PROFILE: ci
         run: |
-          cargo test --workspace --all-targets
+          cargo nextest run --workspace --all-targets
           cargo test --workspace --doc
 
       - name: The exe a release build links has no console
