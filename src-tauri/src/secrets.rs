@@ -100,168 +100,54 @@ impl SecretStore for KeyringStore {
 mod tests {
     use super::*;
 
-    #[cfg(windows)]
-    mod windows_credential_manager {
-        use super::*;
-        use std::sync::Mutex;
+    /// An account of the test's own, deleted on drop. The real
+    /// `director-api-key` stays untouched, and tests running side by side, in
+    /// threads or in separate processes, never share an entry.
+    struct ScratchAccount {
+        store: KeyringStore,
+        account: String,
+    }
 
-        static CREDENTIAL_MANAGER_LOCK: Mutex<()> = Mutex::new(());
-
-        struct CredentialGuard {
-            store: KeyringStore,
-            account: String,
-            original: Option<String>,
-        }
-
-        impl CredentialGuard {
-            fn new(account: &str) -> Self {
-                let store = KeyringStore::new();
-                let original = store.get(account).unwrap_or(None);
-                Self {
-                    store,
-                    account: account.to_string(),
-                    original,
-                }
+    impl ScratchAccount {
+        fn new() -> Self {
+            Self {
+                store: KeyringStore::new(),
+                account: format!("test-{}", uuid::Uuid::new_v4()),
             }
-        }
-
-        impl Drop for CredentialGuard {
-            fn drop(&mut self) {
-                match &self.original {
-                    Some(value) => {
-                        let _ = self.store.set(&self.account, value);
-                    }
-                    None => {
-                        let _ = self.store.delete(&self.account);
-                    }
-                }
-            }
-        }
-
-        #[test]
-        fn round_trip_director_key_through_credential_manager() {
-            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
-
-            let sentinel = format!("sk-windows-cm-roundtrip-{}", uuid::Uuid::new_v4());
-
-            store.set(DIRECTOR_API_KEY, &sentinel).unwrap();
-
-            let retrieved = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(retrieved.as_deref(), Some(sentinel.as_str()));
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-            let after_delete = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(after_delete, None);
-        }
-
-        #[test]
-        fn missing_credential_is_none_not_error() {
-            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-
-            let result = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(result, None);
-        }
-
-        #[test]
-        fn deleting_missing_credential_is_ok() {
-            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-
-            let result = store.delete(DIRECTOR_API_KEY);
-            assert!(result.is_ok());
         }
     }
 
-    /// Linux Secret Service tests. They need gnome-keyring under
-    /// dbus-run-session, as Ubuntu CI runs it, and restore any existing
-    /// `director-api-key`.
-    #[cfg(target_os = "linux")]
-    mod linux_secret_service {
-        use super::*;
-        use std::sync::Mutex;
-
-        static SECRET_SERVICE_LOCK: Mutex<()> = Mutex::new(());
-
-        struct CredentialGuard {
-            store: KeyringStore,
-            account: String,
-            original: Option<String>,
+    impl Drop for ScratchAccount {
+        fn drop(&mut self) {
+            let _ = self.store.delete(&self.account);
         }
+    }
 
-        impl CredentialGuard {
-            fn new(account: &str) -> Self {
-                let store = KeyringStore::new();
-                let original = store.get(account).unwrap_or(None);
-                Self {
-                    store,
-                    account: account.to_string(),
-                    original,
-                }
-            }
-        }
+    #[test]
+    fn a_secret_round_trips_through_the_os_store() {
+        let scratch = ScratchAccount::new();
+        let (store, account) = (&scratch.store, scratch.account.as_str());
+        let sentinel = format!("sk-roundtrip-{}", uuid::Uuid::new_v4());
 
-        impl Drop for CredentialGuard {
-            fn drop(&mut self) {
-                match &self.original {
-                    Some(value) => {
-                        let _ = self.store.set(&self.account, value);
-                    }
-                    None => {
-                        let _ = self.store.delete(&self.account);
-                    }
-                }
-            }
-        }
+        store.set(account, &sentinel).unwrap();
+        assert_eq!(
+            store.get(account).unwrap().as_deref(),
+            Some(sentinel.as_str())
+        );
 
-        #[test]
-        fn round_trip_director_key_through_secret_service() {
-            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
+        store.delete(account).unwrap();
+        assert_eq!(store.get(account).unwrap(), None);
+    }
 
-            let sentinel = format!("sk-linux-ss-roundtrip-{}", uuid::Uuid::new_v4());
+    #[test]
+    fn a_missing_secret_is_none_not_an_error() {
+        let scratch = ScratchAccount::new();
+        assert_eq!(scratch.store.get(&scratch.account).unwrap(), None);
+    }
 
-            store.set(DIRECTOR_API_KEY, &sentinel).unwrap();
-
-            let retrieved = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(retrieved.as_deref(), Some(sentinel.as_str()));
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-            let after_delete = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(after_delete, None);
-        }
-
-        #[test]
-        fn missing_credential_is_none_not_error() {
-            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-
-            let result = store.get(DIRECTOR_API_KEY).unwrap();
-            assert_eq!(result, None);
-        }
-
-        #[test]
-        fn deleting_missing_credential_is_ok() {
-            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
-            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
-            let store = &guard.store;
-
-            store.delete(DIRECTOR_API_KEY).unwrap();
-
-            let result = store.delete(DIRECTOR_API_KEY);
-            assert!(result.is_ok());
-        }
+    #[test]
+    fn deleting_a_missing_secret_is_ok() {
+        let scratch = ScratchAccount::new();
+        assert!(scratch.store.delete(&scratch.account).is_ok());
     }
 }
