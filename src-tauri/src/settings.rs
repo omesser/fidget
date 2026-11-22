@@ -2406,10 +2406,13 @@ mod tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    /// The process id too: under nextest each test is a process, where `NEXT`
+    /// and the thread id start over, so two tests would share one file.
     fn temp_path() -> PathBuf {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "fidget-settings-{n}-{:?}.json",
+            "fidget-settings-{}-{n}-{:?}.json",
+            std::process::id(),
             std::thread::current().id()
         ))
     }
