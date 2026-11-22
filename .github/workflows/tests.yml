@@ -86,7 +86,9 @@ jobs:
         with:
           workspaces: .
           key: ${{ matrix.os }}
-          # A red run is the one about to be pushed again; keep its cache warm.
+          # Pull requests restore main's cache but never upload their own: the
+          # upload sat on the slowest path and pushed the repo past its cache cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
       - name: Install shellcheck
@@ -292,10 +294,43 @@ jobs:
           python scripts/import-pet.py --self-test
 
   # Own job: Windows cannot run the shellcheck/apt path `checks` uses.
-  # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
-  # Tests only on the path list below, the `windows` label, or non-PR events.
+  # Runs on every change: a path gate would miss `not(unix)` arms outside the
+  # list. A label changes no code, so adding one doesn't rerun it.
+  windows-clippy:
+    if: github.event.action != 'labeled'
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: .
+          key: windows-latest
+          # Same reasons as the `checks` job above.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+
+      - name: Clippy the workspace for Windows
+        # --all-targets: also type-check test modules where many `not(unix)` arms live.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Only on the path list below, the `windows` label, or non-PR events. The
+  # no-console check rebuilds the fidget crate, so it gets its own runner.
   windows:
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [tests, no-console]
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -348,24 +383,24 @@ jobs:
           "run_tests=$run_tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Rust
+        if: steps.gate.outputs.run_tests == 'true'
         run: rustup toolchain install stable --profile minimal --component clippy
 
       - name: Cache cargo build
+        if: steps.gate.outputs.run_tests == 'true'
         uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: .
           key: windows-latest
-          # Same reason as the `checks` job above.
+          # Both legs share the job's cache key, so the no-console leg restores
+          # the tests leg's build and only the tests leg on main saves it.
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.check == 'tests' }}
           cache-on-failure: true
-
-      - name: Clippy the workspace for Windows
-        # --all-targets: also type-check test modules where many `not(unix)` arms live.
-        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
         # bash, not the default pwsh, which takes the last command's exit code
         # and let a passing --doc hide a failed --all-targets.
-        if: steps.gate.outputs.run_tests == 'true'
+        if: steps.gate.outputs.run_tests == 'true' && matrix.check == 'tests'
         shell: bash
         run: |
           cargo test --workspace --all-targets
@@ -374,5 +409,5 @@ jobs:
       - name: The exe a release build links has no console
         # Debug assertions off is the switch `windows_subsystem` reads, at the
         # cost of rebuilding the one crate rather than a full release build.
-        if: steps.gate.outputs.run_tests == 'true'
+        if: steps.gate.outputs.run_tests == 'true' && matrix.check == 'no-console'
         run: cargo test -p fidget --test windows_subsystem --config 'profile.dev.package.fidget.debug-assertions=false'
