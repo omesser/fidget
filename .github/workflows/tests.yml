@@ -345,7 +345,7 @@ jobs:
         continue-on-error: true
         with:
           files: |
-            # Every .rs file with Windows-only code.
+            # Every .rs file with a cfg that holds on Windows.
             # tests/windows-gate-paths.test.js fails when one is missing.
             src-tauri/src/main.rs
             src-tauri/src/harness.rs
@@ -361,6 +361,7 @@ jobs:
             src-tauri/src/cursor_mcp.rs
             src-tauri/src/dev_flags.rs
             src-tauri/src/frame_loop.rs
+            src-tauri/src/glass.rs
             src-tauri/src/names_hint.rs
             src-tauri/src/package.rs
             src-tauri/src/pill_focus.rs

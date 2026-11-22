@@ -1,6 +1,6 @@
 // The `windows` job in tests.yml runs only when the diff hits windows-gate's
-// path list. A Rust file with Windows-only code that the list misses can
-// break the Windows build without the Windows tests running.
+// path list. A Rust file with a cfg that holds on Windows, missing from the
+// list, can break the Windows build without the Windows tests running.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -9,7 +9,13 @@ import { test } from "node:test";
 
 const repo = new URL("..", import.meta.url);
 
-const WINDOWS_ONLY = /cfg!?\(windows\)|target_os = "windows"|cfg!?\(not\(unix\)\)/;
+// A cfg line that can hold on Windows. `all(unix, not(target_os = ...))` is a
+// Unix subset, so it reads as `unix` first and never counts as `not(target_os`.
+const CFG = /\bcfg(?:_attr)?!?\(.*/g;
+const UNIX_SUBSET = /all\(unix, not\(target_os = "\w+"\)\)/g;
+const WINDOWS = /\bwindows\b|not\(unix\)|not\(target_os/;
+const hasWindowsCode = (source) =>
+  (source.match(CFG) ?? []).some((cfg) => WINDOWS.test(cfg.replace(UNIX_SUBSET, "unix")));
 
 function gatePatterns() {
   const workflow = readFileSync(new URL(".github/workflows/tests.yml", repo), "utf8");
@@ -32,14 +38,14 @@ const toRegExp = (glob) =>
       .replace(/\0/g, ".*")}$`,
   );
 
-test("windows-gate lists every Rust file with Windows-only code", () => {
+test("windows-gate lists every Rust file with a cfg that holds on Windows", () => {
   const patterns = gatePatterns().map(toRegExp);
   const rust = execFileSync("git", ["ls-files", "-z", "*.rs"], { cwd: repo, encoding: "utf8" })
     .split("\0")
     .filter(Boolean);
   const missing = rust.filter(
     (path) =>
-      WINDOWS_ONLY.test(readFileSync(new URL(path, repo), "utf8")) &&
+      hasWindowsCode(readFileSync(new URL(path, repo), "utf8")) &&
       !patterns.some((pattern) => pattern.test(path)),
   );
   assert.deepEqual(missing, [], `add to windows-gate's files in tests.yml: ${missing.join(", ")}`);
