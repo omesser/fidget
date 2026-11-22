@@ -11,6 +11,12 @@ keyring = { max-threads = 1 }
 filter = 'package(fidget) & test(/^secrets::tests::/)'
 test-group = 'keyring'
 
+# nextest starts tests in binary order, so fidget-verify's PowerShell scenario
+# tests (up to 20 s each on Windows) would start last and run alone.
+[[profile.default.overrides]]
+filter = 'package(fidget-verify)'
+priority = 100
+
 [profile.ci]
 # Report every failure, not just the first, and list the slow tests last.
 fail-fast = false
