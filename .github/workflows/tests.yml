@@ -89,15 +89,6 @@ jobs:
           # A red run is the one about to be pushed again; keep its cache warm.
           cache-on-failure: true
 
-      - name: Install shellcheck
-        # Linux gets shellcheck from apt below, so apt updates once.
-        # No auto-update: it refreshes every formula before this install.
-        # Caching the bottle costs more than the few seconds it takes to fetch.
-        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: 1
-        run: brew install shellcheck
-
       - name: Resolve the Linux package URIs
         # The URI list is the lockfile, so apt-get update runs before the cache key.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
@@ -158,10 +149,14 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit
-        # Runs on docs-only changes too; SKIP drops only the hooks whose
-        # toolchain was not installed. macOS-only hooks check uname themselves.
+        # Runs on docs-only changes too, skipping the hooks whose toolchain was
+        # not installed. macOS also skips the hooks that answer the same on every
+        # OS, which Ubuntu runs. macOS-only hooks check uname themselves.
         env:
-          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy,shfmt,shellcheck' || '' }}
+          SKIP: >-
+            ${{ format('{0},{1}',
+            steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy,shfmt,shellcheck' || '',
+            runner.os == 'macOS' && 'psscriptanalyzer-check,shellcheck,shfmt,actionlint,zizmor,codespell' || '') }}
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure

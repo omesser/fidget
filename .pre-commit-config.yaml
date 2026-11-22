@@ -91,7 +91,7 @@ repos:
         exclude: *vendored
 
     # Workflow lint. actionlint's shellcheck integration uses shellcheck
-    # on PATH, which CI already installs (apt on Linux, brew on macOS).
+    # on PATH, which Linux CI installs from apt. macOS CI skips this hook.
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
