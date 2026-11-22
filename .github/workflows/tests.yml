@@ -93,7 +93,7 @@ jobs:
           key: ${{ matrix.os }}
           # Pull requests restore main's cache but never upload their own: the
           # upload sat on the slowest path and pushed the repo past its cache cap.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.run_attempt == '1' }}  # TEMPORARY: measure warm reruns
           cache-on-failure: true
 
       - name: Install shellcheck
@@ -321,7 +321,7 @@ jobs:
           workspaces: .
           key: windows-latest
           # Same reasons as the `checks` job above.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.run_attempt == '1' }}  # TEMPORARY: measure warm reruns
           cache-on-failure: true
 
       - name: Clippy the workspace for Windows
@@ -433,7 +433,7 @@ jobs:
           key: windows-latest
           # Both legs share the job's cache key, so the no-console leg restores
           # the tests leg's build and only the tests leg on main saves it.
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.check == 'tests' }}
+          save-if: ${{ (github.ref == 'refs/heads/main' || github.run_attempt == '1') && matrix.check == 'tests' }}  # TEMPORARY: measure warm reruns
           cache-on-failure: true
 
       - name: Rust tests
