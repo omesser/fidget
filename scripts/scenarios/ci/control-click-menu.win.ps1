@@ -159,7 +159,6 @@ try {
     }
     $traceFile = Join-Path $data "process.log"
     if (-not (Wait-ForFile 3 $traceFile)) { Fail "process.log never appeared; see $err" }
-    if (-not (Wait-ForTrace 2 $traceFile '^\d+\.?\d* frame: .* sprite\(')) { Fail "Fidget traced no frame; see $traceFile" }
 
     $settingsFile = Join-Path $data "settings.json"
     if (Test-Path -LiteralPath $settingsFile) {

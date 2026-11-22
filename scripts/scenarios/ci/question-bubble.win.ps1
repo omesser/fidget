@@ -220,7 +220,9 @@ try {
     $click = Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ click: down ' } | Select-Object -Last 1
     if ($click -notmatch '^\d+ click: down hits=\[true\]') { Fail "the click missed the sprite: $click" }
     # A Poke resolves once the double-click interval passes, so wait for its verbs line.
-    $null = Wait-ForCount 2 $traceFile '^\d+ verbs: ' $verbCountBefore
+    if (-not (Wait-ForCount 2 $traceFile '^\d+ verbs: ' $verbCountBefore)) {
+        Fail "the click produced no verb; see $traceFile"
+    }
     $verbsAfter = Get-Content -LiteralPath $traceFile | Where-Object { $_ -match '^\d+ verbs: ' } | Select-Object -Last 1
     if ($verbsAfter -match '\[Grab\]') { Fail "click held past DRAG_DELAY_MS and became Grab instead of Poke" }
     if ($verbsAfter -notmatch 'Poke') { Fail "click did not land as Poke; see $traceFile" }
