@@ -46,6 +46,13 @@ that holds on Windows or a `mod` declared under one, and
 `tests/windows-gate-paths.test.js` fails when one is missing. Clippy runs in
 `windows-clippy` either way. The tracker calls these the Windows compile jobs.
 
+A pull request that changes a `scripts/scenarios/ci/` leaf runs that leaf live
+on a hosted runner, with no label. One that changes a file the leaves load, a
+helper in `scripts/scenarios/helpers/` or a tool such as
+`scripts/ax-settings.swift`, runs every leaf of each platform whose leaves load
+it. `scripts/e2e-scope.mjs` picks them. The e2e labels are for the rest: a
+change to behavior a leaf covers, with no leaf or helper in the diff.
+
 `e2e-windows` runs `.github/workflows/e2e-windows.yml`: every
 `scripts/scenarios/ci/*.win.ps1` and the anchor scripts, live on a hosted
 runner. It is too heavy for every pull request, so add it when the diff

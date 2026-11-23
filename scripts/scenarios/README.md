@@ -9,7 +9,7 @@ run one: set up, post the prompt, and wait for a go-ahead for that run.
 
 | Folder | Holds |
 |---|---|
-| `ci/` | Leaves a CI job runs. The `e2e-windows` workflow runs every `ci/*.win.ps1`, `e2e-linux` every `ci/*.x11.sh` and `e2e-macos` every other `ci/*.sh`, each on a hosted runner. |
+| `ci/` | Leaves a CI job runs. The `e2e-windows` workflow runs every `ci/*.win.ps1`, `e2e-linux` every `ci/*.x11.sh` and `e2e-macos` every other `ci/*.sh`, each on a hosted runner. A pull request that changes a leaf runs it; one that changes a helper, or a tool in `scripts/` they load, runs every leaf of each platform whose leaves load it. |
 | `manual-only/` | Every other leaf. Until a leaf passes in an automatic run, treat it as manual: some need a person or a second display, and the rest wait for a CI job on their platform. |
 | `helpers/` | Waits, the fixture Harness launcher, and the Swift and Python tools the leaves share. |
 | `fixtures/` | Saved dumps and traces for each leaf's fixture mode. |

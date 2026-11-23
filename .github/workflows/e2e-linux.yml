@@ -1,11 +1,13 @@
 name: e2e-linux
 
 # Live runs of `scripts/scenarios/ci/*.x11.sh` on a hosted runner's Xvfb
-# display. Too heavy for every pull request: it runs on dispatch or the
-# `e2e-linux` label only.
+# display. Too heavy to run whole on every pull request: it runs the leaves a
+# pull request changes, every leaf when it changes a helper they load, and
+# otherwise on dispatch or the `e2e-linux` label.
 on:
   pull_request:
-    types: [labeled]
+    # Not a `paths:` filter: it would hold back the label's runs too.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       scenarios:
@@ -18,13 +20,52 @@ permissions:
 
 concurrency:
   # Per label: another label's `labeled` run skips its job, and must not cancel
-  # an e2e run in flight. Re-adding e2e-linux replaces it.
+  # an e2e run in flight. Re-adding e2e-linux replaces it, and a push replaces
+  # the last push's run.
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.event.label.name }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    # Its own job, so a push that changes no leaf skips the build. Another
+    # label's `labeled` event runs nothing.
+    if: github.event.action != 'labeled' || github.event.label.name == 'e2e-linux'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      scenarios: ${{ steps.scope.outputs.scenarios }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Pick the leaves to run
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: |
+          # Dispatch and the label run the leaves named, or every leaf.
+          if [ -z "$PR" ] || [ "$ACTION" = labeled ]; then
+            printf 'run=true\nscenarios=%s\n' "$SCENARIOS" | tee -a "$GITHUB_OUTPUT"
+          else
+            gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+              | node scripts/e2e-scope.mjs linux | tee -a "$GITHUB_OUTPUT"
+          fi
+
   e2e-linux:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e-linux'
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -75,7 +116,7 @@ jobs:
         # One session bus for the AT-SPI bus, the tray watcher and every leaf.
         shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
         env:
-          SCENARIOS: ${{ inputs.scenarios }}
+          SCENARIOS: ${{ needs.scope.outputs.scenarios }}
         run: |
           # The leaves write evidence under $TMPDIR: one folder to upload.
           export TMPDIR="$RUNNER_TEMP/evidence"
