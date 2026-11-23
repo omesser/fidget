@@ -1,11 +1,13 @@
 name: e2e-windows
 
 # Live runs of `scripts/scenarios/ci/*.win.ps1` and the anchor scripts on a
-# hosted runner's desktop. Too heavy for every pull request: it runs on
-# dispatch or the `e2e-windows` label only.
+# hosted runner's desktop. Too heavy for every pull request: it runs the leaves
+# a pull request changes, every leaf when it changes a helper they load, and
+# otherwise on dispatch or the `e2e-windows` label.
 on:
   pull_request:
-    types: [labeled]
+    # Not a `paths:` filter: it would hold back the label's runs too.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       scenarios:
@@ -18,13 +20,52 @@ permissions:
 
 concurrency:
   # Per label: another label's `labeled` run skips its job, and must not cancel
-  # an e2e run in flight. Re-adding e2e-windows replaces it.
+  # an e2e run in flight. Re-adding e2e-windows replaces it, and a push replaces
+  # the last push's run.
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.event.label.name }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    # On its own small runner, so a push that changes no leaf starts no
+    # Windows one. Another label's `labeled` event runs nothing.
+    if: github.event.action != 'labeled' || github.event.label.name == 'e2e-windows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      scenarios: ${{ steps.scope.outputs.scenarios }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Pick the leaves to run
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: |
+          # Dispatch and the label run the leaves named, or every leaf.
+          if [ -z "$PR" ] || [ "$ACTION" = labeled ]; then
+            printf 'run=true\nscenarios=%s\n' "$SCENARIOS" | tee -a "$GITHUB_OUTPUT"
+          else
+            gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+              | node scripts/e2e-scope.mjs windows | tee -a "$GITHUB_OUTPUT"
+          fi
+
   e2e-windows:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e-windows'
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -57,7 +98,7 @@ jobs:
       - name: Run the scenarios and anchor scripts
         shell: pwsh
         env:
-          SCENARIOS: ${{ inputs.scenarios }}
+          SCENARIOS: ${{ needs.scope.outputs.scenarios }}
         run: |
           # The leaves write evidence under $env:TEMP; keep it in one folder to upload.
           $env:TEMP = Join-Path $env:RUNNER_TEMP "evidence"
