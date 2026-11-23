@@ -19,19 +19,19 @@ const leaves = changed
   .filter((path) => path.startsWith(ci) && isLeaf(path) && existsSync(path))
   .map((path) => path.slice(ci.length, -suffix.length));
 
-// Names `file` whole: `wait-helpers.sh` is not named by `wait-helpers.mac.sh`.
-const names = (text, file) => new RegExp(`(?<![\\w.-])${file.replace(/[.]/g, "\\.")}(?![\\w-])`).test(text);
+// Whole names only: `wait-helpers.mac.sh` does not mention `wait-helpers.sh`.
+const mentions = (text, file) => new RegExp(`(?<![\\w.-])${file.replace(/[.]/g, "\\.")}(?![\\w-])`).test(text);
 
 // The helpers this platform's leaves load, and the helpers those load in turn.
 const sources = readdirSync(ci)
   .filter(isLeaf)
   .map((name) => readFileSync(ci + name, "utf8"));
-const used = new Set();
+const loaded = new Set();
 for (let grew = true; grew; ) {
   grew = false;
   for (const name of existsSync(helpers) ? readdirSync(helpers) : []) {
-    if (!used.has(name) && sources.some((text) => names(text, name))) {
-      used.add(name);
+    if (!loaded.has(name) && sources.some((text) => mentions(text, name))) {
+      loaded.add(name);
       sources.push(readFileSync(helpers + name, "utf8"));
       grew = true;
     }
@@ -39,7 +39,7 @@ for (let grew = true; grew; ) {
 }
 
 // A helper can change what any leaf that loads it does, so it runs them all.
-const helperChanged = changed.some((path) => path.startsWith(helpers) && used.has(basename(path)));
+const helperChanged = changed.some((path) => path.startsWith(helpers) && loaded.has(basename(path)));
 
 if (helperChanged) {
   process.stdout.write("run=true\nscenarios=\n");

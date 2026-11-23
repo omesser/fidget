@@ -1,9 +1,9 @@
 name: e2e-linux
 
 # Live runs of `scripts/scenarios/ci/*.x11.sh` on a hosted runner's Xvfb
-# display. Too heavy for every pull request: it runs the leaves a pull request
-# changes, every leaf when it changes a helper they load, and otherwise on
-# dispatch or the `e2e-linux` label.
+# display. Too heavy to run whole on every pull request: it runs the leaves a
+# pull request changes, every leaf when it changes a helper they load, and
+# otherwise on dispatch or the `e2e-linux` label.
 on:
   pull_request:
     # Not a `paths:` filter: it would hold back the label's runs too.
@@ -27,8 +27,8 @@ concurrency:
 
 jobs:
   scope:
-    # On its own small runner, so a push that changes no leaf starts no
-    # Linux one. Another label's `labeled` event runs nothing.
+    # Its own job, so a push that changes no leaf skips the build. Another
+    # label's `labeled` event runs nothing.
     if: github.event.action != 'labeled' || github.event.label.name == 'e2e-linux'
     runs-on: ubuntu-latest
     timeout-minutes: 5

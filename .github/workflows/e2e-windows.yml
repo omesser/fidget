@@ -1,9 +1,9 @@
 name: e2e-windows
 
 # Live runs of `scripts/scenarios/ci/*.win.ps1` and the anchor scripts on a
-# hosted runner's desktop. Too heavy for every pull request: it runs the leaves
-# a pull request changes, every leaf when it changes a helper they load, and
-# otherwise on dispatch or the `e2e-windows` label.
+# hosted runner's desktop. Too heavy to run whole on every pull request: it runs
+# the leaves a pull request changes, every leaf when it changes a helper they
+# load, and otherwise on dispatch or the `e2e-windows` label.
 on:
   pull_request:
     # Not a `paths:` filter: it would hold back the label's runs too.
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   scope:
-    # On its own small runner, so a push that changes no leaf starts no
+    # On a Linux runner, so a push that changes no leaf starts no
     # Windows one. Another label's `labeled` event runs nothing.
     if: github.event.action != 'labeled' || github.event.label.name == 'e2e-windows'
     runs-on: ubuntu-latest
