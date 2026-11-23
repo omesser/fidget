@@ -92,6 +92,8 @@ Once the PR merges, make sure the issue actually closed and move its board
 status to `Done`. Tick any leftover acceptance boxes per the edit-unsigned,
 signed-comment rule under "An agent signs what it writes on GitHub".
 
+Write `Refs #123` instead only when the PR does part of the issue.
+
 ## A visual change shows itself
 
 When a pull request changes what the product looks like, the description
