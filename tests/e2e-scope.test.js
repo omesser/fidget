@@ -76,3 +76,12 @@ test("a helper only another platform loads runs nothing", (t) => {
   });
   assert.equal(scope(dir, "windows", [`${helpers}/wait-helpers.x11.sh`]), "run=false\nscenarios=\n");
 });
+
+test("a tool in scripts/ a leaf builds runs every leaf", (t) => {
+  const dir = repo(t, {
+    [`${ci}/chat-level.sh`]: `swiftc -o "$tools/ax" "$root/scripts/ax-settings.swift"\n`,
+    [`${ci}/thinking-row.sh`]: "",
+    "scripts/ax-settings.swift": "",
+  });
+  assert.equal(scope(dir, "macos", ["scripts/ax-settings.swift"]), "run=true\nscenarios=\n");
+});

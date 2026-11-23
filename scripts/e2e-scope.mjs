@@ -20,26 +20,33 @@ const leaves = changed
   .map((path) => path.slice(ci.length, -suffix.length));
 
 // Whole names only: `wait-helpers.mac.sh` does not mention `wait-helpers.sh`.
-const mentions = (text, file) => new RegExp(`(?<![\\w.-])${file.replace(/[.]/g, "\\.")}(?![\\w-])`).test(text);
+const escape = (text) => text.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+const mentions = (text, file) => new RegExp(`(?<![\\w.-])${escape(file)}(?![\\w-])`).test(text);
 
-// The helpers this platform's leaves load, and the helpers those load in turn.
+// Leaves load helpers, and tools such as `scripts/ax-settings.swift` too.
+const files = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }) : [])
+  .filter((entry) => entry.isFile())
+  .map((entry) => dir + entry.name);
+const candidates = [...files(helpers), ...files("scripts/")];
+
+// What this platform's leaves load, and what those files load in turn.
 const sources = readdirSync(ci)
   .filter(isLeaf)
   .map((name) => readFileSync(ci + name, "utf8"));
 const loaded = new Set();
 for (let grew = true; grew; ) {
   grew = false;
-  for (const name of existsSync(helpers) ? readdirSync(helpers) : []) {
-    if (!loaded.has(name) && sources.some((text) => mentions(text, name))) {
-      loaded.add(name);
-      sources.push(readFileSync(helpers + name, "utf8"));
+  for (const path of candidates) {
+    if (!loaded.has(path) && sources.some((text) => mentions(text, basename(path)))) {
+      loaded.add(path);
+      sources.push(readFileSync(path, "utf8"));
       grew = true;
     }
   }
 }
 
-// A helper can change what any leaf that loads it does, so it runs them all.
-const helperChanged = changed.some((path) => path.startsWith(helpers) && loaded.has(basename(path)));
+// A loaded file can change what any leaf that loads it does, so it runs them all.
+const helperChanged = changed.some((path) => loaded.has(path));
 
 if (helperChanged) {
   process.stdout.write("run=true\nscenarios=\n");
